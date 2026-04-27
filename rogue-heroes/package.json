@@ -1,0 +1,16 @@
+{
+  "name": "rogue-heroes-mvp",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "private": true,
+  "scripts": {
+    "serve": "node serve.mjs 8010",
+    "start": "node serve.mjs 8010",
+    "desktop": "electron .",
+    "syntax": "node --check src/main.js"
+  },
+  "devDependencies": {
+    "electron": "^34.0.0"
+  }
+}
