@@ -89,17 +89,18 @@ export class KingdomRenderer {
     }
   }
 
-  drawBuild(timer, mapExpanded = false, selectedBaseNodeId = null) {
+  drawBuild(timer, mapExpanded = false, selectedBaseNodeId = null, baseModalOpen = false) {
     this.beginFrame();
     this.drawTopBar("Build The Kingdom", `Round ${this.sim.round}  |  Spend on offense, defense, and diplomacy  |  Battle in ${Math.ceil(timer)}s`);
-    this.drawGoldBadge(this.width - 390, 18);
+    this.drawGoldBadge(this.width - 470, 18);
     this.drawBuildLayout(selectedBaseNodeId);
     this.drawButton("start_battle", "START BATTLE", this.width - 186, 22, 158, 42, "#21c886", "#0d6a55");
     if (mapExpanded) this.drawMapOverlay();
+    if (baseModalOpen) this.drawBaseModal(selectedBaseNodeId);
     this.drawTooltip();
   }
 
-  drawFactorySetup(mapExpanded = false, factoryTool = "worker", selectedFactoryItem = null) {
+  drawFactorySetup(mapExpanded = false, factoryTool = null, selectedFactoryItem = null) {
     this.beginFrame();
     this.drawTopBar("Factory Setup", "Upgrade your production floor, hire workers, or sabotage a rival before spending on war");
     this.drawGoldBadge(this.width - 390, 18);
@@ -161,11 +162,35 @@ export class KingdomRenderer {
     this.beginFrame(true);
     this.drawTopBar("War Round Live", "Your defense and your offense resolve at the same time");
     this.drawDualBattles();
+    this.drawBattleSummary();
     const speed = this.battles.defense.speed || this.battles.offense.speed || 1;
     this.drawButton("speed_1", "1x", this.width - 180, 24, 44, 36, speed === 1 ? "#21c886" : "#273246");
     this.drawButton("speed_2", "2x", this.width - 128, 24, 44, 36, speed === 2 ? "#21c886" : "#273246");
     this.drawButton("speed_4", "4x", this.width - 76, 24, 44, 36, speed === 4 ? "#21c886" : "#273246");
     this.drawTooltip();
+  }
+
+  drawBattleSummary() {
+    const ctx = this.ctx;
+    const matches = (this.sim.pendingMatches || []).filter((match) => match.attackerId === 0 || match.defenderId === 0);
+    const w = Math.min(680, this.width - 420);
+    const x = 210;
+    const y = this.height - 84;
+    ctx.fillStyle = "rgba(7, 11, 18, 0.78)";
+    roundedRect(ctx, x, y, w, 54, 8);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.stroke();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 12px ui-sans-serif";
+    ctx.fillText("YOUR FRONTIER BATTLES", x + 14, y + 20);
+    ctx.fillStyle = "#9fb0c8";
+    ctx.font = "700 11px ui-sans-serif";
+    const text = matches.slice(0, 4).map((match) => {
+      const area = this.sim.nodeById(match.targetNodeId || match.defenderNodeId)?.name || "frontier";
+      return match.attackerId === 0 ? `Attack ${area} (${match.army.length})` : `Defend ${area}`;
+    }).join("  |  ") || "No direct battles for your kingdom.";
+    ctx.fillText(text, x + 14, y + 40);
   }
 
   drawFormation(selectedFormation, selectedTargetId, news, spyReport, mapExpanded = false, baseOrders = {}, selectedPrepBaseId = null) {
@@ -207,7 +232,7 @@ export class KingdomRenderer {
     this.beginFrame();
     this.drawTopBar(`Round ${this.sim.round} Results`, "A lost defense gives up one map spot; lost attackers reduce next round income");
     this.drawButton("map_expand", "MAP", this.width - 284, 22, 58, 36, "#33465f", "#1b2636");
-    const boardRect = { x: 34, y: 112, w: 390, h: Math.min(430, this.height - 176) };
+    const boardRect = { x: 34, y: 106, w: Math.min(560, this.width * 0.42), h: Math.min(520, this.height - 166) };
     this.drawBoard(boardRect.x, boardRect.y, boardRect.w, boardRect.h, true);
 
     const reportX = boardRect.x + boardRect.w + 28;
@@ -224,10 +249,11 @@ export class KingdomRenderer {
       const defender = this.sim.kingdoms[result.defenderId];
       const won = result.winner === "attacker";
       ctx.fillStyle = won ? "#ffcf6c" : "#75f2b2";
-      ctx.fillText(won ? "BREACH!" : "HELD!", reportX + 24, y);
+      const area = this.sim.nodeById(result.targetNodeId || result.defenderNodeId)?.name || "Frontier";
+      ctx.fillText(won ? "TAKEN!" : "HELD!", reportX + 24, y);
       ctx.fillStyle = "#dce5f5";
       ctx.font = "600 14px ui-sans-serif";
-      ctx.fillText(battleHeadline(result, attacker, defender), reportX + 104, y);
+      ctx.fillText(areaHeadline(result, area, attacker, defender), reportX + 104, y);
       ctx.fillStyle = "#8492aa";
       const lost = Math.max(0, (result.startingAttackers || result.survivingAttackers || 0) - result.survivingAttackers);
       ctx.fillText(`${Math.ceil(result.time)}s  |  ${result.survivingAttackers} attackers left  |  ${lost * 2}g loss penalty  |  ${result.entry || "west"} entry`, reportX + 104, y + 20);
@@ -322,7 +348,7 @@ export class KingdomRenderer {
 
     this.drawCore({ x: CORE.x, y: CORE.y, hp: CORE.hp, maxHp: CORE.hp, r: CORE.r }, map);
     const nodeId = selectedBaseNodeId || this.build.activeNodeId || this.sim.firstOwnedNode(0);
-    for (const structure of this.sim.structuresForNode(0, nodeId)) this.drawStructure(structure, map, map.scale);
+    for (const structure of this.sim.structuresForNode(0, nodeId)) this.drawStructure(structure, map, map.scale, structure.id === this.build.selectedStructureId);
 
     const def = BUILD_DEFS[this.build.selected];
     const world = this.build.screenToWorld(this.input.mouse.x, this.input.mouse.y);
@@ -341,6 +367,7 @@ export class KingdomRenderer {
       ctx.restore();
     }
     this.drawBuildFieldLegend(b);
+    this.drawSelectedStructurePanel(b);
   }
 
   drawBaseSelector(x, y, w, h, selectedBaseNodeId) {
@@ -353,11 +380,37 @@ export class KingdomRenderer {
     ctx.font = "700 11px ui-sans-serif";
     ctx.fillText("Build separately at each owned land.", x + 14, y + 43);
     let yy = y + 58;
-    for (const node of this.sim.ownedNodes(0).slice(0, 3)) {
+    const bases = this.sim.ownedNodes(0);
+    for (const node of bases.slice(0, 2)) {
       const selected = node.id === selectedBaseNodeId;
       this.drawButton(`base_${node.id}`, `${selected ? "*" : ""}${node.name}`, x + 12, yy, w - 24, 24, selected ? "#21c886" : "#33465f", selected ? "#0d6a55" : "#1b2636");
       yy += 28;
     }
+    if (bases.length > 2) this.drawButton("base_more", `ALL BASES (${bases.length})`, x + 12, yy, w - 24, 24, "#273246", "#151c29");
+  }
+
+  drawBaseModal(selectedBaseNodeId) {
+    const ctx = this.ctx;
+    ctx.fillStyle = "rgba(3, 6, 11, 0.78)";
+    ctx.fillRect(0, 0, this.width, this.height);
+    const w = 420;
+    const h = Math.min(520, this.height - 120);
+    const x = this.width / 2 - w / 2;
+    const y = 96;
+    this.drawGlassPanel(x, y, w, h, "#101827");
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 22px ui-sans-serif";
+    ctx.fillText("Select Base", x + 24, y + 38);
+    ctx.fillStyle = "#9fb0c8";
+    ctx.font = "700 12px ui-sans-serif";
+    ctx.fillText("Choose which owned land you are building for.", x + 24, y + 60);
+    let yy = y + 88;
+    for (const node of this.sim.ownedNodes(0)) {
+      const selected = node.id === selectedBaseNodeId;
+      this.drawButton(`base_${node.id}`, `${node.name}  +${node.income}g`, x + 24, yy, w - 48, 34, selected ? "#21c886" : "#33465f", selected ? "#0d6a55" : "#1b2636");
+      yy += 42;
+    }
+    this.drawButton("base_modal_close", "CLOSE", x + w - 112, y + h - 48, 86, 32, "#33465f", "#1b2636");
   }
 
   drawToolbar() {
@@ -608,7 +661,7 @@ export class KingdomRenderer {
     }
   }
 
-  drawStructure(structure, map, scale) {
+  drawStructure(structure, map, scale, selected = false) {
     const ctx = this.ctx;
     const def = BUILD_DEFS[structure.type];
     const p = map.point(structure.x, structure.y);
@@ -633,6 +686,12 @@ export class KingdomRenderer {
     ctx.strokeStyle = "rgba(255,255,255,0.62)";
     ctx.lineWidth = 1.5;
     ctx.stroke();
+    if (selected) {
+      ctx.strokeStyle = "#ffcf6c";
+      ctx.lineWidth = 3;
+      roundedRect(ctx, p.x - size / 2 - 5, p.y - size / 2 - 5, size + 10, size + 10, Math.min(10, size * 0.2));
+      ctx.stroke();
+    }
     drawStructureGlyph(ctx, structure.type, p.x, p.y, size);
     ctx.restore();
     if (structure.maxHp && structure.hp < structure.maxHp) {
@@ -791,6 +850,32 @@ export class KingdomRenderer {
     ctx.fillText("Core must survive  |  Defense protects here  |  Offense attacks enemy cores", x + 12, y + 16);
   }
 
+  drawSelectedStructurePanel(rect) {
+    const structure = this.build.selectedStructure?.();
+    if (!structure) return;
+    const def = BUILD_DEFS[structure.type];
+    const ctx = this.ctx;
+    const w = 330;
+    const h = 78;
+    const x = rect.x + rect.w - w - 18;
+    const y = rect.y + 18;
+    ctx.fillStyle = "rgba(8, 12, 18, 0.82)";
+    roundedRect(ctx, x, y, w, h, 8);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255, 207, 108, 0.45)";
+    ctx.stroke();
+    ctx.fillStyle = "#ffcf6c";
+    ctx.font = "900 12px ui-sans-serif";
+    ctx.fillText("SELECTED STRUCTURE", x + 14, y + 20);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 16px ui-sans-serif";
+    ctx.fillText(def.name, x + 14, y + 44);
+    ctx.fillStyle = "#9fb0c8";
+    ctx.font = "700 11px ui-sans-serif";
+    ctx.fillText(`Sell refund: ${Math.max(1, Math.floor(def.cost * 0.35))}g`, x + 14, y + 63);
+    this.drawButton("sell_structure", "SELL", x + w - 86, y + 22, 64, 34, "#ff655d", "#93323a");
+  }
+
   drawUnitBreakdown(battle, x, y) {
     const ctx = this.ctx;
     const atk = countTypes(battle.attackers);
@@ -911,7 +996,7 @@ export class KingdomRenderer {
       if (statW > 125) {
         ctx.fillStyle = "#91a0b8";
         ctx.font = "700 10px ui-sans-serif";
-        ctx.fillText(stats[i][2], sx + 52, statY + 42);
+        ctx.fillText(stats[i][2], sx + 12, statY + 54);
       }
     }
 
@@ -950,7 +1035,7 @@ export class KingdomRenderer {
     this.drawAssemblyLane(f, floor, intake, treasury, t);
     this.drawFactoryItems(f, floor, selectedFactoryItem, t);
     this.drawFactoryParts(f, floor, intake, treasury, run, factory, t);
-    if (controls) this.drawFactoryPlacementGhost(floor, factoryTool);
+    if (controls && factoryTool) this.drawFactoryPlacementGhost(floor, factoryTool);
 
     ctx.fillStyle = "rgba(7, 11, 18, 0.68)";
     roundedRect(ctx, floor.x + 16, floor.y + floor.h - 50, Math.min(720, floor.w - 32), 36, 7);
@@ -1155,8 +1240,10 @@ export class KingdomRenderer {
     let yy = y + 82;
     for (const node of this.sim.ownedNodes(0).slice(0, 5)) {
       const selected = node.id === selectedPrepBaseId;
-      const order = baseOrders[node.id] || { action: "defend" };
+      const order = baseOrders[node.id] || { allocations: {}, reserve: this.sim.makeArmy(0, node.id).length };
       const armyCount = this.sim.makeArmy(0, node.id).length;
+      const allocated = Object.values(order.allocations || {}).reduce((sum, value) => sum + value, 0);
+      const reserve = order.reserve ?? Math.max(0, armyCount - allocated);
       ctx.fillStyle = selected ? "rgba(125, 231, 165, 0.16)" : "rgba(255,255,255,0.06)";
       roundedRect(ctx, x + 16, yy - 16, w - 32, 58, 8);
       ctx.fill();
@@ -1166,19 +1253,18 @@ export class KingdomRenderer {
       ctx.fillText(node.name, x + 62, yy + 2);
       ctx.fillStyle = "#91a0b8";
       ctx.font = "700 11px ui-sans-serif";
-      const orderText = order.action === "attack"
-        ? `Attacking ${this.sim.nodeById(order.targetNodeId)?.name || "unknown"} with ${armyCount} units`
-        : `Defending here with ${armyCount} offensive units held back`;
-      ctx.fillText(`${armyCount} offensive units  |  ${orderText}`, x + 62, yy + 18);
+      ctx.fillText(`${armyCount} offensive units  |  ${allocated} attacking  |  ${reserve} defending`, x + 62, yy + 18);
       this.drawButton(`prepbase_${node.id}`, selected ? "ACTIVE" : "VIEW", x + w - 318, yy - 10, 62, 26, selected ? "#21c886" : "#33465f", selected ? "#0d6a55" : "#1b2636");
-      this.drawButton(`order_defend_${node.id}`, "DEFEND", x + w - 248, yy - 10, 74, 26, order.action === "defend" ? "#21c886" : "#33465f", order.action === "defend" ? "#0d6a55" : "#1b2636");
+      this.drawButton(`order_defend_${node.id}`, `HOLD ${reserve}`, x + w - 248, yy - 10, 74, 26, reserve > 0 ? "#21c886" : "#33465f", reserve > 0 ? "#0d6a55" : "#1b2636");
       let tx = x + 62;
       const targets = this.sim.adjacentTargetNodesForBase(0, node.id).slice(0, 3);
       for (const target of targets) {
         const owner = this.sim.kingdoms[target.owner];
-        const active = order.action === "attack" && order.targetNodeId === target.id;
-        this.drawButton(`ordertarget_${node.id}_${target.id}`, `${active ? "*" : ""}${target.name}`, tx, yy + 28, 112, 23, active ? "#ffb347" : owner.color, active ? "#9a4f17" : "#1b2636");
-        tx += 118;
+        const count = order.allocations?.[target.id] || 0;
+        this.drawButton(`orderminus_${node.id}_${target.id}`, "-", tx, yy + 28, 24, 23, "#273246", "#151c29");
+        this.drawButton(`ordertarget_${node.id}_${target.id}`, `${target.name} ${count}`, tx + 28, yy + 28, 96, 23, count > 0 ? "#ffb347" : owner.color, count > 0 ? "#9a4f17" : "#1b2636");
+        this.drawButton(`orderplus_${node.id}_${target.id}`, "+", tx + 128, yy + 28, 24, 23, "#273246", "#151c29");
+        tx += 158;
       }
       yy += 70;
     }
@@ -1378,10 +1464,10 @@ export class KingdomRenderer {
     ctx.fillText(selectedFactoryItem ? "MOVE MODE" : "PLACEMENT MODE", x + 14, y + 19);
     ctx.fillStyle = "#ffffff";
     ctx.font = "900 15px ui-sans-serif";
-    ctx.fillText(selectedFactoryItem ? "Click a new floor spot" : `${factoryLabel(factoryTool)} selected`, x + 14, y + 39);
+    ctx.fillText(selectedFactoryItem ? "Click a new floor spot" : factoryTool ? `${factoryLabel(factoryTool)} selected` : "No tool selected", x + 14, y + 39);
     ctx.fillStyle = "#aebbd0";
     ctx.font = "700 11px ui-sans-serif";
-    ctx.fillText(selectedFactoryItem ? "The selected item will move there." : "Next floor click places this item.", x + 14, y + 53);
+    ctx.fillText(selectedFactoryItem ? "The selected item will move there." : factoryTool ? "Next floor click places this item." : "Pick a tool below before placing.", x + 14, y + 53);
   }
 
   drawFactoryToolCard(id, type, label, desc, cost, x, y, w, h, selected) {
@@ -1505,7 +1591,7 @@ export class KingdomRenderer {
 
   hitButton() {
     if (!this.input.mouse.justClicked) return null;
-    return this.buttons.find((button) => inside(this.input.mouse.x, this.input.mouse.y, button)) || null;
+    return [...this.buttons].reverse().find((button) => inside(this.input.mouse.x, this.input.mouse.y, button)) || null;
   }
 
   hitFactory(x, y) {
@@ -1857,6 +1943,15 @@ function battleHeadline(result, attacker, defender) {
   }
   const words = result.survivingDefenders >= 3 ? "stood unbroken" : "survived by a thread";
   return `${defender.name} ${words} against ${attacker.name}`;
+}
+
+function areaHeadline(result, area, attacker, defender) {
+  if (result.contestedNeutral) {
+    const winner = result.winner === "attacker" ? attacker : defender;
+    return `${winner.name} won the neutral clash at ${area}`;
+  }
+  if (result.winner === "attacker") return `${area} fell to ${attacker.name}`;
+  return `${area} held under ${defender.name}`;
 }
 
 function unitSummary(army) {

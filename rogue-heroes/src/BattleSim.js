@@ -45,8 +45,13 @@ export class BattleSim {
       : defender.structures;
     this.structures = structures.map((structure) => ({ ...structure, cooldown: 0 }));
     this.attackers = this.spawnArmy(match.army);
-    this.defenders = this.spawnDefenders(this.sim.makeDefenders(this.defenderId, this.defenderNodeId, match.defenderUsesOffense));
+    this.defenders = this.spawnDefenders(match.defenderArmy || [
+      ...this.sim.makeDefenders(this.defenderId, this.defenderNodeId, match.defenderUsesOffense),
+      ...(match.defenderExtraArmy || []),
+    ]);
     this.startingAttackers = this.attackers.length;
+    this.contestedNeutral = !!match.contestedNeutral;
+    this.targetNodeId = match.targetNodeId || this.defenderNodeId;
   }
 
   spawnArmy(armyTypes) {
@@ -425,6 +430,8 @@ export class BattleSim {
       defenderId: this.defenderId,
       attackerNodeId: this.attackerNodeId,
       defenderNodeId: this.defenderNodeId,
+      targetNodeId: this.targetNodeId,
+      contestedNeutral: this.contestedNeutral,
       winner,
       coreDestroyed,
       startingAttackers: this.startingAttackers || this.attackers.length,

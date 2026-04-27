@@ -37,8 +37,9 @@ let mapExpanded = false;
 let selectedBaseNodeId = null;
 let selectedPrepBaseId = null;
 let baseOrders = {};
-let factoryTool = "worker";
+let factoryTool = null;
 let selectedFactoryItem = null;
+let baseModalOpen = false;
 
 function restart(seed = Date.now()) {
   sim = new KingdomSim(seed);
@@ -65,8 +66,9 @@ function restart(seed = Date.now()) {
   spyReport = null;
   mapExpanded = false;
   baseOrders = {};
-  factoryTool = "worker";
+  factoryTool = null;
   selectedFactoryItem = null;
+  baseModalOpen = false;
 }
 
 function setState(next) {
@@ -97,8 +99,8 @@ function startFormation() {
     const adjacent = sim.adjacentTargetNodesForBase(0, node.id);
     const army = sim.makeArmy(0, node.id);
     baseOrders[node.id] = adjacent.length && army.length
-      ? { action: "attack", targetNodeId: adjacent[0].id, formation: selectedFormation }
-      : { action: "defend", formation: selectedFormation };
+      ? { allocations: { [adjacent[0].id]: army.length }, reserve: 0, formation: selectedFormation }
+      : { allocations: {}, reserve: army.length, formation: selectedFormation };
   }
   selectedPrepBaseId = sim.ownedNodes(0)[0]?.id || null;
   battleNews = sim.makeNewsSnippet();
@@ -176,11 +178,20 @@ function nextRound() {
 function handleInput() {
   const button = renderer.hitButton();
   if (button) {
-    if (button.id === "map_expand") mapExpanded = true;
+    if (mapExpanded && button.id !== "map_close") return;
+    if (baseModalOpen && !(button.id === "base_modal_close" || button.id.startsWith("base_"))) return;
+    if (button.id === "map_expand") {
+      mapExpanded = true;
+      selectedFactoryItem = null;
+      factoryTool = null;
+      build.selectedStructureId = null;
+    }
     if (button.id === "map_close") mapExpanded = false;
-    if (button.id.startsWith("base_") && state === "build") {
+    if (button.id === "base_more") baseModalOpen = true;
+    if (button.id === "base_modal_close") baseModalOpen = false;
+    if (button.id.startsWith("base_") && button.id !== "base_more" && button.id !== "base_modal_close" && state === "build") {
       selectedBaseNodeId = button.id.slice(5);
-      build.setActiveBase(selectedBaseNodeId);
+      if (build.setActiveBase(selectedBaseNodeId)) baseModalOpen = false;
     }
     if (button.id.startsWith("factory_tool_") && state === "factorySetup") {
       factoryTool = button.id.slice("factory_tool_".length);
@@ -211,15 +222,24 @@ function handleInput() {
     }
     if (button.id.startsWith("order_defend_") && state === "formation") {
       const nodeId = button.id.slice("order_defend_".length);
-      baseOrders[nodeId] = { action: "defend", formation: selectedFormation };
+      const armyCount = sim.makeArmy(0, nodeId).length;
+      baseOrders[nodeId] = { allocations: {}, reserve: armyCount, formation: selectedFormation };
       selectedPrepBaseId = nodeId;
     }
     if (button.id.startsWith("ordertarget_") && state === "formation") {
       const [, source, target] = button.id.match(/^ordertarget_(.+?)_(.+)$/) || [];
       if (source && target) {
-        baseOrders[source] = { action: "attack", targetNodeId: target, formation: selectedFormation };
+        const armyCount = sim.makeArmy(0, source).length;
+        baseOrders[source] = { allocations: { [target]: armyCount }, reserve: 0, formation: selectedFormation };
         selectedPrepBaseId = source;
       }
+    }
+    if (button.id.startsWith("orderplus_") && state === "formation") adjustOrder(button.id, 1);
+    if (button.id.startsWith("orderminus_") && state === "formation") adjustOrder(button.id, -1);
+    if (button.id === "sell_structure" && state === "build") {
+      const result = sim.sellStructure(0, build.selectedStructureId);
+      build.setMessage(result.ok ? `Sold for ${result.refund} gold.` : result.reason);
+      build.selectedStructureId = null;
     }
     if (button.id === "ally_accept" && state === "formation") {
       sim.respondAllianceOffer(true);
@@ -243,6 +263,8 @@ function handleInput() {
     return;
   }
 
+  if (mapExpanded || baseModalOpen) return;
+
   if (state === "factorySetup" && input.mouse.justClicked) {
     const factoryHit = renderer.hitFactory(input.mouse.x, input.mouse.y);
     if (factoryHit?.item) {
@@ -251,7 +273,7 @@ function handleInput() {
       if (selectedFactoryItem) {
         sim.moveFactoryItem(0, selectedFactoryItem, factoryHit.point.x, factoryHit.point.y);
         selectedFactoryItem = null;
-      } else {
+      } else if (factoryTool) {
         const result = sim.addFactoryItem(0, factoryTool, factoryHit.point.x, factoryHit.point.y);
         if (!result.ok) build.setMessage(result.reason);
       }
@@ -313,7 +335,7 @@ function update(dt) {
 function render() {
   if (state === "factorySetup") renderer.drawFactorySetup(mapExpanded, factoryTool, selectedFactoryItem);
   else if (state === "factoryRun") renderer.drawFactoryRun(factoryWatchId, factoryTimer, FACTORY_SECONDS);
-  else if (state === "build") renderer.drawBuild(buildTimer, mapExpanded, selectedBaseNodeId);
+  else if (state === "build") renderer.drawBuild(buildTimer, mapExpanded, selectedBaseNodeId, baseModalOpen);
   else if (state === "formation") renderer.drawFormation(selectedFormation, selectedTargetId, battleNews, spyReport, mapExpanded, baseOrders, selectedPrepBaseId);
   else if (state === "battle") renderer.drawBattle();
   else if (state === "results") renderer.drawResults(roundResults, mapExpanded);
@@ -322,6 +344,23 @@ function render() {
   else if (state === "defeat") renderer.drawEnd(false);
   handleInput();
   input.endFrame();
+}
+
+function adjustOrder(id, delta) {
+  const [, source, target] = id.match(/^order(?:plus|minus)_(.+?)_(.+)$/) || [];
+  if (!source || !target) return;
+  const armyCount = sim.makeArmy(0, source).length;
+  const order = baseOrders[source] || { allocations: {}, reserve: armyCount, formation: selectedFormation };
+  order.allocations ||= {};
+  order.reserve ??= Math.max(0, armyCount - Object.values(order.allocations).reduce((sum, value) => sum + value, 0));
+  if (delta > 0 && order.reserve <= 0) return;
+  const current = order.allocations[target] || 0;
+  if (delta < 0 && current <= 0) return;
+  order.allocations[target] = Math.max(0, current + delta);
+  if (order.allocations[target] === 0) delete order.allocations[target];
+  order.reserve = Math.max(0, Math.min(armyCount, order.reserve - delta));
+  baseOrders[source] = order;
+  selectedPrepBaseId = source;
 }
 
 function setBattleSpeed(speed) {

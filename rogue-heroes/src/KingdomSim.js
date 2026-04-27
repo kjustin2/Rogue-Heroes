@@ -4,6 +4,7 @@ import { createRng } from "./rng.js";
 const STARTING_GOLD = 70;
 const BASE_INCOME = 8;
 const ALLIANCE_COST = 18;
+const NEUTRAL_GUARDS = ["guard", "archer"];
 export const NEUTRAL_ID = 4;
 
 const STARTING_OWNERS = {
@@ -198,6 +199,17 @@ export class KingdomSim {
       const def = BUILD_DEFS[structure.type];
       return structure.hp > 0 || def.singleUse;
     });
+  }
+
+  sellStructure(kingdomId, structureId) {
+    const kingdom = this.kingdoms[kingdomId];
+    const index = kingdom?.structures.findIndex((structure) => structure.id === structureId) ?? -1;
+    if (!kingdom || index < 0) return { ok: false, reason: "Select a structure first." };
+    const [structure] = kingdom.structures.splice(index, 1);
+    const def = BUILD_DEFS[structure.type];
+    const refund = Math.max(1, Math.floor((def?.cost || 8) * 0.35));
+    kingdom.gold += refund;
+    return { ok: true, refund, structure };
   }
 
   incomeFor(kingdomId) {
@@ -407,8 +419,12 @@ export class KingdomSim {
     return army;
   }
 
+  takeArmySlice(kingdomId, nodeId, count = Infinity, offset = 0) {
+    return this.makeArmy(kingdomId, nodeId).slice(offset, offset + count);
+  }
+
   makeDefenders(kingdomId, nodeId = null, includeOffense = false) {
-    if (kingdomId === NEUTRAL_ID) return ["guard", "archer"];
+    if (kingdomId === NEUTRAL_ID) return [...NEUTRAL_GUARDS];
     const structures = nodeId ? this.structuresForNode(kingdomId, nodeId) : this.kingdoms[kingdomId].structures;
     const defenders = [];
     for (const structure of structures) {
@@ -472,24 +488,37 @@ export class KingdomSim {
 
   chooseAttackPairs(playerOrders = {}) {
     const matches = [];
-    const defenseOrders = new Set(Object.entries(playerOrders).filter(([, order]) => order?.action === "defend").map(([nodeId]) => nodeId));
+    const defenseCounts = new Map();
+    const usedByBase = new Map();
 
     for (const [nodeId, order] of Object.entries(playerOrders)) {
-      if (!order || order.action !== "attack") continue;
+      const reserve = order?.reserve || 0;
+      if (reserve > 0) defenseCounts.set(nodeId, reserve);
+    }
+
+    for (const [nodeId, order] of Object.entries(playerOrders)) {
+      if (!order) continue;
       const source = this.nodeById(nodeId);
-      const target = this.nodeById(order.targetNodeId);
-      if (!source || !target || source.owner !== 0 || !this.areNodesAdjacent(source.id, target.id) || this.areAllied(source.owner, target.owner)) continue;
-      const army = this.makeArmy(0, source.id);
-      if (army.length === 0) continue;
-      matches.push({
-        attackerId: 0,
-        defenderId: target.owner,
-        attackerNodeId: source.id,
-        defenderNodeId: target.id,
-        targetNodeId: target.id,
-        army,
-        formation: order.formation || "line",
-      });
+      if (!source || source.owner !== 0) continue;
+      let used = order.reserve || 0;
+      const allocations = order.allocations || (order.action === "attack" && order.targetNodeId ? { [order.targetNodeId]: this.makeArmy(0, source.id).length } : {});
+      for (const [targetNodeId, count] of Object.entries(allocations)) {
+        const target = this.nodeById(targetNodeId);
+        if (!target || count <= 0 || !this.areNodesAdjacent(source.id, target.id) || this.areAllied(source.owner, target.owner)) continue;
+        const army = this.takeArmySlice(0, source.id, count, used);
+        used += army.length;
+        if (army.length === 0) continue;
+        matches.push({
+          attackerId: 0,
+          defenderId: target.owner,
+          attackerNodeId: source.id,
+          defenderNodeId: target.id,
+          targetNodeId: target.id,
+          army,
+          formation: order.formation || "line",
+        });
+      }
+      usedByBase.set(nodeId, used);
     }
 
     for (const kingdom of this.aliveKingdoms().filter((k) => k.id !== 0)) {
@@ -507,13 +536,45 @@ export class KingdomSim {
           targetNodeId: target.id,
           army,
           formation: this.rng.pick(["line", "wedge", "column", "scatter"]),
-          defenderUsesOffense: target.owner === 0 && defenseOrders.has(target.id),
+          defenderExtraArmy: target.owner === 0 ? this.takeArmySlice(0, target.id, defenseCounts.get(target.id) || 0) : [],
         });
       }
     }
 
-    this.pendingMatches = matches;
-    return matches;
+    this.pendingMatches = this.resolveNeutralContests(matches);
+    return this.pendingMatches;
+  }
+
+  resolveNeutralContests(matches) {
+    const grouped = new Map();
+    for (const match of matches) {
+      if (match.defenderId !== NEUTRAL_ID) continue;
+      const list = grouped.get(match.targetNodeId) || [];
+      list.push(match);
+      grouped.set(match.targetNodeId, list);
+    }
+    const consumed = new Set();
+    const resolved = [];
+    for (const list of grouped.values()) {
+      if (list.length < 2) continue;
+      for (const item of list) consumed.add(item);
+      const [a, b] = list.sort((left, right) => right.army.length - left.army.length);
+      resolved.push({
+        attackerId: a.attackerId,
+        defenderId: b.attackerId,
+        attackerNodeId: a.attackerNodeId,
+        defenderNodeId: a.targetNodeId,
+        targetNodeId: a.targetNodeId,
+        army: a.army,
+        defenderArmy: [...b.army, ...NEUTRAL_GUARDS],
+        formation: a.formation,
+        contestedNeutral: true,
+      });
+    }
+    for (const match of matches) {
+      if (!consumed.has(match)) resolved.push(match);
+    }
+    return resolved;
   }
 
   makeNewsSnippet() {
@@ -596,7 +657,12 @@ export class KingdomSim {
     const lost = Math.max(0, starting - (result.survivingAttackers || 0));
     if (!attacker.isNeutral) attacker.nextIncomePenalty += Math.min(14, lost * 2);
 
-    if (result.winner === "attacker") {
+    if (result.contestedNeutral) {
+      const winnerId = result.winner === "attacker" ? result.attackerId : result.defenderId;
+      const winner = this.kingdoms[winnerId];
+      this.captureNode(result.targetNodeId || result.defenderNodeId, winnerId);
+      this.log.unshift(`${winner.name} won the clash for ${this.nodeById(result.targetNodeId)?.name || "neutral ground"}.`);
+    } else if (result.winner === "attacker") {
       territoryDelta = 1;
       this.captureNode(result.defenderNodeId || result.targetNodeId, attacker.id);
       this.log.unshift(`${attacker.name} seized ${this.nodeById(result.defenderNodeId)?.name || "one territory"} from ${defender.name}.`);

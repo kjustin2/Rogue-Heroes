@@ -11,6 +11,7 @@ export class BuildManager {
     this.bounds = { ...FIELD };
     this.screenBounds = { ...FIELD };
     this.activeNodeId = sim.firstOwnedNode(0);
+    this.selectedStructureId = null;
   }
 
   setScreenBounds(bounds) {
@@ -24,12 +25,36 @@ export class BuildManager {
       return;
     }
     this.selected = type;
+    this.selectedStructureId = null;
   }
 
   setActiveBase(nodeId) {
     if (!this.sim.ownedNodes(0).some((node) => node.id === nodeId)) return false;
     this.activeNodeId = nodeId;
+    this.selectedStructureId = null;
     return true;
+  }
+
+  selectStructureAt(x, y) {
+    if (!inside(x, y, this.screenBounds)) return null;
+    const world = this.screenToWorld(x, y);
+    let best = null;
+    let bestD = Infinity;
+    for (const structure of this.sim.structuresForNode(0, this.activeNodeId)) {
+      const def = BUILD_DEFS[structure.type];
+      const d = distSq(world.x, world.y, structure.x, structure.y);
+      const r = def.size * 0.7;
+      if (d <= r * r && d < bestD) {
+        best = structure;
+        bestD = d;
+      }
+    }
+    this.selectedStructureId = best?.id || null;
+    return best;
+  }
+
+  selectedStructure() {
+    return this.sim.structuresForNode(0, this.activeNodeId).find((structure) => structure.id === this.selectedStructureId) || null;
   }
 
   update(dt) {
@@ -110,6 +135,7 @@ export class BuildManager {
   }
 
   place(x, y) {
+    if (this.selectStructureAt(x, y)) return true;
     const check = this.canPlace(x, y);
     if (!check.ok) {
       this.setMessage(check.reason);
@@ -119,6 +145,10 @@ export class BuildManager {
     if (!result.ok) this.setMessage(result.reason);
     return result.ok;
   }
+}
+
+function inside(x, y, rect) {
+  return x >= rect.x && y >= rect.y && x <= rect.x + rect.w && y <= rect.y + rect.h;
 }
 
 function distSq(ax, ay, bx, by) {
