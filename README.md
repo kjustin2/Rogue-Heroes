@@ -15,6 +15,17 @@ npm run dev
 
 Open `http://127.0.0.1:5175/`.
 
+## Standalone Electron
+
+```powershell
+cd game
+npm install
+npm run standalone
+```
+
+Use `npm run desktop` from `game/` to launch Electron against an already-built
+`dist/` folder.
+
 ## Verify
 
 ```powershell

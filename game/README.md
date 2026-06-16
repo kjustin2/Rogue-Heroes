@@ -12,6 +12,16 @@ npm run dev
 
 Open `http://localhost:5175`.
 
+## Standalone Electron
+
+```powershell
+npm install
+npm run standalone
+```
+
+Use `npm run desktop` to launch Electron against an already-built `dist/`
+folder.
+
 ## Verify
 
 ```powershell
