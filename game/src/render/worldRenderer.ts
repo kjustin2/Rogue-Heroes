@@ -397,8 +397,8 @@ export class WorldRenderer {
       const to = order.destination ?? sim.entity(order.targetId)?.position;
       if (!to) continue;
       const color = order.kind === "move" ? 0x9dfcff : order.kind === "ram" ? 0xffbf4d : 0xff7f67;
-      const line = makeLine(actor.position, to, color, 0.48);
-      this.orderRoot.add(line);
+      this.orderRoot.add(makeTubeLine(actor.position, to, color, 0.3, 0.13, 0.025));
+      this.orderRoot.add(makeLine(actor.position, to, color, 0.55, 0.18));
     }
   }
 
@@ -413,9 +413,11 @@ export class WorldRenderer {
     const impact = sim.entity(preview.impactEntityId);
     if (!impact) return;
     const clear = !preview.blockedById;
+    this.previewRoot.add(makeTubeLine(actor.position, impact.position, clear ? 0x8de4ff : 0xffbf69, clear ? 0.48 : 0.56, 0.28, 0.05));
     this.previewRoot.add(makeLine(actor.position, impact.position, clear ? 0x8de4ff : 0xffbf69, clear ? 0.88 : 0.96, 0.22));
     this.previewRoot.add(makeEndpoint(impact.position, clear ? 0x8de4ff : 0xffbf69, impact.radius + 0.18));
     if (preview.blockedById) {
+      this.previewRoot.add(makeTubeLine(impact.position, target.position, 0xff765f, 0.26, 0.2, 0.035));
       this.previewRoot.add(makeLine(impact.position, target.position, 0xff765f, 0.42, 0.12));
       this.previewRoot.add(makeEndpoint(target.position, 0xff765f, target.radius + 0.1));
     }
@@ -424,6 +426,7 @@ export class WorldRenderer {
   private syncProjectiles(projectiles: readonly Projectile[]): void {
     this.projectileRoot.clear();
     for (const projectile of projectiles) {
+      this.projectileRoot.add(makeTubeLine(projectile.previous, projectile.position, projectile.color, 0.62, 0.58, 0.045));
       const tracer = makeLine(projectile.previous, projectile.position, projectile.color, 0.92, 0.18);
       this.projectileRoot.add(tracer);
 
@@ -489,6 +492,29 @@ function makeLine(from: { x: number; z: number }, to: { x: number; z: number }, 
   ]);
   const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity });
   return new THREE.Line(geo, mat);
+}
+
+function makeTubeLine(
+  from: { x: number; z: number },
+  to: { x: number; z: number },
+  color: number,
+  opacity: number,
+  y = 0.18,
+  radius = 0.035
+): THREE.Object3D {
+  const start = new THREE.Vector3(from.x, y, from.z);
+  const end = new THREE.Vector3(to.x, y, to.z);
+  const delta = new THREE.Vector3().subVectors(end, start);
+  const length = delta.length();
+  if (length < 0.01) return new THREE.Group();
+
+  const mesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius, length, 10, 1, true),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
+  );
+  mesh.position.copy(start).add(end).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
+  return mesh;
 }
 
 function makeEndpoint(position: { x: number; z: number }, color: number, radius: number): THREE.Mesh {

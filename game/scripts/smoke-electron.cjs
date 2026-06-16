@@ -103,6 +103,14 @@ async function run() {
     element.click();
     return true;
   })()`);
+  const waitForSelector = (selector, label) =>
+    waitFor(() => js(`Boolean(document.querySelector(${JSON.stringify(selector)}))`), label);
+  const clickRequired = async (selector, label) => {
+    await waitForSelector(selector, label);
+    const ok = await click(selector);
+    if (!ok) throw new Error(`Missing ${label}: ${selector}`);
+    await sleep(120);
+  };
 
   try {
     await win.loadURL(`http://127.0.0.1:${port}/`);
@@ -110,9 +118,13 @@ async function run() {
     await assertCanvasPainted(js, "electron command");
     await shot(win, "command");
 
-    await click('[data-select="e-tank-1"]');
-    await click('.part-choice[data-part="left-tread"]');
-    await click('[data-confirm="shoot"]');
+    await clickRequired('[data-select="e-tank-1"]', "Breaker target button");
+    await clickRequired('.part-choice[data-part="left-tread"]', "left tread part option");
+    await waitFor(() => js("document.querySelector('.part-choice.active')?.getAttribute('data-part') === 'left-tread'"), "left tread selected");
+    await waitFor(() => js("document.querySelector('[data-confirm=\"shoot\"]')?.dataset.disabled === 'false'"), "confirm shoot armed");
+    await shot(win, "targeting");
+    await clickRequired('[data-confirm="shoot"]', "confirm shoot button");
+    await waitFor(() => js("window.__rht.sim.orders.length === 1"), "queued electron shot");
     const queued = await js("window.__rht.sim.orders.map((order) => ({ actorId: order.actorId, targetId: order.targetId, kind: order.kind }))");
     if (queued.length !== 1 || queued[0].targetId !== "e-tank-1" || queued[0].kind !== "shoot") {
       throw new Error(`Electron HUD targeting failed: ${JSON.stringify(queued)}`);
@@ -153,6 +165,14 @@ async function run() {
       sim.queueShootPart("e-base-1", "core");
       api.endTurn();
     })()`);
+
+    await sleep(550);
+    const resolveState = await js("({ phase: window.__rht.sim.phase, projectiles: window.__rht.sim.projectiles.length, orders: window.__rht.sim.orders.length })");
+    if (resolveState.phase !== "resolve" || resolveState.projectiles < 1 || resolveState.orders < 3) {
+      throw new Error(`Electron simultaneous resolve failed: ${JSON.stringify(resolveState)}`);
+    }
+    await assertCanvasPainted(js, "electron resolve");
+    await shot(win, "resolve");
 
     await waitFor(() => js("window.__rht.sim.phase === 'victory'"), "victory");
     await assertCanvasPainted(js, "electron victory");
