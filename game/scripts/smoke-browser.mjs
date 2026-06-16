@@ -62,25 +62,57 @@ try {
   await page.waitForSelector(".undo-order");
   const queuedState = await page.evaluate(() => ({
     selectedId: window.__rht.sim.selectedId,
-    orders: window.__rht.sim.orders.map((order) => ({ actorId: order.actorId, kind: order.kind, targetPartId: order.targetPartId })),
+    orders: window.__rht.sim.orders.map((order) => ({ id: order.id, actorId: order.actorId, kind: order.kind, targetPartId: order.targetPartId })),
     cp: window.__rht.sim.entity("p-soldier-1")?.commandPoints,
     commandText: document.querySelector(".commandbar")?.textContent,
+    actions: Array.from(document.querySelectorAll("[data-order-action]")).map((el) => ({
+      action: el.getAttribute("data-order-action"),
+      disabled: el.getAttribute("data-disabled"),
+    })),
   }));
   if (queuedState.selectedId !== "p-soldier-1" || queuedState.orders.length !== 1 || queuedState.orders[0].actorId !== "p-soldier-1") {
     throw new Error(`Expected Rook queued order, got ${JSON.stringify(queuedState)}`);
   }
-  if (queuedState.cp !== 1 || !queuedState.commandText?.includes("Undo Order")) {
+  if (queuedState.cp !== 1 || !queuedState.commandText?.includes("queued 1 order")) {
     throw new Error(`Queued order was not clear or did not spend CP: ${JSON.stringify(queuedState)}`);
   }
+  for (const action of ["move", "shoot", "defend"]) {
+    const state = queuedState.actions.find((item) => item.action === action);
+    if (state?.disabled !== "false") throw new Error(`Expected ${action} to remain enabled with 1 CP: ${JSON.stringify(queuedState.actions)}`);
+  }
   await page.screenshot({ path: join(OUT, "3-queued-undo.png") });
-  await page.locator(".undo-order").click();
+
+  await page.locator('[data-order-action="defend"]').click();
+  await page.locator('[data-confirm="defend"]').click();
+  await page.waitForFunction(() => window.__rht.sim.orders.length === 2 && window.__rht.sim.entity("p-soldier-1")?.commandPoints === 0);
+  const multiOrderState = await page.evaluate(() => ({
+    orders: window.__rht.sim.orders.map((order) => ({ id: order.id, kind: order.kind })),
+    commandText: document.querySelector(".commandbar")?.textContent,
+  }));
+  if (!multiOrderState.orders.some((order) => order.kind === "shoot") || !multiOrderState.orders.some((order) => order.kind === "defend")) {
+    throw new Error(`Expected shoot and defend orders, got ${JSON.stringify(multiOrderState)}`);
+  }
+  if (!multiOrderState.commandText?.includes("queued 2 orders")) {
+    throw new Error(`Multi-order state was unclear: ${JSON.stringify(multiOrderState)}`);
+  }
+
+  await page.locator(".undo-order").first().click();
+  await page.waitForFunction(() => window.__rht.sim.orders.length === 1 && window.__rht.sim.entity("p-soldier-1")?.commandPoints === 1);
+  await page.locator(".undo-order").first().click();
   await page.waitForFunction(() => window.__rht.sim.orders.length === 0 && window.__rht.sim.entity("p-soldier-1")?.commandPoints === 2);
   await page.waitForFunction(() => !document.querySelector(".hud-tooltip.visible"));
+  await page.locator('[data-select="p-soldier-1"]').click();
+  await page.waitForFunction(() => document.querySelector(".target-panel h2")?.textContent?.includes("Rook"));
+  const ownPanel = await page.locator(".target-panel").textContent();
+  if (!ownPanel?.includes("Rook") || !ownPanel.includes("Legs") || !ownPanel.includes("24/24")) {
+    throw new Error(`Selecting own soldier did not expose part health: ${ownPanel}`);
+  }
   await page.screenshot({ path: join(OUT, "4-undone.png") });
 
   await page.locator('[data-select="p-tank-1"]').click();
   await page.locator('[data-select="e-soldier-1"]').click();
   await page.locator('.part-choice[data-part="head"]').click();
+  await page.waitForFunction(() => document.querySelector(".part-choice.active")?.getAttribute("data-part") === "head");
   await page.waitForFunction(() => document.querySelector(".target-summary")?.textContent?.includes("Line blocked"));
   const blockedState = await page.evaluate(() => {
     const preview = window.__rht.sim.previewShot(window.__rht.sim.selectedId, "e-soldier-1", "head");
@@ -102,6 +134,11 @@ try {
   await page.locator('[data-confirm="shoot"]').hover();
   await page.screenshot({ path: join(OUT, "5-blocked-targeting.png") });
 
+  await page.evaluate(() => {
+    for (const entity of window.__rht.sim.entities) {
+      if (entity.team === "neutral") entity.position.z = 8;
+    }
+  });
   await page.locator('[data-select="e-tank-1"]').click();
   await page.waitForSelector(".target-panel");
   const targetTitle = await page.locator(".target-panel h2").first().textContent();
@@ -109,14 +146,14 @@ try {
   if (await page.locator('.part-choice[data-part="head"]').count()) {
     throw new Error("Tank target exposed an invalid head part option");
   }
-  await page.locator('.part-choice[data-part="left-tread"]').click();
+  await page.locator('.part-choice[data-part="right-tread"]').click();
   await page.waitForFunction(() => document.querySelector(".target-summary")?.textContent?.includes("Current line is clear"));
-  const treadTip = await page.locator('.part-choice[data-part="left-tread"]').getAttribute("data-tip");
+  const treadTip = await page.locator('.part-choice[data-part="right-tread"]').getAttribute("data-tip");
   if (!treadTip?.includes("Estimated damage")) throw new Error(`Missing damage tooltip on tread option: ${treadTip}`);
-  const preview = await page.evaluate(() => window.__rht.sim.previewShot("p-tank-1", "e-tank-1", "left-tread"));
+  const preview = await page.evaluate(() => window.__rht.sim.previewShot("p-tank-1", "e-tank-1", "right-tread"));
   if (!preview || preview.blockedById) throw new Error(`Expected clear preview for tank tread shot, got ${JSON.stringify(preview)}`);
   const targetPanelText = await page.locator(".target-panel").textContent();
-  if (!targetPanelText?.includes("Left Tread") || !targetPanelText.includes("34/34")) {
+  if (!targetPanelText?.includes("Right Tread") || !targetPanelText.includes("34/34")) {
     throw new Error(`Target panel did not highlight selected tread detail: ${targetPanelText}`);
   }
   await assertHudLayout(page, "desktop targeting", [".topbar", ".roster", ".target-panel", ".commandbar", ".log"]);
@@ -138,6 +175,10 @@ try {
   await page.waitForTimeout(550);
   const projectileCount = await page.evaluate(() => window.__rht.sim.projectiles.length);
   if (projectileCount < 1) throw new Error("Expected visible projectile travel during resolve");
+  const projectileKinds = await page.evaluate(() => window.__rht.sim.projectiles.map((projectile) => projectile.kind));
+  if (!projectileKinds.includes("shell") || !projectileKinds.includes("rifle")) {
+    throw new Error(`Expected distinct shell and rifle projectiles, got ${JSON.stringify(projectileKinds)}`);
+  }
   await page.screenshot({ path: join(OUT, "7-projectiles.png") });
 
   await page.waitForFunction(() => window.__rht.sim.phase === "command", undefined, { timeout: 5000 });
@@ -153,7 +194,7 @@ try {
       .map((entity) => ({ id: entity.id, hp: entity.parts[0]?.hp }));
     return {
       phase: window.__rht.sim.phase,
-      tankTreadHp: enemyTank?.parts.find((p) => p.id === "left-tread")?.hp,
+      tankTreadHp: enemyTank?.parts.find((p) => p.id === "right-tread")?.hp,
       soldierRifleHp: enemySoldier?.parts.find((p) => p.id === "rifle")?.hp,
       cover,
       log: window.__rht.sim.log.slice(),

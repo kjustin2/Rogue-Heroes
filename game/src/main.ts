@@ -23,6 +23,7 @@ const hud = new Hud(ui, sim, {
   queueMove: (destination) => sim.queueMove(destination),
   queueShootPart: (id: string, partId: string) => sim.queueShootPart(id, partId),
   queueRam: (id: string) => sim.queueRam(id),
+  queueDefend: () => sim.queueDefend(),
   cancelOrder: (id: string) => sim.cancelOrder(id),
 });
 
@@ -81,6 +82,7 @@ declare global {
       setAim(aim: AimMode): void;
       endTurn(): void;
       reset(): void;
+      queueDefend(): void;
       cancelOrder(id: string): void;
     };
   }
@@ -92,5 +94,6 @@ window.__rht = {
   setAim: (aim) => sim.setAim(aim),
   endTurn: () => sim.endTurn(),
   reset: () => sim.reset(),
+  queueDefend: () => sim.queueDefend(),
   cancelOrder: (id) => sim.cancelOrder(id),
 };

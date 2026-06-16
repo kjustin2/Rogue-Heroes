@@ -43,6 +43,17 @@ describe("component damage model", () => {
     expect(soldier.status.deadReason).toBe("Head");
   });
 
+  it("stops a soldier from moving when their legs are destroyed", () => {
+    const soldier = createSoldier("soldier", "Rook", "player", { x: 0, z: 0 });
+
+    const result = applyDamage(soldier, "legs", 99);
+
+    expect(result.destroyed).toBe(true);
+    expect(soldier.status.alive).toBe(true);
+    expect(soldier.status.canMove).toBe(false);
+    expect(soldier.status.immobilized).toBe(true);
+  });
+
   it("lets a base lose its turret while the command core survives", () => {
     const base = createBase("base", "Forward Base", "enemy", { x: 0, z: 0 });
 

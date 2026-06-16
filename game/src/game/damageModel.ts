@@ -128,6 +128,7 @@ export function createSoldier(id: string, name: string, team: Team, position: Ve
       part("body", "Body", "core", 46, { critical: true }),
       part("head", "Head", "head", 16, { critical: true }),
       part("rifle", "Rifle", "weapon", 18),
+      part("legs", "Legs", "mobility", 24),
       part("pack", "Power Pack", "utility", 22),
     ],
   };
@@ -220,8 +221,10 @@ export function preferredPart(entity: CombatEntity, aim: AimMode): DamagePart {
 }
 
 export function aimDamageMultiplier(aim: AimMode): number {
-  if (aim === "head" || aim === "weapon" || aim === "mobility" || aim === "utility") return 0.78;
-  if (aim === "weakest") return 0.9;
+  if (aim === "head") return 1.35;
+  if (aim === "core") return 1.08;
+  if (aim === "weakest") return 1.05;
+  if (aim === "weapon" || aim === "mobility" || aim === "utility") return 0.92;
   return 1;
 }
 

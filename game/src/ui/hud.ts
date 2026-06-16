@@ -3,9 +3,10 @@ import type { CombatEntity, DamagePart } from "../game/damageModel";
 import type { Intent, ShotPreview, TacticalOrder, TacticalSim } from "../game/sim";
 
 const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
-  { id: "move", label: "Move", tip: "Select Move, then click an open point on the map. Costs 1 CP and becomes this unit's order for the turn." },
+  { id: "move", label: "Move", tip: "Select Move, then click an open point on the map. Costs 1 CP. A unit can queue more actions while it still has CP." },
   { id: "shoot", label: "Shoot", tip: "Select Shoot, pick an enemy part, then confirm. The map line previews whether cover blocks the shot." },
   { id: "ram", label: "Ram", tip: "Tank only. Select a target, then confirm. Costs 1 CP, deals 72 damage, and damages your front armor." },
+  { id: "defend", label: "Duck", tip: "Soldier defensive move. Costs 1 CP and avoids incoming head shots during the resolve." },
 ];
 
 export interface HudCallbacks {
@@ -16,6 +17,7 @@ export interface HudCallbacks {
   queueMove(destination: Vec2): boolean;
   queueShootPart(id: string, partId: string): boolean;
   queueRam(id: string): boolean;
+  queueDefend(): boolean;
   cancelOrder(id: string): boolean;
 }
 
@@ -91,11 +93,12 @@ export class Hud {
     const playerUnits = this.sim.entities.filter((entity) => entity.team === "player");
     const enemies = this.sim.entities.filter((entity) => entity.team === "enemy");
     const cover = this.sim.entities.filter((entity) => entity.team === "neutral");
-    const playerOrders = new Map(
-      this.sim.orders
-        .filter((order) => this.sim.entity(order.actorId)?.team === "player")
-        .map((order) => [order.actorId, order])
-    );
+    const playerOrders = new Map<string, TacticalOrder[]>();
+    for (const order of this.sim.orders.filter((item) => this.sim.entity(item.actorId)?.team === "player")) {
+      const orders = playerOrders.get(order.actorId) ?? [];
+      orders.push(order);
+      playerOrders.set(order.actorId, orders);
+    }
 
     const nextHtml = `
       <div class="topbar">
@@ -111,7 +114,7 @@ export class Hud {
 
       <aside class="panel roster">
         <div class="panel-title">Squad</div>
-        ${playerUnits.map((unit) => unitCard(unit, unit.id === actor?.id, playerOrders.get(unit.id), this.sim)).join("")}
+        ${playerUnits.map((unit) => unitCard(unit, unit.id === actor?.id, playerOrders.get(unit.id) ?? [], this.sim)).join("")}
       </aside>
 
       <aside class="panel target-panel">
@@ -125,7 +128,7 @@ export class Hud {
       </aside>
 
       <section class="commandbar">
-        ${orderPlanner(actor, target, this.targetPartId, this.action, playerOrders.get(actor?.id ?? ""), this.sim)}
+        ${orderPlanner(actor, target, this.targetPartId, this.action, playerOrders.get(actor?.id ?? "") ?? [], this.sim)}
       </section>
 
       <section class="log">
@@ -175,6 +178,9 @@ export class Hud {
     if (confirm === "ram" && this.targetId) {
       if (this.callbacks.queueRam(this.targetId)) this.afterConfirmedOrder();
     }
+    if (confirm === "defend") {
+      if (this.callbacks.queueDefend()) this.afterConfirmedOrder();
+    }
 
     const command = target.closest<HTMLElement>("[data-command]")?.dataset.command;
     if (command === "end") this.callbacks.endTurn();
@@ -183,6 +189,8 @@ export class Hud {
 
   private chooseUnit(id: string): void {
     this.callbacks.select(id);
+    this.targetId = id;
+    this.targetPartId = undefined;
     this.action = "select";
     this.callbacks.setIntent("select");
   }
@@ -271,16 +279,17 @@ export class Hud {
   }
 }
 
-function unitCard(entity: CombatEntity, selected: boolean, order: TacticalOrder | undefined, sim: TacticalSim): string {
+function unitCard(entity: CombatEntity, selected: boolean, orders: TacticalOrder[], sim: TacticalSim): string {
+  const lastOrder = orders.at(-1);
   return `
     <div class="unit-card ${selected ? "selected" : ""} ${entity.status.alive ? "" : "dead"}">
       <button class="unit-select" data-select="${entity.id}" data-tip="${escapeAttr(cpTip(entity))}">
         <span class="unit-name">${escapeHtml(entity.name)}</span>
         <span class="unit-meta">${entity.kind.toUpperCase()} / ${cpPips(entity)}</span>
         <span class="mini-bars">${entity.parts.map((part) => miniBar(part)).join("")}</span>
-        <span class="queued-order">${order ? escapeHtml(orderSummary(order, sim)) : "No order queued"}</span>
+        <span class="queued-order">${orders.length ? orders.map((order) => escapeHtml(orderSummary(order, sim))).join("<br>") : "No order queued"}</span>
       </button>
-      ${order && sim.phase === "command" ? `<button class="mini-action undo" data-cancel-order="${entity.id}" data-tip="Undo ${escapeAttr(entity.name)}'s queued order and refund 1 CP.">Undo</button>` : ""}
+      ${lastOrder && sim.phase === "command" ? `<button class="mini-action undo" data-cancel-order="${lastOrder.id}" data-tip="Undo ${escapeAttr(entity.name)}'s latest queued order and refund 1 CP.">Undo</button>` : ""}
     </div>
   `;
 }
@@ -337,17 +346,21 @@ function orderPlanner(
   target: CombatEntity | undefined,
   targetPartId: string | undefined,
   action: Intent,
-  order: TacticalOrder | undefined,
+  orders: TacticalOrder[],
   sim: TacticalSim
 ): string {
   const selectedPart = target?.parts.find((part) => part.id === targetPartId);
   const preview = actor && target && selectedPart ? sim.previewShot(actor.id, target.id, selectedPart.id) : undefined;
   const blocker = preview?.blockedById ? sim.entity(preview.blockedById) : undefined;
-  const canShoot = Boolean(actor && target && selectedPart && actor.status.canShoot && actor.commandPoints > 0 && sim.phase === "command");
+  const canShoot = Boolean(actor && target && target.team !== "player" && selectedPart && actor.status.canShoot && actor.commandPoints > 0 && sim.phase === "command");
   const canRam = Boolean(actor && target && target.team !== "player" && actor.kind === "tank" && actor.status.canMove && actor.commandPoints > 0 && sim.phase === "command");
+  const canDefend = Boolean(actor && actor.kind === "soldier" && actor.status.canMove && actor.commandPoints > 0 && sim.phase === "command");
   const ramTip = actor?.kind === "tank"
     ? "Costs 1 CP. Deals 72 damage to the target and 14 damage to your front armor."
     : "Only tanks can ram.";
+  const defendTip = actor?.kind === "soldier"
+    ? "Costs 1 CP. Ducking avoids head-targeted shots during this turn's resolve."
+    : "Only soldiers can duck.";
 
   return `
     <div class="order-head">
@@ -362,18 +375,19 @@ function orderPlanner(
 
     <div class="action-row">
       ${ORDER_ACTIONS.map((option) => {
-        const disabled = actionDisabled(option.id, actor, order, sim);
-        const tip = option.id === "ram" ? ramTip : option.tip;
+        const disabled = actionDisabled(option.id, actor, sim);
+        const tip = option.id === "ram" ? ramTip : option.id === "defend" ? defendTip : option.tip;
         return `<button class="tool action ${action === option.id ? "active" : ""} ${disabled ? "disabled" : ""}" data-order-action="${option.id}" data-disabled="${disabled}" data-tip="${escapeAttr(tip)}">${option.label}<span>1 CP</span></button>`;
       }).join("")}
     </div>
 
     <div class="order-body">
-      ${order ? queuedOrderState(actor, order, sim) : ""}
-      ${!order && action === "move" ? moveState(actor) : ""}
-      ${!order && action === "shoot" ? shootState(actor, target, targetPartId, preview, blocker, canShoot, sim) : ""}
-      ${!order && action === "ram" ? ramState(target, canRam, ramTip) : ""}
-      ${!order && action === "select" ? orderSummaryState(actor, target) : ""}
+      ${orders.length ? queuedOrdersState(actor, orders, sim) : ""}
+      ${action === "move" ? moveState(actor) : ""}
+      ${action === "shoot" ? shootState(actor, target, targetPartId, preview, blocker, canShoot, sim) : ""}
+      ${action === "ram" ? ramState(target, canRam, ramTip) : ""}
+      ${action === "defend" ? defendState(actor, canDefend, defendTip) : ""}
+      ${action === "select" ? orderSummaryState(actor, target) : ""}
     </div>
   `;
 }
@@ -389,6 +403,14 @@ function shootState(
 ): string {
   if (!actor) return `<div class="order-note">No active unit.</div>`;
   if (!target) return `<div class="order-note">Choose a hostile or cover target.</div>`;
+  if (target.team === "player") {
+    return `
+      <div class="target-summary blocked">
+        <strong>${escapeHtml(target.name)} is friendly</strong>
+        <span>Select a hostile unit or cover object before confirming a shot.</span>
+      </div>
+    `;
+  }
   const parts = sim.targetableParts(target);
   const blockedPart = blocker ? blocker.parts.find((part) => part.id === preview?.impactPartId) : undefined;
   return `
@@ -419,6 +441,19 @@ function ramState(target: CombatEntity | undefined, canRam: boolean, tip: string
   `;
 }
 
+function defendState(actor: CombatEntity | undefined, canDefend: boolean, tip: string): string {
+  return `
+    <div class="target-summary ${canDefend ? "" : "blocked"}">
+      <strong>${actor ? escapeHtml(actor.name) : "No unit selected"}</strong>
+      <span>${canDefend ? "Duck during resolve. Incoming head shots pass overhead." : tip}</span>
+    </div>
+    <button class="btn confirm ${canDefend ? "" : "disabled"}" data-confirm="defend" data-disabled="${!canDefend}" data-tip="${escapeAttr(tip)}">
+      Confirm Duck
+      <span>avoid head shots</span>
+    </button>
+  `;
+}
+
 function moveState(actor: CombatEntity | undefined): string {
   const ready = Boolean(actor && actor.status.canMove && actor.commandPoints > 0);
   return `
@@ -438,16 +473,20 @@ function orderSummaryState(actor: CombatEntity | undefined, target: CombatEntity
   `;
 }
 
-function queuedOrderState(actor: CombatEntity | undefined, order: TacticalOrder, sim: TacticalSim): string {
+function queuedOrdersState(actor: CombatEntity | undefined, orders: TacticalOrder[], sim: TacticalSim): string {
   return `
     <div class="target-summary queued">
-      <strong>${actor ? escapeHtml(actor.name) : "Selected unit"} is locked in</strong>
-      <span>${escapeHtml(orderSummary(order, sim))}. Undo this before ending the turn if you want a different action.</span>
+      <strong>${actor ? escapeHtml(actor.name) : "Selected unit"} queued ${orders.length} order${orders.length === 1 ? "" : "s"}</strong>
+      <span>${orders.map((order) => escapeHtml(orderSummary(order, sim))).join(" / ")}. Spend remaining CP or undo individual choices before ending the turn.</span>
     </div>
-    <button class="btn confirm undo-order" data-cancel-order="${order.actorId}" data-tip="Cancel this unit's queued order and refund its 1 CP.">
-      Undo Order
-      <span>refund 1 CP</span>
-    </button>
+    <div class="queued-list">
+      ${orders.map((order) => `
+        <button class="btn confirm undo-order" data-cancel-order="${order.id}" data-tip="Cancel this queued ${order.kind} order and refund 1 CP.">
+          Undo ${escapeHtml(order.kind)}
+          <span>${escapeHtml(orderSummary(order, sim).replace("Queued: ", ""))}</span>
+        </button>
+      `).join("")}
+    </div>
   `;
 }
 
@@ -484,12 +523,12 @@ function partRow(part: DamagePart, active: boolean): string {
   `;
 }
 
-function actionDisabled(action: Intent, actor: CombatEntity | undefined, order: TacticalOrder | undefined, sim: TacticalSim): boolean {
+function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: TacticalSim): boolean {
   if (!actor || sim.phase !== "command" || actor.commandPoints <= 0) return true;
-  if (order) return true;
   if (action === "move") return !actor.status.canMove;
   if (action === "shoot") return !actor.status.canShoot;
   if (action === "ram") return actor.kind !== "tank" || !actor.status.canMove;
+  if (action === "defend") return actor.kind !== "soldier" || !actor.status.canMove;
   return false;
 }
 
@@ -498,6 +537,7 @@ function orderSummary(order: TacticalOrder, sim: TacticalSim): string {
   const part = target?.parts.find((candidate) => candidate.id === order.targetPartId);
   if (order.kind === "move") return "Queued: move";
   if (order.kind === "ram") return `Queued: ram ${target?.name ?? "target"}`;
+  if (order.kind === "defend") return "Queued: duck";
   return `Queued: shoot ${target?.name ?? "target"}${part ? ` / ${part.label}` : ""}`;
 }
 

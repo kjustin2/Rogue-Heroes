@@ -68,6 +68,7 @@ export class WorldRenderer {
       this.destroyedPartKeys.clear();
       this.debrisRoot.clear();
     }
+    this.animateDebris();
     this.pickables.splice(0);
     const liveIds = new Set(sim.entities.map((e) => e.id));
     for (const [id, group] of this.groups) {
@@ -76,7 +77,7 @@ export class WorldRenderer {
         this.groups.delete(id);
       }
     }
-    for (const entity of sim.entities) this.syncEntity(entity, sim.selectedId, targetId, targetPartId);
+    for (const entity of sim.entities) this.syncEntity(entity, sim.selectedId, targetId, targetPartId, sim.defending.has(entity.id));
     this.syncSelection(sim);
     this.syncTarget(sim, targetId);
     this.syncOrders(sim);
@@ -149,7 +150,7 @@ export class WorldRenderer {
     this.sceneryRoot.add(playerLight, enemyLight);
   }
 
-  private syncEntity(entity: CombatEntity, selectedId: string, targetId: string | undefined, targetPartId: string | undefined): void {
+  private syncEntity(entity: CombatEntity, selectedId: string, targetId: string | undefined, targetPartId: string | undefined, defending: boolean): void {
     let group = this.groups.get(entity.id);
     if (!group) {
       group = this.buildEntity(entity);
@@ -158,7 +159,11 @@ export class WorldRenderer {
     }
     group.position.set(entity.position.x, 0, entity.position.z);
     group.rotation.y = entity.yaw;
-    group.scale.setScalar(entity.status.alive ? 1 : 0.94);
+    if (defending && entity.kind === "soldier" && entity.status.alive) {
+      group.scale.set(1.08, 0.72, 1.08);
+    } else {
+      group.scale.setScalar(entity.status.alive ? 1 : 0.94);
+    }
     group.traverse((object) => {
       if (!("isMesh" in object)) return;
       const mesh = object as PartMesh;
@@ -217,8 +222,8 @@ export class WorldRenderer {
     this.box(group, entity, "pack", [0.38, 0.45, 0.18], [0, 0.82, -0.3], 0x385c62);
     this.box(group, entity, "body", [0.18, 0.52, 0.18], [-0.42, 0.72, 0.02], 0x4f987c);
     this.box(group, entity, "body", [0.18, 0.52, 0.18], [0.42, 0.72, 0.02], 0x4f987c);
-    this.box(group, entity, "body", [0.18, 0.58, 0.2], [-0.18, 0.24, 0], 0x243336);
-    this.box(group, entity, "body", [0.18, 0.58, 0.2], [0.18, 0.24, 0], 0x243336);
+    this.box(group, entity, "legs", [0.18, 0.58, 0.2], [-0.18, 0.24, 0], 0x243336);
+    this.box(group, entity, "legs", [0.18, 0.58, 0.2], [0.18, 0.24, 0], 0x243336);
     this.box(group, entity, "head", [0.26, 0.08, 0.12], [0, 1.38, 0.24], 0x141819, { emissive: 0x9dfcff, emissiveIntensity: 0.2 });
   }
 
@@ -275,6 +280,9 @@ export class WorldRenderer {
     mesh.userData.baseColor = color;
     mesh.userData.baseEmissive = materialOptions.emissive ?? 0x000000;
     mesh.userData.baseEmissiveIntensity = materialOptions.emissiveIntensity ?? 0;
+    mesh.userData.basePosition = mesh.position.clone();
+    mesh.userData.baseRotation = mesh.rotation.clone();
+    mesh.userData.baseScale = mesh.scale.clone();
     this.outline(mesh);
     group.add(mesh);
     return mesh;
@@ -302,6 +310,9 @@ export class WorldRenderer {
     mesh.userData.baseColor = color;
     mesh.userData.baseEmissive = 0x000000;
     mesh.userData.baseEmissiveIntensity = 0;
+    mesh.userData.basePosition = mesh.position.clone();
+    mesh.userData.baseRotation = mesh.rotation.clone();
+    mesh.userData.baseScale = mesh.scale.clone();
     this.outline(mesh);
     group.add(mesh);
     return mesh;
@@ -330,6 +341,7 @@ export class WorldRenderer {
     const count = part.role === "armor" || part.role === "core" ? 7 : part.role === "mobility" ? 6 : 4;
     const color = roleColor(entity, part.role, entity.team === "enemy" ? 0xd96a5d : 0x7bc5d8);
     const seed = hash(`${entity.id}:${part.id}`);
+    const born = performance.now() / 1000;
     for (let i = 0; i < count; i++) {
       const a = ((seed + i * 83) % 360) * (Math.PI / 180);
       const r = 0.38 + ((seed >> (i % 8)) & 7) * 0.08 + i * 0.035;
@@ -354,6 +366,11 @@ export class WorldRenderer {
         entity.position.z + Math.cos(a) * (entity.radius + r)
       );
       mesh.rotation.set(seed * 0.017 + i, a, seed * 0.011 + i * 0.3);
+      mesh.userData.origin = mesh.position.clone();
+      mesh.userData.velocity = new THREE.Vector3(Math.sin(a) * (0.75 + i * 0.08), 1.35 + (i % 4) * 0.22, Math.cos(a) * (0.75 + i * 0.08));
+      mesh.userData.spin = new THREE.Vector3(2.2 + (i % 3) * 0.7, 1.1 + i * 0.18, 1.7 + (i % 4) * 0.35);
+      mesh.userData.baseRotation = mesh.rotation.clone();
+      mesh.userData.born = born;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       this.outline(mesh);
@@ -365,11 +382,44 @@ export class WorldRenderer {
     this.debrisRoot.add(spark);
   }
 
+  private animateDebris(): void {
+    const now = performance.now() / 1000;
+    for (const object of this.debrisRoot.children) {
+      const mesh = object as PartMesh;
+      const origin = mesh.userData.origin as THREE.Vector3 | undefined;
+      const velocity = mesh.userData.velocity as THREE.Vector3 | undefined;
+      const spin = mesh.userData.spin as THREE.Vector3 | undefined;
+      const baseRotation = mesh.userData.baseRotation as THREE.Euler | undefined;
+      const born = mesh.userData.born as number | undefined;
+      if (!origin || !velocity || !spin || !baseRotation || born === undefined) continue;
+      const age = Math.min(2.2, now - born);
+      mesh.position.set(
+        origin.x + velocity.x * age,
+        Math.max(0.07, origin.y + velocity.y * age - 2.65 * age * age),
+        origin.z + velocity.z * age
+      );
+      mesh.rotation.set(
+        baseRotation.x + spin.x * age,
+        baseRotation.y + spin.y * age,
+        baseRotation.z + spin.z * age
+      );
+    }
+  }
+
   private paintPart(mesh: PartMesh, entity: CombatEntity, part: DamagePart, selected: boolean, targeted: boolean, targetedPart: boolean): void {
     const material = mesh.material;
+    const basePosition = mesh.userData.basePosition as THREE.Vector3 | undefined;
+    const baseRotation = mesh.userData.baseRotation as THREE.Euler | undefined;
+    const baseScale = mesh.userData.baseScale as THREE.Vector3 | undefined;
+    if (basePosition) mesh.position.copy(basePosition);
+    if (baseRotation) mesh.rotation.copy(baseRotation);
+    if (baseScale) mesh.scale.copy(baseScale);
+
     const base = roleColor(entity, part.role, mesh.userData.baseColor as number);
     const ratio = clamp01(part.hp / part.maxHp);
-    const color = new THREE.Color(base).lerp(new THREE.Color(0x121517), 1 - ratio);
+    const injury = 1 - ratio;
+    const color = new THREE.Color(base).lerp(new THREE.Color(0x33120f), injury * 0.55);
+    if (ratio < 0.42 && part.hp > 0) color.lerp(new THREE.Color(0xff5f35), 0.16 + injury * 0.18);
     if (!entity.status.alive) color.lerp(new THREE.Color(0x08090a), 0.55);
     if (selected && part.hp > 0) color.lerp(new THREE.Color(0xffffff), 0.12);
     if (targeted && part.hp > 0) color.lerp(new THREE.Color(0xffd166), targetedPart ? 0.46 : 0.18);
@@ -381,9 +431,14 @@ export class WorldRenderer {
       : 0;
     mesh.visible = part.hp > 0 || entity.kind !== "cover";
     if (part.hp <= 0) {
-      mesh.rotation.z = 0.28;
-      mesh.position.y = Math.max(0.15, mesh.position.y - 0.012);
+      mesh.rotation.x += part.role === "head" ? 0.55 : 0.18;
+      mesh.rotation.z += part.role === "mobility" ? 0.75 : 0.32;
+      mesh.position.y = Math.max(0.11, mesh.position.y - 0.18);
+      mesh.position.x += part.role === "weapon" ? 0.16 : part.role === "mobility" ? 0.08 : 0;
+      mesh.scale.multiplyScalar(0.78);
     } else if (ratio < 0.45) {
+      mesh.scale.y *= 0.86 + ratio * 0.2;
+      mesh.rotation.z += part.role === "mobility" ? 0.06 : 0.03;
       material.emissive.setHex(0xff5f35);
       material.emissiveIntensity = 0.18 + (1 - ratio) * 0.28;
     }
@@ -434,6 +489,11 @@ export class WorldRenderer {
     for (const order of sim.orders) {
       const actor = sim.entity(order.actorId);
       if (!actor) continue;
+      if (order.kind === "defend") {
+        this.orderRoot.add(makeEndpoint(actor.position, 0x8de4ff, actor.radius + 0.45));
+        this.orderRoot.add(makeEndpoint(actor.position, 0xffffff, actor.radius + 0.14));
+        continue;
+      }
       const to = order.destination ?? sim.entity(order.targetId)?.position;
       if (!to) continue;
       const color = order.kind === "move" ? 0x9dfcff : order.kind === "ram" ? 0xffbf4d : 0xff7f67;
@@ -448,37 +508,39 @@ export class WorldRenderer {
     if (!actor || actor.team !== "player" || !targetId || !targetPartId || sim.phase !== "command") return;
     const target = sim.entity(targetId);
     const preview = sim.previewShot(actor.id, targetId, targetPartId);
-    if (!target || !preview) return;
+    if (!target || target.team === "player" || !preview) return;
 
     const impact = sim.entity(preview.impactEntityId);
     if (!impact) return;
     const clear = !preview.blockedById;
-    this.previewRoot.add(makeTubeLine(actor.position, impact.position, clear ? 0x8de4ff : 0xffbf69, clear ? 0.48 : 0.56, 0.28, 0.05));
-    this.previewRoot.add(makeLine(actor.position, impact.position, clear ? 0x8de4ff : 0xffbf69, clear ? 0.88 : 0.96, 0.22));
-    this.previewRoot.add(makeEndpoint(impact.position, clear ? 0x8de4ff : 0xffbf69, impact.radius + 0.18));
+    this.previewRoot.add(makeTubeLine(preview.from, preview.impactPoint, clear ? 0x8de4ff : 0xffbf69, clear ? 0.48 : 0.56, 0.28, 0.05));
+    this.previewRoot.add(makeLine(preview.from, preview.impactPoint, clear ? 0x8de4ff : 0xffbf69, clear ? 0.88 : 0.96, 0.22));
+    this.previewRoot.add(makeEndpoint(preview.impactPoint, clear ? 0x8de4ff : 0xffbf69, impact.radius + 0.18));
     if (preview.blockedById) {
-      this.previewRoot.add(makeTubeLine(impact.position, target.position, 0xff765f, 0.26, 0.2, 0.035));
-      this.previewRoot.add(makeLine(impact.position, target.position, 0xff765f, 0.42, 0.12));
-      this.previewRoot.add(makeEndpoint(target.position, 0xff765f, target.radius + 0.1));
+      this.previewRoot.add(makeTubeLine(preview.impactPoint, preview.aimPoint, 0xff765f, 0.26, 0.2, 0.035));
+      this.previewRoot.add(makeLine(preview.impactPoint, preview.aimPoint, 0xff765f, 0.42, 0.12));
+      this.previewRoot.add(makeEndpoint(preview.aimPoint, 0xff765f, target.radius + 0.1));
     }
   }
 
   private syncProjectiles(projectiles: readonly Projectile[]): void {
     this.projectileRoot.clear();
     for (const projectile of projectiles) {
-      this.projectileRoot.add(makeTubeLine(projectile.previous, projectile.position, projectile.color, 0.62, 0.58, 0.045));
-      const tracer = makeLine(projectile.previous, projectile.position, projectile.color, 0.92, 0.18);
+      const style = projectileStyle(projectile);
+      this.projectileRoot.add(makeTubeLine(projectile.previous, projectile.position, style.trailColor, style.trailOpacity, style.trailY, style.trailRadius));
+      const tracer = makeLine(projectile.previous, projectile.position, style.trailColor, 0.9, style.lineY);
       this.projectileRoot.add(tracer);
 
       const shell = new THREE.Mesh(
-        new THREE.SphereGeometry(0.16, 14, 10),
-        new THREE.MeshBasicMaterial({ color: projectile.color, transparent: true, opacity: 0.96 })
+        projectileGeometry(projectile.kind),
+        projectileMaterial(projectile.kind, projectile.color)
       );
-      shell.position.set(projectile.position.x, 0.58, projectile.position.z);
+      shell.position.set(projectile.position.x, style.meshY, projectile.position.z);
+      orientAlongShot(shell, projectile.previous, projectile.position);
       this.projectileRoot.add(shell);
 
-      const glow = new THREE.PointLight(projectile.color, 0.65, 2.8);
-      glow.position.set(projectile.position.x, 0.68, projectile.position.z);
+      const glow = new THREE.PointLight(style.trailColor, style.glow, style.glowRange);
+      glow.position.set(projectile.position.x, style.meshY + 0.1, projectile.position.z);
       this.projectileRoot.add(glow);
     }
   }
@@ -508,6 +570,58 @@ export class WorldRenderer {
       }
     }
   }
+}
+
+function projectileStyle(projectile: Projectile): {
+  trailColor: number;
+  trailOpacity: number;
+  trailY: number;
+  trailRadius: number;
+  lineY: number;
+  meshY: number;
+  glow: number;
+  glowRange: number;
+} {
+  if (projectile.kind === "shell") {
+    return {
+      trailColor: projectile.color,
+      trailOpacity: 0.78,
+      trailY: 0.7,
+      trailRadius: 0.085,
+      lineY: 0.34,
+      meshY: 0.72,
+      glow: 0.85,
+      glowRange: 3.4,
+    };
+  }
+  if (projectile.kind === "bolt") {
+    return {
+      trailColor: 0xffd166,
+      trailOpacity: 0.74,
+      trailY: 0.92,
+      trailRadius: 0.065,
+      lineY: 0.42,
+      meshY: 0.94,
+      glow: 0.95,
+      glowRange: 3.8,
+    };
+  }
+  return {
+    trailColor: projectile.color,
+    trailOpacity: 0.5,
+    trailY: 0.54,
+    trailRadius: 0.026,
+    lineY: 0.18,
+    meshY: 0.56,
+    glow: 0.45,
+    glowRange: 2.1,
+  };
+}
+
+function orientAlongShot(mesh: THREE.Object3D, from: { x: number; z: number }, to: { x: number; z: number }): void {
+  const delta = new THREE.Vector3(to.x - from.x, 0, to.z - from.z);
+  if (delta.lengthSq() < 0.0001) return;
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
 }
 
 function roleColor(entity: CombatEntity, role: PartRole, fallback: number): number {
@@ -587,6 +701,7 @@ function hash(value: string): number {
 const tubeGeometries = new Map<string, THREE.CylinderGeometry>();
 const endpointGeometries = new Map<string, THREE.RingGeometry>();
 const materials = new Map<string, THREE.Material>();
+const projectileGeometries = new Map<string, THREE.BufferGeometry>();
 
 function tubeGeometry(radius: number): THREE.CylinderGeometry {
   const key = radius.toFixed(3);
@@ -633,6 +748,32 @@ function endpointMaterial(color: number): THREE.MeshBasicMaterial {
   let material = materials.get(key);
   if (!material) {
     material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.82, side: THREE.DoubleSide, depthWrite: false });
+    materials.set(key, material);
+  }
+  return material as THREE.MeshBasicMaterial;
+}
+
+function projectileGeometry(kind: Projectile["kind"]): THREE.BufferGeometry {
+  let geometry = projectileGeometries.get(kind);
+  if (!geometry) {
+    if (kind === "shell") {
+      geometry = new THREE.ConeGeometry(0.18, 0.52, 16);
+    } else if (kind === "bolt") {
+      geometry = new THREE.OctahedronGeometry(0.2, 0);
+    } else {
+      geometry = new THREE.SphereGeometry(0.07, 10, 8);
+    }
+    projectileGeometries.set(kind, geometry);
+  }
+  return geometry;
+}
+
+function projectileMaterial(kind: Projectile["kind"], color: number): THREE.MeshBasicMaterial {
+  const tint = kind === "bolt" ? 0xffd166 : color;
+  const key = `projectile:${kind}:${tint}`;
+  let material = materials.get(key);
+  if (!material) {
+    material = new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: kind === "rifle" ? 0.94 : 0.98 });
     materials.set(key, material);
   }
   return material as THREE.MeshBasicMaterial;

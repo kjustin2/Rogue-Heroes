@@ -5,6 +5,9 @@ import { TacticalSim } from "./sim";
 describe("tactical simulation loop", () => {
   it("resolves queued target fire back into a new command phase", () => {
     const sim = new TacticalSim();
+    for (const entity of sim.entities) {
+      if (entity.team === "neutral") entity.position.z = 8;
+    }
 
     sim.select("p-tank-1");
     sim.setAim("mobility");
@@ -33,7 +36,7 @@ describe("tactical simulation loop", () => {
     expect(sim.log[0]).toBe("Cannot ram friendly units");
   });
 
-  it("keeps one queued order per player unit and lets command phase undo refund CP", () => {
+  it("lets a unit spend multiple CP on queued orders and undo individual choices", () => {
     const sim = new TacticalSim();
 
     sim.select("p-soldier-1");
@@ -41,13 +44,13 @@ describe("tactical simulation loop", () => {
     expect(sim.orders).toHaveLength(1);
     expect(sim.entity("p-soldier-1")?.commandPoints).toBe(1);
 
-    expect(sim.queueMove({ x: -7, z: -1 })).toBe(false);
-    expect(sim.orders).toHaveLength(1);
-    expect(sim.log[0]).toBe("Rook already has an order. Undo it first.");
+    expect(sim.queueMove({ x: -7, z: -1 })).toBe(true);
+    expect(sim.orders.map((order) => order.kind)).toEqual(["shoot", "move"]);
+    expect(sim.entity("p-soldier-1")?.commandPoints).toBe(0);
 
-    expect(sim.cancelOrder("p-soldier-1")).toBe(true);
-    expect(sim.orders).toHaveLength(0);
-    expect(sim.entity("p-soldier-1")?.commandPoints).toBe(2);
+    expect(sim.cancelOrder(sim.orders[0].id)).toBe(true);
+    expect(sim.orders.map((order) => order.kind)).toEqual(["move"]);
+    expect(sim.entity("p-soldier-1")?.commandPoints).toBe(1);
     expect(sim.log[0]).toBe("Rook order cancelled");
   });
 
@@ -83,7 +86,7 @@ describe("tactical simulation loop", () => {
       "right-tread",
       "front-plate",
     ]);
-    expect(sim.targetableParts(enemySoldier!).map((part) => part.id)).toEqual(["body", "head", "rifle", "pack"]);
+    expect(sim.targetableParts(enemySoldier!).map((part) => part.id)).toEqual(["body", "head", "rifle", "legs", "pack"]);
 
     sim.select("p-soldier-1");
     expect(sim.queueShootPart("e-tank-1", "head")).toBe(false);
@@ -114,6 +117,64 @@ describe("tactical simulation loop", () => {
     expect(wall?.parts[0].hp).toBeLessThan(70);
     expect(enemy?.parts.find((part) => part.id === "head")?.hp).toBe(16);
     expect(sim.log).toContain("Concrete Wall intercepts shot at Cutlass");
+  });
+
+  it("uses the selected part to change projectile trajectory through cover", () => {
+    const thinCover = createCover("thin-cover", "Thin Cover", { x: 3, z: -0.45 });
+    thinCover.radius = 0.05;
+    const sim = new TacticalSim([
+      createSoldier("player", "Rook", "player", { x: 0, z: 0 }),
+      thinCover,
+      createSoldier("enemy", "Cutlass", "enemy", { x: 6, z: 0 }),
+    ]);
+
+    const bodyPreview = sim.previewShot("player", "enemy", "body");
+    const headPreview = sim.previewShot("player", "enemy", "head");
+
+    expect(bodyPreview?.aimPoint).not.toEqual(headPreview?.aimPoint);
+    expect(bodyPreview?.blockedById).toBe("thin-cover");
+    expect(headPreview?.blockedById).toBeUndefined();
+  });
+
+  it("makes soldier head shots a weak-point damage choice", () => {
+    const sim = new TacticalSim([
+      createSoldier("player", "Rook", "player", { x: 0, z: 0 }),
+      createSoldier("enemy", "Cutlass", "enemy", { x: 4, z: 0 }),
+    ]);
+
+    const headPreview = sim.previewShot("player", "enemy", "head");
+    const bodyPreview = sim.previewShot("player", "enemy", "body");
+
+    expect(headPreview?.amount).toBeGreaterThan(bodyPreview?.amount ?? 0);
+  });
+
+  it("lets soldiers duck under incoming head shots but not body shots", () => {
+    const headSim = new TacticalSim([
+      createSoldier("player", "Rook", "player", { x: 0, z: 0 }),
+      createSoldier("enemy", "Cutlass", "enemy", { x: 2.8, z: 0 }),
+    ]);
+
+    headSim.select("player");
+    expect(headSim.queueDefend()).toBe(true);
+    headSim.orders.push(enemyShootOrder("enemy-head", "enemy", "player", "head"));
+    headSim.phase = "resolve";
+    advance(headSim, 2);
+
+    expect(headSim.entity("player")?.parts.find((part) => part.id === "head")?.hp).toBe(16);
+    expect(headSim.log).toContain("Rook ducks under Cutlass's head shot");
+
+    const bodySim = new TacticalSim([
+      createSoldier("player", "Rook", "player", { x: 0, z: 0 }),
+      createSoldier("enemy", "Cutlass", "enemy", { x: 2.8, z: 0 }),
+    ]);
+
+    bodySim.select("player");
+    expect(bodySim.queueDefend()).toBe(true);
+    bodySim.orders.push(enemyShootOrder("enemy-body", "enemy", "player", "body"));
+    bodySim.phase = "resolve";
+    advance(bodySim, 2);
+
+    expect(bodySim.entity("player")?.parts.find((part) => part.id === "body")?.hp).toBeLessThan(46);
   });
 
   it("launches a visible projectile before applying shot damage", () => {
@@ -177,4 +238,19 @@ describe("tactical simulation loop", () => {
 
 function advance(sim: TacticalSim, seconds: number): void {
   for (let elapsed = 0; elapsed < seconds; elapsed += 0.05) sim.update(0.05);
+}
+
+function enemyShootOrder(id: string, actorId: string, targetId: string, targetPartId: string) {
+  return {
+    id,
+    actorId,
+    kind: "shoot" as const,
+    targetId,
+    targetPartId,
+    aim: targetPartId === "head" ? "head" as const : "core" as const,
+    elapsed: 0,
+    duration: 0.95,
+    fired: false,
+    done: false,
+  };
 }

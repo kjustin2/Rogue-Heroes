@@ -25,8 +25,8 @@ import {
 import { createScenario } from "./scenario";
 
 export type Phase = "command" | "resolve" | "victory" | "defeat";
-export type Intent = "select" | "move" | "shoot" | "ram";
-export type OrderKind = "move" | "shoot" | "ram";
+export type Intent = "select" | "move" | "shoot" | "ram" | "defend";
+export type OrderKind = "move" | "shoot" | "ram" | "defend";
 
 export interface TacticalOrder {
   id: string;
@@ -62,9 +62,14 @@ export interface ShotPreview {
   targetPartId: string;
   impactEntityId: string;
   impactPartId: string;
+  from: Vec2;
+  aimPoint: Vec2;
+  impactPoint: Vec2;
   amount: number;
   blockedById?: string;
 }
+
+export type ProjectileKind = "rifle" | "shell" | "bolt";
 
 export interface Projectile {
   id: string;
@@ -73,6 +78,7 @@ export interface Projectile {
   targetId: string;
   targetPartId?: string;
   aim: AimMode;
+  kind: ProjectileKind;
   position: Vec2;
   previous: Vec2;
   origin: Vec2;
@@ -89,6 +95,7 @@ export class TacticalSim {
   readonly orders: TacticalOrder[] = [];
   readonly projectiles: Projectile[] = [];
   readonly effects: VisualEvent[] = [];
+  readonly defending = new Set<string>();
   readonly log: string[] = [];
 
   phase: Phase = "command";
@@ -145,7 +152,6 @@ export class TacticalSim {
   queueMove(destination: Vec2): boolean {
     const actor = this.requirePlayerActor();
     if (!actor) return false;
-    if (this.playerOrderFor(actor.id)) return this.reject(`${actor.name} already has an order. Undo it first.`);
     if (!actor.status.canMove) return this.reject(`${actor.name} cannot move`);
     if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
     this.addOrder({
@@ -162,7 +168,6 @@ export class TacticalSim {
     const actor = this.requirePlayerActor();
     const target = this.entity(targetId);
     if (!actor || !target || actor.id === target.id) return false;
-    if (this.playerOrderFor(actor.id)) return this.reject(`${actor.name} already has an order. Undo it first.`);
     if (target.team === "player") return this.reject("Cannot target friendly units");
     return this.queueShootFor(actor, target, this.aim);
   }
@@ -171,7 +176,6 @@ export class TacticalSim {
     const actor = this.requirePlayerActor();
     const target = this.entity(targetId);
     if (!actor || !target || actor.id === target.id) return false;
-    if (this.playerOrderFor(actor.id)) return this.reject(`${actor.name} already has an order. Undo it first.`);
     if (target.team === "player") return this.reject("Cannot target friendly units");
     return this.queueShootFor(actor, target, aimForPart(target.parts.find((part) => part.id === partId)), partId);
   }
@@ -180,7 +184,6 @@ export class TacticalSim {
     const actor = this.requirePlayerActor();
     const target = this.entity(targetId);
     if (!actor || !target || actor.id === target.id) return false;
-    if (this.playerOrderFor(actor.id)) return this.reject(`${actor.name} already has an order. Undo it first.`);
     if (target.team === "player") return this.reject("Cannot ram friendly units");
     if (actor.kind !== "tank") return this.reject("Only tanks can ram");
     if (!actor.status.canMove) return this.reject(`${actor.name} cannot ram without mobility`);
@@ -195,10 +198,27 @@ export class TacticalSim {
     return true;
   }
 
-  cancelOrder(actorId: string): boolean {
+  queueDefend(): boolean {
+    const actor = this.requirePlayerActor();
+    if (!actor) return false;
+    if (actor.kind !== "soldier") return this.reject("Only soldiers can duck");
+    if (!actor.status.canMove) return this.reject(`${actor.name} cannot duck without mobility`);
+    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
+    this.addOrder({
+      actorId: actor.id,
+      kind: "defend",
+      aim: "center",
+      duration: 1.55,
+    });
+    return true;
+  }
+
+  cancelOrder(orderId: string): boolean {
     if (this.phase !== "command") return this.reject("Orders can only be changed during command phase");
-    const actor = this.entity(actorId);
-    const index = this.orders.findIndex((order) => order.actorId === actorId);
+    let index = this.orders.findIndex((order) => order.id === orderId);
+    if (index < 0) index = this.orders.findIndex((order) => order.actorId === orderId && this.entity(order.actorId)?.team === "player");
+    const order = this.orders[index];
+    const actor = this.entity(order?.actorId);
     if (!actor || actor.team !== "player" || index < 0) return false;
     this.orders.splice(index, 1);
     actor.commandPoints = Math.min(actor.maxCommandPoints, actor.commandPoints + 1);
@@ -217,10 +237,13 @@ export class TacticalSim {
     const intendedPart = this.targetableParts(intendedTarget).find((part) => part.id === partId);
     if (!intendedPart) return undefined;
 
-    const cover = this.firstCoverBetween(actor, intendedTarget);
+    const from = muzzlePoint(actor);
+    const aimPoint = aimPointFor(intendedTarget, intendedPart);
+    const cover = this.firstCoverBetweenPoints(from, aimPoint, intendedTarget.id);
     const impactTarget = cover ?? intendedTarget;
     const impactPart = cover ? preferredPart(cover, "center") : intendedPart;
     const aim = cover ? "center" : aimForPart(intendedPart);
+    const impactPoint = cover ? aimPointFor(cover, impactPart) : aimPoint;
 
     return {
       actorId,
@@ -228,6 +251,9 @@ export class TacticalSim {
       targetPartId: partId,
       impactEntityId: impactTarget.id,
       impactPartId: impactPart.id,
+      from,
+      aimPoint,
+      impactPoint,
       amount: this.estimateShotDamage(actor, impactTarget, impactPart, aim, Boolean(cover)),
       blockedById: cover?.id,
     };
@@ -248,6 +274,7 @@ export class TacticalSim {
     this.orders.splice(0);
     this.effects.splice(0);
     this.projectiles.splice(0);
+    this.defending.clear();
     this.log.splice(0);
     this.phase = "command";
     this.intent = "select";
@@ -267,6 +294,7 @@ export class TacticalSim {
       if (this.effects[i].age >= this.effects[i].duration) this.effects.splice(i, 1);
     }
 
+    this.defending.clear();
     if (this.phase !== "resolve") return;
     this.resolveClock += dt;
     for (const order of this.orders) {
@@ -315,6 +343,12 @@ export class TacticalSim {
       return;
     }
     order.elapsed += dt;
+
+    if (order.kind === "defend") {
+      this.defending.add(actor.id);
+      if (order.elapsed >= order.duration) order.done = true;
+      return;
+    }
 
     if (order.kind === "move") {
       if (!order.destination || !actor.status.canMove) {
@@ -368,10 +402,11 @@ export class TacticalSim {
       targetId: target.id,
       targetPartId: order.targetPartId,
       aim: order.aim,
-      position: { ...actor.position },
-      previous: { ...actor.position },
-      origin: { ...actor.position },
-      speed: actor.kind === "tank" ? 8.2 : 6.2,
+      kind: projectileKind(actor),
+      position: muzzlePoint(actor),
+      previous: muzzlePoint(actor),
+      origin: muzzlePoint(actor),
+      speed: actor.kind === "tank" ? 7.4 : actor.kind === "base" ? 7.8 : 9.2,
       age: 0,
       maxAge: 3.1,
       color: actor.team === "player" ? 0x75d8ff : 0xff765f,
@@ -399,7 +434,10 @@ export class TacticalSim {
     }
 
     projectile.previous = { ...projectile.position };
-    const desired = { ...intendedTarget.position };
+    const targetPart = projectile.targetPartId
+      ? preferredPartByIdOrAim(intendedTarget, projectile.targetPartId, projectile.aim)
+      : preferredPart(intendedTarget, projectile.aim);
+    const desired = aimPointFor(intendedTarget, targetPart);
     const next = moveToward(projectile.position, desired, projectile.speed * dt);
     const cover = this.firstCoverBetweenPoints(projectile.position, next, intendedTarget.kind === "cover" ? undefined : intendedTarget.id);
     if (cover) {
@@ -409,10 +447,7 @@ export class TacticalSim {
     }
 
     projectile.position = next;
-    if (dist(projectile.position, intendedTarget.position) <= intendedTarget.radius + 0.2) {
-      const targetPart = projectile.targetPartId
-        ? preferredPartByIdOrAim(intendedTarget, projectile.targetPartId, projectile.aim)
-        : preferredPart(intendedTarget, projectile.aim);
+    if (dist(projectile.position, desired) <= impactRadius(intendedTarget, targetPart)) {
       this.impactProjectile(projectile, intendedTarget, targetPart, false);
     }
   }
@@ -422,6 +457,14 @@ export class TacticalSim {
     const intendedTarget = this.entity(projectile.targetId);
     const order = this.orders.find((candidate) => candidate.id === projectile.orderId);
     if (!actor) {
+      this.removeProjectile(projectile.id);
+      if (order) order.done = true;
+      return;
+    }
+
+    if (!cover && target.id === intendedTarget?.id && targetPart.role === "head" && this.defending.has(target.id)) {
+      this.pushLog(`${target.name} ducks under ${actor.name}'s head shot`);
+      this.effect("ping", target.position, target.position, 0x8de4ff, 0.45, target.radius + 0.45);
       this.removeProjectile(projectile.id);
       if (order) order.done = true;
       return;
@@ -508,10 +551,6 @@ export class TacticalSim {
     }
   }
 
-  private firstCoverBetween(actor: CombatEntity, target: CombatEntity): CombatEntity | undefined {
-    return this.firstCoverBetweenPoints(actor.position, target.position, target.id);
-  }
-
   private firstCoverBetweenPoints(from: Vec2, to: Vec2, ignoreId?: string): CombatEntity | undefined {
     const candidates = this.entities
       .filter((e) => e.kind === "cover" && e.status.alive && e.id !== ignoreId)
@@ -563,6 +602,7 @@ export class TacticalSim {
   private finishResolve(): void {
     this.orders.splice(0);
     this.projectiles.splice(0);
+    this.defending.clear();
     if (this.phase === "victory" || this.phase === "defeat") return;
     this.turn += 1;
     this.phase = "command";
@@ -599,10 +639,6 @@ export class TacticalSim {
     return actor;
   }
 
-  private playerOrderFor(actorId: string): TacticalOrder | undefined {
-    return this.orders.find((order) => order.actorId === actorId && this.entity(order.actorId)?.team === "player");
-  }
-
   private reject(text: string): false {
     this.pushLog(text);
     return false;
@@ -633,6 +669,65 @@ function clampToArena(v: Vec2): Vec2 {
     x: clamp(v.x, -12.5, 12.5),
     z: clamp(v.z, -7.5, 7.5),
   };
+}
+
+function muzzlePoint(entity: CombatEntity): Vec2 {
+  if (entity.kind === "tank") return localPoint(entity, { x: 0, z: 1.65 });
+  if (entity.kind === "soldier") return localPoint(entity, { x: 0.42, z: 0.4 });
+  if (entity.kind === "base") return localPoint(entity, { x: 0.2, z: 1.28 });
+  return { ...entity.position };
+}
+
+function aimPointFor(entity: CombatEntity, part: DamagePart): Vec2 {
+  return localPoint(entity, partAimOffset(entity, part));
+}
+
+function partAimOffset(entity: CombatEntity, part: DamagePart): Vec2 {
+  if (entity.kind === "soldier") {
+    if (part.id === "head") return { x: 0.05, z: 0.34 };
+    if (part.id === "rifle") return { x: 0.46, z: 0.24 };
+    if (part.id === "legs") return { x: -0.12, z: -0.08 };
+    if (part.id === "pack") return { x: 0, z: -0.34 };
+    return { x: 0, z: 0 };
+  }
+  if (entity.kind === "tank") {
+    if (part.id === "left-tread") return { x: -1.15, z: -0.05 };
+    if (part.id === "right-tread") return { x: 1.15, z: -0.05 };
+    if (part.id === "front-plate") return { x: 0, z: 0.88 };
+    if (part.id === "cannon") return { x: 0, z: 1.26 };
+    if (part.id === "turret") return { x: 0, z: 0.18 };
+    return { x: 0, z: 0 };
+  }
+  if (entity.kind === "base") {
+    if (part.id === "turret") return { x: 0.2, z: 0.95 };
+    if (part.id === "comms") return { x: -0.9, z: -0.12 };
+    if (part.id === "power") return { x: 0.92, z: -0.62 };
+    if (part.id === "gate") return { x: 0, z: 1.2 };
+    return { x: 0, z: 0 };
+  }
+  return { x: 0, z: 0 };
+}
+
+function localPoint(entity: CombatEntity, offset: Vec2): Vec2 {
+  const sin = Math.sin(entity.yaw);
+  const cos = Math.cos(entity.yaw);
+  return {
+    x: entity.position.x + offset.x * cos + offset.z * sin,
+    z: entity.position.z - offset.x * sin + offset.z * cos,
+  };
+}
+
+function impactRadius(entity: CombatEntity, part: DamagePart): number {
+  if (part.role === "head") return 0.28;
+  if (part.role === "weapon") return 0.34;
+  if (part.role === "mobility") return 0.42;
+  return Math.max(0.32, Math.min(entity.radius * 0.55, 0.68));
+}
+
+function projectileKind(entity: CombatEntity): ProjectileKind {
+  if (entity.kind === "tank") return "shell";
+  if (entity.kind === "base") return "bolt";
+  return "rifle";
 }
 
 function moveSpeed(entity: CombatEntity): number {

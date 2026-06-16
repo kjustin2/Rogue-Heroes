@@ -397,6 +397,7 @@ button {
 .empty-target {
   color: #c1d1cc;
   font-size: 0.8rem;
+  line-height: 1.22;
 }
 
 .mini-bars {
@@ -611,7 +612,7 @@ button {
 
 .action-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(110px, 1fr));
+  grid-template-columns: repeat(4, minmax(96px, 1fr));
   gap: 8px;
 }
 
@@ -676,6 +677,12 @@ button {
   background:
     linear-gradient(90deg, rgba(140, 239, 255, 0.16), transparent 58%),
     rgba(17, 50, 60, 0.34);
+}
+
+.queued-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
 }
 
 .part-options {
@@ -880,7 +887,7 @@ button {
   }
 
   .action-row {
-    grid-template-columns: repeat(3, minmax(84px, 1fr));
+    grid-template-columns: repeat(4, minmax(72px, 1fr));
   }
 
   .tool {
