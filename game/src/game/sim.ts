@@ -13,10 +13,12 @@ import {
   aimDamageMultiplier,
   applyDamage,
   factionLiving,
+  isPartIntact,
   preferredPart,
   repairForNewTurn,
   spendCommandPoint,
   vulnerabilityMultiplier,
+  type DamagePart,
   type AimMode,
   type CombatEntity,
 } from "./damageModel";
@@ -51,6 +53,16 @@ export interface VisualEvent {
   duration: number;
   radius?: number;
   label?: string;
+}
+
+export interface ShotPreview {
+  actorId: string;
+  targetId: string;
+  targetPartId: string;
+  impactEntityId: string;
+  impactPartId: string;
+  amount: number;
+  blockedById?: string;
 }
 
 export class TacticalSim {
@@ -134,6 +146,14 @@ export class TacticalSim {
     return this.queueShootFor(actor, target, this.aim);
   }
 
+  queueShootPart(targetId: string, partId: string): boolean {
+    const actor = this.requirePlayerActor();
+    const target = this.entity(targetId);
+    if (!actor || !target || actor.id === target.id) return false;
+    if (target.team === "player") return this.reject("Cannot target friendly units");
+    return this.queueShootFor(actor, target, aimForPart(target.parts.find((part) => part.id === partId)), partId);
+  }
+
   queueRam(targetId: string): boolean {
     const actor = this.requirePlayerActor();
     const target = this.entity(targetId);
@@ -150,6 +170,33 @@ export class TacticalSim {
       duration: 1.8,
     });
     return true;
+  }
+
+  targetableParts(target: CombatEntity): DamagePart[] {
+    return target.parts.filter(isPartIntact);
+  }
+
+  previewShot(actorId: string, targetId: string, partId: string): ShotPreview | undefined {
+    const actor = this.entity(actorId);
+    const intendedTarget = this.entity(targetId);
+    if (!actor || !intendedTarget || actor.id === intendedTarget.id) return undefined;
+    const intendedPart = this.targetableParts(intendedTarget).find((part) => part.id === partId);
+    if (!intendedPart) return undefined;
+
+    const cover = this.firstCoverBetween(actor, intendedTarget);
+    const impactTarget = cover ?? intendedTarget;
+    const impactPart = cover ? preferredPart(cover, "center") : intendedPart;
+    const aim = cover ? "center" : aimForPart(intendedPart);
+
+    return {
+      actorId,
+      targetId,
+      targetPartId: partId,
+      impactEntityId: impactTarget.id,
+      impactPartId: impactPart.id,
+      amount: this.estimateShotDamage(actor, impactTarget, impactPart, aim, Boolean(cover)),
+      blockedById: cover?.id,
+    };
   }
 
   endTurn(): void {
@@ -194,10 +241,12 @@ export class TacticalSim {
     if ((allDone && this.resolveClock > 0.9) || this.resolveClock > 3.2) this.finishResolve();
   }
 
-  private queueShootFor(actor: CombatEntity, target: CombatEntity, aim: AimMode): boolean {
+  private queueShootFor(actor: CombatEntity, target: CombatEntity, aim: AimMode, partId?: string): boolean {
     if (!actor.status.canShoot) return this.reject(`${actor.name} cannot shoot`);
     if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
-    const targetPart = preferredPart(target, aim);
+    const requestedPart = partId ? this.targetableParts(target).find((part) => part.id === partId) : undefined;
+    if (partId && !requestedPart) return this.reject(`${target.name} does not have that targetable part`);
+    const targetPart = requestedPart ?? preferredPart(target, aim);
     this.addOrder({
       actorId: actor.id,
       kind: "shoot",
@@ -275,16 +324,21 @@ export class TacticalSim {
     const cover = this.firstCoverBetween(actor, intendedTarget);
     const target = cover ?? intendedTarget;
     const targetPart = cover ? preferredPart(cover, "center") : partId ? preferredPartByIdOrAim(intendedTarget, partId, aim) : preferredPart(intendedTarget, aim);
+    const amount = this.estimateShotDamage(actor, target, targetPart, aim, Boolean(cover));
+
+    const result = applyDamage(target, targetPart.id, amount);
+    if (cover) this.pushLog(`${cover.name} intercepts shot at ${intendedTarget.name}`);
+    this.effect("shot", actor.position, target.position, actor.team === "player" ? 0x75d8ff : 0xff765f, 0.26);
+    this.effect("impact", target.position, target.position, result.destroyed ? 0xffd166 : 0xffffff, 0.36, target.radius);
+    this.afterDamage(actor, target, result.messages);
+  }
+
+  private estimateShotDamage(actor: CombatEntity, target: CombatEntity, targetPart: DamagePart, aim: AimMode, cover: boolean): number {
     const base = actor.kind === "tank" ? 58 : actor.kind === "base" ? 42 : 31;
     const range = dist(actor.position, target.position);
     const falloff = clamp(1.08 - range / 26, 0.65, 1);
     const vulnerability = cover ? 1 : vulnerabilityMultiplier(target, targetPart);
-    const amount = Math.round(base * falloff * (cover ? 0.95 : aimDamageMultiplier(aim)) * vulnerability);
-
-    const result = applyDamage(target, targetPart.id, amount);
-    this.effect("shot", actor.position, target.position, actor.team === "player" ? 0x75d8ff : 0xff765f, 0.26);
-    this.effect("impact", target.position, target.position, result.destroyed ? 0xffd166 : 0xffffff, 0.36, target.radius);
-    this.afterDamage(actor, target, result.messages);
+    return Math.round(base * falloff * (cover ? 0.95 : aimDamageMultiplier(aim)) * vulnerability);
   }
 
   private resolveRam(actor: CombatEntity, target: CombatEntity): void {
@@ -478,4 +532,14 @@ function nearest(origin: CombatEntity, candidates: CombatEntity[]): CombatEntity
 
 function preferredPartByIdOrAim(entity: CombatEntity, partId: string, aim: AimMode) {
   return entity.parts.find((p) => p.id === partId && p.hp > 0) ?? preferredPart(entity, aim);
+}
+
+function aimForPart(part: DamagePart | undefined): AimMode {
+  if (!part) return "center";
+  if (part.role === "head") return "head";
+  if (part.role === "weapon") return "weapon";
+  if (part.role === "mobility") return "mobility";
+  if (part.role === "utility" || part.role === "volatile") return "utility";
+  if (part.role === "core" || part.role === "armor") return "core";
+  return "center";
 }

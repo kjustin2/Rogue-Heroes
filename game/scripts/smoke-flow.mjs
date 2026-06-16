@@ -73,14 +73,11 @@ try {
     }
 
     sim.select("p-tank-1");
-    api.setAim("core");
-    sim.queueShoot("e-tank-1");
+    sim.queueShootPart("e-tank-1", "hull");
     sim.select("p-soldier-1");
-    api.setAim("head");
-    sim.queueShoot("e-soldier-1");
+    sim.queueShootPart("e-soldier-1", "head");
     sim.select("p-soldier-2");
-    api.setAim("core");
-    sim.queueShoot("e-base-1");
+    sim.queueShootPart("e-base-1", "core");
     api.endTurn();
 
     return sim.orders
@@ -102,7 +99,7 @@ try {
   if (victoryState.phase !== "victory") throw new Error(`Expected victory, got ${victoryState.phase}`);
   if (victoryState.livingEnemies.length) throw new Error(`Enemies still alive: ${victoryState.livingEnemies.join(", ")}`);
 
-  await page.locator('[data-action="reset"]').click();
+  await page.locator('[data-command="reset"]').click();
   await page.waitForFunction(() => window.__rht.sim.phase === "command" && window.__rht.sim.turn === 1);
   const resetState = await page.evaluate(() => ({
     phase: window.__rht.sim.phase,

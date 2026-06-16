@@ -41,9 +41,17 @@ try {
   await assertCanvasPainted(page, "desktop command");
   await page.screenshot({ path: join(OUT, "1-command.png") });
 
-  await page.locator('[data-intent="shoot"]').click();
-  await page.locator('[data-aim="mobility"]').click();
   await page.locator('[data-select="e-tank-1"]').click();
+  await page.waitForSelector(".target-panel");
+  const targetTitle = await page.locator(".target-panel h2").first().textContent();
+  if (!targetTitle?.includes("Breaker")) throw new Error(`Expected Breaker target details, got ${targetTitle}`);
+  if (await page.locator('.part-choice[data-part="head"]').count()) {
+    throw new Error("Tank target exposed an invalid head part option");
+  }
+  await page.locator('.part-choice[data-part="left-tread"]').click();
+  const treadTip = await page.locator('.part-choice[data-part="left-tread"]').getAttribute("data-tip");
+  if (!treadTip?.includes("Estimated damage")) throw new Error(`Missing damage tooltip on tread option: ${treadTip}`);
+  await page.locator('[data-confirm="shoot"]').click();
 
   await page.evaluate(() => {
     const openTarget = window.__rht.sim.entity("e-soldier-1");
@@ -51,10 +59,10 @@ try {
     openTarget.position.z = -6.4;
   });
   await page.locator('[data-select="p-soldier-2"]').click();
-  await page.locator('[data-intent="shoot"]').click();
-  await page.locator('[data-aim="weapon"]').click();
   await page.locator('[data-select="e-soldier-1"]').click();
-  await page.locator('[data-action="end"]').click();
+  await page.locator('.part-choice[data-part="rifle"]').click();
+  await page.locator('[data-confirm="shoot"]').click();
+  await page.locator('[data-command="end"]').click();
 
   await page.waitForTimeout(2600);
   await assertCanvasPainted(page, "desktop resolved");

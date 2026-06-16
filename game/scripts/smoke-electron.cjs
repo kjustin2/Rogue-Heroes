@@ -110,11 +110,11 @@ async function run() {
     await assertCanvasPainted(js, "electron command");
     await shot(win, "command");
 
-    await click('[data-intent="shoot"]');
-    await click('[data-aim="mobility"]');
     await click('[data-select="e-tank-1"]');
+    await click('.part-choice[data-part="left-tread"]');
+    await click('[data-confirm="shoot"]');
     const queued = await js("window.__rht.sim.orders.map((order) => ({ actorId: order.actorId, targetId: order.targetId, kind: order.kind }))");
-    if (queued.length !== 1 || queued[0].targetId !== "e-tank-1") {
+    if (queued.length !== 1 || queued[0].targetId !== "e-tank-1" || queued[0].kind !== "shoot") {
       throw new Error(`Electron HUD targeting failed: ${JSON.stringify(queued)}`);
     }
 
@@ -146,14 +146,11 @@ async function run() {
         critical.hp = Math.min(critical.hp, 10);
       }
       sim.select("p-tank-1");
-      api.setAim("core");
-      sim.queueShoot("e-tank-1");
+      sim.queueShootPart("e-tank-1", "hull");
       sim.select("p-soldier-1");
-      api.setAim("head");
-      sim.queueShoot("e-soldier-1");
+      sim.queueShootPart("e-soldier-1", "head");
       sim.select("p-soldier-2");
-      api.setAim("core");
-      sim.queueShoot("e-base-1");
+      sim.queueShootPart("e-base-1", "core");
       api.endTurn();
     })()`);
 

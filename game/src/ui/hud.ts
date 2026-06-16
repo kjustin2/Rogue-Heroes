@@ -1,26 +1,28 @@
-import { AIM_LABELS, type AimMode, type CombatEntity, type DamagePart } from "../game/damageModel";
-import type { Intent, TacticalSim } from "../game/sim";
+import type { Vec2 } from "../core/math";
+import type { CombatEntity, DamagePart } from "../game/damageModel";
+import type { Intent, ShotPreview, TacticalOrder, TacticalSim } from "../game/sim";
 
-const AIMS: AimMode[] = ["center", "weapon", "mobility", "utility", "head", "core", "weakest"];
-const INTENTS: { id: Intent; label: string }[] = [
-  { id: "select", label: "Select" },
-  { id: "move", label: "Move" },
-  { id: "shoot", label: "Shoot" },
-  { id: "ram", label: "Ram" },
+const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
+  { id: "move", label: "Move", tip: "Costs 1 CP. Queue a path to a clear point on the battlefield." },
+  { id: "shoot", label: "Shoot", tip: "Costs 1 CP. Pick a target, pick an intact part, then confirm the shot." },
+  { id: "ram", label: "Ram", tip: "Tank only. Costs 1 CP. Drive into a target for 72 damage and take 14 armor damage." },
 ];
 
 export interface HudCallbacks {
   setIntent(intent: Intent): void;
-  setAim(aim: AimMode): void;
   endTurn(): void;
   reset(): void;
   select(id: string): void;
-  queueShoot(id: string): void;
-  queueRam(id: string): void;
+  queueMove(destination: Vec2): boolean;
+  queueShootPart(id: string, partId: string): boolean;
+  queueRam(id: string): boolean;
 }
 
 export class Hud {
   private lastHtml = "";
+  private action: Intent = "select";
+  private targetId: string | undefined;
+  private targetPartId: string | undefined;
 
   constructor(
     private readonly root: HTMLElement,
@@ -30,11 +32,59 @@ export class Hud {
     this.root.addEventListener("click", (event) => this.handleClick(event));
   }
 
+  get focusedTargetId(): string | undefined {
+    return this.targetId;
+  }
+
+  get focusedPartId(): string | undefined {
+    return this.targetPartId;
+  }
+
+  chooseBoardEntity(id: string): void {
+    const entity = this.sim.entity(id);
+    if (!entity) return;
+    if (entity.team === "player") {
+      this.chooseUnit(id);
+    } else {
+      this.chooseTarget(id);
+    }
+  }
+
+  setAction(action: Intent): void {
+    this.action = action;
+    if (action === "select" || action === "move") this.targetPartId = undefined;
+    this.callbacks.setIntent(action);
+  }
+
+  resetGame(): void {
+    this.action = "select";
+    this.targetId = undefined;
+    this.targetPartId = undefined;
+    this.callbacks.reset();
+  }
+
+  chooseGround(destination: Vec2): void {
+    if (this.action !== "move" || this.sim.phase !== "command") return;
+    if (this.callbacks.queueMove(destination)) {
+      this.action = "select";
+      this.callbacks.setIntent("select");
+    }
+  }
+
   update(): void {
+    this.pruneInvalidFocus();
+
     const selected = this.sim.selected;
-    const playerUnits = this.sim.entities.filter((e) => e.team === "player");
-    const enemies = this.sim.entities.filter((e) => e.team === "enemy");
-    const neutral = this.sim.entities.filter((e) => e.team === "neutral");
+    const actor = selected?.team === "player" ? selected : undefined;
+    const target = this.targetId ? this.sim.entity(this.targetId) : undefined;
+    const playerUnits = this.sim.entities.filter((entity) => entity.team === "player");
+    const enemies = this.sim.entities.filter((entity) => entity.team === "enemy");
+    const cover = this.sim.entities.filter((entity) => entity.team === "neutral");
+    const playerOrders = new Map(
+      this.sim.orders
+        .filter((order) => this.sim.entity(order.actorId)?.team === "player")
+        .map((order) => [order.actorId, order])
+    );
 
     const nextHtml = `
       <div class="topbar">
@@ -43,33 +93,28 @@ export class Hud {
           <div class="phase ${this.sim.phase}">Turn ${this.sim.turn} / ${title(this.sim.phase)}</div>
         </div>
         <div class="top-actions">
-          <button class="btn ghost" data-action="reset">Reset</button>
-          <button class="btn primary" data-action="end" ${this.sim.phase !== "command" ? "disabled" : ""}>End Turn</button>
+          <button class="btn ghost" data-command="reset" data-tip="Clear all damage and queued orders.">Reset</button>
+          <button class="btn primary" data-command="end" ${this.sim.phase !== "command" ? "disabled" : ""} data-tip="Resolve every queued player and enemy order.">End Turn</button>
         </div>
       </div>
 
       <aside class="panel roster">
         <div class="panel-title">Squad</div>
-        ${playerUnits.map((unit) => unitCard(unit, unit.id === this.sim.selectedId)).join("")}
+        ${playerUnits.map((unit) => unitCard(unit, unit.id === actor?.id, playerOrders.get(unit.id), this.sim)).join("")}
       </aside>
 
-      <aside class="panel inspector">
-        ${selected ? inspectEntity(selected) : `<div class="empty">No unit selected</div>`}
+      <aside class="panel target-panel">
+        ${target ? inspectEntity(target, "Target", this.targetPartId) : emptyTargetPanel()}
         <div class="target-list">
           <div class="panel-title">Hostiles</div>
-          ${enemies.map((unit) => compactEntity(unit, unit.id === this.sim.selectedId)).join("")}
+          ${enemies.map((unit) => targetChip(unit, unit.id === this.targetId, actor, this.sim)).join("")}
           <div class="panel-title small">Cover</div>
-          ${neutral.map((unit) => compactEntity(unit, unit.id === this.sim.selectedId)).join("")}
+          ${cover.map((unit) => targetChip(unit, unit.id === this.targetId, actor, this.sim)).join("")}
         </div>
       </aside>
 
       <section class="commandbar">
-        <div class="segment">
-          ${INTENTS.map((intent) => `<button class="tool ${this.sim.intent === intent.id ? "active" : ""}" data-intent="${intent.id}">${intent.label}</button>`).join("")}
-        </div>
-        <div class="segment aim">
-          ${AIMS.map((aim) => `<button class="tool ${this.sim.aim === aim ? "active" : ""}" data-aim="${aim}">${AIM_LABELS[aim]}</button>`).join("")}
-        </div>
+        ${orderPlanner(actor, target, this.targetPartId, this.action, this.sim)}
       </section>
 
       <section class="log">
@@ -85,54 +130,114 @@ export class Hud {
 
   private handleClick(event: Event): void {
     const target = event.target as HTMLElement;
-    const intent = target.closest<HTMLElement>("[data-intent]")?.dataset.intent as Intent | undefined;
-    if (intent) this.callbacks.setIntent(intent);
+    const disabled = target.closest<HTMLElement>("[data-disabled='true']");
+    if (disabled) return;
 
-    const aim = target.closest<HTMLElement>("[data-aim]")?.dataset.aim as AimMode | undefined;
-    if (aim) this.callbacks.setAim(aim);
-
-    const select = target.closest<HTMLElement>("[data-select]")?.dataset.select;
-    if (select) {
-      const entity = this.sim.entity(select);
-      if (entity && entity.team !== "player" && this.sim.intent === "shoot") {
-        this.callbacks.queueShoot(select);
-      } else if (entity && entity.team !== "player" && this.sim.intent === "ram") {
-        this.callbacks.queueRam(select);
-      } else {
-        this.callbacks.select(select);
-      }
+    const orderAction = target.closest<HTMLElement>("[data-order-action]")?.dataset.orderAction as Intent | undefined;
+    if (orderAction) {
+      this.action = orderAction;
+      if (orderAction === "move") this.targetPartId = undefined;
+      this.callbacks.setIntent(orderAction);
     }
 
-    const action = target.closest<HTMLElement>("[data-action]")?.dataset.action;
-    if (action === "end") this.callbacks.endTurn();
-    if (action === "reset") this.callbacks.reset();
+    const part = target.closest<HTMLElement>("[data-part]")?.dataset.part;
+    if (part && this.targetId) this.targetPartId = part;
+
+    const select = target.closest<HTMLElement>("[data-select]")?.dataset.select;
+    if (select) this.chooseBoardEntity(select);
+
+    const confirm = target.closest<HTMLElement>("[data-confirm]")?.dataset.confirm as Intent | undefined;
+    if (confirm === "shoot" && this.targetId && this.targetPartId) {
+      if (this.callbacks.queueShootPart(this.targetId, this.targetPartId)) this.afterConfirmedOrder();
+    }
+    if (confirm === "ram" && this.targetId) {
+      if (this.callbacks.queueRam(this.targetId)) this.afterConfirmedOrder();
+    }
+
+    const command = target.closest<HTMLElement>("[data-command]")?.dataset.command;
+    if (command === "end") this.callbacks.endTurn();
+    if (command === "reset") this.resetGame();
+  }
+
+  private chooseUnit(id: string): void {
+    this.callbacks.select(id);
+    this.action = "select";
+    this.callbacks.setIntent("select");
+  }
+
+  private chooseTarget(id: string): void {
+    const target = this.sim.entity(id);
+    if (!target) return;
+    this.targetId = id;
+    this.targetPartId = undefined;
+    if (this.action !== "shoot" && this.action !== "ram") {
+      this.action = "shoot";
+      this.callbacks.setIntent(this.action);
+    }
+  }
+
+  private afterConfirmedOrder(): void {
+    this.action = "select";
+    this.targetPartId = undefined;
+    this.callbacks.setIntent("select");
+  }
+
+  private pruneInvalidFocus(): void {
+    const target = this.targetId ? this.sim.entity(this.targetId) : undefined;
+    if (!target) {
+      this.targetId = undefined;
+      this.targetPartId = undefined;
+      return;
+    }
+    if (this.targetPartId && !this.sim.targetableParts(target).some((part) => part.id === this.targetPartId)) {
+      this.targetPartId = undefined;
+    }
   }
 }
 
-function unitCard(entity: CombatEntity, selected: boolean): string {
+function unitCard(entity: CombatEntity, selected: boolean, order: TacticalOrder | undefined, sim: TacticalSim): string {
   return `
-    <button class="unit-card ${selected ? "selected" : ""} ${entity.status.alive ? "" : "dead"}" data-select="${entity.id}">
+    <button class="unit-card ${selected ? "selected" : ""} ${entity.status.alive ? "" : "dead"}" data-select="${entity.id}" data-tip="${escapeAttr(cpTip(entity))}">
       <span class="unit-name">${escapeHtml(entity.name)}</span>
-      <span class="unit-meta">${entity.kind.toUpperCase()} / CP ${entity.commandPoints}</span>
+      <span class="unit-meta">${entity.kind.toUpperCase()} / ${cpPips(entity)}</span>
       <span class="mini-bars">${entity.parts.map((part) => miniBar(part)).join("")}</span>
+      <span class="queued-order">${order ? escapeHtml(orderSummary(order, sim)) : "No order queued"}</span>
     </button>
   `;
 }
 
-function compactEntity(entity: CombatEntity, selected: boolean): string {
+function targetChip(entity: CombatEntity, selected: boolean, actor: CombatEntity | undefined, sim: TacticalSim): string {
+  const firstPart = sim.targetableParts(entity)[0];
+  const preview = actor && firstPart ? sim.previewShot(actor.id, entity.id, firstPart.id) : undefined;
+  const blocked = preview?.blockedById ? sim.entity(preview.blockedById) : undefined;
+  const tip = blocked
+    ? `${entity.name} is behind ${blocked.name}; shots hit that cover first.`
+    : `${entity.name}: ${entity.kind}, ${statusText(entity)}.`;
   return `
-    <button class="target-chip ${selected ? "selected" : ""} ${entity.status.alive ? "" : "dead"}" data-select="${entity.id}">
+    <button class="target-chip ${selected ? "selected" : ""} ${entity.status.alive ? "" : "dead"}" data-select="${entity.id}" data-tip="${escapeAttr(tip)}">
       <span>${escapeHtml(entity.name)}</span>
-      <span>${statusText(entity)}</span>
+      <span>${blocked ? `blocked by ${escapeHtml(blocked.name)}` : statusText(entity)}</span>
     </button>
   `;
 }
 
-function inspectEntity(entity: CombatEntity): string {
+function emptyTargetPanel(): string {
   return `
     <div class="inspect-head">
       <div>
-        <div class="panel-title">Selected</div>
+        <div class="panel-title">Target</div>
+        <h2>No target</h2>
+      </div>
+    </div>
+    <div class="empty-target">Enemy and cover details appear here.</div>
+  `;
+}
+
+function inspectEntity(entity: CombatEntity, titleText: string, activePartId: string | undefined): string {
+  return `
+    <div class="inspect-head">
+      <div>
+        <div class="panel-title">${titleText}</div>
         <h2>${escapeHtml(entity.name)}</h2>
       </div>
       <div class="status-pill ${entity.status.alive ? "" : "dead"}">${statusText(entity)}</div>
@@ -140,26 +245,194 @@ function inspectEntity(entity: CombatEntity): string {
     <div class="stat-grid">
       <div><span>Type</span><strong>${entity.kind}</strong></div>
       <div><span>Team</span><strong>${entity.team}</strong></div>
-      <div><span>CP</span><strong>${entity.commandPoints}/${entity.maxCommandPoints}</strong></div>
+      <div data-tip="${escapeAttr(cpTip(entity))}"><span>CP</span><strong>${entity.commandPoints}/${entity.maxCommandPoints}</strong></div>
     </div>
     <div class="parts">
-      ${entity.parts.map((part) => partRow(part)).join("")}
+      ${entity.parts.map((part) => partRow(part, part.id === activePartId)).join("")}
     </div>
   `;
 }
 
-function partRow(part: DamagePart): string {
+function orderPlanner(
+  actor: CombatEntity | undefined,
+  target: CombatEntity | undefined,
+  targetPartId: string | undefined,
+  action: Intent,
+  sim: TacticalSim
+): string {
+  const selectedPart = target?.parts.find((part) => part.id === targetPartId);
+  const preview = actor && target && selectedPart ? sim.previewShot(actor.id, target.id, selectedPart.id) : undefined;
+  const blocker = preview?.blockedById ? sim.entity(preview.blockedById) : undefined;
+  const canShoot = Boolean(actor && target && selectedPart && actor.status.canShoot && actor.commandPoints > 0 && sim.phase === "command");
+  const canRam = Boolean(actor && target && target.team !== "player" && actor.kind === "tank" && actor.status.canMove && actor.commandPoints > 0 && sim.phase === "command");
+  const ramTip = actor?.kind === "tank"
+    ? "Costs 1 CP. Deals 72 damage to the target and 14 damage to your front armor."
+    : "Only tanks can ram.";
+
+  return `
+    <div class="order-head">
+      <div>
+        <div class="panel-title">Order</div>
+        <h2>${actor ? escapeHtml(actor.name) : "No unit selected"}</h2>
+      </div>
+      <div class="cp-badge" data-tip="${actor ? escapeAttr(cpTip(actor)) : "Select a living squad unit."}">
+        ${actor ? `${actor.commandPoints}/${actor.maxCommandPoints} CP` : "-- CP"}
+      </div>
+    </div>
+
+    <div class="action-row">
+      ${ORDER_ACTIONS.map((option) => {
+        const disabled = actionDisabled(option.id, actor, sim);
+        const tip = option.id === "ram" ? ramTip : option.tip;
+        return `<button class="tool action ${action === option.id ? "active" : ""} ${disabled ? "disabled" : ""}" data-order-action="${option.id}" data-disabled="${disabled}" data-tip="${escapeAttr(tip)}">${option.label}<span>1 CP</span></button>`;
+      }).join("")}
+    </div>
+
+    <div class="order-body">
+      ${action === "move" ? moveState(actor) : ""}
+      ${action === "shoot" ? shootState(actor, target, targetPartId, preview, blocker, canShoot, sim) : ""}
+      ${action === "ram" ? ramState(target, canRam, ramTip) : ""}
+      ${action === "select" ? orderSummaryState(actor, target) : ""}
+    </div>
+  `;
+}
+
+function shootState(
+  actor: CombatEntity | undefined,
+  target: CombatEntity | undefined,
+  targetPartId: string | undefined,
+  preview: ShotPreview | undefined,
+  blocker: CombatEntity | undefined,
+  canShoot: boolean,
+  sim: TacticalSim
+): string {
+  if (!actor) return `<div class="order-note">No active unit.</div>`;
+  if (!target) return `<div class="order-note">Choose a hostile or cover target.</div>`;
+  const parts = sim.targetableParts(target);
+  const blockedPart = blocker ? blocker.parts.find((part) => part.id === preview?.impactPartId) : undefined;
+  return `
+    <div class="target-summary ${blocker ? "blocked" : ""}">
+      <strong>${escapeHtml(target.name)}</strong>
+      <span>${blocker ? `Line blocked by ${escapeHtml(blocker.name)}; hit ${escapeHtml(blockedPart?.label ?? "cover")} first.` : "Clear line of fire."}</span>
+    </div>
+    <div class="part-options">
+      ${parts.map((part) => partButton(actor, target, part, part.id === targetPartId, sim)).join("")}
+    </div>
+    <button class="btn confirm ${canShoot ? "" : "disabled"}" data-confirm="shoot" data-disabled="${!canShoot}" data-tip="${escapeAttr(confirmShootTip(preview, blocker, target))}">
+      Confirm Shoot
+      <span>${preview ? `${preview.amount} dmg` : "pick part"}</span>
+    </button>
+  `;
+}
+
+function ramState(target: CombatEntity | undefined, canRam: boolean, tip: string): string {
+  return `
+    <div class="target-summary">
+      <strong>${target ? escapeHtml(target.name) : "No target"}</strong>
+      <span>${target ? "Impact: 72 target damage, 14 self armor damage." : "Choose a hostile or cover target."}</span>
+    </div>
+    <button class="btn confirm ${canRam ? "" : "disabled"}" data-confirm="ram" data-disabled="${!canRam}" data-tip="${escapeAttr(tip)}">
+      Confirm Ram
+      <span>72 dmg</span>
+    </button>
+  `;
+}
+
+function moveState(actor: CombatEntity | undefined): string {
+  const ready = Boolean(actor && actor.status.canMove && actor.commandPoints > 0);
+  return `
+    <div class="target-summary ${ready ? "" : "blocked"}">
+      <strong>${ready ? "Move order armed" : "Move unavailable"}</strong>
+      <span>${ready ? "Click a clear point on the battlefield to confirm." : "This unit has no movement or CP available."}</span>
+    </div>
+  `;
+}
+
+function orderSummaryState(actor: CombatEntity | undefined, target: CombatEntity | undefined): string {
+  return `
+    <div class="target-summary">
+      <strong>${actor ? escapeHtml(actor.name) : "Select a unit"}</strong>
+      <span>${target ? `Inspecting ${escapeHtml(target.name)}.` : "No target selected."}</span>
+    </div>
+  `;
+}
+
+function partButton(actor: CombatEntity, target: CombatEntity, part: DamagePart, selected: boolean, sim: TacticalSim): string {
+  const preview = sim.previewShot(actor.id, target.id, part.id);
+  const blocker = preview?.blockedById ? sim.entity(preview.blockedById) : undefined;
+  const impactTarget = preview ? sim.entity(preview.impactEntityId) : undefined;
+  const impactPart = impactTarget?.parts.find((candidate) => candidate.id === preview?.impactPartId);
+  const tip = [
+    partTip(part),
+    preview ? `Estimated damage: ${preview.amount}.` : "",
+    blocker ? `Blocked by ${blocker.name}; the shot hits ${impactPart?.label ?? blocker.name} first.` : "Clear shot to this part.",
+  ].filter(Boolean).join(" ");
+  return `
+    <button class="part-choice ${selected ? "active" : ""} ${blocker ? "blocked" : ""}" data-part="${part.id}" data-tip="${escapeAttr(tip)}">
+      <strong>${escapeHtml(part.label)}</strong>
+      <span>${part.role} / ${Math.ceil(part.hp)} HP</span>
+      <em>${preview ? `${preview.amount} dmg` : "--"}</em>
+    </button>
+  `;
+}
+
+function partRow(part: DamagePart, active: boolean): string {
   const ratio = part.hp / part.maxHp;
   return `
-    <div class="part-row ${part.hp <= 0 ? "destroyed" : ""}">
+    <button class="part-row ${part.hp <= 0 ? "destroyed" : ""} ${active ? "active" : ""}" data-part="${part.id}" data-disabled="${part.hp <= 0}" data-tip="${escapeAttr(partTip(part))}">
       <div>
         <strong>${escapeHtml(part.label)}</strong>
         <span>${part.role}</span>
       </div>
       <div class="bar"><i style="width:${Math.max(0, ratio * 100).toFixed(1)}%"></i></div>
       <em>${Math.max(0, Math.ceil(part.hp))}/${part.maxHp}</em>
-    </div>
+    </button>
   `;
+}
+
+function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: TacticalSim): boolean {
+  if (!actor || sim.phase !== "command" || actor.commandPoints <= 0) return true;
+  if (action === "move") return !actor.status.canMove;
+  if (action === "shoot") return !actor.status.canShoot;
+  if (action === "ram") return actor.kind !== "tank" || !actor.status.canMove;
+  return false;
+}
+
+function orderSummary(order: TacticalOrder, sim: TacticalSim): string {
+  const target = sim.entity(order.targetId);
+  const part = target?.parts.find((candidate) => candidate.id === order.targetPartId);
+  if (order.kind === "move") return "Queued: move";
+  if (order.kind === "ram") return `Queued: ram ${target?.name ?? "target"}`;
+  return `Queued: shoot ${target?.name ?? "target"}${part ? ` / ${part.label}` : ""}`;
+}
+
+function cpPips(entity: CombatEntity): string {
+  const pips = Array.from({ length: entity.maxCommandPoints }, (_, index) =>
+    `<i class="${index < entity.commandPoints ? "full" : ""}"></i>`
+  ).join("");
+  return `<span class="cp-pips">${pips}</span><span class="cp-text">CP ${entity.commandPoints}/${entity.maxCommandPoints}</span>`;
+}
+
+function cpTip(entity: CombatEntity): string {
+  const limited = entity.status.commandLimited ? " Damaged systems reduce this unit's refill." : "";
+  return `Command Points. Most orders cost 1 CP. ${entity.name} has ${entity.commandPoints} of ${entity.maxCommandPoints} CP this turn.${limited}`;
+}
+
+function confirmShootTip(preview: ShotPreview | undefined, blocker: CombatEntity | undefined, target: CombatEntity): string {
+  if (!preview) return "Pick a target part before confirming the shot.";
+  if (blocker) return `Confirm the shot. ${blocker.name} blocks ${target.name}, so the shot deals ${preview.amount} damage to cover.`;
+  return `Confirm the shot for ${preview.amount} estimated damage.`;
+}
+
+function partTip(part: DamagePart): string {
+  if (part.role === "core") return "Core part. Destroying a critical core disables the unit.";
+  if (part.role === "head") return "Head part. Destroying it disables a soldier immediately.";
+  if (part.role === "weapon") return "Weapon part. Destroying it stops this unit from shooting.";
+  if (part.role === "mobility") return "Mobility part. Destroying it stops movement and rams.";
+  if (part.role === "utility") return "System part. Destroying it can jam weapons or reduce CP.";
+  if (part.role === "armor") return "Armor part. Destroying it exposes the core to stronger follow-up shots.";
+  if (part.role === "volatile") return "Volatile part. Destroying it causes an explosion.";
+  return "Targetable part.";
 }
 
 function miniBar(part: DamagePart): string {
@@ -186,4 +459,8 @@ function escapeHtml(value: string): string {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function escapeAttr(value: string): string {
+  return escapeHtml(value).replaceAll("'", "&#39;");
 }

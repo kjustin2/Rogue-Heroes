@@ -16,6 +16,7 @@ export class WorldRenderer {
   private readonly groups = new Map<string, THREE.Group>();
   private readonly destroyedPartKeys = new Set<string>();
   private readonly ring: THREE.Mesh;
+  private readonly targetRing: THREE.Mesh;
 
   constructor(private readonly scene: THREE.Scene) {
     this.scene.add(this.sceneryRoot, this.debrisRoot, this.entityRoot, this.orderRoot, this.effectRoot);
@@ -28,9 +29,17 @@ export class WorldRenderer {
     this.ring.rotation.x = -Math.PI / 2;
     this.ring.position.y = 0.035;
     this.scene.add(this.ring);
+
+    this.targetRing = new THREE.Mesh(
+      new THREE.RingGeometry(1.08, 1.18, 56),
+      new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.88, side: THREE.DoubleSide })
+    );
+    this.targetRing.rotation.x = -Math.PI / 2;
+    this.targetRing.position.y = 0.055;
+    this.scene.add(this.targetRing);
   }
 
-  update(sim: TacticalSim): void {
+  update(sim: TacticalSim, targetId?: string, targetPartId?: string): void {
     if (sim.entities.every((e) => e.parts.every((p) => p.hp === p.maxHp))) {
       this.destroyedPartKeys.clear();
       this.debrisRoot.clear();
@@ -43,8 +52,9 @@ export class WorldRenderer {
         this.groups.delete(id);
       }
     }
-    for (const entity of sim.entities) this.syncEntity(entity, sim.selectedId);
+    for (const entity of sim.entities) this.syncEntity(entity, sim.selectedId, targetId, targetPartId);
     this.syncSelection(sim);
+    this.syncTarget(sim, targetId);
     this.syncOrders(sim);
     this.syncEffects(sim.effects);
   }
@@ -113,7 +123,7 @@ export class WorldRenderer {
     this.sceneryRoot.add(playerLight, enemyLight);
   }
 
-  private syncEntity(entity: CombatEntity, selectedId: string): void {
+  private syncEntity(entity: CombatEntity, selectedId: string, targetId: string | undefined, targetPartId: string | undefined): void {
     let group = this.groups.get(entity.id);
     if (!group) {
       group = this.buildEntity(entity);
@@ -131,7 +141,7 @@ export class WorldRenderer {
       const part = entity.parts.find((p) => p.id === partId);
       if (!part) return;
       this.syncDebris(entity, part);
-      this.paintPart(mesh, entity, part, entity.id === selectedId);
+      this.paintPart(mesh, entity, part, entity.id === selectedId, entity.id === targetId, part.id === targetPartId);
       this.pickables.push(mesh);
     });
   }
@@ -329,18 +339,19 @@ export class WorldRenderer {
     this.debrisRoot.add(spark);
   }
 
-  private paintPart(mesh: PartMesh, entity: CombatEntity, part: DamagePart, selected: boolean): void {
+  private paintPart(mesh: PartMesh, entity: CombatEntity, part: DamagePart, selected: boolean, targeted: boolean, targetedPart: boolean): void {
     const material = mesh.material;
     const base = roleColor(entity, part.role, mesh.userData.baseColor as number);
     const ratio = clamp01(part.hp / part.maxHp);
     const color = new THREE.Color(base).lerp(new THREE.Color(0x121517), 1 - ratio);
     if (!entity.status.alive) color.lerp(new THREE.Color(0x08090a), 0.55);
     if (selected && part.hp > 0) color.lerp(new THREE.Color(0xffffff), 0.12);
+    if (targeted && part.hp > 0) color.lerp(new THREE.Color(0xffd166), targetedPart ? 0.46 : 0.18);
     material.color.copy(color);
     const baseEmissive = mesh.userData.baseEmissive as number;
-    material.emissive.setHex(part.hp > 0 && selected ? 0x0b3844 : baseEmissive);
+    material.emissive.setHex(part.hp > 0 && targetedPart ? 0x4f3000 : part.hp > 0 && selected ? 0x0b3844 : baseEmissive);
     material.emissiveIntensity = part.hp > 0
-      ? (mesh.userData.baseEmissiveIntensity as number) + (selected ? 0.42 : 0)
+      ? (mesh.userData.baseEmissiveIntensity as number) + (selected ? 0.42 : 0) + (targetedPart ? 0.58 : targeted ? 0.18 : 0)
       : 0;
     mesh.visible = part.hp > 0 || entity.kind !== "cover";
     if (part.hp <= 0) {
@@ -361,6 +372,17 @@ export class WorldRenderer {
     this.ring.scale.setScalar(selected.radius * 1.25);
     const mat = this.ring.material as THREE.MeshBasicMaterial;
     mat.color.setHex(selected.team === "player" ? 0x9dfcff : selected.team === "enemy" ? 0xff8f7f : 0xf6d776);
+  }
+
+  private syncTarget(sim: TacticalSim, targetId: string | undefined): void {
+    const target = sim.entity(targetId);
+    this.targetRing.visible = Boolean(target);
+    if (!target) return;
+    this.targetRing.position.x = target.position.x;
+    this.targetRing.position.z = target.position.z;
+    this.targetRing.scale.setScalar(target.radius * 1.42);
+    const mat = this.targetRing.material as THREE.MeshBasicMaterial;
+    mat.color.setHex(target.team === "enemy" ? 0xffd166 : 0xf6d776);
   }
 
   private syncOrders(sim: TacticalSim): void {

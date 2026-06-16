@@ -17,11 +17,11 @@ const world = new WorldRenderer(stage.scene);
 
 const hud = new Hud(ui, sim, {
   setIntent: (intent: Intent) => sim.setIntent(intent),
-  setAim: (aim: AimMode) => sim.setAim(aim),
   endTurn: () => sim.endTurn(),
   reset: () => sim.reset(),
   select: (id: string) => sim.select(id),
-  queueShoot: (id: string) => sim.queueShoot(id),
+  queueMove: (destination) => sim.queueMove(destination),
+  queueShootPart: (id: string, partId: string) => sim.queueShootPart(id, partId),
   queueRam: (id: string) => sim.queueRam(id),
 });
 
@@ -31,21 +31,11 @@ canvas.addEventListener("pointerdown", (event) => {
   if (pick) {
     const entity = sim.entity(pick.entityId);
     if (!entity) return;
-    if (sim.intent === "shoot" && entity.team !== "player") {
-      sim.queueShoot(entity.id);
-      return;
-    }
-    if (sim.intent === "ram" && entity.team !== "player") {
-      sim.queueRam(entity.id);
-      return;
-    }
-    sim.select(entity.id);
+    hud.chooseBoardEntity(entity.id);
     return;
   }
 
-  if (sim.intent === "move") {
-    sim.queueMove(stage.screenToWorld(event.clientX, event.clientY));
-  }
+  hud.chooseGround(stage.screenToWorld(event.clientX, event.clientY));
 });
 
 window.addEventListener("keydown", (event) => {
@@ -57,15 +47,15 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
     sim.cyclePlayer();
   } else if (event.code === "Digit1") {
-    sim.setIntent("select");
+    hud.setAction("select");
   } else if (event.code === "Digit2") {
-    sim.setIntent("move");
+    hud.setAction("move");
   } else if (event.code === "Digit3") {
-    sim.setIntent("shoot");
+    hud.setAction("shoot");
   } else if (event.code === "Digit4") {
-    sim.setIntent("ram");
+    hud.setAction("ram");
   } else if (event.code === "KeyR") {
-    sim.reset();
+    hud.resetGame();
   }
 });
 
@@ -74,7 +64,7 @@ function frame(now: number): void {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   sim.update(dt);
-  world.update(sim);
+  world.update(sim, hud.focusedTargetId, hud.focusedPartId);
   hud.update();
   stage.render();
   requestAnimationFrame(frame);
