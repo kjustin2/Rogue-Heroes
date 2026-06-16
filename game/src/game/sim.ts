@@ -138,6 +138,7 @@ export class TacticalSim {
     const actor = this.requirePlayerActor();
     const target = this.entity(targetId);
     if (!actor || !target || actor.id === target.id) return false;
+    if (target.team === "player") return this.reject("Cannot ram friendly units");
     if (actor.kind !== "tank") return this.reject("Only tanks can ram");
     if (!actor.status.canMove) return this.reject(`${actor.name} cannot ram without mobility`);
     if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);

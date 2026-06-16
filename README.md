@@ -32,4 +32,8 @@ Use `npm run desktop` from `game/` to launch Electron against an already-built
 cd game
 npm run verify
 npm run smoke:browser
+npm run smoke:flow
+npm run smoke:electron
 ```
+
+Use `npm run test:full` to run the full local gate in one command after dependencies are installed.

@@ -13,6 +13,7 @@ mkdirSync(OUT, { recursive: true });
 
 const serverLog = [];
 let server = null;
+let browser = null;
 
 try {
   if (!(await isServerReady(URL))) {
@@ -26,8 +27,7 @@ try {
   }
 
   await waitForServer(URL, 20000);
-  const executablePath = findChromium();
-  const browser = await chromium.launch({ executablePath, headless: true });
+  browser = await chromium.launch({ executablePath: findChromium(), headless: true });
   const page = await (await browser.newContext({ viewport: { width: 1600, height: 900 } })).newPage();
   const errors = [];
 
@@ -38,60 +38,86 @@ try {
 
   await page.goto(URL, { waitUntil: "networkidle" });
   await page.waitForSelector(".topbar");
-  await assertCanvasPainted(page, "desktop command");
-  await page.screenshot({ path: join(OUT, "1-command.png") });
+  await assertCanvasPainted(page, "flow command");
 
-  await page.locator('[data-intent="shoot"]').click();
-  await page.locator('[data-aim="mobility"]').click();
-  await page.locator('[data-select="e-tank-1"]').click();
+  const queued = await page.evaluate(() => {
+    const api = window.__rht;
+    const sim = api.sim;
 
-  await page.evaluate(() => {
-    const openTarget = window.__rht.sim.entity("e-soldier-1");
-    openTarget.position.x = -2.8;
-    openTarget.position.z = -6.4;
+    api.reset();
+    for (const entity of sim.entities) {
+      if (entity.team === "neutral") {
+        entity.position.x = 0;
+        entity.position.z = 8;
+      }
+    }
+
+    const placements = new Map([
+      ["p-tank-1", { x: -5, z: 0 }],
+      ["p-soldier-1", { x: -5, z: -2.4 }],
+      ["p-soldier-2", { x: -5, z: 2.4 }],
+      ["e-tank-1", { x: 1.2, z: 0 }],
+      ["e-soldier-1", { x: 1.2, z: -2.4 }],
+      ["e-base-1", { x: 1.2, z: 2.4 }],
+    ]);
+
+    for (const [id, position] of placements) {
+      const entity = sim.entity(id);
+      entity.position.x = position.x;
+      entity.position.z = position.z;
+    }
+
+    for (const enemy of sim.entities.filter((entity) => entity.team === "enemy")) {
+      const critical = enemy.parts.find((part) => part.critical);
+      critical.hp = Math.min(critical.hp, 10);
+    }
+
+    sim.select("p-tank-1");
+    api.setAim("core");
+    sim.queueShoot("e-tank-1");
+    sim.select("p-soldier-1");
+    api.setAim("head");
+    sim.queueShoot("e-soldier-1");
+    sim.select("p-soldier-2");
+    api.setAim("core");
+    sim.queueShoot("e-base-1");
+    api.endTurn();
+
+    return sim.orders
+      .filter((order) => order.actorId.startsWith("p-"))
+      .map((order) => ({ actorId: order.actorId, targetId: order.targetId, kind: order.kind }));
   });
-  await page.locator('[data-select="p-soldier-2"]').click();
-  await page.locator('[data-intent="shoot"]').click();
-  await page.locator('[data-aim="weapon"]').click();
-  await page.locator('[data-select="e-soldier-1"]').click();
-  await page.locator('[data-action="end"]').click();
 
-  await page.waitForTimeout(2600);
-  await assertCanvasPainted(page, "desktop resolved");
-  await page.screenshot({ path: join(OUT, "2-resolved.png") });
+  if (queued.length !== 3) throw new Error(`Expected 3 player orders, got ${JSON.stringify(queued)}`);
 
-  const state = await page.evaluate(() => {
-    const enemyTank = window.__rht.sim.entity("e-tank-1");
-    const enemySoldier = window.__rht.sim.entity("e-soldier-1");
-    const cover = window.__rht.sim.entities
-      .filter((entity) => entity.kind === "cover")
-      .map((entity) => ({ id: entity.id, hp: entity.parts[0]?.hp }));
-    return {
-      phase: window.__rht.sim.phase,
-      tankTreadHp: enemyTank?.parts.find((p) => p.id === "left-tread")?.hp,
-      soldierRifleHp: enemySoldier?.parts.find((p) => p.id === "rifle")?.hp,
-      cover,
-      log: window.__rht.sim.log.slice(),
-    };
-  });
+  await page.waitForFunction(() => window.__rht.sim.phase === "victory", undefined, { timeout: 6000 });
+  await assertCanvasPainted(page, "flow victory");
+  await page.screenshot({ path: join(OUT, "4-flow-victory.png") });
+
+  const victoryState = await page.evaluate(() => ({
+    phase: window.__rht.sim.phase,
+    livingEnemies: window.__rht.sim.living("enemy").map((entity) => entity.id),
+    log: window.__rht.sim.log.slice(),
+  }));
+  if (victoryState.phase !== "victory") throw new Error(`Expected victory, got ${victoryState.phase}`);
+  if (victoryState.livingEnemies.length) throw new Error(`Enemies still alive: ${victoryState.livingEnemies.join(", ")}`);
+
+  await page.locator('[data-action="reset"]').click();
+  await page.waitForFunction(() => window.__rht.sim.phase === "command" && window.__rht.sim.turn === 1);
+  const resetState = await page.evaluate(() => ({
+    phase: window.__rht.sim.phase,
+    turn: window.__rht.sim.turn,
+    livingEnemies: window.__rht.sim.living("enemy").length,
+    livingPlayers: window.__rht.sim.living("player").length,
+  }));
+  if (resetState.livingEnemies !== 3 || resetState.livingPlayers !== 3) {
+    throw new Error(`Reset did not restore both squads: ${JSON.stringify(resetState)}`);
+  }
 
   if (errors.length) throw new Error(`Console errors:\n${errors.slice(0, 12).join("\n")}`);
-  if (state.phase !== "command") throw new Error(`Expected command phase after resolve, got ${state.phase}`);
-  if (!(typeof state.tankTreadHp === "number" && state.tankTreadHp < 34)) {
-    throw new Error(`Expected tank tread damage, got ${state.tankTreadHp}`);
-  }
-  if (!(typeof state.soldierRifleHp === "number" && state.soldierRifleHp < 18)) {
-    throw new Error(`Expected soldier rifle damage, got ${state.soldierRifleHp}\n${JSON.stringify(state, null, 2)}`);
-  }
-
-  await page.setViewportSize({ width: 390, height: 800 });
-  await page.waitForTimeout(500);
-  await assertCanvasPainted(page, "mobile");
-  await page.screenshot({ path: join(OUT, "3-mobile.png") });
-
-  await browser.close();
-  console.log("Smoke passed");
+  console.log(`Flow passed: ${queued.length} orders, victory reached, reset restored ${resetState.livingPlayers}v${resetState.livingEnemies}`);
 } finally {
+  if (browser) await browser.close();
   if (server) server.kill();
 }
 

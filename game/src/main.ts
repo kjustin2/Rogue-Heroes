@@ -21,6 +21,8 @@ const hud = new Hud(ui, sim, {
   endTurn: () => sim.endTurn(),
   reset: () => sim.reset(),
   select: (id: string) => sim.select(id),
+  queueShoot: (id: string) => sim.queueShoot(id),
+  queueRam: (id: string) => sim.queueRam(id),
 });
 
 canvas.addEventListener("pointerdown", (event) => {

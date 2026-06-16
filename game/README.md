@@ -27,7 +27,11 @@ folder.
 ```powershell
 npm run verify
 npm run smoke:browser
+npm run smoke:flow
+npm run smoke:electron
 ```
+
+Use `npm run test:full` to run all four checks in sequence.
 
 The foundation mirrors the useful Rogue-Hero-3 habits:
 

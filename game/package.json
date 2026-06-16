@@ -12,6 +12,10 @@
     "verify": "npm run typecheck && npm test && npm run build",
     "preview": "vite preview",
     "smoke:browser": "node scripts/smoke-browser.mjs",
+    "smoke:flow": "node scripts/smoke-flow.mjs",
+    "smoke:electron": "electron scripts/smoke-electron.cjs",
+    "test:play": "npm run build && npm run smoke:electron",
+    "test:full": "npm run verify && npm run smoke:browser && npm run smoke:flow && npm run smoke:electron",
     "desktop": "electron .",
     "standalone": "npm run build && electron ."
   },

@@ -15,9 +15,13 @@ export interface HudCallbacks {
   endTurn(): void;
   reset(): void;
   select(id: string): void;
+  queueShoot(id: string): void;
+  queueRam(id: string): void;
 }
 
 export class Hud {
+  private lastHtml = "";
+
   constructor(
     private readonly root: HTMLElement,
     private readonly sim: TacticalSim,
@@ -32,7 +36,7 @@ export class Hud {
     const enemies = this.sim.entities.filter((e) => e.team === "enemy");
     const neutral = this.sim.entities.filter((e) => e.team === "neutral");
 
-    this.root.innerHTML = `
+    const nextHtml = `
       <div class="topbar">
         <div>
           <div class="brand">Rogue Heroes Tactics</div>
@@ -72,6 +76,11 @@ export class Hud {
         ${this.sim.log.map((line) => `<div>${escapeHtml(line)}</div>`).join("")}
       </section>
     `;
+
+    if (nextHtml !== this.lastHtml) {
+      this.root.innerHTML = nextHtml;
+      this.lastHtml = nextHtml;
+    }
   }
 
   private handleClick(event: Event): void {
@@ -83,7 +92,16 @@ export class Hud {
     if (aim) this.callbacks.setAim(aim);
 
     const select = target.closest<HTMLElement>("[data-select]")?.dataset.select;
-    if (select) this.callbacks.select(select);
+    if (select) {
+      const entity = this.sim.entity(select);
+      if (entity && entity.team !== "player" && this.sim.intent === "shoot") {
+        this.callbacks.queueShoot(select);
+      } else if (entity && entity.team !== "player" && this.sim.intent === "ram") {
+        this.callbacks.queueRam(select);
+      } else {
+        this.callbacks.select(select);
+      }
+    }
 
     const action = target.closest<HTMLElement>("[data-action]")?.dataset.action;
     if (action === "end") this.callbacks.endTurn();
