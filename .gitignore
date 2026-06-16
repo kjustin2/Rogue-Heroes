@@ -6,6 +6,7 @@ coverage/
 .wrangler/
 test-results/
 *.log
+shots/
 server.out.log
 server.err.log
 *.tmp

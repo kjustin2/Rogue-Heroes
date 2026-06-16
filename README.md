@@ -1,0 +1,24 @@
+# Rogue Heroes Tactics
+
+Clean-slate 3D prototype for the next Rogue Heroes direction.
+
+The active game lives in [`game/`](game/). It is a Vite + TypeScript + Three.js
+app with an Electron wrapper, unit tests, and browser smoke automation.
+
+## Run
+
+```powershell
+cd game
+npm install
+npm run dev
+```
+
+Open `http://127.0.0.1:5175/`.
+
+## Verify
+
+```powershell
+cd game
+npm run verify
+npm run smoke:browser
+```
