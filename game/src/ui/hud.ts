@@ -4,7 +4,7 @@ import type { Intent, ShotPreview, TacticalOrder, TacticalSim } from "../game/si
 
 const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "move", label: "Move", tip: "Costs 1 CP. Queue a path to a clear point on the battlefield." },
-  { id: "shoot", label: "Shoot", tip: "Costs 1 CP. Pick a target, pick an intact part, then confirm the shot." },
+  { id: "shoot", label: "Shoot", tip: "Costs 1 CP. Pick a target and part. The battlefield line shows the current projectile path and cover block." },
   { id: "ram", label: "Ram", tip: "Tank only. Costs 1 CP. Drive into a target for 72 damage and take 14 armor damage." },
 ];
 
@@ -313,7 +313,7 @@ function shootState(
   return `
     <div class="target-summary ${blocker ? "blocked" : ""}">
       <strong>${escapeHtml(target.name)}</strong>
-      <span>${blocker ? `Line blocked by ${escapeHtml(blocker.name)}; hit ${escapeHtml(blockedPart?.label ?? "cover")} first.` : "Clear line of fire."}</span>
+      <span>${blocker ? `Line blocked by ${escapeHtml(blocker.name)}; hit ${escapeHtml(blockedPart?.label ?? "cover")} first.` : "Current line is clear; moving targets can still reach cover before impact."}</span>
     </div>
     <div class="part-options">
       ${parts.map((part) => partButton(actor, target, part, part.id === targetPartId, sim)).join("")}
@@ -421,7 +421,7 @@ function cpTip(entity: CombatEntity): string {
 function confirmShootTip(preview: ShotPreview | undefined, blocker: CombatEntity | undefined, target: CombatEntity): string {
   if (!preview) return "Pick a target part before confirming the shot.";
   if (blocker) return `Confirm the shot. ${blocker.name} blocks ${target.name}, so the shot deals ${preview.amount} damage to cover.`;
-  return `Confirm the shot for ${preview.amount} estimated damage.`;
+  return `Confirm the shot for ${preview.amount} estimated damage. Projectile travel is slow enough for movement and cover to matter.`;
 }
 
 function partTip(part: DamagePart): string {

@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { clamp01 } from "../core/math";
 import type { CombatEntity, DamagePart, PartRole } from "../game/damageModel";
-import type { TacticalSim, VisualEvent } from "../game/sim";
+import type { Projectile, TacticalSim, VisualEvent } from "../game/sim";
 
 type PartMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
 
@@ -10,6 +10,8 @@ export class WorldRenderer {
 
   private readonly entityRoot = new THREE.Group();
   private readonly orderRoot = new THREE.Group();
+  private readonly previewRoot = new THREE.Group();
+  private readonly projectileRoot = new THREE.Group();
   private readonly effectRoot = new THREE.Group();
   private readonly sceneryRoot = new THREE.Group();
   private readonly debrisRoot = new THREE.Group();
@@ -19,7 +21,7 @@ export class WorldRenderer {
   private readonly targetRing: THREE.Mesh;
 
   constructor(private readonly scene: THREE.Scene) {
-    this.scene.add(this.sceneryRoot, this.debrisRoot, this.entityRoot, this.orderRoot, this.effectRoot);
+    this.scene.add(this.sceneryRoot, this.debrisRoot, this.entityRoot, this.orderRoot, this.previewRoot, this.projectileRoot, this.effectRoot);
     this.addArena();
 
     this.ring = new THREE.Mesh(
@@ -56,6 +58,8 @@ export class WorldRenderer {
     this.syncSelection(sim);
     this.syncTarget(sim, targetId);
     this.syncOrders(sim);
+    this.syncShotPreview(sim, targetId, targetPartId);
+    this.syncProjectiles(sim.projectiles);
     this.syncEffects(sim.effects);
   }
 
@@ -398,6 +402,44 @@ export class WorldRenderer {
     }
   }
 
+  private syncShotPreview(sim: TacticalSim, targetId: string | undefined, targetPartId: string | undefined): void {
+    this.previewRoot.clear();
+    const actor = sim.selected;
+    if (!actor || actor.team !== "player" || !targetId || !targetPartId || sim.phase !== "command") return;
+    const target = sim.entity(targetId);
+    const preview = sim.previewShot(actor.id, targetId, targetPartId);
+    if (!target || !preview) return;
+
+    const impact = sim.entity(preview.impactEntityId);
+    if (!impact) return;
+    const clear = !preview.blockedById;
+    this.previewRoot.add(makeLine(actor.position, impact.position, clear ? 0x8de4ff : 0xffbf69, clear ? 0.88 : 0.96, 0.22));
+    this.previewRoot.add(makeEndpoint(impact.position, clear ? 0x8de4ff : 0xffbf69, impact.radius + 0.18));
+    if (preview.blockedById) {
+      this.previewRoot.add(makeLine(impact.position, target.position, 0xff765f, 0.42, 0.12));
+      this.previewRoot.add(makeEndpoint(target.position, 0xff765f, target.radius + 0.1));
+    }
+  }
+
+  private syncProjectiles(projectiles: readonly Projectile[]): void {
+    this.projectileRoot.clear();
+    for (const projectile of projectiles) {
+      const tracer = makeLine(projectile.previous, projectile.position, projectile.color, 0.92, 0.18);
+      this.projectileRoot.add(tracer);
+
+      const shell = new THREE.Mesh(
+        new THREE.SphereGeometry(0.16, 14, 10),
+        new THREE.MeshBasicMaterial({ color: projectile.color, transparent: true, opacity: 0.96 })
+      );
+      shell.position.set(projectile.position.x, 0.58, projectile.position.z);
+      this.projectileRoot.add(shell);
+
+      const glow = new THREE.PointLight(projectile.color, 0.65, 2.8);
+      glow.position.set(projectile.position.x, 0.68, projectile.position.z);
+      this.projectileRoot.add(glow);
+    }
+  }
+
   private syncEffects(effects: readonly VisualEvent[]): void {
     this.effectRoot.clear();
     for (const effect of effects) {
@@ -440,13 +482,23 @@ function roleColor(entity: CombatEntity, role: PartRole, fallback: number): numb
   return fallback;
 }
 
-function makeLine(from: { x: number; z: number }, to: { x: number; z: number }, color: number, opacity: number): THREE.Line {
+function makeLine(from: { x: number; z: number }, to: { x: number; z: number }, color: number, opacity: number, y = 0.16): THREE.Line {
   const geo = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(from.x, 0.16, from.z),
-    new THREE.Vector3(to.x, 0.16, to.z),
+    new THREE.Vector3(from.x, y, from.z),
+    new THREE.Vector3(to.x, y, to.z),
   ]);
   const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity });
   return new THREE.Line(geo, mat);
+}
+
+function makeEndpoint(position: { x: number; z: number }, color: number, radius: number): THREE.Mesh {
+  const marker = new THREE.Mesh(
+    new THREE.RingGeometry(radius, radius + 0.08, 44),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.82, side: THREE.DoubleSide })
+  );
+  marker.rotation.x = -Math.PI / 2;
+  marker.position.set(position.x, 0.12, position.z);
+  return marker;
 }
 
 function makeBeam(from: { x: number; z: number }, to: { x: number; z: number }, color: number, opacity: number): THREE.Group {

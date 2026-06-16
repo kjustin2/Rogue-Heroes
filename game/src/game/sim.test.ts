@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createCover, createSoldier, createTank } from "./damageModel";
+import { applyDamage, createCover, createSoldier, createTank } from "./damageModel";
 import { TacticalSim } from "./sim";
 
 describe("tactical simulation loop", () => {
@@ -95,6 +95,64 @@ describe("tactical simulation loop", () => {
     const enemy = sim.entity("enemy");
     expect(wall?.parts[0].hp).toBeLessThan(70);
     expect(enemy?.parts.find((part) => part.id === "head")?.hp).toBe(16);
+    expect(sim.log).toContain("Concrete Wall intercepts shot at Cutlass");
+  });
+
+  it("launches a visible projectile before applying shot damage", () => {
+    const enemy = createSoldier("enemy", "Cutlass", "enemy", { x: 2.5, z: 0 });
+    applyDamage(enemy, "rifle", 99);
+    const sim = new TacticalSim([
+      createSoldier("player", "Rook", "player", { x: 0, z: 0 }),
+      enemy,
+    ]);
+
+    sim.select("player");
+    expect(sim.queueShootPart("enemy", "head")).toBe(true);
+    sim.endTurn();
+    advance(sim, 0.36);
+
+    const target = sim.entity("enemy");
+    expect(sim.projectiles).toHaveLength(1);
+    expect(target?.parts.find((part) => part.id === "head")?.hp).toBe(16);
+
+    advance(sim, 1.2);
+
+    expect(sim.projectiles).toHaveLength(0);
+    expect(target?.status.alive).toBe(false);
+  });
+
+  it("lets a moving target drag a tracked shot into cover during resolve", () => {
+    const enemy = createSoldier("enemy", "Cutlass", "enemy", { x: 6, z: -2 });
+    applyDamage(enemy, "rifle", 99);
+    const sim = new TacticalSim([
+      createSoldier("player", "Rook", "player", { x: 0, z: 0 }),
+      createCover("wall", "Concrete Wall", { x: 3, z: 0.3 }),
+      enemy,
+    ]);
+
+    const preview = sim.previewShot("player", "enemy", "head");
+    expect(preview?.blockedById).toBeUndefined();
+
+    sim.select("player");
+    expect(sim.queueShootPart("enemy", "head")).toBe(true);
+    sim.endTurn();
+    sim.orders.push({
+      id: "enemy-move",
+      actorId: "enemy",
+      kind: "move",
+      destination: { x: 6, z: 2 },
+      aim: "center",
+      elapsed: 0,
+      duration: 1.15,
+      fired: false,
+      done: false,
+    });
+
+    advance(sim, 4);
+
+    const wall = sim.entity("wall");
+    expect(wall?.parts[0].hp).toBeLessThan(70);
+    expect(enemy.parts.find((part) => part.id === "head")?.hp).toBe(16);
     expect(sim.log).toContain("Concrete Wall intercepts shot at Cutlass");
   });
 });

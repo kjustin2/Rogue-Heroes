@@ -51,6 +51,9 @@ try {
   await page.locator('.part-choice[data-part="left-tread"]').click();
   const treadTip = await page.locator('.part-choice[data-part="left-tread"]').getAttribute("data-tip");
   if (!treadTip?.includes("Estimated damage")) throw new Error(`Missing damage tooltip on tread option: ${treadTip}`);
+  const preview = await page.evaluate(() => window.__rht.sim.previewShot("p-tank-1", "e-tank-1", "left-tread"));
+  if (!preview || preview.blockedById) throw new Error(`Expected clear preview for tank tread shot, got ${JSON.stringify(preview)}`);
+  await page.screenshot({ path: join(OUT, "1-targeting.png") });
   await page.locator('[data-confirm="shoot"]').click();
 
   await page.evaluate(() => {
@@ -64,9 +67,14 @@ try {
   await page.locator('[data-confirm="shoot"]').click();
   await page.locator('[data-command="end"]').click();
 
-  await page.waitForTimeout(2600);
+  await page.waitForTimeout(550);
+  const projectileCount = await page.evaluate(() => window.__rht.sim.projectiles.length);
+  if (projectileCount < 1) throw new Error("Expected visible projectile travel during resolve");
+  await page.screenshot({ path: join(OUT, "2-projectiles.png") });
+
+  await page.waitForFunction(() => window.__rht.sim.phase === "command", undefined, { timeout: 5000 });
   await assertCanvasPainted(page, "desktop resolved");
-  await page.screenshot({ path: join(OUT, "2-resolved.png") });
+  await page.screenshot({ path: join(OUT, "3-resolved.png") });
 
   const state = await page.evaluate(() => {
     const enemyTank = window.__rht.sim.entity("e-tank-1");
@@ -95,7 +103,7 @@ try {
   await page.setViewportSize({ width: 390, height: 800 });
   await page.waitForTimeout(500);
   await assertCanvasPainted(page, "mobile");
-  await page.screenshot({ path: join(OUT, "3-mobile.png") });
+  await page.screenshot({ path: join(OUT, "4-mobile.png") });
 
   await browser.close();
   console.log("Smoke passed");
