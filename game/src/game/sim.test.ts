@@ -33,6 +33,24 @@ describe("tactical simulation loop", () => {
     expect(sim.log[0]).toBe("Cannot ram friendly units");
   });
 
+  it("keeps one queued order per player unit and lets command phase undo refund CP", () => {
+    const sim = new TacticalSim();
+
+    sim.select("p-soldier-1");
+    expect(sim.queueShootPart("e-soldier-1", "rifle")).toBe(true);
+    expect(sim.orders).toHaveLength(1);
+    expect(sim.entity("p-soldier-1")?.commandPoints).toBe(1);
+
+    expect(sim.queueMove({ x: -7, z: -1 })).toBe(false);
+    expect(sim.orders).toHaveLength(1);
+    expect(sim.log[0]).toBe("Rook already has an order. Undo it first.");
+
+    expect(sim.cancelOrder("p-soldier-1")).toBe(true);
+    expect(sim.orders).toHaveLength(0);
+    expect(sim.entity("p-soldier-1")?.commandPoints).toBe(2);
+    expect(sim.log[0]).toBe("Rook order cancelled");
+  });
+
   it("can finish a one-fight victory from normal queued combat", () => {
     const sim = new TacticalSim([
       createTank("player-tank", "Hammer", "player", { x: 0, z: 0 }),

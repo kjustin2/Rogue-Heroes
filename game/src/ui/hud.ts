@@ -3,9 +3,9 @@ import type { CombatEntity, DamagePart } from "../game/damageModel";
 import type { Intent, ShotPreview, TacticalOrder, TacticalSim } from "../game/sim";
 
 const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
-  { id: "move", label: "Move", tip: "Costs 1 CP. Queue a path to a clear point on the battlefield." },
-  { id: "shoot", label: "Shoot", tip: "Costs 1 CP. Pick a target and part. The battlefield line shows the current projectile path and cover block." },
-  { id: "ram", label: "Ram", tip: "Tank only. Costs 1 CP. Drive into a target for 72 damage and take 14 armor damage." },
+  { id: "move", label: "Move", tip: "Select Move, then click an open point on the map. Costs 1 CP and becomes this unit's order for the turn." },
+  { id: "shoot", label: "Shoot", tip: "Select Shoot, pick an enemy part, then confirm. The map line previews whether cover blocks the shot." },
+  { id: "ram", label: "Ram", tip: "Tank only. Select a target, then confirm. Costs 1 CP, deals 72 damage, and damages your front armor." },
 ];
 
 export interface HudCallbacks {
@@ -16,6 +16,7 @@ export interface HudCallbacks {
   queueMove(destination: Vec2): boolean;
   queueShootPart(id: string, partId: string): boolean;
   queueRam(id: string): boolean;
+  cancelOrder(id: string): boolean;
 }
 
 export class Hud {
@@ -23,6 +24,8 @@ export class Hud {
   private action: Intent = "select";
   private targetId: string | undefined;
   private targetPartId: string | undefined;
+  private readonly tooltip: HTMLDivElement;
+  private tooltipAnchor: HTMLElement | undefined;
 
   constructor(
     private readonly root: HTMLElement,
@@ -30,6 +33,12 @@ export class Hud {
     private readonly callbacks: HudCallbacks
   ) {
     this.root.addEventListener("click", (event) => this.handleClick(event));
+    this.root.addEventListener("pointerover", (event) => this.handleTooltipOver(event));
+    this.root.addEventListener("pointermove", (event) => this.handleTooltipMove(event));
+    this.root.addEventListener("pointerout", (event) => this.handleTooltipOut(event));
+    this.tooltip = document.createElement("div");
+    this.tooltip.className = "hud-tooltip";
+    document.body.append(this.tooltip);
   }
 
   get focusedTargetId(): string | undefined {
@@ -53,6 +62,7 @@ export class Hud {
   setAction(action: Intent): void {
     this.action = action;
     if (action === "select" || action === "move") this.targetPartId = undefined;
+    if (action === "shoot") this.chooseDefaultTargetPart();
     this.callbacks.setIntent(action);
   }
 
@@ -73,6 +83,7 @@ export class Hud {
 
   update(): void {
     this.pruneInvalidFocus();
+    if (this.tooltipAnchor && !this.tooltipAnchor.isConnected) this.hideTooltip();
 
     const selected = this.sim.selected;
     const actor = selected?.team === "player" ? selected : undefined;
@@ -114,7 +125,7 @@ export class Hud {
       </aside>
 
       <section class="commandbar">
-        ${orderPlanner(actor, target, this.targetPartId, this.action, this.sim)}
+        ${orderPlanner(actor, target, this.targetPartId, this.action, playerOrders.get(actor?.id ?? ""), this.sim)}
       </section>
 
       <section class="log">
@@ -132,11 +143,22 @@ export class Hud {
     const target = event.target as HTMLElement;
     const disabled = target.closest<HTMLElement>("[data-disabled='true']");
     if (disabled) return;
+    this.hideTooltip();
+
+    const cancelOrder = target.closest<HTMLElement>("[data-cancel-order]")?.dataset.cancelOrder;
+    if (cancelOrder) {
+      if (this.callbacks.cancelOrder(cancelOrder)) {
+        this.action = "select";
+        this.callbacks.setIntent("select");
+      }
+      return;
+    }
 
     const orderAction = target.closest<HTMLElement>("[data-order-action]")?.dataset.orderAction as Intent | undefined;
     if (orderAction) {
       this.action = orderAction;
       if (orderAction === "move") this.targetPartId = undefined;
+      if (orderAction === "shoot") this.chooseDefaultTargetPart();
       this.callbacks.setIntent(orderAction);
     }
 
@@ -169,7 +191,7 @@ export class Hud {
     const target = this.sim.entity(id);
     if (!target) return;
     this.targetId = id;
-    this.targetPartId = undefined;
+    this.targetPartId = this.firstTargetablePart(target);
     if (this.action !== "shoot" && this.action !== "ram") {
       this.action = "shoot";
       this.callbacks.setIntent(this.action);
@@ -190,19 +212,76 @@ export class Hud {
       return;
     }
     if (this.targetPartId && !this.sim.targetableParts(target).some((part) => part.id === this.targetPartId)) {
-      this.targetPartId = undefined;
+      this.targetPartId = this.firstTargetablePart(target);
     }
+  }
+
+  private chooseDefaultTargetPart(): void {
+    const target = this.targetId ? this.sim.entity(this.targetId) : undefined;
+    if (!target || this.targetPartId) return;
+    this.targetPartId = this.firstTargetablePart(target);
+  }
+
+  private firstTargetablePart(target: CombatEntity): string | undefined {
+    return this.sim.targetableParts(target)[0]?.id;
+  }
+
+  private handleTooltipOver(event: PointerEvent): void {
+    const anchor = (event.target as HTMLElement).closest<HTMLElement>("[data-tip]");
+    if (!anchor) return;
+    this.tooltipAnchor = anchor;
+    this.tooltip.textContent = anchor.dataset.tip ?? "";
+    this.tooltip.classList.add("visible");
+    this.positionTooltip(event);
+  }
+
+  private handleTooltipMove(event: PointerEvent): void {
+    if (!this.tooltipAnchor) return;
+    this.positionTooltip(event);
+  }
+
+  private handleTooltipOut(event: PointerEvent): void {
+    const anchor = (event.target as HTMLElement).closest<HTMLElement>("[data-tip]");
+    if (!anchor || !this.tooltipAnchor) return;
+    const next = event.relatedTarget instanceof HTMLElement ? event.relatedTarget.closest("[data-tip]") : undefined;
+    if (next === anchor) return;
+    this.hideTooltip();
+  }
+
+  private hideTooltip(): void {
+    this.tooltipAnchor = undefined;
+    this.tooltip.classList.remove("visible");
+    this.tooltip.textContent = "";
+    this.tooltip.style.left = "-9999px";
+    this.tooltip.style.top = "-9999px";
+  }
+
+  private positionTooltip(event: PointerEvent): void {
+    const margin = 12;
+    const width = Math.min(320, window.innerWidth - margin * 2);
+    this.tooltip.style.maxWidth = `${width}px`;
+    const rect = this.tooltip.getBoundingClientRect();
+    const nextLeft = Math.min(window.innerWidth - rect.width - margin, Math.max(margin, event.clientX + 14));
+    const below = event.clientY + 18 + rect.height < window.innerHeight - margin;
+    const nextTop = below
+      ? event.clientY + 18
+      : Math.max(margin, event.clientY - rect.height - 18);
+    this.tooltip.style.left = `${nextLeft}px`;
+    this.tooltip.style.top = `${nextTop}px`;
   }
 }
 
 function unitCard(entity: CombatEntity, selected: boolean, order: TacticalOrder | undefined, sim: TacticalSim): string {
   return `
-    <button class="unit-card ${selected ? "selected" : ""} ${entity.status.alive ? "" : "dead"}" data-select="${entity.id}" data-tip="${escapeAttr(cpTip(entity))}">
-      <span class="unit-name">${escapeHtml(entity.name)}</span>
-      <span class="unit-meta">${entity.kind.toUpperCase()} / ${cpPips(entity)}</span>
-      <span class="mini-bars">${entity.parts.map((part) => miniBar(part)).join("")}</span>
-      <span class="queued-order">${order ? escapeHtml(orderSummary(order, sim)) : "No order queued"}</span>
-    </button>
+    <div class="unit-card ${selected ? "selected" : ""} ${entity.status.alive ? "" : "dead"}">
+      <button class="unit-select" data-select="${entity.id}" data-tip="${escapeAttr(cpTip(entity))}">
+        <span class="unit-name">${escapeHtml(entity.name)}</span>
+        <span class="unit-meta">${entity.kind.toUpperCase()} / ${cpPips(entity)}</span>
+        <span class="mini-bars">${entity.parts.map((part) => miniBar(part)).join("")}</span>
+        <span class="queued-order">${order ? escapeHtml(orderSummary(order, sim)) : "No order queued"}</span>
+      </button>
+      ${order && sim.phase === "command" ? `<button class="mini-action undo" data-cancel-order="${entity.id}" data-tip="Undo ${escapeAttr(entity.name)}'s queued order and refund 1 CP.">Undo</button>` : ""}
+    </div>
   `;
 }
 
@@ -258,6 +337,7 @@ function orderPlanner(
   target: CombatEntity | undefined,
   targetPartId: string | undefined,
   action: Intent,
+  order: TacticalOrder | undefined,
   sim: TacticalSim
 ): string {
   const selectedPart = target?.parts.find((part) => part.id === targetPartId);
@@ -282,17 +362,18 @@ function orderPlanner(
 
     <div class="action-row">
       ${ORDER_ACTIONS.map((option) => {
-        const disabled = actionDisabled(option.id, actor, sim);
+        const disabled = actionDisabled(option.id, actor, order, sim);
         const tip = option.id === "ram" ? ramTip : option.tip;
         return `<button class="tool action ${action === option.id ? "active" : ""} ${disabled ? "disabled" : ""}" data-order-action="${option.id}" data-disabled="${disabled}" data-tip="${escapeAttr(tip)}">${option.label}<span>1 CP</span></button>`;
       }).join("")}
     </div>
 
     <div class="order-body">
-      ${action === "move" ? moveState(actor) : ""}
-      ${action === "shoot" ? shootState(actor, target, targetPartId, preview, blocker, canShoot, sim) : ""}
-      ${action === "ram" ? ramState(target, canRam, ramTip) : ""}
-      ${action === "select" ? orderSummaryState(actor, target) : ""}
+      ${order ? queuedOrderState(actor, order, sim) : ""}
+      ${!order && action === "move" ? moveState(actor) : ""}
+      ${!order && action === "shoot" ? shootState(actor, target, targetPartId, preview, blocker, canShoot, sim) : ""}
+      ${!order && action === "ram" ? ramState(target, canRam, ramTip) : ""}
+      ${!order && action === "select" ? orderSummaryState(actor, target) : ""}
     </div>
   `;
 }
@@ -357,6 +438,19 @@ function orderSummaryState(actor: CombatEntity | undefined, target: CombatEntity
   `;
 }
 
+function queuedOrderState(actor: CombatEntity | undefined, order: TacticalOrder, sim: TacticalSim): string {
+  return `
+    <div class="target-summary queued">
+      <strong>${actor ? escapeHtml(actor.name) : "Selected unit"} is locked in</strong>
+      <span>${escapeHtml(orderSummary(order, sim))}. Undo this before ending the turn if you want a different action.</span>
+    </div>
+    <button class="btn confirm undo-order" data-cancel-order="${order.actorId}" data-tip="Cancel this unit's queued order and refund its 1 CP.">
+      Undo Order
+      <span>refund 1 CP</span>
+    </button>
+  `;
+}
+
 function partButton(actor: CombatEntity, target: CombatEntity, part: DamagePart, selected: boolean, sim: TacticalSim): string {
   const preview = sim.previewShot(actor.id, target.id, part.id);
   const blocker = preview?.blockedById ? sim.entity(preview.blockedById) : undefined;
@@ -390,8 +484,9 @@ function partRow(part: DamagePart, active: boolean): string {
   `;
 }
 
-function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: TacticalSim): boolean {
+function actionDisabled(action: Intent, actor: CombatEntity | undefined, order: TacticalOrder | undefined, sim: TacticalSim): boolean {
   if (!actor || sim.phase !== "command" || actor.commandPoints <= 0) return true;
+  if (order) return true;
   if (action === "move") return !actor.status.canMove;
   if (action === "shoot") return !actor.status.canShoot;
   if (action === "ram") return actor.kind !== "tank" || !actor.status.canMove;

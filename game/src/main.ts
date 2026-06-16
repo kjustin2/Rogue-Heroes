@@ -23,6 +23,7 @@ const hud = new Hud(ui, sim, {
   queueMove: (destination) => sim.queueMove(destination),
   queueShootPart: (id: string, partId: string) => sim.queueShootPart(id, partId),
   queueRam: (id: string) => sim.queueRam(id),
+  cancelOrder: (id: string) => sim.cancelOrder(id),
 });
 
 canvas.addEventListener("pointerdown", (event) => {
@@ -80,6 +81,7 @@ declare global {
       setAim(aim: AimMode): void;
       endTurn(): void;
       reset(): void;
+      cancelOrder(id: string): void;
     };
   }
 }
@@ -90,4 +92,5 @@ window.__rht = {
   setAim: (aim) => sim.setAim(aim),
   endTurn: () => sim.endTurn(),
   reset: () => sim.reset(),
+  cancelOrder: (id) => sim.cancelOrder(id),
 };

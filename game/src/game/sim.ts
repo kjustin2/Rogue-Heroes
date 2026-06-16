@@ -145,6 +145,7 @@ export class TacticalSim {
   queueMove(destination: Vec2): boolean {
     const actor = this.requirePlayerActor();
     if (!actor) return false;
+    if (this.playerOrderFor(actor.id)) return this.reject(`${actor.name} already has an order. Undo it first.`);
     if (!actor.status.canMove) return this.reject(`${actor.name} cannot move`);
     if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
     this.addOrder({
@@ -161,6 +162,7 @@ export class TacticalSim {
     const actor = this.requirePlayerActor();
     const target = this.entity(targetId);
     if (!actor || !target || actor.id === target.id) return false;
+    if (this.playerOrderFor(actor.id)) return this.reject(`${actor.name} already has an order. Undo it first.`);
     if (target.team === "player") return this.reject("Cannot target friendly units");
     return this.queueShootFor(actor, target, this.aim);
   }
@@ -169,6 +171,7 @@ export class TacticalSim {
     const actor = this.requirePlayerActor();
     const target = this.entity(targetId);
     if (!actor || !target || actor.id === target.id) return false;
+    if (this.playerOrderFor(actor.id)) return this.reject(`${actor.name} already has an order. Undo it first.`);
     if (target.team === "player") return this.reject("Cannot target friendly units");
     return this.queueShootFor(actor, target, aimForPart(target.parts.find((part) => part.id === partId)), partId);
   }
@@ -177,6 +180,7 @@ export class TacticalSim {
     const actor = this.requirePlayerActor();
     const target = this.entity(targetId);
     if (!actor || !target || actor.id === target.id) return false;
+    if (this.playerOrderFor(actor.id)) return this.reject(`${actor.name} already has an order. Undo it first.`);
     if (target.team === "player") return this.reject("Cannot ram friendly units");
     if (actor.kind !== "tank") return this.reject("Only tanks can ram");
     if (!actor.status.canMove) return this.reject(`${actor.name} cannot ram without mobility`);
@@ -188,6 +192,17 @@ export class TacticalSim {
       aim: "center",
       duration: 1.8,
     });
+    return true;
+  }
+
+  cancelOrder(actorId: string): boolean {
+    if (this.phase !== "command") return this.reject("Orders can only be changed during command phase");
+    const actor = this.entity(actorId);
+    const index = this.orders.findIndex((order) => order.actorId === actorId);
+    if (!actor || actor.team !== "player" || index < 0) return false;
+    this.orders.splice(index, 1);
+    actor.commandPoints = Math.min(actor.maxCommandPoints, actor.commandPoints + 1);
+    this.pushLog(`${actor.name} order cancelled`);
     return true;
   }
 
@@ -582,6 +597,10 @@ export class TacticalSim {
       return undefined;
     }
     return actor;
+  }
+
+  private playerOrderFor(actorId: string): TacticalOrder | undefined {
+    return this.orders.find((order) => order.actorId === actorId && this.entity(order.actorId)?.team === "player");
   }
 
   private reject(text: string): false {

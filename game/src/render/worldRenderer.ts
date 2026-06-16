@@ -18,6 +18,9 @@ export class WorldRenderer {
   private readonly groups = new Map<string, THREE.Group>();
   private readonly destroyedPartKeys = new Set<string>();
   private readonly ring: THREE.Mesh;
+  private readonly selectionDisc: THREE.Mesh;
+  private readonly selectionBeacon: THREE.Mesh;
+  private readonly selectionLight: THREE.PointLight;
   private readonly targetRing: THREE.Mesh;
 
   constructor(private readonly scene: THREE.Scene) {
@@ -25,12 +28,31 @@ export class WorldRenderer {
     this.addArena();
 
     this.ring = new THREE.Mesh(
-      new THREE.RingGeometry(1.1, 1.22, 56),
-      new THREE.MeshBasicMaterial({ color: 0x9dfcff, transparent: true, opacity: 0.86, side: THREE.DoubleSide })
+      new THREE.RingGeometry(0.95, 1.62, 64),
+      new THREE.MeshBasicMaterial({ color: 0x9dfcff, transparent: true, opacity: 0.94, side: THREE.DoubleSide, depthWrite: false })
     );
     this.ring.rotation.x = -Math.PI / 2;
-    this.ring.position.y = 0.035;
+    this.ring.position.y = 0.045;
     this.scene.add(this.ring);
+
+    this.selectionDisc = new THREE.Mesh(
+      new THREE.CircleGeometry(1.5, 56),
+      new THREE.MeshBasicMaterial({ color: 0x9dfcff, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false })
+    );
+    this.selectionDisc.rotation.x = -Math.PI / 2;
+    this.selectionDisc.position.y = 0.026;
+    this.scene.add(this.selectionDisc);
+
+    this.selectionBeacon = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.09, 0.36, 2.35, 18, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0x9dfcff, transparent: true, opacity: 0.28, depthWrite: false })
+    );
+    this.selectionBeacon.position.y = 1.18;
+    this.scene.add(this.selectionBeacon);
+
+    this.selectionLight = new THREE.PointLight(0x9dfcff, 1.45, 5.6);
+    this.selectionLight.position.y = 1.55;
+    this.scene.add(this.selectionLight);
 
     this.targetRing = new THREE.Mesh(
       new THREE.RingGeometry(1.08, 1.18, 56),
@@ -370,12 +392,30 @@ export class WorldRenderer {
   private syncSelection(sim: TacticalSim): void {
     const selected = sim.selected;
     this.ring.visible = Boolean(selected);
+    this.selectionDisc.visible = Boolean(selected);
+    this.selectionBeacon.visible = Boolean(selected);
+    this.selectionLight.visible = Boolean(selected);
     if (!selected) return;
+    const color = selected.team === "player" ? 0x9dfcff : selected.team === "enemy" ? 0xff8f7f : 0xf6d776;
+    const scale = Math.max(0.72, selected.radius * 0.96);
     this.ring.position.x = selected.position.x;
     this.ring.position.z = selected.position.z;
-    this.ring.scale.setScalar(selected.radius * 1.25);
+    this.ring.scale.setScalar(scale);
     const mat = this.ring.material as THREE.MeshBasicMaterial;
-    mat.color.setHex(selected.team === "player" ? 0x9dfcff : selected.team === "enemy" ? 0xff8f7f : 0xf6d776);
+    mat.color.setHex(color);
+    this.selectionDisc.position.x = selected.position.x;
+    this.selectionDisc.position.z = selected.position.z;
+    this.selectionDisc.scale.setScalar(scale * 1.22);
+    const discMat = this.selectionDisc.material as THREE.MeshBasicMaterial;
+    discMat.color.setHex(color);
+    this.selectionBeacon.position.x = selected.position.x;
+    this.selectionBeacon.position.z = selected.position.z;
+    this.selectionBeacon.scale.set(scale, 1, scale);
+    const beaconMat = this.selectionBeacon.material as THREE.MeshBasicMaterial;
+    beaconMat.color.setHex(color);
+    this.selectionLight.position.x = selected.position.x;
+    this.selectionLight.position.z = selected.position.z;
+    this.selectionLight.color.setHex(color);
   }
 
   private syncTarget(sim: TacticalSim, targetId: string | undefined): void {
@@ -490,7 +530,7 @@ function makeLine(from: { x: number; z: number }, to: { x: number; z: number }, 
     new THREE.Vector3(from.x, y, from.z),
     new THREE.Vector3(to.x, y, to.z),
   ]);
-  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity });
+  const mat = lineMaterial(color, opacity);
   return new THREE.Line(geo, mat);
 }
 
@@ -509,18 +549,19 @@ function makeTubeLine(
   if (length < 0.01) return new THREE.Group();
 
   const mesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(radius, radius, length, 10, 1, true),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
+    tubeGeometry(radius),
+    tubeMaterial(color, opacity)
   );
   mesh.position.copy(start).add(end).multiplyScalar(0.5);
+  mesh.scale.y = length;
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
   return mesh;
 }
 
 function makeEndpoint(position: { x: number; z: number }, color: number, radius: number): THREE.Mesh {
   const marker = new THREE.Mesh(
-    new THREE.RingGeometry(radius, radius + 0.08, 44),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.82, side: THREE.DoubleSide })
+    endpointGeometry(radius),
+    endpointMaterial(color)
   );
   marker.rotation.x = -Math.PI / 2;
   marker.position.set(position.x, 0.12, position.z);
@@ -541,4 +582,58 @@ function hash(value: string): number {
     h = Math.imul(h, 16777619);
   }
   return h >>> 0;
+}
+
+const tubeGeometries = new Map<string, THREE.CylinderGeometry>();
+const endpointGeometries = new Map<string, THREE.RingGeometry>();
+const materials = new Map<string, THREE.Material>();
+
+function tubeGeometry(radius: number): THREE.CylinderGeometry {
+  const key = radius.toFixed(3);
+  let geometry = tubeGeometries.get(key);
+  if (!geometry) {
+    geometry = new THREE.CylinderGeometry(radius, radius, 1, 10, 1, true);
+    tubeGeometries.set(key, geometry);
+  }
+  return geometry;
+}
+
+function endpointGeometry(radius: number): THREE.RingGeometry {
+  const key = radius.toFixed(2);
+  let geometry = endpointGeometries.get(key);
+  if (!geometry) {
+    geometry = new THREE.RingGeometry(radius, radius + 0.08, 44);
+    endpointGeometries.set(key, geometry);
+  }
+  return geometry;
+}
+
+function lineMaterial(color: number, opacity: number, depthWrite = true): THREE.LineBasicMaterial {
+  const key = `line:${color}:${opacity.toFixed(2)}:${depthWrite ? 1 : 0}`;
+  let material = materials.get(key);
+  if (!material) {
+    material = new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite });
+    materials.set(key, material);
+  }
+  return material as THREE.LineBasicMaterial;
+}
+
+function tubeMaterial(color: number, opacity: number): THREE.MeshBasicMaterial {
+  const key = `tube:${color}:${opacity.toFixed(2)}`;
+  let material = materials.get(key);
+  if (!material) {
+    material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+    materials.set(key, material);
+  }
+  return material as THREE.MeshBasicMaterial;
+}
+
+function endpointMaterial(color: number): THREE.MeshBasicMaterial {
+  const key = `endpoint:${color}`;
+  let material = materials.get(key);
+  if (!material) {
+    material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.82, side: THREE.DoubleSide, depthWrite: false });
+    materials.set(key, material);
+  }
+  return material as THREE.MeshBasicMaterial;
 }

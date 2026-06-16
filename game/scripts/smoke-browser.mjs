@@ -45,6 +45,40 @@ try {
   await assertHudLayout(page, "desktop command", [".topbar", ".roster", ".target-panel", ".commandbar", ".log"]);
   await page.screenshot({ path: join(OUT, "1-command.png") });
 
+  await page.locator('[data-select="p-soldier-1"]').click();
+  await page.locator('[data-order-action="move"]').hover();
+  await page.waitForSelector(".hud-tooltip.visible");
+  const moveTooltip = await page.locator(".hud-tooltip.visible").textContent();
+  if (!moveTooltip?.includes("click an open point on the map")) {
+    throw new Error(`Move tooltip is unclear or clipped: ${moveTooltip}`);
+  }
+  await assertHudLayout(page, "desktop hover tooltip", [".hud-tooltip.visible"]);
+  await page.screenshot({ path: join(OUT, "2-hover-help.png") });
+
+  await page.locator('[data-order-action="shoot"]').click();
+  await page.locator('[data-select="e-soldier-1"]').click();
+  await page.locator('.part-choice[data-part="rifle"]').click();
+  await page.locator('[data-confirm="shoot"]').click();
+  await page.waitForSelector(".undo-order");
+  const queuedState = await page.evaluate(() => ({
+    selectedId: window.__rht.sim.selectedId,
+    orders: window.__rht.sim.orders.map((order) => ({ actorId: order.actorId, kind: order.kind, targetPartId: order.targetPartId })),
+    cp: window.__rht.sim.entity("p-soldier-1")?.commandPoints,
+    commandText: document.querySelector(".commandbar")?.textContent,
+  }));
+  if (queuedState.selectedId !== "p-soldier-1" || queuedState.orders.length !== 1 || queuedState.orders[0].actorId !== "p-soldier-1") {
+    throw new Error(`Expected Rook queued order, got ${JSON.stringify(queuedState)}`);
+  }
+  if (queuedState.cp !== 1 || !queuedState.commandText?.includes("Undo Order")) {
+    throw new Error(`Queued order was not clear or did not spend CP: ${JSON.stringify(queuedState)}`);
+  }
+  await page.screenshot({ path: join(OUT, "3-queued-undo.png") });
+  await page.locator(".undo-order").click();
+  await page.waitForFunction(() => window.__rht.sim.orders.length === 0 && window.__rht.sim.entity("p-soldier-1")?.commandPoints === 2);
+  await page.waitForFunction(() => !document.querySelector(".hud-tooltip.visible"));
+  await page.screenshot({ path: join(OUT, "4-undone.png") });
+
+  await page.locator('[data-select="p-tank-1"]').click();
   await page.locator('[data-select="e-soldier-1"]').click();
   await page.locator('.part-choice[data-part="head"]').click();
   await page.waitForFunction(() => document.querySelector(".target-summary")?.textContent?.includes("Line blocked"));
@@ -64,9 +98,9 @@ try {
     throw new Error(`Expected exactly one selected head part, got ${JSON.stringify(blockedState.activeParts)}`);
   }
   const shootTip = await page.locator('[data-order-action="shoot"]').getAttribute("data-tip");
-  if (!shootTip?.includes("battlefield line")) throw new Error(`Shoot tooltip does not explain projectile line: ${shootTip}`);
+  if (!shootTip?.includes("map line")) throw new Error(`Shoot tooltip does not explain projectile line: ${shootTip}`);
   await page.locator('[data-confirm="shoot"]').hover();
-  await page.screenshot({ path: join(OUT, "2-blocked-targeting.png") });
+  await page.screenshot({ path: join(OUT, "5-blocked-targeting.png") });
 
   await page.locator('[data-select="e-tank-1"]').click();
   await page.waitForSelector(".target-panel");
@@ -86,7 +120,7 @@ try {
     throw new Error(`Target panel did not highlight selected tread detail: ${targetPanelText}`);
   }
   await assertHudLayout(page, "desktop targeting", [".topbar", ".roster", ".target-panel", ".commandbar", ".log"]);
-  await page.screenshot({ path: join(OUT, "3-clear-targeting.png") });
+  await page.screenshot({ path: join(OUT, "6-clear-targeting.png") });
   await page.locator('[data-confirm="shoot"]').click();
 
   await page.evaluate(() => {
@@ -104,12 +138,12 @@ try {
   await page.waitForTimeout(550);
   const projectileCount = await page.evaluate(() => window.__rht.sim.projectiles.length);
   if (projectileCount < 1) throw new Error("Expected visible projectile travel during resolve");
-  await page.screenshot({ path: join(OUT, "4-projectiles.png") });
+  await page.screenshot({ path: join(OUT, "7-projectiles.png") });
 
   await page.waitForFunction(() => window.__rht.sim.phase === "command", undefined, { timeout: 5000 });
   await assertCanvasPainted(page, "desktop resolved");
   await assertHudLayout(page, "desktop resolved", [".topbar", ".roster", ".target-panel", ".commandbar", ".log"]);
-  await page.screenshot({ path: join(OUT, "5-resolved.png") });
+  await page.screenshot({ path: join(OUT, "8-resolved.png") });
 
   const state = await page.evaluate(() => {
     const enemyTank = window.__rht.sim.entity("e-tank-1");
@@ -139,7 +173,7 @@ try {
   await page.waitForTimeout(500);
   await assertCanvasPainted(page, "mobile");
   await assertHudLayout(page, "mobile", [".topbar", ".roster", ".target-panel", ".commandbar"]);
-  await page.screenshot({ path: join(OUT, "6-mobile.png") });
+  await page.screenshot({ path: join(OUT, "9-mobile.png") });
 
   await browser.close();
   console.log("Smoke passed");
