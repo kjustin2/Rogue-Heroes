@@ -65,7 +65,7 @@ try {
   await page.locator('[data-order-action="move"]').hover();
   await page.waitForSelector(".hud-tooltip.visible");
   const moveTooltip = await page.locator(".hud-tooltip.visible").textContent();
-  if (!moveTooltip?.includes("click an open point on the map")) {
+  if (!moveTooltip?.includes("click ground or a cover object")) {
     throw new Error(`Move tooltip is unclear or clipped: ${moveTooltip}`);
   }
   await assertHudLayout(page, "desktop hover tooltip", [".hud-tooltip.visible"]);
@@ -119,17 +119,24 @@ try {
   await page.mouse.move(24, 24);
   await page.waitForFunction(() => !document.querySelector(".hud-tooltip.visible"));
   await page.locator('[data-select="p-soldier-1"]').click();
-  await page.waitForFunction(() => document.querySelector(".commandbar")?.textContent?.includes("Legs"));
+  await page.waitForSelector(".unit-detail-panel");
   const ownSelection = await page.evaluate(() => ({
     targetTitle: document.querySelector(".target-panel h2")?.textContent,
     commandText: document.querySelector(".commandbar")?.textContent,
+    detailText: document.querySelector(".unit-detail-panel")?.textContent,
+    closeButton: Boolean(document.querySelector('[data-command="close-unit-detail"]')),
   }));
   if (ownSelection.targetTitle?.includes("Rook")) {
     throw new Error(`Friendly unit details should not appear in the target panel: ${JSON.stringify(ownSelection)}`);
   }
-  if (!ownSelection.commandText?.includes("Rook") || !ownSelection.commandText.includes("Legs") || !ownSelection.commandText.includes("24/24")) {
-    throw new Error(`Selecting own soldier did not expose command-bar part health: ${JSON.stringify(ownSelection)}`);
+  if (!ownSelection.commandText?.includes("Unit details are open in the side panel")) {
+    throw new Error(`Command bar did not point to the side detail panel: ${JSON.stringify(ownSelection)}`);
   }
+  if (!ownSelection.detailText?.includes("Rook") || !ownSelection.detailText.includes("Legs") || !ownSelection.detailText.includes("24/24") || !ownSelection.closeButton) {
+    throw new Error(`Selecting own soldier did not expose closable side-panel part health: ${JSON.stringify(ownSelection)}`);
+  }
+  await page.locator('[data-command="close-unit-detail"]').click();
+  await page.waitForFunction(() => !document.querySelector(".unit-detail-panel"));
   await page.screenshot({ path: join(OUT, "4-undone.png") });
 
   await page.evaluate(() => {
@@ -154,6 +161,40 @@ try {
   }
   await assertHudLayout(page, "desktop two move compact queue", [".topbar", ".roster", ".target-panel", ".commandbar"]);
   await page.screenshot({ path: join(OUT, "4-two-moves-compact.png") });
+  await page.locator('[data-command="reset"]').click();
+  await page.waitForFunction(() => window.__rht.sim.phase === "command" && window.__rht.sim.turn === 1 && window.__rht.sim.orders.length === 0);
+
+  const cameraBefore = await page.evaluate(() => window.__rht.camera());
+  await page.keyboard.down("d");
+  await page.waitForTimeout(360);
+  await page.keyboard.up("d");
+  const cameraAfterPan = await page.evaluate(() => window.__rht.camera());
+  if (!(cameraAfterPan.x > cameraBefore.x + 0.4)) {
+    throw new Error(`Expected WASD pan to move camera right: before=${JSON.stringify(cameraBefore)} after=${JSON.stringify(cameraAfterPan)}`);
+  }
+  await page.mouse.wheel(0, -480);
+  await page.waitForTimeout(80);
+  const cameraAfterZoom = await page.evaluate(() => window.__rht.camera());
+  if (!(cameraAfterZoom.zoom < cameraAfterPan.zoom)) {
+    throw new Error(`Expected wheel zoom in to reduce camera distance: before=${JSON.stringify(cameraAfterPan)} after=${JSON.stringify(cameraAfterZoom)}`);
+  }
+
+  await page.locator('[data-select="p-soldier-1"]').click();
+  await page.locator('[data-order-action="move"]').click();
+  await page.locator('[data-select="cover-wall-1"]').click();
+  await page.waitForFunction(() => window.__rht.sim.orders.length === 1 && window.__rht.sim.orders[0].kind === "move");
+  const coverMoveState = await page.evaluate(() => ({
+    order: window.__rht.sim.orders[0],
+    targetTitle: document.querySelector(".target-panel h2")?.textContent,
+    commandText: document.querySelector(".commandbar")?.textContent,
+    log: window.__rht.sim.log.slice(),
+  }));
+  if (coverMoveState.order.targetId || !coverMoveState.order.destination || coverMoveState.targetTitle?.includes("Concrete Wall")) {
+    throw new Error(`Move-clicking cover should queue a move, not target the wall: ${JSON.stringify(coverMoveState)}`);
+  }
+  if (!coverMoveState.log.some((line) => line.includes("moves to cover"))) {
+    throw new Error(`Cover move was not communicated in the log: ${JSON.stringify(coverMoveState)}`);
+  }
   await page.locator('[data-command="reset"]').click();
   await page.waitForFunction(() => window.__rht.sim.phase === "command" && window.__rht.sim.turn === 1 && window.__rht.sim.orders.length === 0);
 
@@ -220,7 +261,7 @@ try {
   await page.locator('[data-command="end"]').click();
   await page.mouse.move(820, 420);
 
-  await page.waitForTimeout(550);
+  await page.waitForTimeout(950);
   const projectileCount = await page.evaluate(() => window.__rht.sim.projectiles.length);
   if (projectileCount < 1) throw new Error("Expected visible projectile travel during resolve");
   const projectileKinds = await page.evaluate(() => window.__rht.sim.projectiles.map((projectile) => projectile.kind));
@@ -229,7 +270,7 @@ try {
   }
   await page.screenshot({ path: join(OUT, "7-projectiles.png") });
 
-  await page.waitForFunction(() => window.__rht.sim.phase === "command", undefined, { timeout: 5000 });
+  await page.waitForFunction(() => window.__rht.sim.phase === "command", undefined, { timeout: 9000 });
   await assertCanvasPainted(page, "desktop resolved");
   await assertHudLayout(page, "desktop resolved", [".topbar", ".roster", ".target-panel", ".commandbar", ".log"]);
   await page.screenshot({ path: join(OUT, "8-resolved.png") });

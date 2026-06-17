@@ -3,8 +3,8 @@ import type { CombatEntity, DamagePart } from "../game/damageModel";
 import type { Intent, ShotPreview, TacticalOrder, TacticalSim } from "../game/sim";
 
 const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
-  { id: "move", label: "Move", tip: "Select Move, then click an open point on the map. Costs 1 CP. A unit can queue more actions while it still has CP." },
-  { id: "shoot", label: "Shoot", tip: "Select Shoot, pick an enemy part, then confirm. The map line previews whether cover blocks the shot." },
+  { id: "move", label: "Move", tip: "Select Move, then click ground or a cover object. Costs 1 CP. Soldiers move up to 3.7m and tanks up to 4.1m." },
+  { id: "shoot", label: "Shoot", tip: "Select Shoot, pick an enemy part, then confirm. The map line previews cover, high ground, and estimated damage." },
   { id: "ram", label: "Ram", tip: "Tank only. Select a target, then confirm. Costs 1 CP, deals 72 damage, and damages your front armor." },
   { id: "defend", label: "Duck", tip: "Soldier defensive move. Costs 1 CP and avoids incoming head shots during the resolve." },
 ];
@@ -15,6 +15,7 @@ export interface HudCallbacks {
   reset(): void;
   select(id: string): void;
   queueMove(destination: Vec2): boolean;
+  queueMoveToCover(id: string): boolean;
   queueShootPart(id: string, partId: string): boolean;
   queueRam(id: string): boolean;
   queueDefend(): boolean;
@@ -26,6 +27,7 @@ export class Hud {
   private action: Intent = "select";
   private targetId: string | undefined;
   private targetPartId: string | undefined;
+  private friendlyDetailsId: string | undefined;
   private readonly tooltip: HTMLDivElement;
   private tooltipAnchor: HTMLElement | undefined;
 
@@ -54,6 +56,13 @@ export class Hud {
   chooseBoardEntity(id: string): void {
     const entity = this.sim.entity(id);
     if (!entity) return;
+    if (entity.kind === "cover" && this.action === "move") {
+      if (this.callbacks.queueMoveToCover(entity.id)) {
+        this.action = "select";
+        this.callbacks.setIntent("select");
+      }
+      return;
+    }
     if (entity.team === "player") {
       this.chooseUnit(id);
     } else {
@@ -72,6 +81,7 @@ export class Hud {
     this.action = "select";
     this.targetId = undefined;
     this.targetPartId = undefined;
+    this.friendlyDetailsId = undefined;
     this.callbacks.reset();
   }
 
@@ -90,6 +100,7 @@ export class Hud {
     const selected = this.sim.selected;
     const actor = selected?.team === "player" ? selected : undefined;
     const target = this.targetId ? this.sim.entity(this.targetId) : undefined;
+    const friendlyDetails = this.friendlyDetailsId ? this.sim.entity(this.friendlyDetailsId) : undefined;
     const playerUnits = this.sim.entities.filter((entity) => entity.team === "player");
     const enemies = this.sim.entities.filter((entity) => entity.team === "enemy");
     const cover = this.sim.entities.filter((entity) => entity.team === "neutral");
@@ -106,6 +117,7 @@ export class Hud {
           <div class="brand">Rogue Heroes Tactics</div>
           <div class="phase ${this.sim.phase}">Turn ${this.sim.turn} / ${title(this.sim.phase)}</div>
         </div>
+        <div class="map-help" data-tip="Use W, A, S, and D to pan across the battlefield. Use the mouse wheel to zoom in or out.">WASD Pan / Wheel Zoom</div>
         <div class="top-actions">
           <button class="btn ghost" data-command="reset" data-tip="Clear all damage and queued orders.">Reset</button>
           <button class="btn primary" data-command="end" ${this.sim.phase !== "command" ? "disabled" : ""} data-tip="Resolve every queued player and enemy order.">End Turn</button>
@@ -126,6 +138,12 @@ export class Hud {
           ${cover.map((unit) => targetChip(unit, unit.id === this.targetId, actor, this.sim)).join("")}
         </div>
       </aside>
+
+      ${friendlyDetails?.team === "player" ? `
+        <aside class="panel unit-detail-panel">
+          ${inspectEntity(friendlyDetails, "Unit Detail", undefined, true)}
+        </aside>
+      ` : ""}
 
       <section class="commandbar">
         ${orderPlanner(actor, target, this.targetPartId, this.action, playerOrders.get(actor?.id ?? "") ?? [], this.sim)}
@@ -185,12 +203,14 @@ export class Hud {
     const command = target.closest<HTMLElement>("[data-command]")?.dataset.command;
     if (command === "end") this.callbacks.endTurn();
     if (command === "reset") this.resetGame();
+    if (command === "close-unit-detail") this.friendlyDetailsId = undefined;
   }
 
   private chooseUnit(id: string): void {
     this.callbacks.select(id);
     this.targetId = undefined;
     this.targetPartId = undefined;
+    this.friendlyDetailsId = id;
     this.action = "select";
     this.callbacks.setIntent("select");
   }
@@ -213,6 +233,9 @@ export class Hud {
   }
 
   private pruneInvalidFocus(): void {
+    const friendly = this.friendlyDetailsId ? this.sim.entity(this.friendlyDetailsId) : undefined;
+    if (!friendly || friendly.team !== "player" || !friendly.status.alive) this.friendlyDetailsId = undefined;
+
     const target = this.targetId ? this.sim.entity(this.targetId) : undefined;
     if (!target) {
       this.targetId = undefined;
@@ -300,11 +323,13 @@ function targetChip(entity: CombatEntity, selected: boolean, actor: CombatEntity
   const blocked = preview?.blockedById ? sim.entity(preview.blockedById) : undefined;
   const tip = blocked
     ? `${entity.name} is behind ${blocked.name}; shots hit that cover first.`
-    : `${entity.name}: ${entity.kind}, ${statusText(entity)}.`;
+    : preview?.blockedByGround
+      ? `${entity.name} is behind high ground; low shots may hit the map first.`
+    : `${entity.name}: ${kindLabel(entity)}, ${statusText(entity)}.`;
   return `
     <button class="target-chip ${selected ? "selected" : ""} ${entity.status.alive ? "" : "dead"}" data-select="${entity.id}" data-tip="${escapeAttr(tip)}">
       <span>${escapeHtml(entity.name)}</span>
-      <span>${blocked ? `blocked by ${escapeHtml(blocked.name)}` : statusText(entity)}</span>
+      <span>${blocked ? `Blocked by ${escapeHtml(blocked.name)}` : preview?.blockedByGround ? "Blocked by High Ground" : statusText(entity)}</span>
     </button>
   `;
 }
@@ -321,18 +346,21 @@ function emptyTargetPanel(): string {
   `;
 }
 
-function inspectEntity(entity: CombatEntity, titleText: string, activePartId: string | undefined): string {
+function inspectEntity(entity: CombatEntity, titleText: string, activePartId: string | undefined, closable = false): string {
   return `
     <div class="inspect-head">
       <div>
         <div class="panel-title">${titleText}</div>
         <h2>${escapeHtml(entity.name)}</h2>
       </div>
-      <div class="status-pill ${entity.status.alive ? "" : "dead"}">${statusText(entity)}</div>
+      <div class="inspect-actions">
+        <div class="status-pill ${entity.status.alive ? "" : "dead"}">${statusText(entity)}</div>
+        ${closable ? `<button class="icon-btn" data-command="close-unit-detail" data-tip="Close unit detail panel.">Close</button>` : ""}
+      </div>
     </div>
     <div class="stat-grid">
-      <div><span>Type</span><strong>${entity.kind}</strong></div>
-      <div><span>Team</span><strong>${entity.team}</strong></div>
+      <div><span>Type</span><strong>${kindLabel(entity)}</strong></div>
+      <div><span>Team</span><strong>${title(entity.team)}</strong></div>
       <div data-tip="${escapeAttr(cpTip(entity))}"><span>CP</span><strong>${entity.commandPoints}/${entity.maxCommandPoints}</strong></div>
     </div>
     <div class="parts">
@@ -427,10 +455,11 @@ function shootState(
   }
   const parts = sim.targetableParts(target);
   const blockedPart = blocker ? blocker.parts.find((part) => part.id === preview?.impactPartId) : undefined;
+  const groundBlocked = Boolean(preview?.blockedByGround);
   return `
-    <div class="target-summary ${blocker ? "blocked" : ""}">
+    <div class="target-summary ${blocker || groundBlocked ? "blocked" : ""}">
       <strong>${escapeHtml(target.name)}</strong>
-      <span>${blocker ? `Line blocked by ${escapeHtml(blocker.name)}; hit ${escapeHtml(blockedPart?.label ?? "cover")} first.` : "Current line is clear; moving targets can still reach cover before impact."}</span>
+      <span>${blocker ? `Line blocked by ${escapeHtml(blocker.name)}; hit ${escapeHtml(blockedPart?.label ?? "cover")} first.` : groundBlocked ? "Line hits high ground before the target. Pick a higher part or move for a better angle." : "Current line is clear; moving targets can still reach cover before impact."}</span>
     </div>
     <div class="part-options">
       ${parts.map((part) => partButton(actor, target, part, part.id === targetPartId, sim)).join("")}
@@ -473,7 +502,7 @@ function moveState(actor: CombatEntity | undefined): string {
   return `
     <div class="target-summary ${ready ? "" : "blocked"}">
       <strong>${ready ? "Move order armed" : "Move unavailable"}</strong>
-      <span>${ready ? "Click a clear point on the battlefield to confirm." : "This unit has no movement or CP available."}</span>
+      <span>${ready ? "Click ground to move, or click a wall/obstacle to take cover beside it. Range is limited this turn." : "This unit has no movement or CP available."}</span>
     </div>
   `;
 }
@@ -482,9 +511,8 @@ function orderSummaryState(actor: CombatEntity | undefined, target: CombatEntity
   return `
     <div class="target-summary">
       <strong>${actor ? escapeHtml(actor.name) : "Select a unit"}</strong>
-      <span>${target ? `Inspecting ${escapeHtml(target.name)}.` : "No target selected."}</span>
+      <span>${target ? `Inspecting ${escapeHtml(target.name)}.` : actor ? "Unit details are open in the side panel." : "No target selected."}</span>
     </div>
-    ${actor ? ownPartGrid(actor) : ""}
   `;
 }
 
@@ -497,7 +525,7 @@ function queuedOrdersState(actor: CombatEntity | undefined, orders: TacticalOrde
     <div class="queued-list">
       ${orders.map((order, index) => `
         <button class="queued-chip undo-order" data-cancel-order="${order.id}" data-tip="Undo step ${index + 1}: ${escapeAttr(orderSummary(order, sim).replace("Queued: ", ""))}. Refunds 1 CP.">
-          <strong>${index + 1}. ${escapeHtml(order.kind)}</strong>
+          <strong>${index + 1}. ${escapeHtml(title(order.kind))}</strong>
           <span>${escapeHtml(orderSummary(order, sim).replace("Queued: ", ""))}</span>
           <em>undo</em>
         </button>
@@ -506,34 +534,24 @@ function queuedOrdersState(actor: CombatEntity | undefined, orders: TacticalOrde
   `;
 }
 
-function ownPartGrid(actor: CombatEntity): string {
-  return `
-    <div class="own-parts" data-tip="Selected squad unit health. These are your unit's damageable parts.">
-      ${actor.parts.map((part) => `
-        <div class="own-part ${part.hp <= 0 ? "destroyed" : ""}">
-          <strong>${escapeHtml(part.label)}</strong>
-          <span>${part.role}</span>
-          <em>${Math.max(0, Math.ceil(part.hp))}/${part.maxHp}</em>
-        </div>
-      `).join("")}
-    </div>
-  `;
-}
-
 function partButton(actor: CombatEntity, target: CombatEntity, part: DamagePart, selected: boolean, sim: TacticalSim): string {
   const preview = sim.previewShot(actor.id, target.id, part.id);
   const blocker = preview?.blockedById ? sim.entity(preview.blockedById) : undefined;
-  const impactTarget = preview ? sim.entity(preview.impactEntityId) : undefined;
+  const impactTarget = preview?.impactEntityId ? sim.entity(preview.impactEntityId) : undefined;
   const impactPart = impactTarget?.parts.find((candidate) => candidate.id === preview?.impactPartId);
   const tip = [
     partTip(part),
     preview ? `Estimated damage: ${preview.amount}.` : "",
-    blocker ? `Blocked by ${blocker.name}; the shot hits ${impactPart?.label ?? blocker.name} first.` : "Clear shot to this part.",
+    blocker
+      ? `Blocked by ${blocker.name}; the shot hits ${impactPart?.label ?? blocker.name} first.`
+      : preview?.blockedByGround
+        ? "High ground blocks this line before the target."
+        : "Clear shot to this part.",
   ].filter(Boolean).join(" ");
   return `
-    <button class="part-choice ${selected ? "active" : ""} ${blocker ? "blocked" : ""}" data-part="${part.id}" data-tip="${escapeAttr(tip)}">
+    <button class="part-choice ${selected ? "active" : ""} ${blocker || preview?.blockedByGround ? "blocked" : ""}" data-part="${part.id}" data-tip="${escapeAttr(tip)}">
       <strong>${escapeHtml(part.label)}</strong>
-      <span>${part.role} / ${Math.ceil(part.hp)} HP</span>
+      <span>${roleLabel(part)} / ${Math.ceil(part.hp)} HP</span>
       <em>${preview ? `${preview.amount} dmg` : "--"}</em>
     </button>
   `;
@@ -545,7 +563,7 @@ function partRow(part: DamagePart, active: boolean): string {
     <button class="part-row ${part.hp <= 0 ? "destroyed" : ""} ${active ? "active" : ""}" data-part="${part.id}" data-disabled="${part.hp <= 0}" data-tip="${escapeAttr(partTip(part))}">
       <div>
         <strong>${escapeHtml(part.label)}</strong>
-        <span>${part.role}</span>
+        <span>${roleLabel(part)}</span>
       </div>
       <div class="bar"><i style="width:${Math.max(0, ratio * 100).toFixed(1)}%"></i></div>
       <em>${Math.max(0, Math.ceil(part.hp))}/${part.maxHp}</em>
@@ -586,17 +604,19 @@ function cpTip(entity: CombatEntity): string {
 function confirmShootTip(preview: ShotPreview | undefined, blocker: CombatEntity | undefined, target: CombatEntity): string {
   if (!preview) return "Pick a target part before confirming the shot.";
   if (blocker) return `Confirm the shot. ${blocker.name} blocks ${target.name}, so the shot deals ${preview.amount} damage to cover.`;
+  if (preview.blockedByGround) return "This shot will hit high ground before the target. Move or choose a higher part for a clean line.";
   return `Confirm the shot for ${preview.amount} estimated damage. Projectile travel is slow enough for movement and cover to matter.`;
 }
 
 function partTip(part: DamagePart): string {
+  if (part.tags?.includes("support-aura")) return "Support system. While intact, nearby allies deal more shot damage.";
   if (part.role === "core") return "Core part. Destroying a critical core disables the unit.";
   if (part.role === "head") return "Head part. Destroying it disables a soldier immediately.";
   if (part.role === "weapon") return "Weapon part. Destroying it stops this unit from shooting.";
   if (part.role === "mobility") return "Mobility part. Destroying it stops movement and rams.";
   if (part.role === "utility") return "System part. Destroying it can jam weapons or reduce CP.";
   if (part.role === "armor") return "Armor part. Destroying it exposes the core to stronger follow-up shots.";
-  if (part.role === "volatile") return "Volatile part. Destroying it causes an explosion.";
+  if (part.role === "volatile") return "Explosive part. Destroying it causes an area blast.";
   return "Targetable part.";
 }
 
@@ -606,12 +626,22 @@ function miniBar(part: DamagePart): string {
 }
 
 function statusText(entity: CombatEntity): string {
-  if (!entity.status.alive) return "disabled";
-  if (entity.status.exposedCore) return "exposed";
-  if (entity.status.immobilized) return "immobile";
-  if (entity.status.disarmed) return "disarmed";
-  if (entity.status.commandLimited) return "limited";
-  return "ready";
+  if (!entity.status.alive) return "Disabled";
+  if (entity.status.exposedCore) return "Exposed";
+  if (entity.status.immobilized) return "Immobile";
+  if (entity.status.disarmed) return "Disarmed";
+  if (entity.status.commandLimited) return "Limited";
+  return "Ready";
+}
+
+function kindLabel(entity: CombatEntity): string {
+  if (entity.kind === "cover" && entity.coverKind) return title(entity.coverKind.replace("-", " "));
+  return title(entity.kind);
+}
+
+function roleLabel(part: DamagePart): string {
+  if (part.role === "volatile") return "Explosive";
+  return title(part.role);
 }
 
 function title(value: string): string {

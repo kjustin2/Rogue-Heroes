@@ -87,7 +87,7 @@ try {
 
   if (queued.length !== 3) throw new Error(`Expected 3 player orders, got ${JSON.stringify(queued)}`);
 
-  await page.waitForTimeout(550);
+  await page.waitForTimeout(950);
   const resolveState = await page.evaluate(() => ({
     phase: window.__rht.sim.phase,
     projectiles: window.__rht.sim.projectiles.length,
@@ -99,7 +99,7 @@ try {
   await assertCanvasPainted(page, "flow resolve");
   await page.screenshot({ path: join(OUT, "7-flow-resolve.png") });
 
-  await page.waitForFunction(() => window.__rht.sim.phase === "victory", undefined, { timeout: 6000 });
+  await page.waitForFunction(() => window.__rht.sim.phase === "victory", undefined, { timeout: 10000 });
   await assertCanvasPainted(page, "flow victory");
   await page.screenshot({ path: join(OUT, "8-flow-victory.png") });
 

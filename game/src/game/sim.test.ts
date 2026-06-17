@@ -224,7 +224,7 @@ describe("tactical simulation loop", () => {
     sim.select("player");
     expect(sim.queueShootPart("enemy", "head")).toBe(true);
     sim.endTurn();
-    advance(sim, 0.36);
+    advance(sim, 0.66);
 
     const target = sim.entity("enemy");
     expect(sim.projectiles).toHaveLength(1);
@@ -269,6 +269,96 @@ describe("tactical simulation loop", () => {
     expect(wall?.parts[0].hp).toBeLessThan(70);
     expect(enemy.parts.find((part) => part.id === "head")?.hp).toBe(16);
     expect(sim.log).toContain("Concrete Wall intercepts shot at Cutlass");
+  });
+
+  it("limits move distance and treats move-clicking cover as taking cover", () => {
+    const sim = new TacticalSim([
+      createSoldier("player", "Rook", "player", { x: 0, z: 0 }),
+      createCover("wall", "Concrete Wall", { x: 3, z: 0 }),
+      createSoldier("enemy", "Cutlass", "enemy", { x: 8, z: 0 }),
+    ]);
+
+    sim.select("player");
+    expect(sim.queueMove({ x: 10, z: 0 })).toBe(true);
+    expect(sim.orders[0].destination?.x).toBeCloseTo(3.7, 1);
+    expect(sim.orders[0].targetId).toBeUndefined();
+
+    const coverSim = new TacticalSim([
+      createSoldier("player", "Rook", "player", { x: 0, z: 0 }),
+      createCover("wall", "Concrete Wall", { x: 3, z: 0 }),
+      createSoldier("enemy", "Cutlass", "enemy", { x: 8, z: 0 }),
+    ]);
+    coverSim.select("player");
+    expect(coverSim.queueMoveToCover("wall")).toBe(true);
+    const coverMove = coverSim.orders[0];
+    expect(coverMove.kind).toBe("move");
+    expect(coverMove.targetId).toBeUndefined();
+    expect(coverMove.destination?.x).toBeGreaterThan(0.5);
+    expect(coverMove.destination?.x).toBeLessThan(3);
+  });
+
+  it("makes tank shells splash nearby parts and crush cover harder than rifle fire", () => {
+    const enemyTank = createTank("enemy-tank", "Breaker", "enemy", { x: 4, z: 0 });
+    const sim = new TacticalSim([
+      createTank("player-tank", "Hammer", "player", { x: 0, z: 0 }),
+      enemyTank,
+      createCover("wall", "Concrete Wall", { x: 8, z: 0 }),
+    ]);
+
+    sim.select("player-tank");
+    expect(sim.queueShootPart("enemy-tank", "turret")).toBe(true);
+    sim.endTurn();
+    advance(sim, 6);
+
+    expect(enemyTank.parts.find((part) => part.id === "turret")?.hp).toBeLessThan(55);
+    expect(enemyTank.parts.find((part) => part.id === "cannon")?.hp).toBeLessThan(42);
+
+    const wallSim = new TacticalSim([
+      createTank("player-tank", "Hammer", "player", { x: 0, z: 0 }),
+      createCover("wall", "Concrete Wall", { x: 4, z: 0 }),
+    ]);
+    wallSim.select("player-tank");
+    const preview = wallSim.previewShot("player-tank", "wall", "wall");
+    expect(preview?.amount).toBeGreaterThan(70);
+    expect(wallSim.queueShootPart("wall", "wall")).toBe(true);
+    wallSim.endTurn();
+    advance(wallSim, 6);
+
+    expect(wallSim.entity("wall")?.status.alive).toBe(false);
+  });
+
+  it("marks low projectile lines as blocked when they would hit high ground first", () => {
+    const sim = new TacticalSim([
+      createSoldier("player", "Rook", "player", { x: -2.5, z: 5.3 }),
+      createSoldier("enemy", "Cutlass", "enemy", { x: 3.2, z: 5.3 }),
+    ]);
+
+    const legsPreview = sim.previewShot("player", "enemy", "legs");
+    const headPreview = sim.previewShot("player", "enemy", "head");
+
+    expect(legsPreview?.blockedByGround).toBe(true);
+    expect(legsPreview?.amount).toBe(0);
+    expect(headPreview?.blockedByGround).toBeFalsy();
+  });
+
+  it("boosts nearby allied shot damage while a support relay is intact", () => {
+    const baseline = new TacticalSim([
+      createSoldier("player", "Rook", "player", { x: 0, z: 0 }),
+      createSoldier("enemy", "Cutlass", "enemy", { x: 4, z: 0 }),
+    ]);
+    const boostedSupport = createSoldier("support", "Sable", "player", { x: 1.4, z: 0 });
+    const pack = boostedSupport.parts.find((part) => part.id === "pack");
+    if (pack) pack.tags = ["support-aura"];
+    const boosted = new TacticalSim([
+      createSoldier("player", "Rook", "player", { x: 0, z: 0 }),
+      boostedSupport,
+      createSoldier("enemy", "Cutlass", "enemy", { x: 4, z: 0 }),
+    ]);
+
+    const baselineDamage = baseline.previewShot("player", "enemy", "body")?.amount ?? 0;
+    const boostedDamage = boosted.previewShot("player", "enemy", "body")?.amount ?? 0;
+
+    expect(boostedDamage).toBeGreaterThan(baselineDamage);
   });
 });
 

@@ -143,6 +143,22 @@ export class WorldRenderer {
       this.sceneryRoot.add(scorch);
     }
 
+    const ridgeMat = new THREE.MeshStandardMaterial({ color: 0x38464a, roughness: 0.9, metalness: 0.05 });
+    const ridge = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.36, 1.28), ridgeMat);
+    ridge.position.set(1.1, 0.16, 5.3);
+    ridge.castShadow = true;
+    ridge.receiveShadow = true;
+    this.sceneryRoot.add(ridge);
+    for (const x of [-0.6, 1.1, 2.8]) {
+      const stripe = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 0.04, 1.4),
+        new THREE.MeshStandardMaterial({ color: 0xffca6b, emissive: 0x6c3a13, emissiveIntensity: 0.35, roughness: 0.62 })
+      );
+      stripe.position.set(x, 0.38, 5.3);
+      stripe.receiveShadow = true;
+      this.sceneryRoot.add(stripe);
+    }
+
     const playerLight = new THREE.PointLight(0x60d7ff, 0.8, 8);
     playerLight.position.set(-8.2, 3, -0.7);
     const enemyLight = new THREE.PointLight(0xff7c5e, 0.8, 8);
@@ -157,6 +173,7 @@ export class WorldRenderer {
       this.groups.set(entity.id, group);
       this.entityRoot.add(group);
     }
+    group.visible = entity.status.alive;
     group.position.set(entity.position.x, 0, entity.position.z);
     group.rotation.y = entity.yaw;
     if (defending && entity.kind === "soldier" && entity.status.alive) {
@@ -173,7 +190,7 @@ export class WorldRenderer {
       if (!part) return;
       this.syncDebris(entity, part);
       this.paintPart(mesh, entity, part, entity.id === selectedId, entity.id === targetId, part.id === targetPartId);
-      this.pickables.push(mesh);
+      if (entity.status.alive) this.pickables.push(mesh);
     });
   }
 
@@ -241,10 +258,27 @@ export class WorldRenderer {
   private buildCover(group: THREE.Group, entity: CombatEntity): void {
     const part = entity.parts[0];
     const volatile = part.role === "volatile";
-    if (volatile) {
+    if (entity.coverKind === "ammo") {
+      this.box(group, entity, part.id, [0.92, 0.58, 0.72], [0, 0.32, 0], 0x8c6541, { emissive: 0xff9e2b, emissiveIntensity: 0.18 });
+      this.box(group, entity, part.id, [0.72, 0.18, 0.52], [0, 0.72, 0], 0xffca6b, { emissive: 0xff7d26, emissiveIntensity: 0.42 });
+      for (const x of [-0.24, 0.24]) this.cylinder(group, entity, part.id, 0.14, 0.62, [x, 0.52, 0], 0x34312a);
+    } else if (entity.coverKind === "conduit") {
+      this.box(group, entity, part.id, [0.48, 1.15, 0.48], [0, 0.58, 0], 0x315764, { emissive: 0x48e9ff, emissiveIntensity: 0.34 });
+      this.box(group, entity, part.id, [1.08, 0.16, 0.24], [0, 1.22, 0], 0x9dfcff, { emissive: 0x48e9ff, emissiveIntensity: 0.68 });
+      this.box(group, entity, part.id, [0.16, 0.82, 0.92], [0, 0.58, 0], 0x152126);
+    } else if (volatile) {
       this.box(group, entity, part.id, [0.82, 0.98, 0.82], [0, 0.5, 0], 0xffb02e, { emissive: 0xff6b1a, emissiveIntensity: 0.35 });
       this.box(group, entity, part.id, [0.56, 0.28, 0.56], [0, 1.14, 0], 0xffd06a, { emissive: 0xffb02e, emissiveIntensity: 0.45 });
       this.box(group, entity, part.id, [0.16, 0.82, 0.9], [0, 0.56, 0], 0x5a3516);
+    } else if (entity.coverKind === "barricade") {
+      this.box(group, entity, part.id, [1.72, 0.62, 0.46], [0, 0.32, 0], 0x8d9390);
+      this.box(group, entity, part.id, [1.54, 0.18, 0.56], [0, 0.72, 0], 0xb8beb9);
+      for (const x of [-0.58, 0.58]) this.box(group, entity, part.id, [0.12, 0.68, 0.58], [x, 0.36, 0], 0x69736f);
+    } else if (entity.coverKind === "ridge") {
+      this.box(group, entity, part.id, [2.2, 0.82, 0.78], [0, 0.48, 0], 0x586466);
+      this.box(group, entity, part.id, [2.34, 0.2, 0.88], [0, 0.98, 0], 0x7c8684);
+      this.box(group, entity, part.id, [0.1, 0.18, 0.96], [-0.72, 1.12, 0], 0xffca6b, { emissive: 0x6c3a13, emissiveIntensity: 0.4 });
+      this.box(group, entity, part.id, [0.1, 0.18, 0.96], [0.72, 1.12, 0], 0xffca6b, { emissive: 0x6c3a13, emissiveIntensity: 0.4 });
     } else {
       this.box(group, entity, part.id, [1.82, 1.25, 0.56], [0, 0.63, 0], 0x8f9894);
       this.box(group, entity, part.id, [1.66, 0.22, 0.62], [0, 1.37, 0], 0xb5bbb5);
@@ -513,15 +547,19 @@ export class WorldRenderer {
     const preview = sim.previewShot(actor.id, targetId, targetPartId);
     if (!target || target.team === "player" || !preview) return;
 
-    const impact = sim.entity(preview.impactEntityId);
-    if (!impact) return;
-    const clear = !preview.blockedById;
-    this.previewRoot.add(makeTubeLine(preview.from, preview.impactPoint, clear ? 0x8de4ff : 0xffbf69, clear ? 0.48 : 0.56, 0.28, 0.05));
-    this.previewRoot.add(makeLine(preview.from, preview.impactPoint, clear ? 0x8de4ff : 0xffbf69, clear ? 0.88 : 0.96, 0.22));
-    this.previewRoot.add(makeEndpoint(preview.impactPoint, clear ? 0x8de4ff : 0xffbf69, impact.radius + 0.18));
+    const impact = preview.impactEntityId ? sim.entity(preview.impactEntityId) : undefined;
+    const clear = !preview.blockedById && !preview.blockedByGround;
+    const previewColor = clear ? 0x8de4ff : preview.blockedByGround ? 0xff6f4f : 0xffbf69;
+    this.previewRoot.add(makeTubeLine(preview.from, preview.impactPoint, previewColor, clear ? 0.48 : 0.56, preview.fromHeight, 0.05, preview.impactHeight));
+    this.previewRoot.add(makeLine(preview.from, preview.impactPoint, previewColor, clear ? 0.88 : 0.96, preview.fromHeight, preview.impactHeight));
+    this.previewRoot.add(makeEndpoint(preview.impactPoint, previewColor, (impact?.radius ?? 0.72) + 0.18));
     if (preview.blockedById) {
       this.previewRoot.add(makeTubeLine(preview.impactPoint, preview.aimPoint, 0xff765f, 0.26, 0.2, 0.035));
       this.previewRoot.add(makeLine(preview.impactPoint, preview.aimPoint, 0xff765f, 0.42, 0.12));
+      this.previewRoot.add(makeEndpoint(preview.aimPoint, 0xff765f, target.radius + 0.1));
+    } else if (preview.blockedByGround) {
+      this.previewRoot.add(makeTubeLine(preview.impactPoint, preview.aimPoint, 0xff765f, 0.2, preview.impactHeight, 0.035, preview.aimHeight));
+      this.previewRoot.add(makeLine(preview.impactPoint, preview.aimPoint, 0xff765f, 0.36, preview.impactHeight, preview.aimHeight));
       this.previewRoot.add(makeEndpoint(preview.aimPoint, 0xff765f, target.radius + 0.1));
     }
   }
@@ -530,18 +568,18 @@ export class WorldRenderer {
     this.projectileRoot.clear();
     for (const projectile of projectiles) {
       const style = projectileStyle(projectile);
-      this.projectileRoot.add(makeTubeLine(projectile.previous, projectile.position, style.trailColor, style.trailOpacity, style.trailY, style.trailRadius));
-      const tracer = makeLine(projectile.previous, projectile.position, style.trailColor, 0.9, style.lineY);
+      this.projectileRoot.add(makeTubeLine(projectile.previous, projectile.position, style.trailColor, style.trailOpacity, projectile.previousHeight, style.trailRadius, projectile.height));
+      const tracer = makeLine(projectile.previous, projectile.position, style.trailColor, 0.9, projectile.previousHeight, projectile.height);
       this.projectileRoot.add(tracer);
       for (const accent of projectileAccentTrails(projectile)) this.projectileRoot.add(accent);
 
       const model = makeProjectileModel(projectile);
-      model.position.set(projectile.position.x, style.meshY, projectile.position.z);
+      model.position.set(projectile.position.x, projectile.height, projectile.position.z);
       orientAlongShot(model, projectile.previous, projectile.position);
       this.projectileRoot.add(model);
 
       const glow = new THREE.PointLight(style.trailColor, style.glow, style.glowRange);
-      glow.position.set(projectile.position.x, style.meshY + 0.1, projectile.position.z);
+      glow.position.set(projectile.position.x, projectile.height + 0.1, projectile.position.z);
       this.projectileRoot.add(glow);
     }
   }
@@ -684,19 +722,19 @@ function makeProjectileModel(projectile: Projectile): THREE.Group {
 function projectileAccentTrails(projectile: Projectile): THREE.Object3D[] {
   if (projectile.kind === "shell") {
     return [
-      makeTubeLine(projectile.previous, projectile.position, 0xffd166, 0.2, 0.52, 0.13),
-      makeLine(offsetPoint(projectile.previous, 0.08), offsetPoint(projectile.position, 0.08), 0xffffff, 0.24, 0.36),
+      makeTubeLine(projectile.previous, projectile.position, 0xffd166, 0.2, projectile.previousHeight - 0.12, 0.13, projectile.height - 0.12),
+      makeLine(offsetPoint(projectile.previous, 0.08), offsetPoint(projectile.position, 0.08), 0xffffff, 0.24, projectile.previousHeight - 0.28, projectile.height - 0.28),
     ];
   }
   if (projectile.kind === "bolt") {
     return [
-      makeTubeLine(projectile.previous, projectile.position, 0xfff1a6, 0.28, 1.04, 0.11),
-      makeLine(offsetPoint(projectile.previous, -0.1), offsetPoint(projectile.position, -0.1), 0xff765f, 0.36, 0.52),
+      makeTubeLine(projectile.previous, projectile.position, 0xfff1a6, 0.28, projectile.previousHeight + 0.1, 0.11, projectile.height + 0.1),
+      makeLine(offsetPoint(projectile.previous, -0.1), offsetPoint(projectile.position, -0.1), 0xff765f, 0.36, projectile.previousHeight - 0.18, projectile.height - 0.18),
     ];
   }
   return [
-    makeLine(offsetPoint(projectile.previous, 0.045), offsetPoint(projectile.position, 0.045), 0xeaffff, 0.52, 0.62),
-    makeLine(offsetPoint(projectile.previous, -0.045), offsetPoint(projectile.position, -0.045), projectile.color, 0.34, 0.5),
+    makeLine(offsetPoint(projectile.previous, 0.045), offsetPoint(projectile.position, 0.045), 0xeaffff, 0.52, projectile.previousHeight + 0.06, projectile.height + 0.06),
+    makeLine(offsetPoint(projectile.previous, -0.045), offsetPoint(projectile.position, -0.045), projectile.color, 0.34, projectile.previousHeight - 0.05, projectile.height - 0.05),
   ];
 }
 
@@ -719,10 +757,10 @@ function roleColor(entity: CombatEntity, role: PartRole, fallback: number): numb
   return fallback;
 }
 
-function makeLine(from: { x: number; z: number }, to: { x: number; z: number }, color: number, opacity: number, y = 0.16): THREE.Line {
+function makeLine(from: { x: number; z: number }, to: { x: number; z: number }, color: number, opacity: number, y = 0.16, toY = y): THREE.Line {
   const geo = new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(from.x, y, from.z),
-    new THREE.Vector3(to.x, y, to.z),
+    new THREE.Vector3(to.x, toY, to.z),
   ]);
   const mat = lineMaterial(color, opacity);
   return new THREE.Line(geo, mat);
@@ -734,10 +772,11 @@ function makeTubeLine(
   color: number,
   opacity: number,
   y = 0.18,
-  radius = 0.035
+  radius = 0.035,
+  toY = y
 ): THREE.Object3D {
   const start = new THREE.Vector3(from.x, y, from.z);
-  const end = new THREE.Vector3(to.x, y, to.z);
+  const end = new THREE.Vector3(to.x, toY, to.z);
   const delta = new THREE.Vector3().subVectors(end, start);
   const length = delta.length();
   if (length < 0.01) return new THREE.Group();

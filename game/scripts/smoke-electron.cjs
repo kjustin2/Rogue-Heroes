@@ -166,7 +166,7 @@ async function run() {
       api.endTurn();
     })()`);
 
-    await sleep(550);
+    await sleep(950);
     const resolveState = await js("({ phase: window.__rht.sim.phase, projectiles: window.__rht.sim.projectiles.length, orders: window.__rht.sim.orders.length })");
     if (resolveState.phase !== "resolve" || resolveState.projectiles < 1 || resolveState.orders < 3) {
       throw new Error(`Electron simultaneous resolve failed: ${JSON.stringify(resolveState)}`);
@@ -174,7 +174,7 @@ async function run() {
     await assertCanvasPainted(js, "electron resolve");
     await shot(win, "resolve");
 
-    await waitFor(() => js("window.__rht.sim.phase === 'victory'"), "victory");
+    await waitFor(() => js("window.__rht.sim.phase === 'victory'"), "victory", 10000);
     await assertCanvasPainted(js, "electron victory");
     await shot(win, "victory");
 

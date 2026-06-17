@@ -14,6 +14,9 @@ export class Stage {
   readonly ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
   private pointer = new THREE.Vector2();
+  private readonly focus: Vec2 = { x: 0, z: 0 };
+  private zoom = 1;
+  private readonly baseOffset = new THREE.Vector3(-10, 17, 15);
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({
@@ -34,8 +37,7 @@ export class Stage {
     this.scene.fog = new THREE.FogExp2(0x0a0d12, 0.025);
 
     this.camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 120);
-    this.camera.position.set(-10, 17, 15);
-    this.camera.lookAt(0, 0, 0);
+    this.updateCamera();
 
     const hemi = new THREE.HemisphereLight(0xb8d7ff, 0x17120f, 1.35);
     this.scene.add(hemi);
@@ -84,6 +86,27 @@ export class Stage {
     this.renderer.render(this.scene, this.camera);
   }
 
+  update(dt: number, input: { up: boolean; down: boolean; left: boolean; right: boolean }): void {
+    const x = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+    const z = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+    if (x || z) this.pan(x * 8.2 * dt, z * 8.2 * dt);
+  }
+
+  pan(dx: number, dz: number): void {
+    this.focus.x = Math.max(-8, Math.min(8, this.focus.x + dx));
+    this.focus.z = Math.max(-5.5, Math.min(5.5, this.focus.z + dz));
+    this.updateCamera();
+  }
+
+  zoomBy(delta: number): void {
+    this.zoom = Math.max(0.62, Math.min(1.55, this.zoom + delta));
+    this.updateCamera();
+  }
+
+  viewState(): { x: number; z: number; zoom: number } {
+    return { x: this.focus.x, z: this.focus.z, zoom: this.zoom };
+  }
+
   private setPointer(clientX: number, clientY: number): void {
     const rect = this.canvas.getBoundingClientRect();
     this.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -96,5 +119,14 @@ export class Stage {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
+  }
+
+  private updateCamera(): void {
+    this.camera.position.set(
+      this.focus.x + this.baseOffset.x * this.zoom,
+      this.baseOffset.y * this.zoom,
+      this.focus.z + this.baseOffset.z * this.zoom
+    );
+    this.camera.lookAt(this.focus.x, 0, this.focus.z);
   }
 }

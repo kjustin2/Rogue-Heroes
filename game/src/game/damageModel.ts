@@ -2,6 +2,7 @@ import type { Vec2 } from "../core/math";
 
 export type Team = "player" | "enemy" | "neutral";
 export type EntityKind = "soldier" | "tank" | "base" | "cover";
+export type CoverKind = "wall" | "barricade" | "fuel" | "ammo" | "conduit" | "ridge";
 export type PartRole = "core" | "head" | "weapon" | "mobility" | "armor" | "utility" | "volatile";
 export type AimMode = "center" | "head" | "weapon" | "mobility" | "utility" | "core" | "weakest";
 
@@ -32,14 +33,25 @@ export interface CombatEntity {
   id: string;
   name: string;
   kind: EntityKind;
+  coverKind?: CoverKind;
   team: Team;
   position: Vec2;
   yaw: number;
   radius: number;
+  height: number;
+  elevation: number;
   commandPoints: number;
   maxCommandPoints: number;
   parts: DamagePart[];
   status: EntityStatus;
+}
+
+export interface CoverOptions {
+  volatile?: boolean;
+  coverKind?: CoverKind;
+  hp?: number;
+  radius?: number;
+  height?: number;
 }
 
 export interface DamageResult {
@@ -96,6 +108,8 @@ export function createTank(id: string, name: string, team: Team, position: Vec2)
     position,
     yaw: team === "player" ? Math.PI * 0.5 : -Math.PI * 0.5,
     radius: 1.45,
+    height: 1.55,
+    elevation: 0,
     commandPoints: 2,
     maxCommandPoints: 2,
     status: statusFor("tank"),
@@ -121,6 +135,8 @@ export function createSoldier(id: string, name: string, team: Team, position: Ve
     position,
     yaw: team === "player" ? Math.PI * 0.5 : -Math.PI * 0.5,
     radius: 0.65,
+    height: 1.65,
+    elevation: 0,
     commandPoints: 2,
     maxCommandPoints: 2,
     status: statusFor("soldier"),
@@ -145,6 +161,8 @@ export function createBase(id: string, name: string, team: Team, position: Vec2)
     position,
     yaw: team === "player" ? Math.PI * 0.5 : -Math.PI * 0.5,
     radius: 2.2,
+    height: 3.1,
+    elevation: 0,
     commandPoints: 1,
     maxCommandPoints: 1,
     status: statusFor("base"),
@@ -160,22 +178,29 @@ export function createBase(id: string, name: string, team: Team, position: Vec2)
   return entity;
 }
 
-export function createCover(id: string, name: string, position: Vec2, volatile = false): CombatEntity {
-  const hp = volatile ? 36 : 70;
+export function createCover(id: string, name: string, position: Vec2, options: boolean | CoverOptions = false): CombatEntity {
+  const settings: CoverOptions = typeof options === "boolean" ? { volatile: options } : options;
+  const coverKind = settings.coverKind ?? (settings.volatile ? "fuel" : name.toLowerCase().includes("barricade") ? "barricade" : "wall");
+  const volatile = Boolean(settings.volatile || coverKind === "fuel" || coverKind === "ammo" || coverKind === "conduit");
+  const hp = settings.hp ?? (coverKind === "barricade" ? 42 : coverKind === "ammo" ? 34 : coverKind === "conduit" ? 44 : volatile ? 36 : coverKind === "ridge" ? 95 : 70);
   const entity: CombatEntity = {
     id,
     name,
     kind: "cover",
+    coverKind,
     team: "neutral",
     position,
     yaw: 0,
-    radius: volatile ? 0.7 : 1.05,
+    radius: settings.radius ?? (coverKind === "barricade" ? 0.82 : volatile ? 0.7 : coverKind === "ridge" ? 1.2 : 1.05),
+    height: settings.height ?? (coverKind === "barricade" ? 0.82 : volatile ? 1.2 : coverKind === "ridge" ? 1.85 : 1.55),
+    elevation: coverKind === "ridge" ? 0.28 : 0,
     commandPoints: 0,
     maxCommandPoints: 0,
     status: statusFor("cover"),
     parts: [
-      part(volatile ? "cell" : "wall", volatile ? "Fuel Cell" : "Wall Block", volatile ? "volatile" : "core", hp, {
+      part(volatile ? "cell" : "wall", volatile ? (coverKind === "ammo" ? "Ammo Cache" : coverKind === "conduit" ? "Power Conduit" : "Fuel Cell") : coverKind === "ridge" ? "High Ground" : coverKind === "barricade" ? "Barricade" : "Wall Block", volatile ? "volatile" : "core", hp, {
         critical: true,
+        tags: coverKind === "ridge" ? ["high-ground"] : undefined,
       }),
     ],
   };

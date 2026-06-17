@@ -21,6 +21,7 @@ const hud = new Hud(ui, sim, {
   reset: () => sim.reset(),
   select: (id: string) => sim.select(id),
   queueMove: (destination) => sim.queueMove(destination),
+  queueMoveToCover: (id: string) => sim.queueMoveToCover(id),
   queueShootPart: (id: string, partId: string) => sim.queueShootPart(id, partId),
   queueRam: (id: string) => sim.queueRam(id),
   queueDefend: () => sim.queueDefend(),
@@ -40,7 +41,19 @@ canvas.addEventListener("pointerdown", (event) => {
   hud.chooseGround(stage.screenToWorld(event.clientX, event.clientY));
 });
 
+const heldKeys = new Set<string>();
+
+window.addEventListener("wheel", (event) => {
+  event.preventDefault();
+  stage.zoomBy(event.deltaY > 0 ? 0.08 : -0.08);
+}, { passive: false });
+
 window.addEventListener("keydown", (event) => {
+  if (["KeyW", "KeyA", "KeyS", "KeyD"].includes(event.code)) {
+    event.preventDefault();
+    heldKeys.add(event.code);
+    return;
+  }
   if (event.repeat) return;
   if (event.code === "Space") {
     event.preventDefault();
@@ -61,10 +74,20 @@ window.addEventListener("keydown", (event) => {
   }
 });
 
+window.addEventListener("keyup", (event) => {
+  heldKeys.delete(event.code);
+});
+
 let last = performance.now();
 function frame(now: number): void {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  stage.update(dt, {
+    up: heldKeys.has("KeyW"),
+    down: heldKeys.has("KeyS"),
+    left: heldKeys.has("KeyA"),
+    right: heldKeys.has("KeyD"),
+  });
   sim.update(dt);
   world.update(sim, hud.focusedTargetId, hud.focusedPartId);
   hud.update();
@@ -83,7 +106,9 @@ declare global {
       endTurn(): void;
       reset(): void;
       queueDefend(): void;
+      queueMoveToCover(id: string): boolean;
       cancelOrder(id: string): void;
+      camera(): { x: number; z: number; zoom: number };
     };
   }
 }
@@ -95,5 +120,7 @@ window.__rht = {
   endTurn: () => sim.endTurn(),
   reset: () => sim.reset(),
   queueDefend: () => sim.queueDefend(),
+  queueMoveToCover: (id) => sim.queueMoveToCover(id),
   cancelOrder: (id) => sim.cancelOrder(id),
+  camera: () => stage.viewState(),
 };
