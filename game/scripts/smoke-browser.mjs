@@ -100,14 +100,46 @@ try {
   await page.waitForFunction(() => window.__rht.sim.orders.length === 1 && window.__rht.sim.entity("p-soldier-1")?.commandPoints === 1);
   await page.locator(".undo-order").first().click();
   await page.waitForFunction(() => window.__rht.sim.orders.length === 0 && window.__rht.sim.entity("p-soldier-1")?.commandPoints === 2);
+  await page.mouse.move(24, 24);
   await page.waitForFunction(() => !document.querySelector(".hud-tooltip.visible"));
   await page.locator('[data-select="p-soldier-1"]').click();
-  await page.waitForFunction(() => document.querySelector(".target-panel h2")?.textContent?.includes("Rook"));
-  const ownPanel = await page.locator(".target-panel").textContent();
-  if (!ownPanel?.includes("Rook") || !ownPanel.includes("Legs") || !ownPanel.includes("24/24")) {
-    throw new Error(`Selecting own soldier did not expose part health: ${ownPanel}`);
+  await page.waitForFunction(() => document.querySelector(".commandbar")?.textContent?.includes("Legs"));
+  const ownSelection = await page.evaluate(() => ({
+    targetTitle: document.querySelector(".target-panel h2")?.textContent,
+    commandText: document.querySelector(".commandbar")?.textContent,
+  }));
+  if (ownSelection.targetTitle?.includes("Rook")) {
+    throw new Error(`Friendly unit details should not appear in the target panel: ${JSON.stringify(ownSelection)}`);
+  }
+  if (!ownSelection.commandText?.includes("Rook") || !ownSelection.commandText.includes("Legs") || !ownSelection.commandText.includes("24/24")) {
+    throw new Error(`Selecting own soldier did not expose command-bar part health: ${JSON.stringify(ownSelection)}`);
   }
   await page.screenshot({ path: join(OUT, "4-undone.png") });
+
+  await page.evaluate(() => {
+    const api = window.__rht;
+    api.reset();
+    api.sim.select("p-soldier-1");
+    api.sim.queueMove({ x: -8, z: -1.6 });
+    api.sim.queueMove({ x: -6.8, z: -0.8 });
+  });
+  await page.waitForFunction(() => window.__rht.sim.orders.length === 2 && document.querySelectorAll(".queued-chip").length === 2);
+  const twoMoveState = await page.evaluate(() => ({
+    commandText: document.querySelector(".commandbar")?.textContent,
+    chipCount: document.querySelectorAll(".queued-chip").length,
+    undoCount: document.querySelectorAll(".undo-order").length,
+    commandHeight: document.querySelector(".commandbar")?.getBoundingClientRect().height,
+  }));
+  if (twoMoveState.chipCount !== 2 || twoMoveState.undoCount !== 2 || !twoMoveState.commandText?.includes("queued 2 orders")) {
+    throw new Error(`Two move queue did not stay clear and undoable: ${JSON.stringify(twoMoveState)}`);
+  }
+  if (typeof twoMoveState.commandHeight === "number" && twoMoveState.commandHeight > 260) {
+    throw new Error(`Two move queue blocks too much screen: ${JSON.stringify(twoMoveState)}`);
+  }
+  await assertHudLayout(page, "desktop two move compact queue", [".topbar", ".roster", ".target-panel", ".commandbar"]);
+  await page.screenshot({ path: join(OUT, "4-two-moves-compact.png") });
+  await page.locator('[data-command="reset"]').click();
+  await page.waitForFunction(() => window.__rht.sim.phase === "command" && window.__rht.sim.turn === 1 && window.__rht.sim.orders.length === 0);
 
   await page.locator('[data-select="p-tank-1"]').click();
   await page.locator('[data-select="e-soldier-1"]').click();

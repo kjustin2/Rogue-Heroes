@@ -681,8 +681,103 @@ button {
 
 .queued-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 6px;
+}
+
+.queued-chip {
+  min-height: 38px;
+  padding: 6px 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  align-items: center;
+  text-align: left;
+  border-color: rgba(255, 202, 107, 0.5);
+  background:
+    linear-gradient(180deg, rgba(255, 202, 107, 0.14), rgba(76, 44, 18, 0.22)),
+    rgba(24, 20, 15, 0.82);
+}
+
+.queued-chip strong,
+.queued-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queued-chip strong {
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.queued-chip span {
+  grid-column: 1;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.queued-chip em {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  color: #fff0cc;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.own-parts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 6px;
+}
+
+.own-part {
+  min-height: 42px;
+  padding: 7px 8px;
+  border: 1px solid rgba(140, 239, 255, 0.18);
+  border-radius: 6px;
+  background:
+    linear-gradient(90deg, rgba(140, 239, 255, 0.08), rgba(255, 255, 255, 0.025)),
+    rgba(255, 255, 255, 0.03);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1px 8px;
+}
+
+.own-part strong,
+.own-part span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.own-part strong {
+  font-size: 0.82rem;
+}
+
+.own-part span {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.own-part em {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+  color: #e3efec;
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.own-part.destroyed {
+  border-color: rgba(255, 113, 105, 0.22);
+  color: #899391;
+  background: rgba(57, 23, 21, 0.18);
 }
 
 .part-options {

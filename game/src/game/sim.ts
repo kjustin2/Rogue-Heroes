@@ -231,14 +231,16 @@ export class TacticalSim {
   }
 
   previewShot(actorId: string, targetId: string, partId: string): ShotPreview | undefined {
-    const actor = this.entity(actorId);
+    const sourceActor = this.entity(actorId);
     const intendedTarget = this.entity(targetId);
-    if (!actor || !intendedTarget || actor.id === intendedTarget.id) return undefined;
+    if (!sourceActor || !intendedTarget || sourceActor.id === intendedTarget.id) return undefined;
     const intendedPart = this.targetableParts(intendedTarget).find((part) => part.id === partId);
     if (!intendedPart) return undefined;
 
-    const from = muzzlePoint(actor);
+    const actor = this.projectedActorForPreview(sourceActor);
     const aimPoint = aimPointFor(intendedTarget, intendedPart);
+    actor.yaw = Math.atan2(aimPoint.x - actor.position.x, aimPoint.z - actor.position.z);
+    const from = muzzlePoint(actor);
     const cover = this.firstCoverBetweenPoints(from, aimPoint, intendedTarget.id);
     const impactTarget = cover ?? intendedTarget;
     const impactPart = cover ? preferredPart(cover, "center") : intendedPart;
@@ -297,7 +299,8 @@ export class TacticalSim {
     this.defending.clear();
     if (this.phase !== "resolve") return;
     this.resolveClock += dt;
-    for (const order of this.orders) {
+    for (let index = 0; index < this.orders.length; index += 1) {
+      const order = this.orders[index];
       if (!order.done) this.updateOrder(order, dt);
     }
     this.updateProjectiles(dt);
@@ -337,6 +340,7 @@ export class TacticalSim {
   }
 
   private updateOrder(order: TacticalOrder, dt: number): void {
+    if (this.hasActivePriorOrder(order)) return;
     const actor = this.entity(order.actorId);
     if (!actor || !actor.status.alive) {
       order.done = true;
@@ -372,7 +376,11 @@ export class TacticalSim {
         order.done = true;
         return;
       }
-      actor.yaw = Math.atan2(target.position.x - actor.position.x, target.position.z - actor.position.z);
+      const targetPart = order.targetPartId
+        ? preferredPartByIdOrAim(target, order.targetPartId, order.aim)
+        : preferredPart(target, order.aim);
+      const aimPoint = aimPointFor(target, targetPart);
+      actor.yaw = Math.atan2(aimPoint.x - actor.position.x, aimPoint.z - actor.position.z);
       if (!order.fired && order.elapsed >= 0.32) {
         order.fired = true;
         order.projectileId = this.launchProjectile(order, actor, target);
@@ -392,6 +400,31 @@ export class TacticalSim {
       this.resolveRam(actor, target);
     }
     if (order.elapsed >= order.duration) order.done = true;
+  }
+
+  private hasActivePriorOrder(order: TacticalOrder): boolean {
+    const index = this.orders.indexOf(order);
+    if (index <= 0) return false;
+    return this.orders.slice(0, index).some((candidate) => candidate.actorId === order.actorId && !candidate.done);
+  }
+
+  private projectedActorForPreview(actor: CombatEntity): CombatEntity {
+    const projected: CombatEntity = {
+      ...actor,
+      position: { ...actor.position },
+      status: { ...actor.status },
+      parts: actor.parts,
+    };
+    for (const order of this.orders) {
+      if (order.actorId !== actor.id || order.done) continue;
+      if (order.kind === "move" && order.destination) {
+        projected.position = { ...order.destination };
+      } else if (order.kind === "ram") {
+        const target = this.entity(order.targetId);
+        if (target) projected.position = moveToward(projected.position, target.position, Math.max(0, dist(projected.position, target.position) - actor.radius - target.radius - 0.25));
+      }
+    }
+    return projected;
   }
 
   private launchProjectile(order: TacticalOrder, actor: CombatEntity, target: CombatEntity): string {

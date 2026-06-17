@@ -54,6 +54,42 @@ describe("tactical simulation loop", () => {
     expect(sim.log[0]).toBe("Rook order cancelled");
   });
 
+  it("previews a queued follow-up shot from the unit's moved position", () => {
+    const enemy = createSoldier("enemy", "Cutlass", "enemy", { x: 6, z: 0 });
+    const sim = new TacticalSim([
+      createSoldier("player", "Rook", "player", { x: 0, z: 0 }),
+      enemy,
+    ]);
+
+    const initialPreview = sim.previewShot("player", "enemy", "head");
+    sim.select("player");
+    expect(sim.queueMove({ x: 2, z: 0 })).toBe(true);
+    const movedPreview = sim.previewShot("player", "enemy", "head");
+
+    expect(initialPreview).toBeDefined();
+    expect(movedPreview).toBeDefined();
+    expect(movedPreview!.from.x).toBeGreaterThan(initialPreview!.from.x + 1.7);
+  });
+
+  it("executes move then shoot from the moved position", () => {
+    const enemy = createSoldier("enemy", "Cutlass", "enemy", { x: 6, z: 0 });
+    applyDamage(enemy, "rifle", 99);
+    const sim = new TacticalSim([
+      createSoldier("player", "Rook", "player", { x: 0, z: 0 }),
+      enemy,
+    ]);
+
+    sim.select("player");
+    expect(sim.queueMove({ x: 2, z: 0 })).toBe(true);
+    expect(sim.queueShootPart("enemy", "head")).toBe(true);
+    sim.endTurn();
+    advanceUntil(sim, () => sim.projectiles.length > 0, 1.5);
+
+    expect(sim.entity("player")?.position.x).toBeGreaterThan(1.9);
+    expect(sim.projectiles[0]?.origin.x).toBeGreaterThan(2.2);
+    expect(sim.projectiles[0]?.origin.x).toBeLessThan(2.7);
+  });
+
   it("can finish a one-fight victory from normal queued combat", () => {
     const sim = new TacticalSim([
       createTank("player-tank", "Hammer", "player", { x: 0, z: 0 }),
@@ -238,6 +274,10 @@ describe("tactical simulation loop", () => {
 
 function advance(sim: TacticalSim, seconds: number): void {
   for (let elapsed = 0; elapsed < seconds; elapsed += 0.05) sim.update(0.05);
+}
+
+function advanceUntil(sim: TacticalSim, predicate: () => boolean, seconds: number): void {
+  for (let elapsed = 0; elapsed < seconds && !predicate(); elapsed += 0.05) sim.update(0.05);
 }
 
 function enemyShootOrder(id: string, actorId: string, targetId: string, targetPartId: string) {

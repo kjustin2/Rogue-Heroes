@@ -189,7 +189,7 @@ export class Hud {
 
   private chooseUnit(id: string): void {
     this.callbacks.select(id);
-    this.targetId = id;
+    this.targetId = undefined;
     this.targetPartId = undefined;
     this.action = "select";
     this.callbacks.setIntent("select");
@@ -361,6 +361,7 @@ function orderPlanner(
   const defendTip = actor?.kind === "soldier"
     ? "Costs 1 CP. Ducking avoids head-targeted shots during this turn's resolve."
     : "Only soldiers can duck.";
+  const showActions = !actor || actor.commandPoints > 0 || orders.length === 0;
 
   return `
     <div class="order-head">
@@ -373,13 +374,13 @@ function orderPlanner(
       </div>
     </div>
 
-    <div class="action-row">
+    ${showActions ? `<div class="action-row">
       ${ORDER_ACTIONS.map((option) => {
         const disabled = actionDisabled(option.id, actor, sim);
         const tip = option.id === "ram" ? ramTip : option.id === "defend" ? defendTip : option.tip;
         return `<button class="tool action ${action === option.id ? "active" : ""} ${disabled ? "disabled" : ""}" data-order-action="${option.id}" data-disabled="${disabled}" data-tip="${escapeAttr(tip)}">${option.label}<span>1 CP</span></button>`;
       }).join("")}
-    </div>
+    </div>` : ""}
 
     <div class="order-body">
       ${orders.length ? queuedOrdersState(actor, orders, sim) : ""}
@@ -387,7 +388,7 @@ function orderPlanner(
       ${action === "shoot" ? shootState(actor, target, targetPartId, preview, blocker, canShoot, sim) : ""}
       ${action === "ram" ? ramState(target, canRam, ramTip) : ""}
       ${action === "defend" ? defendState(actor, canDefend, defendTip) : ""}
-      ${action === "select" ? orderSummaryState(actor, target) : ""}
+      ${action === "select" && !orders.length ? orderSummaryState(actor, target) : ""}
     </div>
   `;
 }
@@ -470,6 +471,7 @@ function orderSummaryState(actor: CombatEntity | undefined, target: CombatEntity
       <strong>${actor ? escapeHtml(actor.name) : "Select a unit"}</strong>
       <span>${target ? `Inspecting ${escapeHtml(target.name)}.` : "No target selected."}</span>
     </div>
+    ${actor ? ownPartGrid(actor) : ""}
   `;
 }
 
@@ -477,14 +479,29 @@ function queuedOrdersState(actor: CombatEntity | undefined, orders: TacticalOrde
   return `
     <div class="target-summary queued">
       <strong>${actor ? escapeHtml(actor.name) : "Selected unit"} queued ${orders.length} order${orders.length === 1 ? "" : "s"}</strong>
-      <span>${orders.map((order) => escapeHtml(orderSummary(order, sim))).join(" / ")}. Spend remaining CP or undo individual choices before ending the turn.</span>
+      <span>${orders.map((order, index) => `${index + 1}. ${escapeHtml(orderSummary(order, sim).replace("Queued: ", ""))}`).join(" / ")}. Spend remaining CP or undo a step before ending the turn.</span>
     </div>
     <div class="queued-list">
-      ${orders.map((order) => `
-        <button class="btn confirm undo-order" data-cancel-order="${order.id}" data-tip="Cancel this queued ${order.kind} order and refund 1 CP.">
-          Undo ${escapeHtml(order.kind)}
+      ${orders.map((order, index) => `
+        <button class="queued-chip undo-order" data-cancel-order="${order.id}" data-tip="Undo step ${index + 1}: ${escapeAttr(orderSummary(order, sim).replace("Queued: ", ""))}. Refunds 1 CP.">
+          <strong>${index + 1}. ${escapeHtml(order.kind)}</strong>
           <span>${escapeHtml(orderSummary(order, sim).replace("Queued: ", ""))}</span>
+          <em>undo</em>
         </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+function ownPartGrid(actor: CombatEntity): string {
+  return `
+    <div class="own-parts" data-tip="Selected squad unit health. These are your unit's damageable parts.">
+      ${actor.parts.map((part) => `
+        <div class="own-part ${part.hp <= 0 ? "destroyed" : ""}">
+          <strong>${escapeHtml(part.label)}</strong>
+          <span>${part.role}</span>
+          <em>${Math.max(0, Math.ceil(part.hp))}/${part.maxHp}</em>
+        </div>
       `).join("")}
     </div>
   `;

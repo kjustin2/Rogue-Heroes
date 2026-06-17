@@ -486,19 +486,22 @@ export class WorldRenderer {
 
   private syncOrders(sim: TacticalSim): void {
     this.orderRoot.clear();
+    const projectedPositions = new Map<string, { x: number; z: number }>();
     for (const order of sim.orders) {
       const actor = sim.entity(order.actorId);
       if (!actor) continue;
+      const from = projectedPositions.get(actor.id) ?? actor.position;
       if (order.kind === "defend") {
-        this.orderRoot.add(makeEndpoint(actor.position, 0x8de4ff, actor.radius + 0.45));
-        this.orderRoot.add(makeEndpoint(actor.position, 0xffffff, actor.radius + 0.14));
+        this.orderRoot.add(makeEndpoint(from, 0x8de4ff, actor.radius + 0.45));
+        this.orderRoot.add(makeEndpoint(from, 0xffffff, actor.radius + 0.14));
         continue;
       }
       const to = order.destination ?? sim.entity(order.targetId)?.position;
       if (!to) continue;
       const color = order.kind === "move" ? 0x9dfcff : order.kind === "ram" ? 0xffbf4d : 0xff7f67;
-      this.orderRoot.add(makeTubeLine(actor.position, to, color, 0.3, 0.13, 0.025));
-      this.orderRoot.add(makeLine(actor.position, to, color, 0.55, 0.18));
+      this.orderRoot.add(makeTubeLine(from, to, color, 0.3, 0.13, 0.025));
+      this.orderRoot.add(makeLine(from, to, color, 0.55, 0.18));
+      if (order.kind === "move" && order.destination) projectedPositions.set(actor.id, order.destination);
     }
   }
 
@@ -531,13 +534,10 @@ export class WorldRenderer {
       const tracer = makeLine(projectile.previous, projectile.position, style.trailColor, 0.9, style.lineY);
       this.projectileRoot.add(tracer);
 
-      const shell = new THREE.Mesh(
-        projectileGeometry(projectile.kind),
-        projectileMaterial(projectile.kind, projectile.color)
-      );
-      shell.position.set(projectile.position.x, style.meshY, projectile.position.z);
-      orientAlongShot(shell, projectile.previous, projectile.position);
-      this.projectileRoot.add(shell);
+      const model = makeProjectileModel(projectile);
+      model.position.set(projectile.position.x, style.meshY, projectile.position.z);
+      orientAlongShot(model, projectile.previous, projectile.position);
+      this.projectileRoot.add(model);
 
       const glow = new THREE.PointLight(style.trailColor, style.glow, style.glowRange);
       glow.position.set(projectile.position.x, style.meshY + 0.1, projectile.position.z);
@@ -622,6 +622,45 @@ function orientAlongShot(mesh: THREE.Object3D, from: { x: number; z: number }, t
   const delta = new THREE.Vector3(to.x - from.x, 0, to.z - from.z);
   if (delta.lengthSq() < 0.0001) return;
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
+}
+
+function makeProjectileModel(projectile: Projectile): THREE.Group {
+  const group = new THREE.Group();
+  if (projectile.kind === "shell") {
+    const body = new THREE.Mesh(projectileGeometry("shell-body"), projectileMaterial("shell-body", 0xbfd1cc, 0.98));
+    const nose = new THREE.Mesh(projectileGeometry("shell-nose"), projectileMaterial("shell-nose", projectile.color, 0.98));
+    const exhaust = new THREE.Mesh(projectileGeometry("shell-exhaust"), projectileMaterial("shell-exhaust", 0xffd166, 0.72));
+    nose.position.y = 0.33;
+    exhaust.position.y = -0.32;
+    exhaust.scale.set(1.1, 0.62, 1.1);
+    for (const angle of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
+      const fin = new THREE.Mesh(projectileGeometry("shell-fin"), projectileMaterial("shell-fin", 0x6e7a78, 0.92));
+      fin.position.set(Math.cos(angle) * 0.13, -0.18, Math.sin(angle) * 0.13);
+      fin.rotation.y = angle;
+      group.add(fin);
+    }
+    group.add(body, nose, exhaust);
+    return group;
+  }
+  if (projectile.kind === "bolt") {
+    const core = new THREE.Mesh(projectileGeometry("bolt-core"), projectileMaterial("bolt-core", 0xffd166, 0.98));
+    const ringA = new THREE.Mesh(projectileGeometry("bolt-ring"), projectileMaterial("bolt-ring-a", 0xfff1a6, 0.62));
+    const ringB = new THREE.Mesh(projectileGeometry("bolt-ring"), projectileMaterial("bolt-ring-b", 0xff765f, 0.48));
+    ringA.rotation.x = Math.PI / 2;
+    ringB.rotation.x = Math.PI / 2;
+    ringB.rotation.z = Math.PI / 2;
+    ringA.scale.setScalar(0.92);
+    ringB.scale.setScalar(0.68);
+    group.add(core, ringA, ringB);
+    return group;
+  }
+  const slug = new THREE.Mesh(projectileGeometry("rifle-slug"), projectileMaterial("rifle-slug", 0xeaffff, 0.98));
+  const tip = new THREE.Mesh(projectileGeometry("rifle-tip"), projectileMaterial("rifle-tip", projectile.color, 0.96));
+  const spark = new THREE.Mesh(projectileGeometry("rifle-spark"), projectileMaterial("rifle-spark", 0xfff1a6, 0.72));
+  tip.position.y = 0.18;
+  spark.position.y = -0.2;
+  group.add(slug, tip, spark);
+  return group;
 }
 
 function roleColor(entity: CombatEntity, role: PartRole, fallback: number): number {
@@ -753,28 +792,41 @@ function endpointMaterial(color: number): THREE.MeshBasicMaterial {
   return material as THREE.MeshBasicMaterial;
 }
 
-function projectileGeometry(kind: Projectile["kind"]): THREE.BufferGeometry {
-  let geometry = projectileGeometries.get(kind);
+function projectileGeometry(key: string): THREE.BufferGeometry {
+  let geometry = projectileGeometries.get(key);
   if (!geometry) {
-    if (kind === "shell") {
-      geometry = new THREE.ConeGeometry(0.18, 0.52, 16);
-    } else if (kind === "bolt") {
+    if (key === "shell-body") {
+      geometry = new THREE.CylinderGeometry(0.14, 0.16, 0.42, 16);
+    } else if (key === "shell-nose") {
+      geometry = new THREE.ConeGeometry(0.15, 0.3, 16);
+    } else if (key === "shell-exhaust") {
+      geometry = new THREE.SphereGeometry(0.14, 12, 8);
+    } else if (key === "shell-fin") {
+      geometry = new THREE.BoxGeometry(0.05, 0.18, 0.34);
+    } else if (key === "bolt-core") {
       geometry = new THREE.OctahedronGeometry(0.2, 0);
+    } else if (key === "bolt-ring") {
+      geometry = new THREE.TorusGeometry(0.26, 0.018, 8, 24);
+    } else if (key === "rifle-slug") {
+      geometry = new THREE.CylinderGeometry(0.035, 0.045, 0.34, 10);
+    } else if (key === "rifle-tip") {
+      geometry = new THREE.SphereGeometry(0.055, 10, 8);
+    } else if (key === "rifle-spark") {
+      geometry = new THREE.SphereGeometry(0.08, 10, 8);
     } else {
-      geometry = new THREE.SphereGeometry(0.07, 10, 8);
+      geometry = new THREE.SphereGeometry(0.08, 10, 8);
     }
-    projectileGeometries.set(kind, geometry);
+    projectileGeometries.set(key, geometry);
   }
   return geometry;
 }
 
-function projectileMaterial(kind: Projectile["kind"], color: number): THREE.MeshBasicMaterial {
-  const tint = kind === "bolt" ? 0xffd166 : color;
-  const key = `projectile:${kind}:${tint}`;
-  let material = materials.get(key);
+function projectileMaterial(key: string, color: number, opacity: number): THREE.MeshBasicMaterial {
+  const materialKey = `projectile:${key}:${color}:${opacity.toFixed(2)}`;
+  let material = materials.get(materialKey);
   if (!material) {
-    material = new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: kind === "rifle" ? 0.94 : 0.98 });
-    materials.set(key, material);
+    material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+    materials.set(materialKey, material);
   }
   return material as THREE.MeshBasicMaterial;
 }
