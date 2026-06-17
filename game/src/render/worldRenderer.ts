@@ -533,6 +533,7 @@ export class WorldRenderer {
       this.projectileRoot.add(makeTubeLine(projectile.previous, projectile.position, style.trailColor, style.trailOpacity, style.trailY, style.trailRadius));
       const tracer = makeLine(projectile.previous, projectile.position, style.trailColor, 0.9, style.lineY);
       this.projectileRoot.add(tracer);
+      for (const accent of projectileAccentTrails(projectile)) this.projectileRoot.add(accent);
 
       const model = makeProjectileModel(projectile);
       model.position.set(projectile.position.x, style.meshY, projectile.position.z);
@@ -630,16 +631,25 @@ function makeProjectileModel(projectile: Projectile): THREE.Group {
     const body = new THREE.Mesh(projectileGeometry("shell-body"), projectileMaterial("shell-body", 0xbfd1cc, 0.98));
     const nose = new THREE.Mesh(projectileGeometry("shell-nose"), projectileMaterial("shell-nose", projectile.color, 0.98));
     const exhaust = new THREE.Mesh(projectileGeometry("shell-exhaust"), projectileMaterial("shell-exhaust", 0xffd166, 0.72));
+    const bandA = new THREE.Mesh(projectileGeometry("shell-band"), projectileMaterial("shell-band-a", 0x1d2426, 0.9));
+    const bandB = new THREE.Mesh(projectileGeometry("shell-band"), projectileMaterial("shell-band-b", projectile.color, 0.88));
     nose.position.y = 0.33;
     exhaust.position.y = -0.32;
-    exhaust.scale.set(1.1, 0.62, 1.1);
+    exhaust.scale.setScalar(1.08 + Math.sin(projectile.age * 24) * 0.16);
+    bandA.position.y = 0.02;
+    bandB.position.y = -0.14;
+    bandA.rotation.x = Math.PI / 2;
+    bandB.rotation.x = Math.PI / 2;
+    bandA.scale.setScalar(0.95);
+    bandB.scale.setScalar(0.78);
     for (const angle of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
       const fin = new THREE.Mesh(projectileGeometry("shell-fin"), projectileMaterial("shell-fin", 0x6e7a78, 0.92));
       fin.position.set(Math.cos(angle) * 0.13, -0.18, Math.sin(angle) * 0.13);
       fin.rotation.y = angle;
       group.add(fin);
     }
-    group.add(body, nose, exhaust);
+    group.add(body, nose, exhaust, bandA, bandB);
+    group.scale.setScalar(1.14);
     return group;
   }
   if (projectile.kind === "bolt") {
@@ -648,19 +658,50 @@ function makeProjectileModel(projectile: Projectile): THREE.Group {
     const ringB = new THREE.Mesh(projectileGeometry("bolt-ring"), projectileMaterial("bolt-ring-b", 0xff765f, 0.48));
     ringA.rotation.x = Math.PI / 2;
     ringB.rotation.x = Math.PI / 2;
-    ringB.rotation.z = Math.PI / 2;
+    ringA.rotation.z = projectile.age * 6;
+    ringB.rotation.z = Math.PI / 2 - projectile.age * 8;
     ringA.scale.setScalar(0.92);
     ringB.scale.setScalar(0.68);
+    core.scale.setScalar(1 + Math.sin(projectile.age * 18) * 0.08);
     group.add(core, ringA, ringB);
+    group.scale.setScalar(1.18);
     return group;
   }
   const slug = new THREE.Mesh(projectileGeometry("rifle-slug"), projectileMaterial("rifle-slug", 0xeaffff, 0.98));
   const tip = new THREE.Mesh(projectileGeometry("rifle-tip"), projectileMaterial("rifle-tip", projectile.color, 0.96));
   const spark = new THREE.Mesh(projectileGeometry("rifle-spark"), projectileMaterial("rifle-spark", 0xfff1a6, 0.72));
+  const tailA = new THREE.Mesh(projectileGeometry("rifle-tail"), projectileMaterial("rifle-tail-a", projectile.color, 0.42));
+  const tailB = new THREE.Mesh(projectileGeometry("rifle-tail"), projectileMaterial("rifle-tail-b", 0xeaffff, 0.28));
   tip.position.y = 0.18;
   spark.position.y = -0.2;
-  group.add(slug, tip, spark);
+  tailA.position.y = -0.24;
+  tailB.position.y = -0.34;
+  tailB.scale.setScalar(0.72);
+  group.add(slug, tip, spark, tailA, tailB);
   return group;
+}
+
+function projectileAccentTrails(projectile: Projectile): THREE.Object3D[] {
+  if (projectile.kind === "shell") {
+    return [
+      makeTubeLine(projectile.previous, projectile.position, 0xffd166, 0.2, 0.52, 0.13),
+      makeLine(offsetPoint(projectile.previous, 0.08), offsetPoint(projectile.position, 0.08), 0xffffff, 0.24, 0.36),
+    ];
+  }
+  if (projectile.kind === "bolt") {
+    return [
+      makeTubeLine(projectile.previous, projectile.position, 0xfff1a6, 0.28, 1.04, 0.11),
+      makeLine(offsetPoint(projectile.previous, -0.1), offsetPoint(projectile.position, -0.1), 0xff765f, 0.36, 0.52),
+    ];
+  }
+  return [
+    makeLine(offsetPoint(projectile.previous, 0.045), offsetPoint(projectile.position, 0.045), 0xeaffff, 0.52, 0.62),
+    makeLine(offsetPoint(projectile.previous, -0.045), offsetPoint(projectile.position, -0.045), projectile.color, 0.34, 0.5),
+  ];
+}
+
+function offsetPoint(point: { x: number; z: number }, amount: number): { x: number; z: number } {
+  return { x: point.x + amount, z: point.z - amount };
 }
 
 function roleColor(entity: CombatEntity, role: PartRole, fallback: number): number {
@@ -801,6 +842,8 @@ function projectileGeometry(key: string): THREE.BufferGeometry {
       geometry = new THREE.ConeGeometry(0.15, 0.3, 16);
     } else if (key === "shell-exhaust") {
       geometry = new THREE.SphereGeometry(0.14, 12, 8);
+    } else if (key === "shell-band") {
+      geometry = new THREE.TorusGeometry(0.16, 0.012, 8, 18);
     } else if (key === "shell-fin") {
       geometry = new THREE.BoxGeometry(0.05, 0.18, 0.34);
     } else if (key === "bolt-core") {
@@ -813,6 +856,8 @@ function projectileGeometry(key: string): THREE.BufferGeometry {
       geometry = new THREE.SphereGeometry(0.055, 10, 8);
     } else if (key === "rifle-spark") {
       geometry = new THREE.SphereGeometry(0.08, 10, 8);
+    } else if (key === "rifle-tail") {
+      geometry = new THREE.ConeGeometry(0.055, 0.22, 10);
     } else {
       geometry = new THREE.SphereGeometry(0.08, 10, 8);
     }

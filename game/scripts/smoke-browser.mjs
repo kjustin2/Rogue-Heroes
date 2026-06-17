@@ -43,6 +43,22 @@ try {
   await page.waitForSelector(".topbar");
   await assertCanvasPainted(page, "desktop command");
   await assertHudLayout(page, "desktop command", [".topbar", ".roster", ".target-panel", ".commandbar", ".log"]);
+  const commandDeckState = await page.evaluate(() => ({
+    layout: Boolean(document.querySelector(".command-layout")),
+    actionDeck: Boolean(document.querySelector(".action-deck")),
+    detailDeck: Boolean(document.querySelector(".detail-deck")),
+    sectionLabels: Array.from(document.querySelectorAll(".section-label")).map((node) => node.textContent?.trim()),
+    actionLabels: Array.from(document.querySelectorAll("[data-order-action] strong")).map((node) => node.textContent?.trim()),
+  }));
+  if (!commandDeckState.layout || !commandDeckState.actionDeck || !commandDeckState.detailDeck) {
+    throw new Error(`Command deck is not organized into action/detail sections: ${JSON.stringify(commandDeckState)}`);
+  }
+  if (!commandDeckState.sectionLabels.includes("Actions") || !commandDeckState.sectionLabels.includes("Detail")) {
+    throw new Error(`Command deck section labels are unclear: ${JSON.stringify(commandDeckState)}`);
+  }
+  for (const label of ["1. Move", "2. Shoot", "3. Ram", "4. Duck"]) {
+    if (!commandDeckState.actionLabels.includes(label)) throw new Error(`Missing organized action label ${label}: ${JSON.stringify(commandDeckState)}`);
+  }
   await page.screenshot({ path: join(OUT, "1-command.png") });
 
   await page.locator('[data-select="p-soldier-1"]').click();

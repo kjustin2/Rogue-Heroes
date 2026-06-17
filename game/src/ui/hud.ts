@@ -361,7 +361,16 @@ function orderPlanner(
   const defendTip = actor?.kind === "soldier"
     ? "Costs 1 CP. Ducking avoids head-targeted shots during this turn's resolve."
     : "Only soldiers can duck.";
-  const showActions = !actor || actor.commandPoints > 0 || orders.length === 0;
+  const showActions = !actor || actor.commandPoints > 0;
+
+  const actionBody = [
+    orders.length ? queuedOrdersState(actor, orders, sim) : "",
+    action === "move" ? moveState(actor) : "",
+    action === "shoot" ? shootState(actor, target, targetPartId, preview, blocker, canShoot, sim) : "",
+    action === "ram" ? ramState(target, canRam, ramTip) : "",
+    action === "defend" ? defendState(actor, canDefend, defendTip) : "",
+    action === "select" && !orders.length ? orderSummaryState(actor, target) : "",
+  ].filter(Boolean).join("");
 
   return `
     <div class="order-head">
@@ -374,21 +383,25 @@ function orderPlanner(
       </div>
     </div>
 
-    ${showActions ? `<div class="action-row">
-      ${ORDER_ACTIONS.map((option) => {
-        const disabled = actionDisabled(option.id, actor, sim);
-        const tip = option.id === "ram" ? ramTip : option.id === "defend" ? defendTip : option.tip;
-        return `<button class="tool action ${action === option.id ? "active" : ""} ${disabled ? "disabled" : ""}" data-order-action="${option.id}" data-disabled="${disabled}" data-tip="${escapeAttr(tip)}">${option.label}<span>1 CP</span></button>`;
-      }).join("")}
-    </div>` : ""}
-
-    <div class="order-body">
-      ${orders.length ? queuedOrdersState(actor, orders, sim) : ""}
-      ${action === "move" ? moveState(actor) : ""}
-      ${action === "shoot" ? shootState(actor, target, targetPartId, preview, blocker, canShoot, sim) : ""}
-      ${action === "ram" ? ramState(target, canRam, ramTip) : ""}
-      ${action === "defend" ? defendState(actor, canDefend, defendTip) : ""}
-      ${action === "select" && !orders.length ? orderSummaryState(actor, target) : ""}
+    <div class="command-layout">
+      ${showActions ? `
+        <div class="command-section action-deck">
+          <div class="section-label">Actions</div>
+          <div class="action-row">
+            ${ORDER_ACTIONS.map((option, index) => {
+              const disabled = actionDisabled(option.id, actor, sim);
+              const tip = option.id === "ram" ? ramTip : option.id === "defend" ? defendTip : option.tip;
+              return `<button class="tool action action-${option.id} ${action === option.id ? "active" : ""} ${disabled ? "disabled" : ""}" data-order-action="${option.id}" data-disabled="${disabled}" data-tip="${escapeAttr(tip)}"><strong>${index + 1}. ${option.label}</strong><span>1 CP</span></button>`;
+            }).join("")}
+          </div>
+        </div>
+      ` : ""}
+      <div class="command-section detail-deck">
+        <div class="section-label">${orders.length ? "Queued / Detail" : "Detail"}</div>
+        <div class="order-body">
+          ${actionBody}
+        </div>
+      </div>
     </div>
   `;
 }

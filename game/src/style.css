@@ -603,24 +603,60 @@ button {
   left: 320px;
   right: 378px;
   bottom: 16px;
-  min-height: 190px;
+  min-height: 178px;
   overflow: visible;
   padding: 14px;
   display: grid;
   gap: 12px;
 }
 
+.command-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.78fr) minmax(0, 1.35fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.command-layout > .detail-deck:only-child {
+  grid-column: 1 / -1;
+}
+
+.command-section {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.section-label {
+  min-height: 18px;
+  color: #9fbab7;
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.section-label::before {
+  content: "";
+  display: inline-block;
+  width: 18px;
+  height: 2px;
+  margin-right: 7px;
+  vertical-align: 0.22em;
+  background: linear-gradient(90deg, var(--cyan), var(--amber));
+  box-shadow: 0 0 12px rgba(140, 239, 255, 0.4);
+}
+
 .action-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(96px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
 }
 
 .tool {
   position: relative;
-  min-height: 50px;
-  padding: 9px 10px;
-  font-size: 0.92rem;
+  min-height: 48px;
+  padding: 8px 10px 8px 12px;
+  font-size: 0.9rem;
   font-weight: 900;
   overflow: hidden;
 }
@@ -638,10 +674,52 @@ button {
 
 .tool.action {
   text-align: left;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  align-items: center;
+}
+
+.tool.action::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  background: var(--cyan);
+  box-shadow: 0 0 14px rgba(140, 239, 255, 0.48);
+}
+
+.tool.action strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tool.action span {
-  margin-top: 3px;
+  margin-top: 0;
+  color: #e6f0ed;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-align: right;
+}
+
+.action-move::before {
+  background: var(--cyan);
+}
+
+.action-shoot::before {
+  background: var(--orange);
+}
+
+.action-ram::before {
+  background: var(--amber);
+}
+
+.action-defend::before {
+  background: var(--mint);
 }
 
 .order-body {
@@ -977,17 +1055,38 @@ button {
     bottom: 12px;
     max-height: 250px;
     min-height: 0;
-    overflow: visible;
+    overflow: hidden auto;
     padding: 10px;
   }
 
+  .command-layout {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .section-label {
+    min-height: 15px;
+    font-size: 0.66rem;
+  }
+
   .action-row {
-    grid-template-columns: repeat(4, minmax(72px, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
   }
 
   .tool {
-    min-height: 44px;
-    font-size: 0.82rem;
+    min-height: 42px;
+    padding: 7px 8px;
+    font-size: 0.78rem;
+  }
+
+  .tool.action {
+    grid-template-columns: 1fr;
+    gap: 1px;
+  }
+
+  .tool.action span {
+    text-align: left;
   }
 
   .mini-action {
