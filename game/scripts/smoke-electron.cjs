@@ -116,8 +116,13 @@ async function run() {
     await win.loadURL(`http://127.0.0.1:${port}/`);
     await waitFor(() => js("Boolean(window.__rht && document.querySelector('.topbar'))"), "game boot");
     await assertCanvasPainted(js, "electron command");
+    const initialDrawers = await js("({ targetPanel: Boolean(document.querySelector('.target-panel')), unitDetail: Boolean(document.querySelector('.unit-detail-panel')) })");
+    if (initialDrawers.targetPanel || initialDrawers.unitDetail) {
+      throw new Error(`Electron command view opens too many drawers: ${JSON.stringify(initialDrawers)}`);
+    }
     await shot(win, "command");
 
+    await clickRequired('[data-order-action="shoot"]', "shoot action button");
     await clickRequired('[data-select="e-tank-1"]', "Breaker target button");
     await clickRequired('.part-choice[data-part="left-tread"]', "left tread part option");
     await waitFor(() => js("document.querySelector('.part-choice.active')?.getAttribute('data-part') === 'left-tread'"), "left tread selected");
@@ -141,12 +146,17 @@ async function run() {
         }
       }
       const placements = new Map([
-        ["p-tank-1", { x: -5, z: 0 }],
-        ["p-soldier-1", { x: -5, z: -2.4 }],
-        ["p-soldier-2", { x: -5, z: 2.4 }],
+        ["p-sniper-1", { x: -2, z: 0 }],
+        ["p-soldier-1", { x: -2, z: -2.4 }],
+        ["p-soldier-2", { x: -2, z: 2.4 }],
+        ["p-grenadier-1", { x: -2, z: 4.8 }],
+        ["p-striker-1", { x: -1.6, z: 0.8 }],
+        ["p-tank-1", { x: -2, z: -4.8 }],
         ["e-tank-1", { x: 1.2, z: 0 }],
         ["e-soldier-1", { x: 1.2, z: -2.4 }],
-        ["e-base-1", { x: 1.2, z: 2.4 }],
+        ["e-sniper-1", { x: 1.2, z: 2.4 }],
+        ["e-grenadier-1", { x: 1.2, z: 4.8 }],
+        ["e-base-1", { x: 1.2, z: -4.8 }],
       ]);
       for (const [id, position] of placements) {
         const entity = sim.entity(id);
@@ -155,26 +165,37 @@ async function run() {
       }
       for (const enemy of sim.entities.filter((entity) => entity.team === "enemy")) {
         const critical = enemy.parts.find((part) => part.critical);
-        critical.hp = Math.min(critical.hp, 10);
+        critical.hp = Math.min(critical.hp, 1);
+        if (enemy.id === "e-tank-1") {
+          const frontPlate = enemy.parts.find((part) => part.id === "front-plate");
+          if (frontPlate) frontPlate.hp = 0;
+        }
       }
-      sim.select("p-tank-1");
-      sim.queueShootPart("e-tank-1", "hull");
+      for (const player of sim.entities.filter((entity) => entity.team === "player" && entity.kind !== "tank")) {
+        player.stance = "crouched";
+      }
+      sim.select("p-striker-1");
+      sim.queueMelee("e-tank-1");
       sim.select("p-soldier-1");
-      sim.queueShootPart("e-soldier-1", "head");
+      sim.queueShootPart("e-soldier-1", "body");
       sim.select("p-soldier-2");
+      sim.queueShootPart("e-sniper-1", "body");
+      sim.select("p-grenadier-1");
+      sim.queueShootPart("e-grenadier-1", "body");
+      sim.select("p-tank-1");
       sim.queueShootPart("e-base-1", "core");
       api.endTurn();
     })()`);
 
-    await sleep(950);
+    await waitFor(() => js("window.__rht.sim.phase === 'resolve' && window.__rht.sim.projectiles.length > 0"), "active resolve projectile", 3000);
     const resolveState = await js("({ phase: window.__rht.sim.phase, projectiles: window.__rht.sim.projectiles.length, orders: window.__rht.sim.orders.length })");
-    if (resolveState.phase !== "resolve" || resolveState.projectiles < 1 || resolveState.orders < 3) {
+    if (resolveState.phase !== "resolve" || resolveState.projectiles < 1 || resolveState.orders < 5) {
       throw new Error(`Electron simultaneous resolve failed: ${JSON.stringify(resolveState)}`);
     }
     await assertCanvasPainted(js, "electron resolve");
     await shot(win, "resolve");
 
-    await waitFor(() => js("window.__rht.sim.phase === 'victory'"), "victory", 10000);
+    await waitFor(() => js("window.__rht.sim.phase === 'victory'"), "victory", 16000);
     await assertCanvasPainted(js, "electron victory");
     await shot(win, "victory");
 

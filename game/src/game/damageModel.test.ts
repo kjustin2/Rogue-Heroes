@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   applyDamage,
   createBase,
+  createGrenadier,
+  createSniper,
   createSoldier,
+  createStriker,
   createTank,
+  isInfantryKind,
   preferredPart,
   repairForNewTurn,
   vulnerabilityMultiplier,
@@ -104,5 +108,22 @@ describe("component damage model", () => {
     expect(preferredPart(tank, "weapon").id).toBe("cannon");
     expect(preferredPart(tank, "utility").id).toBe("turret");
     expect(preferredPart(tank, "core").id).toBe("hull");
+  });
+
+  it("creates sniper, grenadier, and striker infantry variants with role-specific systems", () => {
+    const sniper = createSniper("sniper", "Vesper", "player", { x: 0, z: 0 });
+    const grenadier = createGrenadier("grenadier", "Briggs", "player", { x: 0, z: 0 });
+    const striker = createStriker("striker", "Kade", "player", { x: 0, z: 0 });
+
+    expect(isInfantryKind(sniper.kind)).toBe(true);
+    expect(isInfantryKind(grenadier.kind)).toBe(true);
+    expect(isInfantryKind(striker.kind)).toBe(true);
+    expect(sniper.parts.find((part) => part.id === "pack")?.tags).toContain("spotter-aura");
+    expect(grenadier.parts.find((part) => part.id === "pack")?.role).toBe("volatile");
+    expect(striker.parts.find((part) => part.id === "rifle")?.label).toBe("Arc Blade");
+    expect(sniper.status.canShoot).toBe(true);
+    expect(grenadier.status.canMove).toBe(true);
+    expect(striker.status.canShoot).toBe(false);
+    expect(striker.status.canMove).toBe(true);
   });
 });

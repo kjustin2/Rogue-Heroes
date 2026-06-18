@@ -39,6 +39,15 @@ try {
   await page.goto(URL, { waitUntil: "networkidle" });
   await page.waitForSelector(".topbar");
   await assertCanvasPainted(page, "flow command");
+  const initialUi = await page.evaluate(() => ({
+    targetPanel: Boolean(document.querySelector(".target-panel")),
+    unitDetail: Boolean(document.querySelector(".unit-detail-panel")),
+    flowCount: document.querySelectorAll(".flow-steps span").length,
+    commandText: document.querySelector(".commandbar")?.textContent,
+  }));
+  if (initialUi.targetPanel || initialUi.unitDetail || initialUi.flowCount || !initialUi.commandText?.includes("Hammer")) {
+    throw new Error(`Flow smoke started with unclear default UI: ${JSON.stringify(initialUi)}`);
+  }
 
   const queued = await page.evaluate(() => {
     const api = window.__rht;
@@ -53,12 +62,17 @@ try {
     }
 
     const placements = new Map([
-      ["p-tank-1", { x: -5, z: 0 }],
-      ["p-soldier-1", { x: -5, z: -2.4 }],
-      ["p-soldier-2", { x: -5, z: 2.4 }],
+      ["p-sniper-1", { x: -2, z: 0 }],
+      ["p-soldier-1", { x: -2, z: -2.4 }],
+      ["p-soldier-2", { x: -2, z: 2.4 }],
+      ["p-grenadier-1", { x: -2, z: 4.8 }],
+      ["p-striker-1", { x: -1.6, z: 0.8 }],
+      ["p-tank-1", { x: -2, z: -4.8 }],
       ["e-tank-1", { x: 1.2, z: 0 }],
       ["e-soldier-1", { x: 1.2, z: -2.4 }],
-      ["e-base-1", { x: 1.2, z: 2.4 }],
+      ["e-sniper-1", { x: 1.2, z: 2.4 }],
+      ["e-grenadier-1", { x: 1.2, z: 4.8 }],
+      ["e-base-1", { x: 1.2, z: -4.8 }],
     ]);
 
     for (const [id, position] of placements) {
@@ -69,14 +83,26 @@ try {
 
     for (const enemy of sim.entities.filter((entity) => entity.team === "enemy")) {
       const critical = enemy.parts.find((part) => part.critical);
-      critical.hp = Math.min(critical.hp, 10);
+      critical.hp = Math.min(critical.hp, 1);
+      if (enemy.id === "e-tank-1") {
+        const frontPlate = enemy.parts.find((part) => part.id === "front-plate");
+        if (frontPlate) frontPlate.hp = 0;
+      }
     }
 
-    sim.select("p-tank-1");
-    sim.queueShootPart("e-tank-1", "hull");
+    for (const player of sim.entities.filter((entity) => entity.team === "player" && entity.kind !== "tank")) {
+      player.stance = "crouched";
+    }
+
+    sim.select("p-striker-1");
+    sim.queueMelee("e-tank-1");
     sim.select("p-soldier-1");
-    sim.queueShootPart("e-soldier-1", "head");
+    sim.queueShootPart("e-soldier-1", "body");
     sim.select("p-soldier-2");
+    sim.queueShootPart("e-sniper-1", "body");
+    sim.select("p-grenadier-1");
+    sim.queueShootPart("e-grenadier-1", "body");
+    sim.select("p-tank-1");
     sim.queueShootPart("e-base-1", "core");
     api.endTurn();
 
@@ -85,9 +111,9 @@ try {
       .map((order) => ({ actorId: order.actorId, targetId: order.targetId, kind: order.kind }));
   });
 
-  if (queued.length !== 3) throw new Error(`Expected 3 player orders, got ${JSON.stringify(queued)}`);
+  if (queued.length !== 5) throw new Error(`Expected 5 player orders, got ${JSON.stringify(queued)}`);
 
-  await page.waitForTimeout(950);
+  await page.waitForFunction(() => window.__rht.sim.phase === "resolve" && window.__rht.sim.projectiles.length > 0, undefined, { timeout: 3000 });
   const resolveState = await page.evaluate(() => ({
     phase: window.__rht.sim.phase,
     projectiles: window.__rht.sim.projectiles.length,
@@ -99,7 +125,7 @@ try {
   await assertCanvasPainted(page, "flow resolve");
   await page.screenshot({ path: join(OUT, "7-flow-resolve.png") });
 
-  await page.waitForFunction(() => window.__rht.sim.phase === "victory", undefined, { timeout: 10000 });
+  await page.waitForFunction(() => window.__rht.sim.phase === "victory", undefined, { timeout: 16000 });
   await assertCanvasPainted(page, "flow victory");
   await page.screenshot({ path: join(OUT, "8-flow-victory.png") });
 
@@ -111,16 +137,21 @@ try {
   if (victoryState.phase !== "victory") throw new Error(`Expected victory, got ${victoryState.phase}`);
   if (victoryState.livingEnemies.length) throw new Error(`Enemies still alive: ${victoryState.livingEnemies.join(", ")}`);
 
-  await page.locator('[data-command="reset"]').click();
+  await page.evaluate(() => window.__rht.reset());
   await page.waitForFunction(() => window.__rht.sim.phase === "command" && window.__rht.sim.turn === 1);
   const resetState = await page.evaluate(() => ({
     phase: window.__rht.sim.phase,
     turn: window.__rht.sim.turn,
     livingEnemies: window.__rht.sim.living("enemy").length,
     livingPlayers: window.__rht.sim.living("player").length,
+    targetPanel: Boolean(document.querySelector(".target-panel")),
+    unitDetail: Boolean(document.querySelector(".unit-detail-panel")),
   }));
-  if (resetState.livingEnemies !== 3 || resetState.livingPlayers !== 3) {
+  if (resetState.livingEnemies !== 5 || resetState.livingPlayers !== 6) {
     throw new Error(`Reset did not restore both squads: ${JSON.stringify(resetState)}`);
+  }
+  if (resetState.targetPanel || resetState.unitDetail) {
+    throw new Error(`Reset should return to the compact command UI: ${JSON.stringify(resetState)}`);
   }
 
   if (errors.length) throw new Error(`Console errors:\n${errors.slice(0, 12).join("\n")}`);

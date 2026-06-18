@@ -1,10 +1,11 @@
 import type { Vec2 } from "../core/math";
 
 export type Team = "player" | "enemy" | "neutral";
-export type EntityKind = "soldier" | "tank" | "base" | "cover";
-export type CoverKind = "wall" | "barricade" | "fuel" | "ammo" | "conduit" | "ridge";
+export type EntityKind = "soldier" | "sniper" | "grenadier" | "striker" | "tank" | "base" | "cover";
+export type CoverKind = "wall" | "barricade" | "fuel" | "ammo" | "conduit" | "ridge" | "cliff";
 export type PartRole = "core" | "head" | "weapon" | "mobility" | "armor" | "utility" | "volatile";
 export type AimMode = "center" | "head" | "weapon" | "mobility" | "utility" | "core" | "weakest";
+export type InfantryStance = "standing" | "crouched" | "prone";
 
 export interface DamagePart {
   id: string;
@@ -40,6 +41,7 @@ export interface CombatEntity {
   radius: number;
   height: number;
   elevation: number;
+  stance: InfantryStance;
   commandPoints: number;
   maxCommandPoints: number;
   parts: DamagePart[];
@@ -89,8 +91,8 @@ function part(id: string, label: string, role: PartRole, maxHp: number, extras: 
 function statusFor(kind: EntityKind): EntityStatus {
   return {
     alive: true,
-    canMove: kind === "soldier" || kind === "tank",
-    canShoot: kind === "soldier" || kind === "tank" || kind === "base",
+    canMove: isInfantryKind(kind) || kind === "tank",
+    canShoot: (isInfantryKind(kind) && kind !== "striker") || kind === "tank" || kind === "base",
     immobilized: false,
     disarmed: false,
     exposedCore: false,
@@ -110,6 +112,7 @@ export function createTank(id: string, name: string, team: Team, position: Vec2)
     radius: 1.45,
     height: 1.55,
     elevation: 0,
+    stance: "standing",
     commandPoints: 2,
     maxCommandPoints: 2,
     status: statusFor("tank"),
@@ -127,25 +130,107 @@ export function createTank(id: string, name: string, team: Team, position: Vec2)
 }
 
 export function createSoldier(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  return createInfantry(id, name, "soldier", team, position, {
+    radius: 0.65,
+    height: 1.65,
+    bodyHp: 46,
+    headHp: 16,
+    weaponHp: 18,
+    legsHp: 24,
+    packHp: 22,
+    weaponLabel: "Rifle",
+    packLabel: "Power Pack",
+    packRole: "utility",
+  });
+}
+
+export function createSniper(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  const entity = createInfantry(id, name, "sniper", team, position, {
+    radius: 0.62,
+    height: 1.68,
+    bodyHp: 38,
+    headHp: 13,
+    weaponHp: 28,
+    legsHp: 20,
+    packHp: 18,
+    weaponLabel: "Marksman Rifle",
+    packLabel: "Optic Relay",
+    packRole: "utility",
+    packTags: ["spotter-aura"],
+  });
+  return entity;
+}
+
+export function createGrenadier(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  return createInfantry(id, name, "grenadier", team, position, {
+    radius: 0.72,
+    height: 1.66,
+    bodyHp: 52,
+    headHp: 16,
+    weaponHp: 24,
+    legsHp: 24,
+    packHp: 24,
+    weaponLabel: "Grenade Launcher",
+    packLabel: "Ammo Satchel",
+    packRole: "volatile",
+  });
+}
+
+export function createStriker(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  return createInfantry(id, name, "striker", team, position, {
+    radius: 0.58,
+    height: 1.62,
+    bodyHp: 42,
+    headHp: 14,
+    weaponHp: 30,
+    legsHp: 26,
+    packHp: 18,
+    weaponLabel: "Arc Blade",
+    packLabel: "Sprint Rig",
+    packRole: "utility",
+  });
+}
+
+function createInfantry(
+  id: string,
+  name: string,
+  kind: "soldier" | "sniper" | "grenadier" | "striker",
+  team: Team,
+  position: Vec2,
+  config: {
+    radius: number;
+    height: number;
+    bodyHp: number;
+    headHp: number;
+    weaponHp: number;
+    legsHp: number;
+    packHp: number;
+    weaponLabel: string;
+    packLabel: string;
+    packRole: "utility" | "volatile";
+    packTags?: string[];
+  }
+): CombatEntity {
   const entity: CombatEntity = {
     id,
     name,
-    kind: "soldier",
+    kind,
     team,
     position,
     yaw: team === "player" ? Math.PI * 0.5 : -Math.PI * 0.5,
-    radius: 0.65,
-    height: 1.65,
+    radius: config.radius,
+    height: config.height,
     elevation: 0,
+    stance: "standing",
     commandPoints: 2,
     maxCommandPoints: 2,
-    status: statusFor("soldier"),
+    status: statusFor(kind),
     parts: [
-      part("body", "Body", "core", 46, { critical: true }),
-      part("head", "Head", "head", 16, { critical: true }),
-      part("rifle", "Rifle", "weapon", 18),
-      part("legs", "Legs", "mobility", 24),
-      part("pack", "Power Pack", "utility", 22),
+      part("body", "Body", "core", config.bodyHp, { critical: true }),
+      part("head", "Head", "head", config.headHp, { critical: true }),
+      part("rifle", config.weaponLabel, "weapon", config.weaponHp),
+      part("legs", "Legs", "mobility", config.legsHp),
+      part("pack", config.packLabel, config.packRole, config.packHp, { tags: config.packTags }),
     ],
   };
   recomputeStatus(entity);
@@ -163,6 +248,7 @@ export function createBase(id: string, name: string, team: Team, position: Vec2)
     radius: 2.2,
     height: 3.1,
     elevation: 0,
+    stance: "standing",
     commandPoints: 1,
     maxCommandPoints: 1,
     status: statusFor("base"),
@@ -182,7 +268,7 @@ export function createCover(id: string, name: string, position: Vec2, options: b
   const settings: CoverOptions = typeof options === "boolean" ? { volatile: options } : options;
   const coverKind = settings.coverKind ?? (settings.volatile ? "fuel" : name.toLowerCase().includes("barricade") ? "barricade" : "wall");
   const volatile = Boolean(settings.volatile || coverKind === "fuel" || coverKind === "ammo" || coverKind === "conduit");
-  const hp = settings.hp ?? (coverKind === "barricade" ? 42 : coverKind === "ammo" ? 34 : coverKind === "conduit" ? 44 : volatile ? 36 : coverKind === "ridge" ? 95 : 70);
+  const hp = settings.hp ?? (coverKind === "barricade" ? 42 : coverKind === "ammo" ? 34 : coverKind === "conduit" ? 44 : volatile ? 36 : coverKind === "ridge" ? 95 : coverKind === "cliff" ? 160 : 70);
   const entity: CombatEntity = {
     id,
     name,
@@ -191,16 +277,17 @@ export function createCover(id: string, name: string, position: Vec2, options: b
     team: "neutral",
     position,
     yaw: 0,
-    radius: settings.radius ?? (coverKind === "barricade" ? 0.82 : volatile ? 0.7 : coverKind === "ridge" ? 1.2 : 1.05),
-    height: settings.height ?? (coverKind === "barricade" ? 0.82 : volatile ? 1.2 : coverKind === "ridge" ? 1.85 : 1.55),
-    elevation: coverKind === "ridge" ? 0.28 : 0,
+    radius: settings.radius ?? (coverKind === "barricade" ? 0.82 : volatile ? 0.7 : coverKind === "ridge" ? 1.2 : coverKind === "cliff" ? 1.28 : 1.05),
+    height: settings.height ?? (coverKind === "barricade" ? 0.82 : volatile ? 1.2 : coverKind === "ridge" ? 1.85 : coverKind === "cliff" ? 2.15 : 1.55),
+    elevation: 0,
+    stance: "standing",
     commandPoints: 0,
     maxCommandPoints: 0,
     status: statusFor("cover"),
     parts: [
-      part(volatile ? "cell" : "wall", volatile ? (coverKind === "ammo" ? "Ammo Cache" : coverKind === "conduit" ? "Power Conduit" : "Fuel Cell") : coverKind === "ridge" ? "High Ground" : coverKind === "barricade" ? "Barricade" : "Wall Block", volatile ? "volatile" : "core", hp, {
+      part(volatile ? "cell" : "wall", volatile ? (coverKind === "ammo" ? "Ammo Cache" : coverKind === "conduit" ? "Power Conduit" : "Fuel Cell") : coverKind === "cliff" ? "Cliff Face" : coverKind === "ridge" ? "High Ground" : coverKind === "barricade" ? "Barricade" : "Wall Block", volatile ? "volatile" : "core", hp, {
         critical: true,
-        tags: coverKind === "ridge" ? ["high-ground"] : undefined,
+        tags: coverKind === "ridge" || coverKind === "cliff" ? ["high-ground"] : undefined,
       }),
     ],
   };
@@ -213,8 +300,13 @@ export function cloneEntity(entity: CombatEntity): CombatEntity {
     ...entity,
     position: { ...entity.position },
     status: { ...entity.status },
+    stance: entity.stance,
     parts: entity.parts.map((p) => ({ ...p, tags: p.tags ? [...p.tags] : undefined })),
   };
+}
+
+export function isInfantryKind(kind: EntityKind): boolean {
+  return kind === "soldier" || kind === "sniper" || kind === "grenadier" || kind === "striker";
 }
 
 export function isPartIntact(part: DamagePart): boolean {
@@ -310,7 +402,7 @@ export function recomputeStatus(entity: CombatEntity): void {
   const armorDestroyed = entity.parts.some((p) => p.role === "armor" && !isPartIntact(p));
   const utilityDestroyed = entity.parts.filter((p) => p.role === "utility" && !isPartIntact(p));
   const turretLocked = entity.kind === "tank" && utilityDestroyed.some((p) => p.id === "turret");
-  const packDown = entity.kind === "soldier" && utilityDestroyed.some((p) => p.id === "pack");
+  const packDown = isInfantryKind(entity.kind) && utilityDestroyed.some((p) => p.id === "pack");
   const commsDown = entity.kind === "base" && utilityDestroyed.some((p) => p.id === "comms");
   const alive = !destroyedCritical;
 
@@ -321,8 +413,8 @@ export function recomputeStatus(entity: CombatEntity): void {
   entity.status.exposedCore = alive && armorDestroyed;
   entity.status.commandLimited = alive && (packDown || commsDown);
   entity.status.systemsDown = utilityDestroyed.map((p) => p.label);
-  entity.status.canMove = alive && (entity.kind === "soldier" || entity.kind === "tank") && allMobilityIntact;
-  entity.status.canShoot = alive && hasWeapon && intactWeapon && !turretLocked;
+  entity.status.canMove = alive && (isInfantryKind(entity.kind) || entity.kind === "tank") && allMobilityIntact;
+  entity.status.canShoot = alive && hasWeapon && intactWeapon && !turretLocked && entity.kind !== "striker";
 
   if (!alive) {
     entity.commandPoints = 0;
@@ -335,7 +427,7 @@ export function recomputeStatus(entity: CombatEntity): void {
 
 function utilityMessages(entity: CombatEntity, part: DamagePart): string[] {
   if (entity.kind === "tank" && part.id === "turret") return [`${entity.name}'s turret ring is jammed`];
-  if (entity.kind === "soldier" && part.id === "pack") return [`${entity.name}'s power pack is ruptured`];
+  if (isInfantryKind(entity.kind) && part.id === "pack") return [`${entity.name}'s ${part.label.toLowerCase()} is ruptured`];
   if (entity.kind === "base" && part.id === "comms") return [`${entity.name}'s comms are down`];
   return [`${entity.name} lost ${part.label}`];
 }
