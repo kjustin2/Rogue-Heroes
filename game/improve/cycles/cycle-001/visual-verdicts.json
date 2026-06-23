@@ -1,0 +1,14 @@
+{
+  "G1-main-menu":   { "pass": true,  "note": "ROGUE HEROES title + Start Game button on clean menu bg." },
+  "G2-deploy-screen": { "pass": true, "note": "6 battlefields, top-down preview, 3 modes, 3 difficulties all visible." },
+  "G4-canvas-painted": { "pass": true, "note": "3D battlefield with terrain + base + HUD renders (not black)." },
+  "G5-deploy-cost": { "pass": false, "note": "Deployed Recruit is hidden behind the auto-opened base command deck; no clean view of the unit next to the base. Capture must frame it with the deck closed." },
+  "G7-combat-damage": { "pass": false, "note": "No projectile streak or impact effect visible in the resolve frame — capture caught a quiet frame; combatants also appear far apart. Improve capture timing and/or projectile visibility." },
+  "G8-victory": { "pass": true, "note": "VICTORY card with Play Again / Main Menu and +110 points toast." },
+  "G9-move-range-ring": { "pass": true, "note": "Circular movement-range ring is drawn on the ground around the selected recruit (a touch faint, but present and readable)." },
+  "G10-ground-blast-preview": { "pass": false, "note": "Only the grenade throw-range circle is visible; no distinct blast-radius ring + arc/landing marker at the aimed ground spot. Needs a clearer blast preview and a sensible hover point." },
+  "G11-build-placement-ring": { "pass": true, "note": "Green placement-range ring around the base plus a clear 'click inside the green ring' instruction." },
+  "G12-objective-hud": { "pass": false, "note": "At battle start the base deck is auto-open and covers the HUD; the objective/mode chip and turn indicator are not cleanly visible. Capture a deselected, unobstructed battle-start frame." },
+  "G13-dead-part-visible": { "pass": false, "note": "Inspect-detail does not list the destroyed enemy part at all (destroyedPartListed=false) — matches the known gap; must show it at 0 HP." },
+  "G14-end-return-menu": { "pass": true, "note": "Victory screen has a Main Menu button (and Play Again)." }
+}

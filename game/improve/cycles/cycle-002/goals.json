@@ -1,0 +1,266 @@
+{
+  "cycle": "cycle-002",
+  "total": 14,
+  "met": 2,
+  "allMet": false,
+  "vitest": {
+    "ok": true,
+    "failed": []
+  },
+  "consoleErrors": [],
+  "runError": null,
+  "pendingVisualReview": [
+    "G1-main-menu",
+    "G2-deploy-screen",
+    "G4-canvas-painted",
+    "G5-deploy-cost",
+    "G7-combat-damage",
+    "G8-victory",
+    "G9-move-range-ring",
+    "G10-ground-blast-preview",
+    "G11-build-placement-ring",
+    "G12-objective-hud",
+    "G13-dead-part-visible",
+    "G14-end-return-menu"
+  ],
+  "results": [
+    {
+      "id": "G1-main-menu",
+      "title": "Main menu renders with title and Start Game",
+      "category": "both",
+      "met": false,
+      "logical": {
+        "pass": true,
+        "detail": "mainMenu=true startButton=true"
+      },
+      "visual": {
+        "shot": "01-main-menu.png",
+        "lookFor": "ROGUE HEROES title logo and a prominent Start Game button on a clean menu background",
+        "present": true,
+        "presenceNote": "551KB canvasLit=true",
+        "semantic": null,
+        "verdictNote": null
+      }
+    },
+    {
+      "id": "G2-deploy-screen",
+      "title": "Deploy screen offers maps, a live preview, modes and difficulty",
+      "category": "both",
+      "met": false,
+      "logical": {
+        "pass": true,
+        "detail": "maps=6 modes=3 diffs=3 preview=true"
+      },
+      "visual": {
+        "shot": "02-deploy-screen.png",
+        "lookFor": "a list of battlefields, a top-down map PREVIEW image, mode cards, and difficulty cards",
+        "present": true,
+        "presenceNote": "653KB canvasLit=true",
+        "semantic": null,
+        "verdictNote": null
+      }
+    },
+    {
+      "id": "G3-start-empty",
+      "title": "Battle starts in command phase, turn 1, with no units fielded",
+      "category": "logical",
+      "met": true,
+      "logical": {
+        "pass": true,
+        "detail": "phase=command turn=1 field=0/0"
+      },
+      "visual": null
+    },
+    {
+      "id": "G4-canvas-painted",
+      "title": "The 3D battlefield actually renders (canvas is painted)",
+      "category": "both",
+      "met": false,
+      "logical": {
+        "pass": true,
+        "detail": "canvas lit=576"
+      },
+      "visual": {
+        "shot": "03-battle-start.png",
+        "lookFor": "a 3D battlefield with terrain, the player base, and the HUD command bar — not a black frame",
+        "present": true,
+        "presenceNote": "521KB canvasLit=true",
+        "semantic": null,
+        "verdictNote": null
+      }
+    },
+    {
+      "id": "G5-deploy-cost",
+      "title": "Deploying a Recruit adds a field unit and spends money + the base CP",
+      "category": "both",
+      "met": false,
+      "logical": {
+        "pass": true,
+        "detail": "fieldDelta=1 moneyDelta=-150 baseCpAfter=0 spawned=true"
+      },
+      "visual": {
+        "shot": "05-deploy-unit.png",
+        "lookFor": "a newly deployed infantry unit standing next to the player Home Base",
+        "present": true,
+        "presenceNote": "523KB canvasLit=true",
+        "semantic": null,
+        "verdictNote": null
+      }
+    },
+    {
+      "id": "G6-research-unlock",
+      "title": "Researching a doctrine unlocks it on the base",
+      "category": "logical",
+      "met": true,
+      "logical": {
+        "pass": true,
+        "detail": "unlocked=[\"assault\"]"
+      },
+      "visual": null
+    },
+    {
+      "id": "G7-combat-damage",
+      "title": "A resolved attack reduces an enemy part's health",
+      "category": "both",
+      "met": false,
+      "logical": {
+        "pass": true,
+        "detail": "enemyHpDelta=-20 damageEntries=0"
+      },
+      "visual": {
+        "shot": "09-resolve.png",
+        "lookFor": "projectiles in flight and/or impact effects between units during the resolve phase",
+        "present": true,
+        "presenceNote": "613KB canvasLit=true",
+        "semantic": null,
+        "verdictNote": null
+      }
+    },
+    {
+      "id": "G8-victory",
+      "title": "Eliminating the enemy transitions to a victory end-state with a reward",
+      "category": "both",
+      "met": false,
+      "logical": {
+        "pass": true,
+        "detail": "phase=victory reward=110"
+      },
+      "visual": {
+        "shot": "12-victory.png",
+        "lookFor": "a Victory end screen overlaying the battlefield",
+        "present": true,
+        "presenceNote": "584KB canvasLit=true",
+        "semantic": null,
+        "verdictNote": null
+      }
+    },
+    {
+      "id": "G9-move-range-ring",
+      "title": "Selecting Move shows the unit's movement-range ring",
+      "category": "both",
+      "met": false,
+      "logical": {
+        "pass": true,
+        "detail": "actionRange={\"kind\":\"move\",\"radius\":6.7}"
+      },
+      "visual": {
+        "shot": "07-move-range.png",
+        "lookFor": "a cyan circular movement-range ring drawn on the ground around the selected unit",
+        "present": true,
+        "presenceNote": "567KB canvasLit=true",
+        "semantic": null,
+        "verdictNote": null
+      }
+    },
+    {
+      "id": "G10-ground-blast-preview",
+      "title": "Explosive ground-aim previews a blast-radius the unit can reach",
+      "category": "both",
+      "met": false,
+      "logical": {
+        "pass": true,
+        "detail": "groundAim={\"radius\":2.55,\"reachable\":true,\"blocked\":false}"
+      },
+      "visual": {
+        "shot": "08-ground-aim.png",
+        "lookFor": "a blast-radius ring drawn at a ground spot for an explosive unit's targeting, with the arc/landing marker",
+        "present": true,
+        "presenceNote": "579KB canvasLit=true",
+        "semantic": null,
+        "verdictNote": null
+      }
+    },
+    {
+      "id": "G11-build-placement-ring",
+      "title": "Building a defense shows a placement-range ring near the base",
+      "category": "both",
+      "met": false,
+      "logical": {
+        "pass": true,
+        "detail": "buildPlacement={\"radius\":11.7,\"center\":{\"x\":-20,\"z\":0}}"
+      },
+      "visual": {
+        "shot": "11-build-placement.png",
+        "lookFor": "a green placement-range ring around the Home Base while a turret/wall is being placed",
+        "present": true,
+        "presenceNote": "857KB canvasLit=true",
+        "semantic": null,
+        "verdictNote": null
+      }
+    },
+    {
+      "id": "G12-objective-hud",
+      "title": "The HUD shows the current objective and the turn number",
+      "category": "both",
+      "met": false,
+      "logical": {
+        "pass": true,
+        "detail": "modeChip=true turnIndicator=true"
+      },
+      "visual": {
+        "shot": "03-battle-start.png",
+        "lookFor": "an objective/mode chip and a visible turn/round indicator in the HUD",
+        "present": true,
+        "presenceNote": "521KB canvasLit=true",
+        "semantic": null,
+        "verdictNote": null
+      }
+    },
+    {
+      "id": "G13-dead-part-visible",
+      "title": "A destroyed enemy part is shown at 0 HP, not hidden",
+      "category": "both",
+      "met": false,
+      "logical": {
+        "pass": true,
+        "detail": "hadDestroyedPart=true destroyedPartListed=true"
+      },
+      "visual": {
+        "shot": "10-detail-destroyed.png",
+        "lookFor": "the inspected enemy's parts list still listing the destroyed part, shown at 0 / empty health",
+        "present": true,
+        "presenceNote": "588KB canvasLit=true",
+        "semantic": null,
+        "verdictNote": null
+      }
+    },
+    {
+      "id": "G14-end-return-menu",
+      "title": "The end screen lets the player return to the main menu",
+      "category": "both",
+      "met": false,
+      "logical": {
+        "pass": true,
+        "detail": "endReturnControl=true"
+      },
+      "visual": {
+        "shot": "12-victory.png",
+        "lookFor": "a control on the victory screen that returns to the main menu (e.g. a Main Menu / Continue button)",
+        "present": true,
+        "presenceNote": "584KB canvasLit=true",
+        "semantic": null,
+        "verdictNote": null
+      }
+    }
+  ]
+}

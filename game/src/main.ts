@@ -1,10 +1,29 @@
 import "./style.css";
 
+import { dist, type Vec2 } from "./core/math";
 import { Stage } from "./render/stage";
-import { WorldRenderer } from "./render/worldRenderer";
+import { WorldRenderer, type WorldRenderDebug } from "./render/worldRenderer";
 import { Hud } from "./ui/hud";
-import { TacticalSim, type Intent } from "./game/sim";
-import type { AimMode } from "./game/damageModel";
+import {
+  TacticalSim,
+  MAPS,
+  MODES,
+  DIFFICULTIES,
+  mapDef,
+  difficultyLabel,
+  type Intent,
+  type ModeId,
+  type TroopKind,
+  type DefenseKind,
+  type Difficulty,
+  type MapDef,
+} from "./game/sim";
+import type { AimMode, Team } from "./game/damageModel";
+import { sfx } from "./audio";
+import { progression, COSMETICS } from "./progression";
+import { battleReward } from "./progression";
+import { settings, ACTION_PACES, PACE_LABEL, type ActionPace } from "./settings";
+import { applyScenario, scenarioInfo } from "./game/scenarios";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement | null;
 const ui = document.getElementById("ui");
@@ -15,18 +34,34 @@ const uiRoot = ui;
 const stage = new Stage(canvas);
 const sim = new TacticalSim();
 const world = new WorldRenderer(stage.scene);
+world.setPlayerAccent(progression.accentColor());
+sfx.setMuted(settings.muted);
+sfx.setVolume(settings.volume);
+
+const SAVE_KEY = "rht.savedBattle.v1";
+
+let tutorialActive = false;
+let hoverWorld: Vec2 | undefined;
+let lastEndPhase: "victory" | "defeat" | undefined;
 
 const hud = new Hud(uiRoot, sim, {
   setIntent: (intent: Intent) => sim.setIntent(intent),
-  endTurn: () => sim.endTurn(),
+  endTurn: () => {
+    if (sim.phase === "command") sfx.turn();
+    sim.endTurn();
+  },
   reset: () => {
     sim.reset();
-    if (sim.selected) stage.focusOn(sim.selected.position);
+    world.applyMap(sim.mapDef.theme);
+    focusOnPlayerBase();
+    lastEndPhase = undefined;
   },
   select: (id: string) => {
     sim.select(id);
     const entity = sim.entity(id);
-    if (entity) stage.focusOn(entity.position);
+    // Only recenter if the unit is genuinely off-screen or hidden behind a panel; don't snap
+    // when it is already comfortably in view.
+    if (entity && !stage.isInView(entity.position)) stage.focusOn(entity.position);
   },
   deselect: () => sim.deselect(),
   queueMove: (destination) => sim.queueMove(destination),
@@ -34,12 +69,38 @@ const hud = new Hud(uiRoot, sim, {
   queueTakeCover: (id: string) => sim.queueTakeCover(id),
   queueClimbCover: (id: string) => sim.queueClimbCover(id),
   queueShootPart: (id: string, partId: string) => sim.queueShootPart(id, partId),
+  queueGrenadePart: (id: string, partId: string) => sim.queueGrenadePart(id, partId),
+  queueGrenadeAt: (destination) => sim.queueGrenadeAt(destination),
   queueRam: (id: string) => sim.queueRam(id),
   queueMelee: (id: string) => sim.queueMelee(id),
+  queueMeleePart: (id: string, partId: string) => sim.queueMeleePart(id, partId),
   queueDefend: (stance) => sim.queueDefend(stance),
+  queueSpawnTroop: (kind) => {
+    const ok = sim.queueSpawnTroop(kind);
+    if (ok) sfx.deploy();
+    return ok;
+  },
+  upgradeBaseIncome: () => sim.upgradeBaseIncome(),
+  upgradeBaseCommand: () => sim.upgradeBaseCommand(),
+  beginBuild: (kind: DefenseKind) => {
+    sim.setPendingBuild(kind);
+    sfx.ui();
+  },
+  cancelBuild: () => sim.setPendingBuild(undefined),
+  queueBuildStructure: (point) => {
+    const ok = sim.queueBuildStructure(point);
+    if (ok) sfx.build();
+    return ok;
+  },
+  queueShootAt: (point) => sim.queueShootAt(point),
+  researchTech: (nodeId) => sim.researchTech(nodeId),
   cancelOrder: (id: string) => sim.cancelOrder(id),
+  explainGrenadeTarget: (id: string) => sim.explainGrenadeTarget(id),
   explainRamTarget: (id: string) => sim.explainRamTarget(id),
   explainMeleeTarget: (id: string) => sim.explainMeleeTarget(id),
+  openMenu: () => openPauseMenu(),
+  returnToMainMenu: () => showMainMenu(),
+  editUnit: (id: string) => openEditOverlay(id),
 });
 
 let orbitingPointerId: number | undefined;
@@ -47,6 +108,7 @@ let orbitLastX = 0;
 let orbitLastY = 0;
 
 canvas.addEventListener("pointerdown", (event) => {
+  sfx.unlock();
   if (event.button === 1) {
     event.preventDefault();
     orbitingPointerId = event.pointerId;
@@ -56,25 +118,32 @@ canvas.addEventListener("pointerdown", (event) => {
     return;
   }
   if (event.button !== 0) return;
+  if (anyOverlayOpen()) return;
   const pick = stage.pick(event.clientX, event.clientY, world.pickables);
   if (pick) {
     const entity = sim.entity(pick.entityId);
     if (!entity) return;
     hud.chooseBoardEntity(entity.id);
+    hud.update();
     return;
   }
 
   hud.chooseGround(stage.screenToWorld(event.clientX, event.clientY));
+  hud.update();
 });
 
 canvas.addEventListener("pointermove", (event) => {
-  if (orbitingPointerId !== event.pointerId) return;
-  event.preventDefault();
-  const deltaX = event.clientX - orbitLastX;
-  const deltaY = event.clientY - orbitLastY;
-  orbitLastX = event.clientX;
-  orbitLastY = event.clientY;
-  stage.orbitBy(deltaX * 0.008, -deltaY * 0.005);
+  if (orbitingPointerId === event.pointerId) {
+    event.preventDefault();
+    const deltaX = event.clientX - orbitLastX;
+    const deltaY = event.clientY - orbitLastY;
+    orbitLastX = event.clientX;
+    orbitLastY = event.clientY;
+    stage.orbitBy(deltaX * 0.008, -deltaY * 0.005);
+    return;
+  }
+  // Track the ground point under the cursor so we can preview a grenade/shell landing spot.
+  hoverWorld = stage.screenToWorld(event.clientX, event.clientY);
 });
 
 const stopOrbit = (event: PointerEvent): void => {
@@ -89,7 +158,15 @@ canvas.addEventListener("auxclick", (event) => {
   if (event.button === 1) event.preventDefault();
 });
 
+// A click anywhere in the HUD plays a soft UI blip (the deploy/build/turn cues layer on top).
+uiRoot.addEventListener("pointerdown", (event) => {
+  sfx.unlock();
+  const el = event.target as HTMLElement;
+  if (el.closest("button, .menu-card, [data-select], [data-part]")) sfx.ui();
+});
+
 const heldKeys = new Set<string>();
+let lastCommandCameraKey = "";
 
 function clickArmedConfirm(): boolean {
   const button = uiRoot.querySelector<HTMLElement>("[data-confirm][data-disabled='false']");
@@ -105,8 +182,10 @@ window.addEventListener("wheel", (event) => {
 }, { passive: false });
 
 function shouldLetUiScroll(event: WheelEvent): boolean {
+  // Any open full-screen menu/overlay scrolls instead of zooming the world.
+  if (anyOverlayOpen()) return true;
   const target = event.target instanceof Element ? event.target : undefined;
-  const scroller = target?.closest<HTMLElement>(".commandbar, .panel, .target-panel, .unit-detail-panel, .roster");
+  const scroller = target?.closest<HTMLElement>(".menu-content, .commandbar, .panel, .target-panel, .unit-detail-panel, .roster, .compact-log.expanded, .battle-log-panel, .turn-report-list, .overlay-card");
   if (!scroller || scroller.scrollHeight <= scroller.clientHeight + 1) return false;
   if (event.deltaY > 0) return scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 1;
   if (event.deltaY < 0) return scroller.scrollTop > 0;
@@ -114,6 +193,14 @@ function shouldLetUiScroll(event: WheelEvent): boolean {
 }
 
 window.addEventListener("keydown", (event) => {
+  // When any overlay/menu is open, only Escape (to step back) is handled.
+  if (anyOverlayOpen()) {
+    if (event.code === "Escape") {
+      event.preventDefault();
+      dismissTopOverlay();
+    }
+    return;
+  }
   if (["KeyW", "KeyA", "KeyS", "KeyD"].includes(event.code)) {
     event.preventDefault();
     heldKeys.add(event.code);
@@ -122,34 +209,47 @@ window.addEventListener("keydown", (event) => {
   if (event.repeat) return;
   if (event.code === "Space") {
     event.preventDefault();
+    if (sim.phase === "command") sfx.turn();
     sim.endTurn();
   } else if (event.code === "Tab") {
     event.preventDefault();
-    sim.cyclePlayer();
+    sim.cyclePlayer(event.shiftKey ? -1 : 1);
     if (sim.selected) stage.focusOn(sim.selected.position);
+    hud.update();
   } else if (event.code === "Digit1") {
-    hud.setAction("move");
+    hud.activateActionSlot(1);
   } else if (event.code === "Digit2") {
-    hud.setAction("shoot");
+    hud.activateActionSlot(2);
   } else if (event.code === "Digit3") {
-    hud.setAction("ram");
+    hud.activateActionSlot(3);
   } else if (event.code === "Digit4") {
-    hud.setAction("defend");
+    hud.activateActionSlot(4);
+  } else if (event.code === "Digit5") {
+    hud.activateActionSlot(5);
+  } else if (event.code === "Digit6") {
+    hud.activateActionSlot(6);
   } else if (event.code === "KeyM") {
     hud.setAction("move");
   } else if (event.code === "KeyF") {
     hud.setAction("shoot");
+  } else if (event.code === "KeyG") {
+    hud.setAction("grenade");
   } else if (event.code === "KeyX") {
     hud.setAction("ram");
   } else if (event.code === "KeyV") {
     hud.setAction("defend");
+  } else if (event.code === "KeyB") {
+    hud.setAction("melee");
   } else if (event.code === "KeyC") {
     if (sim.queueDefend("crouched")) hud.setAction("select");
+  } else if (event.code === "KeyL") {
+    hud.toggleLog();
   } else if (event.code === "Enter") {
     event.preventDefault();
     clickArmedConfirm();
   } else if (event.code === "Escape") {
-    hud.setAction("select");
+    event.preventDefault();
+    if (!hud.handleEscape()) openPauseMenu();
   } else if (event.code === "KeyR") {
     hud.resetGame();
   }
@@ -159,7 +259,642 @@ window.addEventListener("keyup", (event) => {
   heldKeys.delete(event.code);
 });
 
+function focusOnPlayerBase(): void {
+  const base = sim.entities.find((e) => e.team === "player" && e.kind === "base");
+  if (base) stage.focusOn(base.position);
+  else if (sim.selected) stage.focusOn(sim.selected.position);
+}
+
+// Configure and theme the battle for a chosen map + mode + difficulty, then frame the base.
+function startBattle(mapId: string, modeId: ModeId, difficulty: Difficulty = settings.difficulty): void {
+  tutorialActive = false;
+  closeAllMenus();
+  sim.configure(mapDef(mapId), modeId, difficulty);
+  world.applyMap(sim.mapDef.theme);
+  world.setPlayerAccent(progression.accentColor());
+  focusOnPlayerBase();
+  lastEndPhase = undefined;
+  hud.update();
+}
+
+// ---------------------------------------------------------------------------
+// Menu, overlay, and helper UI
+// ---------------------------------------------------------------------------
+
+function anyOverlayOpen(): boolean {
+  return Boolean(document.querySelector(".menu-screen:not(.is-leaving), .pause-overlay, .edit-overlay"));
+}
+
+// When one menu replaces another we skip the incoming screen's fade-in. Otherwise it
+// animates up from fully transparent for half a second, briefly revealing the live 3D
+// battlefield behind the translucent menu — the "flash to a map" between screens. The very
+// first menu shown after page load still fades in for a polished entrance.
+let skipNextMenuEntrance = false;
+
+function closeAllMenus(): void {
+  for (const el of document.querySelectorAll(".menu-screen, .pause-overlay, .edit-overlay")) {
+    if (el.classList.contains("menu-screen")) skipNextMenuEntrance = true;
+    el.remove();
+  }
+}
+
+function dismissTopOverlay(): void {
+  const overlays = [...document.querySelectorAll<HTMLElement>(".menu-screen:not(.is-leaving), .pause-overlay, .edit-overlay")];
+  const top = overlays[overlays.length - 1];
+  if (!top) return;
+  // The root landing menu cannot be escaped away.
+  if (top.classList.contains("main-menu")) return;
+  const closer = top.querySelector<HTMLElement>("[data-overlay-close]");
+  if (closer) closer.click();
+  else top.remove();
+}
+
+function mountScreen(html: string, className: string): HTMLDivElement {
+  const screen = document.createElement("div");
+  screen.className = className;
+  if (className.includes("menu-screen")) {
+    if (skipNextMenuEntrance) screen.classList.add("menu-screen--instant");
+    skipNextMenuEntrance = false;
+  }
+  screen.innerHTML = html;
+  document.body.appendChild(screen);
+  return screen;
+}
+
+// A scaled top-down SVG preview of a battlefield: terrain blocks, bases, the central zone.
+function mapPreviewSvg(map: MapDef): string {
+  const b = map.terrain.bounds;
+  const w = b.maxX - b.minX;
+  const d = b.maxZ - b.minZ;
+  const W = 360;
+  const H = Math.round((W * d) / w);
+  const sx = (x: number): number => ((x - b.minX) / w) * W;
+  const sy = (z: number): number => ((z - b.minZ) / d) * H;
+  const hex = (n: number): string => `#${n.toString(16).padStart(6, "0")}`;
+  const blocks = (map.terrain.blocks ?? [])
+    .map((blk) => {
+      const op = Math.min(0.85, 0.28 + blk.height * 0.32);
+      return `<rect x="${sx(blk.minX).toFixed(1)}" y="${sy(blk.minZ).toFixed(1)}" width="${(sx(blk.maxX) - sx(blk.minX)).toFixed(1)}" height="${(sy(blk.maxZ) - sy(blk.minZ)).toFixed(1)}" rx="3" fill="${hex(map.theme.groundAccent)}" opacity="${op.toFixed(2)}" stroke="rgba(0,0,0,0.35)" stroke-width="1"/>`;
+    })
+    .join("");
+  const hill = `<circle cx="${sx(map.hill.x).toFixed(1)}" cy="${sy(map.hill.z).toFixed(1)}" r="${((map.hillRadius / w) * W).toFixed(1)}" fill="none" stroke="#ffe08a" stroke-width="2" stroke-dasharray="5 4" opacity="0.8"/>`;
+  const player = `<g><circle cx="${sx(map.playerBase.x).toFixed(1)}" cy="${sy(map.playerBase.z).toFixed(1)}" r="9" fill="#6fd7ff"/><text x="${sx(map.playerBase.x).toFixed(1)}" y="${(sy(map.playerBase.z) + 4).toFixed(1)}" text-anchor="middle" font-size="10" fill="#03121a" font-weight="700">P</text></g>`;
+  const enemy = `<g><circle cx="${sx(map.enemyBase.x).toFixed(1)}" cy="${sy(map.enemyBase.z).toFixed(1)}" r="9" fill="#ff7c5e"/><text x="${sx(map.enemyBase.x).toFixed(1)}" y="${(sy(map.enemyBase.z) + 4).toFixed(1)}" text-anchor="middle" font-size="10" fill="#1a0603" font-weight="700">E</text></g>`;
+  return `<svg class="map-preview-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapeAttr(map.name)} preview">
+    <rect x="0" y="0" width="${W}" height="${H}" rx="8" fill="${hex(map.theme.ground)}"/>
+    ${blocks}${hill}${player}${enemy}
+  </svg>`;
+}
+
+function pointsBadge(): string {
+  return `<div class="menu-points" data-tip="Points earned by playing battles. Spend them in the Armory on cosmetic unit accents."><span>★</span> ${progression.points} pts</div>`;
+}
+
+function showMainMenu(): void {
+  closeAllMenus();
+  const hasSave = Boolean(safeStorageGet(SAVE_KEY));
+  const screen = mountScreen(
+    `
+    <div class="menu-bg"><span></span><span></span><span></span></div>
+    <div class="title-screen__content menu-content main-menu__content">
+      <div class="title-kicker">Tactical Command</div>
+      <h1 class="title-logo">ROGUE HEROES<span>TACTICS</span></h1>
+      <div class="main-menu__buttons">
+        <button class="title-start" data-menu="play" type="button">Start Game</button>
+        ${hasSave ? `<button class="menu-action" data-menu="continue" type="button">Continue Battle</button>` : ""}
+        <button class="menu-action" data-menu="tutorial" type="button">Tutorial</button>
+        <button class="menu-action" data-menu="armory" type="button">Armory</button>
+        <button class="menu-action" data-menu="settings" type="button">Settings</button>
+      </div>
+    </div>
+  `,
+    "menu-screen main-menu",
+  );
+
+  screen.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    const action = target.closest<HTMLElement>("[data-menu]")?.dataset.menu;
+    if (action === "play") showStartScreen();
+    else if (action === "continue") loadSavedBattle();
+    else if (action === "tutorial") startTutorial();
+    else if (action === "armory") showArmory();
+    else if (action === "settings") showSettings();
+  });
+}
+
+function showStartScreen(): void {
+  closeAllMenus();
+  let selectedMap = MAPS[0].id;
+  let selectedMode: ModeId = "destroy";
+  let selectedDifficulty: Difficulty = settings.difficulty;
+
+  const mapList = MAPS.map(
+    (m) => `<button class="menu-card map-card ${m.id === selectedMap ? "selected" : ""}" data-map="${m.id}" type="button">
+      <strong>${m.name}</strong>
+      <span>${m.feel}</span>
+    </button>`,
+  ).join("");
+  const modeCards = MODES.map(
+    (mode) => `<button class="menu-card mode-card ${mode.id === selectedMode ? "selected" : ""}" data-mode="${mode.id}" type="button">
+      <strong>${mode.name}</strong>
+      <span>${mode.blurb}</span>
+    </button>`,
+  ).join("");
+  const diffCards = DIFFICULTIES.map(
+    (d) => `<button class="menu-card diff-card ${d === selectedDifficulty ? "selected" : ""}" data-diff="${d}" type="button">
+      <strong>${difficultyLabel(d)}</strong>
+      <span>${difficultyBlurb(d)}</span>
+    </button>`,
+  ).join("");
+
+  const screen = mountScreen(
+    `
+    <div class="menu-bg"><span></span><span></span><span></span></div>
+    <div class="title-screen__content menu-content">
+      <div class="menu-head">
+        <button class="menu-back" data-overlay-close data-back type="button">&lsaquo; Back</button>
+        <h2 class="menu-heading">Deploy to Battle</h2>
+      </div>
+      <div class="start-layout">
+        <div class="start-left">
+          <div class="menu-section">
+            <div class="menu-label">Choose a battlefield</div>
+            <div class="map-list">${mapList}</div>
+          </div>
+        </div>
+        <div class="start-right">
+          <div class="menu-label">Preview</div>
+          <div class="map-preview" data-preview></div>
+          <div class="menu-section">
+            <div class="menu-label">Mode</div>
+            <div class="menu-grid mode-grid">${modeCards}</div>
+          </div>
+          <div class="menu-section">
+            <div class="menu-label">Difficulty</div>
+            <div class="menu-grid diff-grid">${diffCards}</div>
+          </div>
+        </div>
+      </div>
+      <button class="title-start" data-start type="button">Deploy to Battle</button>
+    </div>
+  `,
+    "menu-screen title-screen",
+  );
+
+  const previewHost = screen.querySelector<HTMLElement>("[data-preview]");
+  const renderPreview = (): void => {
+    if (previewHost) previewHost.innerHTML = mapPreviewSvg(mapDef(selectedMap));
+  };
+  renderPreview();
+
+  screen.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("[data-back]")) {
+      showMainMenu();
+      return;
+    }
+    const mapBtn = target.closest<HTMLElement>("[data-map]");
+    if (mapBtn) {
+      selectedMap = mapBtn.dataset.map ?? selectedMap;
+      for (const el of screen.querySelectorAll(".map-card")) el.classList.toggle("selected", el === mapBtn);
+      renderPreview();
+      return;
+    }
+    const modeBtn = target.closest<HTMLElement>("[data-mode]");
+    if (modeBtn) {
+      selectedMode = (modeBtn.dataset.mode as ModeId) ?? selectedMode;
+      for (const el of screen.querySelectorAll(".mode-card")) el.classList.toggle("selected", el === modeBtn);
+      return;
+    }
+    const diffBtn = target.closest<HTMLElement>("[data-diff]");
+    if (diffBtn) {
+      selectedDifficulty = (diffBtn.dataset.diff as Difficulty) ?? selectedDifficulty;
+      for (const el of screen.querySelectorAll(".diff-card")) el.classList.toggle("selected", el === diffBtn);
+      return;
+    }
+    if (target.closest("[data-start]")) {
+      if (screen.classList.contains("is-leaving")) return;
+      settings.difficulty = selectedDifficulty;
+      settings.save();
+      startBattle(selectedMap, selectedMode, selectedDifficulty);
+      screen.classList.add("is-leaving");
+      window.setTimeout(() => screen.remove(), 480);
+    }
+  });
+}
+
+function difficultyBlurb(d: Difficulty): string {
+  if (d === "easy") return "Weaker enemy units and economy. Learn the ropes.";
+  if (d === "hard") return "Enemy units get more health, hit harder, and earn faster.";
+  return "A balanced, even fight.";
+}
+
+function showSettings(): void {
+  closeAllMenus();
+  const screen = mountScreen(
+    `
+    <div class="menu-bg"><span></span><span></span><span></span></div>
+    <div class="title-screen__content menu-content overlay-card">
+      <div class="menu-head">
+        <button class="menu-back" data-overlay-close data-back type="button">&lsaquo; Back</button>
+        <h2 class="menu-heading">Settings</h2>
+      </div>
+      <div class="settings-row">
+        <label>Sound</label>
+        <button class="menu-toggle ${settings.muted ? "" : "on"}" data-set="mute" type="button">${settings.muted ? "Muted" : "On"}</button>
+      </div>
+      <div class="settings-row">
+        <label>Volume</label>
+        <input type="range" min="0" max="100" value="${Math.round(settings.volume * 100)}" data-set="volume" />
+      </div>
+      <div class="settings-row">
+        <label>Default difficulty</label>
+        <div class="settings-choices">
+          ${DIFFICULTIES.map((d) => `<button class="menu-chip ${settings.difficulty === d ? "on" : ""}" data-set="diff" data-value="${d}" type="button">${difficultyLabel(d)}</button>`).join("")}
+        </div>
+      </div>
+      <div class="settings-row">
+        <label>Action speed</label>
+        <div class="settings-choices">
+          ${ACTION_PACES.map((p) => `<button class="menu-chip ${settings.actionPace === p ? "on" : ""}" data-set="pace" data-value="${p}" type="button">${PACE_LABEL[p]}</button>`).join("")}
+        </div>
+      </div>
+      <div class="settings-row">
+        <label>Reduced motion</label>
+        <button class="menu-toggle ${settings.reducedMotion ? "on" : ""}" data-set="motion" type="button">${settings.reducedMotion ? "On" : "Off"}</button>
+      </div>
+      <p class="settings-note">Action speed changes how fast queued orders play out. Settings are saved to this device.</p>
+    </div>
+  `,
+    "menu-screen",
+  );
+
+  screen.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("[data-back]")) {
+      showMainMenu();
+      return;
+    }
+    const set = target.closest<HTMLElement>("[data-set]")?.dataset.set;
+    if (set === "mute") {
+      settings.muted = !settings.muted;
+      sfx.setMuted(settings.muted);
+    } else if (set === "diff") {
+      const value = target.closest<HTMLElement>("[data-value]")?.dataset.value as Difficulty | undefined;
+      if (value) settings.difficulty = value;
+    } else if (set === "pace") {
+      const value = target.closest<HTMLElement>("[data-value]")?.dataset.value as ActionPace | undefined;
+      if (value) settings.actionPace = value;
+    } else if (set === "motion") {
+      settings.reducedMotion = !settings.reducedMotion;
+      document.body.classList.toggle("reduced-motion", settings.reducedMotion);
+    }
+    settings.save();
+    showSettings();
+  });
+  screen.addEventListener("input", (event) => {
+    const target = event.target as HTMLInputElement;
+    if (target.dataset.set === "volume") {
+      settings.volume = Number(target.value) / 100;
+      sfx.setVolume(settings.volume);
+      settings.save();
+    }
+  });
+}
+
+function showArmory(): void {
+  closeAllMenus();
+  const cards = COSMETICS.map((c) => {
+    const owned = progression.isUnlocked(c.id);
+    const active = progression.accentId === c.id;
+    const hex = `#${c.accent.toString(16).padStart(6, "0")}`;
+    return `<div class="armory-card ${active ? "active" : ""}">
+      <div class="armory-swatch" style="--swatch:${hex}"></div>
+      <strong>${c.name}</strong>
+      <span>${c.desc}</span>
+      ${owned
+        ? `<button class="menu-chip ${active ? "on" : ""}" data-equip="${c.id}" type="button">${active ? "Equipped" : "Equip"}</button>`
+        : `<button class="menu-chip ${progression.points >= c.cost ? "" : "locked"}" data-unlock="${c.id}" type="button">Unlock · ${c.cost}</button>`}
+    </div>`;
+  }).join("");
+  const screen = mountScreen(
+    `
+    <div class="menu-bg"><span></span><span></span><span></span></div>
+    <div class="title-screen__content menu-content overlay-card">
+      <div class="menu-head">
+        <button class="menu-back" data-overlay-close data-back type="button">&lsaquo; Back</button>
+        <h2 class="menu-heading">Armory</h2>
+        ${pointsBadge()}
+      </div>
+      <p class="settings-note">Spend points earned in battle to unlock cosmetic accents for your units, then equip one.</p>
+      <div class="armory-grid">${cards}</div>
+    </div>
+  `,
+    "menu-screen",
+  );
+  screen.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("[data-back]")) {
+      showMainMenu();
+      return;
+    }
+    const unlock = target.closest<HTMLElement>("[data-unlock]")?.dataset.unlock;
+    if (unlock) {
+      if (progression.unlock(unlock)) {
+        progression.setAccent(unlock);
+        world.setPlayerAccent(progression.accentColor());
+      }
+      showArmory();
+      return;
+    }
+    const equip = target.closest<HTMLElement>("[data-equip]")?.dataset.equip;
+    if (equip) {
+      progression.setAccent(equip);
+      world.setPlayerAccent(progression.accentColor());
+      showArmory();
+    }
+  });
+}
+
+// ---- In-battle pause menu ----
+function openPauseMenu(): void {
+  if (document.querySelector(".pause-overlay")) return;
+  const screen = mountScreen(
+    `
+    <div class="overlay-card pause-card">
+      <h2 class="menu-heading">Paused</h2>
+      <div class="pause-buttons">
+        <button class="title-start" data-pause="resume" data-overlay-close type="button">Resume</button>
+        <button class="menu-action" data-pause="save" type="button">Save Battle</button>
+        <button class="menu-action" data-pause="controls" type="button">Controls</button>
+        <button class="menu-action" data-pause="menu" type="button">Main Menu</button>
+      </div>
+      <div class="pause-feedback" data-feedback></div>
+    </div>
+  `,
+    "pause-overlay",
+  );
+  screen.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    if (target === screen) {
+      screen.remove();
+      return;
+    }
+    const action = target.closest<HTMLElement>("[data-pause]")?.dataset.pause;
+    if (action === "resume") screen.remove();
+    else if (action === "save") {
+      const ok = saveBattle();
+      const feedback = screen.querySelector<HTMLElement>("[data-feedback]");
+      if (feedback) feedback.textContent = ok ? "Battle saved." : "Save unavailable.";
+    } else if (action === "controls") {
+      screen.remove();
+      showControls();
+    } else if (action === "menu") {
+      screen.remove();
+      showMainMenu();
+    }
+  });
+}
+
+function showControls(): void {
+  const rows: Array<[string, string]> = [
+    ["Left click", "Select a unit / pick a target / order ground"],
+    ["Middle-drag", "Orbit the camera"],
+    ["WASD", "Pan the camera"],
+    ["Scroll", "Zoom"],
+    ["Space", "End turn"],
+    ["Tab", "Cycle squad units"],
+    ["1–6", "Activate the matching command-deck action"],
+    ["M / F / G", "Move / Shoot / Grenade"],
+    ["X / B / V", "Ram / Strike / Crouch (defend)"],
+    ["C", "Quick crouch"],
+    ["Enter", "Confirm the armed order"],
+    ["L", "Toggle the battle log"],
+    ["Esc", "Back out / open this menu"],
+    ["R", "Restart the battle"],
+  ];
+  const screen = mountScreen(
+    `
+    <div class="overlay-card controls-card">
+      <div class="menu-head">
+        <button class="menu-back" data-overlay-close data-back type="button">&lsaquo; Back</button>
+        <h2 class="menu-heading">Controls</h2>
+      </div>
+      <div class="controls-grid">
+        ${rows.map(([k, v]) => `<div class="controls-row"><kbd>${k}</kbd><span>${v}</span></div>`).join("")}
+      </div>
+    </div>
+  `,
+    "pause-overlay",
+  );
+  screen.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    if (target === screen || target.closest("[data-back]")) {
+      screen.remove();
+      openPauseMenu();
+    }
+  });
+}
+
+// ---- Per-unit customization (rename + accent) ----
+function openEditOverlay(id: string): void {
+  const entity = sim.entity(id);
+  if (!entity) return;
+  const accents = COSMETICS.filter((c) => progression.isUnlocked(c.id));
+  const screen = mountScreen(
+    `
+    <div class="overlay-card edit-card">
+      <div class="menu-head">
+        <button class="menu-back" data-overlay-close data-back type="button">&lsaquo; Back</button>
+        <h2 class="menu-heading">Customize Unit</h2>
+      </div>
+      <label class="edit-label">Name</label>
+      <input class="edit-name" type="text" maxlength="22" value="${escapeAttr(entity.name)}" />
+      <label class="edit-label">Accent</label>
+      <div class="edit-accents">
+        ${accents.map((c) => {
+          const hex = `#${c.accent.toString(16).padStart(6, "0")}`;
+          const current = (entity.accent ?? progression.accentColor()) === c.accent;
+          return `<button class="edit-accent ${current ? "on" : ""}" data-accent="${c.accent}" style="--swatch:${hex}" title="${escapeAttr(c.name)}" type="button"></button>`;
+        }).join("")}
+      </div>
+      <p class="settings-note">Unlock more accents in the Armory with points earned in battle.</p>
+      <button class="title-start edit-apply" data-apply type="button">Apply</button>
+    </div>
+  `,
+    "edit-overlay",
+  );
+  const nameInput = screen.querySelector<HTMLInputElement>(".edit-name");
+  let accent = entity.accent;
+  screen.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    if (target === screen || target.closest("[data-back]")) {
+      screen.remove();
+      return;
+    }
+    const accentBtn = target.closest<HTMLElement>("[data-accent]");
+    if (accentBtn) {
+      accent = Number(accentBtn.dataset.accent);
+      for (const el of screen.querySelectorAll(".edit-accent")) el.classList.toggle("on", el === accentBtn);
+      return;
+    }
+    if (target.closest("[data-apply]")) {
+      const name = nameInput?.value.trim();
+      if (name) entity.name = name;
+      entity.accent = accent;
+      screen.remove();
+      hud.update();
+    }
+  });
+}
+
+// ---- Save / load ----
+// Always overwrite the single save slot with the current battle so "Continue" reloads the
+// most recent save. (The old command-phase-only guard silently failed mid-resolve saves,
+// leaving a stale earlier save as the one Continue would load.) restore() normalizes any
+// snapshot back to a clean command phase.
+function saveBattle(): boolean {
+  if (sim.gameOver) return false; // nothing meaningful to resume from a finished battle
+  return safeStorageSet(SAVE_KEY, sim.serialize());
+}
+
+function loadSavedBattle(): void {
+  const raw = safeStorageGet(SAVE_KEY);
+  if (!raw) {
+    showMainMenu();
+    return;
+  }
+  if (sim.restore(raw)) {
+    tutorialActive = false;
+    closeAllMenus();
+    world.applyMap(sim.mapDef.theme);
+    world.setPlayerAccent(progression.accentColor());
+    focusOnPlayerBase();
+    lastEndPhase = undefined;
+    hud.update();
+  }
+}
+
+function safeStorageGet(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function safeStorageSet(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ---- Tutorial ----
+const TUTORIAL_STEPS: Array<{ title: string; body: string }> = [
+  { title: "Welcome, Commander", body: "This is a turn-based tactics skirmish. You start with only a Home Base. Let's learn the basics on an easy bot." },
+  { title: "Select your base", body: "Click your blue Home Base. Its command deck opens at the bottom — from there you deploy troops, research tech, build defenses, and upgrade." },
+  { title: "Deploy a Recruit", body: "In the base deck, click 'Recruit' to deploy rifle infantry next to your base. It costs money and the base's command point." },
+  { title: "End the turn", body: "Press Space (or End Turn) to resolve the round. Income is paid and your new troop becomes ready to act next turn." },
+  { title: "Move a unit", body: "Select your Recruit and press M (Move). A cyan circle shows how far it can go this turn — click inside it to move." },
+  { title: "Attack", body: "Press F (Shoot), click an enemy, pick a body part, and Confirm. The line preview shows cover, accuracy, and estimated damage." },
+  { title: "Build defenses & win", body: "From the base you can build walls and turrets near it, and upgrade income and command points. Destroy the enemy base and force to win. Good luck!" },
+];
+let tutorialStep = 0;
+
+function startTutorial(): void {
+  closeAllMenus();
+  tutorialStep = 0;
+  startBattle("ironworks", "destroy", "easy");
+  tutorialActive = true;
+  renderTutorialPanel();
+}
+
+function renderTutorialPanel(): void {
+  document.querySelector(".tutorial-panel")?.remove();
+  if (!tutorialActive) return;
+  const step = TUTORIAL_STEPS[tutorialStep];
+  const panel = document.createElement("div");
+  panel.className = "tutorial-panel";
+  panel.innerHTML = `
+    <div class="tutorial-step">Step ${tutorialStep + 1} / ${TUTORIAL_STEPS.length}</div>
+    <strong>${step.title}</strong>
+    <p>${step.body}</p>
+    <div class="tutorial-actions">
+      ${tutorialStep > 0 ? `<button class="menu-chip" data-tut="back" type="button">Back</button>` : ""}
+      ${tutorialStep < TUTORIAL_STEPS.length - 1 ? `<button class="menu-chip on" data-tut="next" type="button">Next</button>` : `<button class="menu-chip on" data-tut="done" type="button">Got it</button>`}
+      <button class="menu-chip" data-tut="exit" type="button">Exit Tutorial</button>
+    </div>
+  `;
+  panel.addEventListener("click", (event) => {
+    const action = (event.target as HTMLElement).closest<HTMLElement>("[data-tut]")?.dataset.tut;
+    if (action === "next") {
+      tutorialStep = Math.min(TUTORIAL_STEPS.length - 1, tutorialStep + 1);
+      renderTutorialPanel();
+    } else if (action === "back") {
+      tutorialStep = Math.max(0, tutorialStep - 1);
+      renderTutorialPanel();
+    } else if (action === "done") {
+      panel.remove();
+    } else if (action === "exit") {
+      tutorialActive = false;
+      panel.remove();
+      showMainMenu();
+    }
+  });
+  document.body.appendChild(panel);
+}
+
+// A brief flourish when a resolve finishes and the next command round opens.
+let roundTransitionEl: HTMLDivElement | undefined;
+function showRoundTransition(turn: number): void {
+  if (anyOverlayOpen() || sim.gameOver) return;
+  roundTransitionEl?.remove();
+  const el = document.createElement("div");
+  el.className = "round-transition";
+  el.innerHTML = `<div class="round-transition__bar"></div><div class="round-transition__label"><span>Round</span><strong>Turn ${turn}</strong></div>`;
+  document.body.appendChild(el);
+  roundTransitionEl = el;
+  // Trigger the enter animation on the next frame, then auto-clear.
+  requestAnimationFrame(() => el.classList.add("show"));
+  // Held ~0.5s longer than the original 1300/700 so the new round reads clearly before play.
+  const life = settings.reducedMotion ? 1200 : 1800;
+  window.setTimeout(() => {
+    el.classList.remove("show");
+    el.classList.add("leaving");
+    window.setTimeout(() => { el.remove(); if (roundTransitionEl === el) roundTransitionEl = undefined; }, 360);
+  }, life);
+}
+
+sim.bus.on("TURN_START", ({ turn }) => showRoundTransition(turn));
+
+function showToast(text: string): void {
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.textContent = text;
+  document.body.appendChild(toast);
+  window.setTimeout(() => toast.classList.add("show"), 16);
+  window.setTimeout(() => {
+    toast.classList.remove("show");
+    window.setTimeout(() => toast.remove(), 400);
+  }, 2600);
+}
+
+if (settings.reducedMotion) document.body.classList.add("reduced-motion");
+showMainMenu();
+
+// ---------------------------------------------------------------------------
+// Frame loop
+// ---------------------------------------------------------------------------
+
 let last = performance.now();
+let lastHudUpdateAt = 0;
+let lastHudPhase = sim.phase;
+let lastHudLogHead = "";
+const seenProjectileIds = new Set<string>();
+const seenEffectIds = new Set<string>();
+
 function frame(now: number): void {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
@@ -169,14 +904,68 @@ function frame(now: number): void {
     left: heldKeys.has("KeyA"),
     right: heldKeys.has("KeyD"),
   });
-  sim.update(dt);
-  world.update(sim, hud.focusedTargetId ?? hud.hoveredTargetId, hud.focusedPartId);
-  hud.update();
+  // The action-pace setting only scales time while orders resolve; planning stays real-time.
+  sim.update(sim.phase === "resolve" ? dt * settings.resolveSpeed : dt);
+  playBattleAudio();
+  handleEndState();
+  syncCameraAssist();
+  const aimPoint = groundAimHover();
+  world.update(sim, hud.focusedTargetId ?? hud.hoveredTargetId, hud.focusedPartId, stage.camera, aimPoint);
+  const hudLogHead = sim.log[0] ?? "";
+  const idleThrottleMs = sim.phase === "resolve" ? 120 : 90;
+  const shouldUpdateHud = sim.phase !== lastHudPhase || hudLogHead !== lastHudLogHead || now - lastHudUpdateAt > idleThrottleMs;
+  if (shouldUpdateHud) {
+    hud.update();
+    lastHudUpdateAt = now;
+    lastHudPhase = sim.phase;
+    lastHudLogHead = hudLogHead;
+  }
   stage.render();
   requestAnimationFrame(frame);
 }
 
 requestAnimationFrame(frame);
+
+// The cursor ground point, only while aiming a grenade/shell at a spot (so the renderer can
+// draw the landing arc and blast radius).
+function groundAimHover(): Vec2 | undefined {
+  if (anyOverlayOpen() || sim.phase !== "command") return undefined;
+  const aiming = sim.intent === "grenade" || (sim.intent === "shoot" && sim.selectedCanGroundTarget());
+  return aiming ? hoverWorld : undefined;
+}
+
+function playBattleAudio(): void {
+  for (const projectile of sim.projectiles) {
+    if (seenProjectileIds.has(projectile.id)) continue;
+    seenProjectileIds.add(projectile.id);
+    sfx.shot(projectile.kind);
+  }
+  for (const effect of sim.effects) {
+    if (seenEffectIds.has(effect.id)) continue;
+    seenEffectIds.add(effect.id);
+    if (effect.type === "blast") sfx.explosion();
+    else if (effect.type === "impact") sfx.impact();
+  }
+  if (seenProjectileIds.size > 500) seenProjectileIds.clear();
+  if (seenEffectIds.size > 800) seenEffectIds.clear();
+}
+
+function handleEndState(): void {
+  if (sim.phase !== "victory" && sim.phase !== "defeat") {
+    if (lastEndPhase) lastEndPhase = undefined;
+    return;
+  }
+  if (lastEndPhase === sim.phase) return;
+  lastEndPhase = sim.phase;
+  const victory = sim.phase === "victory";
+  if (victory) sfx.victory();
+  else sfx.defeat();
+  if (!tutorialActive) {
+    const reward = battleReward(victory, sim.difficulty, sim.turn);
+    progression.award(reward);
+    showToast(`+${reward} points earned`);
+  }
+}
 
 declare global {
   interface Window {
@@ -192,9 +981,25 @@ declare global {
       queueMoveToCover(id: string): boolean;
       queueTakeCover(id: string): boolean;
       queueClimbCover(id: string): boolean;
+      queueGrenadePart(id: string, partId: string): boolean;
+      queueGrenadeAt(destination: Vec2): boolean;
+      queueShootAt(destination: Vec2): boolean;
       queueMelee(id: string): boolean;
+      queueMeleePart(id: string, partId: string): boolean;
+      queueSpawnTroop(kind: TroopKind): boolean;
+      queueBuildStructure(point: Vec2): boolean;
+      beginBuild(kind: DefenseKind): void;
+      upgradeBaseIncome(): boolean;
+      upgradeBaseCommand(): boolean;
+      researchTech(nodeId: string): boolean;
+      startBattle(mapId: string, modeId: ModeId, difficulty?: Difficulty): void;
+      money(team: Team): number;
       cancelOrder(id: string): void;
       camera(): { x: number; z: number; zoom: number; yaw: number; pitch: number };
+      renderDebug(): WorldRenderDebug;
+      // Debug scenario harness: cut straight to a staged battle state for tests/screenshots.
+      scenario(id: string): boolean;
+      scenarios(): Array<{ id: string; title: string; description: string }>;
     };
   }
 }
@@ -205,8 +1010,8 @@ window.__rht = {
   setAim: (aim) => sim.setAim(aim),
   endTurn: () => sim.endTurn(),
   reset: () => {
-    sim.reset();
-    if (sim.selected) stage.focusOn(sim.selected.position);
+    hud.resetGame();
+    lastCommandCameraKey = "";
   },
   deselect: () => sim.deselect(),
   chooseBoardEntity: (id) => hud.chooseBoardEntity(id),
@@ -214,7 +1019,106 @@ window.__rht = {
   queueMoveToCover: (id) => sim.queueMoveToCover(id),
   queueTakeCover: (id) => sim.queueTakeCover(id),
   queueClimbCover: (id) => sim.queueClimbCover(id),
+  queueGrenadePart: (id, partId) => sim.queueGrenadePart(id, partId),
+  queueGrenadeAt: (destination) => sim.queueGrenadeAt(destination),
+  queueShootAt: (destination) => sim.queueShootAt(destination),
   queueMelee: (id) => sim.queueMelee(id),
+  queueMeleePart: (id, partId) => sim.queueMeleePart(id, partId),
+  queueSpawnTroop: (kind) => sim.queueSpawnTroop(kind),
+  queueBuildStructure: (point) => sim.queueBuildStructure(point),
+  beginBuild: (kind) => sim.setPendingBuild(kind),
+  upgradeBaseIncome: () => sim.upgradeBaseIncome(),
+  upgradeBaseCommand: () => sim.upgradeBaseCommand(),
+  researchTech: (nodeId) => sim.researchTech(nodeId),
+  startBattle: (mapId, modeId, difficulty) => startBattle(mapId, modeId, difficulty),
+  money: (team) => sim.money(team),
   cancelOrder: (id) => sim.cancelOrder(id),
   camera: () => stage.viewState(),
+  renderDebug: () => world.debugState(),
+  scenario: (id) => {
+    closeAllMenus();
+    if (!applyScenario(sim, id)) return false;
+    tutorialActive = false;
+    lastEndPhase = undefined; // let victory/defeat scenarios render their end screen
+    world.applyMap(sim.mapDef.theme);
+    world.setPlayerAccent(progression.accentColor());
+    const focus = sim.selected;
+    if (focus) stage.focusOn(focus.position);
+    else focusOnPlayerBase();
+    hud.update();
+    return true;
+  },
+  scenarios: () => scenarioInfo(),
 };
+
+function escapeAttr(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function syncCameraAssist(): void {
+  if (sim.phase === "resolve") {
+    const focus = resolveFocusPoint();
+    if (!focus) return;
+    const view = stage.viewState();
+    stage.guideTo({
+      focus,
+      zoom: Math.min(view.zoom, 0.86),
+      pitch: Math.max(view.pitch, 0.62),
+    }, { mode: "resolve", strength: 1.85, durationMs: 280 });
+    lastCommandCameraKey = "";
+    return;
+  }
+
+  if (sim.phase !== "command") {
+    lastCommandCameraKey = "";
+    return;
+  }
+
+  const actor = sim.selected;
+  const target = sim.entity(hud.focusedTargetId ?? hud.hoveredTargetId);
+  if (!actor || actor.team !== "player" || !target || target.team === "player") {
+    lastCommandCameraKey = "";
+    return;
+  }
+
+  const key = `${actor.id}:${target.id}:${hud.focusedPartId ?? ""}:${sim.intent}`;
+  if (key === lastCommandCameraKey) return;
+  lastCommandCameraKey = key;
+
+  const separation = dist(actor.position, target.position);
+  stage.guideTo({
+    focus: midpoint(actor.position, target.position),
+    zoom: separation > 9 ? 0.9 : 0.82,
+    pitch: 0.68,
+  }, { mode: "aim", strength: 2.7, durationMs: 1300 });
+}
+
+function resolveFocusPoint(): Vec2 | undefined {
+  if (sim.projectiles.length) {
+    let x = 0;
+    let z = 0;
+    let count = 0;
+    for (const projectile of sim.projectiles.slice(0, 8)) {
+      x += projectile.position.x + projectile.intendedPoint.x;
+      z += projectile.position.z + projectile.intendedPoint.z;
+      count += 2;
+    }
+    return count ? { x: x / count, z: z / count } : undefined;
+  }
+
+  const active = sim.orders.find((order) => !order.done);
+  const actor = sim.entity(active?.actorId);
+  const target = sim.entity(active?.targetId);
+  if (actor && target) return midpoint(actor.position, target.position);
+  if (actor && active?.destination) return midpoint(actor.position, active.destination);
+  return undefined;
+}
+
+function midpoint(a: Vec2, b: Vec2): Vec2 {
+  return { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 };
+}

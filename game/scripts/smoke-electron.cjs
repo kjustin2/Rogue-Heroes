@@ -150,7 +150,7 @@ async function run() {
         ["p-soldier-1", { x: -2, z: -2.4 }],
         ["p-soldier-2", { x: -2, z: 2.4 }],
         ["p-grenadier-1", { x: -2, z: 4.8 }],
-        ["p-striker-1", { x: -1.6, z: 0.8 }],
+        ["p-striker-1", { x: -1.35, z: 0.8 }],
         ["p-tank-1", { x: -2, z: -4.8 }],
         ["e-tank-1", { x: 1.2, z: 0 }],
         ["e-soldier-1", { x: 1.2, z: -2.4 }],
@@ -175,7 +175,7 @@ async function run() {
         player.stance = "crouched";
       }
       sim.select("p-striker-1");
-      sim.queueMelee("e-tank-1");
+      sim.queueMeleePart("e-tank-1", "hull");
       sim.select("p-soldier-1");
       sim.queueShootPart("e-soldier-1", "body");
       sim.select("p-soldier-2");

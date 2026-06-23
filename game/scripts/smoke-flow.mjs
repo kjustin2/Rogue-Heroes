@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
 
-const PORT = 5175;
+const PORT = 5179;
 const URL = `http://127.0.0.1:${PORT}`;
 const OUT = "shots";
 
@@ -18,7 +18,7 @@ let browser = null;
 try {
   if (!(await isServerReady(URL))) {
     const viteBin = join(process.cwd(), "node_modules", "vite", "bin", "vite.js");
-    server = spawn(process.execPath, [viteBin, "--host", "127.0.0.1", "--strictPort"], {
+    server = spawn(process.execPath, [viteBin, "--host", "127.0.0.1", "--strictPort", "--port", String(PORT)], {
       cwd: process.cwd(),
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -37,125 +37,79 @@ try {
   page.on("pageerror", (err) => errors.push(`PAGEERROR: ${err.message}`));
 
   await page.goto(URL, { waitUntil: "networkidle" });
-  await page.waitForSelector(".topbar");
-  await assertCanvasPainted(page, "flow command");
-  const initialUi = await page.evaluate(() => ({
-    targetPanel: Boolean(document.querySelector(".target-panel")),
-    unitDetail: Boolean(document.querySelector(".unit-detail-panel")),
-    flowCount: document.querySelectorAll(".flow-steps span").length,
-    commandText: document.querySelector(".commandbar")?.textContent,
-  }));
-  if (initialUi.targetPanel || initialUi.unitDetail || initialUi.flowCount || !initialUi.commandText?.includes("Hammer")) {
-    throw new Error(`Flow smoke started with unclear default UI: ${JSON.stringify(initialUi)}`);
-  }
+  await page.waitForSelector(".main-menu");
+  await page.screenshot({ path: join(OUT, "6-menu.png") });
 
-  const queued = await page.evaluate(() => {
+  // Enter the deploy screen, pick a specific map + mode through the menu, then deploy.
+  await page.click('[data-menu="play"]');
+  await page.waitForSelector('[data-map="ironworks"]');
+  await page.click('[data-map="ironworks"]');
+  await page.click('[data-mode="ctf"]');
+  await page.click("[data-start]");
+  await page.waitForSelector(".title-screen", { state: "detached", timeout: 4000 }).catch(() => {});
+  await assertCanvasPainted(page, "flow command");
+
+  const startState = await page.evaluate(() => ({
+    map: window.__rht.sim.mapDef.id,
+    mode: window.__rht.sim.mode,
+    players: window.__rht.sim.fieldUnitCount("player"),
+    enemies: window.__rht.sim.fieldUnitCount("enemy"),
+    modeChip: Boolean(document.querySelector(".mode-chip")),
+  }));
+  if (startState.map !== "ironworks" || startState.mode !== "ctf") {
+    throw new Error(`Menu selection not applied: ${JSON.stringify(startState)}`);
+  }
+  if (startState.players !== 0 || startState.enemies !== 0) {
+    throw new Error(`Battle should start with no units deployed: ${JSON.stringify(startState)}`);
+  }
+  if (!startState.modeChip) throw new Error("Mode/score chip missing from HUD");
+
+  // Research a doctrine, then deploy a couple of troops over the next turns.
+  const built = await page.evaluate(async () => {
     const api = window.__rht;
     const sim = api.sim;
-
-    api.reset();
-    for (const entity of sim.entities) {
-      if (entity.team === "neutral") {
-        entity.position.x = 0;
-        entity.position.z = 8;
-      }
-    }
-
-    const placements = new Map([
-      ["p-sniper-1", { x: -2, z: 0 }],
-      ["p-soldier-1", { x: -2, z: -2.4 }],
-      ["p-soldier-2", { x: -2, z: 2.4 }],
-      ["p-grenadier-1", { x: -2, z: 4.8 }],
-      ["p-striker-1", { x: -1.6, z: 0.8 }],
-      ["p-tank-1", { x: -2, z: -4.8 }],
-      ["e-tank-1", { x: 1.2, z: 0 }],
-      ["e-soldier-1", { x: 1.2, z: -2.4 }],
-      ["e-sniper-1", { x: 1.2, z: 2.4 }],
-      ["e-grenadier-1", { x: 1.2, z: 4.8 }],
-      ["e-base-1", { x: 1.2, z: -4.8 }],
-    ]);
-
-    for (const [id, position] of placements) {
-      const entity = sim.entity(id);
-      entity.position.x = position.x;
-      entity.position.z = position.z;
-    }
-
-    for (const enemy of sim.entities.filter((entity) => entity.team === "enemy")) {
-      const critical = enemy.parts.find((part) => part.critical);
-      critical.hp = Math.min(critical.hp, 1);
-      if (enemy.id === "e-tank-1") {
-        const frontPlate = enemy.parts.find((part) => part.id === "front-plate");
-        if (frontPlate) frontPlate.hp = 0;
-      }
-    }
-
-    for (const player of sim.entities.filter((entity) => entity.team === "player" && entity.kind !== "tank")) {
-      player.stance = "crouched";
-    }
-
-    sim.select("p-striker-1");
-    sim.queueMelee("e-tank-1");
-    sim.select("p-soldier-1");
-    sim.queueShootPart("e-soldier-1", "body");
-    sim.select("p-soldier-2");
-    sim.queueShootPart("e-sniper-1", "body");
-    sim.select("p-grenadier-1");
-    sim.queueShootPart("e-grenadier-1", "body");
-    sim.select("p-tank-1");
-    sim.queueShootPart("e-base-1", "core");
+    const base = sim.entities.find((e) => e.kind === "base" && e.team === "player");
+    sim.select(base.id);
+    // Grant a comfortable treasury so the harness exercises mechanics, not the price curve.
+    sim.economy.set("player", 2000);
+    api.researchTech("assault");
     api.endTurn();
-
-    return sim.orders
-      .filter((order) => order.actorId.startsWith("p-"))
-      .map((order) => ({ actorId: order.actorId, targetId: order.targetId, kind: order.kind }));
   });
+  void built;
+  await page.waitForFunction(() => window.__rht.sim.phase === "command" && window.__rht.sim.turn === 2, undefined, { timeout: 16000 });
 
-  if (queued.length !== 5) throw new Error(`Expected 5 player orders, got ${JSON.stringify(queued)}`);
-
-  await page.waitForFunction(() => window.__rht.sim.phase === "resolve" && window.__rht.sim.projectiles.length > 0, undefined, { timeout: 3000 });
-  const resolveState = await page.evaluate(() => ({
-    phase: window.__rht.sim.phase,
-    projectiles: window.__rht.sim.projectiles.length,
-    orders: window.__rht.sim.orders.length,
-  }));
-  if (resolveState.phase !== "resolve" || resolveState.projectiles < 1 || resolveState.orders < 3) {
-    throw new Error(`Expected active simultaneous resolve, got ${JSON.stringify(resolveState)}`);
-  }
+  await page.evaluate(() => {
+    const api = window.__rht;
+    api.sim.economy.set("player", 2000);
+    api.sim.select(api.sim.entities.find((e) => e.kind === "base" && e.team === "player").id);
+    api.queueSpawnTroop("striker");
+    api.endTurn();
+  });
+  await page.waitForFunction(() => window.__rht.sim.phase === "resolve" || window.__rht.sim.turn >= 3, undefined, { timeout: 6000 });
   await assertCanvasPainted(page, "flow resolve");
-  await page.screenshot({ path: join(OUT, "7-flow-resolve.png") });
+  await page.waitForFunction(() => window.__rht.sim.phase === "command" && window.__rht.sim.turn >= 3, undefined, { timeout: 16000 });
+  await page.screenshot({ path: join(OUT, "7-flow-battle.png") });
 
-  await page.waitForFunction(() => window.__rht.sim.phase === "victory", undefined, { timeout: 16000 });
-  await assertCanvasPainted(page, "flow victory");
-  await page.screenshot({ path: join(OUT, "8-flow-victory.png") });
-
-  const victoryState = await page.evaluate(() => ({
-    phase: window.__rht.sim.phase,
-    livingEnemies: window.__rht.sim.living("enemy").map((entity) => entity.id),
-    log: window.__rht.sim.log.slice(),
+  const midState = await page.evaluate(() => ({
+    players: window.__rht.sim.fieldUnitCount("player"),
+    enemies: window.__rht.sim.fieldUnitCount("enemy"),
   }));
-  if (victoryState.phase !== "victory") throw new Error(`Expected victory, got ${victoryState.phase}`);
-  if (victoryState.livingEnemies.length) throw new Error(`Enemies still alive: ${victoryState.livingEnemies.join(", ")}`);
+  if (midState.players < 1) throw new Error(`Player deployed no troops: ${JSON.stringify(midState)}`);
 
+  // Reset returns to a fresh, empty battle.
   await page.evaluate(() => window.__rht.reset());
   await page.waitForFunction(() => window.__rht.sim.phase === "command" && window.__rht.sim.turn === 1);
   const resetState = await page.evaluate(() => ({
-    phase: window.__rht.sim.phase,
     turn: window.__rht.sim.turn,
-    livingEnemies: window.__rht.sim.living("enemy").length,
-    livingPlayers: window.__rht.sim.living("player").length,
-    targetPanel: Boolean(document.querySelector(".target-panel")),
-    unitDetail: Boolean(document.querySelector(".unit-detail-panel")),
+    players: window.__rht.sim.fieldUnitCount("player"),
+    enemies: window.__rht.sim.fieldUnitCount("enemy"),
   }));
-  if (resetState.livingEnemies !== 5 || resetState.livingPlayers !== 6) {
-    throw new Error(`Reset did not restore both squads: ${JSON.stringify(resetState)}`);
-  }
-  if (resetState.targetPanel || resetState.unitDetail) {
-    throw new Error(`Reset should return to the compact command UI: ${JSON.stringify(resetState)}`);
+  if (resetState.players !== 0 || resetState.enemies !== 0) {
+    throw new Error(`Reset did not return to an empty start: ${JSON.stringify(resetState)}`);
   }
 
   if (errors.length) throw new Error(`Console errors:\n${errors.slice(0, 12).join("\n")}`);
-  console.log(`Flow passed: ${queued.length} orders, victory reached, reset restored ${resetState.livingPlayers}v${resetState.livingEnemies}`);
+  console.log(`Flow passed: menu picked ${startState.map}/${startState.mode}, deployed ${midState.players}, enemy fielded ${midState.enemies}, reset to empty.`);
 } finally {
   if (browser) await browser.close();
   if (server) server.kill();

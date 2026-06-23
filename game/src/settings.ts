@@ -1,0 +1,53 @@
+// Persisted player settings: audio mute/volume, default bot difficulty, reduced motion.
+
+import type { Difficulty } from "./game/sim";
+
+const KEY = "rht.settings.v1";
+
+// Resolve-phase pacing: how fast queued orders play out. 1 = default; <1 slower, >1 faster.
+export type ActionPace = "slow" | "normal" | "fast";
+export const ACTION_PACES: readonly ActionPace[] = ["slow", "normal", "fast"];
+export const PACE_SPEED: Record<ActionPace, number> = { slow: 0.6, normal: 1, fast: 1.8 };
+export const PACE_LABEL: Record<ActionPace, string> = { slow: "Slow", normal: "Default", fast: "Fast" };
+
+export class GameSettings {
+  muted = false;
+  volume = 0.6;
+  difficulty: Difficulty = "normal";
+  reducedMotion = false;
+  actionPace: ActionPace = "normal";
+
+  constructor() {
+    this.load();
+  }
+
+  // The dt multiplier applied to the sim while resolving orders.
+  get resolveSpeed(): number {
+    return PACE_SPEED[this.actionPace];
+  }
+
+  private load(): void {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      const s = JSON.parse(raw) as Partial<GameSettings>;
+      if (typeof s.muted === "boolean") this.muted = s.muted;
+      if (typeof s.volume === "number") this.volume = Math.max(0, Math.min(1, s.volume));
+      if (s.difficulty === "easy" || s.difficulty === "normal" || s.difficulty === "hard") this.difficulty = s.difficulty;
+      if (typeof s.reducedMotion === "boolean") this.reducedMotion = s.reducedMotion;
+      if (s.actionPace === "slow" || s.actionPace === "normal" || s.actionPace === "fast") this.actionPace = s.actionPace;
+    } catch {
+      // ignore
+    }
+  }
+
+  save(): void {
+    try {
+      localStorage.setItem(KEY, JSON.stringify({ muted: this.muted, volume: this.volume, difficulty: this.difficulty, reducedMotion: this.reducedMotion, actionPace: this.actionPace }));
+    } catch {
+      // ignore
+    }
+  }
+}
+
+export const settings = new GameSettings();

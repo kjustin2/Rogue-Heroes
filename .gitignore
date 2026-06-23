@@ -7,6 +7,8 @@ coverage/
 test-results/
 *.log
 shots/
+improve/cycles/*/vitest.json
+improve/scenario-gallery/*.png
 server.out.log
 server.err.log
 *.tmp

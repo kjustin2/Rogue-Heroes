@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { applyDamage, createCover, createGrenadier, createSniper, createSoldier, createStriker, createTank } from "./damageModel";
-import { TacticalSim, type Projectile } from "./sim";
+import { dist } from "../core/math";
+import { applyDamage, createBase, createCover, createGrenadier, createHeavy, createMedic, createScout, createSniper, createSoldier, createStriker, createTank, createWall } from "./damageModel";
+import {
+  BASE_INCOME,
+  INCOME_BY_LEVEL,
+  MAPS,
+  POP_CAP,
+  START_MONEY_PLAYER,
+  TacticalSim,
+  generatorEfficiency,
+  incomeUpgradeCost,
+  troopSpec,
+  type Projectile,
+} from "./sim";
 import { terrainHeightAt } from "./terrain";
 
 describe("tactical simulation loop", () => {
@@ -29,7 +41,10 @@ describe("tactical simulation loop", () => {
   });
 
   it("does not let tank rams target friendly units", () => {
-    const sim = new TacticalSim();
+    const sim = new TacticalSim([
+      createTank("p-tank-1", "Hammer", "player", { x: 0, z: 0 }),
+      createSoldier("p-soldier-1", "Rook", "player", { x: 1.6, z: 0 }),
+    ]);
 
     sim.select("p-tank-1");
 
@@ -38,8 +53,40 @@ describe("tactical simulation loop", () => {
     expect(sim.log[0]).toBe("Cannot ram friendly units");
   });
 
+  it("cycles the player squad with Tab, wrapping both ways and skipping structures", () => {
+    const sim = new TacticalSim([
+      createBase("p-base-1", "HQ", "player", { x: -10, z: 0 }),
+      createSoldier("p-a", "Able", "player", { x: 0, z: 0 }),
+      createScout("p-b", "Baker", "player", { x: 1.6, z: 0 }),
+      createTank("p-c", "Charlie", "player", { x: 3.2, z: 0 }),
+      createWall("p-wall", "Barrier", "player", { x: 4.8, z: 0 }),
+    ]);
+
+    // Forward cycles in roster order, then wraps from the last unit back to the first
+    // (past the wall and base, which are never part of the squad cycle).
+    sim.select("p-a");
+    sim.cyclePlayer(1);
+    expect(sim.selectedId).toBe("p-b");
+    sim.cyclePlayer(1);
+    expect(sim.selectedId).toBe("p-c");
+    sim.cyclePlayer(1);
+    expect(sim.selectedId).toBe("p-a");
+
+    // Reverse (Shift+Tab) wraps the other direction: first unit -> last unit.
+    sim.cyclePlayer(-1);
+    expect(sim.selectedId).toBe("p-c");
+
+    // Selecting a structure then pressing Tab steps onto a real unit, never stalling.
+    sim.select("p-wall");
+    sim.cyclePlayer(1);
+    expect(sim.selectedId).toBe("p-a");
+  });
+
   it("lets a unit spend multiple CP on queued orders and undo individual choices", () => {
-    const sim = new TacticalSim();
+    const sim = new TacticalSim([
+      createSoldier("p-soldier-1", "Rook", "player", { x: 0, z: 0 }),
+      createSoldier("e-soldier-1", "Cutlass", "enemy", { x: 6, z: 0 }),
+    ]);
 
     sim.select("p-soldier-1");
     expect(sim.queueShootPart("e-soldier-1", "rifle")).toBe(true);
@@ -76,6 +123,7 @@ describe("tactical simulation loop", () => {
   it("executes move then shoot from the moved position", () => {
     const enemy = createSoldier("enemy", "Cutlass", "enemy", { x: 6, z: 0 });
     applyDamage(enemy, "rifle", 99);
+    applyDamage(enemy, "legs", 99); // keep the dummy stationary so the player's geometry is deterministic
     const sim = new TacticalSim([
       createSoldier("player", "Rook", "player", { x: 0, z: 0 }),
       enemy,
@@ -110,7 +158,11 @@ describe("tactical simulation loop", () => {
   });
 
   it("only exposes intact parts that exist on the selected target type", () => {
-    const sim = new TacticalSim();
+    const sim = new TacticalSim([
+      createSoldier("p-soldier-1", "Rook", "player", { x: 0, z: 0 }),
+      createTank("e-tank-1", "Breaker", "enemy", { x: 6, z: 0 }),
+      createSoldier("e-soldier-1", "Cutlass", "enemy", { x: 4, z: 2 }),
+    ]);
     const enemyTank = sim.entity("e-tank-1");
     const enemySoldier = sim.entity("e-soldier-1");
 
@@ -363,26 +415,33 @@ describe("tactical simulation loop", () => {
     expect(farPreview?.hitChance).toBeLessThan(0.35);
   });
 
-  it("lets a highly inaccurate projectile hit a different unit on the swayed line", () => {
-    const bystander = createSoldier("bystander", "Bystander", "enemy", { x: 5, z: 0.2 });
-    const target = createSoldier("target", "Target", "enemy", { x: 9, z: 0 });
-    applyDamage(bystander, "rifle", 99);
-    applyDamage(target, "rifle", 99);
-    const sim = new TacticalSim([
-      createGrenadier("grenadier", "Briggs", "player", { x: 0, z: 0 }),
-      bystander,
-      target,
-    ]);
-    sim.rng.reseed(1);
-
-    sim.select("grenadier");
-    expect(sim.queueShootPart("target", "head")).toBe(true);
-    sim.endTurn();
-    advance(sim, 14);
-
-    expect(target.parts.find((part) => part.id === "head")?.hp).toBe(16);
-    expect(bystander.parts.some((part) => part.id !== "rifle" && part.hp < part.maxHp)).toBe(true);
-    expect(sim.log).toContain("Bystander is caught in the blast");
+  it("lets a highly inaccurate burst stray into a different unit on the line", () => {
+    // A heavy gunner sprays a 4-round burst at a distant target; with a bystander near the
+    // firing line, the wide spread should sometimes clip the bystander. Search seeds so the
+    // test stays robust to the random spread.
+    let caught = false;
+    for (let seed = 1; seed <= 400 && !caught; seed += 1) {
+      const bystander = createSoldier("bystander", "Bystander", "enemy", { x: 6, z: 0.35 });
+      const target = createSoldier("target", "Target", "enemy", { x: 13, z: 0 });
+      applyDamage(bystander, "rifle", 99);
+      applyDamage(bystander, "legs", 99);
+      applyDamage(target, "rifle", 99);
+      applyDamage(target, "legs", 99);
+      bystander.grenades = 0;
+      target.grenades = 0;
+      const sim = new TacticalSim([
+        createHeavy("heavy", "Gunner", "player", { x: 0, z: 0 }),
+        bystander,
+        target,
+      ]);
+      sim.rng.reseed(seed);
+      sim.select("heavy");
+      if (!sim.queueShootPart("target", "body")) continue;
+      sim.endTurn();
+      advance(sim, 6);
+      if (bystander.parts.some((part) => part.id !== "rifle" && part.id !== "legs" && part.hp < part.maxHp)) caught = true;
+    }
+    expect(caught).toBe(true);
   });
 
   it("lets a moving target drag a tracked shot into cover during resolve", () => {
@@ -400,6 +459,10 @@ describe("tactical simulation loop", () => {
     sim.select("player");
     expect(sim.queueShootPart("enemy", "head")).toBe(true);
     sim.endTurn();
+    // Replace the enemy's auto AI order with a scripted dash into the wall's line.
+    for (let i = sim.orders.length - 1; i >= 0; i -= 1) {
+      if (sim.orders[i].actorId === "enemy") sim.orders.splice(i, 1);
+    }
     sim.orders.push({
       id: "enemy-move",
       actorId: "enemy",
@@ -489,8 +552,8 @@ describe("tactical simulation loop", () => {
     expect(sim.orders).toHaveLength(0);
   });
 
-  it("lets a striker rush into melee for high close damage", () => {
-    const target = createSoldier("enemy", "Cutlass", "enemy", { x: 7.4, z: 0 });
+  it("lets a striker make adjacent melee strikes for high close damage", () => {
+    const target = createSoldier("enemy", "Cutlass", "enemy", { x: 1.35, z: 0 });
     const sim = new TacticalSim([
       createStriker("striker", "Kade", "player", { x: 0, z: 0 }),
       target,
@@ -504,7 +567,7 @@ describe("tactical simulation loop", () => {
     advance(sim, 2.4);
 
     expect(target.status.alive).toBe(false);
-    expect(sim.log).toContain("Kade strikes Cutlass");
+    expect(sim.log.some((line) => line.includes("Kade strikes Cutlass"))).toBe(true);
 
     const far = new TacticalSim([
       createStriker("striker", "Kade", "player", { x: 0, z: 0 }),
@@ -699,6 +762,103 @@ describe("tactical simulation loop", () => {
     expect(preview?.warningEntityId).toBe("friendly");
     expect(preview?.warningText).toContain("Friendly fire risk");
     expect(preview?.impactEntityId).toBe("friendly");
+  });
+
+  it("lets soldiers spend, cancel, and exhaust a limited grenade supply", () => {
+    const soldier = createSoldier("player", "Rook", "player", { x: 0, z: 0 });
+    const target = createSoldier("target", "Target", "enemy", { x: 6, z: 0 });
+    const farTarget = createSoldier("far-target", "Far Target", "enemy", { x: 13, z: 0 });
+    const sim = new TacticalSim([soldier, target, farTarget]);
+
+    const preview = sim.previewGrenade("player", "target", "body");
+    expect(preview?.projectileKind).toBe("grenade");
+    expect(preview?.arcHeight).toBeGreaterThan(1.8);
+
+    sim.select("player");
+    expect(sim.queueGrenadePart("target", "body")).toBe(true);
+    expect(sim.orders[0]?.kind).toBe("grenade");
+    expect(soldier.grenades).toBe(1);
+    expect(soldier.commandPoints).toBe(1);
+
+    expect(sim.cancelOrder(sim.orders[0].id)).toBe(true);
+    expect(soldier.grenades).toBe(2);
+    expect(soldier.commandPoints).toBe(2);
+
+    expect(sim.queueGrenadePart("far-target", "body")).toBe(false);
+    expect(sim.log[0]).toContain("outside grenade range");
+    expect(soldier.grenades).toBe(2);
+
+    expect(sim.queueGrenadePart("target", "body")).toBe(true);
+    expect(sim.queueGrenadePart("target", "body")).toBe(true);
+    soldier.commandPoints = 1;
+    expect(sim.queueGrenadePart("target", "body")).toBe(false);
+    expect(sim.log[0]).toBe("Rook is out of grenades");
+  });
+
+  it("launches soldier hand grenades as arcing projectiles", () => {
+    const target = createSoldier("target", "Target", "enemy", { x: 6, z: 0 });
+    applyDamage(target, "rifle", 99);
+    target.grenades = 0;
+    const sim = new TacticalSim([
+      createSoldier("player", "Rook", "player", { x: 0, z: 0 }),
+      target,
+    ]);
+
+    sim.select("player");
+    expect(sim.queueGrenadePart("target", "body")).toBe(true);
+    sim.endTurn();
+    advanceUntil(sim, () => sim.projectiles.length > 0, 1.5);
+
+    expect(sim.projectiles[0]?.kind).toBe("grenade");
+    expect(sim.projectiles[0]?.attackMode).toBe("grenade");
+    expect(sim.projectiles[0]?.arcHeight).toBeGreaterThan(1.8);
+    expect(sim.projectiles[0]?.speed).toBeLessThan(2.3);
+  });
+
+  it("lets soldiers throw grenades at ground locations for area damage", () => {
+    const target = createSoldier("target", "Target", "enemy", { x: 6.4, z: 0.35 });
+    applyDamage(target, "rifle", 99);
+    target.grenades = 0;
+    const sim = new TacticalSim([
+      createSoldier("player", "Rook", "player", { x: 0, z: 0 }),
+      target,
+    ]);
+
+    sim.select("player");
+    expect(sim.queueGrenadeAt({ x: 6.2, z: 0 })).toBe(true);
+    expect(sim.orders[0]?.kind).toBe("grenade");
+    expect(sim.orders[0]?.destination).toEqual({ x: 6.2, z: 0 });
+    expect(sim.orders[0]?.targetId).toBeUndefined();
+    sim.endTurn();
+    advance(sim, 8);
+
+    expect(target.parts.some((part) => part.hp < part.maxHp)).toBe(true);
+    expect(sim.log.some((line) => line.includes("grenade"))).toBe(true);
+    expect(sim.phase).toBe("command");
+  });
+
+  it("requires strikes to start adjacent and applies them to the selected part", () => {
+    const target = createSoldier("target", "Target", "enemy", { x: 1.35, z: 0 });
+    const farTarget = createSoldier("far-target", "Far Target", "enemy", { x: 5, z: 0 });
+    target.grenades = 0;
+    farTarget.grenades = 0;
+    const sim = new TacticalSim([
+      createStriker("striker", "Kade", "player", { x: 0, z: 0 }),
+      target,
+      farTarget,
+    ]);
+
+    sim.select("striker");
+    expect(sim.queueMeleePart("target", "head")).toBe(true);
+    expect(sim.queueMeleePart("far-target", "body")).toBe(false);
+    expect(sim.log[0]).toContain("too far to strike");
+    expect(sim.orders).toHaveLength(1);
+
+    sim.endTurn();
+    advance(sim, 3);
+
+    expect(target.parts.find((part) => part.id === "head")?.hp).toBeLessThan(14);
+    expect(target.parts.find((part) => part.id === "body")?.hp).toBe(46);
   });
 
   it("gives grenadiers arced projectiles with splash damage around close impacts", () => {
@@ -908,6 +1068,425 @@ describe("tactical simulation loop", () => {
     const boostedDamage = boosted.previewShot("player", "enemy", "body")?.amount ?? 0;
 
     expect(boostedDamage).toBeGreaterThan(baselineDamage);
+  });
+
+  it("records resolve damage without emitting floating damage labels", () => {
+    const enemy = createSoldier("enemy", "Cutlass", "enemy", { x: 3.2, z: 0 });
+    applyDamage(enemy, "rifle", 99);
+    const sim = new TacticalSim([
+      createSoldier("player", "Rook", "player", { x: 0, z: 0 }),
+      enemy,
+    ]);
+
+    sim.select("player");
+    expect(sim.queueShootPart("enemy", "head")).toBe(true);
+    sim.endTurn();
+    advanceUntil(sim, () => Boolean(sim.currentTurnReport?.entries.length), 4);
+
+    expect(sim.currentTurnReport?.entries.some((entry) => entry.targetName === "Cutlass" && entry.amount > 0)).toBe(true);
+    expect(sim.effects.some((effect) => "label" in effect)).toBe(false);
+  });
+});
+
+describe("base economy and troop deployment", () => {
+  it("pays base income each round, scaled by reactor health", () => {
+    const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 });
+    const sim = new TacticalSim([base]);
+
+    expect(sim.money("player")).toBe(START_MONEY_PLAYER);
+    sim.endTurn();
+    advance(sim, 3);
+    expect(sim.turn).toBe(2);
+    expect(sim.money("player")).toBe(START_MONEY_PLAYER + BASE_INCOME); // reactor at 100% → full income
+
+    // Partial reactor damage → reduced (but non-zero) income.
+    applyDamage(base, "power", 22);
+    const efficiency = generatorEfficiency(base);
+    expect(efficiency).toBeGreaterThan(0);
+    expect(efficiency).toBeLessThan(1);
+    const beforePartial = sim.money("player");
+    sim.endTurn();
+    advance(sim, 3);
+    expect(sim.money("player")).toBe(beforePartial + Math.round(BASE_INCOME * efficiency));
+
+    // Destroyed reactor → no income.
+    applyDamage(base, "power", 999);
+    const beforeDead = sim.money("player");
+    sim.endTurn();
+    advance(sim, 3);
+    expect(base.status.alive).toBe(true);
+    expect(sim.money("player")).toBe(beforeDead);
+  });
+
+  it("deploys a troop instantly, spending CP and money and applying a cooldown", () => {
+    const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 });
+    const sim = new TacticalSim([base]);
+    sim.select("p-base-1");
+
+    const cost = troopSpec("soldier").cost;
+    const before = sim.money("player");
+    expect(sim.queueSpawnTroop("soldier")).toBe(true);
+    expect(sim.money("player")).toBe(before - cost);
+    expect(base.commandPoints).toBe(0);
+    expect(sim.fieldUnitCount("player")).toBe(1);
+
+    const recruit = sim.entities.find((entity) => entity.id.startsWith("p-spawn-"));
+    expect(recruit).toBeDefined();
+    expect(recruit!.team).toBe("player");
+    // A freshly deployed troop holds position until the next turn.
+    expect(recruit!.commandPoints).toBe(0);
+    expect(dist(recruit!.position, base.position)).toBeLessThan(6);
+
+    // The Recruit type is on cooldown, so a second one is rejected even with CP and money.
+    base.commandPoints = 1;
+    expect(sim.queueSpawnTroop("soldier")).toBe(false);
+    expect(sim.log[0]).toContain("cooldown");
+  });
+
+  it("gates troop types behind the tech tree", () => {
+    const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 });
+    const sim = new TacticalSim([base]);
+    sim.select("p-base-1");
+
+    // The Tank needs the Armor Bay doctrine, which the base has not researched.
+    expect(sim.queueSpawnTroop("tank")).toBe(false);
+    expect(sim.log[0]).toContain("Armor Bay");
+    expect(base.commandPoints).toBe(1); // no CP spent on a rejected deployment
+  });
+
+  it("clears a troop cooldown after enough rounds", () => {
+    const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 });
+    const sim = new TacticalSim([base]);
+    sim.select("p-base-1");
+
+    expect(sim.queueSpawnTroop("soldier")).toBe(true);
+    expect(sim.troopCooldown(base, "soldier")).toBe(troopSpec("soldier").cooldown);
+
+    sim.endTurn();
+    advance(sim, 3);
+    // After the round ticks, the Recruit cooldown has expired and it can deploy again.
+    expect(sim.troopCooldown(base, "soldier")).toBe(0);
+    expect(sim.spawnFailureReason(base, "soldier")).toBeUndefined();
+  });
+
+  it("enforces the hard field cap", () => {
+    const entities = [createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 })];
+    for (let i = 0; i < POP_CAP; i += 1) {
+      entities.push(createSoldier(`p-fill-${i}`, `Fill ${i}`, "player", { x: -8 + i, z: 8 }));
+    }
+    const sim = new TacticalSim(entities);
+    sim.select("p-base-1");
+
+    expect(sim.fieldUnitCount("player")).toBe(POP_CAP);
+    expect(sim.queueSpawnTroop("soldier")).toBe(false);
+    expect(sim.log[0]).toContain("Field is full");
+  });
+
+  it("upgrades income to raise the money paid each round", () => {
+    const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 });
+    const sim = new TacticalSim([base]);
+    sim.select("p-base-1");
+
+    const cost = incomeUpgradeCost(base)!;
+    const before = sim.money("player");
+    expect(sim.upgradeBaseIncome()).toBe(true);
+    expect(base.incomeLevel).toBe(1);
+    expect(base.commandPoints).toBe(0);
+    expect(sim.money("player")).toBe(before - cost);
+
+    const beforeIncome = sim.money("player");
+    sim.endTurn();
+    advance(sim, 3);
+    expect(sim.money("player")).toBe(beforeIncome + INCOME_BY_LEVEL[1]);
+  });
+
+  it("researches a tech node to unlock new troop types", () => {
+    const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 });
+    const sim = new TacticalSim([base]);
+    sim.economy.set("player", 600); // enough to research and still field a troop next turn
+    sim.select("p-base-1");
+
+    // The Striker needs the Assault doctrine, not yet researched.
+    expect(sim.spawnFailureReason(base, "striker")).toContain("Assault");
+    expect(sim.researchTech("assault")).toBe(true);
+    expect(base.unlockedTech).toContain("assault");
+    expect(base.commandPoints).toBe(0);
+
+    // Next turn the base can deploy a now-unlocked Striker.
+    sim.endTurn();
+    advance(sim, 3);
+    sim.select("p-base-1");
+    expect(sim.spawnFailureReason(base, "striker")).toBeUndefined();
+    expect(sim.queueSpawnTroop("striker")).toBe(true);
+    expect(sim.entities.some((entity) => entity.kind === "striker" && entity.team === "player")).toBe(true);
+  });
+
+  it("blocks research without prerequisites and respects the tree", () => {
+    const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 });
+    const sim = new TacticalSim([base]);
+    sim.select("p-base-1");
+
+    // Siege requires Armor, which requires Assault — none researched yet.
+    expect(sim.researchFailureReason(base, "siege")).toBeDefined();
+    expect(sim.researchTech("siege")).toBe(false);
+    // Assault is a root with no prerequisites.
+    expect(sim.researchFailureReason(base, "assault")).toBeUndefined();
+  });
+
+  it("keeps the home base unarmed", () => {
+    const sim = new TacticalSim([
+      createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 }),
+      createSoldier("foe", "Foe", "enemy", { x: 0, z: 0 }),
+    ]);
+
+    expect(sim.entity("p-base-1")!.status.canShoot).toBe(false);
+    sim.select("p-base-1");
+    expect(sim.queueShoot("foe")).toBe(false);
+  });
+
+  it("starts both sides with only a Home Base on a fresh map", () => {
+    const sim = new TacticalSim();
+    const playerLiving = sim.living("player");
+    const enemyLiving = sim.living("enemy");
+    expect(playerLiving.length).toBe(1);
+    expect(enemyLiving.length).toBe(1);
+    expect(playerLiving[0].kind).toBe("base");
+    expect(enemyLiving[0].kind).toBe("base");
+    expect(sim.fieldUnitCount("player")).toBe(0);
+    expect(sim.fieldUnitCount("enemy")).toBe(0);
+
+    // The map provides neutral cover, and the player base is unarmed but can produce.
+    expect(sim.entities.some((e) => e.kind === "cover")).toBe(true);
+    expect(playerLiving[0].status.canShoot).toBe(false);
+    expect(playerLiving[0].status.canProduce).toBe(true);
+  });
+
+  it("lets the home base deploy a troop in the full default scenario", () => {
+    const sim = new TacticalSim();
+    const base = sim.entities.find((entity) => entity.kind === "base" && entity.team === "player")!;
+    sim.select(base.id);
+
+    const before = sim.fieldUnitCount("player");
+    expect(sim.queueSpawnTroop("soldier")).toBe(true);
+    expect(sim.fieldUnitCount("player")).toBe(before + 1);
+    expect(sim.entities.some((entity) => entity.id.startsWith("p-spawn-"))).toBe(true);
+  });
+
+  it("has the enemy base reinforce its army each turn", () => {
+    const enemyBase = createBase("e-base-1", "Relay Base", "enemy", { x: 14, z: 0 });
+    enemyBase.unlockedTech = ["assault"];
+    const sim = new TacticalSim([
+      createBase("p-base-1", "Home Base", "player", { x: -14, z: 0 }),
+      enemyBase,
+    ]);
+    // Enough to deploy a troop but not enough to tempt the base into an upgrade,
+    // so the enemy reliably reinforces.
+    sim.economy.set("enemy", 250);
+    const before = sim.fieldUnitCount("enemy");
+
+    sim.endTurn();
+    advance(sim, 3);
+
+    expect(sim.turn).toBe(2);
+    expect(enemyBase.status.alive).toBe(true);
+    expect(sim.fieldUnitCount("enemy")).toBeGreaterThan(before);
+  });
+});
+
+describe("game modes, tech tree, and unit variety", () => {
+  it("starts every map empty and lays out cover without clumping", () => {
+    for (const map of MAPS) {
+      const sim = new TacticalSim({ map, mode: "destroy" });
+      expect(sim.fieldUnitCount("player")).toBe(0);
+      expect(sim.fieldUnitCount("enemy")).toBe(0);
+      const cover = sim.entities.filter((e) => e.kind === "cover");
+      // The map should place (nearly) all of its authored cover — catches over-constrained
+      // scatter that silently under-fills a battlefield.
+      const intended =
+        (map.signature ?? []).reduce((n, s) => n + (s.mirror && Math.abs(s.x) > 0.3 ? 2 : 1), 0) +
+        map.scatter.reduce((n, g) => n + g.count * 2, 0);
+      expect(cover.length).toBeGreaterThanOrEqual(Math.floor(intended * 0.9));
+      // Objects are never stacked on top of each other (no clumping); deliberate wall
+      // lines may sit adjacent, but nothing shares a spot.
+      for (let i = 0; i < cover.length; i += 1) {
+        for (let j = i + 1; j < cover.length; j += 1) {
+          expect(dist(cover[i].position, cover[j].position)).toBeGreaterThan(1.3);
+        }
+      }
+    }
+  });
+
+  it("banks control and wins Hold the Hill", () => {
+    const sim = new TacticalSim({ mode: "hill" });
+    const holder = createSoldier("holder", "Holder", "player", { ...sim.modeState.hill });
+    sim.entities.push(holder);
+    sim.modeState.playerScore = sim.modeState.target - 1;
+
+    sim.endTurn();
+    advance(sim, 4);
+
+    expect(sim.modeState.playerScore).toBeGreaterThanOrEqual(sim.modeState.target);
+    expect(sim.phase).toBe("victory");
+  });
+
+  it("steals and captures the flag in Capture the Flag", () => {
+    const sim = new TacticalSim({ mode: "ctf" });
+    const enemyFlag = sim.modeState.flags.find((f) => f.team === "enemy")!;
+    const playerFlag = sim.modeState.flags.find((f) => f.team === "player")!;
+    const runner = createSoldier("runner", "Runner", "player", { ...enemyFlag.pos });
+    sim.entities.push(runner);
+
+    sim.endTurn();
+    advance(sim, 4);
+    expect(enemyFlag.carrierId).toBe("runner");
+
+    // Carry the stolen flag back to our home flag.
+    runner.position = { ...playerFlag.home };
+    sim.endTurn();
+    advance(sim, 4);
+    expect(sim.modeState.playerScore).toBeGreaterThanOrEqual(1);
+  });
+
+  it("unlocks armor down the tech tree and deploys a tank", () => {
+    const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 });
+    const sim = new TacticalSim([base]);
+    base.unlockedTech = ["assault", "armor"]; // armor requires assault
+    base.commandPoints = 1;
+    sim.economy.set("player", 999);
+    sim.select("p-base-1");
+
+    expect(sim.spawnFailureReason(base, "tank")).toBeUndefined();
+    expect(sim.queueSpawnTroop("tank")).toBe(true);
+    expect(sim.entities.some((e) => e.kind === "tank" && e.team === "player")).toBe(true);
+  });
+
+  it("heals nearby infantry with a medic aura each round", () => {
+    const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 });
+    const medic = createMedic("medic", "Medic", "player", { x: 0, z: 0 });
+    const wounded = createSoldier("wounded", "Wounded", "player", { x: 1.2, z: 0 });
+    applyDamage(wounded, "body", 20);
+    const before = wounded.parts.find((p) => p.id === "body")!.hp;
+    const sim = new TacticalSim([base, medic, wounded]);
+
+    sim.endTurn();
+    advance(sim, 3);
+
+    const after = wounded.parts.find((p) => p.id === "body")!.hp;
+    expect(after).toBeGreaterThan(before);
+  });
+});
+
+describe("defenses, difficulty, and base upgrades", () => {
+  it("upgrades the base to two command points per turn", () => {
+    const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 });
+    const sim = new TacticalSim([base]);
+    sim.economy.set("player", 800);
+    sim.select("p-base-1");
+
+    expect(base.maxCommandPoints).toBe(1);
+    expect(sim.upgradeBaseCommand()).toBe(true);
+    expect(base.maxCommandPoints).toBe(2);
+    expect(base.commandPoints).toBe(0); // spent its CP on the upgrade
+
+    // Next turn it refills to two command points.
+    sim.endTurn();
+    advance(sim, 3);
+    sim.select("p-base-1");
+    expect(base.commandPoints).toBe(2);
+    // A second upgrade is rejected.
+    expect(sim.upgradeBaseCommand()).toBe(false);
+  });
+
+  it("builds a defensive turret near the base but rejects far or overlapping spots", () => {
+    const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 });
+    const sim = new TacticalSim([base]);
+    sim.economy.set("player", 1500);
+    sim.select("p-base-1");
+
+    sim.setPendingBuild("turret");
+    // Too far from the base.
+    expect(sim.queueBuildStructure({ x: 14, z: 5 })).toBe(false);
+    expect(sim.log[0]).toContain("closer to the base");
+
+    expect(sim.queueBuildStructure({ x: -10.5, z: -5 })).toBe(true);
+    const turret = sim.entities.find((e) => e.kind === "turret" && e.team === "player");
+    expect(turret).toBeDefined();
+    expect(turret!.status.canShoot).toBe(true);
+    expect(turret!.status.canMove).toBe(false);
+    expect(base.commandPoints).toBe(0);
+
+    // A wall can't be dropped on top of the turret we just built.
+    base.commandPoints = 1;
+    sim.setPendingBuild("wall");
+    expect(sim.queueBuildStructure({ x: -10.5, z: -5 })).toBe(false);
+    expect(sim.log[0]).toContain("blocked");
+  });
+
+  it("lets a tank fire an explosive shell at a ground spot", () => {
+    const sim = new TacticalSim([
+      createTank("p-tank-1", "Hammer", "player", { x: 0, z: 0 }),
+    ]);
+    sim.select("p-tank-1");
+    expect(sim.queueShootAt({ x: 8, z: 0 })).toBe(true);
+    const order = sim.orders[0];
+    expect(order.kind).toBe("shoot");
+    expect(order.targetId).toBeUndefined();
+    expect(order.destination).toEqual({ x: 8, z: 0 });
+    expect(sim.entity("p-tank-1")?.commandPoints).toBe(1);
+  });
+
+  it("does not let infantry fire at the ground", () => {
+    const sim = new TacticalSim([
+      createSoldier("p-soldier-1", "Rook", "player", { x: 0, z: 0 }),
+    ]);
+    sim.select("p-soldier-1");
+    expect(sim.selectedCanGroundTarget()).toBe(false);
+    expect(sim.queueShootAt({ x: 6, z: 0 })).toBe(false);
+  });
+
+  it("gives enemy units more health on harder difficulty", () => {
+    const bodyHpForDifficulty = (difficulty: "normal" | "hard"): number => {
+      const sim = new TacticalSim();
+      sim.configure(MAPS[0], "destroy", difficulty);
+      const enemyBase = sim.entities.find((e) => e.kind === "base" && e.team === "enemy")!;
+      sim.economy.set("enemy", 160); // afford a Recruit, not a research/upgrade
+      enemyBase.commandPoints = 1;
+      sim.endTurn();
+      advance(sim, 3);
+      const spawn = sim.entities.find((e) => e.team === "enemy" && e.id.startsWith("e-spawn-"));
+      return spawn?.parts.find((p) => p.id === "body")?.maxHp ?? 0;
+    };
+    const normalHp = bodyHpForDifficulty("normal");
+    const hardHp = bodyHpForDifficulty("hard");
+    expect(normalHp).toBeGreaterThan(0);
+    expect(hardHp).toBeGreaterThan(normalHp);
+  });
+
+  it("provides a move-range circle when Move is armed", () => {
+    const sim = new TacticalSim([
+      createSoldier("p-soldier-1", "Rook", "player", { x: 0, z: 0 }),
+    ]);
+    sim.select("p-soldier-1");
+    sim.setIntent("move");
+    const range = sim.selectedActionRange();
+    expect(range?.kind).toBe("move");
+    expect(range?.radius).toBeGreaterThan(0);
+  });
+
+  it("saves and restores a battle", () => {
+    const sim = new TacticalSim();
+    sim.configure(MAPS[1], "hill", "hard");
+    sim.economy.set("player", 999);
+    sim.select(sim.entities.find((e) => e.kind === "base" && e.team === "player")!.id);
+    sim.queueSpawnTroop("soldier");
+    const saved = sim.serialize();
+
+    const restored = new TacticalSim();
+    expect(restored.restore(saved)).toBe(true);
+    expect(restored.mapDef.id).toBe(MAPS[1].id);
+    expect(restored.mode).toBe("hill");
+    expect(restored.difficulty).toBe("hard");
+    expect(restored.fieldUnitCount("player")).toBe(1);
   });
 });
 

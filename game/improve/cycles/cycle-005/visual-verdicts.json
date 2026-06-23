@@ -1,0 +1,19 @@
+{
+  "G1-main-menu":   { "pass": true,  "note": "Clean title screen with richer background." },
+  "G2-deploy-screen": { "pass": true, "note": "Battlefields, preview, modes, difficulties present." },
+  "G4-canvas-painted": { "pass": true, "note": "Battlefield renders; terrain clean, props tinted." },
+  "G5-deploy-cost": { "pass": true, "note": "Deployed recruit visible (now with RFL glyph)." },
+  "G7-combat-damage": { "pass": true, "note": "Resolve shows the grenade blast." },
+  "G8-victory": { "pass": true, "note": "VICTORY card with Play Again / Main Menu." },
+  "G9-move-range-ring": { "pass": true, "note": "Movement-range ring around the unit." },
+  "G10-ground-blast-preview": { "pass": true, "note": "Bold blast-radius ring + landing marker." },
+  "G11-build-placement-ring": { "pass": true, "note": "Green placement ring, deck ducked to slim bar." },
+  "G12-objective-hud": { "pass": true, "note": "Turn/phase chip + objective chip." },
+  "G13-dead-part-visible": { "pass": true, "note": "Destroyed part listed at 0 HP while targeting." },
+  "G14-end-return-menu": { "pass": true, "note": "Victory Main Menu button present." },
+  "G15-menu-clean": { "pass": true, "note": "No points badge / no hints on the main menu." },
+  "G16-build-deck-ducks": { "pass": true, "note": "Deck collapses to a slim placement bar." },
+  "G17-action-pace-setting": { "pass": true, "note": "Settings has Slow / Default / Fast action speed." },
+  "G18-unit-glyphs": { "pass": true, "note": "Each unit carries a legible, role-coloured type tag — RCN / MRK / HVY / TNK / ART / MTR / GRN / RFL — instantly distinguishing types (and enemy units too) from the tactical camera." },
+  "G19-prop-tint": { "pass": true, "note": "Crates/sandbags/pillars now carry the Ironworks map's cool grey-blue cast so they fit the scene; glowing signal props (fuel/ammo/conduit) stay vivid." }
+}

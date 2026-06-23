@@ -1,0 +1,14 @@
+{
+  "G1-main-menu":   { "pass": true,  "note": "ROGUE HEROES title + Start Game / Tutorial / Armory / Settings on clean bg." },
+  "G2-deploy-screen": { "pass": true, "note": "6 battlefields, top-down preview, 3 modes, 3 difficulties." },
+  "G4-canvas-painted": { "pass": true, "note": "Clean 3D battlefield (deck deselected): terrain, base, props, HUD." },
+  "G5-deploy-cost": { "pass": true, "note": "Deployed Recruit is centered and clearly visible with its selection beacon; roster shows Recruit 1." },
+  "G7-combat-damage": { "pass": true, "note": "Resolve frame now shows a clear explosion/blast cloud at the impact (grenade), with the Turn 2 Resolving chip." },
+  "G8-victory": { "pass": true, "note": "VICTORY card with Play Again / Main Menu and +110 points toast." },
+  "G9-move-range-ring": { "pass": true, "note": "Circular movement-range ring drawn on the ground around the selected recruit." },
+  "G10-ground-blast-preview": { "pass": true, "note": "FIXED: bold blast-radius ring + landing marker at the aimed ground spot, inside the throw-range circle, with the arc line." },
+  "G11-build-placement-ring": { "pass": true, "note": "Green placement-range ring around the base + 'click inside the green ring' instruction." },
+  "G12-objective-hud": { "pass": true, "note": "FIXED: HUD now shows a 'Turn 1 / Command' chip plus the 'Ironworks · Annihilation' objective chip." },
+  "G13-dead-part-visible": { "pass": true, "note": "FIXED: the destroyed Command Core is now listed in the targeting part panel as a dimmed, struck-through 0-HP chip instead of vanishing." },
+  "G14-end-return-menu": { "pass": true, "note": "Victory screen has a Main Menu button (and Play Again)." }
+}

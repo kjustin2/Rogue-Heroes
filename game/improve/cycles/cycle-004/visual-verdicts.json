@@ -1,0 +1,17 @@
+{
+  "G1-main-menu":   { "pass": true,  "note": "Title + Start/Tutorial/Armory/Settings on a richer animated background." },
+  "G2-deploy-screen": { "pass": true, "note": "Battlefields, preview, modes, difficulties present." },
+  "G4-canvas-painted": { "pass": true, "note": "Clean 3D battlefield; terrain caps now render without z-fighting and floor shows subtle tiling." },
+  "G5-deploy-cost": { "pass": true, "note": "Deployed recruit centered and visible." },
+  "G7-combat-damage": { "pass": true, "note": "Resolve shows the grenade blast cloud at the enemy base; Turn 2 Resolving chip visible." },
+  "G8-victory": { "pass": true, "note": "VICTORY card with Play Again / Main Menu + points toast." },
+  "G9-move-range-ring": { "pass": true, "note": "Movement-range ring drawn around the unit (origin now follows queued moves)." },
+  "G10-ground-blast-preview": { "pass": true, "note": "Bold blast-radius ring + landing marker inside the throw ring." },
+  "G11-build-placement-ring": { "pass": true, "note": "Green placement ring around the base, now unobstructed by the deck." },
+  "G12-objective-hud": { "pass": true, "note": "Turn/phase chip + objective chip both shown." },
+  "G13-dead-part-visible": { "pass": true, "note": "Destroyed Command Core listed as a dimmed struck-through 0-HP chip in the targeting list." },
+  "G14-end-return-menu": { "pass": true, "note": "Victory screen Main Menu button present." },
+  "G15-menu-clean": { "pass": true, "note": "FIXED: main menu has no points badge and no how-to-play hints; background has an added aurora/horizon glow." },
+  "G16-build-deck-ducks": { "pass": true, "note": "FIXED: during turret placement the full deck is replaced by a slim 'Placing Gun Turret … Cancel' bar, leaving the green ring and field visible." },
+  "G17-action-pace-setting": { "pass": true, "note": "FIXED: Settings now has an Action speed row with Slow / Default / Fast." }
+}

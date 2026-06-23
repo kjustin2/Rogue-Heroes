@@ -1,0 +1,110 @@
+{
+  "count": 8,
+  "consoleErrors": [],
+  "results": [
+    {
+      "id": "roster",
+      "title": "Unit roster",
+      "description": "Every player unit type laid out in a grid — for at-a-glance differentiation.",
+      "ok": true,
+      "map": "ironworks",
+      "phase": "command",
+      "players": 12,
+      "enemies": 0,
+      "entities": 58,
+      "canvasLit": true,
+      "file": "roster.png"
+    },
+    {
+      "id": "siege",
+      "title": "Siege the enemy base",
+      "description": "Player armor + siege column advancing on a walled, turret-defended enemy base.",
+      "ok": true,
+      "map": "karak",
+      "phase": "command",
+      "players": 3,
+      "enemies": 1,
+      "entities": 44,
+      "canvasLit": true,
+      "file": "siege.png"
+    },
+    {
+      "id": "firefight",
+      "title": "Cover firefight",
+      "description": "Two infantry squads trading fire across scattered cover at mid range.",
+      "ok": true,
+      "map": "verdant",
+      "phase": "command",
+      "players": 3,
+      "enemies": 3,
+      "entities": 46,
+      "canvasLit": true,
+      "file": "firefight.png"
+    },
+    {
+      "id": "grenade-arc",
+      "title": "Grenade over a wall",
+      "description": "A soldier lobbing a grenade with a wall directly in the throw path (blocked-arc preview).",
+      "ok": true,
+      "map": "ironworks",
+      "phase": "command",
+      "players": 1,
+      "enemies": 1,
+      "entities": 49,
+      "canvasLit": true,
+      "file": "grenade-arc.png"
+    },
+    {
+      "id": "high-ground",
+      "title": "High-ground overwatch",
+      "description": "A marksman on raised terrain overlooking enemies on the flat below.",
+      "ok": true,
+      "map": "causeway",
+      "phase": "command",
+      "players": 2,
+      "enemies": 3,
+      "entities": 31,
+      "canvasLit": true,
+      "file": "high-ground.png"
+    },
+    {
+      "id": "base-defense",
+      "title": "Hold the base",
+      "description": "Enemy armor assaulting a player base fortified with walls and turrets.",
+      "ok": true,
+      "map": "dustbowl",
+      "phase": "command",
+      "players": 1,
+      "enemies": 3,
+      "entities": 41,
+      "canvasLit": true,
+      "file": "base-defense.png"
+    },
+    {
+      "id": "victory",
+      "title": "Victory end screen",
+      "description": "Player force standing, enemy eliminated — the victory report.",
+      "ok": true,
+      "map": "ironworks",
+      "phase": "victory",
+      "players": 3,
+      "enemies": 0,
+      "entities": 49,
+      "canvasLit": true,
+      "file": "victory.png"
+    },
+    {
+      "id": "defeat",
+      "title": "Defeat end screen",
+      "description": "Enemy force standing, player eliminated — the defeat report.",
+      "ok": true,
+      "map": "ironworks",
+      "phase": "defeat",
+      "players": 0,
+      "enemies": 3,
+      "entities": 49,
+      "canvasLit": true,
+      "file": "defeat.png"
+    }
+  ]
+}

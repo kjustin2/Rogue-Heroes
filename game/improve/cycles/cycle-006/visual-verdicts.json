@@ -1,0 +1,20 @@
+{
+  "G1-main-menu":   { "pass": true,  "note": "Clean title screen." },
+  "G2-deploy-screen": { "pass": true, "note": "Battlefields, preview, modes, difficulties." },
+  "G4-canvas-painted": { "pass": true, "note": "Battlefield renders; terrain clean, props tinted." },
+  "G5-deploy-cost": { "pass": true, "note": "Deployed recruit visible." },
+  "G7-combat-damage": { "pass": true, "note": "Resolve blast." },
+  "G8-victory": { "pass": true, "note": "VICTORY card with Main Menu." },
+  "G9-move-range-ring": { "pass": true, "note": "Movement-range ring." },
+  "G10-ground-blast-preview": { "pass": true, "note": "Bold blast-radius ring + landing marker." },
+  "G11-build-placement-ring": { "pass": true, "note": "Green ring, deck ducked." },
+  "G12-objective-hud": { "pass": true, "note": "Turn/phase + objective chips." },
+  "G13-dead-part-visible": { "pass": true, "note": "Destroyed part listed at 0 HP." },
+  "G14-end-return-menu": { "pass": true, "note": "Victory Main Menu button." },
+  "G15-menu-clean": { "pass": true, "note": "No points badge / no hints." },
+  "G16-build-deck-ducks": { "pass": true, "note": "Slim placement bar." },
+  "G17-action-pace-setting": { "pass": true, "note": "Slow / Default / Fast." },
+  "G18-unit-glyphs": { "pass": true, "note": "Role-coloured type tags per unit." },
+  "G19-prop-tint": { "pass": true, "note": "Props carry the map palette." },
+  "G20-debug-scenarios": { "pass": true, "note": "One window.__rht.scenario('siege') call instantly staged a fortified karak enemy base (2 walls, TUR, MTL, HVY) facing a player TNK/ART/GRN column — the debug cut-to-scenario + screenshot capability. 8 scenarios registered; standalone gallery (improve:gallery) screenshots them all." }
+}

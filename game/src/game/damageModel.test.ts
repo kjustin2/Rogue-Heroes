@@ -58,14 +58,33 @@ describe("component damage model", () => {
     expect(soldier.status.immobilized).toBe(true);
   });
 
-  it("lets a base lose its turret while the command core survives", () => {
+  it("keeps an economy base unarmed and lets it lose its comms while the core survives", () => {
     const base = createBase("base", "Forward Base", "enemy", { x: 0, z: 0 });
 
-    applyDamage(base, "turret", 80);
+    // A base earns money and deploys troops; it has no weapon and cannot attack.
+    expect(base.status.canShoot).toBe(false);
+    expect(base.status.canProduce).toBe(true);
+    expect(base.parts.some((p) => p.role === "weapon")).toBe(false);
+
+    applyDamage(base, "comms", 80);
 
     expect(base.status.alive).toBe(true);
     expect(base.status.canShoot).toBe(false);
-    expect(base.parts.find((p) => p.id === "core")?.hp).toBe(150);
+    expect(base.parts.find((p) => p.id === "core")?.hp).toBe(160);
+  });
+
+  it("starts a base with economy state and stops it producing once destroyed", () => {
+    const base = createBase("base", "Home Base", "player", { x: 0, z: 0 });
+
+    expect(base.incomeLevel).toBe(0);
+    expect(base.unlockedTech).toEqual([]);
+    expect(base.status.canProduce).toBe(true);
+    expect(base.status.canMove).toBe(false);
+
+    const killed = applyDamage(base, "core", 999);
+    expect(killed.killed).toBe(true);
+    expect(base.status.alive).toBe(false);
+    expect(base.status.canProduce).toBe(false);
   });
 
   it("jams tank fire when the turret ring is destroyed", () => {
@@ -126,4 +145,5 @@ describe("component damage model", () => {
     expect(striker.status.canShoot).toBe(false);
     expect(striker.status.canMove).toBe(true);
   });
+
 });

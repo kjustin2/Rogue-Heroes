@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
 
-const PORT = 5175;
+const PORT = Number(process.env.SMOKE_PORT ?? 5175);
 const URL = `http://127.0.0.1:${PORT}`;
 const OUT = "shots";
 
@@ -20,7 +20,7 @@ let server = null;
 try {
   if (!(await isServerReady(URL))) {
     const viteBin = join(process.cwd(), "node_modules", "vite", "bin", "vite.js");
-    server = spawn(process.execPath, [viteBin, "--host", "127.0.0.1", "--strictPort"], {
+    server = spawn(process.execPath, [viteBin, "--host", "127.0.0.1", "--port", String(PORT), "--strictPort"], {
       cwd: process.cwd(),
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -41,6 +41,15 @@ try {
 
   await page.goto(URL, { waitUntil: "networkidle" });
   await page.waitForSelector(".topbar");
+  // Navigate the landing menu into a battle (Start Game -> Deploy).
+  const playButton = await page.$('[data-menu="play"]');
+  if (playButton) {
+    await playButton.click();
+    await page.waitForSelector("[data-start]", { timeout: 4000 }).catch(() => {});
+    const startButton = await page.$("[data-start]");
+    if (startButton) await startButton.click();
+    await page.waitForSelector(".title-screen", { state: "detached", timeout: 4000 }).catch(() => {});
+  }
   await assertCanvasPainted(page, "desktop command");
   await assertHudLayout(page, "desktop command", [".topbar", ".roster", ".commandbar", ".log"]);
   await assertNoOverlap(page, "desktop command log and order bar", ".log.compact-log:not(.expanded)", ".commandbar", 8);
@@ -55,6 +64,10 @@ try {
   }
   if ((defaultDrawerState.commandWidth ?? 0) > 1000) {
     throw new Error(`Command bar should stay compact by default: ${JSON.stringify(defaultDrawerState)}`);
+  }
+  const initialRenderDebug = await page.evaluate(() => window.__rht.renderDebug());
+  if (initialRenderDebug.unitMarkers < 4) {
+    throw new Error(`Expected persistent overhead unit markers for map readability: ${JSON.stringify(initialRenderDebug)}`);
   }
   const commandDeckState = await page.evaluate(() => ({
     layout: Boolean(document.querySelector(".command-layout")),
@@ -341,6 +354,10 @@ try {
   if (!(cameraAfterPan.x > cameraBefore.x + 0.4)) {
     throw new Error(`Expected WASD pan to move camera right: before=${JSON.stringify(cameraBefore)} after=${JSON.stringify(cameraAfterPan)}`);
   }
+  const panRenderDebug = await page.evaluate(() => window.__rht.renderDebug());
+  if (panRenderDebug.ghostedEntities.length) {
+    throw new Error(`Plain WASD map panning should not tint/ghost battlefield textures: ${JSON.stringify(panRenderDebug)}`);
+  }
   await page.mouse.wheel(0, -480);
   await page.waitForTimeout(80);
   const cameraAfterZoom = await page.evaluate(() => window.__rht.camera());
@@ -477,6 +494,70 @@ try {
     throw new Error(`Plain move over cliff should be blocked before the mesa: ${JSON.stringify(cliffMoveBlock)}`);
   }
 
+  await page.evaluate(() => {
+    const api = window.__rht;
+    api.reset();
+    for (const entity of api.sim.entities) {
+      if (entity.team === "neutral") {
+        entity.position.x = 15;
+        entity.position.z = 9;
+      }
+    }
+    const rook = api.sim.entity("p-soldier-1");
+    const target = api.sim.entity("e-soldier-1");
+    if (rook) {
+      rook.position.x = 0;
+      rook.position.z = 0;
+      rook.commandPoints = 2;
+    }
+    if (target) {
+      target.position.x = 6.2;
+      target.position.z = 0.35;
+      target.grenades = 0;
+      const rifle = target.parts.find((part) => part.id === "rifle");
+      if (rifle) rifle.hp = 0;
+    }
+    api.sim.select("p-soldier-1");
+    api.setIntent("grenade");
+  });
+  const groundGrenadeQueued = await page.evaluate(() => ({
+    queued: window.__rht.queueGrenadeAt({ x: 6.1, z: 0 }),
+    order: window.__rht.sim.orders[0],
+    grenades: window.__rht.sim.entity("p-soldier-1")?.grenades,
+    log: window.__rht.sim.log.slice(),
+  }));
+  if (!groundGrenadeQueued.queued || groundGrenadeQueued.order?.kind !== "grenade" || groundGrenadeQueued.order?.targetId || !groundGrenadeQueued.order?.destination || groundGrenadeQueued.grenades !== 1) {
+    throw new Error(`Ground-target grenade did not queue correctly: ${JSON.stringify(groundGrenadeQueued)}`);
+  }
+
+  await page.evaluate(() => {
+    const api = window.__rht;
+    api.reset();
+    const striker = api.sim.entity("p-striker-1");
+    const target = api.sim.entity("e-soldier-1");
+    if (striker) {
+      striker.position.x = 0;
+      striker.position.z = 0;
+      striker.commandPoints = 2;
+    }
+    if (target) {
+      target.position.x = 1.35;
+      target.position.z = 0;
+    }
+  });
+  await page.locator('[data-select="p-striker-1"]').click();
+  await page.locator('[data-order-action="melee"]').click();
+  await page.locator('[data-select="e-soldier-1"]').click();
+  await page.locator('.part-choice[data-part="head"]').click();
+  await page.locator('[data-confirm="melee"]').click();
+  const meleePartQueued = await page.evaluate(() => ({
+    order: window.__rht.sim.orders[0],
+    text: document.querySelector(".commandbar")?.textContent,
+  }));
+  if (meleePartQueued.order?.kind !== "melee" || meleePartQueued.order?.targetPartId !== "head") {
+    throw new Error(`Part-specific adjacent strike did not queue head target: ${JSON.stringify(meleePartQueued)}`);
+  }
+
   await page.evaluate(() => window.__rht.reset());
   await page.waitForFunction(() => window.__rht.sim.phase === "command" && window.__rht.sim.turn === 1 && window.__rht.sim.orders.length === 0);
   await page.locator('[data-select="p-tank-1"]').click();
@@ -551,6 +632,10 @@ try {
   if (!treadTip?.includes("Estimated damage")) throw new Error(`Missing damage tooltip on tread option: ${treadTip}`);
   const preview = await page.evaluate(() => window.__rht.sim.previewShot("p-tank-1", "e-tank-1", "right-tread"));
   if (!preview || preview.blockedById) throw new Error(`Expected clear preview for tank tread shot, got ${JSON.stringify(preview)}`);
+  const clearTargetRenderDebug = await page.evaluate(() => window.__rht.renderDebug());
+  if (clearTargetRenderDebug.previewLabels < 1 || clearTargetRenderDebug.splashRings < 1 || clearTargetRenderDebug.affectedMarkers < 1) {
+    throw new Error(`Clear shell targeting should show damage, splash radius, and affected markers: ${JSON.stringify(clearTargetRenderDebug)}`);
+  }
   const commandPanelText = await page.locator(".commandbar").textContent();
   if (!commandPanelText?.includes("Right Tread") || !commandPanelText.includes("34 HP")) {
     throw new Error(`Compact shoot panel did not expose selected tread detail: ${commandPanelText}`);
@@ -558,6 +643,13 @@ try {
   await assertHudLayout(page, "desktop targeting", [".topbar", ".roster", ".commandbar", ".log"]);
   await page.screenshot({ path: join(OUT, "6-clear-targeting.png") });
   await page.locator('[data-confirm="shoot"]').click();
+  const queuedOrderDebug = await page.evaluate(() => ({
+    ...window.__rht.renderDebug(),
+    orderCount: window.__rht.sim.orders.length,
+  }));
+  if (queuedOrderDebug.orderCount < 1 || queuedOrderDebug.orderMarkers !== 0) {
+    throw new Error(`Queued orders should draw paths without numbered map markers: ${JSON.stringify(queuedOrderDebug)}`);
+  }
 
   await page.evaluate(() => {
     const openTarget = window.__rht.sim.entity("e-soldier-1");
@@ -575,6 +667,7 @@ try {
   await page.locator('[data-select="e-soldier-1"]').click();
   await page.locator('.part-choice[data-part="rifle"]').click();
   await page.locator('[data-confirm="shoot"]').click();
+  const cameraBeforeResolve = await page.evaluate(() => window.__rht.camera());
   await page.locator('[data-command="end"]').click();
   await page.mouse.move(820, 420);
 
@@ -595,6 +688,10 @@ try {
     const over120 = deltas.filter((delta) => delta > 120).length;
     return { max, avg, over120 };
   });
+  const cameraDuringResolve = await page.evaluate(() => window.__rht.camera());
+  if (angleDelta(cameraDuringResolve.yaw, cameraBeforeResolve.yaw) > 0.35) {
+    throw new Error(`Resolve camera should not whip yaw around: before=${JSON.stringify(cameraBeforeResolve)} during=${JSON.stringify(cameraDuringResolve)}`);
+  }
   if (resolveFrameStats.max > 220 || resolveFrameStats.avg > 55 || resolveFrameStats.over120 > 1) {
     throw new Error(`Resolve phase frame pacing regressed: ${JSON.stringify(resolveFrameStats)}`);
   }
@@ -606,6 +703,10 @@ try {
     throw new Error(`Expected distinct shell and rifle projectiles, got ${JSON.stringify(projectileKinds)}`);
   }
   await page.screenshot({ path: join(OUT, "7-projectiles.png") });
+  const resolveFeedbackDebug = await page.evaluate(() => window.__rht.renderDebug());
+  if (resolveFeedbackDebug.floatingLabels !== 0 || resolveFeedbackDebug.orderMarkers !== 0) {
+    throw new Error(`Resolve should avoid floating damage labels and queued-order numbers: ${JSON.stringify(resolveFeedbackDebug)}`);
+  }
 
   await page.waitForFunction(() => window.__rht.sim.phase === "command", undefined, { timeout: 14000 });
   await assertCanvasPainted(page, "desktop resolved");
@@ -637,6 +738,18 @@ try {
   if (!state.soldierDamagedParts.length) {
     throw new Error(`Expected soldier damage, got ${JSON.stringify(state, null, 2)}`);
   }
+  await page.evaluate(() => {
+    const template = window.__rht.sim.turnReports[0];
+    if (!template) return;
+    for (let index = 0; index < 8; index += 1) {
+      window.__rht.sim.turnReports.push({
+        ...template,
+        turn: 80 + index,
+        entries: template.entries.map((entry, entryIndex) => ({ ...entry, id: `smoke-scroll-${index}-${entryIndex}` })),
+        notes: [`Scroll smoke report ${index}`, ...template.notes],
+      });
+    }
+  });
   await page.locator(".log-toggle").click();
   await page.waitForSelector(".compact-log.expanded .battle-log-panel");
   const expandedLog = await page.evaluate(() => ({
@@ -657,6 +770,25 @@ try {
   }
   if (expandedLog.playerSections < 1 || expandedLog.enemySections < 1 || !expandedLog.sectionLabels.includes("Your Squad Hit") || !expandedLog.sectionLabels.includes("Enemy Force Hit")) {
     throw new Error(`Expanded log should separate player and enemy damage sections: ${JSON.stringify(expandedLog)}`);
+  }
+  const beforeExpandedLogWheel = await page.evaluate(() => ({
+    scrollTop: document.querySelector(".compact-log.expanded .turn-report-list")?.scrollTop ?? 0,
+    scrollHeight: document.querySelector(".compact-log.expanded .turn-report-list")?.scrollHeight ?? 0,
+    clientHeight: document.querySelector(".compact-log.expanded .turn-report-list")?.clientHeight ?? 0,
+    zoom: window.__rht.camera().zoom,
+  }));
+  await page.locator(".compact-log.expanded .turn-report-list").hover();
+  await page.mouse.wheel(0, 520);
+  await page.waitForTimeout(120);
+  const afterExpandedLogWheel = await page.evaluate(() => ({
+    scrollTop: document.querySelector(".compact-log.expanded .turn-report-list")?.scrollTop ?? 0,
+    zoom: window.__rht.camera().zoom,
+  }));
+  if (beforeExpandedLogWheel.scrollHeight > beforeExpandedLogWheel.clientHeight + 1 && !(afterExpandedLogWheel.scrollTop > beforeExpandedLogWheel.scrollTop + 8)) {
+    throw new Error(`Wheel over expanded battle log should scroll the log list: before=${JSON.stringify(beforeExpandedLogWheel)} after=${JSON.stringify(afterExpandedLogWheel)}`);
+  }
+  if (Math.abs(afterExpandedLogWheel.zoom - beforeExpandedLogWheel.zoom) > 0.001) {
+    throw new Error(`Wheel over expanded battle log should not zoom the map: before=${JSON.stringify(beforeExpandedLogWheel)} after=${JSON.stringify(afterExpandedLogWheel)}`);
   }
   await page.screenshot({ path: join(OUT, "8-expanded-log.png") });
   await page.locator(".log-toggle").click();
@@ -863,6 +995,12 @@ function findChromium() {
 
   if (!matches.length) throw new Error(`No cached Chromium executable under ${root}`);
   return matches[matches.length - 1];
+}
+
+function angleDelta(a, b) {
+  let delta = Math.abs((a - b) % (Math.PI * 2));
+  if (delta > Math.PI) delta = Math.PI * 2 - delta;
+  return delta;
 }
 
 async function assertCanvasPainted(page, label) {

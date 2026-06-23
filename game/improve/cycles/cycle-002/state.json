@@ -1,0 +1,370 @@
+{
+  "port": 5180,
+  "cycleDir": "E:\\Storage\\SAAS\\Rogue-Heroes\\game\\improve\\cycles\\cycle-002",
+  "steps": [
+    {
+      "step": "01-main-menu",
+      "label": "Main menu",
+      "shot": "01-main-menu.png",
+      "phase": "command",
+      "turn": 1,
+      "money": {
+        "player": 320,
+        "enemy": 280
+      },
+      "field": {
+        "player": 0,
+        "enemy": 0
+      },
+      "selectedId": "p-base-1",
+      "selectedKind": "base",
+      "canvas": {
+        "ok": true,
+        "lit": 576,
+        "width": 1600,
+        "height": 900
+      },
+      "dom": {
+        "mainMenu": true,
+        "startButton": true
+      }
+    },
+    {
+      "step": "02-deploy-screen",
+      "label": "Deploy / map select",
+      "shot": "02-deploy-screen.png",
+      "phase": "command",
+      "turn": 1,
+      "money": {
+        "player": 320,
+        "enemy": 280
+      },
+      "field": {
+        "player": 0,
+        "enemy": 0
+      },
+      "selectedId": "p-base-1",
+      "selectedKind": "base",
+      "canvas": {
+        "ok": true,
+        "lit": 576,
+        "width": 1600,
+        "height": 900
+      },
+      "dom": {
+        "maps": 6,
+        "modes": 3,
+        "diffs": 3,
+        "preview": true
+      }
+    },
+    {
+      "step": "03-battle-start",
+      "label": "Battle start (turn 1)",
+      "shot": "03-battle-start.png",
+      "phase": "command",
+      "turn": 1,
+      "money": {
+        "player": 320,
+        "enemy": 280
+      },
+      "field": {
+        "player": 0,
+        "enemy": 0
+      },
+      "selectedId": "",
+      "canvas": {
+        "ok": true,
+        "lit": 576,
+        "width": 1600,
+        "height": 900
+      },
+      "dom": {
+        "modeChip": true,
+        "turnIndicator": true,
+        "topbarText": "End Turn Space Menu Esc Ironworks · Annihilation"
+      }
+    },
+    {
+      "step": "04-base-deck",
+      "label": "Home Base command deck",
+      "shot": "04-base-deck.png",
+      "phase": "command",
+      "turn": 1,
+      "money": {
+        "player": 3000,
+        "enemy": 280
+      },
+      "field": {
+        "player": 0,
+        "enemy": 0
+      },
+      "selectedId": "p-base-1",
+      "selectedKind": "base",
+      "canvas": {
+        "ok": true,
+        "lit": 576,
+        "width": 1600,
+        "height": 900
+      }
+    },
+    {
+      "step": "05-deploy-unit",
+      "label": "Deployed a Recruit",
+      "shot": "05-deploy-unit.png",
+      "phase": "command",
+      "turn": 1,
+      "money": {
+        "player": 2850,
+        "enemy": 280
+      },
+      "field": {
+        "player": 1,
+        "enemy": 0
+      },
+      "selectedId": "p-spawn-1",
+      "selectedKind": "soldier",
+      "canvas": {
+        "ok": true,
+        "lit": 576,
+        "width": 1600,
+        "height": 900
+      },
+      "probe": {
+        "fieldDelta": 1,
+        "moneyDelta": -150,
+        "baseCpAfter": 0,
+        "spawned": true,
+        "recruitId": "p-spawn-1"
+      }
+    },
+    {
+      "step": "06-research",
+      "label": "Researched Assault doctrine",
+      "shot": "06-research.png",
+      "phase": "command",
+      "turn": 2,
+      "money": {
+        "player": 2780,
+        "enemy": 125
+      },
+      "field": {
+        "player": 1,
+        "enemy": 1
+      },
+      "selectedId": "p-base-1",
+      "selectedKind": "base",
+      "canvas": {
+        "ok": true,
+        "lit": 576,
+        "width": 1600,
+        "height": 900
+      },
+      "probe": {
+        "unlocked": [
+          "assault"
+        ]
+      }
+    },
+    {
+      "step": "07-move-range",
+      "label": "Move-range ring shown",
+      "shot": "07-move-range.png",
+      "phase": "command",
+      "turn": 3,
+      "money": {
+        "player": 3000,
+        "enemy": 210
+      },
+      "field": {
+        "player": 1,
+        "enemy": 1
+      },
+      "selectedId": "p-spawn-1",
+      "selectedKind": "soldier",
+      "canvas": {
+        "ok": true,
+        "lit": 576,
+        "width": 1600,
+        "height": 900
+      },
+      "probe": {
+        "actionRange": {
+          "kind": "move",
+          "radius": 6.7
+        }
+      }
+    },
+    {
+      "step": "08-ground-aim",
+      "label": "Explosive ground-aim blast preview",
+      "shot": "08-ground-aim.png",
+      "phase": "command",
+      "turn": 3,
+      "money": {
+        "player": 3000,
+        "enemy": 210
+      },
+      "field": {
+        "player": 1,
+        "enemy": 1
+      },
+      "selectedId": "p-spawn-1",
+      "selectedKind": "soldier",
+      "canvas": {
+        "ok": true,
+        "lit": 576,
+        "width": 1600,
+        "height": 900
+      },
+      "probe": {
+        "groundAim": {
+          "radius": 2.55,
+          "reachable": true,
+          "blocked": false
+        }
+      }
+    },
+    {
+      "step": "09-resolve",
+      "label": "Resolve phase — grenade arc & blast",
+      "shot": "09-resolve.png",
+      "phase": "resolve",
+      "turn": 3,
+      "money": {
+        "player": 3000,
+        "enemy": 40
+      },
+      "field": {
+        "player": 1,
+        "enemy": 2
+      },
+      "selectedId": "p-spawn-1",
+      "selectedKind": "soldier",
+      "canvas": {
+        "ok": true,
+        "lit": 576,
+        "width": 1600,
+        "height": 900
+      }
+    },
+    {
+      "step": "10-post-resolve",
+      "label": "Post-resolve (damage applied)",
+      "shot": "10-post-resolve.png",
+      "phase": "command",
+      "turn": 4,
+      "money": {
+        "player": 3085,
+        "enemy": 125
+      },
+      "field": {
+        "player": 1,
+        "enemy": 2
+      },
+      "selectedId": "p-spawn-1",
+      "selectedKind": "soldier",
+      "canvas": {
+        "ok": true,
+        "lit": 576,
+        "width": 1600,
+        "height": 900
+      },
+      "probe": {
+        "enemyHpDelta": -20,
+        "damageEntries": 0
+      }
+    },
+    {
+      "step": "10-detail-destroyed",
+      "label": "Destroyed enemy part still listed while targeting",
+      "shot": "10-detail-destroyed.png",
+      "phase": "command",
+      "turn": 4,
+      "money": {
+        "player": 3085,
+        "enemy": 125
+      },
+      "field": {
+        "player": 1,
+        "enemy": 2
+      },
+      "selectedId": "p-spawn-1",
+      "selectedKind": "soldier",
+      "canvas": {
+        "ok": true,
+        "lit": 576,
+        "width": 1600,
+        "height": 900
+      },
+      "probe": {
+        "hadDestroyedPart": true,
+        "destroyedPartListed": true
+      }
+    },
+    {
+      "step": "11-build-placement",
+      "label": "Defense placement range ring",
+      "shot": "11-build-placement.png",
+      "phase": "command",
+      "turn": 4,
+      "money": {
+        "player": 3000,
+        "enemy": 125
+      },
+      "field": {
+        "player": 1,
+        "enemy": 2
+      },
+      "selectedId": "p-base-1",
+      "selectedKind": "base",
+      "canvas": {
+        "ok": true,
+        "lit": 576,
+        "width": 1600,
+        "height": 900
+      },
+      "probe": {
+        "buildPlacement": {
+          "radius": 11.7,
+          "center": {
+            "x": -20,
+            "z": 0
+          }
+        }
+      }
+    },
+    {
+      "step": "12-victory",
+      "label": "Victory end-state",
+      "shot": "12-victory.png",
+      "phase": "victory",
+      "turn": 4,
+      "money": {
+        "player": 3000,
+        "enemy": 125
+      },
+      "field": {
+        "player": 1,
+        "enemy": 0
+      },
+      "selectedId": "p-spawn-1",
+      "selectedKind": "soldier",
+      "canvas": {
+        "ok": true,
+        "lit": 576,
+        "width": 1600,
+        "height": 900
+      },
+      "probe": {
+        "reward": 110
+      },
+      "dom": {
+        "endscreen": true,
+        "endReturnControl": true
+      }
+    }
+  ],
+  "consoleErrors": [],
+  "runError": null
+}
