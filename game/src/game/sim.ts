@@ -212,6 +212,9 @@ export interface Projectile {
   targetPartId?: string;
   aim: AimMode;
   kind: ProjectileKind;
+  // The entity kind that fired this — lets the renderer give each unit a distinct round.
+  // Optional so test-constructed projectiles stay valid; renderer falls back to `kind`.
+  sourceKind?: EntityKind;
   position: Vec2;
   previous: Vec2;
   origin: Vec2;
@@ -1624,6 +1627,7 @@ export class TacticalSim {
       targetPartId: order.targetPartId,
       aim: order.aim,
       kind,
+      sourceKind: actor.kind,
       position: { ...origin },
       previous: { ...origin },
       origin,
@@ -1684,6 +1688,7 @@ export class TacticalSim {
       actorId: actor.id,
       aim: "center",
       kind,
+      sourceKind: actor.kind,
       position: { ...origin },
       previous: { ...origin },
       origin,
@@ -1737,6 +1742,7 @@ export class TacticalSim {
       actorId: actor.id,
       aim: "center",
       kind: "grenade",
+      sourceKind: actor.kind,
       position: { ...origin },
       previous: { ...origin },
       origin,

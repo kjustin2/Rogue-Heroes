@@ -128,6 +128,33 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
+    id: "stress",
+    title: "Stress test (perf)",
+    description: "A crowded battlefield — two large mixed armies plus fortifications — for benchmarking frame time, draw calls, and resolve-phase load.",
+    apply(sim) {
+      sim.configure(mapDef("dustbowl"), "destroy", "normal");
+      sim.debugGrant("player", 99999);
+      sim.debugGrant("enemy", 99999);
+      const lineup: TroopKind[] = ["soldier", "scout", "sniper", "heavy", "grenadier", "mortar", "striker", "tank", "apc", "artillery"];
+      // Two opposing double-rows of every unit type — ~40 combat entities.
+      for (let rowIdx = 0; rowIdx < 2; rowIdx += 1) {
+        lineup.forEach((k, i) => {
+          const z = -11.7 + i * 2.6;
+          sim.debugSpawn(k, "player", { x: -13 + rowIdx * 2, z });
+          sim.debugSpawn(k, "enemy", { x: 13 - rowIdx * 2, z });
+        });
+      }
+      // Fortifications add geometry + occluders to exercise the draw-call path.
+      for (let i = -2; i <= 2; i += 1) {
+        sim.debugBuild("wall", "player", { x: -6, z: i * 2.4 });
+        sim.debugBuild("wall", "enemy", { x: 6, z: i * 2.4 });
+      }
+      sim.debugBuild("turret", "player", { x: -8, z: 0 });
+      sim.debugBuild("exturret", "enemy", { x: 8, z: 0 });
+      sim.deselect();
+    },
+  },
+  {
     id: "victory",
     title: "Victory end screen",
     description: "Player force standing, enemy eliminated — the victory report.",

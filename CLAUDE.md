@@ -23,6 +23,9 @@ wrapper. Runtime dependency is just `three`; everything else is dev tooling.
 | Build (typecheck + bundle) | `npm run build` |
 | **Gate before commit** | `npm run verify` (typecheck → test → build) |
 | Full gate + smokes | `npm run test:full` |
+| **Perf bench + leak probe** | `npm run perf` (`-- --update-baseline` to rebase) |
+| **AI vision inspector** | `npm run vision` (`-- <scenario>` or `-- all`) |
+| Scenario screenshot gallery | `npm run improve:gallery` |
 | Desktop app (build + Electron) | `npm run standalone` |
 
 TypeScript is **strict** with `noUnusedLocals`/`noUnusedParameters` — unused symbols fail
@@ -45,6 +48,37 @@ flow `5179`, economy `5176`, buttons `5191`, browser `5175`, screenshot tools `5
 
 Smokes need the Playwright Chromium cache (`%LOCALAPPDATA%\ms-playwright\chromium-*`) or
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`.
+
+### Debug / perf / vision harness
+
+Three capabilities make the renderer observable to both automated checks and a reviewing
+AI. They share the same headless-Chromium plumbing (`improve/lib/harness.mjs`) and own
+ports `perf 5182`, `vision 5183`.
+
+- **`npm run perf`** (`improve/perf-bench.mjs`) — cuts to the heavy `stress` scenario and
+  samples `window.__rht.perf()` across the command + resolve phases, then runs a
+  memory-churn probe (repeated scenario swaps) to catch geometry/texture leaks. Writes
+  `improve/perf/perf-report.md`. The **hard gate** is the deterministic draw-work signals
+  (draw calls, triangles, scene objects, leak growth) compared to
+  `improve/perf-baseline.json`; **FPS is advisory only** because headless SwiftShader frame
+  time is noisy (10–140 fps seen). Rebase with `npm run perf -- --update-baseline` after an
+  intentional cost change.
+- **`npm run vision`** (`improve/vision.mjs`) — for each scenario, captures `clean.png`, an
+  `annotated.png` (the in-game debug overlay labels every unit with kind/id/HP at its
+  on-screen position), plus `scene.json` + `report.md` (`describeScene()` with world AND
+  screen coords, and the `diagnostics()` anomaly scan). Hand the agent `annotated.png`
+  beside `report.md` to map pixels → game state. `-- all` does every scenario.
+- **`diagnostics()`** is the bug scanner: NaN positions, out-of-bounds/stacked units,
+  selected-unit-off-screen, stuck projectiles, empty field, draw-call spikes, frozen render.
+  Pure logic lives in `src/debug/diagnostics.ts` (unit-tested); perf math in
+  `src/render/perfMonitor.ts`. The overlay (`src/debug/debugOverlay.ts`) mounts on
+  `<body>`, **not** `#ui` (the HUD rewrites `#ui`'s innerHTML each frame).
+
+> Renderer disposal rule: every per-frame / per-swap THREE group is torn down via
+> `disposeAndClear()` (→ `disposeSubtree`), which frees Mesh/Line **geometry** only —
+> Sprites and pooled geometries tagged `userData.shared` are skipped (materials/textures are
+> shared and left alone). Skipping this is how the geometry-leak the perf probe guards
+> against creeps back in.
 
 ### Self-improvement loop (`game/improve/`)
 
@@ -128,6 +162,13 @@ fixed mesa the line-of-sight/cover tests rely on).
 `queueSpawnTroop`, `researchTech`, `money`, `camera`, `renderDebug`, …). This is the entire
 surface the Playwright smokes script the game through — keep it in sync when adding sim
 features that smokes need to drive.
+
+**Observability surface** (drives perf/vision): `perf()` → FPS + frame-time percentiles +
+draw calls/triangles + scene-object count; `perfReset()` starts a fresh window;
+`diagnostics()` → the anomaly scan (`{ ok, errors, warnings, issues[] }`); `describeScene()`
+→ every entity with world + projected screen coords, HP, and selection (AI-readable);
+`sceneGraph()` → `{ total, topLevel }` object counts; `setDebugOverlay(on)` toggles the
+on-screen entity-label overlay.
 
 **Debug scenarios:** `window.__rht.scenario(id)` cuts straight to a staged battle state and
 `window.__rht.scenarios()` lists them. Scenarios live in `src/game/scenarios.ts`, built on

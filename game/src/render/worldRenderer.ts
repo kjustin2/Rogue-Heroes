@@ -34,6 +34,9 @@ export class WorldRenderer {
   private readonly groups = new Map<string, THREE.Group>();
   private readonly unitMarkers = new Map<string, THREE.Group>();
   private readonly destroyedPartKeys = new Set<string>();
+  // Per-actor firing recoil [0..1], rebuilt each frame from freshly-launched projectiles so a
+  // unit's weapon kicks back (and its body rocks) the instant it shoots.
+  private readonly recoilByActor = new Map<string, number>();
   private readonly ring: THREE.Mesh;
   private readonly selectionDisc: THREE.Mesh;
   private readonly selectionBeacon: THREE.Mesh;
@@ -122,6 +125,7 @@ export class WorldRenderer {
       "bolt-core", "bolt-ring",
       "grenade-body", "grenade-band", "grenade-spark",
       "rifle-slug", "rifle-tip", "rifle-spark", "rifle-tail",
+      "ember", "muzzle-flash",
     ]) projectileGeometry(key);
     for (const radius of [0.026, 0.035, 0.04, 0.052, 0.07, 0.085, 0.11, 0.13]) tubeGeometry(radius);
     for (const radius of [0.22, 0.34, 0.38, 0.46]) projectileShadowGeometry(radius);
@@ -138,17 +142,19 @@ export class WorldRenderer {
     this.debug.ghostedEntities = [...this.ghostedEntityIds];
     if (sim.entities.every((e) => e.parts.every((p) => p.hp === p.maxHp))) {
       this.destroyedPartKeys.clear();
-      this.debrisRoot.clear();
+      this.disposeAndClear(this.debrisRoot);
     }
     this.animateDebris();
     this.pickables.splice(0);
     const liveIds = new Set(sim.entities.map((e) => e.id));
     for (const [id, group] of this.groups) {
       if (!liveIds.has(id)) {
+        disposeSubtree(group);
         this.entityRoot.remove(group);
         this.groups.delete(id);
       }
     }
+    this.computeRecoil(sim.projectiles);
     for (const entity of sim.entities) this.syncEntity(entity, sim.selectedId, targetId, targetPartId, sim.defending.has(entity.id), this.ghostedEntityIds.has(entity.id));
     this.syncUnitMarkers(sim);
     this.syncSelection(sim);
@@ -173,9 +179,16 @@ export class WorldRenderer {
     this.syncObjectives(sim);
   }
 
+  // Dispose then detach every child of a per-frame / per-swap root, freeing GPU geometry
+  // before the (cheap) JS objects are GC'd. Without this, every rebuild leaks buffers.
+  private disposeAndClear(group: THREE.Group): void {
+    disposeSubtree(group);
+    group.clear();
+  }
+
   // Flag poles (CTF) and the contested zone ring (Hold the Hill), redrawn each frame.
   private syncObjectives(sim: TacticalSim): void {
-    this.objectiveRoot.clear();
+    this.disposeAndClear(this.objectiveRoot);
     const s = sim.modeState;
     if (sim.mode === "hill") {
       const color = s.hillHolder === "player" ? 0x6fd7ff : s.hillHolder === "enemy" ? 0xff7c5e : 0xffe08a;
@@ -244,7 +257,7 @@ export class WorldRenderer {
   }
 
   private rebuildArena(theme: MapTheme): void {
-    this.sceneryRoot.clear();
+    this.disposeAndClear(this.sceneryRoot);
     const width = arenaWidth();
     const depth = arenaDepth();
 
@@ -391,8 +404,21 @@ export class WorldRenderer {
     }
     for (const [id, marker] of this.unitMarkers) {
       if (liveMarkerIds.has(id)) continue;
+      disposeSubtree(marker);
       this.markerRoot.remove(marker);
       this.unitMarkers.delete(id);
+    }
+  }
+
+  // Each gun/cannon round, on its first ~0.16s of flight, drives a recoil punch on the unit that
+  // fired it. Grenades are thrown (no recoil). A rapid-firing unit gets a fresh punch per round.
+  private computeRecoil(projectiles: readonly Projectile[]): void {
+    this.recoilByActor.clear();
+    for (const projectile of projectiles) {
+      if (projectile.kind === "grenade") continue;
+      const recoil = clamp01(1 - projectile.age / RECOIL_TIME);
+      if (recoil <= 0) continue;
+      if (recoil > (this.recoilByActor.get(projectile.actorId) ?? 0)) this.recoilByActor.set(projectile.actorId, recoil);
     }
   }
 
@@ -412,6 +438,7 @@ export class WorldRenderer {
     group.userData.previousPosition = { ...entity.position };
     group.userData.motionTime = motionTime;
     group.userData.moving = moving;
+    group.userData.recoil = this.recoilByActor.get(entity.id) ?? 0;
     // Body rises on each footfall (two per stride) for a walking bounce, locked to distance.
     const bob = moving && isInfantryKind(entity.kind) ? Math.abs(Math.sin(motionTime * 1.6)) * 0.05 : 0;
     // Ease the rendered ground height so stepping on/off cover or terrain ledges glides
@@ -486,6 +513,9 @@ export class WorldRenderer {
     }
     this.box(group, entity, "hull", [0.18, 0.22, 0.44], [-0.44, 0.86, -0.88], 0x151b1d, { emissive: 0xff7d26, emissiveIntensity: 0.18 });
     this.box(group, entity, "hull", [0.18, 0.22, 0.44], [0.44, 0.86, -0.88], 0x151b1d, { emissive: 0xff7d26, emissiveIntensity: 0.18 });
+    // Armored side skirts shielding the upper track run (all tracked hulls share them).
+    this.box(group, entity, "left-tread", [0.12, 0.36, 1.58], [-1.18, 0.6, 0], 0x2a3236, { metalness: 0.24 });
+    this.box(group, entity, "right-tread", [0.12, 0.36, 1.58], [1.18, 0.6, 0], 0x2a3236, { metalness: 0.24 });
 
     if (entity.kind === "apc") {
       // Turretless boxy troop carrier: tall angular compartment, roof hatch, side vision
@@ -501,6 +531,14 @@ export class WorldRenderer {
         this.box(group, entity, "hull", [0.05, 0.22, 0.2], [-0.99, 1.16, z], 0x121a1e, { emissive: factionGlow, emissiveIntensity: 0.18 });
       }
       this.box(group, entity, "hull", [1.2, 0.5, 0.12], [0, 1.1, -0.78], 0x3a5563, { emissive: factionGlow, emissiveIntensity: 0.16 }); // rear troop ramp
+      // Mudguard fenders front and rear, roof stowage, and a tall whip antenna.
+      for (const side of [-1, 1]) {
+        this.box(group, entity, side < 0 ? "left-tread" : "right-tread", [0.42, 0.1, 0.5], [side * 1.3, 0.62, 0.78], 0x20262a, { metalness: 0.2 });
+        this.box(group, entity, side < 0 ? "left-tread" : "right-tread", [0.42, 0.1, 0.5], [side * 1.3, 0.62, -0.78], 0x20262a, { metalness: 0.2 });
+      }
+      this.box(group, entity, "hull", [0.5, 0.2, 0.5], [-0.74, 1.62, -0.52], 0x6a5a36, { accent: true });
+      this.cylinder(group, entity, "turret", 0.028, 0.95, [0.86, 2.1, -0.52], 0xdfeaf2, [0, 0, 0], { accent: true, emissive: factionGlow, emissiveIntensity: 0.4 });
+      this.box(group, entity, "turret", [0.08, 0.08, 0.08], [0.86, 2.56, -0.52], 0x9dfcff, { accent: true, emissive: factionGlow, emissiveIntensity: 0.85 });
       return;
     }
 
@@ -515,10 +553,23 @@ export class WorldRenderer {
     this.box(group, entity, "turret", [0.08, 0.58, 0.08], [-0.46, 1.72, -0.32], 0x0d1112, { metalness: 0.28 });
     this.box(group, entity, "turret", [0.28, 0.08, 0.08], [-0.46, 2.03, -0.32], 0xdaf7ff, { emissive: factionGlow, emissiveIntensity: 0.5 });
     if (entity.kind === "artillery") {
-      // Extra-long siege barrel + recoil spade reaching out the back.
+      // Siege gun: extra-long barrel with a slotted muzzle brake, hydraulic recoil
+      // cylinders alongside the breech, a recoil spade, and rear outrigger legs.
       this.box(group, entity, "cannon", [0.26, 0.26, 1.7], [0, 1.3, 1.95], 0xb8c4bd, { metalness: 0.42 });
+      this.box(group, entity, "cannon", [0.4, 0.4, 0.34], [0, 1.3, 2.84], 0x14181a, { accent: true, metalness: 0.4 });
+      this.box(group, entity, "cannon", [0.5, 0.12, 0.12], [0, 1.3, 2.84], 0x0a0d0e, { accent: true });
+      for (const x of [-0.18, 0.18]) this.cylinder(group, entity, "cannon", 0.08, 0.66, [x, 1.36, 0.95], 0x3a4042, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.4 });
       this.box(group, entity, "cannon", [0.4, 0.16, 0.5], [0, 1.16, 0.2], 0x2a3133, { metalness: 0.3 });
       this.box(group, entity, "hull", [0.5, 0.16, 0.9], [0, 0.32, -1.1], 0x2a3133, { metalness: 0.2 });
+      for (const x of [-1, 1]) this.box(group, entity, "hull", [0.16, 0.16, 0.8], [x * 0.66, 0.28, -1.05], 0x2a3133, { accent: true });
+    } else {
+      // Tank: commander cupola + glowing periscope, a coaxial MG, a slotted muzzle brake,
+      // and a turret-rear stowage bustle — clearly the gun tank, not the carriage gun.
+      this.box(group, entity, "turret", [0.34, 0.2, 0.34], [0.36, 1.42, -0.08], 0x1c2428, { accent: true, metalness: 0.3 });
+      this.box(group, entity, "turret", [0.12, 0.12, 0.12], [0.36, 1.57, 0.02], 0x8df0ff, { accent: true, emissive: 0x50d7ff, emissiveIntensity: 0.85 });
+      this.box(group, entity, "cannon", [0.1, 0.12, 0.5], [0.27, 1.34, 0.72], 0x14181a, { accent: true, metalness: 0.34 });
+      this.box(group, entity, "cannon", [0.34, 0.34, 0.26], [0, 1.16, 1.66], 0x14181a, { accent: true, metalness: 0.4 });
+      this.box(group, entity, "turret", [0.72, 0.2, 0.32], [0, 1.12, -0.46], 0x6a5a36, { accent: true });
     }
   }
 
@@ -534,67 +585,111 @@ export class WorldRenderer {
     this.box(group, entity, "body", [0.18, 0.18, 0.38], [0.44, 1.02, 0.02], trimColor, { metalness: 0.18 });
     this.box(group, entity, "head", [0.36, 0.36, 0.36], [0, 1.35, 0.02], 0xd8d2bd);
     if (entity.kind === "sniper") {
-      this.box(group, entity, "rifle", [0.14, 0.16, 1.32], [0.48, 0.95, 0.45], trimColor, { metalness: 0.32 });
-      this.box(group, entity, "rifle", [0.22, 0.18, 0.2], [0.48, 1.06, 0.08], 0x141819, { emissive: 0x8de4ff, emissiveIntensity: 0.28 });
-      this.box(group, entity, "pack", [0.66, 0.1, 0.52], [0, 0.74, -0.45], 0x19303a, { emissive: 0x8de4ff, emissiveIntensity: 0.1 });
-      this.box(group, entity, "head", [0.54, 0.1, 0.14], [0, 1.43, 0.18], 0x0a1418, { emissive: 0x8de4ff, emissiveIntensity: 0.45 });
+      // Marksman: extra-long bipod-steadied rifle, a fat glowing scope, and a camo ghillie
+      // hood/cloak that ragged-edges the silhouette — clearly the patient long-range shooter.
+      this.box(group, entity, "rifle", [0.13, 0.15, 1.54], [0.46, 0.95, 0.52], trimColor, { metalness: 0.34 });
+      this.box(group, entity, "rifle", [0.22, 0.2, 0.28], [0.46, 1.08, 0.12], 0x12161a, { accent: true, emissive: 0x8de4ff, emissiveIntensity: 0.5 });
+      this.box(group, entity, "rifle", [0.1, 0.1, 0.12], [0.46, 1.13, -0.06], 0x8de4ff, { accent: true, emissive: 0x8de4ff, emissiveIntensity: 0.95 });
+      this.cylinder(group, entity, "rifle", 0.03, 0.44, [0.38, 0.74, 1.04], 0x14181a, [0.5, 0, 0.32], { metalness: 0.3 });
+      this.cylinder(group, entity, "rifle", 0.03, 0.44, [0.54, 0.74, 1.04], 0x14181a, [0.5, 0, -0.32], { metalness: 0.3 });
+      this.box(group, entity, "body", [0.66, 0.26, 0.52], [0, 1.05, -0.06], 0x55603c, { accent: true });
+      this.box(group, entity, "body", [0.5, 0.5, 0.16], [0, 0.74, -0.34], 0x4c5436, { accent: true });
+      for (const x of [-0.22, 0.04, 0.26]) this.box(group, entity, "body", [0.1, 0.2, 0.08], [x, 0.5, -0.36], 0x5d663f, { accent: true });
+      this.box(group, entity, "head", [0.48, 0.22, 0.52], [0, 1.5, -0.05], 0x55603c, { accent: true });
+      this.box(group, entity, "head", [0.5, 0.1, 0.14], [0, 1.44, 0.2], 0x0a1418, { accent: true, emissive: 0x8de4ff, emissiveIntensity: 0.55 });
     } else if (entity.kind === "grenadier") {
-      this.box(group, entity, "rifle", [0.28, 0.26, 0.84], [0.48, 0.93, 0.28], trimColor, { metalness: 0.2 });
-      this.box(group, entity, "rifle", [0.4, 0.36, 0.24], [0.48, 0.93, 0.74], 0x2b2418, { emissive: 0xffb02e, emissiveIntensity: 0.22 });
-      for (const x of [-0.18, 0, 0.18]) this.box(group, entity, "pack", [0.12, 0.18, 0.12], [x, 1.06, -0.42], 0xffca6b, { emissive: 0xff7d26, emissiveIntensity: 0.25 });
-      this.box(group, entity, "head", [0.48, 0.12, 0.44], [0, 1.54, 0.0], 0x3a2a1d, { metalness: 0.12 });
+      // Splash specialist: stubby fat-muzzled launcher, a bandolier of amber rounds across
+      // the chest, more on the pack, and a round pot helmet.
+      this.box(group, entity, "rifle", [0.28, 0.26, 0.78], [0.48, 0.93, 0.3], trimColor, { metalness: 0.2 });
+      this.cylinder(group, entity, "rifle", 0.21, 0.2, [0.48, 0.93, 0.74], 0x2b2418, [0.5, 0, 0], { accent: true, emissive: 0xffb02e, emissiveIntensity: 0.42 });
+      this.cylinder(group, entity, "body", 0.06, 0.94, [0, 0.86, 0.2], 0x2e2110, [0, 0, 0.72], { accent: true });
+      for (const [x, y] of [[-0.2, 0.66], [0, 0.86], [0.2, 1.06]] as const) this.box(group, entity, "body", [0.12, 0.15, 0.12], [x, y, 0.25], 0xffb84a, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.4 });
+      for (const x of [-0.16, 0, 0.16]) this.box(group, entity, "pack", [0.11, 0.16, 0.11], [x, 1.08, -0.42], 0xffca6b, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.35 });
+      this.box(group, entity, "head", [0.46, 0.2, 0.46], [0, 1.5, 0.0], 0x5a4a22, { accent: true });
+      this.box(group, entity, "head", [0.5, 0.09, 0.18], [0, 1.46, 0.22], 0x6a5626, { accent: true });
     } else if (entity.kind === "striker") {
-      this.box(group, entity, "rifle", [0.12, 0.16, 1.16], [0.5, 0.86, 0.32], 0xdad2ff, { metalness: 0.24, emissive: 0xb48cff, emissiveIntensity: 0.44 });
-      this.box(group, entity, "rifle", [0.16, 0.1, 0.38], [0.5, 1.08, 0.86], 0x9dfcff, { emissive: 0x9dfcff, emissiveIntensity: 0.7 });
-      this.box(group, entity, "pack", [0.52, 0.16, 0.34], [0, 0.92, -0.44], 0x2a2142, { emissive: 0xb48cff, emissiveIntensity: 0.24 });
-      this.box(group, entity, "head", [0.46, 0.11, 0.4], [0, 1.54, 0.0], 0x241d34, { emissive: teamGlow, emissiveIntensity: 0.2 });
+      // Close-assault: a long glowing arc-blade, a buckler on the off arm, a shoulder
+      // pauldron, and a sleek crested visor helm — aggressive and unmistakably melee.
+      this.box(group, entity, "rifle", [0.1, 0.16, 1.28], [0.52, 0.86, 0.42], 0xe6dcff, { accent: true, emissive: 0xb48cff, emissiveIntensity: 0.72 });
+      this.box(group, entity, "rifle", [0.16, 0.2, 0.22], [0.52, 0.92, -0.12], 0x2a2142, { accent: true, emissive: 0xb48cff, emissiveIntensity: 0.45 });
+      this.box(group, entity, "body", [0.12, 0.6, 0.5], [-0.52, 0.86, 0.06], 0x3a2c5c, { accent: true });
+      this.box(group, entity, "body", [0.08, 0.4, 0.1], [-0.58, 0.86, 0.06], 0xc6a8ff, { accent: true, emissive: 0xb48cff, emissiveIntensity: 0.6 });
+      this.box(group, entity, "body", [0.3, 0.2, 0.36], [0.46, 1.14, 0.02], 0x4a3a72, { accent: true });
+      this.box(group, entity, "head", [0.44, 0.34, 0.46], [0, 1.46, 0.0], 0x2a2142, { accent: true, metalness: 0.2 });
+      this.box(group, entity, "head", [0.48, 0.08, 0.16], [0, 1.44, 0.22], 0xc6a8ff, { accent: true, emissive: 0xb48cff, emissiveIntensity: 0.8 });
+      this.box(group, entity, "head", [0.1, 0.26, 0.12], [0, 1.7, -0.04], 0x6a4fae, { accent: true, emissive: 0xb48cff, emissiveIntensity: 0.5 });
     } else if (entity.kind === "heavy") {
-      // Bulky frame, drum-fed auto-cannon, and a big glowing ammo drum on the back.
-      this.box(group, entity, "body", [0.74, 0.52, 0.5], [0, 0.95, 0.03], bodyColor, { metalness: 0.14, emissive: 0x401a08, emissiveIntensity: 0.12 });
-      this.box(group, entity, "body", [0.9, 0.2, 0.52], [0, 1.12, 0.0], trimColor, { metalness: 0.18 });
-      this.box(group, entity, "rifle", [0.27, 0.27, 1.22], [0.52, 0.92, 0.46], 0x2b2f31, { metalness: 0.32 });
-      this.cylinder(group, entity, "rifle", 0.26, 0.24, [0.52, 0.74, 0.5], 0x14181a, [0, 0, 0], { metalness: 0.3 });
-      this.box(group, entity, "rifle", [0.34, 0.3, 0.22], [0.52, 0.92, 1.12], 0xffca6b, { emissive: 0xff7d26, emissiveIntensity: 0.4 });
-      this.box(group, entity, "pack", [0.58, 0.56, 0.42], [0, 0.9, -0.38], 0xffb02e, { emissive: 0xff6b1a, emissiveIntensity: 0.42 });
-      this.box(group, entity, "pack", [0.64, 0.12, 0.48], [0, 1.2, -0.38], 0xfff0bf, { emissive: 0xff7d26, emissiveIntensity: 0.5 });
-      this.box(group, entity, "head", [0.48, 0.44, 0.46], [0, 1.36, 0.0], 0xb7b0a0, { metalness: 0.14 });
-      this.box(group, entity, "head", [0.52, 0.12, 0.16], [0, 1.4, 0.22], 0x141819, { emissive: 0xffb02e, emissiveIntensity: 0.5 });
+      // Anchor: the widest, bulkiest frame, armor pauldrons, a drum-fed auto-cannon with an
+      // ammo belt looping to a big glowing back drum, and a slab face-visor helmet.
+      this.box(group, entity, "body", [0.78, 0.54, 0.52], [0, 0.95, 0.03], bodyColor, { metalness: 0.14, emissive: 0x401a08, emissiveIntensity: 0.12 });
+      this.box(group, entity, "body", [0.94, 0.2, 0.54], [0, 1.12, 0.0], trimColor, { metalness: 0.18 });
+      for (const x of [-0.56, 0.56]) this.box(group, entity, "body", [0.34, 0.26, 0.5], [x, 1.16, 0.02], 0x6a3a1c, { accent: true, metalness: 0.2 });
+      this.box(group, entity, "rifle", [0.27, 0.27, 1.22], [0.54, 0.92, 0.46], 0x2b2f31, { metalness: 0.32 });
+      this.cylinder(group, entity, "rifle", 0.26, 0.24, [0.54, 0.74, 0.5], 0x14181a, [0, 0, 0], { metalness: 0.3 });
+      this.box(group, entity, "rifle", [0.34, 0.3, 0.22], [0.54, 0.92, 1.12], 0xffca6b, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.5 });
+      for (let i = 0; i < 4; i++) this.box(group, entity, "rifle", [0.12, 0.09, 0.1], [0.34 - i * 0.07, 0.8 - i * 0.015, 0.18 - i * 0.13], 0xffca6b, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.3 });
+      this.box(group, entity, "pack", [0.58, 0.56, 0.42], [0, 0.9, -0.38], 0xffb02e, { accent: true, emissive: 0xff6b1a, emissiveIntensity: 0.5 });
+      this.box(group, entity, "pack", [0.64, 0.12, 0.48], [0, 1.2, -0.38], 0xfff0bf, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.6 });
+      this.box(group, entity, "head", [0.5, 0.46, 0.48], [0, 1.36, 0.0], 0x7a4a2a, { accent: true, metalness: 0.18 });
+      this.box(group, entity, "head", [0.54, 0.14, 0.16], [0, 1.36, 0.22], 0x141819, { accent: true, emissive: 0xffb02e, emissiveIntensity: 0.6 });
     } else if (entity.kind === "mortar") {
-      // Stubby sidearm plus a long mortar tube slung over the shoulder.
-      this.box(group, entity, "rifle", [0.16, 0.16, 0.46], [0.44, 0.94, 0.2], trimColor, { metalness: 0.2 });
-      this.cylinder(group, entity, "rifle", 0.13, 1.05, [0.16, 1.18, -0.12], 0x2a2f31, [Math.PI * 0.32, 0, 0], { metalness: 0.34 });
-      this.cylinder(group, entity, "rifle", 0.15, 0.1, [-0.04, 1.55, -0.4], 0xffd27a, [Math.PI * 0.32, 0, 0], { emissive: 0xff9e2b, emissiveIntensity: 0.4 });
-      this.box(group, entity, "pack", [0.42, 0.4, 0.26], [0, 0.86, -0.34], 0x6a4a1a, { emissive: 0xffb02e, emissiveIntensity: 0.22 });
-      this.box(group, entity, "head", [0.42, 0.12, 0.36], [0, 1.54, 0.0], 0x243336, { emissive: teamGlow, emissiveIntensity: 0.08 });
+      // Indirect-fire team: long mortar tube slung high over the shoulder, a round olive
+      // baseplate + folded bipod legs on the back, and a heavy olive-drab steel helmet.
+      this.box(group, entity, "rifle", [0.16, 0.16, 0.44], [0.44, 0.94, 0.2], trimColor, { metalness: 0.2 });
+      this.cylinder(group, entity, "rifle", 0.13, 1.1, [0.14, 1.2, -0.12], 0x2a2f31, [Math.PI * 0.32, 0, 0], { metalness: 0.34 });
+      this.cylinder(group, entity, "rifle", 0.16, 0.12, [-0.06, 1.6, -0.42], 0xffd27a, [Math.PI * 0.32, 0, 0], { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.45 });
+      this.cylinder(group, entity, "pack", 0.33, 0.08, [0, 1.0, -0.47], 0x4a4f33, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.3 });
+      this.cylinder(group, entity, "pack", 0.12, 0.1, [0, 1.0, -0.52], 0x2c2f22, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.3 });
+      for (const x of [-0.16, 0.16]) this.box(group, entity, "pack", [0.04, 0.62, 0.04], [x, 0.86, -0.5], 0x3a3f2c, { accent: true });
+      this.box(group, entity, "head", [0.46, 0.22, 0.46], [0, 1.5, 0.0], 0x4a4f33, { accent: true, metalness: 0.16 });
+      this.box(group, entity, "head", [0.5, 0.09, 0.18], [0, 1.45, 0.22], 0x3a3f28, { accent: true });
     } else if (entity.kind === "medic") {
-      // White kit with a red cross and a small sidearm.
-      this.box(group, entity, "rifle", [0.16, 0.16, 0.5], [0.45, 0.9, 0.24], 0xd8d2cf, { metalness: 0.2 });
-      this.box(group, entity, "body", [0.2, 0.5, 0.06], [0, 0.86, 0.2], 0xff5a6a, { emissive: 0xff2a44, emissiveIntensity: 0.45 });
-      this.box(group, entity, "body", [0.5, 0.18, 0.06], [0, 0.92, 0.2], 0xff5a6a, { emissive: 0xff2a44, emissiveIntensity: 0.45 });
-      this.box(group, entity, "head", [0.42, 0.12, 0.36], [0, 1.54, 0.0], 0xffffff, { emissive: 0xff7f8f, emissiveIntensity: 0.24 });
+      // Support: a clean white vest + helmet emblazoned with a bold red cross, a hip med
+      // satchel, a glowing green heal vial, and only a small sidearm — reads as "help."
+      this.box(group, entity, "rifle", [0.16, 0.16, 0.46], [0.45, 0.9, 0.24], 0xd8d2cf, { metalness: 0.2 });
+      this.box(group, entity, "body", [0.5, 0.66, 0.06], [0, 0.86, 0.19], 0xf4f4f4, { accent: true });
+      this.box(group, entity, "body", [0.18, 0.42, 0.05], [0, 0.9, 0.23], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.5 });
+      this.box(group, entity, "body", [0.42, 0.16, 0.05], [0, 0.94, 0.23], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.5 });
+      this.box(group, entity, "pack", [0.3, 0.3, 0.2], [0.36, 0.66, -0.04], 0xf0f0f0, { accent: true });
+      this.box(group, entity, "pack", [0.14, 0.05, 0.05], [0.36, 0.7, 0.07], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.45 });
+      this.box(group, entity, "pack", [0.05, 0.14, 0.05], [0.36, 0.7, 0.07], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.45 });
+      this.box(group, entity, "body", [0.1, 0.16, 0.1], [-0.3, 0.7, 0.16], 0x9dffd0, { accent: true, emissive: 0x4ce0a0, emissiveIntensity: 0.7 });
+      this.box(group, entity, "head", [0.46, 0.2, 0.46], [0, 1.5, 0.0], 0xf4f4f4, { accent: true });
+      this.box(group, entity, "head", [0.1, 0.05, 0.16], [0, 1.52, 0.22], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.5 });
+      this.box(group, entity, "head", [0.05, 0.14, 0.16], [0, 1.52, 0.22], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.5 });
     } else if (entity.kind === "scout") {
-      // Light recon: stubby carbine, a tall whip antenna off the pack, and a low-profile
-      // visor cap — the leanest, most lightly-armed silhouette on the field.
-      this.box(group, entity, "rifle", [0.13, 0.14, 0.62], [0.46, 0.95, 0.22], trimColor, { metalness: 0.22 });
-      this.cylinder(group, entity, "pack", 0.028, 0.92, [-0.2, 1.42, -0.34], 0xdaf7e6, [0, 0, 0], { emissive: 0x6ff0b0, emissiveIntensity: 0.5 });
-      this.box(group, entity, "pack", [0.07, 0.07, 0.07], [-0.2, 1.9, -0.34], 0x9dffcf, { emissive: 0x6ff0b0, emissiveIntensity: 0.85 });
-      this.box(group, entity, "head", [0.44, 0.16, 0.34], [0, 1.5, 0.02], palette.body, { metalness: 0.1 });
-      this.box(group, entity, "head", [0.42, 0.08, 0.16], [0, 1.42, 0.2], 0x0e2a24, { emissive: 0x6ff0b0, emissiveIntensity: 0.5 });
+      // Light recon: stubby carbine, chest binoculars with glowing green lenses, a tall whip
+      // antenna with a blinking tip, and a soft beret with goggles — the leanest silhouette.
+      this.box(group, entity, "rifle", [0.13, 0.14, 0.6], [0.46, 0.95, 0.22], trimColor, { metalness: 0.22 });
+      this.box(group, entity, "body", [0.28, 0.14, 0.12], [0, 1.0, 0.22], 0x1c2a24, { accent: true });
+      for (const x of [-0.09, 0.09]) this.cylinder(group, entity, "body", 0.05, 0.07, [x, 1.0, 0.3], 0x9dffcf, [Math.PI / 2, 0, 0], { accent: true, emissive: 0x6ff0b0, emissiveIntensity: 0.85 });
+      this.cylinder(group, entity, "pack", 0.028, 0.95, [-0.2, 1.42, -0.34], 0xdaf7e6, [0, 0, 0], { accent: true, emissive: 0x6ff0b0, emissiveIntensity: 0.5 });
+      this.box(group, entity, "pack", [0.08, 0.08, 0.08], [-0.2, 1.92, -0.34], 0x9dffcf, { accent: true, emissive: 0x6ff0b0, emissiveIntensity: 0.95 });
+      this.box(group, entity, "head", [0.44, 0.14, 0.42], [0, 1.5, 0.0], 0x2f6e4a, { accent: true });
+      this.box(group, entity, "head", [0.12, 0.1, 0.08], [0.16, 1.56, -0.04], 0x244d39, { accent: true });
+      this.box(group, entity, "head", [0.42, 0.1, 0.14], [0, 1.42, 0.2], 0x0e2a24, { accent: true, emissive: 0x6ff0b0, emissiveIntensity: 0.6 });
     } else if (entity.kind === "engineer") {
-      // Builder crew: a welding torch with a hot tip, a big wrench slung on the back, a
-      // bright hard hat and hi-vis tool belt — clearly the support/utility unit.
+      // Builder crew: a welding torch with a blazing tip, a big steel wrench on the back,
+      // a hi-vis hard hat with a head-lamp, and a tool belt of hanging gear.
       this.box(group, entity, "rifle", [0.12, 0.12, 0.46], [0.46, 0.92, 0.2], 0x3a3320, { metalness: 0.3 });
-      this.box(group, entity, "rifle", [0.1, 0.1, 0.14], [0.46, 0.92, 0.5], 0xffe39a, { emissive: 0xffce4a, emissiveIntensity: 0.95 });
-      this.box(group, entity, "pack", [0.1, 0.64, 0.1], [-0.34, 0.92, -0.32], 0xd9d2b0, { metalness: 0.42 });
-      this.box(group, entity, "pack", [0.24, 0.16, 0.12], [-0.34, 1.28, -0.32], 0xd9d2b0, { metalness: 0.42 });
-      this.box(group, entity, "body", [0.6, 0.1, 0.4], [0, 0.62, 0.02], 0xffce4a, { emissive: 0xff9e2b, emissiveIntensity: 0.32 });
-      this.box(group, entity, "head", [0.48, 0.18, 0.44], [0, 1.5, 0.0], 0xffd23f, { emissive: 0xff9e2b, emissiveIntensity: 0.3 });
+      this.box(group, entity, "rifle", [0.11, 0.11, 0.16], [0.46, 0.92, 0.5], 0xfff0c0, { accent: true, emissive: 0xffce4a, emissiveIntensity: 1.0 });
+      this.box(group, entity, "pack", [0.1, 0.64, 0.1], [-0.34, 0.92, -0.32], 0xcfd6dc, { accent: true, metalness: 0.42 });
+      this.box(group, entity, "pack", [0.24, 0.16, 0.12], [-0.34, 1.28, -0.32], 0xcfd6dc, { accent: true, metalness: 0.42 });
+      this.box(group, entity, "body", [0.6, 0.12, 0.4], [0, 0.62, 0.02], 0xffce4a, { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.4 });
+      for (const x of [-0.18, 0.12]) this.box(group, entity, "body", [0.08, 0.18, 0.06], [x, 0.5, 0.18], 0xbfc6cc, { accent: true, metalness: 0.4 });
+      this.box(group, entity, "head", [0.48, 0.18, 0.46], [0, 1.5, 0.0], 0xffce4a, { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.35 });
+      this.box(group, entity, "head", [0.16, 0.1, 0.08], [0, 1.5, 0.24], 0xbfe8ff, { accent: true, emissive: 0xbfe8ff, emissiveIntensity: 0.9 });
     } else {
-      // Line infantry (soldier): standard rifle and a clear brimmed combat helmet — the
-      // plain baseline trooper every other kind reads against.
+      // Line infantry (soldier): standard bayoneted rifle, a brimmed helmet with a comms
+      // bead, chest webbing/pouches and a slung frag — the plain baseline trooper.
       this.box(group, entity, "rifle", [0.18, 0.18, 0.9], [0.45, 0.92, 0.28], trimColor);
-      this.box(group, entity, "head", [0.42, 0.18, 0.42], [0, 1.5, 0.0], 0x2c3a3d, { metalness: 0.14 });
-      this.box(group, entity, "head", [0.46, 0.06, 0.16], [0, 1.42, 0.22], 0x141819, { emissive: teamGlow, emissiveIntensity: 0.14 });
+      this.box(group, entity, "rifle", [0.05, 0.05, 0.3], [0.45, 0.96, 0.78], 0xeaffff, { accent: true, metalness: 0.5 });
+      this.box(group, entity, "body", [0.5, 0.12, 0.06], [0, 0.94, 0.2], 0x2c3a30, { accent: true });
+      for (const x of [-0.16, 0.16]) this.box(group, entity, "body", [0.14, 0.18, 0.1], [x, 0.74, 0.2], 0x35463a, { accent: true });
+      this.box(group, entity, "body", [0.12, 0.16, 0.12], [-0.3, 0.66, 0.12], 0x3f5036, { accent: true });
+      this.box(group, entity, "head", [0.44, 0.2, 0.44], [0, 1.5, 0.0], 0x2c3a3d, { accent: true, metalness: 0.14 });
+      this.box(group, entity, "head", [0.48, 0.07, 0.16], [0, 1.43, 0.22], 0x141819, { accent: true });
+      this.box(group, entity, "head", [0.09, 0.08, 0.07], [0.2, 1.5, 0.1], 0x8df0ff, { accent: true, emissive: 0x5ff1ff, emissiveIntensity: 0.7 });
     }
     this.box(group, entity, "pack", [0.38, 0.45, 0.18], [0, 0.82, -0.3], packColor, entity.kind === "grenadier" ? { emissive: 0xff7d26, emissiveIntensity: 0.26 } : {});
     this.box(group, entity, "pack", [0.12, 0.16, 0.08], [-0.24, 1.04, -0.42], 0xdaf7ff, { emissive: teamGlow, emissiveIntensity: 0.42 });
@@ -788,7 +883,7 @@ export class WorldRenderer {
     size: [number, number, number],
     pos: [number, number, number],
     color: number,
-    materialOptions: { metalness?: number; emissive?: number; emissiveIntensity?: number } = {}
+    materialOptions: { metalness?: number; emissive?: number; emissiveIntensity?: number; accent?: boolean } = {}
   ): PartMesh {
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(size[0], size[1], size[2]),
@@ -806,6 +901,7 @@ export class WorldRenderer {
     mesh.userData.entityId = entity.id;
     mesh.userData.partId = partId;
     mesh.userData.baseColor = color;
+    mesh.userData.accent = materialOptions.accent === true;
     mesh.userData.baseEmissive = materialOptions.emissive ?? 0x000000;
     mesh.userData.baseEmissiveIntensity = materialOptions.emissiveIntensity ?? 0;
     mesh.userData.basePosition = mesh.position.clone();
@@ -825,7 +921,7 @@ export class WorldRenderer {
     pos: [number, number, number],
     color: number,
     rotation: [number, number, number] = [0, 0, Math.PI / 2],
-    materialOptions: { metalness?: number; emissive?: number; emissiveIntensity?: number } = {}
+    materialOptions: { metalness?: number; emissive?: number; emissiveIntensity?: number; accent?: boolean } = {}
   ): PartMesh {
     const mesh = new THREE.Mesh(
       new THREE.CylinderGeometry(radius, radius, depth, 14),
@@ -844,6 +940,7 @@ export class WorldRenderer {
     mesh.userData.entityId = entity.id;
     mesh.userData.partId = partId;
     mesh.userData.baseColor = color;
+    mesh.userData.accent = materialOptions.accent === true;
     mesh.userData.baseEmissive = materialOptions.emissive ?? 0x000000;
     mesh.userData.baseEmissiveIntensity = materialOptions.emissiveIntensity ?? 0;
     mesh.userData.basePosition = mesh.position.clone();
@@ -975,7 +1072,24 @@ export class WorldRenderer {
       mesh.position.y = pivotY - reach * Math.cos(swing);
     }
 
-    const base = roleColor(entity, part.role, mesh.userData.baseColor as number);
+    // Firing recoil: the weapon kicks back toward the body and tips its muzzle up, and the
+    // torso rocks back a touch — a quick punch that decays over the round's first frames.
+    const recoil = (parent?.userData.recoil as number | undefined) ?? 0;
+    if (recoil > 0 && part.hp > 0 && entity.status.alive) {
+      if (part.id === "rifle" || part.id === "cannon" || part.id === "gun") {
+        const kick = recoil * (entity.kind === "tank" || entity.kind === "artillery" ? 0.3 : entity.kind === "apc" || entity.kind === "turret" || entity.kind === "exturret" ? 0.22 : 0.16);
+        mesh.position.z -= kick;
+        mesh.rotation.x -= recoil * 0.16;
+      } else if (part.role === "core" && isInfantryKind(entity.kind)) {
+        mesh.rotation.x -= recoil * 0.08;
+        mesh.position.z -= recoil * 0.03;
+      }
+    }
+
+    // Accent meshes (signature insignia / visors / gear) opt out of the team-color
+    // normalization so each unit can carry a little authored identity color of its own.
+    const accent = mesh.userData.accent === true;
+    const base = accent ? (mesh.userData.baseColor as number) : roleColor(entity, part.role, mesh.userData.baseColor as number);
     const ratio = clamp01(part.hp / part.maxHp);
     const injury = 1 - ratio;
     const color = new THREE.Color(base).lerp(new THREE.Color(0x33120f), injury * 0.55);
@@ -989,7 +1103,7 @@ export class WorldRenderer {
     const coverGlow = entity.kind === "cover" && part.hp > 0;
     const coverGlowColor = entity.coverKind === "cliff" ? 0x4a2284 : part.role === "volatile" ? 0x7a4200 : entity.coverKind === "ridge" ? 0x5a3a13 : 0x0a6472;
     const unitGlowColor = entity.team === "enemy" ? 0x4f160f : 0x063a44;
-    material.emissive.setHex(part.hp > 0 && targetedPart ? 0x4f3000 : part.hp > 0 && selected ? 0x0b3844 : unitGlow ? unitGlowColor : coverGlow ? coverGlowColor : baseEmissive);
+    material.emissive.setHex(part.hp > 0 && targetedPart ? 0x4f3000 : part.hp > 0 && selected ? 0x0b3844 : accent ? baseEmissive : unitGlow ? unitGlowColor : coverGlow ? coverGlowColor : baseEmissive);
     material.emissiveIntensity = part.hp > 0
       ? (mesh.userData.baseEmissiveIntensity as number) + (unitGlow ? 0.14 : 0) + (coverGlow ? 0.18 : 0) + (selected ? 0.58 : 0) + (targetedPart ? 0.72 : targeted ? 0.34 : 0)
       : 0;
@@ -1097,7 +1211,7 @@ export class WorldRenderer {
   // Faint rings showing the reach of support/spotter auras (medic, engineer, scout, sniper),
   // so the player can see which allies benefit. Command phase only to avoid resolve clutter.
   private syncAuras(sim: TacticalSim): void {
-    this.auraRoot.clear();
+    this.disposeAndClear(this.auraRoot);
     if (sim.phase !== "command") return;
     const pulse = (Math.sin(performance.now() * 0.004) + 1) * 0.5;
     for (const entity of sim.entities) {
@@ -1139,7 +1253,7 @@ export class WorldRenderer {
   }
 
   private syncOrders(sim: TacticalSim): void {
-    this.orderRoot.clear();
+    this.disposeAndClear(this.orderRoot);
     if (sim.phase !== "command") return;
     const projectedPositions = new Map<string, { x: number; z: number }>();
     for (const order of sim.orders) {
@@ -1164,7 +1278,7 @@ export class WorldRenderer {
   }
 
   private syncShotPreview(sim: TacticalSim, targetId: string | undefined, targetPartId: string | undefined): void {
-    this.previewRoot.clear();
+    this.disposeAndClear(this.previewRoot);
     const actor = sim.selected;
     if (!actor || actor.team !== "player" || !targetId || !targetPartId || sim.phase !== "command") return;
     const target = sim.entity(targetId);
@@ -1191,7 +1305,7 @@ export class WorldRenderer {
   // Hovering ground while aiming a grenade or explosive shell: show the throw/firing arc, the
   // blast radius at the landing spot, and whether terrain or a unit in front intercepts it.
   private syncGroundAim(sim: TacticalSim, point?: Vec2): void {
-    this.groundAimRoot.clear();
+    this.disposeAndClear(this.groundAimRoot);
     if (!point) return;
     const aim = sim.groundAimPreview(point);
     if (!aim) return;
@@ -1262,11 +1376,14 @@ export class WorldRenderer {
   }
 
   private syncProjectiles(projectiles: readonly Projectile[]): void {
-    this.projectileRoot.clear();
+    this.disposeAndClear(this.projectileRoot);
     for (const projectile of projectiles) {
       const style = projectileStyle(projectile);
       this.projectileRoot.add(makeLine(projectile.previous, projectile.position, style.trailColor, 0.92, projectile.previousHeight, projectile.height));
       this.projectileRoot.add(makeProjectileShadow(projectile, style.trailColor));
+
+      const flash = makeMuzzleFlash(projectile);
+      if (flash) this.projectileRoot.add(flash);
 
       const model = makeProjectileModel(projectile);
       model.position.set(projectile.position.x, projectile.height, projectile.position.z);
@@ -1276,7 +1393,7 @@ export class WorldRenderer {
   }
 
   private syncEffects(effects: readonly VisualEvent[]): void {
-    this.effectRoot.clear();
+    this.disposeAndClear(this.effectRoot);
     for (const effect of effects) {
       const t = clamp01(effect.age / effect.duration);
       const opacity = 1 - t;
@@ -1480,6 +1597,9 @@ function projectileStyle(projectile: Projectile): {
       trailColor: 0xffbf69,
     };
   }
+  // Rifle family: brighten the marksman's tracer and give the heavy gunner a hot orange streak.
+  if (projectile.sourceKind === "sniper") return { trailColor: blendHex(projectile.color, 0xffffff, 0.4) };
+  if (projectile.sourceKind === "heavy") return { trailColor: 0xffae57 };
   return {
     trailColor: projectile.color,
   };
@@ -1491,49 +1611,83 @@ function orientAlongShot(mesh: THREE.Object3D, from: { x: number; z: number }, t
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
 }
 
+// A few small trailing embers behind a round (in the model's local frame, where -Y is the
+// trailing direction). All use pooled geometry + cached materials, so they cost no GC churn.
+function addEmbers(group: THREE.Group, count: number, color: number, spread: number, baseY: number, age: number): void {
+  for (let i = 0; i < count; i += 1) {
+    const ember = new THREE.Mesh(projectileGeometry("ember"), projectileMaterial(`ember-${i}`, color, 0.55 - i * 0.13));
+    ember.position.set(Math.sin(age * 22 + i * 2.1) * spread, baseY - i * 0.16, Math.cos(age * 19 + i * 1.7) * spread);
+    ember.scale.setScalar(1 - i * 0.22);
+    group.add(ember);
+  }
+}
+
 function makeProjectileModel(projectile: Projectile): THREE.Group {
   const group = new THREE.Group();
+  const src = projectile.sourceKind;
+  const team = projectile.color;
   if (projectile.kind === "shell") {
+    // Siege shells: artillery is the biggest with 6 fins and a smoky tail, the mortar turret
+    // lobs a fat blunt-nosed bomb, the tank fires a sleek AP round. All spin-stabilise in flight.
+    const heavy = src === "artillery";
+    const bomb = src === "exturret";
     const body = new THREE.Mesh(projectileGeometry("shell-body"), projectileMaterial("shell-body", 0xbfd1cc, 0.98));
-    const nose = new THREE.Mesh(projectileGeometry("shell-nose"), projectileMaterial("shell-nose", projectile.color, 0.98));
+    const nose = new THREE.Mesh(projectileGeometry("shell-nose"), projectileMaterial("shell-nose", team, 0.98));
     const exhaust = new THREE.Mesh(projectileGeometry("shell-exhaust"), projectileMaterial("shell-exhaust", 0xffd166, 0.72));
     const bandA = new THREE.Mesh(projectileGeometry("shell-band"), projectileMaterial("shell-band-a", 0x1d2426, 0.9));
-    const bandB = new THREE.Mesh(projectileGeometry("shell-band"), projectileMaterial("shell-band-b", projectile.color, 0.88));
+    const bandB = new THREE.Mesh(projectileGeometry("shell-band"), projectileMaterial("shell-band-b", team, 0.88));
     nose.position.y = 0.33;
+    if (bomb) { nose.scale.set(1.35, 0.62, 1.35); nose.position.y = 0.26; }
     exhaust.position.y = -0.32;
-    exhaust.scale.setScalar(1.08 + Math.sin(projectile.age * 24) * 0.16);
+    exhaust.scale.setScalar((1.08 + Math.sin(projectile.age * 24) * 0.16) * (heavy ? 1.45 : 1));
     bandA.position.y = 0.02;
     bandB.position.y = -0.14;
     bandA.rotation.x = Math.PI / 2;
     bandB.rotation.x = Math.PI / 2;
     bandA.scale.setScalar(0.95);
     bandB.scale.setScalar(0.78);
-    for (const angle of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
+    const finCount = heavy ? 6 : 4;
+    for (let i = 0; i < finCount; i += 1) {
+      const angle = (i / finCount) * Math.PI * 2;
       const fin = new THREE.Mesh(projectileGeometry("shell-fin"), projectileMaterial("shell-fin", 0x6e7a78, 0.92));
       fin.position.set(Math.cos(angle) * 0.13, -0.18, Math.sin(angle) * 0.13);
       fin.rotation.y = angle;
       group.add(fin);
     }
     group.add(body, nose, exhaust, bandA, bandB);
-    group.scale.setScalar(1.14);
+    group.rotation.y = projectile.age * (heavy ? 6 : 11);
+    if (heavy) addEmbers(group, 3, 0xffae57, 0.12, -0.34, projectile.age);
+    group.scale.setScalar(1.14 * (heavy ? 1.3 : bomb ? 1.12 : 1));
     return group;
   }
   if (projectile.kind === "bolt") {
+    // Energy bolts: the APC autogun spits small fast bolts, the Home Base lobs a heavy haloed
+    // core, turrets fire the standard round. Cores pulse; containment rings counter-spin.
+    const small = src === "apc";
+    const big = src === "base";
     const core = new THREE.Mesh(projectileGeometry("bolt-core"), projectileMaterial("bolt-core", 0xffd166, 0.98));
     const ringA = new THREE.Mesh(projectileGeometry("bolt-ring"), projectileMaterial("bolt-ring-a", 0xfff1a6, 0.62));
-    const ringB = new THREE.Mesh(projectileGeometry("bolt-ring"), projectileMaterial("bolt-ring-b", 0xff765f, 0.48));
+    const ringB = new THREE.Mesh(projectileGeometry("bolt-ring"), projectileMaterial("bolt-ring-b", team, 0.5));
     ringA.rotation.x = Math.PI / 2;
     ringB.rotation.x = Math.PI / 2;
-    ringA.rotation.z = projectile.age * 6;
-    ringB.rotation.z = Math.PI / 2 - projectile.age * 8;
+    ringA.rotation.z = projectile.age * (small ? 10 : 6);
+    ringB.rotation.z = Math.PI / 2 - projectile.age * (small ? 12 : 8);
     ringA.scale.setScalar(0.92);
     ringB.scale.setScalar(0.68);
-    core.scale.setScalar(1 + Math.sin(projectile.age * 18) * 0.08);
+    core.scale.setScalar(1 + Math.sin(projectile.age * 18) * 0.1);
     group.add(core, ringA, ringB);
-    group.scale.setScalar(1.18);
+    if (big) {
+      const halo = new THREE.Mesh(projectileGeometry("bolt-ring"), projectileMaterial("bolt-ring-c", 0xfff1a6, 0.32));
+      halo.rotation.x = Math.PI / 2;
+      halo.rotation.z = projectile.age * 4;
+      halo.scale.setScalar(1.25);
+      group.add(halo);
+    }
+    group.scale.setScalar(1.18 * (small ? 0.78 : big ? 1.35 : 1));
     return group;
   }
   if (projectile.kind === "grenade") {
+    const mortar = src === "mortar";
     const body = new THREE.Mesh(projectileGeometry("grenade-body"), projectileMaterial("grenade-body", 0x2f342a, 0.98));
     const band = new THREE.Mesh(projectileGeometry("grenade-band"), projectileMaterial("grenade-band", 0xffbf69, 0.82));
     const spark = new THREE.Mesh(projectileGeometry("grenade-spark"), projectileMaterial("grenade-spark", 0xfff1a6, 0.6));
@@ -1543,14 +1697,31 @@ function makeProjectileModel(projectile: Projectile): THREE.Group {
     spark.position.x = projectile.state === "rolling" ? Math.sin(projectile.age * 18) * 0.12 : 0;
     spark.scale.setScalar((projectile.state === "rolling" ? 0.72 : 1) + Math.sin(projectile.age * 18) * 0.18);
     group.add(body, band, spark);
+    // Mortar bomb: tail fins and a heavier body that tumbles end-over-end through its arc.
+    if (mortar && projectile.state !== "rolling") {
+      for (const angle of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
+        const fin = new THREE.Mesh(projectileGeometry("shell-fin"), projectileMaterial("mortar-fin", 0x4a4f33, 0.92));
+        fin.position.set(Math.cos(angle) * 0.12, 0.16, Math.sin(angle) * 0.12);
+        fin.rotation.y = angle;
+        fin.scale.set(0.6, 0.7, 0.6);
+        group.add(fin);
+      }
+      group.rotation.x = projectile.age * 5;
+    }
     if (projectile.state === "rolling") group.rotation.z = projectile.age * 8;
-    group.scale.setScalar(projectile.state === "rolling" ? 0.94 : 1.08);
+    group.scale.setScalar((projectile.state === "rolling" ? 0.94 : 1.08) * (mortar ? 1.22 : 1));
     return group;
   }
+  // Rifle family: the marksman fires a long bright tracer, the scout a small fast dart, the
+  // heavy gunner a fat hot round; everyone else the standard sparking tracer.
+  const sniper = src === "sniper";
+  const scout = src === "scout";
+  const heavyGun = src === "heavy";
+  const tipColor = heavyGun ? 0xffb24a : team;
   const slug = new THREE.Mesh(projectileGeometry("rifle-slug"), projectileMaterial("rifle-slug", 0xeaffff, 0.98));
-  const tip = new THREE.Mesh(projectileGeometry("rifle-tip"), projectileMaterial("rifle-tip", projectile.color, 0.96));
-  const spark = new THREE.Mesh(projectileGeometry("rifle-spark"), projectileMaterial("rifle-spark", 0xfff1a6, 0.72));
-  const tailA = new THREE.Mesh(projectileGeometry("rifle-tail"), projectileMaterial("rifle-tail-a", projectile.color, 0.42));
+  const tip = new THREE.Mesh(projectileGeometry("rifle-tip"), projectileMaterial("rifle-tip", tipColor, 0.96));
+  const spark = new THREE.Mesh(projectileGeometry("rifle-spark"), projectileMaterial("rifle-spark", heavyGun ? 0xffd08a : 0xfff1a6, 0.72));
+  const tailA = new THREE.Mesh(projectileGeometry("rifle-tail"), projectileMaterial("rifle-tail-a", tipColor, 0.42));
   const tailB = new THREE.Mesh(projectileGeometry("rifle-tail"), projectileMaterial("rifle-tail-b", 0xeaffff, 0.28));
   tip.position.y = 0.18;
   spark.position.y = -0.2;
@@ -1558,7 +1729,48 @@ function makeProjectileModel(projectile: Projectile): THREE.Group {
   tailB.position.y = -0.34;
   tailB.scale.setScalar(0.72);
   group.add(slug, tip, spark, tailA, tailB);
+  if (sniper) {
+    group.scale.set(0.74, 1.7, 0.74);
+    const streak = new THREE.Mesh(projectileGeometry("rifle-tail"), projectileMaterial("rifle-streak", team, 0.22));
+    streak.position.y = -0.5;
+    streak.scale.set(0.6, 1.8, 0.6);
+    group.add(streak);
+  } else if (scout) {
+    group.scale.setScalar(0.78);
+  } else if (heavyGun) {
+    group.scale.set(1.32, 1.05, 1.32);
+    addEmbers(group, 2, 0xffae57, 0.07, -0.3, projectile.age);
+  } else {
+    addEmbers(group, 2, 0xffe6b0, 0.05, -0.3, projectile.age);
+  }
   return group;
+}
+
+// A quick bright flash at the muzzle on the first frames of a round's life. Drawn at the
+// projectile's stored origin (the muzzle point), so it needs no separate sim event.
+const RECOIL_TIME = 0.16;
+const MUZZLE_FLASH_TIME = 0.12;
+function makeMuzzleFlash(projectile: Projectile): THREE.Object3D | undefined {
+  if (projectile.kind === "grenade" || projectile.age > MUZZLE_FLASH_TIME) return undefined;
+  const t = clamp01(projectile.age / MUZZLE_FLASH_TIME);
+  const fade = 1 - t;
+  const scale = muzzleFlashScale(projectile) * (0.55 + t * 0.9);
+  const group = new THREE.Group();
+  const core = new THREE.Mesh(projectileGeometry("muzzle-flash"), projectileMaterial("muzzle-core", 0xfff4cf, 0.9 * fade));
+  core.scale.setScalar(scale);
+  const glow = new THREE.Mesh(projectileGeometry("muzzle-flash"), projectileMaterial("muzzle-glow", blendHex(projectile.color, 0xffd27a, 0.5), 0.4 * fade));
+  glow.scale.setScalar(scale * 1.9);
+  group.add(core, glow);
+  group.position.set(projectile.origin.x, projectile.originHeight, projectile.origin.z);
+  return group;
+}
+
+function muzzleFlashScale(p: Projectile): number {
+  if (p.kind === "shell") return p.sourceKind === "artillery" ? 1.5 : 1.2;
+  if (p.kind === "bolt") return p.sourceKind === "base" ? 1.2 : 0.85;
+  if (p.sourceKind === "heavy") return 0.8;
+  if (p.sourceKind === "sniper") return 0.7;
+  return 0.55;
 }
 
 function makeProjectileShadow(projectile: Projectile, color: number): THREE.Mesh {
@@ -1760,6 +1972,24 @@ function hash(value: string): number {
   return h >>> 0;
 }
 
+// Free the GPU geometry of every Mesh/Line under `obj` before it is detached, so rebuilt
+// overlays + swapped scenes don't leak buffers (renderer.info.memory.geometries climbing is
+// the symptom). Deliberately conservative:
+//   * geometry ONLY — materials/textures are often shared (label sprites, pooled materials),
+//     and they are a separate counter; freeing geometry fixes the measured leak with no risk.
+//   * Sprites are skipped — THREE.Sprite.geometry is a single module-shared geometry; disposing
+//     it would break every sprite.
+//   * geometries tagged `userData.shared` (the pooled projectile/tube/ring caches) are skipped.
+export function disposeSubtree(obj: THREE.Object3D): void {
+  obj.traverse((node) => {
+    if ((node as THREE.Sprite).isSprite) return;
+    const geometry = (node as Partial<THREE.Mesh>).geometry as THREE.BufferGeometry | undefined;
+    if (geometry && typeof geometry.dispose === "function" && !geometry.userData?.shared) {
+      geometry.dispose();
+    }
+  });
+}
+
 const tubeGeometries = new Map<string, THREE.CylinderGeometry>();
 const endpointGeometries = new Map<string, THREE.RingGeometry>();
 const projectileShadowGeometries = new Map<string, THREE.CircleGeometry>();
@@ -1772,6 +2002,7 @@ function tubeGeometry(radius: number): THREE.CylinderGeometry {
   let geometry = tubeGeometries.get(key);
   if (!geometry) {
     geometry = new THREE.CylinderGeometry(radius, radius, 1, 10, 1, true);
+    geometry.userData.shared = true; // pooled — never disposed by disposeSubtree
     tubeGeometries.set(key, geometry);
   }
   return geometry;
@@ -1782,6 +2013,7 @@ function endpointGeometry(radius: number): THREE.RingGeometry {
   let geometry = endpointGeometries.get(key);
   if (!geometry) {
     geometry = new THREE.RingGeometry(radius, radius + 0.08, 44);
+    geometry.userData.shared = true;
     endpointGeometries.set(key, geometry);
   }
   return geometry;
@@ -1792,6 +2024,7 @@ function projectileShadowGeometry(radius: number): THREE.CircleGeometry {
   let geometry = projectileShadowGeometries.get(key);
   if (!geometry) {
     geometry = new THREE.CircleGeometry(radius, 28);
+    geometry.userData.shared = true;
     projectileShadowGeometries.set(key, geometry);
   }
   return geometry;
@@ -1868,9 +2101,14 @@ function projectileGeometry(key: string): THREE.BufferGeometry {
       geometry = new THREE.SphereGeometry(0.08, 10, 8);
     } else if (key === "rifle-tail") {
       geometry = new THREE.ConeGeometry(0.055, 0.22, 10);
+    } else if (key === "ember") {
+      geometry = new THREE.SphereGeometry(0.05, 8, 6);
+    } else if (key === "muzzle-flash") {
+      geometry = new THREE.SphereGeometry(0.18, 12, 8);
     } else {
       geometry = new THREE.SphereGeometry(0.08, 10, 8);
     }
+    geometry.userData.shared = true;
     projectileGeometries.set(key, geometry);
   }
   return geometry;

@@ -111,6 +111,21 @@ export class Stage {
     return x > -0.94 && x < 0.96 && y > -0.94 && y < 0.95;
   }
 
+  // Project a world point (at the given height) to CSS pixel coordinates plus a visibility
+  // flag. Used by the debug overlay + the AI scene-description to place entity labels and to
+  // tell whether an entity is actually on-screen. `behind` is true when the point is behind
+  // the camera (its projected x/y are meaningless then).
+  projectToScreen(point: Vec2, height = 0.8): { x: number; y: number; visible: boolean; behind: boolean } {
+    this.projectScratch.set(point.x, height, point.z);
+    this.projectScratch.project(this.camera);
+    const { x, y, z } = this.projectScratch;
+    const behind = z >= 1;
+    const px = (x * 0.5 + 0.5) * window.innerWidth;
+    const py = (-y * 0.5 + 0.5) * window.innerHeight;
+    const visible = !behind && x >= -1 && x <= 1 && y >= -1 && y <= 1;
+    return { x: px, y: py, visible, behind };
+  }
+
   screenToWorld(clientX: number, clientY: number): Vec2 {
     this.setPointer(clientX, clientY);
     this.raycaster.setFromCamera(this.pointer, this.camera);
@@ -204,6 +219,18 @@ export class Stage {
 
   viewState(): { x: number; z: number; zoom: number; yaw: number; pitch: number } {
     return { x: this.focus.x, z: this.focus.z, zoom: this.zoom, yaw: this.orbitYaw, pitch: this.orbitPitch };
+  }
+
+  // Debug-only: hard-set the camera (bypasses the interactive zoom clamp) so test/capture
+  // scripts can frame tight inspection shots of models. Not used by normal gameplay input.
+  debugSetView(view: { x?: number; z?: number; zoom?: number; yaw?: number; pitch?: number }): void {
+    this.suppressGuide();
+    if (view.x !== undefined) this.focus.x = view.x;
+    if (view.z !== undefined) this.focus.z = view.z;
+    if (view.zoom !== undefined) this.zoom = Math.max(0.18, Math.min(1.55, view.zoom));
+    if (view.yaw !== undefined) this.orbitYaw = view.yaw;
+    if (view.pitch !== undefined) this.orbitPitch = Math.max(0.05, Math.min(1.4, view.pitch));
+    this.updateCamera();
   }
 
   private setPointer(clientX: number, clientY: number): void {

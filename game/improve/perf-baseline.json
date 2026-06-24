@@ -1,0 +1,72 @@
+{
+  "at": "2026-06-23T22:23:50.477Z",
+  "command": {
+    "label": "command-stress",
+    "fps": 10.19,
+    "windowMs": 3427.8,
+    "frame": {
+      "count": 36,
+      "mean": 98.11,
+      "p50": 76.4,
+      "p95": 194.5,
+      "p99": 409.8,
+      "max": 409.8,
+      "jank": 36,
+      "jankRatio": 1
+    },
+    "render": {
+      "calls": 2079,
+      "triangles": 22238,
+      "geometries": 3851,
+      "textures": 1,
+      "programs": 11
+    },
+    "sceneObjects": 3338
+  },
+  "resolve": {
+    "label": "resolve-stress",
+    "fps": 7.82,
+    "windowMs": 6200.4,
+    "frame": {
+      "count": 49,
+      "mean": 127.81,
+      "p50": 97.3,
+      "p95": 277.7,
+      "p99": 299.1,
+      "max": 299.1,
+      "jank": 48,
+      "jankRatio": 0.98
+    },
+    "render": {
+      "calls": 1894,
+      "triangles": 22994,
+      "geometries": 7135,
+      "textures": 1,
+      "programs": 11
+    },
+    "sceneObjects": 3424
+  },
+  "light": {
+    "label": "command-light",
+    "fps": 44.76,
+    "windowMs": 3106,
+    "frame": {
+      "count": 149,
+      "mean": 22.34,
+      "p50": 13.8,
+      "p95": 83.4,
+      "p99": 139,
+      "max": 222.3,
+      "jank": 27,
+      "jankRatio": 0.181
+    },
+    "render": {
+      "calls": 570,
+      "triangles": 5052,
+      "geometries": 1055,
+      "textures": 1,
+      "programs": 9
+    },
+    "sceneObjects": 780
+  }
+}

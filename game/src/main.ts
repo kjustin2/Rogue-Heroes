@@ -24,6 +24,16 @@ import { progression, COSMETICS } from "./progression";
 import { battleReward } from "./progression";
 import { settings, ACTION_PACES, PACE_LABEL, type ActionPace } from "./settings";
 import { applyScenario, scenarioInfo } from "./game/scenarios";
+import { ARENA_BOUNDS } from "./game/terrain";
+import { PerfMonitor, type PerfSnapshot, type RenderInfo } from "./render/perfMonitor";
+import { DebugOverlay } from "./debug/debugOverlay";
+import {
+  runDiagnostics,
+  describeScene,
+  type DiagnosticsReport,
+  type SceneDescription,
+  type ScreenProjector,
+} from "./debug/diagnostics";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement | null;
 const ui = document.getElementById("ui");
@@ -37,6 +47,60 @@ const world = new WorldRenderer(stage.scene);
 world.setPlayerAccent(progression.accentColor());
 sfx.setMuted(settings.muted);
 sfx.setVolume(settings.volume);
+
+// --- Debug/perf harness wiring (drives window.__rht.perf/diagnostics/overlay) ---
+const perfMon = new PerfMonitor();
+// Mount on <body>, NOT #ui — the HUD rewrites #ui's innerHTML every update, which would
+// wipe out a canvas parented there. position:fixed keeps it pinned over the game canvas.
+const debugOverlay = new DebugOverlay(document.body);
+// World point -> screen pixel projector shared by diagnostics, describeScene, and the overlay.
+const projectToScreen: ScreenProjector = (point, height) => stage.projectToScreen(point, height);
+
+/** Read the live THREE renderer counters into a plain, serializable snapshot. */
+function readRenderInfo(): RenderInfo {
+  const info = stage.renderer.info;
+  return {
+    calls: info.render.calls,
+    triangles: info.render.triangles,
+    geometries: info.memory.geometries,
+    textures: info.memory.textures,
+    programs: info.programs?.length ?? 0,
+  };
+}
+
+/** Total live objects in the scene graph — a coarse leak signal for the perf harness. */
+function countSceneObjects(): number {
+  let n = 0;
+  stage.scene.traverse(() => { n += 1; });
+  return n;
+}
+
+/** Structured, projected readout of the current scene for the overlay + AI inspector. */
+function buildSceneDescription(): SceneDescription {
+  return describeScene(sim, {
+    project: projectToScreen,
+    selectedId: sim.selectedId,
+    targetedId: hud.focusedTargetId ?? hud.hoveredTargetId,
+  });
+}
+
+/** Run the anomaly scan against the current sim + perf state. */
+function runSceneDiagnostics(): DiagnosticsReport {
+  return runDiagnostics(sim, {
+    bounds: ARENA_BOUNDS,
+    project: projectToScreen,
+    perf: perfSnapshot(),
+    // Floor kept low so it flags genuinely frozen/broken rendering anywhere without false
+    // positives from the slow headless (SwiftShader) GPU the capture harness runs on.
+    fpsFloor: 12,
+  });
+}
+
+/** A perf snapshot that also refreshes the renderer counters + scene-object count. */
+function perfSnapshot(): PerfSnapshot {
+  perfMon.setRenderInfo(readRenderInfo(), countSceneObjects());
+  return perfMon.snapshot();
+}
 
 const SAVE_KEY = "rht.savedBattle.v1";
 
@@ -896,7 +960,8 @@ const seenProjectileIds = new Set<string>();
 const seenEffectIds = new Set<string>();
 
 function frame(now: number): void {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const frameMs = now - last;
+  const dt = Math.min(0.05, frameMs / 1000);
   last = now;
   stage.update(dt, {
     up: heldKeys.has("KeyW"),
@@ -921,6 +986,13 @@ function frame(now: number): void {
     lastHudLogHead = hudLogHead;
   }
   stage.render();
+
+  // Perf instrumentation — sample the inter-frame delta (skip first frame + tab-switch
+  // outliers) and refresh the renderer counters now that this frame has drawn.
+  if (frameMs > 0 && frameMs < 1000) perfMon.sample(frameMs, now);
+  perfMon.setRenderInfo(readRenderInfo(), null);
+  if (debugOverlay.isEnabled()) debugOverlay.render(buildSceneDescription());
+
   requestAnimationFrame(frame);
 }
 
@@ -996,10 +1068,18 @@ declare global {
       money(team: Team): number;
       cancelOrder(id: string): void;
       camera(): { x: number; z: number; zoom: number; yaw: number; pitch: number };
+      setView(view: { x?: number; z?: number; zoom?: number; yaw?: number; pitch?: number }): void;
       renderDebug(): WorldRenderDebug;
       // Debug scenario harness: cut straight to a staged battle state for tests/screenshots.
       scenario(id: string): boolean;
       scenarios(): Array<{ id: string; title: string; description: string }>;
+      // Perf + bug harness: frame stats, anomaly scan, AI-readable scene, scene-graph size.
+      perf(): PerfSnapshot;
+      perfReset(): void;
+      diagnostics(): DiagnosticsReport;
+      describeScene(): SceneDescription;
+      sceneGraph(): { total: number; topLevel: number };
+      setDebugOverlay(on: boolean): boolean;
     };
   }
 }
@@ -1034,6 +1114,7 @@ window.__rht = {
   money: (team) => sim.money(team),
   cancelOrder: (id) => sim.cancelOrder(id),
   camera: () => stage.viewState(),
+  setView: (view) => stage.debugSetView(view),
   renderDebug: () => world.debugState(),
   scenario: (id) => {
     closeAllMenus();
@@ -1049,6 +1130,12 @@ window.__rht = {
     return true;
   },
   scenarios: () => scenarioInfo(),
+  perf: () => perfSnapshot(),
+  perfReset: () => perfMon.reset(),
+  diagnostics: () => runSceneDiagnostics(),
+  describeScene: () => buildSceneDescription(),
+  sceneGraph: () => ({ total: countSceneObjects(), topLevel: stage.scene.children.length }),
+  setDebugOverlay: (on) => { debugOverlay.setEnabled(on); return debugOverlay.isEnabled(); },
 };
 
 function escapeAttr(value: string): string {

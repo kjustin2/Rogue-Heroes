@@ -20,6 +20,8 @@
     "improve:check": "node improve/check-goals.mjs",
     "improve:cycle": "node improve/run-cycle.mjs",
     "improve:gallery": "node improve/scenario-gallery.mjs",
+    "perf": "node improve/perf-bench.mjs",
+    "vision": "node improve/vision.mjs",
     "smoke:electron": "electron scripts/smoke-electron.cjs",
     "test:play": "npm run build && npm run smoke:electron",
     "test:full": "npm run verify && npm run smoke:buttons && npm run smoke:flow && npm run smoke:economy",

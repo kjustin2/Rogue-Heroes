@@ -9,6 +9,9 @@ test-results/
 shots/
 improve/cycles/*/vitest.json
 improve/scenario-gallery/*.png
+# Generated perf/vision harness output (the perf-baseline.json reference stays tracked).
+game/improve/perf/
+game/improve/vision/
 server.out.log
 server.err.log
 *.tmp

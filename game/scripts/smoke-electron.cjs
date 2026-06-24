@@ -79,7 +79,7 @@ async function run() {
   const win = new BrowserWindow({
     width: 1600,
     height: 900,
-    show: true,
+    show: false,
     backgroundColor: "#080a0d",
     autoHideMenuBar: true,
     webPreferences: {
@@ -89,6 +89,10 @@ async function run() {
       sandbox: true,
     },
   });
+
+  // ponytail: showInactive paints real frames for capturePage() without stealing
+  // focus from the editor/terminal. Plain show:true yanked focus on every smoke run.
+  win.showInactive();
 
   win.webContents.on("console-message", (event) => {
     if (event.level === "error") errors.push(`CONSOLE: ${event.message}`);

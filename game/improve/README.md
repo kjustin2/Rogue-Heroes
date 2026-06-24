@@ -58,9 +58,11 @@ by `check-goals.mjs`, so the loop is reproducible and auditable, not vibes.
 | `check-goals.mjs` | Evaluate goals → `goals.json` + `report.md`. |
 | `run-cycle.mjs` | Orchestrator: vitest → capture → check; writes cycle dir + ledger. |
 | `lib/harness.mjs` | Shared Vite-server / Chromium / canvas-sample helpers. |
+| `perf-bench.mjs` | Perf benchmark + memory-churn leak probe → `perf/perf-report.md`. |
+| `vision.mjs` | AI inspector: clean + annotated screenshots + `scene.json`/`report.md`. |
 | `../src/game/loop-goals.test.ts` | In-process logic tests mirroring the goals. |
 
-npm aliases: `npm run improve:cycle`, `improve:capture`, `improve:check`.
+npm aliases: `npm run improve:cycle`, `improve:capture`, `improve:check`, `perf`, `vision`.
 
 ## Cycle history
 
@@ -82,3 +84,37 @@ npm aliases: `npm run improve:cycle`, `improve:capture`, `improve:check`.
 that bypass the economy for instant setup. Use them in capture scripts to reach a situation in
 one call instead of driving the UI. `npm run improve:gallery` screenshots all of them into
 `improve/scenario-gallery/`. The `debug scenarios` vitest suite asserts they each apply cleanly.
+There are 9 scenarios; `stress` (two ~40-unit armies + fortifications) is the perf benchmark's load.
+
+## Performance + vision harness
+
+Two standalone tools make the renderer observable — for catching bugs and for letting a
+reviewing AI actually *see* the scene. Both reuse `lib/harness.mjs` and drive a new
+observability surface on `window.__rht`: `perf()`, `diagnostics()`, `describeScene()`,
+`sceneGraph()`, `setDebugOverlay()`.
+
+### `npm run perf` → `improve/perf/perf-report.md`
+
+Cuts to the `stress` scenario and samples the in-page `PerfMonitor` across the command and
+resolve phases (FPS, frame-time p50/p95/p99/max, jank%, draw calls, triangles, scene
+objects), then runs a **memory-churn leak probe** — 8 scenario swaps, asserting live
+geometries/textures/objects don't grow. The **hard regression gate** is the deterministic
+draw-work signals vs `improve/perf-baseline.json`; **FPS is advisory** (headless SwiftShader
+frame time swings 10–140 fps). Rebase the baseline after an intentional cost change:
+
+```
+npm run perf -- --update-baseline
+```
+
+> This probe is how the renderer's THREE-geometry leak was found and fixed: every per-frame /
+> per-swap group is now torn down with `disposeAndClear()`. Re-introducing a bare `.clear()`
+> on a group of inline-geometry meshes will trip the leak check.
+
+### `npm run vision [-- <scenario>|all]` → `improve/vision/<id>/`
+
+Per scenario writes `clean.png`, `annotated.png` (the in-game debug overlay labels each unit
+with kind/id/HP at its on-screen position), `scene.json`, and `report.md`. `describeScene()`
+gives every entity's world **and** projected screen coords plus HP/selection, and
+`diagnostics()` flags anomalies (NaN/out-of-bounds/stacked units, off-screen selection, stuck
+projectiles, empty field, draw-call spikes). Hand an agent `annotated.png` next to `report.md`
+to map pixels → game state and spot what a raw screenshot hides.
