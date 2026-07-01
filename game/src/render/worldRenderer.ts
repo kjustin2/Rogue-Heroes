@@ -75,8 +75,18 @@ export class WorldRenderer {
   private lastModelsVersion = modelsVersion();
   private debug: WorldRenderDebug = emptyDebug();
 
+  // Fixed pool of flash lights (muzzle/blast), pre-added at intensity 0 so the scene's
+  // light count never changes at runtime — a light-count change relinks every material.
+  private readonly flashLights: { light: THREE.PointLight; strength: number; until: number; duration: number }[] = [];
+
   constructor(private readonly scene: THREE.Scene) {
     this.scene.add(this.sceneryRoot, this.debrisRoot, this.entityRoot, this.markerRoot, this.orderRoot, this.previewRoot, this.projectileRoot, this.effectRoot, this.objectiveRoot, this.groundAimRoot, this.auraRoot, this.damageNumberRoot, this.environmentRoot);
+    for (let i = 0; i < 3; i += 1) {
+      const light = new THREE.PointLight(0xffc37a, 0, 9, 1.6);
+      light.position.y = 1.4;
+      this.scene.add(light);
+      this.flashLights.push({ light, strength: 0, until: 0, duration: 1 });
+    }
     this.applyMap(MAPS[0].theme);
     this.prewarmActionAssets();
 
@@ -208,6 +218,7 @@ export class WorldRenderer {
     }
     this.syncProjectiles(sim.projectiles);
     this.syncEffects(sim.effects);
+    this.syncFlashLights();
     this.syncDamageNumbers(sim);
     this.syncEnvironment(sim);
     this.syncAmbient();
@@ -1771,6 +1782,25 @@ export class WorldRenderer {
     }
   }
 
+  /** Claim the stalest pooled light and flash it at a world point (muzzle or blast). */
+  flashLight(position: Vec2, color: number, strength: number, durationMs = 150, height = 1.3): void {
+    let stalest = this.flashLights[0];
+    for (const record of this.flashLights) if (record.until < stalest.until) stalest = record;
+    stalest.light.color.setHex(color);
+    stalest.light.position.set(position.x, height, position.z);
+    stalest.strength = strength;
+    stalest.duration = durationMs;
+    stalest.until = performance.now() + durationMs;
+  }
+
+  private syncFlashLights(): void {
+    const now = performance.now();
+    for (const record of this.flashLights) {
+      const remaining = record.until - now;
+      record.light.intensity = remaining > 0 ? record.strength * (remaining / record.duration) : 0;
+    }
+  }
+
   private syncEffects(effects: readonly VisualEvent[]): void {
     this.disposeAndClear(this.effectRoot);
     for (const effect of effects) {
@@ -1786,6 +1816,15 @@ export class WorldRenderer {
         ring.rotation.x = -Math.PI / 2;
         ring.position.set(effect.to.x, 0.08, effect.to.z);
         this.effectRoot.add(ring);
+        // White-hot core that punches through the bloom threshold for the blast's first beats.
+        if (t < 0.45) {
+          const core = new THREE.Mesh(
+            new THREE.SphereGeometry((effect.radius ?? 1) * (0.16 + t * 0.5), 12, 8),
+            new THREE.MeshBasicMaterial({ color: 0xfff3da, transparent: true, opacity: (1 - t / 0.45) * 0.95, depthWrite: false })
+          );
+          core.position.set(effect.to.x, 0.5 + t * 0.9, effect.to.z);
+          this.effectRoot.add(core);
+        }
         const dome = new THREE.Mesh(
           new THREE.SphereGeometry((effect.radius ?? 1) * (0.24 + t * 0.82), 12, 6),
           new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: opacity * 0.22, depthWrite: false })
@@ -1793,6 +1832,11 @@ export class WorldRenderer {
         dome.scale.y = 0.36;
         dome.position.set(effect.to.x, 0.22 + t * 0.36, effect.to.z);
         this.effectRoot.add(dome);
+        // Ember spray arcing out of the blast.
+        const embers = new THREE.Group();
+        embers.position.set(effect.to.x, 0.3, effect.to.z);
+        addEmbers(embers, 4, 0xffb02e, (effect.radius ?? 1) * (0.4 + t * 0.9), 0.4 + t * 1.2, effect.age);
+        this.effectRoot.add(embers);
       } else {
         const hit = new THREE.Mesh(
           new THREE.SphereGeometry((effect.radius ?? 0.45) * (1 + t), 8, 6),

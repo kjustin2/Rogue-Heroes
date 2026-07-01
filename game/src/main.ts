@@ -4,6 +4,7 @@ import { dist, type Vec2 } from "./core/math";
 import { Stage } from "./render/stage";
 import { WorldRenderer, type WorldRenderDebug } from "./render/worldRenderer";
 import { preloadAll as preloadModels, loadedTemplates, modelsVersion } from "./render/models";
+import { FeelDirector } from "./render/feel";
 import { Hud } from "./ui/hud";
 import {
   TacticalSim,
@@ -55,6 +56,8 @@ preloadModels(); // kick GLB loads immediately; renderer swaps them in as they a
 const sim = new TacticalSim();
 const world = new WorldRenderer(stage.scene);
 world.setPlayerAccent(progression.accentColor());
+const feel = new FeelDirector(stage);
+feel.setReducedMotion(settings.reducedMotion);
 sfx.setMuted(settings.muted);
 sfx.setVolume(settings.volume);
 
@@ -732,6 +735,7 @@ function showSettings(): void {
     } else if (set === "motion") {
       settings.reducedMotion = !settings.reducedMotion;
       document.body.classList.toggle("reduced-motion", settings.reducedMotion);
+      feel.setReducedMotion(settings.reducedMotion);
     }
     settings.save();
     showSettings();
@@ -1282,7 +1286,8 @@ function frame(now: number): void {
   });
   // The action-pace setting only scales time while orders resolve; planning stays real-time.
   sim.update(sim.phase === "resolve" ? dt * settings.resolveSpeed : dt);
-  playBattleAudio();
+  processBattleEvents();
+  feel.update(dt);
   handleEndState();
   syncCameraAssist();
   const aimPoint = groundAimHover();
@@ -1324,17 +1329,39 @@ function groundAimHover(): Vec2 | undefined {
   return aiming ? hoverWorld : undefined;
 }
 
-function playBattleAudio(): void {
+// Diff freshly-spawned projectiles/effects against the seen-sets and fire the one-shot
+// feedback for each: audio, camera trauma/kick, and pooled flash lights. This is the single
+// seam where sim events become player-facing juice (one-way data flow preserved).
+function processBattleEvents(): void {
   for (const projectile of sim.projectiles) {
     if (seenProjectileIds.has(projectile.id)) continue;
     seenProjectileIds.add(projectile.id);
     sfx.shot(projectile.kind);
+    const onScreen = stage.isInView(projectile.origin) ? 1 : 0.3;
+    const heavy = projectile.kind === "shell" || projectile.kind === "grenade";
+    if (heavy) {
+      feel.addTrauma((projectile.kind === "shell" ? 0.12 : 0.08) * onScreen);
+      world.flashLight(projectile.origin, 0xffc37a, 3.2 * onScreen, 130);
+    } else {
+      world.flashLight(projectile.origin, 0xffe2a8, 1.6 * onScreen, 90);
+    }
   }
   for (const effect of sim.effects) {
     if (seenEffectIds.has(effect.id)) continue;
     seenEffectIds.add(effect.id);
-    if (effect.type === "blast") sfx.explosion();
-    else if (effect.type === "impact") sfx.impact();
+    if (effect.type === "blast") {
+      sfx.explosion();
+      const onScreen = stage.isInView(effect.to) ? 1 : 0.3;
+      const size = Math.min(1, (effect.radius ?? 1) / 3);
+      feel.addTrauma((0.18 + size * 0.2) * onScreen);
+      const view = stage.viewState();
+      feel.kick(effect.to, { x: view.x, z: view.z }, (0.9 + size * 1.6) * onScreen);
+      stage.punch(0.25 * size * onScreen);
+      world.flashLight(effect.to, 0xffa24d, (4.5 + size * 4) * onScreen, 260, 1.8);
+    } else if (effect.type === "impact") {
+      sfx.impact();
+      if (stage.isInView(effect.to)) feel.addTrauma(0.05);
+    }
   }
   // Keep the seen-sets bounded by dropping ids no longer in play. A blind clear() would let a
   // projectile/effect that is still alive be re-seen next frame and replay its sound.
