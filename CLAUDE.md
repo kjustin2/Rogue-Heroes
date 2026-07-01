@@ -36,7 +36,7 @@ the build, so `npm run verify` catches more than tests alone.
 Each smoke script (`scripts/smoke-*.mjs`) launches its **own** Vite server on a dedicated
 `--strictPort` and drives a headless Chromium (`playwright-core`) via the `window.__rht`
 debug API. Ports are deliberately distinct because a sibling project squats **5175**:
-flow `5179`, economy `5176`, buttons `5191`, browser `5175`, screenshot tools `5177`/`5178`.
+flow `5179`, economy `5176`, buttons `5191`, screenshot tools `5177`/`5178`.
 
 - `npm run smoke:flow` — menu → deploy → multi-turn battle → reset
 - `npm run smoke:economy`, `npm run smoke:buttons`
@@ -44,7 +44,6 @@ flow `5179`, economy `5176`, buttons `5191`, browser `5175`, screenshot tools `5
 - Smokes that test gameplay must navigate the menu (click `[data-menu="play"]`, pick a
   `[data-map]`, then `[data-start]`) and usually grant cash with
   `sim.economy.set("player", N)` so they exercise mechanics, not the price curve.
-- `smoke-browser.mjs` is known to be stale; prefer `smoke-flow`.
 
 Smokes need the Playwright Chromium cache (`%LOCALAPPDATA%\ms-playwright\chromium-*`) or
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`.

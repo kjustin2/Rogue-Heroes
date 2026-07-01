@@ -17,3 +17,9 @@ server.err.log
 *.tmp
 Thumbs.db
 .DS_Store
+game/release/
+game/improve/verify-campaign/
+game/improve/verify-features/
+.env
+.env.*
+game/assets-raw/
