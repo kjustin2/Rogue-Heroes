@@ -36,7 +36,7 @@ try {
   });
   page.on("pageerror", (err) => errors.push(`PAGEERROR: ${err.message}`));
 
-  await page.goto(URL, { waitUntil: "networkidle" });
+  await page.goto(`${URL}/?lowfx=1`, { waitUntil: "networkidle" });
   await page.waitForSelector(".main-menu");
   await page.screenshot({ path: join(OUT, "6-menu.png") });
 

@@ -73,7 +73,7 @@ const main = async () => {
     page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text()); });
     page.on("pageerror", (e) => consoleErrors.push(`PAGEERROR: ${e.message}`));
 
-    await page.goto(url, { waitUntil: "networkidle" });
+    await page.goto(`${url}/?lowfx=1`, { waitUntil: "networkidle" });
     await page.waitForSelector(".main-menu", { timeout: 15000 });
 
     // --- Light reference: the default battle start (few entities) ---

@@ -35,7 +35,7 @@ try {
   });
   page.on("pageerror", (err) => errors.push(`PAGEERROR: ${err.message}`));
 
-  await page.goto(URL, { waitUntil: "networkidle" });
+  await page.goto(`${URL}/?lowfx=1`, { waitUntil: "networkidle" });
   // Navigate the landing menu into a battle (Start Game -> Deploy) so HUD clicks land.
   await page.waitForSelector(".main-menu");
   await page.click('[data-menu="play"]');

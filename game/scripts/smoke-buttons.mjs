@@ -31,7 +31,7 @@ try {
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
   page.on("pageerror", (e) => errors.push(`PAGEERROR: ${e.message}`));
   await page.addInitScript(() => { try { localStorage.clear(); localStorage.setItem("rht.progression.v1", JSON.stringify({ points: 500, unlocked: ["default"], accent: "default" })); } catch {} });
-  await page.goto(URL, { waitUntil: "networkidle" });
+  await page.goto(`${URL}/?lowfx=1`, { waitUntil: "networkidle" });
 
   // 1) The game must boot to the main menu.
   await page.waitForSelector(".main-menu");

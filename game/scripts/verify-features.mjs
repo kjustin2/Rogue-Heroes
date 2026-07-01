@@ -24,7 +24,7 @@ const main = async () => {
     const page = await (await browser.newContext({ viewport: { width: 1600, height: 900 } })).newPage();
     page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text()); });
     page.on("pageerror", (e) => consoleErrors.push(`PAGEERROR: ${e.message}`));
-    await page.goto(url, { waitUntil: "networkidle" });
+    await page.goto(`${url}/?lowfx=1`, { waitUntil: "networkidle" });
     await page.waitForSelector(".main-menu", { timeout: 15000 });
 
     const stage = async (id) => {

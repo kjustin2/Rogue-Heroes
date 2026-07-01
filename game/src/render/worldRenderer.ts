@@ -71,6 +71,7 @@ export class WorldRenderer {
   // A midtone derived from the active map palette; structural props are tinted toward it so
   // they read as part of the map instead of generic brown crates on every battlefield.
   private propTint = new THREE.Color(0x8a7a5c);
+  private skyTexture: THREE.CanvasTexture | null = null;
   private lastModelsVersion = modelsVersion();
   private debug: WorldRenderDebug = emptyDebug();
 
@@ -415,7 +416,9 @@ export class WorldRenderer {
     this.baseSkyColor = theme.sky;
     this.sandstormBlend = 0;
     this.scene.fog = new THREE.FogExp2(theme.fog, theme.fogDensity);
-    this.scene.background = new THREE.Color(theme.sky);
+    if (this.skyTexture) this.skyTexture.dispose();
+    this.skyTexture = makeThemeSky(theme);
+    this.scene.background = this.skyTexture;
     // A desaturated blend of the map's ground tones — what structural props get nudged toward.
     this.propTint = new THREE.Color(theme.ground).lerp(new THREE.Color(theme.groundAccent), 0.55);
     this.rebuildArena(theme);
@@ -1271,7 +1274,10 @@ export class WorldRenderer {
     mesh.userData.basePosition = mesh.position.clone();
     mesh.userData.baseRotation = mesh.rotation.clone();
     mesh.userData.baseScale = mesh.scale.clone();
-    this.outline(mesh);
+    // Outlines only on infantry: small silhouettes need the edge punch to read at tactics
+    // distance, while big structures/vehicles look toy-like with them (and they cost a
+    // draw call per part mesh — dropping them roughly halves the entity draw calls).
+    if (isInfantryKind(entity.kind)) this.outline(mesh);
     group.add(mesh);
     return mesh;
   }
@@ -1310,7 +1316,7 @@ export class WorldRenderer {
     mesh.userData.basePosition = mesh.position.clone();
     mesh.userData.baseRotation = mesh.rotation.clone();
     mesh.userData.baseScale = mesh.scale.clone();
-    this.outline(mesh);
+    if (isInfantryKind(entity.kind)) this.outline(mesh);
     group.add(mesh);
     return mesh;
   }
@@ -1318,7 +1324,7 @@ export class WorldRenderer {
   private outline(mesh: PartMesh): void {
     const edges = new THREE.LineSegments(
       new THREE.EdgesGeometry(mesh.geometry, 35),
-      new THREE.LineBasicMaterial({ color: 0x050708, transparent: true, opacity: 0.55 })
+      new THREE.LineBasicMaterial({ color: 0x050708, transparent: true, opacity: 0.38 })
     );
     edges.userData.decor = true;
     mesh.add(edges);
@@ -1509,7 +1515,7 @@ export class WorldRenderer {
       for (const material of materials) {
         if (!(material instanceof THREE.Material)) continue;
         material.transparent = true;
-        material.opacity = ghosted ? 0.16 : 0.55;
+        material.opacity = ghosted ? 0.16 : 0.38;
         material.depthWrite = !ghosted;
       }
     }
@@ -2418,6 +2424,31 @@ function hash(value: string): number {
 // Which Meshy GLB (if any) stands in for this entity. Infantry keep their procedural
 // bodies (walk cycle + per-part damage posing), walls stay parametric, and glow-signal
 // props (ammo/fuel/conduit) keep their emissive gameplay cue.
+// A vertical gradient sky derived from the map theme: deep zenith fading through the
+// theme's sky color into a warm fogged horizon band, so every map gets atmosphere depth
+// instead of a flat color backdrop.
+function makeThemeSky(theme: MapTheme): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 8;
+  canvas.height = 256;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    const sky = new THREE.Color(theme.sky);
+    const zenith = sky.clone().multiplyScalar(0.42).lerp(new THREE.Color(0x101b30), 0.35);
+    const horizon = sky.clone().lerp(new THREE.Color(theme.fog), 0.65).multiplyScalar(1.08);
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    gradient.addColorStop(0, `#${zenith.getHexString()}`);
+    gradient.addColorStop(0.45, `#${sky.getHexString()}`);
+    gradient.addColorStop(1, `#${horizon.getHexString()}`);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 function modelKeyFor(entity: CombatEntity): ModelKey | null {
   switch (entity.kind) {
     case "tank": return "tank";

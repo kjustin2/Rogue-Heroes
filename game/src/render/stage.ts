@@ -1,4 +1,17 @@
 import * as THREE from "three";
+import {
+  BloomEffect,
+  BrightnessContrastEffect,
+  ChromaticAberrationEffect,
+  EffectComposer,
+  EffectPass,
+  HueSaturationEffect,
+  NoiseEffect,
+  RenderPass,
+  SMAAEffect,
+  VignetteEffect,
+  type Effect,
+} from "postprocessing";
 import { clamp, lerp, type Vec2 } from "../core/math";
 import { ARENA_BOUNDS } from "../game/terrain";
 
@@ -22,6 +35,15 @@ interface CameraGuide extends CameraGuideTarget {
   expiresAt: number;
 }
 
+/** Graphics tiers (named to match the persisted renderScale setting):
+ *  - performance: direct render, no composer, 1024 shadows (also the ?lowfx path —
+ *    SwiftShader stalls on the HalfFloat bloom chain, so headless smokes force this)
+ *  - balanced:    bloom + vignette + SMAA
+ *  - quality:     + grade (saturation/contrast) + film grain, 2048 shadows
+ *  - ultra:       + subtle chromatic aberration
+ */
+export type QualityTier = "performance" | "balanced" | "quality" | "ultra";
+
 export class Stage {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -41,23 +63,43 @@ export class Stage {
   private guide: CameraGuide | undefined;
   private guideSuppressUntil = 0;
 
+  // Feel-layer seam: additive camera offsets (trauma shake / directional kick) applied on
+  // top of the tactical rig each updateCamera. A FeelDirector writes these every frame.
+  private readonly shakeOffset = new THREE.Vector3();
+  private readonly lookShake = new THREE.Vector3();
+
+  private quality: QualityTier = "quality";
+  private pixelRatioCap = 1.15;
+  private lowCost = false;
+  /** Full battle chain and the lean menu chain. Both null on the performance tier. */
+  private composer: EffectComposer | null = null;
+  private menuComposer: EffectComposer | null = null;
+  private vignette: VignetteEffect | null = null;
+  private aberration: ChromaticAberrationEffect | null = null;
+  /** 0..1 transient screen stress — punched up by blasts, decays fast (vignette/CA pulse). */
+  private stress = 0;
+  private readonly baseVignette = 0.32;
+  private readonly baseAberration = 0.0011;
+  private readonly keyLight: THREE.DirectionalLight;
+
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.orbitPitch = Math.atan2(this.baseOffset.y, Math.hypot(this.baseOffset.x, this.baseOffset.z));
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: true,
+      antialias: false, // SMAA in the post chain; MSAA doesn't reach composer render targets
+      stencil: false,
       powerPreference: "high-performance",
-      preserveDrawingBuffer: true,
+      preserveDrawingBuffer: true, // the smoke harness readPixels the canvas — keep it
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.15));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.pixelRatioCap));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.16;
+    this.renderer.toneMappingExposure = 1.1;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    // A vertical gradient sky gives the scene depth and a dusk atmosphere.
+    // A vertical gradient sky gives the scene depth; worldRenderer re-themes it per map.
     this.scene.background = makeSkyTexture();
     this.scene.fog = new THREE.FogExp2(0x6a4a33, 0.019);
 
@@ -66,11 +108,11 @@ export class Stage {
 
     // Soft, near-neutral sky fill + warm ground bounce. Kept low-saturation so shadows
     // (where the warm key is blocked) don't pick up a teal cast.
-    const hemi = new THREE.HemisphereLight(0xd7dde4, 0x4a3424, 0.95);
+    const hemi = new THREE.HemisphereLight(0xd7dde4, 0x4a3424, 0.85);
     this.scene.add(hemi);
 
-    // Warm key "sun" with soft shadows covering the full arena.
-    const key = new THREE.DirectionalLight(0xfff0d6, 2.7);
+    // Warm dusty key "sun" with soft shadows covering the full arena.
+    const key = new THREE.DirectionalLight(0xffe6c0, 2.4);
     key.position.set(-8, 18, 10);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
@@ -83,20 +125,143 @@ export class Stage {
     key.shadow.camera.far = 72;
     key.shadow.bias = -0.0006;
     key.shadow.normalBias = 0.02;
+    this.keyLight = key;
     this.scene.add(key);
 
-    // Cool rim light makes units and buildings pop off the warm ground.
+    // Cool steel rim light makes units and buildings pop off the warm ground.
     const rim = new THREE.DirectionalLight(0x8fdcff, 1.15);
     rim.position.set(12, 9, -14);
     this.scene.add(rim);
 
     // Warm fill from the opposite side to lift shadow detail toward sand tones.
-    const fill = new THREE.DirectionalLight(0xffc890, 0.6);
+    const fill = new THREE.DirectionalLight(0xffc890, 0.55);
     fill.position.set(7, 5, 11);
     this.scene.add(fill);
 
+    this.buildPost();
     window.addEventListener("resize", () => this.resize());
     this.resize();
+  }
+
+  /** (Re)build both post chains for the current quality tier. */
+  private buildPost(): void {
+    this.composer?.dispose();
+    this.menuComposer?.dispose();
+    this.composer = null;
+    this.menuComposer = null;
+    this.vignette = null;
+    this.aberration = null;
+    if (this.quality === "performance") return; // direct renderer.render path
+
+    this.composer = new EffectComposer(this.renderer, { frameBufferType: THREE.HalfFloatType });
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    const effects: Effect[] = [];
+    // Daylight scene: a high threshold so bloom picks out muzzle flashes, tracers, team
+    // glows and explosions — not the sand.
+    effects.push(new BloomEffect({ intensity: 0.55, luminanceThreshold: 0.75, luminanceSmoothing: 0.2, mipmapBlur: true, radius: 0.62 }));
+    if (this.quality === "ultra") {
+      this.aberration = new ChromaticAberrationEffect({
+        offset: new THREE.Vector2(this.baseAberration, this.baseAberration),
+        radialModulation: true,
+        modulationOffset: 0.35,
+      });
+      effects.push(this.aberration);
+    }
+    this.vignette = new VignetteEffect({ darkness: this.baseVignette, offset: 0.3 });
+    effects.push(this.vignette);
+    if (this.quality !== "balanced") {
+      effects.push(new HueSaturationEffect({ saturation: 0.1 }));
+      effects.push(new BrightnessContrastEffect({ contrast: 0.06 }));
+      const noise = new NoiseEffect({ premultiply: true });
+      noise.blendMode.opacity.value = 0.32;
+      effects.push(noise);
+    }
+    this.composer.addPass(new EffectPass(this.camera, ...effects));
+    this.composer.addPass(new EffectPass(this.camera, new SMAAEffect()));
+
+    // Lean chain behind menus: render + vignette + grade only. Built as its own chain —
+    // a disabled trailing pass in `postprocessing` leaves the output unrouted (black).
+    this.menuComposer = new EffectComposer(this.renderer, { frameBufferType: THREE.HalfFloatType });
+    this.menuComposer.addPass(new RenderPass(this.scene, this.camera));
+    this.menuComposer.addPass(new EffectPass(
+      this.camera,
+      new VignetteEffect({ darkness: this.baseVignette, offset: 0.3 }),
+      new HueSaturationEffect({ saturation: 0.1 }),
+      new BrightnessContrastEffect({ contrast: 0.06 }),
+    ));
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    this.composer.setSize(w, h);
+    this.menuComposer.setSize(w, h);
+  }
+
+  /** Switch graphics tier (wired to the renderScale setting; ?lowfx forces performance). */
+  setQuality(tier: QualityTier): void {
+    if (tier === this.quality) return;
+    this.quality = tier;
+    const shadowSize = tier === "performance" ? 1024 : 2048;
+    if (this.keyLight.shadow.mapSize.x !== shadowSize) {
+      this.keyLight.shadow.mapSize.set(shadowSize, shadowSize);
+      this.keyLight.shadow.map?.dispose();
+      this.keyLight.shadow.map = null;
+    }
+    this.buildPost();
+  }
+
+  /**
+   * Lean path while full-screen menus are up: lean post chain + key shadows off. Both
+   * shadow states are pre-compiled by warmUp(), so the flip never relinks on a live frame.
+   */
+  setLowCost(on: boolean): void {
+    if (on === this.lowCost) return;
+    this.lowCost = on;
+    this.keyLight.castShadow = !on;
+  }
+
+  /** Punch the screen — big blasts. amount 0..1; vignette/aberration pulse, fast decay. */
+  punch(amount: number): void {
+    this.stress = Math.min(1, this.stress + amount);
+  }
+
+  /** Feel-layer seam: additive camera position/look offsets, applied every updateCamera. */
+  setShake(offset: THREE.Vector3, look: THREE.Vector3): void {
+    this.shakeOffset.copy(offset);
+    this.lookShake.copy(look);
+    this.updateCamera();
+  }
+
+  /**
+   * Pre-compile shaders for everything in the scene plus any staged extras (GLB templates,
+   * pooled VFX) across BOTH shadow states and BOTH post chains. A directional light's
+   * castShadow flag is baked into every lit material's program key, so the menu<->battle
+   * flip (setLowCost) would otherwise synchronously relink every material in the scene.
+   */
+  warmUp(extras: THREE.Object3D[] = []): void {
+    const staged: THREE.Object3D[] = [];
+    for (const extra of extras) {
+      if (extra.parent) continue;
+      extra.visible = false; // compile() warms materials regardless of visibility
+      this.scene.add(extra);
+      staged.push(extra);
+    }
+    const prevCast = this.keyLight.castShadow;
+    try {
+      this.keyLight.castShadow = true;
+      this.renderer.compile(this.scene, this.camera);
+      this.composer?.render(0.016);
+      this.keyLight.castShadow = false;
+      this.renderer.compile(this.scene, this.camera);
+      this.menuComposer?.render(0.016);
+      if (!this.composer) this.renderer.render(this.scene, this.camera);
+    } catch {
+      /* headless / lost context */
+    } finally {
+      this.keyLight.castShadow = prevCast;
+      for (const extra of staged) {
+        this.scene.remove(extra);
+        extra.visible = true;
+      }
+    }
   }
 
   // True when a world point sits comfortably on-screen (not at the very edges or behind
@@ -145,11 +310,20 @@ export class Stage {
     return undefined;
   }
 
-  render(): void {
-    this.renderer.render(this.scene, this.camera);
+  render(dt = 0.016): void {
+    const chain = this.lowCost ? this.menuComposer : this.composer;
+    if (chain) chain.render(dt);
+    else this.renderer.render(this.scene, this.camera);
   }
 
   update(dt: number, input: { up: boolean; down: boolean; left: boolean; right: boolean }): void {
+    // Screen-stress decay (blast vignette/aberration pulse).
+    this.stress = Math.max(0, this.stress - this.stress * 6 * dt);
+    if (this.vignette) this.vignette.darkness = this.baseVignette + this.stress * 0.4;
+    if (this.aberration) {
+      const ab = this.baseAberration + this.stress * 0.01;
+      this.aberration.offset.set(ab, ab);
+    }
     const x = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     const y = (input.up ? 1 : 0) - (input.down ? 1 : 0);
     if (x || y) {
@@ -245,10 +419,13 @@ export class Stage {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
+    this.composer?.setSize(width, height);
+    this.menuComposer?.setSize(width, height);
   }
 
   /** Graphics-quality knob: render at `cap`× pixels, never above the device's own ratio. */
   setPixelRatioCap(cap: number): void {
+    this.pixelRatioCap = cap;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, cap));
     this.resize();
   }
@@ -288,11 +465,11 @@ export class Stage {
     const offsetZ = Math.cos(azimuth) * horizontal;
     const offsetY = Math.sin(this.orbitPitch) * this.baseDistance;
     this.camera.position.set(
-      this.focus.x + offsetX * this.zoom,
-      offsetY * this.zoom,
-      this.focus.z + offsetZ * this.zoom
+      this.focus.x + offsetX * this.zoom + this.shakeOffset.x,
+      offsetY * this.zoom + this.shakeOffset.y,
+      this.focus.z + offsetZ * this.zoom + this.shakeOffset.z
     );
-    this.camera.lookAt(this.focus.x, 0, this.focus.z);
+    this.camera.lookAt(this.focus.x + this.lookShake.x, this.lookShake.y, this.focus.z + this.lookShake.z);
   }
 }
 

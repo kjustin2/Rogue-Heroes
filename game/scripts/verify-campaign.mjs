@@ -23,7 +23,7 @@ const main = async () => {
     page.on("pageerror", (e) => consoleErrors.push(`PAGEERROR: ${e.message}`));
     const shot = async (n) => { await page.screenshot({ path: join(outDir, `${n}.png`) }); console.log(`  📸 ${n}.png`); };
 
-    await page.goto(url, { waitUntil: "networkidle" });
+    await page.goto(`${url}/?lowfx=1`, { waitUntil: "networkidle" });
     await page.waitForSelector(".main-menu", { timeout: 15000 });
     // Start from a clean slate so the campaign begins at mission 1.
     await page.evaluate(() => { try { localStorage.removeItem("rht.campaign.v1"); } catch {} });
@@ -46,7 +46,7 @@ const main = async () => {
     await shot("03-briefing");
 
     // Armory (categories).
-    await page.goto(url, { waitUntil: "networkidle" });
+    await page.goto(`${url}/?lowfx=1`, { waitUntil: "networkidle" });
     await page.waitForSelector(".main-menu");
     await page.click('[data-menu="armory"]');
     await page.waitForSelector(".armory-screen", { timeout: 8000 });
@@ -56,7 +56,7 @@ const main = async () => {
     check("armory shows multiple categories", categoryCount >= 3, `${categoryCount} categories`);
 
     // Win mission 1 and show the campaign victory overlay (advances the ladder + persists).
-    await page.goto(url, { waitUntil: "networkidle" });
+    await page.goto(`${url}/?lowfx=1`, { waitUntil: "networkidle" });
     await page.waitForSelector(".main-menu");
     await page.evaluate(() => {
       window.__rht.startCampaign("m1-cold-start");
@@ -90,7 +90,7 @@ const main = async () => {
     await shot("07-after-reload");
 
     // PERSISTENCE: start a mission, save the battle, reload, and resume via Continue.
-    await page.goto(url, { waitUntil: "networkidle" });
+    await page.goto(`${url}/?lowfx=1`, { waitUntil: "networkidle" });
     await page.waitForSelector(".main-menu");
     await page.evaluate(() => { window.__rht.startCampaign("m2-the-foundry"); window.__rht.save(); });
     await delay(300);

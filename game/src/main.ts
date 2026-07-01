@@ -3,7 +3,7 @@ import "./style.css";
 import { dist, type Vec2 } from "./core/math";
 import { Stage } from "./render/stage";
 import { WorldRenderer, type WorldRenderDebug } from "./render/worldRenderer";
-import { preloadAll as preloadModels } from "./render/models";
+import { preloadAll as preloadModels, loadedTemplates, modelsVersion } from "./render/models";
 import { Hud } from "./ui/hud";
 import {
   TacticalSim,
@@ -46,6 +46,10 @@ if (!canvas || !ui) throw new Error("Missing game canvas or UI root");
 const uiRoot = ui;
 
 const stage = new Stage(canvas);
+// ?lowfx=1 forces the composer-free performance path — headless SwiftShader (smokes,
+// perf bench) stalls on the HalfFloat bloom chain; real GPUs get the graded stack.
+const LOWFX = new URLSearchParams(location.search).has("lowfx");
+stage.setQuality(LOWFX ? "performance" : settings.renderScale);
 stage.setPixelRatioCap(RENDER_SCALE_DPR[settings.renderScale]);
 preloadModels(); // kick GLB loads immediately; renderer swaps them in as they arrive
 const sim = new TacticalSim();
@@ -435,6 +439,7 @@ function closeAllMenus(): void {
   // Hide the persistent radar backdrop. show*() re-adds this synchronously before paint
   // when swapping menus, so the radar only stops when we leave menus for gameplay.
   document.body.classList.remove("menus-open");
+  stage.setLowCost(false);
 }
 
 function dismissTopOverlay(): void {
@@ -455,6 +460,7 @@ function mountScreen(html: string, className: string): HTMLDivElement {
     if (skipNextMenuEntrance) screen.classList.add("menu-screen--instant");
     skipNextMenuEntrance = false;
     document.body.classList.add("menus-open"); // reveal the persistent radar backdrop
+    stage.setLowCost(true); // lean post chain + shadows off while menus cover the field
   }
   screen.innerHTML = html;
   document.body.appendChild(screen);
@@ -715,6 +721,7 @@ function showSettings(): void {
       if (value) {
         settings.renderScale = value;
         stage.setPixelRatioCap(RENDER_SCALE_DPR[value]);
+        if (!LOWFX) stage.setQuality(value);
       }
     } else if (set === "diff") {
       const value = target.closest<HTMLElement>("[data-value]")?.dataset.value as Difficulty | undefined;
@@ -1247,12 +1254,16 @@ function updateOnboardingHints(): void {
 
 if (settings.reducedMotion) document.body.classList.add("reduced-motion");
 showMainMenu();
+// Pre-compile every shader variant (both shadow states × both post chains) behind the
+// first menu, so battle start / menu flips never stall on a synchronous GLSL link.
+stage.warmUp();
 
 // ---------------------------------------------------------------------------
 // Frame loop
 // ---------------------------------------------------------------------------
 
 let last = performance.now();
+let warmedModelsVersion = modelsVersion();
 let lastHudUpdateAt = 0;
 let lastHudPhase = sim.phase;
 let lastHudLogHead = "";
@@ -1286,7 +1297,13 @@ function frame(now: number): void {
     lastHudPhase = sim.phase;
     lastHudLogHead = hudLogHead;
   }
-  stage.render();
+  stage.render(dt);
+  // A GLB arrived since the last warm-up: compile its textured-PBR shaders off the hot
+  // path so the first deploy of that unit doesn't hitch.
+  if (modelsVersion() !== warmedModelsVersion) {
+    warmedModelsVersion = modelsVersion();
+    stage.warmUp(loadedTemplates());
+  }
 
   // Perf instrumentation — sample the inter-frame delta (skip first frame + tab-switch
   // outliers) and refresh the renderer counters now that this frame has drawn.

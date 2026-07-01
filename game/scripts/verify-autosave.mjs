@@ -29,7 +29,7 @@ try {
 
   browser = await chromium.launch({ executablePath: findChromium(), headless: true });
   const page = await (await browser.newContext({ viewport: { width: 1600, height: 900 } })).newPage();
-  await page.goto(URL, { waitUntil: "networkidle" });
+  await page.goto(`${URL}/?lowfx=1`, { waitUntil: "networkidle" });
   await page.waitForSelector(".main-menu");
 
   // Start a battle through the menu.
