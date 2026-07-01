@@ -45,6 +45,7 @@
     }
   },
   "dependencies": {
+    "postprocessing": "^6.39.2",
     "three": "^0.170.0"
   },
   "devDependencies": {
