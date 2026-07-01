@@ -34,6 +34,16 @@ export class Sfx {
     if (this.master) this.master.gain.value = muted ? 0 : this.volume;
   }
 
+  // The music layer routes through the same context + master gain, so the global
+  // volume/mute controls govern it too.
+  get audioContext(): AudioContext | undefined {
+    return this.ctx;
+  }
+
+  get masterGain(): GainNode | undefined {
+    return this.master;
+  }
+
   setVolume(volume: number): void {
     this.volume = Math.max(0, Math.min(1, volume));
     if (this.master && !this.muted) this.master.gain.value = this.volume;

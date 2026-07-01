@@ -20,6 +20,7 @@ export const RENDER_SCALE_DPR: Record<RenderScale, number> = { performance: 0.62
 export class GameSettings {
   muted = false;
   volume = 0.6;
+  musicVolume = 0.5;
   difficulty: Difficulty = "normal";
   reducedMotion = false;
   actionPace: ActionPace = "normal";
@@ -41,6 +42,7 @@ export class GameSettings {
       const s = JSON.parse(raw) as Partial<GameSettings>;
       if (typeof s.muted === "boolean") this.muted = s.muted;
       if (typeof s.volume === "number") this.volume = Math.max(0, Math.min(1, s.volume));
+      if (typeof s.musicVolume === "number") this.musicVolume = Math.max(0, Math.min(1, s.musicVolume));
       if (s.difficulty === "easy" || s.difficulty === "normal" || s.difficulty === "hard") this.difficulty = s.difficulty;
       if (typeof s.reducedMotion === "boolean") this.reducedMotion = s.reducedMotion;
       if (s.actionPace === "slow" || s.actionPace === "normal" || s.actionPace === "fast") this.actionPace = s.actionPace;
@@ -52,7 +54,7 @@ export class GameSettings {
 
   save(): void {
     try {
-      localStorage.setItem(KEY, JSON.stringify({ muted: this.muted, volume: this.volume, difficulty: this.difficulty, reducedMotion: this.reducedMotion, actionPace: this.actionPace, renderScale: this.renderScale }));
+      localStorage.setItem(KEY, JSON.stringify({ muted: this.muted, volume: this.volume, musicVolume: this.musicVolume, difficulty: this.difficulty, reducedMotion: this.reducedMotion, actionPace: this.actionPace, renderScale: this.renderScale }));
     } catch {
       // ignore
     }

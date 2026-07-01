@@ -24,6 +24,7 @@ import {
 import type { AimMode, Team } from "./game/damageModel";
 import { isInfantryKind } from "./game/damageModel";
 import { sfx } from "./audio";
+import { music } from "./music";
 import { progression, COSMETICS, COSMETIC_CATEGORIES, type Cosmetic } from "./progression";
 import { battleReward } from "./progression";
 import { campaign, CAMPAIGN_TITLE, CAMPAIGN_SYNOPSIS, type CampaignMission } from "./campaign";
@@ -60,6 +61,7 @@ const feel = new FeelDirector(stage);
 feel.setReducedMotion(settings.reducedMotion);
 sfx.setMuted(settings.muted);
 sfx.setVolume(settings.volume);
+music.setVolume(settings.musicVolume);
 
 // --- Debug/perf harness wiring (drives window.__rht.perf/diagnostics/overlay) ---
 const perfMon = new PerfMonitor();
@@ -684,6 +686,10 @@ function showSettings(): void {
         <input type="range" min="0" max="100" value="${Math.round(settings.volume * 100)}" data-set="volume" />
       </div>
       <div class="settings-row">
+        <label>Music</label>
+        <input type="range" min="0" max="100" value="${Math.round(settings.musicVolume * 100)}" data-set="musicVolume" />
+      </div>
+      <div class="settings-row">
         <label>Default difficulty</label>
         <div class="settings-choices">
           ${DIFFICULTIES.map((d) => `<button class="menu-chip ${settings.difficulty === d ? "on" : ""}" data-set="diff" data-value="${d}" type="button">${difficultyLabel(d)}</button>`).join("")}
@@ -745,6 +751,10 @@ function showSettings(): void {
     if (target.dataset.set === "volume") {
       settings.volume = Number(target.value) / 100;
       sfx.setVolume(settings.volume);
+      settings.save();
+    } else if (target.dataset.set === "musicVolume") {
+      settings.musicVolume = Number(target.value) / 100;
+      music.setVolume(settings.musicVolume);
       settings.save();
     }
   });
@@ -1288,6 +1298,12 @@ function frame(now: number): void {
   sim.update(sim.phase === "resolve" ? dt * settings.resolveSpeed : dt);
   processBattleEvents();
   feel.update(dt);
+  music.setState(
+    sim.phase === "resolve" ? "resolve"
+    : sim.phase === "victory" || sim.phase === "defeat" ? "end"
+    : inBattle ? "command" : "menu",
+  );
+  music.update();
   handleEndState();
   syncCameraAssist();
   const aimPoint = groundAimHover();
