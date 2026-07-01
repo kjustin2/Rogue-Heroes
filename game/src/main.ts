@@ -1,4 +1,14 @@
 import "./style.css";
+// Self-hosted fonts (no CDN — the packaged Electron app must work offline).
+import "@fontsource/orbitron/600.css";
+import "@fontsource/orbitron/700.css";
+import "@fontsource/orbitron/900.css";
+import "@fontsource/rajdhani/500.css";
+import "@fontsource/rajdhani/600.css";
+import "@fontsource/rajdhani/700.css";
+import "@fontsource/inter/400.css";
+import "@fontsource/inter/500.css";
+import "@fontsource/inter/600.css";
 
 import { dist, type Vec2 } from "./core/math";
 import { Stage } from "./render/stage";

@@ -45,6 +45,9 @@
     }
   },
   "dependencies": {
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/orbitron": "^5.2.8",
+    "@fontsource/rajdhani": "^5.2.7",
     "postprocessing": "^6.39.2",
     "three": "^0.170.0"
   },

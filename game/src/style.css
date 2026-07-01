@@ -11,23 +11,25 @@
   color-scheme: dark;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  --bg: #05080d;
-  --panel: rgba(9, 15, 22, 0.88);
-  --panel-strong: rgba(15, 25, 34, 0.95);
-  --panel-soft: rgba(24, 36, 46, 0.72);
-  --line: rgba(128, 205, 235, 0.28);
-  --line-strong: rgba(149, 236, 255, 0.66);
+  /* Gritty near-future military chrome: warm gunmetal panels, weathered brass/amber
+     lines. Cyan stays reserved for player-team accents so the faction read holds. */
+  --bg: #0a0906;
+  --panel: rgba(16, 15, 11, 0.88);
+  --panel-strong: rgba(24, 23, 18, 0.95);
+  --panel-soft: rgba(38, 36, 28, 0.72);
+  --line: rgba(198, 174, 122, 0.28);
+  --line-strong: rgba(255, 202, 107, 0.6);
   --cyan: #8cefff;
   --mint: #8ef2d1;
   --amber: #ffca6b;
   --orange: #ff875f;
   --red: #ff7169;
   --green: #a4ef94;
-  --text-muted: #aebdb8;
-  --shadow: rgba(0, 0, 0, 0.52);
-  --steel-rail: rgba(79, 115, 126, 0.36);
-  --glass-edge: rgba(228, 250, 255, 0.12);
-  --accent-glow: rgba(140, 239, 255, 0.5);
+  --text-muted: #b8b2a0;
+  --shadow: rgba(0, 0, 0, 0.55);
+  --steel-rail: rgba(118, 112, 90, 0.4);
+  --glass-edge: rgba(255, 240, 210, 0.1);
+  --accent-glow: rgba(255, 202, 107, 0.42);
 }
 
 * {
@@ -47,9 +49,9 @@ body,
 
 body {
   background:
-    linear-gradient(135deg, rgba(18, 54, 68, 0.42) 0%, rgba(5, 8, 13, 0) 34%),
-    linear-gradient(315deg, rgba(88, 38, 26, 0.38) 0%, rgba(5, 8, 13, 0) 38%),
-    repeating-linear-gradient(90deg, rgba(120, 205, 230, 0.035) 0 1px, transparent 1px 92px),
+    linear-gradient(135deg, rgba(58, 54, 32, 0.42) 0%, rgba(10, 9, 6, 0) 34%),
+    linear-gradient(315deg, rgba(92, 42, 24, 0.4) 0%, rgba(10, 9, 6, 0) 38%),
+    repeating-linear-gradient(90deg, rgba(230, 200, 140, 0.03) 0 1px, transparent 1px 92px),
     var(--bg);
 }
 
@@ -80,7 +82,7 @@ button {
 #ui::before {
   background:
     repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.028) 0 1px, transparent 1px 5px),
-    linear-gradient(180deg, rgba(140, 239, 255, 0.08), transparent 18%, transparent 82%, rgba(255, 135, 95, 0.07));
+    linear-gradient(180deg, rgba(255, 214, 150, 0.07), transparent 18%, transparent 82%, rgba(255, 135, 95, 0.08));
   opacity: 0.36;
   mix-blend-mode: screen;
 }
@@ -99,9 +101,9 @@ button {
   border: 1px solid var(--line);
   border-radius: 6px;
   background:
-    linear-gradient(135deg, rgba(140, 239, 255, 0.13), transparent 24%),
-    linear-gradient(315deg, rgba(255, 135, 95, 0.12), transparent 30%),
-    repeating-linear-gradient(90deg, rgba(140, 239, 255, 0.03) 0 1px, transparent 1px 28px),
+    linear-gradient(135deg, rgba(255, 210, 140, 0.1), transparent 24%),
+    linear-gradient(315deg, rgba(255, 135, 95, 0.1), transparent 30%),
+    repeating-linear-gradient(90deg, rgba(230, 200, 140, 0.028) 0 1px, transparent 1px 28px),
     linear-gradient(180deg, var(--panel-strong), var(--panel));
   box-shadow:
     0 24px 70px var(--shadow),
@@ -3071,12 +3073,12 @@ h2,
   transition: opacity 0.4s ease;
   backdrop-filter: blur(4px) saturate(1.05); /* blur the live scene behind the menus */
   background:
-    repeating-radial-gradient(circle at 50% 44%, rgba(140, 239, 255, 0.055) 0 1px, transparent 1px 104px),
-    repeating-linear-gradient(90deg, rgba(140, 239, 255, 0.045) 0 1px, transparent 1px 58px),
-    repeating-linear-gradient(0deg, rgba(140, 239, 255, 0.035) 0 1px, transparent 1px 58px),
-    radial-gradient(120% 78% at 50% -8%, rgba(120, 220, 255, 0.16), transparent 52%),
-    radial-gradient(150% 80% at 50% 118%, rgba(255, 128, 78, 0.24), transparent 60%),
-    linear-gradient(180deg, #061021, #04070e 56%, #16100b);
+    repeating-radial-gradient(circle at 50% 44%, rgba(255, 206, 130, 0.05) 0 1px, transparent 1px 104px),
+    repeating-linear-gradient(90deg, rgba(255, 206, 130, 0.04) 0 1px, transparent 1px 58px),
+    repeating-linear-gradient(0deg, rgba(255, 206, 130, 0.032) 0 1px, transparent 1px 58px),
+    radial-gradient(120% 78% at 50% -8%, rgba(210, 170, 110, 0.14), transparent 52%),
+    radial-gradient(150% 80% at 50% 118%, rgba(255, 128, 78, 0.26), transparent 60%),
+    linear-gradient(180deg, #120f0a, #080604 56%, #16100b);
 }
 /* Shown only while a menu is open. The radar/scan/float animations are paused while hidden
    so they cost nothing during gameplay AND resume from their current angle (never restart)
@@ -3108,9 +3110,9 @@ body.menus-open .menu-bg span {
     from 0deg,
     transparent 0deg,
     transparent 296deg,
-    rgba(140, 239, 255, 0.06) 330deg,
-    rgba(150, 243, 255, 0.16) 354deg,
-    rgba(190, 250, 255, 0.30) 360deg
+    rgba(255, 202, 107, 0.06) 330deg,
+    rgba(255, 214, 130, 0.16) 354deg,
+    rgba(255, 232, 170, 0.30) 360deg
   );
   -webkit-mask: radial-gradient(circle at center, #000 0 16%, rgba(0, 0, 0, 0.6) 40%, transparent 64%);
           mask: radial-gradient(circle at center, #000 0 16%, rgba(0, 0, 0, 0.6) 40%, transparent 64%);
@@ -3123,8 +3125,8 @@ body.menus-open .menu-bg span {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(0deg, transparent, rgba(150, 243, 255, 0.05) 47%, rgba(180, 250, 255, 0.09) 50%, rgba(150, 243, 255, 0.05) 53%, transparent),
-    radial-gradient(72% 20% at 50% 91%, rgba(140, 239, 255, 0.22), transparent 70%),
+    linear-gradient(0deg, transparent, rgba(255, 214, 130, 0.045) 47%, rgba(255, 226, 160, 0.08) 50%, rgba(255, 214, 130, 0.045) 53%, transparent),
+    radial-gradient(72% 20% at 50% 91%, rgba(255, 178, 92, 0.2), transparent 70%),
     radial-gradient(120% 120% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.62));
   background-size: 100% 280px, 100% 100%, 100% 100%;
   background-repeat: no-repeat;
@@ -3138,9 +3140,9 @@ body.menus-open .menu-bg span {
   mix-blend-mode: screen;
   animation: menu-float 18s ease-in-out infinite;
 }
-.menu-bg span:nth-child(1) { width: 360px; height: 360px; left: 6%; top: 14%; background: rgba(120, 220, 255, 0.45); }
-.menu-bg span:nth-child(2) { width: 420px; height: 420px; right: 2%; top: 34%; background: rgba(255, 128, 78, 0.36); animation-delay: -6s; }
-.menu-bg span:nth-child(3) { width: 300px; height: 300px; left: 46%; bottom: 2%; background: rgba(150, 245, 215, 0.30); animation-delay: -11s; }
+.menu-bg span:nth-child(1) { width: 360px; height: 360px; left: 6%; top: 14%; background: rgba(255, 190, 110, 0.32); }
+.menu-bg span:nth-child(2) { width: 420px; height: 420px; right: 2%; top: 34%; background: rgba(255, 118, 66, 0.36); animation-delay: -6s; }
+.menu-bg span:nth-child(3) { width: 300px; height: 300px; left: 46%; bottom: 2%; background: rgba(178, 190, 120, 0.26); animation-delay: -11s; }
 @keyframes menu-float {
   0%, 100% { transform: translate(0, 0) scale(1); }
   50% { transform: translate(28px, -34px) scale(1.12); }
