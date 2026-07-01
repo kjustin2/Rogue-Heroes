@@ -15,6 +15,14 @@ const MIME = {
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
   ".wasm": "application/wasm",
+  ".glb": "model/gltf-binary",
+  ".bin": "application/octet-stream",
+  ".ktx2": "image/ktx2",
+  ".webp": "image/webp",
+  ".woff2": "font/woff2",
+  ".woff": "font/woff",
+  ".mp3": "audio/mpeg",
+  ".ogg": "audio/ogg",
 };
 
 // Serve the built SPA from a STABLE custom origin (app://rht) instead of an http server on a

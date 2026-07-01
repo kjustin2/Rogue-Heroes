@@ -3,6 +3,7 @@ import "./style.css";
 import { dist, type Vec2 } from "./core/math";
 import { Stage } from "./render/stage";
 import { WorldRenderer, type WorldRenderDebug } from "./render/worldRenderer";
+import { preloadAll as preloadModels } from "./render/models";
 import { Hud } from "./ui/hud";
 import {
   TacticalSim,
@@ -46,6 +47,7 @@ const uiRoot = ui;
 
 const stage = new Stage(canvas);
 stage.setPixelRatioCap(RENDER_SCALE_DPR[settings.renderScale]);
+preloadModels(); // kick GLB loads immediately; renderer swaps them in as they arrive
 const sim = new TacticalSim();
 const world = new WorldRenderer(stage.scene);
 world.setPlayerAccent(progression.accentColor());

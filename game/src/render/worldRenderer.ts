@@ -4,6 +4,7 @@ import { isDefenseKind, isInfantryKind, isVehicleKind, type CombatEntity, type D
 import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec } from "../game/maps";
 import { ARENA_BOUNDS, arenaDepth, arenaWidth, terrainBlocks, terrainHeightAt } from "../game/terrain";
+import { instantiate, modelsVersion, type ModelKey } from "./models";
 
 type PartMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
 
@@ -70,6 +71,7 @@ export class WorldRenderer {
   // A midtone derived from the active map palette; structural props are tinted toward it so
   // they read as part of the map instead of generic brown crates on every battlefield.
   private propTint = new THREE.Color(0x8a7a5c);
+  private lastModelsVersion = modelsVersion();
   private debug: WorldRenderDebug = emptyDebug();
 
   constructor(private readonly scene: THREE.Scene) {
@@ -157,6 +159,16 @@ export class WorldRenderer {
 
   update(sim: TacticalSim, targetId?: string, targetPartId?: string, camera?: THREE.Camera, groundAim?: Vec2): void {
     this.debug = emptyDebug();
+    // A GLB finished loading since last frame: rebuild every entity group so units that
+    // were born with procedural fallback meshes pick up their real model.
+    if (modelsVersion() !== this.lastModelsVersion) {
+      this.lastModelsVersion = modelsVersion();
+      for (const [id, group] of this.groups) {
+        disposeSubtree(group);
+        this.entityRoot.remove(group);
+        this.groups.delete(id);
+      }
+    }
     this.ghostedEntityIds = this.computeGhostedEntities(sim, targetId, targetPartId, camera);
     this.debug.ghostedEntities = [...this.ghostedEntityIds];
     if (sim.entities.every((e) => e.parts.every((p) => p.hp === p.maxHp))) {
@@ -674,6 +686,15 @@ export class WorldRenderer {
       group.scale.setScalar(entity.status.alive ? 1 : 0.94);
     }
     const renderGhosted = ghosted;
+    if (group.userData.glb) {
+      // Whole-vehicle recoil kick for model-based units (no per-part weapon mesh to punch).
+      const recoil = (group.userData.recoil as number | undefined) ?? 0;
+      if (recoil > 0 && entity.status.alive) {
+        group.position.x -= Math.sin(entity.yaw) * recoil * 0.14;
+        group.position.z -= Math.cos(entity.yaw) * recoil * 0.14;
+        group.rotation.x -= recoil * 0.02;
+      }
+    }
     group.traverse((object) => {
       if (!("isMesh" in object)) return;
       const mesh = object as PartMesh;
@@ -682,9 +703,15 @@ export class WorldRenderer {
       const part = entity.parts.find((p) => p.id === partId);
       if (!part) return;
       this.syncDebris(entity, part);
+      if (mesh.userData.pickProxy) {
+        // Invisible raycast box over a GLB region — pickable, never painted.
+        if (entity.status.alive) this.pickables.push(mesh);
+        return;
+      }
       this.paintPart(mesh, entity, part, entity.id === selectedId, entity.id === targetId, part.id === targetPartId, renderGhosted);
       if (entity.status.alive) this.pickables.push(mesh);
     });
+    if (group.userData.glb) this.paintModel(group, entity, entity.id === selectedId, entity.id === targetId, renderGhosted);
   }
 
   private syncDebris(entity: CombatEntity, part: DamagePart): void {
@@ -699,6 +726,8 @@ export class WorldRenderer {
   }
 
   private buildEntity(entity: CombatEntity): THREE.Group {
+    const model = this.buildFromModel(entity);
+    if (model) return model;
     const group = new THREE.Group();
     group.userData.entityId = entity.id;
     if (isVehicleKind(entity.kind)) this.buildTank(group, entity);
@@ -707,6 +736,125 @@ export class WorldRenderer {
     if (isDefenseKind(entity.kind)) this.buildDefense(group, entity);
     if (entity.kind === "cover") this.buildCover(group, entity);
     return group;
+  }
+
+  // Try the Meshy GLB for this entity kind; null (not loaded / no mapping) keeps the
+  // procedural builder in charge. Infantry, walls, and glow-signal props are always
+  // procedural — their walk cycle / parametric height / gameplay glow is the point.
+  private buildFromModel(entity: CombatEntity): THREE.Group | null {
+    const key = modelKeyFor(entity);
+    if (!key) return null;
+    const group = instantiate(key);
+    if (!group) return null;
+    group.userData.entityId = entity.id;
+    group.userData.glb = true;
+    if (entity.kind === "cover") {
+      this.tintModelToMap(group);
+      this.interactionGlow(group, entity, entity.parts[0]?.role === "volatile");
+    } else {
+      this.addModelAccents(group, entity);
+    }
+    this.addPickProxies(group, entity);
+    return group;
+  }
+
+  // Team-colored emissive trim (roof light bar + side strips) so a weathered GLB still
+  // reads player-cyan vs enemy-red at tactics camera distance — the same accent language
+  // the procedural units use.
+  private addModelAccents(group: THREE.Group, entity: CombatEntity): void {
+    if (entity.team === "neutral") return;
+    const color = entity.team === "enemy" ? 0xff6d57 : (entity.accent ?? this.playerAccent);
+    const dims = group.userData.dims as THREE.Vector3;
+    const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.85, roughness: 0.4, metalness: 0.1 });
+    mat.userData.shared = false;
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.3, dims.x * 0.2), 0.07, 0.07), mat);
+    bar.position.set(0, dims.y + 0.05, -dims.z * 0.16);
+    bar.userData.decor = true;
+    group.add(bar);
+    for (const side of [-1, 1]) {
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.09, Math.max(0.4, dims.z * 0.36)), mat);
+      strip.position.set(side * dims.x * 0.48, dims.y * 0.42, 0);
+      strip.userData.decor = true;
+      group.add(strip);
+    }
+  }
+
+  // Nudge a GLB prop's albedo toward the map palette (mirror of tintPropToMap, but on the
+  // clone's material records so per-frame damage tinting keeps the tint as its base).
+  private tintModelToMap(group: THREE.Group, amount = 0.24): void {
+    const mats = group.userData.glbMaterials as { material: THREE.MeshStandardMaterial; base: number }[] | undefined;
+    if (!mats) return;
+    for (const record of mats) {
+      const tinted = new THREE.Color(record.base).lerp(this.propTint, amount);
+      record.material.color.copy(tinted);
+      record.base = tinted.getHex();
+    }
+  }
+
+  // Invisible raycast boxes standing in for the procedural part meshes, so part-aiming,
+  // hover and the vision overlay keep working over a single-skin GLB.
+  private addPickProxies(group: THREE.Group, entity: CombatEntity): void {
+    const dims = group.userData.dims as THREE.Vector3;
+    const layout: [string, [number, number, number], [number, number, number]][] =
+      entity.kind === "cover"
+        ? [[entity.parts[0]?.id ?? "wall", [dims.x, dims.y, dims.z], [0, dims.y / 2, 0]]]
+        : PICK_PROXY_LAYOUTS[entity.kind] ?? [];
+    for (const [partId, size, pos] of layout) {
+      if (!entity.parts.some((p) => p.id === partId)) continue;
+      const proxy = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), pickProxyMaterial());
+      proxy.position.set(pos[0], pos[1], pos[2]);
+      proxy.userData.entityId = entity.id;
+      proxy.userData.partId = partId;
+      proxy.userData.pickProxy = true;
+      proxy.visible = false; // raycaster tests invisible meshes; renderer never draws them
+      proxy.castShadow = false;
+      proxy.receiveShadow = false;
+      group.add(proxy);
+    }
+  }
+
+  // Per-frame tint/feedback for GLB entities: damage char, death darkening, selection /
+  // target / hit-flash cues and ghosting — the coarse-grained sibling of paintPart.
+  private paintModel(group: THREE.Group, entity: CombatEntity, selected: boolean, targeted: boolean, ghosted: boolean): void {
+    const mats = group.userData.glbMaterials as { material: THREE.MeshStandardMaterial; base: number }[] | undefined;
+    if (!mats) return;
+    let totalHp = 0;
+    let totalMax = 0;
+    let flash = 0;
+    for (const part of entity.parts) {
+      totalHp += part.hp;
+      totalMax += part.maxHp;
+      flash = Math.max(flash, this.partFlash(entity.id, part.id));
+    }
+    const injury = 1 - clamp01(totalHp / Math.max(1, totalMax));
+    const alive = entity.status.alive;
+    const unitGlow = entity.kind !== "cover" && entity.team !== "neutral";
+    const glowColor = entity.team === "enemy" ? 0x4f160f : 0x063a44;
+    for (const record of mats) {
+      const material = record.material;
+      const color = _paintColor.set(record.base).lerp(_paintTmp.set(0x33120f), injury * 0.5);
+      if (!alive) color.lerp(_paintTmp.set(0x08090a), 0.55);
+      if (selected && alive) color.lerp(_paintTmp.set(0xffffff), 0.14);
+      if (targeted && alive) color.lerp(_paintTmp.set(0xffd166), 0.26);
+      if (flash > 0 && alive) color.lerp(_paintTmp.set(0xffffff), flash * 0.55);
+      material.color.copy(color);
+      if (flash > 0 && alive) {
+        material.emissive.setHex(0xffffff);
+        material.emissiveIntensity = 0.35 + flash * 0.5;
+      } else if (alive && (selected || targeted)) {
+        material.emissive.setHex(targeted ? 0x4f3000 : 0x0b3844);
+        material.emissiveIntensity = targeted ? 0.4 : 0.5;
+      } else if (alive && unitGlow) {
+        material.emissive.setHex(glowColor);
+        material.emissiveIntensity = 0.18 + injury * 0.1;
+      } else {
+        material.emissive.setHex(0x000000);
+        material.emissiveIntensity = 0;
+      }
+      material.transparent = ghosted && alive;
+      material.opacity = ghosted && alive ? (targeted ? 0.48 : 0.34) : 1;
+      material.depthWrite = !(ghosted && alive);
+    }
   }
 
   private buildTank(group: THREE.Group, entity: CombatEntity): void {
@@ -2267,6 +2415,83 @@ function hash(value: string): number {
 //   * Sprites are skipped — THREE.Sprite.geometry is a single module-shared geometry; disposing
 //     it would break every sprite.
 //   * geometries tagged `userData.shared` (the pooled projectile/tube/ring caches) are skipped.
+// Which Meshy GLB (if any) stands in for this entity. Infantry keep their procedural
+// bodies (walk cycle + per-part damage posing), walls stay parametric, and glow-signal
+// props (ammo/fuel/conduit) keep their emissive gameplay cue.
+function modelKeyFor(entity: CombatEntity): ModelKey | null {
+  switch (entity.kind) {
+    case "tank": return "tank";
+    case "apc": return "apc";
+    case "artillery": return "artillery";
+    case "base": return "hq";
+    case "turret": return "turret";
+    case "exturret": return "mortar-turret";
+    case "cover":
+      if (entity.parts[0]?.role === "volatile") return null;
+      switch (entity.coverKind) {
+        case "barricade": return "barricade";
+        case "sandbag": return "sandbags";
+        case "crate": return "crates";
+        case "rock": return "rock";
+        case "rubble": return "rock";
+        default: return null;
+      }
+    default: return null;
+  }
+}
+
+// Invisible raycast boxes approximating where each damage-model part sits on the GLB —
+// sized/positioned to match the procedural builders they replace so part-aiming feels
+// identical. Raycaster ignores `visible`, so these cost zero draw calls.
+const PICK_PROXY_LAYOUTS: Record<string, [string, [number, number, number], [number, number, number]][]> = {
+  tank: [
+    ["hull", [2.4, 0.9, 1.5], [0, 0.55, 0]],
+    ["front-plate", [2.3, 0.5, 0.3], [0, 0.65, 0.85]],
+    ["left-tread", [0.45, 0.6, 1.8], [-1.25, 0.3, 0]],
+    ["right-tread", [0.45, 0.6, 1.8], [1.25, 0.3, 0]],
+    ["turret", [1.2, 0.6, 1.0], [0, 1.25, 0]],
+    ["cannon", [0.35, 0.35, 1.7], [0, 1.2, 1.2]],
+  ],
+  apc: [
+    ["hull", [2.2, 1.4, 1.5], [0, 0.9, 0]],
+    ["front-plate", [2.1, 0.7, 0.3], [0, 1.0, 0.75]],
+    ["left-tread", [0.45, 0.6, 1.8], [-1.2, 0.3, 0]],
+    ["right-tread", [0.45, 0.6, 1.8], [1.2, 0.3, 0]],
+    ["turret", [0.7, 0.4, 0.8], [0, 1.7, 0.08]],
+    ["cannon", [0.25, 0.25, 0.9], [0.16, 1.8, 0.5]],
+  ],
+  artillery: [
+    ["hull", [2.4, 0.9, 1.6], [0, 0.55, -0.3]],
+    ["front-plate", [2.3, 0.5, 0.3], [0, 0.65, 0.6]],
+    ["left-tread", [0.45, 0.6, 1.9], [-1.25, 0.3, -0.2]],
+    ["right-tread", [0.45, 0.6, 1.9], [1.25, 0.3, -0.2]],
+    ["turret", [1.2, 0.6, 1.0], [0, 1.25, -0.2]],
+    ["cannon", [0.35, 0.35, 2.6], [0, 1.35, 1.3]],
+  ],
+  base: [
+    ["core", [2.6, 1.7, 2.2], [0, 0.85, 0]],
+    ["comms", [0.5, 1.9, 0.5], [-0.9, 2.2, -0.15]],
+    ["power", [0.95, 1.1, 0.95], [0.9, 0.6, -0.6]],
+    ["gate", [2.7, 0.8, 0.5], [0, 0.4, 1.2]],
+  ],
+  turret: [
+    ["mount", [1.8, 0.6, 1.8], [0, 0.3, 0]],
+    ["gun", [0.9, 0.6, 2.0], [0, 0.95, 0.4]],
+    ["sensor", [0.5, 0.5, 0.5], [-0.26, 1.25, -0.12]],
+  ],
+  exturret: [
+    ["mount", [1.8, 0.6, 1.8], [0, 0.3, 0]],
+    ["gun", [1.2, 1.0, 1.2], [0, 1.1, 0.05]],
+    ["ammo", [0.75, 0.55, 0.6], [0, 0.62, -0.7]],
+  ],
+};
+
+const _pickProxyMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+_pickProxyMaterial.userData.shared = true;
+function pickProxyMaterial(): THREE.MeshBasicMaterial {
+  return _pickProxyMaterial;
+}
+
 export function disposeSubtree(obj: THREE.Object3D): void {
   obj.traverse((node) => {
     if ((node as THREE.Sprite).isSprite) return;
