@@ -1657,7 +1657,9 @@ button {
 
 .roster {
   width: 226px;
-  max-height: calc(100vh - 70px);
+  /* End above the treasury + log bars (bottom-left stack) so a long squad list scrolls
+     inside the panel instead of clipping behind them. */
+  max-height: calc(100vh - 158px);
 }
 
 .target-panel {

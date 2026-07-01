@@ -95,7 +95,7 @@ export class Stage {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.1;
+    this.renderer.toneMappingExposure = 1.06;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -170,8 +170,10 @@ export class Stage {
     this.vignette = new VignetteEffect({ darkness: this.baseVignette, offset: 0.3 });
     effects.push(this.vignette);
     if (this.quality !== "balanced") {
-      effects.push(new HueSaturationEffect({ saturation: 0.1 }));
-      effects.push(new BrightnessContrastEffect({ contrast: 0.06 }));
+      // Low saturation push + firmer contrast: the desert themes collapse into one ochre
+      // band if saturation is boosted, and anchored blacks are what keep units readable.
+      effects.push(new HueSaturationEffect({ saturation: 0.04 }));
+      effects.push(new BrightnessContrastEffect({ contrast: 0.09 }));
       const noise = new NoiseEffect({ premultiply: true });
       noise.blendMode.opacity.value = 0.32;
       effects.push(noise);

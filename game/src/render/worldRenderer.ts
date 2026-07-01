@@ -423,10 +423,12 @@ export class WorldRenderer {
   // Re-theme the whole scene for a map: fog, sky, ground, terrain, grid, and lights.
   applyMap(theme: MapTheme): void {
     this.baseFogColor = theme.fog;
-    this.baseFogDensity = theme.fogDensity;
+    // Trimmed below the authored density: under the graded post stack the full value
+    // dissolves the frame edges into a cream wash and units stop reading at distance.
+    this.baseFogDensity = theme.fogDensity * 0.72;
     this.baseSkyColor = theme.sky;
     this.sandstormBlend = 0;
-    this.scene.fog = new THREE.FogExp2(theme.fog, theme.fogDensity);
+    this.scene.fog = new THREE.FogExp2(theme.fog, this.baseFogDensity);
     if (this.skyTexture) this.skyTexture.dispose();
     this.skyTexture = makeThemeSky(theme);
     this.scene.background = this.skyTexture;
@@ -503,9 +505,11 @@ export class WorldRenderer {
     const width = arenaWidth();
     const depth = arenaDepth();
 
+    // Slightly darker than the authored ground tone so units (whose palette tops out
+    // near-white) keep value separation from the floor under the warm key light.
     const floor = new THREE.Mesh(
       new THREE.BoxGeometry(width, 0.18, depth),
-      new THREE.MeshStandardMaterial({ color: theme.ground, roughness: 0.95, metalness: 0.02 })
+      new THREE.MeshStandardMaterial({ color: new THREE.Color(theme.ground).multiplyScalar(0.86), roughness: 0.95, metalness: 0.02 })
     );
     floor.position.y = -0.11;
     floor.receiveShadow = true;
@@ -1235,7 +1239,9 @@ export class WorldRenderer {
   }
 
   private interactionGlow(group: THREE.Group, entity: CombatEntity, volatile: boolean): void {
-    const color = entity.coverKind === "cliff" ? 0xb48cff : volatile ? 0xffca6b : entity.coverKind === "ridge" ? 0xf0c37a : 0x8de4ff;
+    // Neutral cover glows warm white — cyan is reserved for the player team, so a crate
+    // must never wear the same edge light as friendly kit.
+    const color = entity.coverKind === "cliff" ? 0xb48cff : volatile ? 0xffca6b : entity.coverKind === "ridge" ? 0xf0c37a : 0xffe9c4;
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.72, depthWrite: false });
     const width = Math.max(0.58, entity.radius * 1.08);
     const depth = Math.max(0.42, entity.radius * 0.54);
@@ -1487,7 +1493,7 @@ export class WorldRenderer {
     const baseEmissive = mesh.userData.baseEmissive as number;
     const unitGlow = entity.kind !== "cover" && entity.team !== "neutral";
     const coverGlow = entity.kind === "cover" && part.hp > 0;
-    const coverGlowColor = entity.coverKind === "cliff" ? 0x4a2284 : part.role === "volatile" ? 0x7a4200 : entity.coverKind === "ridge" ? 0x5a3a13 : 0x0a6472;
+    const coverGlowColor = entity.coverKind === "cliff" ? 0x4a2284 : part.role === "volatile" ? 0x7a4200 : entity.coverKind === "ridge" ? 0x5a3a13 : 0x5c4620;
     const unitGlowColor = entity.team === "enemy" ? 0x4f160f : 0x063a44;
     material.emissive.setHex(part.hp > 0 && targetedPart ? 0x4f3000 : part.hp > 0 && selected ? 0x0b3844 : accent ? baseEmissive : unitGlow ? unitGlowColor : coverGlow ? coverGlowColor : baseEmissive);
     material.emissiveIntensity = part.hp > 0

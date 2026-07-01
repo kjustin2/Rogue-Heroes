@@ -8,7 +8,9 @@ The entire app lives in **`game/`** — run every command from there (`cd game` 
 repo root holds only the README, design notes (`improve*.md`, `docs/`), and scratch images.
 
 It is a **Vite + TypeScript + Three.js** single-page game with an **Electron** desktop
-wrapper. Runtime dependency is just `three`; everything else is dev tooling.
+wrapper. Runtime dependencies are `three`, `postprocessing` (the graded post stack), and
+`@fontsource/*` (self-hosted fonts so the packaged app works offline); everything else is
+dev tooling.
 
 ## Commands (run from `game/`)
 
@@ -40,13 +42,40 @@ flow `5179`, economy `5176`, buttons `5191`, screenshot tools `5177`/`5178`.
 
 - `npm run smoke:flow` — menu → deploy → multi-turn battle → reset
 - `npm run smoke:economy`, `npm run smoke:buttons`
-- `npm run smoke:electron` — builds, then boots the packaged Electron app
+- `npm run smoke:electron` — builds, then boots the packaged Electron app (boot +
+  screenshot work; its late gameplay assertions are stale — prefer smoke:flow)
 - Smokes that test gameplay must navigate the menu (click `[data-menu="play"]`, pick a
   `[data-map]`, then `[data-start]`) and usually grant cash with
   `sim.economy.set("player", N)` so they exercise mechanics, not the price curve.
+- **`?lowfx=1`** forces the composer-free performance render path. Functional smokes,
+  verify scripts, and the perf bench navigate with it because headless SwiftShader stalls
+  on the HalfFloat bloom chain. `vision`/gallery run full-FX (the visual source of truth).
 
 Smokes need the Playwright Chromium cache (`%LOCALAPPDATA%\ms-playwright\chromium-*`) or
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`.
+
+### Meshy GLB asset pipeline
+
+Hero models (vehicles, bases, defenses, cover props) are Meshy-generated GLBs in
+`game/public/models/` (committed, with `.meshy.json` audit sidecars). Generation is an
+**offline** step: put `MESHY_API_KEY` in gitignored `game/.env` (see `.env.example`), then
+`node --env-file=.env scripts/build-models.mjs` (`--balance` preflight first; ~30 credits
+per model; raw GLBs cache in gitignored `assets-raw/` so re-optimizing never re-spends).
+At runtime `src/render/models.ts` async-loads them; `worldRenderer` uses a GLB when loaded
+and **falls back to the procedural builders otherwise** — dev/CI never depend on assets.
+GLB entities keep part-aiming via invisible pick-proxy boxes and get team-colored emissive
+accent trim. Infantry, walls, and glow-signal props are procedural by design (walk cycle /
+parametric height / gameplay glow). Template geometry is tagged `userData.shared`.
+
+### Presentation layer notes
+
+- `src/render/stage.ts` owns the **postprocessing composer** (bloom/vignette/grade/grain/
+  SMAA) with quality tiers riding the `renderScale` setting; `performance` = no composer.
+  `warmUp()` pre-compiles both shadow states × both chains — call it after staging new
+  material kinds or the next menu↔battle flip stalls on a shader relink.
+- `src/render/feel.ts` — trauma screenshake + kick, driven by `processBattleEvents()` in
+  main (the single sim-event → juice seam). `src/music.ts` — procedural state-layered
+  music (menu/command/resolve), routed through the Sfx master gain.
 
 ### Debug / perf / vision harness
 
