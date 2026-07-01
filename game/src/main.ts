@@ -10,6 +10,7 @@ import {
   MODES,
   DIFFICULTIES,
   mapDef,
+  modeDef,
   difficultyLabel,
   type Intent,
   type ModeId,
@@ -19,10 +20,12 @@ import {
   type MapDef,
 } from "./game/sim";
 import type { AimMode, Team } from "./game/damageModel";
+import { isInfantryKind } from "./game/damageModel";
 import { sfx } from "./audio";
-import { progression, COSMETICS } from "./progression";
+import { progression, COSMETICS, COSMETIC_CATEGORIES, type Cosmetic } from "./progression";
 import { battleReward } from "./progression";
-import { settings, ACTION_PACES, PACE_LABEL, type ActionPace } from "./settings";
+import { campaign, CAMPAIGN_TITLE, CAMPAIGN_SYNOPSIS, type CampaignMission } from "./campaign";
+import { settings, ACTION_PACES, PACE_LABEL, RENDER_SCALES, RENDER_SCALE_LABEL, RENDER_SCALE_DPR, type ActionPace, type RenderScale } from "./settings";
 import { applyScenario, scenarioInfo } from "./game/scenarios";
 import { ARENA_BOUNDS } from "./game/terrain";
 import { PerfMonitor, type PerfSnapshot, type RenderInfo } from "./render/perfMonitor";
@@ -42,6 +45,7 @@ if (!canvas || !ui) throw new Error("Missing game canvas or UI root");
 const uiRoot = ui;
 
 const stage = new Stage(canvas);
+stage.setPixelRatioCap(RENDER_SCALE_DPR[settings.renderScale]);
 const sim = new TacticalSim();
 const world = new WorldRenderer(stage.scene);
 world.setPlayerAccent(progression.accentColor());
@@ -105,8 +109,23 @@ function perfSnapshot(): PerfSnapshot {
 const SAVE_KEY = "rht.savedBattle.v1";
 
 let tutorialActive = false;
+// The campaign mission the current battle belongs to (undefined for skirmish/tutorial). Drives
+// whether a victory advances the campaign ladder and shows the story overlay.
+let activeCampaignMission: CampaignMission | undefined;
+let inBattle = false; // true between starting/loading a battle and it ending or being left
 let hoverWorld: Vec2 | undefined;
 let lastEndPhase: "victory" | "defeat" | undefined;
+
+// Persist an in-progress battle so closing the app or quitting to the menu never loses it.
+// Tutorials are throwaway and finished battles aren't resumable, so neither is saved.
+function autosaveIfActive(): void {
+  if (inBattle && !tutorialActive && (sim.phase === "command" || sim.phase === "resolve")) {
+    safeStorageSet(SAVE_KEY, sim.serialize());
+  }
+}
+// pagehide fires on app/tab close (more reliable than beforeunload); the localStorage write
+// is synchronous so it completes before the page unloads.
+window.addEventListener("pagehide", autosaveIfActive);
 
 const hud = new Hud(uiRoot, sim, {
   setIntent: (intent: Intent) => sim.setIntent(intent),
@@ -332,13 +351,64 @@ function focusOnPlayerBase(): void {
 // Configure and theme the battle for a chosen map + mode + difficulty, then frame the base.
 function startBattle(mapId: string, modeId: ModeId, difficulty: Difficulty = settings.difficulty): void {
   tutorialActive = false;
+  activeCampaignMission = undefined;
+  campaign.setActive(undefined); // a skirmish is not a campaign mission
   closeAllMenus();
   sim.configure(mapDef(mapId), modeId, difficulty);
   world.applyMap(sim.mapDef.theme);
   world.setPlayerAccent(progression.accentColor());
   focusOnPlayerBase();
   lastEndPhase = undefined;
+  inBattle = true;
   hud.update();
+}
+
+// Configure a campaign mission battle and remember which mission it is (so victory advances the
+// ladder and a save can resume it). Mirrors startBattle but tags the active mission.
+function startCampaignMission(mission: CampaignMission): void {
+  tutorialActive = false;
+  activeCampaignMission = mission;
+  campaign.setActive(mission.id);
+  closeAllMenus();
+  sim.configure(mapDef(mission.map), mission.mode, mission.difficulty);
+  world.applyMap(sim.mapDef.theme);
+  world.setPlayerAccent(progression.accentColor());
+  focusOnPlayerBase();
+  lastEndPhase = undefined;
+  inBattle = true;
+  hud.update();
+}
+
+// Deploy with a brief full-screen loading veil. startBattle() rebuilds the whole arena
+// (geometry + materials) synchronously, so without this the click just freezes for a beat.
+// We paint the veil first (two rAFs let it reach the screen), then run the heavy build under
+// it, then fade it once the battle has had a frame to render. Min visible time avoids a flash.
+function deployWithLoadingScreen(mapId: string, modeId: ModeId, difficulty: Difficulty, mission?: CampaignMission): void {
+  const veil = document.createElement("div");
+  veil.className = "battle-loading";
+  veil.innerHTML = `<div class="battle-loading__inner">
+    <div class="battle-loading__spinner"></div>
+    <div class="battle-loading__label"><span>Deploying to</span><strong>${escapeAttr(mapDef(mapId).name)}</strong></div>
+  </div>`;
+  document.body.appendChild(veil);
+  requestAnimationFrame(() => veil.classList.add("show"));
+  const startedAt = performance.now();
+  const minVisible = settings.reducedMotion ? 250 : 600;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (mission) {
+      startCampaignMission(mission);
+    } else {
+      startBattle(mapId, modeId, difficulty);
+      // First time the player tries a mode, spell out how it's won (the tutorial only covers Annihilation).
+      const mode = modeDef(modeId);
+      hintOnce(`mode-${modeId}`, `${mode.name}: ${mode.blurb}`);
+    }
+    const hold = Math.max(0, minVisible - (performance.now() - startedAt));
+    window.setTimeout(() => {
+      veil.classList.add("leaving");
+      window.setTimeout(() => veil.remove(), 360);
+    }, hold);
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -360,6 +430,9 @@ function closeAllMenus(): void {
     if (el.classList.contains("menu-screen")) skipNextMenuEntrance = true;
     el.remove();
   }
+  // Hide the persistent radar backdrop. show*() re-adds this synchronously before paint
+  // when swapping menus, so the radar only stops when we leave menus for gameplay.
+  document.body.classList.remove("menus-open");
 }
 
 function dismissTopOverlay(): void {
@@ -379,6 +452,7 @@ function mountScreen(html: string, className: string): HTMLDivElement {
   if (className.includes("menu-screen")) {
     if (skipNextMenuEntrance) screen.classList.add("menu-screen--instant");
     skipNextMenuEntrance = false;
+    document.body.classList.add("menus-open"); // reveal the persistent radar backdrop
   }
   screen.innerHTML = html;
   document.body.appendChild(screen);
@@ -415,20 +489,24 @@ function pointsBadge(): string {
 }
 
 function showMainMenu(): void {
+  autosaveIfActive(); // quitting a battle to the menu preserves it for Continue
+  inBattle = false;
   closeAllMenus();
   const hasSave = Boolean(safeStorageGet(SAVE_KEY));
   const screen = mountScreen(
     `
-    <div class="menu-bg"><span></span><span></span><span></span></div>
     <div class="title-screen__content menu-content main-menu__content">
       <div class="title-kicker">Tactical Command</div>
       <h1 class="title-logo">ROGUE HEROES<span>TACTICS</span></h1>
+      <div class="commander-id" data-tip="Your commander loadout — change it in the Armory."><span class="commander-emblem">${escapeHtml(progression.emblemGlyph())}</span> ${escapeHtml(progression.titleText())}</div>
       <div class="main-menu__buttons">
-        <button class="title-start" data-menu="play" type="button">Start Game</button>
+        <button class="title-start" data-menu="campaign" type="button">Campaign</button>
         ${hasSave ? `<button class="menu-action" data-menu="continue" type="button">Continue Battle</button>` : ""}
+        <button class="menu-action" data-menu="play" type="button">Skirmish</button>
         <button class="menu-action" data-menu="tutorial" type="button">Tutorial</button>
         <button class="menu-action" data-menu="armory" type="button">Armory</button>
         <button class="menu-action" data-menu="settings" type="button">Settings</button>
+        <button class="menu-action menu-action--exit" data-menu="exit" type="button">Exit Game</button>
       </div>
     </div>
   `,
@@ -438,11 +516,13 @@ function showMainMenu(): void {
   screen.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
     const action = target.closest<HTMLElement>("[data-menu]")?.dataset.menu;
-    if (action === "play") showStartScreen();
+    if (action === "campaign") showCampaign();
+    else if (action === "play") showStartScreen();
     else if (action === "continue") loadSavedBattle();
     else if (action === "tutorial") startTutorial();
     else if (action === "armory") showArmory();
     else if (action === "settings") showSettings();
+    else if (action === "exit") window.close(); // Electron: closes window → app.quit(); no-op in a browser tab
   });
 }
 
@@ -473,7 +553,6 @@ function showStartScreen(): void {
 
   const screen = mountScreen(
     `
-    <div class="menu-bg"><span></span><span></span><span></span></div>
     <div class="title-screen__content menu-content">
       <div class="menu-head">
         <button class="menu-back" data-overlay-close data-back type="button">&lsaquo; Back</button>
@@ -540,9 +619,8 @@ function showStartScreen(): void {
       if (screen.classList.contains("is-leaving")) return;
       settings.difficulty = selectedDifficulty;
       settings.save();
-      startBattle(selectedMap, selectedMode, selectedDifficulty);
-      screen.classList.add("is-leaving");
-      window.setTimeout(() => screen.remove(), 480);
+      screen.classList.add("is-leaving"); // startBattle's closeAllMenus removes it
+      deployWithLoadingScreen(selectedMap, selectedMode, selectedDifficulty);
     }
   });
 }
@@ -553,15 +631,38 @@ function difficultyBlurb(d: Difficulty): string {
   return "A balanced, even fight.";
 }
 
+function toggleFullscreen(): void {
+  if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+  else void document.documentElement.requestFullscreen().catch(() => {});
+}
+
+// Keep the Settings fullscreen toggle in sync when the user enters/leaves via F11 or Esc.
+document.addEventListener("fullscreenchange", () => {
+  const btn = document.querySelector<HTMLElement>('[data-set="fullscreen"]');
+  if (!btn) return;
+  const on = !!document.fullscreenElement;
+  btn.classList.toggle("on", on);
+  btn.textContent = on ? "On" : "Off";
+});
+
 function showSettings(): void {
   closeAllMenus();
   const screen = mountScreen(
     `
-    <div class="menu-bg"><span></span><span></span><span></span></div>
     <div class="title-screen__content menu-content overlay-card">
       <div class="menu-head">
         <button class="menu-back" data-overlay-close data-back type="button">&lsaquo; Back</button>
         <h2 class="menu-heading">Settings</h2>
+      </div>
+      <div class="settings-row">
+        <label>Fullscreen</label>
+        <button class="menu-toggle ${document.fullscreenElement ? "on" : ""}" data-set="fullscreen" type="button">${document.fullscreenElement ? "On" : "Off"}</button>
+      </div>
+      <div class="settings-row">
+        <label>Graphics quality</label>
+        <div class="settings-choices">
+          ${RENDER_SCALES.map((r) => `<button class="menu-chip ${settings.renderScale === r ? "on" : ""}" data-set="scale" data-value="${r}" type="button">${RENDER_SCALE_LABEL[r]}</button>`).join("")}
+        </div>
       </div>
       <div class="settings-row">
         <label>Sound</label>
@@ -600,9 +701,19 @@ function showSettings(): void {
       return;
     }
     const set = target.closest<HTMLElement>("[data-set]")?.dataset.set;
+    if (set === "fullscreen") {
+      toggleFullscreen();
+      return; // label refreshes via the fullscreenchange listener
+    }
     if (set === "mute") {
       settings.muted = !settings.muted;
       sfx.setMuted(settings.muted);
+    } else if (set === "scale") {
+      const value = target.closest<HTMLElement>("[data-value]")?.dataset.value as RenderScale | undefined;
+      if (value) {
+        settings.renderScale = value;
+        stage.setPixelRatioCap(RENDER_SCALE_DPR[value]);
+      }
     } else if (set === "diff") {
       const value = target.closest<HTMLElement>("[data-value]")?.dataset.value as Difficulty | undefined;
       if (value) settings.difficulty = value;
@@ -626,32 +737,41 @@ function showSettings(): void {
   });
 }
 
+function armoryCardHtml(c: Cosmetic): string {
+  const owned = progression.isUnlocked(c.id);
+  const active = progression.isEquipped(c.id);
+  const preview =
+    c.kind === "accent"
+      ? `<div class="armory-swatch" style="--swatch:#${(c.accent ?? 0).toString(16).padStart(6, "0")}"></div>`
+      : c.kind === "emblem"
+        ? `<div class="armory-glyph">${c.emblem || "—"}</div>`
+        : `<div class="armory-glyph armory-glyph--title">“${escapeHtml(c.title ?? "")}”</div>`;
+  return `<div class="armory-card ${active ? "active" : ""}">
+    ${preview}
+    <strong>${escapeHtml(c.name)}</strong>
+    <span>${escapeHtml(c.desc)}</span>
+    ${owned
+      ? `<button class="menu-chip ${active ? "on" : ""}" data-equip="${c.id}" type="button">${active ? "Equipped" : "Equip"}</button>`
+      : `<button class="menu-chip ${progression.points >= c.cost ? "" : "locked"}" data-unlock="${c.id}" type="button">Unlock · ${c.cost}</button>`}
+  </div>`;
+}
+
 function showArmory(): void {
   closeAllMenus();
-  const cards = COSMETICS.map((c) => {
-    const owned = progression.isUnlocked(c.id);
-    const active = progression.accentId === c.id;
-    const hex = `#${c.accent.toString(16).padStart(6, "0")}`;
-    return `<div class="armory-card ${active ? "active" : ""}">
-      <div class="armory-swatch" style="--swatch:${hex}"></div>
-      <strong>${c.name}</strong>
-      <span>${c.desc}</span>
-      ${owned
-        ? `<button class="menu-chip ${active ? "on" : ""}" data-equip="${c.id}" type="button">${active ? "Equipped" : "Equip"}</button>`
-        : `<button class="menu-chip ${progression.points >= c.cost ? "" : "locked"}" data-unlock="${c.id}" type="button">Unlock · ${c.cost}</button>`}
-    </div>`;
+  const sections = COSMETIC_CATEGORIES.map((cat) => {
+    const cards = COSMETICS.filter((c) => c.kind === cat.kind).map(armoryCardHtml).join("");
+    return `<div class="armory-category-title">${cat.label}</div><div class="armory-grid">${cards}</div>`;
   }).join("");
   const screen = mountScreen(
     `
-    <div class="menu-bg"><span></span><span></span><span></span></div>
-    <div class="title-screen__content menu-content overlay-card">
+    <div class="title-screen__content menu-content overlay-card armory-screen">
       <div class="menu-head">
         <button class="menu-back" data-overlay-close data-back type="button">&lsaquo; Back</button>
         <h2 class="menu-heading">Armory</h2>
         ${pointsBadge()}
       </div>
-      <p class="settings-note">Spend points earned in battle to unlock cosmetic accents for your units, then equip one.</p>
-      <div class="armory-grid">${cards}</div>
+      <p class="settings-note">Earn points in battle to unlock unit accents, commander titles, and emblems — then equip your loadout.</p>
+      ${sections}
     </div>
   `,
     "menu-screen",
@@ -665,7 +785,7 @@ function showArmory(): void {
     const unlock = target.closest<HTMLElement>("[data-unlock]")?.dataset.unlock;
     if (unlock) {
       if (progression.unlock(unlock)) {
-        progression.setAccent(unlock);
+        progression.setEquipped(unlock);
         world.setPlayerAccent(progression.accentColor());
       }
       showArmory();
@@ -673,9 +793,153 @@ function showArmory(): void {
     }
     const equip = target.closest<HTMLElement>("[data-equip]")?.dataset.equip;
     if (equip) {
-      progression.setAccent(equip);
+      progression.setEquipped(equip);
       world.setPlayerAccent(progression.accentColor());
       showArmory();
+    }
+  });
+}
+
+// ---- Campaign ----
+function showCampaign(): void {
+  closeAllMenus();
+  const missions = campaign.missions();
+  const completedCount = missions.filter((m) => campaign.isCompleted(m.id)).length;
+  const cards = missions
+    .map((m, i) => {
+      const done = campaign.isCompleted(m.id);
+      const unlocked = campaign.isUnlocked(i);
+      const status = done ? "completed" : unlocked ? "available" : "locked";
+      const label = done ? "✓ Cleared" : unlocked ? "Briefing ›" : "Locked";
+      return `<button class="campaign-card ${status}" data-mission="${m.id}" ${unlocked ? "" : "disabled"} type="button">
+        <span class="campaign-card__no">${String(i + 1).padStart(2, "0")}</span>
+        <span class="campaign-card__body">
+          <strong>${escapeHtml(m.name)}</strong>
+          <span class="campaign-card__region">${escapeHtml(m.region)} · ${escapeHtml(modeDef(m.mode).name)} · ${escapeHtml(difficultyLabel(m.difficulty))}</span>
+        </span>
+        <span class="campaign-card__status">${label}</span>
+      </button>`;
+    })
+    .join("");
+  const screen = mountScreen(
+    `
+    <div class="title-screen__content menu-content overlay-card campaign-screen">
+      <div class="menu-head">
+        <button class="menu-back" data-overlay-close data-back type="button">&lsaquo; Back</button>
+        <h2 class="menu-heading">${escapeHtml(CAMPAIGN_TITLE)}</h2>
+        ${pointsBadge()}
+      </div>
+      <p class="settings-note campaign-synopsis">${escapeHtml(CAMPAIGN_SYNOPSIS)}</p>
+      <div class="campaign-progress">Progress · ${completedCount} / ${missions.length}${campaign.isAllComplete() ? " — Campaign complete ★" : ""}</div>
+      <div class="campaign-list">${cards}</div>
+    </div>
+  `,
+    "menu-screen",
+  );
+  screen.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("[data-back]")) {
+      showMainMenu();
+      return;
+    }
+    const id = target.closest<HTMLElement>("[data-mission]")?.dataset.mission;
+    if (!id) return;
+    const mission = campaign.mission(id);
+    if (mission && campaign.isUnlocked(missions.indexOf(mission))) showBriefing(mission);
+  });
+}
+
+function showBriefing(mission: CampaignMission): void {
+  closeAllMenus();
+  const map = mapDef(mission.map);
+  const paras = mission.briefing.map((p) => `<p>${escapeHtml(p)}</p>`).join("");
+  const screen = mountScreen(
+    `
+    <div class="title-screen__content menu-content overlay-card briefing-screen">
+      <div class="menu-head">
+        <button class="menu-back" data-back type="button">&lsaquo; Missions</button>
+        <h2 class="menu-heading">${escapeHtml(mission.name)}</h2>
+      </div>
+      <div class="briefing-layout">
+        <div class="briefing-text">
+          <div class="briefing-meta">${escapeHtml(mission.region)} · ${escapeHtml(modeDef(mission.mode).name)} · ${escapeHtml(difficultyLabel(mission.difficulty))}</div>
+          ${paras}
+          <div class="briefing-objective"><span>Objective</span> ${escapeHtml(mission.objective)}</div>
+        </div>
+        <div class="briefing-map">${mapPreviewSvg(map)}</div>
+      </div>
+      <button class="title-start" data-deploy type="button">Deploy to Battle</button>
+    </div>
+  `,
+    "menu-screen",
+  );
+  screen.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("[data-back]")) {
+      showCampaign();
+      return;
+    }
+    if (target.closest("[data-deploy]")) {
+      screen.classList.add("is-leaving");
+      deployWithLoadingScreen(mission.map, mission.mode, mission.difficulty, mission);
+    }
+  });
+}
+
+function showCampaignVictory(mission: CampaignMission, reward: number): void {
+  const next = campaign.nextMission(mission.id);
+  const complete = campaign.isAllComplete();
+  const screen = mountScreen(
+    `
+    <div class="overlay-card campaign-end victory">
+      <div class="campaign-end__kicker">${complete ? "Campaign Complete ★" : "Mission Complete"}</div>
+      <h2 class="menu-heading">${escapeHtml(mission.name)}</h2>
+      <p class="campaign-end__story">${escapeHtml(mission.victory)}</p>
+      <div class="campaign-end__reward">+${reward} points</div>
+      <div class="pause-buttons">
+        ${!complete && next ? `<button class="title-start" data-next type="button">Next · ${escapeHtml(next.name)}</button>` : ""}
+        <button class="menu-action" data-menu-btn type="button">${complete ? "Return to Menu" : "Mission Select"}</button>
+      </div>
+    </div>
+  `,
+    "pause-overlay campaign-overlay",
+  );
+  screen.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("[data-next]") && next) {
+      screen.remove();
+      showBriefing(next);
+    } else if (target.closest("[data-menu-btn]")) {
+      screen.remove();
+      if (complete) showMainMenu();
+      else showCampaign();
+    }
+  });
+}
+
+function showCampaignDefeat(mission: CampaignMission): void {
+  const screen = mountScreen(
+    `
+    <div class="overlay-card campaign-end defeat">
+      <div class="campaign-end__kicker">Mission Failed</div>
+      <h2 class="menu-heading">${escapeHtml(mission.name)}</h2>
+      <p class="campaign-end__story">The Vanguard is thrown back — but not broken. Regroup and try again, Commander.</p>
+      <div class="pause-buttons">
+        <button class="title-start" data-retry type="button">Retry Mission</button>
+        <button class="menu-action" data-menu-btn type="button">Mission Select</button>
+      </div>
+    </div>
+  `,
+    "pause-overlay campaign-overlay",
+  );
+  screen.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("[data-retry]")) {
+      screen.remove();
+      deployWithLoadingScreen(mission.map, mission.mode, mission.difficulty, mission);
+    } else if (target.closest("[data-menu-btn]")) {
+      screen.remove();
+      showCampaign();
     }
   });
 }
@@ -764,7 +1028,7 @@ function showControls(): void {
 function openEditOverlay(id: string): void {
   const entity = sim.entity(id);
   if (!entity) return;
-  const accents = COSMETICS.filter((c) => progression.isUnlocked(c.id));
+  const accents = COSMETICS.filter((c): c is Cosmetic & { accent: number } => c.kind === "accent" && c.accent !== undefined && progression.isUnlocked(c.id));
   const screen = mountScreen(
     `
     <div class="overlay-card edit-card">
@@ -830,11 +1094,14 @@ function loadSavedBattle(): void {
   }
   if (sim.restore(raw)) {
     tutorialActive = false;
+    // If the saved battle was a campaign mission, resume that context so victory still advances.
+    activeCampaignMission = campaign.activeMissionId ? campaign.mission(campaign.activeMissionId) : undefined;
     closeAllMenus();
     world.applyMap(sim.mapDef.theme);
     world.setPlayerAccent(progression.accentColor());
     focusOnPlayerBase();
     lastEndPhase = undefined;
+    inBattle = true;
     hud.update();
   }
 }
@@ -945,6 +1212,37 @@ function showToast(text: string): void {
   }, 2600);
 }
 
+// First-time onboarding hints beyond the 7-step tutorial — each fires once ever (persisted to
+// localStorage) and never during the tutorial itself. Reuses the existing toast surface.
+const HINTS_KEY = "rht.hints.v1";
+const seenHints = ((): Set<string> => {
+  try {
+    const raw = safeStorageGet(HINTS_KEY);
+    return new Set<string>(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set<string>();
+  }
+})();
+function hintOnce(id: string, text: string): void {
+  if (tutorialActive || seenHints.has(id)) return;
+  seenHints.add(id);
+  safeStorageSet(HINTS_KEY, JSON.stringify([...seenHints]));
+  showToast(text);
+}
+
+// Contextual, state-triggered tooltips checked each command-phase frame (cheap; bails once both
+// have fired). These cover the gap the tutorial leaves: what to do once units are on the field.
+function updateOnboardingHints(): void {
+  if (!inBattle || tutorialActive || sim.phase !== "command") return;
+  if (seenHints.has("controls") && seenHints.has("cover")) return;
+  if (sim.fieldUnitCount("player") > 0) hintOnce("controls", "Your troops are deployed — select one, then press M to move or F to fire.");
+  const selected = sim.entity(sim.selectedId);
+  if (selected && selected.team === "player" && isInfantryKind(selected.kind) && !sim.defending.has(selected.id)) {
+    const nearCover = sim.entities.some((e) => e.kind === "cover" && e.status.alive && e.height >= 1 && dist(e.position, selected.position) <= 3.6);
+    if (nearCover) hintOnce("cover", "You're beside cover — move onto it or press C to crouch and cut incoming fire.");
+  }
+}
+
 if (settings.reducedMotion) document.body.classList.add("reduced-motion");
 showMainMenu();
 
@@ -976,6 +1274,7 @@ function frame(now: number): void {
   syncCameraAssist();
   const aimPoint = groundAimHover();
   world.update(sim, hud.focusedTargetId ?? hud.hoveredTargetId, hud.focusedPartId, stage.camera, aimPoint);
+  updateOnboardingHints();
   const hudLogHead = sim.log[0] ?? "";
   const idleThrottleMs = sim.phase === "resolve" ? 120 : 90;
   const shouldUpdateHud = sim.phase !== lastHudPhase || hudLogHead !== lastHudLogHead || now - lastHudUpdateAt > idleThrottleMs;
@@ -1018,8 +1317,16 @@ function playBattleAudio(): void {
     if (effect.type === "blast") sfx.explosion();
     else if (effect.type === "impact") sfx.impact();
   }
-  if (seenProjectileIds.size > 500) seenProjectileIds.clear();
-  if (seenEffectIds.size > 800) seenEffectIds.clear();
+  // Keep the seen-sets bounded by dropping ids no longer in play. A blind clear() would let a
+  // projectile/effect that is still alive be re-seen next frame and replay its sound.
+  if (seenProjectileIds.size > 500) {
+    const live = new Set(sim.projectiles.map((p) => p.id));
+    for (const id of seenProjectileIds) if (!live.has(id)) seenProjectileIds.delete(id);
+  }
+  if (seenEffectIds.size > 800) {
+    const live = new Set(sim.effects.map((e) => e.id));
+    for (const id of seenEffectIds) if (!live.has(id)) seenEffectIds.delete(id);
+  }
 }
 
 function handleEndState(): void {
@@ -1032,6 +1339,21 @@ function handleEndState(): void {
   const victory = sim.phase === "victory";
   if (victory) sfx.victory();
   else sfx.defeat();
+  // Campaign battles advance the story ladder and show their own end overlay.
+  const mission = activeCampaignMission;
+  if (mission) {
+    if (victory) {
+      const firstClear = !campaign.isCompleted(mission.id);
+      const reward = (firstClear ? mission.reward : Math.round(mission.reward * 0.25)) + battleReward(true, sim.difficulty, sim.turn);
+      campaign.markComplete(mission.id); // records progress + clears the active-mission save tag
+      activeCampaignMission = undefined;
+      progression.award(reward);
+      showCampaignVictory(mission, reward);
+    } else {
+      showCampaignDefeat(mission); // keep the mission active so Retry re-runs it
+    }
+    return;
+  }
   if (!tutorialActive) {
     const reward = battleReward(victory, sim.difficulty, sim.turn);
     progression.award(reward);
@@ -1080,6 +1402,11 @@ declare global {
       describeScene(): SceneDescription;
       sceneGraph(): { total: number; topLevel: number };
       setDebugOverlay(on: boolean): boolean;
+      // Dynamic map events: read current weather/zone state; force one for screenshots/tests.
+      environment(): { sandstorm: number; ionstorm: number; notice?: string; zones: Array<{ kind: string; x: number; z: number; radius: number }> };
+      forceEvent(kind: "sandstorm" | "barrage" | "collapse" | "ionstorm"): void;
+      startCampaign(id: string): void;
+      save(): boolean;
     };
   }
 }
@@ -1136,7 +1463,16 @@ window.__rht = {
   describeScene: () => buildSceneDescription(),
   sceneGraph: () => ({ total: countSceneObjects(), topLevel: stage.scene.children.length }),
   setDebugOverlay: (on) => { debugOverlay.setEnabled(on); return debugOverlay.isEnabled(); },
+  environment: () => sim.environment(),
+  forceEvent: (kind) => sim.debugForceEvent(kind),
+  startCampaign: (id) => { const m = campaign.mission(id); if (m) startCampaignMission(m); },
+  save: () => saveBattle(),
 };
+
+// Text-content escaping reuses the attribute escaper (it already neutralizes < > & " ').
+function escapeHtml(value: string): string {
+  return escapeAttr(value);
+}
 
 function escapeAttr(value: string): string {
   return value

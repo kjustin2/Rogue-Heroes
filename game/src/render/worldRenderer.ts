@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec2 } from "../core/math";
 import { isDefenseKind, isInfantryKind, isVehicleKind, type CombatEntity, type DamagePart, type PartRole } from "../game/damageModel";
 import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
-import { MAPS, type MapTheme } from "../game/maps";
+import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec } from "../game/maps";
 import { ARENA_BOUNDS, arenaDepth, arenaWidth, terrainBlocks, terrainHeightAt } from "../game/terrain";
 
 type PartMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
@@ -31,6 +31,25 @@ export class WorldRenderer {
   private readonly auraRoot = new THREE.Group();
   private readonly sceneryRoot = new THREE.Group();
   private readonly debrisRoot = new THREE.Group();
+  // Resolve-phase juice: floating damage numbers and a brief white flash on a freshly-hit part.
+  private readonly damageNumberRoot = new THREE.Group();
+  private readonly floatingNumbers: { sprite: THREE.Sprite; bornMs: number; origin: Vec2; baseHeight: number; aspect: number }[] = [];
+  private readonly flashByPart = new Map<string, number>();
+  private lastDamageSeq = 0;
+  // Dynamic map events: danger-zone rings + an eased sandstorm fog/haze blend.
+  private readonly environmentRoot = new THREE.Group();
+  private baseFogColor = 0xd9b27a;
+  private baseFogDensity = 0.012;
+  private baseSkyColor = 0xe8c98f;
+  private sandstormBlend = 0;
+  private ionBlend = 0;
+  private readonly envScratch = new THREE.Color();
+  private readonly envSand = new THREE.Color(0xcaa46a);
+  private readonly envIon = new THREE.Color(0x5aa0ff);
+  // Per-map ambient particle bed (dust/embers/pollen/snow/ash) that drifts to give the map life.
+  private ambientPoints: THREE.Points | null = null;
+  private ambientVel: Float32Array | null = null;
+  private ambientClock = 0;
   private readonly groups = new Map<string, THREE.Group>();
   private readonly unitMarkers = new Map<string, THREE.Group>();
   private readonly destroyedPartKeys = new Set<string>();
@@ -54,7 +73,7 @@ export class WorldRenderer {
   private debug: WorldRenderDebug = emptyDebug();
 
   constructor(private readonly scene: THREE.Scene) {
-    this.scene.add(this.sceneryRoot, this.debrisRoot, this.entityRoot, this.markerRoot, this.orderRoot, this.previewRoot, this.projectileRoot, this.effectRoot, this.objectiveRoot, this.groundAimRoot, this.auraRoot);
+    this.scene.add(this.sceneryRoot, this.debrisRoot, this.entityRoot, this.markerRoot, this.orderRoot, this.previewRoot, this.projectileRoot, this.effectRoot, this.objectiveRoot, this.groundAimRoot, this.auraRoot, this.damageNumberRoot, this.environmentRoot);
     this.applyMap(MAPS[0].theme);
     this.prewarmActionAssets();
 
@@ -176,7 +195,137 @@ export class WorldRenderer {
     }
     this.syncProjectiles(sim.projectiles);
     this.syncEffects(sim.effects);
+    this.syncDamageNumbers(sim);
+    this.syncEnvironment(sim);
+    this.syncAmbient();
     this.syncObjectives(sim);
+  }
+
+  // Dynamic map events: ease the sandstorm haze (fog + sky tint) and draw pulsing danger rings
+  // over barrage/collapse zones so the player can read — and clear — the threatened ground.
+  private syncEnvironment(sim: TacticalSim): void {
+    this.disposeAndClear(this.environmentRoot);
+    const env = sim.environment();
+    this.sandstormBlend += (env.sandstorm - this.sandstormBlend) * 0.06;
+    const fog = this.scene.fog as THREE.FogExp2 | null;
+    if (fog && "density" in fog) {
+      // A readable dusty haze, not a brown-out: keep units visible while the field clearly hazes.
+      fog.color.copy(this.envScratch.setHex(this.baseFogColor)).lerp(this.envSand, this.sandstormBlend * 0.7);
+      fog.density = this.baseFogDensity * (1 + this.sandstormBlend * 1.6);
+    }
+    if (this.scene.background instanceof THREE.Color) {
+      this.scene.background.copy(this.envScratch.setHex(this.baseSkyColor)).lerp(this.envSand, this.sandstormBlend * 0.45);
+    }
+    // Ion storm: an electric-blue cast that flickers, plus a few crackling arcs over the field.
+    this.ionBlend += ((env.ionstorm ? 1 : 0) - this.ionBlend) * 0.08;
+    if (this.ionBlend > 0.01) {
+      const flicker = 1 + Math.sin(performance.now() * 0.021) * 0.18 * this.ionBlend;
+      if (fog && "density" in fog) {
+        fog.color.lerp(this.envIon, this.ionBlend * 0.55);
+        fog.density *= flicker;
+      }
+      if (this.scene.background instanceof THREE.Color) this.scene.background.lerp(this.envIon, this.ionBlend * 0.4);
+      if (this.ionBlend > 0.3) {
+        const halfW = arenaWidth() * 0.36;
+        const halfD = arenaDepth() * 0.36;
+        for (let k = 0; k < 3; k += 1) {
+          const t = performance.now() * 0.004 + k * 2.3;
+          const x = Math.sin(t * 1.7) * halfW;
+          const z = Math.cos(t * 1.1) * halfD;
+          const h = 3.2 + Math.sin(t * 6) * 1.6;
+          const geo = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(x, 0, z),
+            new THREE.Vector3(x + Math.sin(t * 11) * 0.5, h, z + Math.cos(t * 9) * 0.5),
+          ]);
+          const arc = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x9ad0ff, transparent: true, opacity: (0.4 + 0.5 * Math.abs(Math.sin(t * 7))) * this.ionBlend }));
+          this.environmentRoot.add(arc);
+        }
+      }
+    }
+    const pulse = (Math.sin(performance.now() * 0.006) + 1) * 0.5;
+    for (const zone of env.zones) {
+      const color = zone.kind === "barrage" ? 0xff5a3c : 0xffb24a;
+      const y = terrainHeightAt(zone) + 0.07;
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(zone.radius - 0.4, zone.radius, 72),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4 + pulse * 0.42, side: THREE.DoubleSide, depthWrite: false }),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(zone.x, y, zone.z);
+      this.environmentRoot.add(ring);
+      const disc = new THREE.Mesh(
+        new THREE.CircleGeometry(zone.radius, 56),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.06 + pulse * 0.05, side: THREE.DoubleSide, depthWrite: false }),
+      );
+      disc.rotation.x = -Math.PI / 2;
+      disc.position.set(zone.x, y, zone.z);
+      this.environmentRoot.add(disc);
+    }
+  }
+
+  // Floating damage numbers that pop off a unit when it's hit during resolve, plus recording
+  // the per-part hit so paintPart can flash it white. Reads the live turn report (resolve only);
+  // already-spawned numbers keep rising/fading on their own into the next command phase.
+  private syncDamageNumbers(sim: TacticalSim): void {
+    const now = performance.now();
+    const report = sim.currentTurnReport;
+    if (report && report.entries.length) {
+      const maxSeq = report.entries.reduce((m, e) => Math.max(m, damageSeqOf(e.id)), 0);
+      if (maxSeq < this.lastDamageSeq) this.lastDamageSeq = 0; // a new battle reset the counter
+      for (const entry of report.entries) {
+        if (damageSeqOf(entry.id) <= this.lastDamageSeq) continue;
+        this.spawnDamageNumber(sim, entry, now);
+      }
+      this.lastDamageSeq = Math.max(this.lastDamageSeq, maxSeq);
+    }
+    for (let i = this.floatingNumbers.length - 1; i >= 0; i -= 1) {
+      const fn = this.floatingNumbers[i];
+      const t = (now - fn.bornMs) / DAMAGE_NUMBER_MS;
+      if (t >= 1) {
+        (fn.sprite.material as THREE.SpriteMaterial).dispose();
+        this.damageNumberRoot.remove(fn.sprite);
+        this.floatingNumbers.splice(i, 1);
+        continue;
+      }
+      const pop = 0.62 + Math.min(1, t * 6) * 0.3; // quick punch in, then hold
+      fn.sprite.scale.set(fn.aspect * pop, pop, 1);
+      fn.sprite.position.set(fn.origin.x, fn.baseHeight + 0.5 + t * 1.5, fn.origin.z);
+      (fn.sprite.material as THREE.SpriteMaterial).opacity = clamp01(1.1 - t) * 0.96;
+    }
+  }
+
+  private spawnDamageNumber(sim: TacticalSim, entry: { targetId: string; partId: string; targetTeam: CombatEntity["team"]; amount: number; killed: boolean; destroyed: boolean }, now: number): void {
+    const target = sim.entity(entry.targetId);
+    if (!target) return;
+    this.flashByPart.set(`${entry.targetId}:${entry.partId}`, now);
+    // Cap concurrent numbers so a 40-unit splash melee can't spike draw calls — recycle the
+    // oldest (the flash still records for every hit; you can't read 200 numbers anyway).
+    while (this.floatingNumbers.length >= MAX_FLOATING_NUMBERS) {
+      const oldest = this.floatingNumbers.shift();
+      if (oldest) {
+        (oldest.sprite.material as THREE.SpriteMaterial).dispose();
+        this.damageNumberRoot.remove(oldest.sprite);
+      }
+    }
+    // Red when our own units take damage (alarm), gold when we're dealing it to the enemy.
+    const color = entry.targetTeam === "player" ? 0xff6b7a : entry.targetTeam === "enemy" ? 0xffd166 : 0xffbf69;
+    const text = entry.destroyed ? "WRECKED" : entry.killed ? `${entry.amount}!` : `${entry.amount}`;
+    const record = floatingNumberTexture(text, color);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: record.texture, transparent: true, opacity: 0.96, depthWrite: false, depthTest: false }));
+    const baseHeight = target.elevation + target.height * 0.6;
+    sprite.scale.set(record.aspect * 0.62, 0.62, 1);
+    sprite.position.set(target.position.x, baseHeight + 0.5, target.position.z);
+    this.damageNumberRoot.add(sprite);
+    this.floatingNumbers.push({ sprite, bornMs: now, origin: { ...target.position }, baseHeight, aspect: record.aspect });
+    this.debug.floatingLabels += 1;
+  }
+
+  // Flash strength [0..1] for a part hit in the last DAMAGE_FLASH_MS, decaying to 0.
+  private partFlash(entityId: string, partId: string): number {
+    const at = this.flashByPart.get(`${entityId}:${partId}`);
+    if (at === undefined) return 0;
+    const t = (performance.now() - at) / DAMAGE_FLASH_MS;
+    return t >= 1 ? 0 : 1 - t;
   }
 
   // Dispose then detach every child of a per-frame / per-swap root, freeing GPU geometry
@@ -249,14 +398,81 @@ export class WorldRenderer {
 
   // Re-theme the whole scene for a map: fog, sky, ground, terrain, grid, and lights.
   applyMap(theme: MapTheme): void {
+    this.baseFogColor = theme.fog;
+    this.baseFogDensity = theme.fogDensity;
+    this.baseSkyColor = theme.sky;
+    this.sandstormBlend = 0;
     this.scene.fog = new THREE.FogExp2(theme.fog, theme.fogDensity);
     this.scene.background = new THREE.Color(theme.sky);
     // A desaturated blend of the map's ground tones — what structural props get nudged toward.
     this.propTint = new THREE.Color(theme.ground).lerp(new THREE.Color(theme.groundAccent), 0.55);
     this.rebuildArena(theme);
+    this.buildAmbient(theme.ambient);
+  }
+
+  // (Re)build the drifting ambient particle bed for the active map.
+  private buildAmbient(spec?: AmbientSpec): void {
+    if (this.ambientPoints) {
+      this.scene.remove(this.ambientPoints);
+      this.ambientPoints.geometry.dispose();
+      (this.ambientPoints.material as THREE.Material).dispose();
+      this.ambientPoints = null;
+      this.ambientVel = null;
+    }
+    if (!spec) return;
+    const count = Math.max(40, Math.round((spec.density ?? 1) * 170));
+    const positions = new Float32Array(count * 3);
+    const vel = new Float32Array(count * 3);
+    const m = ambientMotion(spec.kind);
+    const w = arenaWidth();
+    const d = arenaDepth();
+    for (let i = 0; i < count; i += 1) {
+      positions[i * 3] = ARENA_BOUNDS.minX + Math.random() * w;
+      positions[i * 3 + 1] = Math.random() * AMBIENT_CEIL;
+      positions[i * 3 + 2] = ARENA_BOUNDS.minZ + Math.random() * d;
+      vel[i * 3] = m.windX * (0.4 + Math.random());
+      vel[i * 3 + 1] = m.vy * (0.6 + Math.random() * 0.8);
+      vel[i * 3 + 2] = m.windZ * (0.4 + Math.random());
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    const material = new THREE.PointsMaterial({ color: spec.color, size: m.size, transparent: true, opacity: m.opacity, depthWrite: false, sizeAttenuation: true });
+    this.ambientPoints = new THREE.Points(geometry, material);
+    this.ambientPoints.frustumCulled = false;
+    this.ambientVel = vel;
+    this.scene.add(this.ambientPoints);
+  }
+
+  // Drift the ambient particles each frame, wrapping them within the arena bounds.
+  private syncAmbient(): void {
+    if (!this.ambientPoints || !this.ambientVel) return;
+    const now = performance.now();
+    let dt = (now - this.ambientClock) / 1000;
+    this.ambientClock = now;
+    if (dt <= 0 || dt > 0.1) dt = 0.016; // first frame / tab-switch guard
+    const attr = this.ambientPoints.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const arr = attr.array as Float32Array;
+    const { minX, maxX, minZ, maxZ } = ARENA_BOUNDS;
+    for (let i = 0; i < arr.length; i += 3) {
+      arr[i] += this.ambientVel[i] * dt;
+      arr[i + 1] += this.ambientVel[i + 1] * dt;
+      arr[i + 2] += this.ambientVel[i + 2] * dt;
+      if (arr[i] > maxX) arr[i] = minX; else if (arr[i] < minX) arr[i] = maxX;
+      if (arr[i + 2] > maxZ) arr[i + 2] = minZ; else if (arr[i + 2] < minZ) arr[i + 2] = maxZ;
+      if (arr[i + 1] > AMBIENT_CEIL) arr[i + 1] = 0; else if (arr[i + 1] < 0) arr[i + 1] = AMBIENT_CEIL;
+    }
+    attr.needsUpdate = true;
   }
 
   private rebuildArena(theme: MapTheme): void {
+    // Arena materials (floor/rails/panels/patches/grid/terrain blocks) are freshly built on
+    // every map swap and never shared with the pooled caches, so dispose them too — the generic
+    // disposeAndClear frees geometry only, which would leak a full set of materials per battle.
+    this.sceneryRoot.traverse((node) => {
+      const mat = (node as Partial<THREE.Mesh>).material;
+      const list = mat ? (Array.isArray(mat) ? mat : [mat]) : [];
+      for (const m of list) if (m && !m.userData?.shared) m.dispose();
+    });
     this.disposeAndClear(this.sceneryRoot);
     const width = arenaWidth();
     const depth = arenaDepth();
@@ -1092,11 +1308,16 @@ export class WorldRenderer {
     const base = accent ? (mesh.userData.baseColor as number) : roleColor(entity, part.role, mesh.userData.baseColor as number);
     const ratio = clamp01(part.hp / part.maxHp);
     const injury = 1 - ratio;
-    const color = new THREE.Color(base).lerp(new THREE.Color(0x33120f), injury * 0.55);
-    if (ratio < 0.42 && part.hp > 0) color.lerp(new THREE.Color(0xff5f35), 0.16 + injury * 0.18);
-    if (!entity.status.alive) color.lerp(new THREE.Color(0x08090a), 0.55);
-    if (selected && part.hp > 0) color.lerp(new THREE.Color(0xffffff), 0.24);
-    if (targeted && part.hp > 0) color.lerp(new THREE.Color(0xffd166), targetedPart ? 0.58 : 0.3);
+    // Reuse module-scope scratch Colors: paintPart runs for every part mesh of every entity
+    // every frame, so `new THREE.Color()` here was allocating hundreds of objects per frame.
+    const color = _paintColor.set(base).lerp(_paintTmp.set(0x33120f), injury * 0.55);
+    if (ratio < 0.42 && part.hp > 0) color.lerp(_paintTmp.set(0xff5f35), 0.16 + injury * 0.18);
+    if (!entity.status.alive) color.lerp(_paintTmp.set(0x08090a), 0.55);
+    if (selected && part.hp > 0) color.lerp(_paintTmp.set(0xffffff), 0.24);
+    if (targeted && part.hp > 0) color.lerp(_paintTmp.set(0xffd166), targetedPart ? 0.58 : 0.3);
+    // Hit flash: a freshly-damaged part snaps white for a beat, so the eye catches what got hit.
+    const flash = part.hp > 0 ? this.partFlash(entity.id, part.id) : 0;
+    if (flash > 0) color.lerp(_paintTmp.set(0xffffff), flash * 0.7);
     material.color.copy(color);
     const baseEmissive = mesh.userData.baseEmissive as number;
     const unitGlow = entity.kind !== "cover" && entity.team !== "neutral";
@@ -1126,6 +1347,10 @@ export class WorldRenderer {
     }
     if (entity.kind === "tank" && part.role === "mobility" && mesh.geometry.type === "CylinderGeometry" && mesh.parent?.userData.moving) {
       mesh.rotation.y += ((mesh.parent.userData.motionTime as number | undefined) ?? 0) * 2.2;
+    }
+    if (flash > 0) {
+      material.emissive.setHex(0xffffff);
+      material.emissiveIntensity = Math.max(material.emissiveIntensity, 0.5 + flash * 0.6);
     }
   }
 
@@ -1500,6 +1725,68 @@ function makeSplashDisc(position: Vec2, color: number, radius: number): THREE.Gr
   ring.position.set(position.x, y + 0.012, position.z);
   group.add(fill, ring);
   return group;
+}
+
+// How long a floating damage number lives, how long a hit-flash on a part lasts (ms), and the
+// cap on concurrent floating numbers (bounds worst-case draw calls in a huge melee).
+const DAMAGE_NUMBER_MS = 950;
+const DAMAGE_FLASH_MS = 320;
+const MAX_FLOATING_NUMBERS = 24;
+
+// Ceiling height (world units) the ambient particle bed drifts within.
+const AMBIENT_CEIL = 7;
+
+// Per-kind drift + look for the ambient particle bed. windX/windZ = lateral drift, vy = vertical
+// (positive rises like embers, negative falls like snow), plus point size and opacity.
+function ambientMotion(kind: AmbientKind): { windX: number; windZ: number; vy: number; size: number; opacity: number } {
+  switch (kind) {
+    case "embers": return { windX: 0.25, windZ: 0.12, vy: 0.55, size: 0.12, opacity: 0.85 };
+    case "snow": return { windX: 0.22, windZ: 0.1, vy: -0.5, size: 0.17, opacity: 0.72 };
+    case "ash": return { windX: 0.3, windZ: 0.12, vy: -0.22, size: 0.13, opacity: 0.5 };
+    case "pollen": return { windX: 0.3, windZ: 0.28, vy: 0.04, size: 0.1, opacity: 0.5 };
+    default: return { windX: 0.8, windZ: 0.22, vy: 0.08, size: 0.14, opacity: 0.5 }; // dust
+  }
+}
+
+// Parse the trailing integer out of a "damage-N" report id.
+function damageSeqOf(id: string): number {
+  const n = Number(id.slice(id.lastIndexOf("-") + 1));
+  return Number.isFinite(n) ? n : 0;
+}
+
+// Outlined, box-less number sprite for floating combat damage (cached by text+color).
+function floatingNumberTexture(text: string, color: number): { texture: THREE.CanvasTexture; aspect: number } {
+  const key = `dmg|${text}|${color.toString(16)}`;
+  const cached = floatingNumberTextures.get(key);
+  if (cached) return cached;
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) {
+    const texture = new THREE.CanvasTexture(canvas);
+    const fallback = { texture, aspect: 1 };
+    floatingNumberTextures.set(key, fallback);
+    return fallback;
+  }
+  const font = "900 52px Arial, sans-serif";
+  context.font = font;
+  const textWidth = Math.ceil(context.measureText(text).width);
+  canvas.width = Math.max(64, textWidth + 28);
+  canvas.height = 72;
+  context.font = font;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  const fg = new THREE.Color(color);
+  context.lineWidth = 8;
+  context.strokeStyle = "rgba(6, 8, 10, 0.92)";
+  context.lineJoin = "round";
+  context.strokeText(text, canvas.width / 2, canvas.height / 2);
+  context.fillStyle = `rgb(${Math.round(fg.r * 255)}, ${Math.round(fg.g * 255)}, ${Math.round(fg.b * 255)})`;
+  context.fillText(text, canvas.width / 2, canvas.height / 2);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const record = { texture, aspect: canvas.width / canvas.height };
+  floatingNumberTextures.set(key, record);
+  return record;
 }
 
 function makeLabelSprite(text: string, color: number, size = 0.58, background = 0x101516, opacity = 0.94): THREE.Sprite {
@@ -1990,12 +2277,17 @@ export function disposeSubtree(obj: THREE.Object3D): void {
   });
 }
 
+// Scratch colors reused by paintPart's per-frame, per-mesh hot path (avoids allocating).
+const _paintColor = new THREE.Color();
+const _paintTmp = new THREE.Color();
+
 const tubeGeometries = new Map<string, THREE.CylinderGeometry>();
 const endpointGeometries = new Map<string, THREE.RingGeometry>();
 const projectileShadowGeometries = new Map<string, THREE.CircleGeometry>();
 const materials = new Map<string, THREE.Material>();
 const projectileGeometries = new Map<string, THREE.BufferGeometry>();
 const labelTextures = new Map<string, { texture: THREE.CanvasTexture; aspect: number }>();
+const floatingNumberTextures = new Map<string, { texture: THREE.CanvasTexture; aspect: number }>();
 
 function tubeGeometry(radius: number): THREE.CylinderGeometry {
   const key = radius.toFixed(3);

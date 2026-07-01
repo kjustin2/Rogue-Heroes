@@ -51,9 +51,9 @@ import {
 import { createScenario } from "./scenario";
 import { DEFAULT_TERRAIN, TERRAIN_STEP, clampToArena, setActiveTerrain, terrainHeightAt } from "./terrain";
 import { TROOP_CATALOG, troopSpec, defenseSpec, type TroopKind, type DefenseKind } from "./units";
-import { TECH_TREE, techNode, type TechNode } from "./tech";
+import { TECH_TREE, techNode, aggregateTechEffect, type TechNode, type TechEffect } from "./tech";
 import { modeDef, type ModeId } from "./modes";
-import { MAPS, mapDef, flagPositions, type MapDef } from "./maps";
+import { MAPS, mapDef, mapCenter, flagPositions, type MapDef, type MapEventConfig, type MapEventKind } from "./maps";
 
 export { TROOP_CATALOG, troopSpec, DEFENSE_CATALOG, defenseSpec, type TroopKind, type TroopSpec, type DefenseKind, type DefenseSpec } from "./units";
 export { TECH_TREE, techNode, troopsUnlockedBy, type TechNode } from "./tech";
@@ -250,7 +250,9 @@ export interface TurnDamageEntry {
   id: string;
   actorName: string;
   targetName: string;
+  targetId: string;
   targetTeam: CombatEntity["team"];
+  partId: string;
   partLabel: string;
   amount: number;
   remainingHp: number;
@@ -337,6 +339,16 @@ export class TacticalSim {
   private resolveClock = 0;
   private activeTurnReport: TurnReport | undefined;
 
+  // Dynamic map events are a pure function of the map config + current turn, so none of this
+  // needs serializing — restore() just recomputes it. `forced*` are single-turn debug/test
+  // overrides; `pendingStrikes` are the staggered barrage/collapse detonations during a resolve.
+  eventNotice: string | undefined;
+  private forcedSandstorm = false;
+  private forcedIonStorm = false;
+  private forcedZones: { kind: MapEventKind; x: number; z: number; radius: number }[] = [];
+  private pendingStrikes: { at: number; point: Vec2; radius: number; damage: number; kind: "barrage" | "collapse"; fired?: boolean }[] = [];
+  private strikeClock = 0;
+
   constructor(init?: CombatEntity[] | { map?: MapDef; mode?: ModeId }) {
     if (Array.isArray(init)) {
       // Direct entity list (tests / sandbox) — keep the deterministic default terrain.
@@ -389,9 +401,16 @@ export class TacticalSim {
     this.economy.set("enemy", START_MONEY_ENEMY);
     this.economy.set("neutral", 0);
     this.pendingBuild = undefined;
+    this.forcedSandstorm = false;
+    this.forcedIonStorm = false;
+    this.forcedZones = [];
+    this.pendingStrikes = [];
+    this.strikeClock = 0;
+    this.eventNotice = undefined;
     this.syncAllElevations();
     this.pushLog(`${modeDef(mode).name} — ${map.name}`);
     this.pushLog("Turn 1 command phase");
+    this.refreshEventNotice();
   }
 
   private buildModeState(): ModeState {
@@ -848,6 +867,10 @@ export class TacticalSim {
     const unit = makeTroop(kind, id, name, base.team, this.freeSpawnNear(base));
     // Difficulty scaling: enemy units field with more health on higher difficulties.
     if (base.team === "enemy") scaleEntityHp(unit, DIFFICULTY_MODS[this.difficulty].enemyHp);
+    // Specialization scaling: Bulwark Training / Reactive Plating deploy tougher units.
+    const eff = this.teamTech(base.team);
+    if (isInfantryKind(unit.kind)) scaleEntityHp(unit, eff.infantryHp);
+    else if (isVehicleKind(unit.kind)) scaleEntityHp(unit, eff.vehicleHp);
     return unit;
   }
 
@@ -980,6 +1003,9 @@ export class TacticalSim {
       const missing = node.requires.find((req) => !isTechUnlocked(base, req));
       return `${node.name} requires ${techNode(missing ?? "")?.name ?? "a prerequisite"}`;
     }
+    // Specializations come in mutually-exclusive pairs: picking one permanently locks the sibling.
+    const lockedBy = (base.unlockedTech ?? []).find((owned) => techNode(owned)?.excludes?.includes(nodeId) || node.excludes?.includes(owned));
+    if (lockedBy) return `${node.name} is locked out by ${techNode(lockedBy)?.name ?? "your doctrine"}`;
     if (this.money(base.team) < node.cost) return `Not enough money to research ${node.name} ($${node.cost})`;
     if (base.commandPoints <= 0) return `${base.name} has no command points`;
     return undefined;
@@ -1115,6 +1141,7 @@ export class TacticalSim {
   endTurn(): void {
     if (this.phase !== "command") return;
     this.queueEnemyOrders();
+    this.scheduleMapStrikes();
     this.phase = "resolve";
     this.resolveClock = 0;
     this.activeTurnReport = { turn: this.turn, phase: "active", entries: [], notes: [] };
@@ -1200,6 +1227,7 @@ export class TacticalSim {
       entities: this.entities,
       modeState: this.modeState,
       troopSeq: this.troopSeq,
+      detonated: [...this.detonated],
     });
   }
 
@@ -1209,6 +1237,7 @@ export class TacticalSim {
       const data = JSON.parse(raw) as {
         map: string; mode: ModeId; difficulty?: Difficulty; turn?: number;
         economy: [Team, number][]; entities: CombatEntity[]; modeState: ModeState; troopSeq?: number;
+        detonated?: string[];
       };
       const map = mapDef(data.map);
       setActiveTerrain(map.terrain);
@@ -1225,7 +1254,10 @@ export class TacticalSim {
       this.projectiles.splice(0);
       this.effects.splice(0);
       this.defending.clear();
+      // Restore which volatile covers already blew up, so a destroyed-but-still-present cover
+      // caught in a later blast doesn't detonate a second time after a save/load.
       this.detonated.clear();
+      for (const id of data.detonated ?? []) this.detonated.add(id);
       this.log.splice(0);
       this.turnReports.splice(0);
       this.activeTurnReport = undefined;
@@ -1237,6 +1269,11 @@ export class TacticalSim {
       this.selectedId = this.entities.find((e) => e.team === "player" && isBuildingKind(e.kind))?.id ?? this.entities[0]?.id ?? "";
       this.syncAllElevations();
       this.refreshDefendingStances();
+      this.forcedSandstorm = false;
+      this.forcedIonStorm = false;
+      this.forcedZones = [];
+      this.pendingStrikes = [];
+      this.refreshEventNotice();
       this.pushLog(`Battle restored — Turn ${this.turn}`);
       return true;
     } catch {
@@ -1259,10 +1296,11 @@ export class TacticalSim {
       if (!order.done) this.updateOrder(order, dt);
     }
     this.updateProjectiles(dt);
+    this.updateMapStrikes(dt);
 
     const allDone = this.orders.every((o) => o.done);
-    if (allDone && this.projectiles.length === 0 && this.resolveClock > 1.9) this.finishResolve();
-    if (this.projectiles.length === 0 && this.resolveClock > 18) this.finishResolve();
+    if (allDone && this.projectiles.length === 0 && this.pendingStrikes.length === 0 && this.resolveClock > 1.9) this.finishResolve();
+    if (this.projectiles.length === 0 && this.pendingStrikes.length === 0 && this.resolveClock > 18) this.finishResolve();
   }
 
   private queueShootFor(actor: CombatEntity, target: CombatEntity, aim: AimMode, partId?: string): boolean {
@@ -2004,12 +2042,28 @@ export class TacticalSim {
     const explosiveActor = actor.kind === "tank" || actor.kind === "artillery" || actor.kind === "grenadier" || actor.kind === "mortar" || actor.kind === "exturret";
     const shellObjectBoost = ((attackMode === "weapon" && explosiveActor) || attackMode === "grenade") && target.kind === "cover" ? 1.72 : 1;
     const aimMultiplier = attackMode === "grenade" ? 1 : aimDamageMultiplier(aim);
-    return Math.round(base * falloff * (cover ? 1.05 : aimMultiplier) * vulnerability * shellObjectBoost * this.supportDamageMultiplier(actor) * this.teamDamageScale(actor));
+    return Math.round(base * falloff * (cover ? 1.05 : aimMultiplier) * vulnerability * shellObjectBoost * this.supportDamageMultiplier(actor) * this.teamDamageScale(actor) * this.techDamageScale(actor, target));
   }
 
   // Difficulty scaling: enemy units hit harder on higher difficulties.
   private teamDamageScale(actor: CombatEntity): number {
     return actor.team === "enemy" ? DIFFICULTY_MODS[this.difficulty].enemyDamage : 1;
+  }
+
+  // Specialization scaling: Breaching Rounds boosts infantry damage, Hunter Rounds boosts
+  // damage dealt to vehicles. Reads the firing team's researched doctrine specializations.
+  private techDamageScale(actor: CombatEntity, target: CombatEntity): number {
+    const eff = this.teamTech(actor.team);
+    let scale = 1;
+    if (isInfantryKind(actor.kind)) scale *= eff.infantryDamage;
+    if (isVehicleKind(target.kind)) scale *= eff.vsVehicleDamage;
+    return scale;
+  }
+
+  // Aggregate combat modifiers from a team's Home Base specializations (1×/+0 if none).
+  private teamTech(team: Team): Required<TechEffect> {
+    const base = this.entities.find((e) => e.team === team && e.kind === "base");
+    return aggregateTechEffect(base?.unlockedTech ?? []);
   }
 
   private supportDamageMultiplier(actor: CombatEntity): number {
@@ -2024,7 +2078,9 @@ export class TacticalSim {
   }
 
   private resolveShellSplash(actor: CombatEntity, target: CombatEntity, targetPart: DamagePart, amount: number, impactPoint: Vec2): void {
-    const localSplash = Math.max(10, Math.round(amount * 0.34));
+    // Ordnance specializations: Thermobarics boosts splash damage, Cluster Munitions widens it.
+    const eff = this.teamTech(actor.team);
+    const localSplash = Math.max(10, Math.round(amount * 0.34 * eff.splashDamage));
     for (const partId of adjacentPartIds(target, targetPart.id)) {
       const part = target.parts.find((candidate) => candidate.id === partId && candidate.hp > 0);
       if (!part) continue;
@@ -2038,11 +2094,11 @@ export class TacticalSim {
     for (const entity of this.entities) {
       if (entity.id === target.id || entity.id === actor.id || !entity.status.alive) continue;
       const d = dist(entity.position, impactPoint);
-      const radius = target.kind === "cover" ? 2.7 : 1.9;
+      const radius = (target.kind === "cover" ? 2.7 : 1.9) * eff.splashRadius;
       if (d > radius + entity.radius * 0.35) continue;
       const part = preferredPart(entity, entity.kind === "cover" ? "center" : "weakest");
       const falloff = clamp(1 - d / (radius + entity.radius), 0.18, 0.74);
-      const splash = Math.round((entity.kind === "cover" ? 38 : 22) * falloff);
+      const splash = Math.round((entity.kind === "cover" ? 38 : 22) * falloff * eff.splashDamage);
       if (splash <= 0) continue;
       const result = applyDamage(entity, part.id, splash);
       if (result.amount > 0) {
@@ -2247,6 +2303,18 @@ export class TacticalSim {
       notes.push("long range");
     }
 
+    if (this.sandstormActive()) {
+      spreadDegrees = spreadDegrees * 1.45 + 1.1;
+      notes.push("sandstorm");
+    }
+
+    // Ghillie Doctrine: the defending team's units are simply harder to hit.
+    const evasion = this.teamTech(target.team).evasion;
+    if (evasion > 1) {
+      spreadDegrees *= evasion;
+      notes.push("evasive target");
+    }
+
     spreadDegrees = Math.max(0, spreadDegrees);
     const rating = ratingForSpread(spreadDegrees);
     const effectiveSpreadDegrees = rating === "great" ? 0 : spreadDegrees;
@@ -2273,7 +2341,9 @@ export class TacticalSim {
       dist(entity.position, actor.position) <= 6.2 &&
       entity.parts.some((part) => part.hp > 0 && part.tags?.includes("spotter-aura"))
     );
-    return spotter ? 0.82 : 1;
+    if (!spotter) return 1;
+    // Optics Array sharpens the spotter relay further.
+    return this.teamTech(actor.team).spotterBoost ? 0.7 : 0.82;
   }
 
   private actorHasQueuedMove(actorId: string): boolean {
@@ -2400,7 +2470,17 @@ export class TacticalSim {
     return candidates[0]?.entity;
   }
 
+  // Which tactical behaviors the enemy commander uses, by difficulty. Easy is the original
+  // greedy bot (nearest target, no focus-fire/cover/retreat). Normal and Hard share the smart
+  // brain — the difference between them is the stat padding applied elsewhere, not the tactics,
+  // so Normal is a *fair* test of skill rather than a dumb bot with a health bar.
+  private aiProfile(): { focusFire: boolean; useCover: boolean; retreat: boolean; smartEconomy: boolean } {
+    if (this.difficulty === "easy") return { focusFire: false, useCover: false, retreat: false, smartEconomy: false };
+    return { focusFire: true, useCover: true, retreat: true, smartEconomy: true };
+  }
+
   private queueEnemyOrders(): void {
+    const profile = this.aiProfile();
     for (const entity of this.living("enemy")) repairForNewTurn(entity);
     const enemyCommsOnline = this.entities.some((e) =>
       e.team === "enemy" &&
@@ -2422,6 +2502,10 @@ export class TacticalSim {
     const allPlayers = this.living("player");
     if (!allPlayers.length) return;
     const objective = this.enemyObjective();
+    const home = this.enemyHomePosition();
+    // Running tally of damage already committed to each player unit this turn. Focus-fire reads
+    // it so shooters pile onto one target until it's predicted dead, then spill to the next.
+    const committed = new Map<string, number>();
     for (const enemy of this.living("enemy")) {
       if (isBuildingKind(enemy.kind)) continue;
       const target = nearest(enemy, players.length ? players : allPlayers);
@@ -2438,35 +2522,53 @@ export class TacticalSim {
         spendCommandPoint(enemy);
         continue;
       }
-      // Fire when a target is in weapon range.
-      if (target && enemy.status.canShoot && enemy.commandPoints > 0 && separation <= range) {
+      // Fire when a target is in weapon range. Smart bots focus-fire the highest-value killable
+      // unit they can reach; the greedy bot just shoots whatever is nearest and in range.
+      const shootTarget = profile.focusFire
+        ? this.pickShootTarget(enemy, players.length ? players : allPlayers, committed, range)
+        : (target && separation <= range ? target : undefined);
+      if (shootTarget && enemy.status.canShoot && enemy.commandPoints > 0) {
         const aim = enemy.kind === "sniper"
-          ? (isInfantryKind(target.kind) ? "head" : "weapon")
+          ? (isInfantryKind(shootTarget.kind) ? "head" : "weapon")
           : enemy.kind === "grenadier" || enemy.kind === "mortar"
             ? "center"
-            : isVehicleKind(target.kind) ? "mobility" : this.rng.chance(0.35) ? "weapon" : "center";
-        this.queueShootFor(enemy, target, aim);
+            : isVehicleKind(shootTarget.kind) ? "mobility" : this.rng.chance(0.35) ? "weapon" : "center";
+        if (this.queueShootFor(enemy, shootTarget, aim)) {
+          const burst = enemy.kind === "heavy" ? 3 : 1;
+          committed.set(shootTarget.id, (committed.get(shootTarget.id) ?? 0) + baseShotDamage(enemy.kind) * burst);
+        }
       }
-      // Otherwise advance: carriers run the flag home, others push the objective or the
-      // nearest threat, routing around solid objects.
+      // Otherwise advance: carriers run the flag home, crippled units fall back to base, others
+      // push the objective or the nearest threat, routing around (and hugging) solid objects.
       if (enemy.status.canMove && enemy.commandPoints > 0) {
         const carrying = this.modeState.flags.some((f) => f.carrierId === enemy.id);
         const homeGoal = this.modeState.flags.find((f) => f.team === "enemy")?.home;
         const isMelee = enemy.kind === "striker";
+        // A unit that has lost its weapon or is badly wounded retreats toward base instead of
+        // feeding itself into fire — but only if it has somewhere to fall back to.
+        const crippled = profile.retreat && !carrying && Boolean(home) && (!enemy.status.canShoot || coreHpFraction(enemy) < 0.3);
         // Shooters hold at weapon range; melee always close; carriers run the flag home;
         // in objective modes, idle units push the hill/flag rather than over-extending.
         const wantsTarget = Boolean(target) && (isMelee || separation > Math.min(range * 0.8, 6));
         let goal: Vec2 | undefined;
+        let advancing = false;
         if (carrying && homeGoal) {
           goal = homeGoal;
+        } else if (crippled) {
+          goal = home;
         } else if (wantsTarget) {
           goal = target!.position;
+          advancing = true;
         } else if (this.mode !== "destroy" && objective && dist(enemy.position, objective) > 2.2) {
           goal = objective;
+          advancing = true;
         }
         if (goal) {
           const step = isVehicleKind(enemy.kind) ? Math.max(3.2, moveRange(enemy)) : moveRange(enemy);
-          const destination = this.navigateToward(enemy, goal, step);
+          // When pushing toward a threat, prefer a tile that ends sheltered behind cover.
+          const destination = profile.useCover && advancing && target
+            ? this.coverBiasedDestination(enemy, goal, target.position, step)
+            : this.navigateToward(enemy, goal, step);
           if (dist(enemy.position, destination) > 0.2) {
             spendCommandPoint(enemy);
             this.addOrder({
@@ -2482,6 +2584,71 @@ export class TacticalSim {
     }
   }
 
+  // The position the enemy army falls back to when crippled (its living Home Base), if any.
+  private enemyHomePosition(): Vec2 | undefined {
+    return this.entities.find((e) => e.team === "enemy" && e.kind === "base" && e.status.alive)?.position;
+  }
+
+  // Focus-fire target picker: among the shooter's in-range options, concentrate fire on a
+  // single unit until it is predicted dead (overkilled targets sink to the bottom), preferring
+  // high-value units (support/siege) and finishing wounded ones first.
+  private pickShootTarget(shooter: CombatEntity, candidates: CombatEntity[], committed: Map<string, number>, range: number): CombatEntity | undefined {
+    const ranked = candidates
+      .filter((t) => t.status.alive && dist(shooter.position, t.position) <= range + 0.01)
+      .map((t) => {
+        const com = committed.get(t.id) ?? 0;
+        const hp = remainingHp(t);
+        return {
+          t,
+          saturated: com >= hp ? 1 : 0, // already getting enough fire to die — deprioritize
+          engaged: com > 0 ? 0 : 1, // pile onto a unit we've already started on
+          value: AI_TARGET_VALUE[t.kind] ?? 4,
+          hp,
+        };
+      })
+      .sort((a, b) => a.saturated - b.saturated || a.engaged - b.engaged || b.value - a.value || a.hp - b.hp);
+    return ranked[0]?.t;
+  }
+
+  // Advance toward a goal but prefer a reachable tile that ends behind sturdy cover relative to
+  // the threat, so the bot doesn't cross open ground when a flanking-but-covered step exists.
+  private coverBiasedDestination(actor: CombatEntity, goal: Vec2, threat: Vec2, step: number): Vec2 {
+    const direct = this.navigateToward(actor, goal, step);
+    const candidates: Vec2[] = [direct];
+    const baseAngle = Math.atan2(goal.x - actor.position.x, goal.z - actor.position.z);
+    for (const offset of [0.6, -0.6, 1.1, -1.1]) {
+      const angle = baseAngle + offset;
+      const cand = clampToArena({ x: actor.position.x + Math.sin(angle) * step, z: actor.position.z + Math.cos(angle) * step });
+      candidates.push(this.blockedMoveDestination(actor, actor.position, cand, undefined, true));
+    }
+    let best = direct;
+    let bestScore = -Infinity;
+    const startToGoal = dist(actor.position, goal);
+    for (const c of candidates) {
+      if (dist(actor.position, c) < step * 0.3) continue; // didn't meaningfully move
+      const progress = startToGoal - dist(c, goal); // positive = closer to the goal
+      const sheltered = this.isShelteredAt(c, threat) ? 2.4 : 0;
+      const score = progress + sheltered;
+      if (score > bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    }
+    return best;
+  }
+
+  // True if standing at `pos` puts sturdy cover between the unit and the threat.
+  private isShelteredAt(pos: Vec2, threat: Vec2): boolean {
+    return this.entities.some((e) =>
+      e.kind === "cover" &&
+      e.status.alive &&
+      e.height >= 1 &&
+      !isVolatileCover(e) &&
+      dist(e.position, pos) <= e.radius + 1.1 &&
+      coverIsTowardThreat(e.position, pos, threat)
+    );
+  }
+
   // The point the enemy army pushes toward, by mode.
   private enemyObjective(): Vec2 | undefined {
     if (this.mode === "hill") return this.modeState.hill;
@@ -2495,17 +2662,44 @@ export class TacticalSim {
   private enemyBaseAct(base: CombatEntity): void {
     if (!base.status.alive || base.commandPoints <= 0) return;
     const money = this.money(base.team);
+    const smart = this.aiProfile().smartEconomy;
+    // What the bot *wants* to field given what the player has on the board (anti-armor when the
+    // player rolls vehicles, splash against massed infantry, etc.). Greedy bots ignore this.
+    const desired = smart ? this.enemyTroopPreference() : undefined;
     const research = TECH_TREE
       .filter((node) => !this.researchFailureReason(base, node.id))
       .sort((a, b) => a.cost - b.cost);
-    if (research.length && money >= research[0].cost + 200 && this.rng.chance(0.45) && this.researchTechFor(base, research[0].id)) return;
+    // Smart bots research *toward* a doctrine they want a unit from; greedy bots take the cheapest.
+    const researchPick = (smart && desired
+      ? research.find((node) => desired.some((kind) => troopSpec(kind).tech === node.id))
+      : undefined) ?? research[0];
+    if (researchPick && money >= researchPick.cost + 200 && this.rng.chance(0.45) && this.researchTechFor(base, researchPick.id)) return;
     const incomeCost = incomeUpgradeCost(base);
     if (incomeCost !== undefined && money >= incomeCost + 340 && this.rng.chance(0.3) && this.upgradeIncomeFor(base)) return;
     if (this.fieldUnitCount(base.team) >= POP_CAP) return;
-    const ready = TROOP_CATALOG
-      .filter((spec) => !this.spawnFailureReason(base, spec.kind))
-      .sort((a, b) => b.cost - a.cost);
-    if (ready.length) this.spawnTroopFor(base, ready[0].kind);
+    const affordable = TROOP_CATALOG.filter((spec) => !this.spawnFailureReason(base, spec.kind));
+    if (!affordable.length) return;
+    // Build the most-wanted affordable troop; fall back to the strongest the bot can field.
+    const pick =
+      (desired?.find((kind) => affordable.some((spec) => spec.kind === kind))) ??
+      [...affordable].sort((a, b) => b.cost - a.cost)[0].kind;
+    this.spawnTroopFor(base, pick);
+  }
+
+  // Ordered troop wishlist for the enemy commander, reacting to the player's current army.
+  // enemyBaseAct deploys the first entry it can afford and has teched, so earlier = higher want.
+  private enemyTroopPreference(): TroopKind[] {
+    const players = this.fieldUnits("player");
+    const playerVehicles = players.filter((p) => isVehicleKind(p.kind)).length;
+    const playerInfantry = players.filter((p) => isInfantryKind(p.kind)).length;
+    const mine = this.fieldUnits("enemy");
+    const haveAntiArmor = mine.some((u) => u.kind === "tank" || u.kind === "artillery" || u.kind === "heavy" || u.kind === "grenadier" || u.kind === "mortar");
+    const pref: TroopKind[] = [];
+    if (playerVehicles > 0 && !haveAntiArmor) pref.push("tank", "heavy", "grenadier", "artillery");
+    if (playerInfantry >= 3) pref.push("grenadier", "mortar", "heavy");
+    // Round out into a balanced force when there's nothing specific to counter.
+    pref.push("heavy", "striker", "soldier", "scout", "apc", "tank", "sniper");
+    return [...new Set(pref)];
   }
 
   // Collision-aware step for AI units: try the direct line, then sidestep around
@@ -2551,6 +2745,12 @@ export class TacticalSim {
     for (const entity of this.entities) repairForNewTurn(entity);
     this.runEconomyTick();
     this.resolveSupportAuras();
+    // Forced events are single-turn debug overrides; clear them, then announce the new turn's events.
+    this.forcedZones = [];
+    this.forcedSandstorm = false;
+    this.forcedIonStorm = false;
+    this.refreshEventNotice();
+    this.applyIonStormClamp(); // scramble command points if an ion storm is raking the field
     this.pushLog(`Turn ${this.turn} command phase`);
     this.bus.emit("TURN_START", { turn: this.turn });
   }
@@ -2559,6 +2759,148 @@ export class TacticalSim {
   private resolveModeObjectives(): void {
     if (this.mode === "ctf") this.resolveCtf();
     else if (this.mode === "hill") this.resolveHill();
+  }
+
+  // ---- Dynamic map events ---------------------------------------------------------------
+  // All of this derives purely from the map config + current turn (plus single-turn debug
+  // overrides), so it survives save/load for free and stays deterministic.
+
+  private mapEvents(): readonly MapEventConfig[] {
+    return this.mapDef.events ?? [];
+  }
+
+  // Whether reduced-accuracy sandstorm weather is in effect on a given turn.
+  sandstormActive(turn: number = this.turn): boolean {
+    return this.forcedSandstorm || this.mapEvents().some((e) => e.kind === "sandstorm" && eventOccursWindow(e, turn));
+  }
+
+  // Whether a command-scrambling ion storm is in effect on a given turn (clamps units to 1 CP).
+  ionStormActive(turn: number = this.turn): boolean {
+    return this.forcedIonStorm || this.mapEvents().some((e) => e.kind === "ionstorm" && eventOccursWindow(e, turn));
+  }
+
+  // Ion storm: every field unit (not bases) is scrambled down to a single command point.
+  private applyIonStormClamp(): void {
+    if (!this.ionStormActive()) return;
+    for (const entity of this.entities) {
+      if (entity.status.alive && entity.kind !== "base") entity.commandPoints = Math.min(entity.commandPoints, 1);
+    }
+  }
+
+  private eventZone(e: MapEventConfig): { x: number; z: number; radius: number } {
+    if (e.zone) return e.zone;
+    const c = mapCenter(this.mapDef);
+    return { x: c.x, z: c.z, radius: 6 };
+  }
+
+  // Barrage/collapse danger zones that fire during the given turn's resolve (for renderer rings).
+  eventZonesForTurn(turn: number = this.turn): { kind: MapEventKind; x: number; z: number; radius: number }[] {
+    const fromMap = this.mapEvents()
+      .filter((e) => (e.kind === "barrage" || e.kind === "collapse") && eventOccursWindow(e, turn))
+      .map((e) => ({ kind: e.kind, ...this.eventZone(e) }));
+    return [...fromMap, ...this.forcedZones];
+  }
+
+  // Read-only environment snapshot for the renderer + HUD.
+  environment(): { sandstorm: number; ionstorm: number; notice?: string; zones: { kind: MapEventKind; x: number; z: number; radius: number }[] } {
+    return { sandstorm: this.sandstormActive() ? 1 : 0, ionstorm: this.ionStormActive() ? 1 : 0, notice: this.eventNotice, zones: this.eventZonesForTurn() };
+  }
+
+  // Set the banner/log for the new turn's events (and announce sandstorm transitions).
+  private refreshEventNotice(): void {
+    const t = this.turn;
+    let notice: string | undefined;
+    const stormNow = this.sandstormActive(t);
+    const stormPrev = t > 1 && this.sandstormActive(t - 1);
+    if (stormNow && !stormPrev) {
+      this.pushLog("A sandstorm rolls in — fire is far less accurate until it clears.");
+      notice = "⚠ Sandstorm — fire is far less accurate until it clears.";
+    } else if (!stormNow && stormPrev) {
+      this.pushLog("The sandstorm clears.");
+    } else if (stormNow) {
+      notice = "⚠ Sandstorm — fire is far less accurate.";
+    }
+    const ionNow = this.ionStormActive(t);
+    const ionPrev = t > 1 && this.ionStormActive(t - 1);
+    if (ionNow && !ionPrev) {
+      this.pushLog("An ion storm scrambles command links — units are limited to one command point.");
+      notice = "⚠ Ion storm — units are scrambled to a single command point.";
+    } else if (ionNow) {
+      notice = "⚠ Ion storm — units limited to one command point.";
+    }
+    const zones = this.eventZonesForTurn(t);
+    if (zones.some((z) => z.kind === "barrage")) {
+      this.pushLog("Incoming artillery barrage — clear the marked zone!");
+      notice = "⚠ Incoming barrage — clear the marked zone before you end your turn.";
+    }
+    if (zones.some((z) => z.kind === "collapse")) {
+      this.pushLog("Structures in the marked zone are about to collapse.");
+      notice = notice ?? "⚠ Cover in the marked zone collapses this turn.";
+    }
+    if (!notice) {
+      if (this.sandstormActive(t + 1) && !stormNow) notice = "A sandstorm is approaching next turn.";
+      else if (this.eventZonesForTurn(t + 1).some((z) => z.kind === "barrage")) notice = "Artillery is ranging in — a barrage hits next turn.";
+    }
+    this.eventNotice = notice;
+  }
+
+  // At end-of-turn, turn this turn's barrage/collapse zones into staggered detonations that
+  // play out during the resolve animation (so shells visibly walk across the zone).
+  private scheduleMapStrikes(): void {
+    this.pendingStrikes = [];
+    this.strikeClock = 0;
+    for (const zone of this.eventZonesForTurn(this.turn)) {
+      if (zone.kind === "barrage") {
+        for (let i = 0; i < 6; i += 1) {
+          const angle = this.rng.range(0, Math.PI * 2);
+          const r = Math.sqrt(this.rng.range(0, 1)) * zone.radius; // uniform across the disc
+          const point = clampToArena({ x: zone.x + Math.sin(angle) * r, z: zone.z + Math.cos(angle) * r });
+          this.pendingStrikes.push({ at: 0.25 + i * 0.26, point, radius: 2.6, damage: 34, kind: "barrage" });
+        }
+      } else {
+        const covers = this.entities.filter((e) => e.kind === "cover" && e.status.alive && dist(e.position, zone) <= zone.radius);
+        covers.forEach((c, i) => this.pendingStrikes.push({ at: 0.25 + i * 0.2, point: { ...c.position }, radius: 1.7, damage: 999, kind: "collapse" }));
+      }
+    }
+  }
+
+  private updateMapStrikes(dt: number): void {
+    if (!this.pendingStrikes.length) return;
+    this.strikeClock += dt;
+    let detonated = false;
+    for (const strike of this.pendingStrikes) {
+      if (strike.fired || this.strikeClock < strike.at) continue;
+      strike.fired = true;
+      detonated = true;
+      this.detonateStrike(strike);
+    }
+    if (detonated) this.pendingStrikes = this.pendingStrikes.filter((s) => !s.fired);
+  }
+
+  // A single environmental detonation: a blast effect plus AoE damage to anything in range
+  // (both teams — it's the battlefield, not a unit's attack). Bases are spared so the sky can't
+  // hand someone the win.
+  private detonateStrike(strike: { point: Vec2; radius: number; damage: number; kind: "barrage" | "collapse" }): void {
+    const color = strike.kind === "barrage" ? 0xffac5a : 0xb59a72;
+    this.effect("blast", strike.point, strike.point, color, 0.85, strike.radius);
+    for (const e of this.entities) {
+      if (!e.status.alive || e.kind === "base") continue;
+      const d = dist(e.position, strike.point);
+      if (d > strike.radius + e.radius * 0.5) continue;
+      const part = preferredPart(e, "center");
+      const falloff = clamp01(1 - d / (strike.radius + 0.6));
+      const damage = strike.kind === "collapse" ? strike.damage : Math.max(8, Math.round(strike.damage * Math.max(0.4, falloff)));
+      applyDamage(e, part.id, damage);
+    }
+    this.pushLog(strike.kind === "barrage" ? "Shells hammer the marked zone." : "Cover collapses in the marked zone.");
+  }
+
+  // Debug/test hook: force an environmental event onto the current turn (for screenshots/tests).
+  debugForceEvent(kind: MapEventKind, zone?: { x: number; z: number; radius: number }): void {
+    if (kind === "sandstorm") this.forcedSandstorm = true;
+    else if (kind === "ionstorm") { this.forcedIonStorm = true; this.applyIonStormClamp(); }
+    else this.forcedZones.push({ kind, ...(zone ?? this.eventZone({ kind, startTurn: this.turn })) });
+    this.refreshEventNotice();
   }
 
   private fieldUnits(team: Team): CombatEntity[] {
@@ -2671,12 +3013,13 @@ export class TacticalSim {
       const repairs = source.parts.some((p) => p.hp > 0 && p.tags?.includes("repair-aura"));
       if (!heals && !repairs) continue;
       let mended = 0;
+      const eff = this.teamTech(source.team);
       for (const ally of this.entities) {
         if (ally.team !== source.team || ally.id === source.id || !ally.status.alive) continue;
         if (dist(ally.position, source.position) > 4.5) continue;
         let healed = false;
-        if (heals && isInfantryKind(ally.kind)) healed = this.healEntity(ally, 8);
-        if (repairs && (isVehicleKind(ally.kind) || isBuildingKind(ally.kind))) healed = this.healEntity(ally, 12) || healed;
+        if (heals && isInfantryKind(ally.kind)) healed = this.healEntity(ally, 8 + eff.healBonus);
+        if (repairs && (isVehicleKind(ally.kind) || isBuildingKind(ally.kind))) healed = this.healEntity(ally, 12 + eff.repairBonus) || healed;
         if (healed) {
           this.effect("ping", ally.position, ally.position, 0x8effa6, 0.9, ally.radius + 0.5);
           mended += 1;
@@ -2767,7 +3110,9 @@ export class TacticalSim {
       id: `damage-${++this.damageSeq}`,
       actorName: actor.name,
       targetName: target.name,
+      targetId: target.id,
       targetTeam: target.team,
+      partId: result.partId,
       partLabel,
       amount: result.amount,
       remainingHp: Math.max(0, part?.hp ?? 0),
@@ -3294,6 +3639,49 @@ function nearest(origin: CombatEntity, candidates: CombatEntity[]): CombatEntity
   return candidates
     .map((entity) => ({ entity, d: dist(origin.position, entity.position) }))
     .sort((a, b) => a.d - b.d)[0]?.entity;
+}
+
+// How keen the enemy commander is to shoot a given player unit. Soft, high-impact units
+// (support, siege, snipers) rank above durable bruisers so focus-fire kills what matters.
+const AI_TARGET_VALUE: Partial<Record<EntityKind, number>> = {
+  artillery: 9, mortar: 8, sniper: 8, medic: 8, engineer: 7, grenadier: 7,
+  scout: 6, base: 6, heavy: 5, exturret: 5, striker: 5, soldier: 4, turret: 4,
+  apc: 3, tank: 3, wall: 1, cover: 0,
+};
+
+// Total HP across an entity's still-living parts — its effective remaining health.
+function remainingHp(entity: CombatEntity): number {
+  return entity.parts.reduce((sum, part) => sum + Math.max(0, part.hp), 0);
+}
+
+// Fraction of the entity's core (body/hull) HP remaining, 0..1. Drives the "retreat when
+// crippled" decision; falls back to all parts for entities with no explicit core.
+function coreHpFraction(entity: CombatEntity): number {
+  const cores = entity.parts.filter((part) => part.role === "core");
+  const pool = cores.length ? cores : entity.parts;
+  const hp = pool.reduce((sum, part) => sum + Math.max(0, part.hp), 0);
+  const max = pool.reduce((sum, part) => sum + part.maxHp, 0);
+  return max > 0 ? hp / max : 0;
+}
+
+function isVolatileCover(entity: CombatEntity): boolean {
+  return entity.parts.some((part) => part.role === "volatile");
+}
+
+// True if `cover` sits on the threat-facing side of a unit standing at `pos` (so it blocks LoS).
+function coverIsTowardThreat(cover: Vec2, pos: Vec2, threat: Vec2): boolean {
+  return (threat.x - pos.x) * (cover.x - pos.x) + (threat.z - pos.z) * (cover.z - pos.z) > 0;
+}
+
+// Whether a map event is active on a given turn, honoring its start turn, duration, and period.
+function eventOccursWindow(e: MapEventConfig, turn: number): boolean {
+  if (turn < e.startTurn) return false;
+  const duration = Math.max(1, e.duration ?? 1);
+  if (e.period && e.period > 0) {
+    const phase = (turn - e.startTurn) % e.period;
+    return phase >= 0 && phase < duration;
+  }
+  return turn < e.startTurn + duration;
 }
 
 function preferredPartByIdOrAim(entity: CombatEntity, partId: string, aim: AimMode) {

@@ -1,7 +1,7 @@
-const { app, BrowserWindow, Menu, screen } = require("electron");
+const { app, BrowserWindow, Menu, screen, protocol } = require("electron");
 const fs = require("fs");
-const http = require("http");
 const path = require("path");
+const { pathToFileURL } = require("url");
 
 const distDir = path.join(__dirname, "dist");
 const MIME = {
@@ -17,38 +17,36 @@ const MIME = {
   ".wasm": "application/wasm",
 };
 
-let server = null;
-let serverPort = 0;
+// Serve the built SPA from a STABLE custom origin (app://rht) instead of an http server on a
+// random port. localStorage is partitioned by origin — scheme + host + PORT — so the old
+// `server.listen(0)` handed every launch a brand-new origin and a fresh, empty store, silently
+// wiping saved battles, settings, and progression on every quit. A fixed scheme keeps the origin
+// constant across launches, so persistence survives exiting the game. Files are read and
+// served with explicit MIME types so ES modules load with the correct Content-Type.
+protocol.registerSchemesAsPrivileged([
+  { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true } },
+]);
 
-function startServer() {
-  return new Promise((resolve, reject) => {
-    server = http.createServer((req, res) => {
-      let urlPath = decodeURIComponent((req.url || "/").split("?")[0]);
-      if (urlPath === "/" || urlPath === "") urlPath = "/index.html";
-      const resolved = path.resolve(path.join(distDir, urlPath));
-      if (!resolved.startsWith(path.resolve(distDir))) {
-        res.writeHead(403);
-        res.end("Forbidden");
-        return;
-      }
-      fs.readFile(resolved, (err, data) => {
-        if (err) {
-          res.writeHead(404);
-          res.end("Not found");
-          return;
-        }
-        res.writeHead(200, {
+function serveAppProtocol() {
+  protocol.handle("app", async (request) => {
+    let pathname = decodeURIComponent(new URL(request.url).pathname);
+    if (pathname === "/" || pathname === "") pathname = "/index.html";
+    const resolved = path.resolve(path.join(distDir, pathname));
+    if (!resolved.startsWith(path.resolve(distDir))) {
+      return new Response("Forbidden", { status: 403 });
+    }
+    try {
+      const data = await fs.promises.readFile(resolved);
+      return new Response(data, {
+        status: 200,
+        headers: {
           "Content-Type": MIME[path.extname(resolved).toLowerCase()] || "application/octet-stream",
-          "Cache-Control": "public, max-age=31536000, immutable",
-        });
-        res.end(data);
+          "Cache-Control": "no-cache",
+        },
       });
-    });
-    server.listen(0, "127.0.0.1", () => {
-      serverPort = server.address().port;
-      resolve(serverPort);
-    });
-    server.on("error", reject);
+    } catch {
+      return new Response("Not found", { status: 404 });
+    }
   });
 }
 
@@ -73,12 +71,12 @@ function createWindow() {
 
   Menu.setApplicationMenu(null);
   win.once("ready-to-show", () => win.show());
-  win.loadURL(`http://127.0.0.1:${serverPort}/`);
+  win.loadURL("app://rht/index.html");
   if (process.env.RHT_DEVTOOLS === "1") win.webContents.openDevTools({ mode: "detach" });
 }
 
-app.whenReady().then(async () => {
-  await startServer();
+app.whenReady().then(() => {
+  serveAppProtocol();
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -86,13 +84,5 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
-  if (server) {
-    try {
-      server.close();
-    } catch (_) {
-      // noop
-    }
-    server = null;
-  }
   if (process.platform !== "darwin") app.quit();
 });

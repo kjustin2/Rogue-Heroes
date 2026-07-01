@@ -1488,6 +1488,210 @@ describe("defenses, difficulty, and base upgrades", () => {
     expect(restored.difficulty).toBe("hard");
     expect(restored.fieldUnitCount("player")).toBe(1);
   });
+
+  it("preserves which volatile covers already detonated across save/load", () => {
+    // Regression: detonated was dropped on serialize, so a destroyed-but-present volatile cover
+    // caught in a later blast would explode a second time after loading.
+    const sim = new TacticalSim();
+    sim.configure(MAPS[0], "destroy", "normal");
+    sim.detonated.add("cover-7");
+    const restored = new TacticalSim();
+    expect(restored.restore(sim.serialize())).toBe(true);
+    expect(restored.detonated.has("cover-7")).toBe(true);
+  });
+});
+
+describe("tactical enemy AI", () => {
+  it("concentrates enemy fire on the highest-value target (focus fire) on normal", () => {
+    const medic = createMedic("p-medic", "Medic", "player", { x: 0, z: 0 });
+    const grunt = createSoldier("p-grunt", "Grunt", "player", { x: 0, z: 2 });
+    const a = createSoldier("e-a", "A", "enemy", { x: 6, z: 0 });
+    const b = createSoldier("e-b", "B", "enemy", { x: 6, z: 2 });
+    a.grenades = 0;
+    b.grenades = 0; // keep both on the rifle so we test target choice, not the grenade roll
+    const sim = new TacticalSim([medic, grunt, a, b]);
+
+    sim.endTurn();
+    const shots = sim.orders.filter((o) => o.kind === "shoot" && (o.actorId === "e-a" || o.actorId === "e-b"));
+    expect(shots).toHaveLength(2);
+    // Both shooters pile onto the medic (value 8) rather than each taking its own nearest grunt.
+    expect(new Set(shots.map((o) => o.targetId))).toEqual(new Set(["p-medic"]));
+  });
+
+  it("greedy (easy) enemies each shoot their own nearest target instead of focusing", () => {
+    const medic = createMedic("p-medic", "Medic", "player", { x: 0, z: 0 });
+    const grunt = createSoldier("p-grunt", "Grunt", "player", { x: 0, z: 2 });
+    const a = createSoldier("e-a", "A", "enemy", { x: 6, z: 0 }); // nearest = medic
+    const b = createSoldier("e-b", "B", "enemy", { x: 6, z: 2 }); // nearest = grunt
+    a.grenades = 0;
+    b.grenades = 0;
+    const sim = new TacticalSim([medic, grunt, a, b]);
+    sim.difficulty = "easy";
+
+    sim.endTurn();
+    const shots = sim.orders.filter((o) => o.kind === "shoot" && (o.actorId === "e-a" || o.actorId === "e-b"));
+    expect(shots).toHaveLength(2);
+    expect(new Set(shots.map((o) => o.targetId)).size).toBe(2); // split fire, not focused
+  });
+
+  it("retreats a crippled enemy toward its base instead of feeding it into fire", () => {
+    const enemyBase = createBase("e-base", "Relay", "enemy", { x: 14, z: 0 });
+    const cripple = createSoldier("e-cripple", "Limp", "enemy", { x: 4, z: 0 });
+    applyDamage(cripple, "rifle", 99); // weapon destroyed → cannot shoot
+    cripple.grenades = 0;
+    const sim = new TacticalSim([
+      createSoldier("p", "Rook", "player", { x: 0, z: 0 }),
+      enemyBase,
+      cripple,
+    ]);
+    sim.economy.set("enemy", 0); // base has nothing to spend, so only the cripple acts
+
+    sim.endTurn();
+    const move = sim.orders.find((o) => o.actorId === "e-cripple" && o.kind === "move");
+    expect(move).toBeDefined();
+    // The player threat is at x=0; the base is at x=14. A crippled unit falls back (+x), not forward.
+    expect(move!.destination!.x).toBeGreaterThan(4);
+  });
+
+  it("smart economy answers massed infantry with splash; greedy just buys the priciest unit", () => {
+    const spawnedKind = (difficulty: "normal" | "easy") => {
+      const enemyBase = createBase("e-base", "Relay", "enemy", { x: 14, z: 0 });
+      enemyBase.unlockedTech = ["assault", "ordnance", "armor"]; // grenadier and tank both available
+      const sim = new TacticalSim([
+        enemyBase,
+        createSoldier("p1", "A", "player", { x: 0, z: 0 }),
+        createSoldier("p2", "B", "player", { x: 1.4, z: 0 }),
+        createSoldier("p3", "C", "player", { x: 2.8, z: 0 }),
+      ]);
+      sim.difficulty = difficulty;
+      sim.economy.set("enemy", 400); // affords a tank (400), grenadier (250), etc.
+      sim.endTurn();
+      return sim.entities.find((e) => e.team === "enemy" && e.id.startsWith("e-spawn-"))?.kind;
+    };
+    expect(spawnedKind("normal")).toBe("grenadier"); // splash to counter 3 infantry
+    expect(spawnedKind("easy")).toBe("tank"); // greedy = strongest affordable
+  });
+});
+
+describe("tech specializations", () => {
+  it("makes specialization pairs mutually exclusive", () => {
+    const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: 0 });
+    const sim = new TacticalSim([base]);
+    base.unlockedTech = ["assault"];
+    sim.economy.set("player", 9999);
+    base.commandPoints = 5;
+    sim.select("p-base-1");
+
+    expect(sim.researchTech("breach")).toBe(true);
+    expect(sim.researchFailureReason(base, "bulwark")).toMatch(/locked out/i);
+    expect(sim.researchTech("bulwark")).toBe(false);
+  });
+
+  it("breaching rounds raise infantry damage", () => {
+    const previewDamage = (tech: string[]) => {
+      const base = createBase("p-base-1", "HQ", "player", { x: -14, z: 0 });
+      base.unlockedTech = tech;
+      const sim = new TacticalSim([
+        base,
+        createSoldier("p", "Rook", "player", { x: 0, z: 0 }),
+        createSoldier("e", "Foe", "enemy", { x: 4, z: 0 }),
+      ]);
+      return sim.previewShot("p", "e", "body")?.amount ?? 0;
+    };
+    expect(previewDamage(["assault", "breach"])).toBeGreaterThan(previewDamage([]));
+  });
+
+  it("bulwark training deploys infantry with more HP", () => {
+    const spawnBodyHp = (tech: string[]) => {
+      const base = createBase("p-base-1", "HQ", "player", { x: -14, z: 0 });
+      base.unlockedTech = tech;
+      const sim = new TacticalSim([base]);
+      sim.economy.set("player", 9999);
+      base.commandPoints = 1;
+      sim.select("p-base-1");
+      sim.queueSpawnTroop("soldier");
+      const spawn = sim.entities.find((e) => e.id.startsWith("p-spawn-"));
+      return spawn?.parts.find((p) => p.id === "body")?.maxHp ?? 0;
+    };
+    expect(spawnBodyHp(["assault", "bulwark"])).toBeGreaterThan(spawnBodyHp(["assault"]));
+  });
+
+  it("ghillie doctrine makes your units harder to hit", () => {
+    const spread = (enemyTech: string[]): number => {
+      const enemyBase = createBase("e-base", "Relay", "enemy", { x: 14, z: 0 });
+      enemyBase.unlockedTech = enemyTech;
+      const sim = new TacticalSim([
+        enemyBase,
+        createSoldier("p", "Rook", "player", { x: 0, z: 0 }),
+        createSoldier("e", "Foe", "enemy", { x: 8, z: 0 }),
+      ]);
+      return sim.previewShot("p", "e", "body")?.spreadDegrees ?? 0;
+    };
+    expect(spread(["recon", "ghillie"])).toBeGreaterThan(spread([]));
+  });
+
+  it("thermobarics increases explosive splash damage", () => {
+    const splashTotal = (tech: string[]): number => {
+      const base = createBase("p-base-1", "HQ", "player", { x: -14, z: 0 });
+      base.unlockedTech = tech;
+      const enemyTank = createTank("et", "Breaker", "enemy", { x: 5, z: 0 });
+      const sim = new TacticalSim([base, createTank("pt", "Hammer", "player", { x: 0, z: 0 }), enemyTank]);
+      sim.select("pt");
+      sim.queueShootPart("et", "turret");
+      sim.endTurn();
+      advance(sim, 6);
+      return enemyTank.parts.reduce((sum, p) => sum + (p.maxHp - p.hp), 0);
+    };
+    expect(splashTotal(["assault", "ordnance", "thermobarics"])).toBeGreaterThan(splashTotal([]));
+  });
+});
+
+describe("dynamic map events", () => {
+  it("a sandstorm widens accuracy spread", () => {
+    const spread = (storm: boolean): number => {
+      const sim = new TacticalSim([
+        createSoldier("p", "Rook", "player", { x: 0, z: 0 }),
+        createSoldier("e", "Foe", "enemy", { x: 8, z: 0 }),
+      ]);
+      if (storm) sim.debugForceEvent("sandstorm");
+      return sim.previewShot("p", "e", "body")?.spreadDegrees ?? 0;
+    };
+    expect(spread(true)).toBeGreaterThan(spread(false));
+  });
+
+  it("an artillery barrage damages units caught in the zone", () => {
+    const victim = createSoldier("victim", "Victim", "enemy", { x: 0, z: 0 });
+    victim.commandPoints = 0; // hold still, so the shells are unambiguously what hit it
+    const sim = new TacticalSim([
+      createSoldier("obs", "Observer", "player", { x: 26, z: 10 }),
+      victim,
+    ]);
+    sim.debugForceEvent("barrage", { x: 0, z: 0, radius: 0.5 });
+    sim.endTurn();
+    advance(sim, 4);
+    expect(victim.parts.some((p) => p.hp < p.maxHp)).toBe(true);
+  });
+
+  it("an ion storm scrambles units down to one command point", () => {
+    const unit = createSoldier("u", "Unit", "player", { x: 0, z: 0 });
+    unit.commandPoints = 2;
+    const sim = new TacticalSim([unit]);
+    expect(unit.commandPoints).toBe(2);
+    sim.debugForceEvent("ionstorm");
+    expect(unit.commandPoints).toBe(1);
+  });
+
+  it("collapsing cover wrecks cover inside the zone", () => {
+    const cover = createCover("c1", "Pillar", { x: 0, z: 0 });
+    const sim = new TacticalSim([
+      createSoldier("p", "Rook", "player", { x: -10, z: 0 }),
+      cover,
+    ]);
+    sim.debugForceEvent("collapse", { x: 0, z: 0, radius: 4 });
+    sim.endTurn();
+    advance(sim, 4);
+    expect(cover.status.alive).toBe(false);
+  });
 });
 
 function advance(sim: TacticalSim, seconds: number): void {

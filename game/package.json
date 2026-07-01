@@ -26,8 +26,10 @@
     "test:play": "npm run build && npm run smoke:electron",
     "test:full": "npm run verify && npm run smoke:buttons && npm run smoke:flow && npm run smoke:economy",
     "desktop": "electron .",
-    "standalone": "npm run build && electron ."
+    "standalone": "npm run build && electron .",
+    "dist:exe": "npm run build && electron-builder --win portable"
   },
+  "author": "Rogue Heroes",
   "build": {
     "appId": "com.rogueheroes.tactical",
     "productName": "Rogue Heroes Tactics",
@@ -36,6 +38,9 @@
       "dist/**/*",
       "package.json"
     ],
+    "win": {
+      "target": "portable"
+    },
     "directories": {
       "output": "release"
     }

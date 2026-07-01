@@ -1,72 +1,72 @@
 {
-  "at": "2026-06-23T22:23:50.477Z",
+  "at": "2026-06-25T01:52:46.411Z",
   "command": {
     "label": "command-stress",
-    "fps": 10.19,
-    "windowMs": 3427.8,
+    "fps": 38.99,
+    "windowMs": 3493.7,
     "frame": {
-      "count": 36,
-      "mean": 98.11,
-      "p50": 76.4,
-      "p95": 194.5,
-      "p99": 409.8,
-      "max": 409.8,
-      "jank": 36,
-      "jankRatio": 1
+      "count": 137,
+      "mean": 25.65,
+      "p50": 20.9,
+      "p95": 41.8,
+      "p99": 48.7,
+      "max": 55.6,
+      "jank": 34,
+      "jankRatio": 0.248
     },
     "render": {
       "calls": 2079,
       "triangles": 22238,
-      "geometries": 3851,
+      "geometries": 2563,
       "textures": 1,
-      "programs": 11
+      "programs": 10
     },
-    "sceneObjects": 3338
+    "sceneObjects": 3340
   },
   "resolve": {
     "label": "resolve-stress",
-    "fps": 7.82,
-    "windowMs": 6200.4,
+    "fps": 30.89,
+    "windowMs": 6050,
     "frame": {
-      "count": 49,
-      "mean": 127.81,
-      "p50": 97.3,
-      "p95": 277.7,
-      "p99": 299.1,
-      "max": 299.1,
-      "jank": 48,
-      "jankRatio": 0.98
+      "count": 188,
+      "mean": 32.37,
+      "p50": 27.8,
+      "p95": 48.7,
+      "p99": 69.4,
+      "max": 125.1,
+      "jank": 79,
+      "jankRatio": 0.42
     },
     "render": {
-      "calls": 1894,
-      "triangles": 22994,
-      "geometries": 7135,
-      "textures": 1,
-      "programs": 11
+      "calls": 2725,
+      "triangles": 29240,
+      "geometries": 3203,
+      "textures": 20,
+      "programs": 10
     },
-    "sceneObjects": 3424
+    "sceneObjects": 3382
   },
   "light": {
     "label": "command-light",
-    "fps": 44.76,
-    "windowMs": 3106,
+    "fps": 133.69,
+    "windowMs": 3007.5,
     "frame": {
-      "count": 149,
-      "mean": 22.34,
-      "p50": 13.8,
-      "p95": 83.4,
-      "p99": 139,
-      "max": 222.3,
-      "jank": 27,
-      "jankRatio": 0.181
+      "count": 416,
+      "mean": 7.48,
+      "p50": 7,
+      "p95": 7.1,
+      "p99": 14,
+      "max": 104.2,
+      "jank": 1,
+      "jankRatio": 0.002
     },
     "render": {
       "calls": 570,
       "triangles": 5052,
-      "geometries": 1055,
+      "geometries": 635,
       "textures": 1,
       "programs": 9
     },
-    "sceneObjects": 780
+    "sceneObjects": 782
   }
 }

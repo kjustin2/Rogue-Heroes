@@ -2675,13 +2675,11 @@ h2,
   display: grid;
   place-items: center;
   pointer-events: auto;
-  background:
-    radial-gradient(120% 90% at 50% 8%, rgba(140, 239, 255, 0.12), transparent 46%),
-    radial-gradient(120% 90% at 50% 120%, rgba(255, 135, 95, 0.16), transparent 52%),
-    linear-gradient(180deg, rgba(4, 7, 12, 0.78), rgba(4, 7, 12, 0.92));
-  backdrop-filter: blur(4px) saturate(1.05);
+  /* The dark gradient + radar live on the persistent .menu-bg backdrop behind these
+     screens; the screen itself is a transparent content/interaction layer. */
+  background: transparent;
   animation: title-in 0.5s ease both;
-  transition: opacity 0.5s ease, backdrop-filter 0.5s ease;
+  transition: opacity 0.5s ease;
 }
 @keyframes title-in {
   from { opacity: 0; }
@@ -2989,6 +2987,17 @@ h2,
 .mode-chip.score .score-you { color: var(--cyan); font-weight: 700; }
 .mode-chip.score .score-foe { color: #ff8f7f; font-weight: 700; }
 .mode-chip em { color: var(--text-muted); font-style: normal; font-size: 0.78rem; }
+.mode-chip.event-chip {
+  border-color: rgba(255, 150, 70, 0.6);
+  background: rgba(60, 30, 10, 0.66);
+  color: #ffd0a3;
+  font-weight: 600;
+  animation: event-chip-pulse 1.4s ease-in-out infinite;
+}
+@keyframes event-chip-pulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(255, 150, 70, 0); }
+  50% { box-shadow: 0 0 12px rgba(255, 150, 70, 0.5); }
+}
 
 .turn-chip {
   font-family: var(--font-ui);
@@ -3049,57 +3058,99 @@ h2,
 }
 
 /* Animated dusk background shared by all menu screens. */
+/* Tactical command-console backdrop: concentric range rings + a fine grid over a
+   deep gradient read as a battle map seen through a scope. */
 .menu-bg {
-  position: absolute;
+  position: fixed;
   inset: 0;
   overflow: hidden;
   pointer-events: none;
-  z-index: -1;
+  z-index: 49; /* above the HUD/canvas, just below menu screens (50) */
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.4s ease;
+  backdrop-filter: blur(4px) saturate(1.05); /* blur the live scene behind the menus */
   background:
-    radial-gradient(120% 80% at 50% -10%, rgba(140, 239, 255, 0.18), transparent 50%),
-    radial-gradient(150% 70% at 50% 116%, rgba(255, 135, 95, 0.26), transparent 58%),
-    repeating-linear-gradient(90deg, rgba(140, 239, 255, 0.05) 0 1px, transparent 1px 64px),
-    repeating-linear-gradient(0deg, rgba(140, 239, 255, 0.04) 0 1px, transparent 1px 64px),
-    linear-gradient(180deg, #081120, #05080f 58%, #140b08);
+    repeating-radial-gradient(circle at 50% 44%, rgba(140, 239, 255, 0.055) 0 1px, transparent 1px 104px),
+    repeating-linear-gradient(90deg, rgba(140, 239, 255, 0.045) 0 1px, transparent 1px 58px),
+    repeating-linear-gradient(0deg, rgba(140, 239, 255, 0.035) 0 1px, transparent 1px 58px),
+    radial-gradient(120% 78% at 50% -8%, rgba(120, 220, 255, 0.16), transparent 52%),
+    radial-gradient(150% 80% at 50% 118%, rgba(255, 128, 78, 0.24), transparent 60%),
+    linear-gradient(180deg, #061021, #04070e 56%, #16100b);
 }
-/* A slow aurora sweep behind the menu gives the title screen motion and depth. */
+/* Shown only while a menu is open. The radar/scan/float animations are paused while hidden
+   so they cost nothing during gameplay AND resume from their current angle (never restart)
+   when a menu reopens. */
+body.menus-open .menu-bg {
+  opacity: 1;
+  visibility: visible;
+}
+.menu-bg::before,
+.menu-bg::after,
+.menu-bg span {
+  animation-play-state: paused;
+}
+body.menus-open .menu-bg::before,
+body.menus-open .menu-bg::after,
+body.menus-open .menu-bg span {
+  animation-play-state: running;
+}
+/* The radar sweep — a slow rotating wedge centered on the scope origin is the hero motion. */
 .menu-bg::before {
   content: "";
   position: absolute;
-  inset: -20%;
-  background:
-    conic-gradient(from 200deg at 30% 20%, transparent 0deg, rgba(140, 239, 255, 0.16) 60deg, transparent 140deg),
-    conic-gradient(from 20deg at 75% 30%, transparent 0deg, rgba(192, 140, 255, 0.14) 70deg, transparent 150deg);
-  filter: blur(46px);
-  opacity: 0.8;
-  animation: menu-aurora 26s linear infinite;
+  width: 150vmax;
+  height: 150vmax;
+  left: 50%;
+  top: 44%;
+  transform: translate(-50%, -50%);
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 296deg,
+    rgba(140, 239, 255, 0.06) 330deg,
+    rgba(150, 243, 255, 0.16) 354deg,
+    rgba(190, 250, 255, 0.30) 360deg
+  );
+  -webkit-mask: radial-gradient(circle at center, #000 0 16%, rgba(0, 0, 0, 0.6) 40%, transparent 64%);
+          mask: radial-gradient(circle at center, #000 0 16%, rgba(0, 0, 0, 0.6) 40%, transparent 64%);
+  opacity: 0.9;
+  animation: menu-radar 16s linear infinite;
 }
-/* A bright horizon line low on the screen + a soft vignette frame the composition. */
+/* Drifting scan band + bright horizon + vignette frame the composition. */
 .menu-bg::after {
   content: "";
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(80% 22% at 50% 90%, rgba(140, 239, 255, 0.22), transparent 70%),
-    radial-gradient(120% 120% at 50% 50%, transparent 58%, rgba(0, 0, 0, 0.55));
+    linear-gradient(0deg, transparent, rgba(150, 243, 255, 0.05) 47%, rgba(180, 250, 255, 0.09) 50%, rgba(150, 243, 255, 0.05) 53%, transparent),
+    radial-gradient(72% 20% at 50% 91%, rgba(140, 239, 255, 0.22), transparent 70%),
+    radial-gradient(120% 120% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.62));
+  background-size: 100% 280px, 100% 100%, 100% 100%;
+  background-repeat: no-repeat;
+  animation: menu-scan 7.5s linear infinite;
 }
 .menu-bg span {
   position: absolute;
   border-radius: 50%;
-  filter: blur(40px);
-  opacity: 0.5;
-  animation: menu-float 16s ease-in-out infinite;
+  filter: blur(46px);
+  opacity: 0.55;
+  mix-blend-mode: screen;
+  animation: menu-float 18s ease-in-out infinite;
 }
-.menu-bg span:nth-child(1) { width: 340px; height: 340px; left: 8%; top: 16%; background: rgba(140, 239, 255, 0.4); }
-.menu-bg span:nth-child(2) { width: 400px; height: 400px; right: 4%; top: 38%; background: rgba(255, 135, 95, 0.34); animation-delay: -5s; }
-.menu-bg span:nth-child(3) { width: 280px; height: 280px; left: 44%; bottom: 4%; background: rgba(142, 242, 209, 0.3); animation-delay: -9s; }
+.menu-bg span:nth-child(1) { width: 360px; height: 360px; left: 6%; top: 14%; background: rgba(120, 220, 255, 0.45); }
+.menu-bg span:nth-child(2) { width: 420px; height: 420px; right: 2%; top: 34%; background: rgba(255, 128, 78, 0.36); animation-delay: -6s; }
+.menu-bg span:nth-child(3) { width: 300px; height: 300px; left: 46%; bottom: 2%; background: rgba(150, 245, 215, 0.30); animation-delay: -11s; }
 @keyframes menu-float {
   0%, 100% { transform: translate(0, 0) scale(1); }
   50% { transform: translate(28px, -34px) scale(1.12); }
 }
-@keyframes menu-aurora {
-  0% { transform: rotate(0deg) scale(1.05); }
-  100% { transform: rotate(360deg) scale(1.05); }
+@keyframes menu-radar {
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+@keyframes menu-scan {
+  0% { background-position: 0 -280px, 0 0, 0 0; }
+  100% { background-position: 0 calc(100% + 280px), 0 0, 0 0; }
 }
 
 .main-menu__content {
@@ -3148,6 +3199,16 @@ h2,
   border-color: var(--line-strong);
   transform: translateY(-1px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 18px rgba(140, 239, 255, 0.22);
+}
+.menu-action--exit {
+  margin-top: 6px;
+  color: #ffd9cf;
+  border-color: rgba(255, 128, 78, 0.4);
+  background: linear-gradient(180deg, rgba(255, 128, 78, 0.12), rgba(255, 255, 255, 0.03)), rgba(26, 12, 10, 0.7);
+}
+.menu-action--exit:hover {
+  border-color: rgba(255, 128, 78, 0.7);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 18px rgba(255, 128, 78, 0.28);
 }
 
 .menu-head {
@@ -3250,6 +3311,60 @@ h2,
 .armory-card span { color: var(--text-muted); font-size: 0.8rem; }
 .armory-swatch { height: 36px; border-radius: 7px; background: var(--swatch); box-shadow: inset 0 0 12px rgba(0,0,0,0.4), 0 0 14px var(--swatch); }
 .armory-card .menu-chip { justify-self: start; margin-top: 2px; }
+.armory-screen { text-align: left; max-height: 78vh; overflow-y: auto; }
+.armory-category-title { margin: 14px 0 4px; font-family: var(--font-ui); letter-spacing: 0.12em; text-transform: uppercase; font-size: 0.74rem; color: var(--cyan); opacity: 0.85; }
+.armory-glyph { height: 36px; display: grid; place-items: center; border-radius: 7px; background: rgba(8, 16, 22, 0.7); border: 1px solid var(--line); font-size: 1.4rem; color: #eafdff; }
+.armory-glyph--title { font-size: 0.92rem; font-style: italic; color: #cfe6ea; }
+/* Commander identity on the main menu */
+.commander-id { margin: -6px 0 16px; font-family: var(--font-ui); letter-spacing: 0.08em; color: #bfe9ef; font-size: 0.92rem; }
+.commander-emblem { color: var(--cyan); margin-right: 4px; }
+
+/* Campaign */
+.campaign-screen { max-width: 720px; text-align: left; }
+.campaign-synopsis { margin-top: 8px; line-height: 1.5; }
+.campaign-progress { margin: 12px 0 8px; font-family: var(--font-ui); font-size: 0.82rem; color: #eafdff; letter-spacing: 0.04em; }
+.campaign-list { display: grid; gap: 8px; max-height: 52vh; overflow-y: auto; padding-right: 4px; }
+.campaign-card {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(10, 18, 26, 0.6);
+  text-align: left;
+  cursor: pointer;
+  color: #eafdff;
+  font: inherit;
+}
+.campaign-card:hover:not(:disabled) { border-color: var(--cyan); background: rgba(16, 30, 40, 0.8); }
+.campaign-card:disabled { opacity: 0.45; cursor: not-allowed; }
+.campaign-card.completed { border-color: rgba(140, 239, 255, 0.4); }
+.campaign-card__no { font-family: var(--font-ui); font-size: 1.3rem; font-weight: 800; color: var(--cyan); opacity: 0.7; }
+.campaign-card__body { display: grid; gap: 3px; }
+.campaign-card__body strong { font-family: var(--font-ui); color: #f4fdff; }
+.campaign-card__region { color: var(--text-muted); font-size: 0.78rem; }
+.campaign-card__status { font-family: var(--font-ui); font-size: 0.78rem; color: var(--cyan); white-space: nowrap; }
+.campaign-card.completed .campaign-card__status { color: #8effb0; }
+.campaign-card.locked .campaign-card__status { color: var(--text-muted); }
+
+/* Mission briefing */
+.briefing-screen { max-width: 760px; text-align: left; }
+.briefing-layout { display: grid; grid-template-columns: 1fr 320px; gap: 22px; margin: 8px 0 18px; align-items: start; }
+.briefing-text p { line-height: 1.6; color: #d7e6ea; margin: 8px 0; }
+.briefing-meta { font-family: var(--font-ui); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--cyan); margin-bottom: 6px; }
+.briefing-objective { margin-top: 14px; padding: 10px 12px; border-left: 3px solid var(--cyan); background: rgba(10, 20, 28, 0.6); border-radius: 0 8px 8px 0; color: #eafdff; }
+.briefing-objective span { display: block; font-family: var(--font-ui); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--cyan); margin-bottom: 3px; }
+.briefing-map { border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+@media (max-width: 720px) { .briefing-layout { grid-template-columns: 1fr; } }
+
+/* Campaign end overlays */
+.campaign-end { max-width: 520px; }
+.campaign-end__kicker { font-family: var(--font-ui); letter-spacing: 0.16em; text-transform: uppercase; font-size: 0.84rem; color: var(--cyan); }
+.campaign-end.defeat .campaign-end__kicker { color: #ff8f7f; }
+.campaign-end__story { line-height: 1.6; color: #d7e6ea; margin: 12px 0; }
+.campaign-end__reward { font-family: var(--font-ui); color: #ffd166; font-weight: 700; margin-bottom: 14px; }
 
 /* Pause + controls + edit overlays */
 .pause-overlay, .edit-overlay {
@@ -3382,6 +3497,7 @@ h2,
 
 .reduced-motion .menu-bg span,
 .reduced-motion .menu-bg::before,
+.reduced-motion .menu-bg::after,
 .reduced-motion .title-start,
 .reduced-motion .tutorial-panel,
 .reduced-motion .round-transition,
@@ -3442,3 +3558,39 @@ h2,
   78% { transform: translateY(-50%) scaleX(1); opacity: 1; }
   100% { transform: translateY(-50%) scaleX(1.04); opacity: 0; }
 }
+
+.battle-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 42%, #0f1922, var(--bg) 72%);
+  opacity: 0;
+  transition: opacity 0.28s ease;
+}
+.battle-loading.show { opacity: 1; }
+.battle-loading.leaving { opacity: 0; }
+.battle-loading__inner { display: flex; flex-direction: column; align-items: center; gap: 1.4rem; }
+.battle-loading__spinner {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 3px solid rgba(140, 239, 255, 0.18);
+  border-top-color: var(--cyan);
+  animation: battle-loading-spin 0.9s linear infinite;
+}
+.battle-loading__label { text-align: center; text-transform: uppercase; }
+.battle-loading__label span { display: block; font-size: 0.78rem; letter-spacing: 0.4em; color: rgba(140, 239, 255, 0.85); }
+.battle-loading__label strong {
+  display: block;
+  margin-top: 0.35rem;
+  font-family: var(--font-display);
+  font-size: 1.9rem;
+  letter-spacing: 0.12em;
+  color: #eaf6ff;
+  text-shadow: 0 2px 18px rgba(140, 239, 255, 0.5);
+}
+@keyframes battle-loading-spin { to { transform: rotate(360deg); } }
+.reduced-motion .battle-loading__spinner { animation-duration: 1.6s; }

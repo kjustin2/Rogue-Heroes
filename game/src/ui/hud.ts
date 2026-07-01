@@ -257,6 +257,7 @@ export class Hud {
         <button class="btn ghost menu-btn" data-command="open-menu" data-tip="Open the in-battle menu: save, controls, or return to the main menu. Hotkey: Esc.">Menu <span>Esc</span></button>
         ${turnChip(this.sim)}
         ${modeChip(this.sim)}
+        ${eventChip(this.sim)}
       </div>
 
       <aside class="panel roster ${allOrdersSet ? "all-set" : ""}">
@@ -659,6 +660,13 @@ function modeChip(sim: TacticalSim): string {
   const s = sim.modeState;
   const label = sim.mode === "ctf" ? "Captures" : "Hold";
   return `<span class="mode-chip score" data-tip="${escapeAttr(def.blurb)} ${escapeHtml(sim.mapDef.name)}.">${escapeHtml(def.name)} <strong class="score-you">${s.playerScore}</strong> – <strong class="score-foe">${s.enemyScore}</strong> <em>/ ${s.target} ${label}</em></span>`;
+}
+
+// A warning chip for the active/upcoming dynamic map event (sandstorm, barrage, collapse).
+function eventChip(sim: TacticalSim): string {
+  const notice = sim.environment().notice;
+  if (!notice) return "";
+  return `<span class="mode-chip event-chip" data-tip="Dynamic battlefield event">${escapeHtml(notice)}</span>`;
 }
 
 function buildingDetail(entity: CombatEntity): string {
@@ -1087,7 +1095,8 @@ function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
     const unlocked = isTechUnlocked(base, node.id);
     const reason = sim.researchFailureReason(base, node.id);
     const ready = !reason;
-    const sub = unlocked ? "Done" : `$${node.cost}`;
+    const lockedOut = Boolean(reason && /locked out/i.test(reason));
+    const sub = unlocked ? "Done" : lockedOut ? "Locked" : `$${node.cost}`;
     const tip = unlocked
       ? `${node.name}: ${node.blurb} (researched)`
       : reason

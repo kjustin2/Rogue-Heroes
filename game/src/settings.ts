@@ -10,12 +10,20 @@ export const ACTION_PACES: readonly ActionPace[] = ["slow", "normal", "fast"];
 export const PACE_SPEED: Record<ActionPace, number> = { slow: 0.6, normal: 1, fast: 1.8 };
 export const PACE_LABEL: Record<ActionPace, string> = { slow: "Slow", normal: "Default", fast: "Fast" };
 
+// Graphics quality = how many pixels we render. Each tier caps the device-pixel-ratio:
+// lower renders fewer pixels (faster, softer), higher renders sharper on hi-dpi displays.
+export type RenderScale = "performance" | "balanced" | "quality" | "ultra";
+export const RENDER_SCALES: readonly RenderScale[] = ["performance", "balanced", "quality", "ultra"];
+export const RENDER_SCALE_LABEL: Record<RenderScale, string> = { performance: "Performance", balanced: "Balanced", quality: "Quality", ultra: "Ultra" };
+export const RENDER_SCALE_DPR: Record<RenderScale, number> = { performance: 0.62, balanced: 1, quality: 1.5, ultra: 2 };
+
 export class GameSettings {
   muted = false;
   volume = 0.6;
   difficulty: Difficulty = "normal";
   reducedMotion = false;
   actionPace: ActionPace = "normal";
+  renderScale: RenderScale = "quality";
 
   constructor() {
     this.load();
@@ -36,6 +44,7 @@ export class GameSettings {
       if (s.difficulty === "easy" || s.difficulty === "normal" || s.difficulty === "hard") this.difficulty = s.difficulty;
       if (typeof s.reducedMotion === "boolean") this.reducedMotion = s.reducedMotion;
       if (s.actionPace === "slow" || s.actionPace === "normal" || s.actionPace === "fast") this.actionPace = s.actionPace;
+      if (s.renderScale && RENDER_SCALES.includes(s.renderScale)) this.renderScale = s.renderScale;
     } catch {
       // ignore
     }
@@ -43,7 +52,7 @@ export class GameSettings {
 
   save(): void {
     try {
-      localStorage.setItem(KEY, JSON.stringify({ muted: this.muted, volume: this.volume, difficulty: this.difficulty, reducedMotion: this.reducedMotion, actionPace: this.actionPace }));
+      localStorage.setItem(KEY, JSON.stringify({ muted: this.muted, volume: this.volume, difficulty: this.difficulty, reducedMotion: this.reducedMotion, actionPace: this.actionPace, renderScale: this.renderScale }));
     } catch {
       // ignore
     }

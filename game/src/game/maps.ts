@@ -3,6 +3,14 @@ import { dist, type Vec2 } from "../core/math";
 import { COVER_PROFILES, createCover, type CombatEntity, type CoverKind } from "./damageModel";
 import { onTerrainEdge, terrainHeightAt, type TerrainSpec } from "./terrain";
 
+// A drifting ambient particle bed that gives each map its own living atmosphere.
+export type AmbientKind = "dust" | "embers" | "pollen" | "snow" | "ash";
+export interface AmbientSpec {
+  kind: AmbientKind;
+  color: number;
+  density?: number; // ~1 = the default particle count
+}
+
 export interface MapTheme {
   ground: number;
   groundAccent: number;
@@ -12,6 +20,7 @@ export interface MapTheme {
   playerLight: number;
   enemyLight: number;
   sky: number;
+  ambient?: AmbientSpec;
 }
 
 // A scatter group authors a cohesive band of objects; positions are generated in the
@@ -35,6 +44,21 @@ export interface SignatureObject {
   mirror?: boolean; // also place a mirrored copy across the map center
 }
 
+// Dynamic battlefield events — opt-in per map, deterministic (seeded), telegraphed a turn ahead.
+//  • sandstorm: a window of turns where accuracy drops and the fog thickens.
+//  • barrage: off-map artillery shells a zone during the turn's resolve (hits both sides).
+//  • collapse: cover inside a zone crumbles during the turn's resolve.
+export type MapEventKind = "sandstorm" | "barrage" | "collapse" | "ionstorm";
+
+export interface MapEventConfig {
+  kind: MapEventKind;
+  startTurn: number; // first turn it fires
+  period?: number; // repeat every N turns (omit = one-shot)
+  duration?: number; // turns it stays active — sandstorm only (default 1)
+  zone?: { x: number; z: number; radius: number }; // affected area (barrage/collapse); omit = map center
+  power?: number; // tuning knob (barrage shell damage); omit = sensible default
+}
+
 export interface MapDef {
   id: string;
   name: string;
@@ -50,6 +74,7 @@ export interface MapDef {
   hillRadius: number;
   scatter: ScatterGroup[];
   signature?: SignatureObject[];
+  events?: MapEventConfig[];
 }
 
 export function mapCenter(map: MapDef): Vec2 {
@@ -170,7 +195,7 @@ export const MAPS: readonly MapDef[] = [
     blurb: "Sun-baked flats walled in by two towering rock ranges.",
     feel: "Open desert basin between great mountain ranges — long sightlines reward snipers and armor; climb the slopes for overwatch.",
     seed: 0x44555354,
-    theme: { ground: 0x9c6f3e, groundAccent: 0xc79a5c, grid: 0xd6ad6d, fog: 0xd9b27a, fogDensity: 0.012, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0xe8c98f },
+    theme: { ground: 0x9c6f3e, groundAccent: 0xc79a5c, grid: 0xd6ad6d, fog: 0xd9b27a, fogDensity: 0.012, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0xe8c98f, ambient: { kind: "dust", color: 0xe6c98a, density: 1.1 } },
     terrain: {
       bounds: { minX: -30, maxX: 30, minZ: -19, maxZ: 19 },
       maxHeight: 3.6,
@@ -211,6 +236,8 @@ export const MAPS: readonly MapDef[] = [
       { kind: "rock", x: -8, z: -10, mirror: true, radius: 1.1 },
       { kind: "barricade", x: -2, z: 7, mirror: true },
     ],
+    // Recurring sandstorms sweep the open basin — accuracy and visibility drop in waves.
+    events: [{ kind: "sandstorm", startTurn: 3, duration: 2, period: 6 }],
   },
   {
     id: "ironworks",
@@ -218,7 +245,7 @@ export const MAPS: readonly MapDef[] = [
     blurb: "A cramped foundry of steel and shipping crates.",
     feel: "Tight industrial maze — dense cover and chokepoints favor infantry brawls.",
     seed: 0x49524f4e,
-    theme: { ground: 0x3a3f47, groundAccent: 0x586170, grid: 0x6f7c8c, fog: 0x2b3038, fogDensity: 0.02, playerLight: 0x5fd7ff, enemyLight: 0xff6d57, sky: 0x394150 },
+    theme: { ground: 0x3a3f47, groundAccent: 0x586170, grid: 0x6f7c8c, fog: 0x2b3038, fogDensity: 0.02, playerLight: 0x5fd7ff, enemyLight: 0xff6d57, sky: 0x394150, ambient: { kind: "embers", color: 0xff9a4a, density: 0.85 } },
     terrain: {
       bounds: { minX: -24, maxX: 24, minZ: -15, maxZ: 15 },
       maxHeight: 1.3,
@@ -247,6 +274,8 @@ export const MAPS: readonly MapDef[] = [
       { kind: "pillar", x: -11, z: -2.2, mirror: true },
       { kind: "fuel", x: -8, z: 11, mirror: true },
     ],
+    // Overstressed gantries give way: cover around the central platform crumbles periodically.
+    events: [{ kind: "collapse", startTurn: 5, period: 5, zone: { x: 0, z: 0, radius: 7 } }],
   },
   {
     id: "verdant",
@@ -254,7 +283,7 @@ export const MAPS: readonly MapDef[] = [
     blurb: "A green valley walled by forested mountains around a central hill.",
     feel: "Towering wooded mountain flanks and a true high-ground center — hold the hill, watch the slopes.",
     seed: 0x56455244,
-    theme: { ground: 0x4a6b34, groundAccent: 0x6f8f4a, grid: 0x86a85f, fog: 0xa8c6a0, fogDensity: 0.011, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0xbcd6b0 },
+    theme: { ground: 0x4a6b34, groundAccent: 0x6f8f4a, grid: 0x86a85f, fog: 0xa8c6a0, fogDensity: 0.011, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0xbcd6b0, ambient: { kind: "pollen", color: 0xd8f0a0, density: 1 } },
     terrain: {
       bounds: { minX: -28, maxX: 28, minZ: -19, maxZ: 19 },
       maxHeight: 3.6,
@@ -299,7 +328,7 @@ export const MAPS: readonly MapDef[] = [
     blurb: "A narrow land bridge between frozen basins.",
     feel: "Linear and funneled — a single icy causeway forces brutal head-on fights.",
     seed: 0x46524f5a,
-    theme: { ground: 0xa9c2d6, groundAccent: 0xd6e6f0, grid: 0xbfd6e6, fog: 0xcfe0ec, fogDensity: 0.016, playerLight: 0x7fd7ff, enemyLight: 0xff8f7f, sky: 0xdcebf4 },
+    theme: { ground: 0xa9c2d6, groundAccent: 0xd6e6f0, grid: 0xbfd6e6, fog: 0xcfe0ec, fogDensity: 0.016, playerLight: 0x7fd7ff, enemyLight: 0xff8f7f, sky: 0xdcebf4, ambient: { kind: "snow", color: 0xeaf4ff, density: 1.2 } },
     terrain: {
       bounds: { minX: -32, maxX: 32, minZ: -16, maxZ: 16 },
       maxHeight: 1.4,
@@ -326,6 +355,8 @@ export const MAPS: readonly MapDef[] = [
       { kind: "sandbag", x: -12, z: -1, mirror: true },
       { kind: "rock", x: -15, z: 1.5, mirror: true },
     ],
+    // Ion storms rake the exposed causeway, scrambling command links (units lose command points).
+    events: [{ kind: "ionstorm", startTurn: 3, duration: 1, period: 4 }],
   },
   {
     id: "karak",
@@ -333,7 +364,7 @@ export const MAPS: readonly MapDef[] = [
     blurb: "Toppled colonnades over stepped stone mesas.",
     feel: "Vertical ruins — climb the mesas and fight among broken pillars and cliffs.",
     seed: 0x4b415241,
-    theme: { ground: 0x8a6a3c, groundAccent: 0xb08a4e, grid: 0xc6a567, fog: 0xc7a877, fogDensity: 0.013, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0xd8bd8c },
+    theme: { ground: 0x8a6a3c, groundAccent: 0xb08a4e, grid: 0xc6a567, fog: 0xc7a877, fogDensity: 0.013, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0xd8bd8c, ambient: { kind: "ash", color: 0xcbb083, density: 0.9 } },
     terrain: {
       bounds: { minX: -26, maxX: 26, minZ: -18, maxZ: 18 },
       maxHeight: 2.1,
@@ -363,6 +394,8 @@ export const MAPS: readonly MapDef[] = [
       { kind: "pillar", x: -10.5, z: -8.5, mirror: true },
       { kind: "rock", x: -16, z: 2.5, mirror: true },
     ],
+    // The ancient colonnades give way: cover near the central dais collapses every few turns.
+    events: [{ kind: "collapse", startTurn: 4, period: 4, zone: { x: 0, z: 0, radius: 9 } }],
   },
   {
     id: "crossfire",
@@ -370,7 +403,7 @@ export const MAPS: readonly MapDef[] = [
     blurb: "A symmetric bowl built for honest, balanced duels.",
     feel: "Balanced competitive arena — mirrored cover nests and a sunken central basin.",
     seed: 0x43524f53,
-    theme: { ground: 0x5a6348, groundAccent: 0x7c8760, grid: 0x97a277, fog: 0x9fb091, fogDensity: 0.012, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0xb6c4a6 },
+    theme: { ground: 0x5a6348, groundAccent: 0x7c8760, grid: 0x97a277, fog: 0x9fb091, fogDensity: 0.012, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0xb6c4a6, ambient: { kind: "pollen", color: 0xc6d8a8, density: 0.7 } },
     terrain: {
       bounds: { minX: -26, maxX: 26, minZ: -17, maxZ: 17 },
       maxHeight: 1.6,
@@ -399,6 +432,8 @@ export const MAPS: readonly MapDef[] = [
       { kind: "ammo", x: -12.5, z: 3.5, mirror: true },
       { kind: "fuel", x: -8.5, z: 8, mirror: true },
     ],
+    // Off-map artillery ranges in on the central basin on a steady cadence — don't loiter there.
+    events: [{ kind: "barrage", startTurn: 3, period: 4, zone: { x: 0, z: 0, radius: 6 }, power: 34 }],
   },
 ];
 

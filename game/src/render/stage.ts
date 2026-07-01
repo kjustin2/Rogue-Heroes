@@ -247,6 +247,12 @@ export class Stage {
     this.renderer.setSize(width, height);
   }
 
+  /** Graphics-quality knob: render at `cap`× pixels, never above the device's own ratio. */
+  setPixelRatioCap(cap: number): void {
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, cap));
+    this.resize();
+  }
+
   private updateGuide(dt: number): void {
     if (!this.guide) return;
     if (performance.now() > this.guide.expiresAt) {
