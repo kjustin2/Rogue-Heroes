@@ -124,7 +124,9 @@ export class Stage {
     key.shadow.camera.near = 2;
     key.shadow.camera.far = 72;
     key.shadow.bias = -0.0006;
-    key.shadow.normalBias = 0.02;
+    // Higher normal bias than the box-only era: the GLB hulls' curved/angled plates
+    // self-shadow-acne (reads as flickering stripes) at the old 0.02.
+    key.shadow.normalBias = 0.05;
     this.keyLight = key;
     this.scene.add(key);
 

@@ -73,6 +73,9 @@ export class WorldRenderer {
   private propTint = new THREE.Color(0x8a7a5c);
   private skyTexture: THREE.CanvasTexture | null = null;
   private lastModelsVersion = modelsVersion();
+  private readonly ghostStickyUntil = new Map<string, number>();
+  // Recent flight positions per live projectile — drawn as a fading comet tail.
+  private readonly trailHistory = new Map<string, { x: number; y: number; z: number }[]>();
   private debug: WorldRenderDebug = emptyDebug();
 
   // Fixed pool of flash lights (muzzle/blast), pre-added at intensity 0 so the scene's
@@ -82,7 +85,9 @@ export class WorldRenderer {
   constructor(private readonly scene: THREE.Scene) {
     this.scene.add(this.sceneryRoot, this.debrisRoot, this.entityRoot, this.markerRoot, this.orderRoot, this.previewRoot, this.projectileRoot, this.effectRoot, this.objectiveRoot, this.groundAimRoot, this.auraRoot, this.damageNumberRoot, this.environmentRoot);
     for (let i = 0; i < 3; i += 1) {
-      const light = new THREE.PointLight(0xffc37a, 0, 9, 1.6);
+      // Tight radius + fast decay: a wide pool reads as a brown stain on the ground
+      // rather than a flash.
+      const light = new THREE.PointLight(0xffc37a, 0, 5.5, 2);
       light.position.y = 1.4;
       this.scene.add(light);
       this.flashLights.push({ light, strength: 0, until: 0, duration: 1 });
@@ -180,7 +185,21 @@ export class WorldRenderer {
         this.groups.delete(id);
       }
     }
-    this.ghostedEntityIds = this.computeGhostedEntities(sim, targetId, targetPartId, camera);
+    // Ghosting with hysteresis: the trigger set is recomputed from in-flight projectiles
+    // every frame, so during resolve a cover piece near a fire line would strobe
+    // transparent<->opaque frame to frame. Once ghosted, stay ghosted for a beat.
+    {
+      const now = performance.now();
+      for (const id of this.computeGhostedEntities(sim, targetId, targetPartId, camera)) {
+        this.ghostStickyUntil.set(id, now + 350);
+      }
+      const ghosted = new Set<string>();
+      for (const [id, until] of this.ghostStickyUntil) {
+        if (until > now) ghosted.add(id);
+        else this.ghostStickyUntil.delete(id);
+      }
+      this.ghostedEntityIds = ghosted;
+    }
     this.debug.ghostedEntities = [...this.ghostedEntityIds];
     if (sim.entities.every((e) => e.parts.every((p) => p.hp === p.maxHp))) {
       this.destroyedPartKeys.clear();
@@ -785,21 +804,22 @@ export class WorldRenderer {
     const dims = group.userData.dims as THREE.Vector3;
     const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.85, roughness: 0.4, metalness: 0.1 });
     mat.userData.shared = false;
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.3, dims.x * 0.2), 0.07, 0.07), mat);
-    bar.position.set(0, dims.y + 0.05, -dims.z * 0.16);
+    // Roof-mounted only: flank strips either z-fight (embedded in the hull surface) or
+    // float in mid-air, because the bbox doesn't follow the hull's actual profile. A light
+    // bar + a small beacon above the silhouette are always safely clear of the mesh.
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.32, dims.x * 0.22), 0.07, 0.07), mat);
+    bar.position.set(0, dims.y + 0.06, -dims.z * 0.16);
     bar.userData.decor = true;
     group.add(bar);
-    for (const side of [-1, 1]) {
-      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.09, Math.max(0.4, dims.z * 0.36)), mat);
-      strip.position.set(side * dims.x * 0.48, dims.y * 0.42, 0);
-      strip.userData.decor = true;
-      group.add(strip);
-    }
+    const beacon = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.09), mat);
+    beacon.position.set(0, dims.y + 0.06, dims.z * 0.2);
+    beacon.userData.decor = true;
+    group.add(beacon);
   }
 
   // Nudge a GLB prop's albedo toward the map palette (mirror of tintPropToMap, but on the
   // clone's material records so per-frame damage tinting keeps the tint as its base).
-  private tintModelToMap(group: THREE.Group, amount = 0.24): void {
+  private tintModelToMap(group: THREE.Group, amount = 0.38): void {
     const mats = group.userData.glbMaterials as { material: THREE.MeshStandardMaterial; base: number }[] | undefined;
     if (!mats) return;
     for (const record of mats) {
@@ -1773,9 +1793,32 @@ export class WorldRenderer {
 
   private syncProjectiles(projectiles: readonly Projectile[]): void {
     this.disposeAndClear(this.projectileRoot);
+    const liveIds = new Set<string>();
     for (const projectile of projectiles) {
+      liveIds.add(projectile.id);
       const style = projectileStyle(projectile);
-      this.projectileRoot.add(makeLine(projectile.previous, projectile.position, style.trailColor, 0.92, projectile.previousHeight, projectile.height));
+
+      // Comet tail: recent positions fade out behind the round. Opacities are quantized
+      // so every segment hits the cached line-material pool.
+      let history = this.trailHistory.get(projectile.id);
+      if (!history) {
+        history = [];
+        this.trailHistory.set(projectile.id, history);
+      }
+      history.push({ x: projectile.position.x, y: projectile.height, z: projectile.position.z });
+      if (history.length > 8) history.shift();
+      for (let i = history.length - 1; i > 0; i -= 1) {
+        const a = history[i - 1];
+        const b = history[i];
+        const fade = TRAIL_OPACITIES[Math.min(TRAIL_OPACITIES.length - 1, history.length - 1 - i)];
+        this.projectileRoot.add(makeLine(a, b, style.trailColor, fade, a.y, b.y));
+      }
+      // White-hot head segment reads as a tracer and feeds the bloom pass.
+      this.projectileRoot.add(makeTubeLine(
+        projectile.previous, projectile.position,
+        blendHex(style.trailColor, 0xffffff, 0.55), 0.9,
+        projectile.previousHeight, 0.028, projectile.height,
+      ));
       this.projectileRoot.add(makeProjectileShadow(projectile, style.trailColor));
 
       const flash = makeMuzzleFlash(projectile);
@@ -1786,6 +1829,7 @@ export class WorldRenderer {
       orientAlongShot(model, projectile.previous, projectile.position);
       this.projectileRoot.add(model);
     }
+    for (const id of this.trailHistory.keys()) if (!liveIds.has(id)) this.trailHistory.delete(id);
   }
 
   /** Claim the stalest pooled light and flash it at a world point (muzzle or blast). */
@@ -1822,18 +1866,19 @@ export class WorldRenderer {
         ring.rotation.x = -Math.PI / 2;
         ring.position.set(effect.to.x, 0.08, effect.to.z);
         this.effectRoot.add(ring);
-        // White-hot core that punches through the bloom threshold for the blast's first beats.
+        // White-hot core that punches through the bloom threshold for the blast's first
+        // beats. Additive so it reads as light, not a solid white egg.
         if (t < 0.45) {
           const core = new THREE.Mesh(
-            new THREE.SphereGeometry((effect.radius ?? 1) * (0.16 + t * 0.5), 12, 8),
-            new THREE.MeshBasicMaterial({ color: 0xfff3da, transparent: true, opacity: (1 - t / 0.45) * 0.95, depthWrite: false })
+            new THREE.SphereGeometry((effect.radius ?? 1) * (0.14 + t * 0.42), 12, 8),
+            new THREE.MeshBasicMaterial({ color: 0xffdba6, transparent: true, opacity: (1 - t / 0.45) * 0.85, depthWrite: false, blending: THREE.AdditiveBlending })
           );
           core.position.set(effect.to.x, 0.5 + t * 0.9, effect.to.z);
           this.effectRoot.add(core);
         }
         const dome = new THREE.Mesh(
           new THREE.SphereGeometry((effect.radius ?? 1) * (0.24 + t * 0.82), 12, 6),
-          new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: opacity * 0.22, depthWrite: false })
+          new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: opacity * 0.2, depthWrite: false, blending: THREE.AdditiveBlending })
         );
         dome.scale.y = 0.36;
         dome.position.set(effect.to.x, 0.22 + t * 0.36, effect.to.z);
@@ -1844,9 +1889,11 @@ export class WorldRenderer {
         addEmbers(embers, 4, 0xffb02e, (effect.radius ?? 1) * (0.4 + t * 0.9), 0.4 + t * 1.2, effect.age);
         this.effectRoot.add(embers);
       } else {
+        // Additive with capped growth — the old opaque 2x-growing sphere wrapped the
+        // whole unit in a colored balloon on heavy hits.
         const hit = new THREE.Mesh(
-          new THREE.SphereGeometry((effect.radius ?? 0.45) * (1 + t), 8, 6),
-          new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: opacity * 0.55 })
+          new THREE.SphereGeometry((effect.radius ?? 0.45) * (0.65 + t * 0.45), 10, 8),
+          new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: opacity * 0.42, depthWrite: false, blending: THREE.AdditiveBlending })
         );
         hit.position.set(effect.to.x, 0.8, effect.to.z);
         this.effectRoot.add(hit);
@@ -2148,7 +2195,9 @@ function makeProjectileModel(projectile: Projectile): THREE.Group {
     group.add(body, nose, exhaust, bandA, bandB);
     group.rotation.y = projectile.age * (heavy ? 6 : 11);
     if (heavy) addEmbers(group, 3, 0xffae57, 0.12, -0.34, projectile.age);
-    group.scale.setScalar(1.14 * (heavy ? 1.3 : bomb ? 1.12 : 1));
+    // Sized against the 3.4-unit GLB tank — the old 1.14 base read as a toy bullet a
+    // third of the vehicle's length.
+    group.scale.setScalar(0.82 * (heavy ? 1.3 : bomb ? 1.12 : 1));
     return group;
   }
   if (projectile.kind === "bolt") {
@@ -2587,6 +2636,10 @@ export function disposeSubtree(obj: THREE.Object3D): void {
 // Scratch colors reused by paintPart's per-frame, per-mesh hot path (avoids allocating).
 const _paintColor = new THREE.Color();
 const _paintTmp = new THREE.Color();
+
+// Quantized comet-tail opacities (newest segment first) — fixed values keep the cached
+// line-material pool bounded.
+const TRAIL_OPACITIES = [0.62, 0.4, 0.26, 0.16, 0.09, 0.05, 0.03];
 
 const tubeGeometries = new Map<string, THREE.CylinderGeometry>();
 const endpointGeometries = new Map<string, THREE.RingGeometry>();
