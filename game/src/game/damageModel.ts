@@ -85,6 +85,8 @@ export interface CombatEntity {
   incomeLevel?: number;
   unlockedTech?: string[];
   spawnCooldowns?: Partial<Record<EntityKind, number>>;
+  // Rounds until each off-map support power can be called again (Home Base only).
+  supportCooldowns?: Partial<Record<string, number>>;
   // Optional cosmetic accent (hex color) for the player's unit markings — purely visual.
   accent?: number;
 }

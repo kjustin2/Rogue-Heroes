@@ -1571,6 +1571,61 @@ describe("tactical enemy AI", () => {
     expect(spawnedKind("normal")).toBe("grenadier"); // splash to counter 3 infantry
     expect(spawnedKind("easy")).toBe("tank"); // greedy = strongest affordable
   });
+
+  it("airstrike support power: pays, cools down, flies in, and damages the line", () => {
+    const base = createBase("p-base-1", "HQ", "player", { x: -14, z: 0 });
+    const enemyBase = createBase("e-base-1", "Enemy HQ", "enemy", { x: 14, z: 8 });
+    const victim = createSoldier("e-victim", "Victim", "enemy", { x: 4, z: 0 });
+    const sim = new TacticalSim([base, enemyBase, victim]);
+    sim.economy.set("player", 1000);
+    base.commandPoints = 1;
+    sim.select("p-base-1");
+    sim.setPendingSupport("airstrike");
+    expect(sim.queueSupportAt({ x: 4, z: 0 })).toBe(true);
+    expect(sim.money("player")).toBe(1000 - 320);
+    expect(sim.supportCooldown(base, "airstrike")).toBe(3);
+    // On cooldown + no CP: a second call is rejected.
+    sim.setPendingSupport("airstrike");
+    expect(sim.queueSupportAt({ x: 4, z: 0 })).toBe(false);
+
+    const hpBefore = victim.parts.reduce((sum, p) => sum + p.hp, 0);
+    sim.endTurn();
+    let sawJet = false;
+    for (let i = 0; i < 200 && sim.phase === "resolve"; i += 1) {
+      sim.update(0.05);
+      if (sim.effects.some((e) => e.type === "jet")) sawJet = true;
+    }
+    expect(sawJet).toBe(true);
+    expect(victim.parts.reduce((sum, p) => sum + p.hp, 0)).toBeLessThan(hpBefore);
+    expect(sim.phase).toBe("command");
+  });
+
+  it("locks cluster and laser support behind their doctrines", () => {
+    const base = createBase("p-base-1", "HQ", "player", { x: -14, z: 0 });
+    const sim = new TacticalSim([base, createBase("e-base-1", "Enemy HQ", "enemy", { x: 14, z: 0 })]);
+    sim.economy.set("player", 5000);
+    base.commandPoints = 1;
+    expect(sim.supportFailureReason(base, "cluster")).toMatch(/Ordnance/i);
+    expect(sim.supportFailureReason(base, "laser")).toMatch(/Siege/i);
+    base.unlockedTech = ["assault", "ordnance", "armor", "siege"];
+    expect(sim.supportFailureReason(base, "cluster")).toBeUndefined();
+    expect(sim.supportFailureReason(base, "laser")).toBeUndefined();
+  });
+
+  it("never stalls: a unit that cannot fire still pushes the objective in destroy mode", () => {
+    // Regression: destroy mode had no fallback objective, so a unit that couldn't take a
+    // shot (here: disarmed, on a no-retreat profile) got no goal at all and stood forever.
+    const playerBase = createBase("p-base-1", "Home Base", "player", { x: -14, z: 0 });
+    const grunt = createSoldier("e-grunt", "Grunt", "enemy", { x: 10, z: 0 });
+    applyDamage(grunt, "rifle", 999); // disarmed: canShoot false
+    const foe = createSoldier("p-foe", "Foe", "player", { x: 14, z: 0 }); // close: no advance pull
+    const sim = new TacticalSim([playerBase, foe, grunt]);
+    sim.difficulty = "easy"; // greedy profile: no retreat, so pre-fix this unit idled
+    sim.endTurn();
+    const move = sim.orders.find((o) => o.actorId === "e-grunt" && o.kind === "move");
+    expect(move?.destination).toBeDefined();
+    expect(dist(move!.destination!, playerBase.position)).toBeLessThan(dist(grunt.position, playerBase.position));
+  });
 });
 
 describe("tech specializations", () => {

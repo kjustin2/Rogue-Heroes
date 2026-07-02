@@ -64,6 +64,50 @@ export class Sfx {
     this.boom(90, 0.28, 0.7);
   }
 
+  // Strike aircraft flyby: a long filtered-noise sweep that rises then falls.
+  jet(): void {
+    if (!this.ready()) return;
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    const dur = 1.4;
+    const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * dur), ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.Q.value = 1.1;
+    bp.frequency.setValueAtTime(220, t);
+    bp.frequency.exponentialRampToValueAtTime(1450, t + dur * 0.45);
+    bp.frequency.exponentialRampToValueAtTime(180, t + dur);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.001, t);
+    env.gain.exponentialRampToValueAtTime(0.5, t + dur * 0.4);
+    env.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(bp).connect(env).connect(this.master!);
+    src.start(t);
+    src.stop(t + dur + 0.05);
+  }
+
+  // Orbital lance: a deep descending charge tone under a bright zap.
+  beam(): void {
+    if (!this.ready()) return;
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(1600, t);
+    osc.frequency.exponentialRampToValueAtTime(90, t + 0.9);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.28, t);
+    env.gain.exponentialRampToValueAtTime(0.001, t + 0.95);
+    osc.connect(env).connect(this.master!);
+    osc.start(t);
+    osc.stop(t + 1);
+    this.boom(70, 0.5, 0.5);
+  }
+
   ui(): void {
     this.blip(540, 0.04, "triangle", 0.18);
   }

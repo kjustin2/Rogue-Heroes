@@ -352,7 +352,11 @@ export class WorldRenderer {
     }
     // Red when our own units take damage (alarm), gold when we're dealing it to the enemy.
     const color = entry.targetTeam === "player" ? 0xff6b7a : entry.targetTeam === "enemy" ? 0xffd166 : 0xffbf69;
-    const text = entry.destroyed ? "WRECKED" : entry.killed ? `${entry.amount}!` : `${entry.amount}`;
+    // Serious military phrasing for a kill, by what died: personnel are K.I.A.,
+    // vehicles/structures are DESTROYED, cover is DEMOLISHED.
+    const text = entry.destroyed
+      ? (isInfantryKind(target.kind) ? "K.I.A." : target.kind === "cover" ? "DEMOLISHED" : "DESTROYED")
+      : entry.killed ? `${entry.amount}!` : `${entry.amount}`;
     const record = floatingNumberTexture(text, color);
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: record.texture, transparent: true, opacity: 0.96, depthWrite: false, depthTest: false }));
     const baseHeight = target.elevation + target.height * 0.6;
@@ -1780,6 +1784,11 @@ export class WorldRenderer {
   private syncGroundAim(sim: TacticalSim, point?: Vec2): void {
     this.disposeAndClear(this.groundAimRoot);
     if (!point) return;
+    // Targeting a support power: draw the strike footprint instead of a weapon arc.
+    if (sim.pendingSupport) {
+      this.drawSupportReticle(sim, sim.pendingSupport, point);
+      return;
+    }
     const aim = sim.groundAimPreview(point);
     if (!aim) return;
     const landing = aim.hit ?? { point: aim.to, height: aim.toHeight };
@@ -1794,6 +1803,34 @@ export class WorldRenderer {
     // Blast footprint at where it actually lands (the marked spot, or the obstacle it clips).
     this.groundAimRoot.add(makeSplashDisc(landing.point, color, aim.radius));
     this.groundAimRoot.add(makeEndpoint(landing.point, color, 0.5, landing.height + 0.05));
+  }
+
+  // The hover footprint while calling in a support power: line of bomb circles (airstrike),
+  // a wide saturation disc (cluster), or the burning beam line (laser). Line powers align
+  // away from the calling base, so the preview shows the true strike axis.
+  private drawSupportReticle(sim: TacticalSim, kind: string, point: Vec2): void {
+    const base = sim.selected;
+    const dx = point.x - (base?.position.x ?? point.x - 1);
+    const dz = point.z - (base?.position.z ?? point.z);
+    const len = Math.hypot(dx, dz) || 1;
+    const dir = { x: dx / len, z: dz / len };
+    const pulse = (Math.sin(performance.now() * 0.008) + 1) * 0.5;
+    const y = terrainHeightAt(point) + 0.07;
+    if (kind === "airstrike") {
+      for (let i = 0; i < 5; i += 1) {
+        const p = { x: point.x + dir.x * (i - 2) * 1.7, z: point.z + dir.z * (i - 2) * 1.7 };
+        this.groundAimRoot.add(makeSplashDisc(p, 0xff8c3a, 1.9));
+      }
+      this.groundAimRoot.add(makeLine({ x: point.x - dir.x * 6, z: point.z - dir.z * 6 }, { x: point.x + dir.x * 6, z: point.z + dir.z * 6 }, 0xff8c3a, 0.5 + pulse * 0.3, y));
+    } else if (kind === "cluster") {
+      this.groundAimRoot.add(makeSplashDisc(point, 0xffb02e, 3.2 + 1.35));
+      this.groundAimRoot.add(makeEndpoint(point, 0xffb02e, 0.6, y));
+    } else {
+      const from = { x: point.x - dir.x * 4.5, z: point.z - dir.z * 4.5 };
+      const to = { x: point.x + dir.x * 4.5, z: point.z + dir.z * 4.5 };
+      this.groundAimRoot.add(makeTubeLine(from, to, 0xff5a4d, 0.4 + pulse * 0.3, y, 0.09));
+      this.groundAimRoot.add(makeSplashDisc(point, 0xff5a4d, 1.15));
+    }
   }
 
   private syncSplashPreview(sim: TacticalSim, actorId: string, preview: ShotPreview, color: number): void {
@@ -1941,6 +1978,69 @@ export class WorldRenderer {
       const opacity = 1 - t;
       if (effect.type === "shot") {
         this.effectRoot.add(makeBeam(effect.from, effect.to, effect.color, opacity));
+      } else if (effect.type === "jet") {
+        // A strike aircraft crossing the field: dark delta silhouette + engine glow +
+        // contrail, plus a racing ground shadow so the flyby reads at tactics zoom.
+        const x = effect.from.x + (effect.to.x - effect.from.x) * t;
+        const z = effect.from.z + (effect.to.z - effect.from.z) * t;
+        const dirX = effect.to.x - effect.from.x;
+        const dirZ = effect.to.z - effect.from.z;
+        const len = Math.hypot(dirX, dirZ) || 1;
+        const alt = 7.4;
+        const jet = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.ConeGeometry(0.2, 1.7, 6), new THREE.MeshBasicMaterial({ color: 0x14171a }));
+        body.rotation.x = Math.PI / 2;
+        const wing = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.06, 0.6), new THREE.MeshBasicMaterial({ color: 0x1d2125 }));
+        wing.position.z = -0.3;
+        const tail = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.06, 0.3), new THREE.MeshBasicMaterial({ color: 0x1d2125 }));
+        tail.position.z = -0.75;
+        jet.add(body, wing, tail);
+        for (const side of [-1, 1]) {
+          const engine = new THREE.Mesh(
+            new THREE.SphereGeometry(0.09, 8, 6),
+            new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }),
+          );
+          engine.position.set(side * 0.32, -0.02, -0.72);
+          jet.add(engine);
+        }
+        jet.position.set(x, alt, z);
+        jet.rotation.y = Math.atan2(dirX, dirZ);
+        this.effectRoot.add(jet);
+        const back = { x: x - (dirX / len) * 3.4, z: z - (dirZ / len) * 3.4 };
+        this.effectRoot.add(makeTubeLine(back, { x, z }, 0xffffff, 0.22, alt, 0.06, alt));
+        const shadow = new THREE.Mesh(projectileShadowGeometry(0.5), projectileShadowMaterial(0x000000, 0.2));
+        shadow.rotation.x = -Math.PI / 2;
+        shadow.position.set(x, terrainHeightAt({ x, z }) + 0.03, z);
+        shadow.scale.set(1, 1.9, 1);
+        this.effectRoot.add(shadow);
+      } else if (effect.type === "beam") {
+        // Orbital lance: a burning light-curtain from the sky along the strike line, with a
+        // white-hot core and a scorch line on the ground.
+        const fade = t < 0.18 ? t / 0.18 : 1 - (t - 0.18) / 0.82;
+        const dirX = effect.to.x - effect.from.x;
+        const dirZ = effect.to.z - effect.from.z;
+        const length = Math.hypot(dirX, dirZ) || 1;
+        const yaw = Math.atan2(-dirZ, dirX);
+        const midX = (effect.from.x + effect.to.x) / 2;
+        const midZ = (effect.from.z + effect.to.z) / 2;
+        const curtain = new THREE.Mesh(
+          new THREE.PlaneGeometry(length + 1.5, 17),
+          new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: fade * 0.4, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }),
+        );
+        curtain.position.set(midX, 8.4, midZ);
+        curtain.rotation.y = yaw;
+        this.effectRoot.add(curtain);
+        const core = new THREE.Mesh(
+          new THREE.PlaneGeometry(length + 0.5, 17),
+          new THREE.MeshBasicMaterial({ color: 0xfff1dc, transparent: true, opacity: fade * 0.7, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }),
+        );
+        core.position.set(midX, 8.4, midZ);
+        core.rotation.y = yaw;
+        core.scale.x = 0.22;
+        this.effectRoot.add(core);
+        const y = terrainHeightAt({ x: midX, z: midZ }) + 0.12;
+        this.effectRoot.add(makeTubeLine(effect.from, effect.to, 0xff7a5a, fade * 0.9, y, 0.11));
+        this.effectRoot.add(makeLine(effect.from, effect.to, 0xfff1dc, fade, y + 0.06));
       } else if (effect.type === "blast") {
         const ring = new THREE.Mesh(
           new THREE.RingGeometry((effect.radius ?? 1) * t, (effect.radius ?? 1) * t + 0.08, 32),

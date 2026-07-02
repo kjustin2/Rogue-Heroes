@@ -5,6 +5,8 @@ import {
   TROOP_CATALOG,
   TECH_TREE,
   DEFENSE_CATALOG,
+  SUPPORT_POWERS,
+  supportPowerSpec,
   INCOME_BY_LEVEL,
   generatorEfficiency,
   baseIncome,
@@ -14,6 +16,7 @@ import {
   modeDef,
   type TroopKind,
   type DefenseKind,
+  type SupportPowerKind,
 } from "../game/sim";
 import type { Intent, ShotPreview, TacticalOrder, TacticalSim, TurnDamageEntry, TurnReport } from "../game/sim";
 
@@ -88,6 +91,9 @@ export interface HudCallbacks {
   beginBuild(kind: DefenseKind): void;
   cancelBuild(): void;
   queueBuildStructure(point: Vec2): boolean;
+  beginSupport(kind: SupportPowerKind): void;
+  cancelSupport(): void;
+  queueSupportAt(point: Vec2): boolean;
   queueShootAt(point: Vec2): boolean;
   researchTech(nodeId: string): boolean;
   cancelOrder(id: string): boolean;
@@ -184,6 +190,11 @@ export class Hud {
       this.update();
       return true;
     }
+    if (this.sim.pendingSupport) {
+      this.callbacks.cancelSupport();
+      this.update();
+      return true;
+    }
     if (this.action !== "select") {
       this.setAction("select");
       return true;
@@ -200,8 +211,9 @@ export class Hud {
   }
 
   setAction(action: Intent): void {
-    // Picking any unit action cancels an in-progress defense placement.
+    // Picking any unit action cancels an in-progress defense placement or strike call.
     if (this.sim.pendingBuild) this.callbacks.cancelBuild();
+    if (this.sim.pendingSupport) this.callbacks.cancelSupport();
     this.action = action;
     if (action === "select" || action === "move") this.targetPartId = undefined;
     if (action === "select" || action === "move") this.targetId = undefined;
@@ -233,6 +245,15 @@ export class Hud {
         this.action = "select";
         this.callbacks.setIntent("select");
       }
+      return;
+    }
+    // Calling a support strike: mark the clicked spot as the target point.
+    if (this.sim.pendingSupport && this.sim.phase === "command") {
+      if (this.callbacks.queueSupportAt(destination)) {
+        this.action = "select";
+        this.callbacks.setIntent("select");
+      }
+      this.update();
       return;
     }
     if (this.action === "grenade" && this.sim.phase === "command") {
@@ -401,6 +422,10 @@ export class Hud {
     const buildKind = target.closest<HTMLElement>("[data-build]")?.dataset.build as DefenseKind | undefined;
     if (buildKind) this.callbacks.beginBuild(buildKind);
     if (target.closest<HTMLElement>("[data-build-cancel]")) this.callbacks.cancelBuild();
+
+    const supportKind = target.closest<HTMLElement>("[data-support]")?.dataset.support as SupportPowerKind | undefined;
+    if (supportKind) this.callbacks.beginSupport(supportKind);
+    if (target.closest<HTMLElement>("[data-support-cancel]")) this.callbacks.cancelSupport();
 
     const editUnitId = target.closest<HTMLElement>("[data-edit-unit]")?.dataset.editUnit;
     if (editUnitId) {
@@ -1194,6 +1219,35 @@ function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
     ? `<div class="order-note order-note--progress">Placing ${escapeHtml(pendingLabel)} — click a spot inside the green ring near your base. <button class="icon-btn" data-build-cancel="1" data-tip="Cancel placement.">Cancel</button></div>`
     : "";
 
+  // Off-map support powers: tech-locked ones stay classified (same discovery language as
+  // the troop deck); unlocked ones show cost / cooldown, and the armed one shows Targeting.
+  const supportButtons = SUPPORT_POWERS.map((spec) => {
+    const techLocked = Boolean(spec.tech) && !isTechUnlocked(base, spec.tech as string);
+    if (techLocked) {
+      const techName = TECH_TREE.find((n) => n.id === spec.tech)?.name ?? "a doctrine";
+      return `<button class="btn confirm disabled classified" data-support="${spec.kind}" data-disabled="true" data-tip="${escapeAttr(`Classified support asset. Research ${techName} to reveal it.`)}">
+        <span class="classified-name">▮▮▮▮▮▮</span>
+        <span>${escapeHtml(techName)}</span>
+      </button>`;
+    }
+    const reason = sim.supportFailureReason(base, spec.kind);
+    const cooldown = sim.supportCooldown(base, spec.kind);
+    const active = sim.pendingSupport === spec.kind;
+    const ready = !reason;
+    const sub = active ? "Targeting…" : cooldown > 0 ? `${cooldown} rd` : `$${spec.cost}`;
+    const tip = reason && !active
+      ? `${spec.label}: ${reason}.`
+      : `${spec.label} (${spec.role}): ${spec.tip} Costs 1 CP and $${spec.cost}; ${spec.cooldown}-round cooldown. Then click the target point.`;
+    return `<button class="btn confirm ${active ? "active" : ready ? "" : "disabled"}" data-support="${spec.kind}" data-disabled="${!ready && !active}" data-tip="${escapeAttr(tip)}">
+      ${escapeHtml(spec.label)}
+      <span>${sub}</span>
+    </button>`;
+  }).join("");
+
+  const supportNote = sim.pendingSupport
+    ? `<div class="order-note order-note--progress">Targeting ${escapeHtml(supportPowerSpec(sim.pendingSupport).label)} — click the strike point anywhere on the field. <button class="icon-btn" data-support-cancel="1" data-tip="Cancel the strike call.">Cancel</button></div>`
+    : "";
+
   return `
     <div class="order-note">${escapeHtml(note)}</div>
     ${baseSummary(base, sim)}
@@ -1204,6 +1258,9 @@ function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
     <div class="tech-options part-options">${techButtons}</div>
     <div class="base-section-title">Build Defenses</div>
     <div class="defense-options part-options">${defenseButtons}</div>
+    <div class="base-section-title">Call Support</div>
+    ${supportNote}
+    <div class="support-options part-options">${supportButtons}</div>
     <div class="base-section-title">Upgrade Base</div>
     <div class="upgrade-options part-options">
       <button class="btn confirm ${incomeReady ? "" : "disabled"}" data-base-upgrade="income" data-disabled="${!incomeReady}" data-tip="${escapeAttr(incomeTip)}">

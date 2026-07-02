@@ -30,6 +30,7 @@ import {
   type DefenseKind,
   type Difficulty,
   type MapDef,
+  type SupportPowerKind,
 } from "./game/sim";
 import type { AimMode, Team } from "./game/damageModel";
 import { isInfantryKind } from "./game/damageModel";
@@ -196,6 +197,19 @@ const hud = new Hud(uiRoot, sim, {
   queueBuildStructure: (point) => {
     const ok = sim.queueBuildStructure(point);
     if (ok) sfx.build();
+    return ok;
+  },
+  beginSupport: (kind) => {
+    sim.setPendingSupport(kind);
+    sfx.ui();
+  },
+  cancelSupport: () => sim.setPendingSupport(undefined),
+  queueSupportAt: (point) => {
+    const ok = sim.queueSupportAt(point);
+    if (ok) {
+      sfx.turn();
+      showToast("Strike inbound — resolves at end of turn");
+    }
     return ok;
   },
   queueShootAt: (point) => sim.queueShootAt(point),
@@ -1392,6 +1406,7 @@ requestAnimationFrame(frame);
 // draw the landing arc and blast radius).
 function groundAimHover(): Vec2 | undefined {
   if (anyOverlayOpen() || sim.phase !== "command") return undefined;
+  if (sim.pendingSupport) return hoverWorld; // strike-call targeting reticle
   const aiming = sim.intent === "grenade" || (sim.intent === "shoot" && sim.selectedCanGroundTarget());
   return aiming ? hoverWorld : undefined;
 }
@@ -1428,6 +1443,13 @@ function processBattleEvents(): void {
     } else if (effect.type === "impact") {
       sfx.impact();
       if (stage.isInView(effect.to)) feel.addTrauma(0.05);
+    } else if (effect.type === "jet") {
+      sfx.jet();
+      feel.addTrauma(0.08);
+    } else if (effect.type === "beam") {
+      sfx.beam();
+      feel.addTrauma(0.22);
+      stage.punch(0.3);
     }
   }
   // Keep the seen-sets bounded by dropping ids no longer in play. A blind clear() would let a
@@ -1496,6 +1518,8 @@ declare global {
       queueSpawnTroop(kind: TroopKind): boolean;
       queueBuildStructure(point: Vec2): boolean;
       beginBuild(kind: DefenseKind): void;
+      beginSupport(kind: SupportPowerKind): void;
+      queueSupportAt(point: Vec2): boolean;
       upgradeBaseIncome(): boolean;
       upgradeBaseCommand(): boolean;
       researchTech(nodeId: string): boolean;
@@ -1547,6 +1571,8 @@ window.__rht = {
   queueSpawnTroop: (kind) => sim.queueSpawnTroop(kind),
   queueBuildStructure: (point) => sim.queueBuildStructure(point),
   beginBuild: (kind) => sim.setPendingBuild(kind),
+  beginSupport: (kind) => sim.setPendingSupport(kind),
+  queueSupportAt: (point) => sim.queueSupportAt(point),
   upgradeBaseIncome: () => sim.upgradeBaseIncome(),
   upgradeBaseCommand: () => sim.upgradeBaseCommand(),
   researchTech: (nodeId) => sim.researchTech(nodeId),

@@ -50,18 +50,18 @@ import {
 } from "./damageModel";
 import { createScenario } from "./scenario";
 import { DEFAULT_TERRAIN, TERRAIN_STEP, clampToArena, setActiveTerrain, terrainHeightAt } from "./terrain";
-import { TROOP_CATALOG, troopSpec, defenseSpec, type TroopKind, type DefenseKind } from "./units";
+import { TROOP_CATALOG, troopSpec, defenseSpec, supportPowerSpec, type TroopKind, type DefenseKind, type SupportPowerKind } from "./units";
 import { TECH_TREE, techNode, aggregateTechEffect, type TechNode, type TechEffect } from "./tech";
 import { modeDef, type ModeId } from "./modes";
 import { MAPS, mapDef, mapCenter, flagPositions, type MapDef, type MapEventConfig, type MapEventKind } from "./maps";
 
-export { TROOP_CATALOG, troopSpec, DEFENSE_CATALOG, defenseSpec, type TroopKind, type TroopSpec, type DefenseKind, type DefenseSpec } from "./units";
+export { TROOP_CATALOG, troopSpec, DEFENSE_CATALOG, defenseSpec, SUPPORT_POWERS, supportPowerSpec, type TroopKind, type TroopSpec, type DefenseKind, type DefenseSpec, type SupportPowerKind, type SupportPowerSpec } from "./units";
 export { TECH_TREE, techNode, troopsUnlockedBy, type TechNode } from "./tech";
 export { MODES, modeDef, type ModeId, type ModeDef } from "./modes";
 export { MAPS, mapDef, flagPositions, mapCenter, type MapDef, type MapTheme } from "./maps";
 
 export type Phase = "command" | "resolve" | "victory" | "defeat";
-export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "interact" | "inspect" | "inspect-detail" | "build";
+export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "interact" | "inspect" | "inspect-detail" | "build" | "support";
 export type OrderKind = "move" | "shoot" | "grenade" | "ram" | "defend" | "melee";
 
 // Hard cap on how many combat units one side can field at once.
@@ -166,7 +166,8 @@ export interface TacticalOrder {
 
 export interface VisualEvent {
   id: string;
-  type: "shot" | "impact" | "blast" | "ping";
+  // "jet" = a strike aircraft flying from->to; "beam" = an orbital lance burning the from->to line.
+  type: "shot" | "impact" | "blast" | "ping" | "jet" | "beam";
   from: Vec2;
   to: Vec2;
   color: number;
@@ -330,6 +331,12 @@ export class TacticalSim {
   turn = 1;
   // The defense kind queued for placement when intent is "build" (set by the HUD build deck).
   pendingBuild: DefenseKind | undefined;
+  // The support power awaiting a ground target when intent is "support" (set by the HUD).
+  pendingSupport: SupportPowerKind | undefined;
+  // Support strikes committed this command phase; they fly in during the next resolve.
+  private queuedSupport: { kind: SupportPowerKind; point: Vec2; dir: Vec2 }[] = [];
+  // Timed one-shot visual events (strike jets, orbital beams) played during a resolve.
+  private pendingFx: { at: number; type: VisualEvent["type"]; from: Vec2; to: Vec2; color: number; duration: number; radius?: number; fired?: boolean }[] = [];
 
   private orderSeq = 0;
   private effectSeq = 0;
@@ -346,7 +353,7 @@ export class TacticalSim {
   private forcedSandstorm = false;
   private forcedIonStorm = false;
   private forcedZones: { kind: MapEventKind; x: number; z: number; radius: number }[] = [];
-  private pendingStrikes: { at: number; point: Vec2; radius: number; damage: number; kind: "barrage" | "collapse"; fired?: boolean }[] = [];
+  private pendingStrikes: { at: number; point: Vec2; radius: number; damage: number; kind: "barrage" | "collapse" | "airstrike" | "cluster" | "laser"; fired?: boolean }[] = [];
   private strikeClock = 0;
 
   constructor(init?: CombatEntity[] | { map?: MapDef; mode?: ModeId }) {
@@ -401,6 +408,9 @@ export class TacticalSim {
     this.economy.set("enemy", START_MONEY_ENEMY);
     this.economy.set("neutral", 0);
     this.pendingBuild = undefined;
+    this.pendingSupport = undefined;
+    this.queuedSupport = [];
+    this.pendingFx = [];
     this.forcedSandstorm = false;
     this.forcedIonStorm = false;
     this.forcedZones = [];
@@ -933,6 +943,101 @@ export class TacticalSim {
     this.intent = kind ? "build" : "select";
   }
 
+  // ---- Off-map support powers (airstrike / cluster / orbital lance) ----
+
+  setPendingSupport(kind: SupportPowerKind | undefined): void {
+    this.pendingSupport = kind;
+    this.intent = kind ? "support" : "select";
+    if (kind) this.pendingBuild = undefined;
+  }
+
+  supportCooldown(base: CombatEntity, kind: SupportPowerKind): number {
+    return base.supportCooldowns?.[kind] ?? 0;
+  }
+
+  // Why a support power can't be called right now, or undefined if it can.
+  supportFailureReason(base: CombatEntity | undefined, kind: SupportPowerKind): string | undefined {
+    if (!base || base.kind !== "base") return "Select your Home Base to call support";
+    if (!base.status.alive) return `${base.name} is disabled`;
+    const spec = supportPowerSpec(kind);
+    if (spec.tech && !isTechUnlocked(base, spec.tech)) {
+      const tech = techNode(spec.tech);
+      return `Research ${tech?.name ?? "the required doctrine"} to unlock ${spec.label}`;
+    }
+    if (base.commandPoints <= 0) return `${base.name} has no command points`;
+    const cooldown = this.supportCooldown(base, kind);
+    if (cooldown > 0) return `${spec.label} is on cooldown (${cooldown} rd)`;
+    if (this.money(base.team) < spec.cost) return `Not enough money for ${spec.label} ($${spec.cost})`;
+    return undefined;
+  }
+
+  // Commit the pending support power at a ground point (the HUD targeting flow). The strike
+  // itself flies in during the next resolve; line powers align away from the calling base.
+  queueSupportAt(point: Vec2): boolean {
+    const base = this.requirePlayerActor();
+    if (!base) return false;
+    const kind = this.pendingSupport;
+    if (!kind) return this.reject("Choose a support power first");
+    const failure = this.supportFailureReason(base, kind);
+    if (failure) return this.reject(failure);
+    const spec = supportPowerSpec(kind);
+    const target = clampToArena(point);
+    const dx = target.x - base.position.x;
+    const dz = target.z - base.position.z;
+    const len = Math.hypot(dx, dz);
+    const dir = len > 0.01 ? { x: dx / len, z: dz / len } : { x: 1, z: 0 };
+    spendCommandPoint(base);
+    this.addMoney(base.team, -spec.cost);
+    base.supportCooldowns = { ...(base.supportCooldowns ?? {}), [kind]: spec.cooldown };
+    this.queuedSupport.push({ kind, point: target, dir });
+    this.pendingSupport = undefined;
+    this.intent = "select";
+    this.pushLog(
+      kind === "airstrike" ? `${base.name} tasks a strike wing — bombs on the next resolve`
+      : kind === "cluster" ? `${base.name} authorizes a cluster strike — saturation on the next resolve`
+      : `${base.name} requests the orbital lance — beam on the next resolve`,
+    );
+    return true;
+  }
+
+  // Convert committed support calls into staggered detonations + fly-in visuals.
+  private scheduleSupportStrikes(): void {
+    for (const call of this.queuedSupport) {
+      const { kind, point, dir } = call;
+      if (kind === "airstrike") {
+        // The jet crosses the whole line low and fast; bombs walk behind it.
+        const from = clampToArena({ x: point.x - dir.x * 16, z: point.z - dir.z * 16 });
+        const to = clampToArena({ x: point.x + dir.x * 16, z: point.z + dir.z * 16 });
+        this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: 0xffc37a, duration: 1.5 });
+        for (let i = 0; i < 5; i += 1) {
+          const p = clampToArena({ x: point.x + dir.x * (i - 2) * 1.7, z: point.z + dir.z * (i - 2) * 1.7 });
+          this.pendingStrikes.push({ at: 1.0 + i * 0.13, point: p, radius: 1.9, damage: 42, kind: "airstrike" });
+        }
+      } else if (kind === "cluster") {
+        const from = clampToArena({ x: point.x - dir.x * 14, z: point.z - dir.z * 14 });
+        const to = clampToArena({ x: point.x + dir.x * 14, z: point.z + dir.z * 14 });
+        this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: 0xffb02e, duration: 1.5 });
+        for (let i = 0; i < 8; i += 1) {
+          const angle = this.rng.range(0, Math.PI * 2);
+          const r = Math.sqrt(this.rng.range(0, 1)) * 3.2;
+          const p = clampToArena({ x: point.x + Math.sin(angle) * r, z: point.z + Math.cos(angle) * r });
+          this.pendingStrikes.push({ at: 1.1 + i * 0.09, point: p, radius: 1.35, damage: 24, kind: "cluster" });
+        }
+      } else {
+        // The lance burns for ~2s and its detonations sweep down the line with it.
+        const from = clampToArena({ x: point.x - dir.x * 4.5, z: point.z - dir.z * 4.5 });
+        const to = clampToArena({ x: point.x + dir.x * 4.5, z: point.z + dir.z * 4.5 });
+        this.pendingFx.push({ at: 0.7, type: "beam", from, to, color: 0xff5a4d, duration: 1.9 });
+        for (let i = 0; i < 7; i += 1) {
+          const t = i / 6;
+          const p = { x: from.x + (to.x - from.x) * t, z: from.z + (to.z - from.z) * t };
+          this.pendingStrikes.push({ at: 0.9 + i * 0.22, point: p, radius: 1.15, damage: 32, kind: "laser" });
+        }
+      }
+    }
+    this.queuedSupport = [];
+  }
+
   // Why a structure can't be placed at a point right now, or undefined if it can.
   buildFailureReason(base: CombatEntity | undefined, kind: DefenseKind, point: Vec2): string | undefined {
     if (!base || base.kind !== "base") return "Select your Home Base to build defenses";
@@ -1142,6 +1247,7 @@ export class TacticalSim {
     if (this.phase !== "command") return;
     this.queueEnemyOrders();
     this.scheduleMapStrikes();
+    this.scheduleSupportStrikes();
     this.phase = "resolve";
     this.resolveClock = 0;
     this.activeTurnReport = { turn: this.turn, phase: "active", entries: [], notes: [] };
@@ -1265,6 +1371,9 @@ export class TacticalSim {
       this.intent = "select";
       this.aim = "center";
       this.pendingBuild = undefined;
+      this.pendingSupport = undefined;
+      this.queuedSupport = [];
+      this.pendingFx = [];
       this.resolveClock = 0;
       this.selectedId = this.entities.find((e) => e.team === "player" && isBuildingKind(e.kind))?.id ?? this.entities[0]?.id ?? "";
       this.syncAllElevations();
@@ -1299,7 +1408,7 @@ export class TacticalSim {
     this.updateMapStrikes(dt);
 
     const allDone = this.orders.every((o) => o.done);
-    if (allDone && this.projectiles.length === 0 && this.pendingStrikes.length === 0 && this.resolveClock > 1.9) this.finishResolve();
+    if (allDone && this.projectiles.length === 0 && this.pendingStrikes.length === 0 && this.pendingFx.length === 0 && this.resolveClock > 1.9) this.finishResolve();
     if (this.projectiles.length === 0 && this.pendingStrikes.length === 0 && this.resolveClock > 18) this.finishResolve();
   }
 
@@ -2527,6 +2636,7 @@ export class TacticalSim {
       const shootTarget = profile.focusFire
         ? this.pickShootTarget(enemy, players.length ? players : allPlayers, committed, range)
         : (target && separation <= range ? target : undefined);
+      let fired = false;
       if (shootTarget && enemy.status.canShoot && enemy.commandPoints > 0) {
         const aim = enemy.kind === "sniper"
           ? (isInfantryKind(shootTarget.kind) ? "head" : "weapon")
@@ -2534,6 +2644,7 @@ export class TacticalSim {
             ? "center"
             : isVehicleKind(shootTarget.kind) ? "mobility" : this.rng.chance(0.35) ? "weapon" : "center";
         if (this.queueShootFor(enemy, shootTarget, aim)) {
+          fired = true;
           const burst = enemy.kind === "heavy" ? 3 : 1;
           committed.set(shootTarget.id, (committed.get(shootTarget.id) ?? 0) + baseShotDamage(enemy.kind) * burst);
         }
@@ -2559,7 +2670,12 @@ export class TacticalSim {
         } else if (wantsTarget) {
           goal = target!.position;
           advancing = true;
-        } else if (this.mode !== "destroy" && objective && dist(enemy.position, objective) > 2.2) {
+        } else if (!fired && objective && dist(enemy.position, objective) > 2.2) {
+          // No shot landed this turn and no target pulled us: push the mode objective.
+          // This ALSO applies in destroy mode (objective = the player base) — without it,
+          // a unit whose line of fire was blocked or that idled just inside its range
+          // band had no goal at all and the whole army could stall at its own base.
+          // Units that DID fire still hold at weapon range as designed.
           goal = objective;
           advancing = true;
         }
@@ -2865,8 +2981,14 @@ export class TacticalSim {
   }
 
   private updateMapStrikes(dt: number): void {
-    if (!this.pendingStrikes.length) return;
+    if (!this.pendingStrikes.length && !this.pendingFx.length) return;
     this.strikeClock += dt;
+    for (const fx of this.pendingFx) {
+      if (fx.fired || this.strikeClock < fx.at) continue;
+      fx.fired = true;
+      this.effect(fx.type, fx.from, fx.to, fx.color, fx.duration, fx.radius);
+    }
+    this.pendingFx = this.pendingFx.filter((fx) => !fx.fired);
     let detonated = false;
     for (const strike of this.pendingStrikes) {
       if (strike.fired || this.strikeClock < strike.at) continue;
@@ -2880,8 +3002,12 @@ export class TacticalSim {
   // A single environmental detonation: a blast effect plus AoE damage to anything in range
   // (both teams — it's the battlefield, not a unit's attack). Bases are spared so the sky can't
   // hand someone the win.
-  private detonateStrike(strike: { point: Vec2; radius: number; damage: number; kind: "barrage" | "collapse" }): void {
-    const color = strike.kind === "barrage" ? 0xffac5a : 0xb59a72;
+  private detonateStrike(strike: { point: Vec2; radius: number; damage: number; kind: "barrage" | "collapse" | "airstrike" | "cluster" | "laser" }): void {
+    const color = strike.kind === "barrage" ? 0xffac5a
+      : strike.kind === "collapse" ? 0xb59a72
+      : strike.kind === "laser" ? 0xff5a4d
+      : strike.kind === "cluster" ? 0xffb02e
+      : 0xff8c3a;
     this.effect("blast", strike.point, strike.point, color, 0.85, strike.radius);
     for (const e of this.entities) {
       if (!e.status.alive || e.kind === "base") continue;
@@ -2892,7 +3018,10 @@ export class TacticalSim {
       const damage = strike.kind === "collapse" ? strike.damage : Math.max(8, Math.round(strike.damage * Math.max(0.4, falloff)));
       applyDamage(e, part.id, damage);
     }
-    this.pushLog(strike.kind === "barrage" ? "Shells hammer the marked zone." : "Cover collapses in the marked zone.");
+    // Environmental events log per shell (they threaten a marked zone); support strikes
+    // logged once when tasked, so a 8-bomb cluster doesn't spam the feed.
+    if (strike.kind === "barrage") this.pushLog("Shells hammer the marked zone.");
+    else if (strike.kind === "collapse") this.pushLog("Cover collapses in the marked zone.");
   }
 
   // Debug/test hook: force an environmental event onto the current turn (for screenshots/tests).
@@ -3055,6 +3184,14 @@ export class TacticalSim {
           const remaining = (entity.spawnCooldowns[key] ?? 0) - 1;
           if (remaining > 0) entity.spawnCooldowns[key] = remaining;
           else delete entity.spawnCooldowns[key];
+        }
+      }
+      // Tick down this base's support-power cooldowns the same way.
+      if (entity.supportCooldowns) {
+        for (const key of Object.keys(entity.supportCooldowns)) {
+          const remaining = (entity.supportCooldowns[key] ?? 0) - 1;
+          if (remaining > 0) entity.supportCooldowns[key] = remaining;
+          else delete entity.supportCooldowns[key];
         }
       }
     }

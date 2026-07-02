@@ -64,3 +64,27 @@ export const DEFENSE_CATALOG: readonly DefenseSpec[] = [
 export function defenseSpec(kind: DefenseKind): DefenseSpec {
   return DEFENSE_CATALOG.find((spec) => spec.kind === kind) ?? DEFENSE_CATALOG[0];
 }
+
+// ---- Off-map support powers the Home Base can call in (cost money + the base CP). ----
+
+export type SupportPowerKind = "airstrike" | "cluster" | "laser";
+
+export interface SupportPowerSpec {
+  kind: SupportPowerKind;
+  label: string;
+  role: string;
+  cost: number;
+  cooldown: number; // rounds before this power can be called again
+  tech?: string; // tech node id that unlocks it (undefined = available from the start)
+  tip: string;
+}
+
+export const SUPPORT_POWERS: readonly SupportPowerSpec[] = [
+  { kind: "airstrike", label: "Airstrike", role: "Line", cost: 320, cooldown: 3, tip: "A strike wing carpets a line of bombs through the target point, aligned away from your base. Hardened HQs are unaffected." },
+  { kind: "cluster", label: "Cluster Strike", role: "Area", cost: 300, cooldown: 3, tech: "ordnance", tip: "Bomblets saturate a wide area around the target point. Hardened HQs are unaffected." },
+  { kind: "laser", label: "Orbital Lance", role: "Beam", cost: 420, cooldown: 4, tech: "siege", tip: "An orbital beam cuts a burning line through the target point. Hardened HQs are unaffected." },
+];
+
+export function supportPowerSpec(kind: SupportPowerKind): SupportPowerSpec {
+  return SUPPORT_POWERS.find((spec) => spec.kind === kind) ?? SUPPORT_POWERS[0];
+}
