@@ -11,8 +11,11 @@
  * Optimized GLBs + .meshy.json audit sidecars land in public/models/ (committed).
  * A model that already has a raw GLB is never regenerated — delete the raw to force it.
  */
-import { existsSync, copyFileSync, statSync } from "node:fs";
+import { existsSync, copyFileSync, statSync, mkdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+
+mkdirSync("assets-raw", { recursive: true });
+mkdirSync("public/models", { recursive: true });
 
 // The hero set: gritty near-future military, weathered materials, symmetry via prompt
 // (meshy-6 ignores the symmetry flag), no FX words (glow/smoke cause mesh artifacts).
@@ -22,8 +25,9 @@ const MANIFEST = [
   { name: "artillery", polycount: 40000, prompt: "near-future self-propelled howitzer, tracked chassis, extra long artillery barrel with slotted muzzle brake, hydraulic recoil cylinders, rear stabilizer spades, weathered gunmetal and olive drab, dusty chipped paint, symmetrical design, game asset" },
   { name: "hq", polycount: 80000, prompt: "near-future military command post building, low fortified bunker with angular armored plating, sandbag perimeter, tall comms mast with antenna array, rooftop floodlights, heavy blast door entrance, weathered concrete and rusted steel, battle-worn, game asset" },
   { name: "turret", polycount: 30000, prompt: "near-future automated defense turret, twin-barrel autocannon on rotating armored pedestal mount, ammunition feed box, sensor pod, weathered gunmetal steel, chipped paint, symmetrical design, game asset" },
-  { name: "mortar-turret", polycount: 30000, prompt: "near-future stationary mortar battery emplacement, two upward-angled heavy mortar tubes on a reinforced armored platform, ammunition drum, hydraulic frame, weathered steel, dusty, game asset" },
-  { name: "barricade", polycount: 12000, prompt: "concrete jersey barrier segment, exposed steel rebar at chipped corners, bullet pockmarks, cracked weathered gray concrete, dusty base, game asset" },
+  // mortar-turret intentionally absent: two generations (mortar tubes / AA launcher) both
+  // came out as flat sprawled tube heaps — the exturret keeps its procedural model.
+  { name: "barricade", polycount: 12000, prompt: "long concrete jersey barrier, elongated highway barrier wall segment three times longer than tall, sloped sides, exposed steel rebar at chipped ends, bullet pockmarks, weathered gray concrete, game asset" },
   { name: "sandbags", polycount: 12000, prompt: "military sandbag wall emplacement, two stacked rows of burlap sandbags in a shallow arc, worn faded khaki fabric, dusty, game asset" },
   { name: "crates", polycount: 12000, prompt: "stack of military supply crates, olive drab steel ammunition boxes and wooden crates with stenciled markings, scuffed edges, cargo straps, game asset" },
   { name: "rock", polycount: 12000, prompt: "large weathered desert boulder cluster, layered sandstone rock formation, wind-eroded, sun-bleached, dusty base, game asset" },
@@ -36,8 +40,12 @@ const only = (() => {
 })();
 const optimizeOnly = argv.includes("--optimize-only");
 
+// node runs WITHOUT a shell — on Windows shell:true re-splits quoted args, which truncated
+// a multi-word --prompt at its first space. npx needs the shell (it's npx.cmd), but its
+// args never contain spaces.
 const run = (cmd, args) => {
-  const res = spawnSync(cmd, args, { stdio: "inherit", shell: process.platform === "win32" });
+  const shell = cmd !== "node" && process.platform === "win32";
+  const res = spawnSync(cmd, args, { stdio: "inherit", shell });
   if (res.status !== 0) throw new Error(`${cmd} ${args.join(" ")} exited ${res.status}`);
 };
 

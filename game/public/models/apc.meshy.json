@@ -1,0 +1,19 @@
+{
+  "name": "apc",
+  "prompt": "near-future tracked armored personnel carrier, tall boxy troop compartment, rear ramp, roof hatch with small remote autogun, vision slits, weathered desert tan armor plating, scratched panels, mud-spattered tracks, symmetrical design, game asset",
+  "aiModel": "meshy-6",
+  "character": false,
+  "previewId": "019f2019-2243-7a4c-a5d9-46acf117399d",
+  "refineId": "019f201b-6c32-7a85-b602-e7ef9480afd3",
+  "topology": "triangle",
+  "polycount": 40000,
+  "lowpoly": false,
+  "pbr": true,
+  "removeLighting": true,
+  "pose": null,
+  "consumed_credits": 30,
+  "balance_after": 1779,
+  "bytes": 12056468,
+  "seconds": 258,
+  "generatedAt": "2026-07-01T23:56:42.678Z"
+}

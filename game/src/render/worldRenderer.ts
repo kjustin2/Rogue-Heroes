@@ -2506,7 +2506,8 @@ function modelKeyFor(entity: CombatEntity): ModelKey | null {
     case "artillery": return "artillery";
     case "base": return "hq";
     case "turret": return "turret";
-    case "exturret": return "mortar-turret";
+    // exturret stays procedural: two Meshy attempts both produced sprawled/flat tube
+    // heaps — the authored angled-mortar emplacement reads far better.
     case "cover":
       if (entity.parts[0]?.role === "volatile") return null;
       switch (entity.coverKind) {

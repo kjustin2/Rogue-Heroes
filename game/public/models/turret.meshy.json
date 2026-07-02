@@ -1,0 +1,19 @@
+{
+  "name": "turret",
+  "prompt": "near-future automated defense turret, twin-barrel autocannon on rotating armored pedestal mount, ammunition feed box, sensor pod, weathered gunmetal steel, chipped paint, symmetrical design, game asset",
+  "aiModel": "meshy-6",
+  "character": false,
+  "previewId": "019f2023-c4f6-794c-9c53-8743b24767c8",
+  "refineId": "019f2026-238e-75f3-a849-28d8580558c9",
+  "topology": "triangle",
+  "polycount": 30000,
+  "lowpoly": false,
+  "pbr": true,
+  "removeLighting": true,
+  "pose": null,
+  "consumed_credits": 30,
+  "balance_after": 1689,
+  "bytes": 10006044,
+  "seconds": 262,
+  "generatedAt": "2026-07-02T00:08:24.896Z"
+}

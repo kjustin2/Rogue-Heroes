@@ -1,0 +1,19 @@
+{
+  "name": "hq",
+  "prompt": "near-future military command post building, low fortified bunker with angular armored plating, sandbag perimeter, tall comms mast with antenna array, rooftop floodlights, heavy blast door entrance, weathered concrete and rusted steel, battle-worn, game asset",
+  "aiModel": "meshy-6",
+  "character": false,
+  "previewId": "019f2020-3699-7542-955d-2ce2a5a119c6",
+  "refineId": "019f2022-1b29-7b42-ba83-7ecd6b942c54",
+  "topology": "triangle",
+  "polycount": 80000,
+  "lowpoly": false,
+  "pbr": true,
+  "removeLighting": true,
+  "pose": null,
+  "consumed_credits": 30,
+  "balance_after": 1719,
+  "bytes": 12637172,
+  "seconds": 231,
+  "generatedAt": "2026-07-02T00:04:00.703Z"
+}

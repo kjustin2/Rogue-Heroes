@@ -1,0 +1,19 @@
+{
+  "name": "tank",
+  "prompt": "near-future main battle tank, low angular hull, layered composite armor plates, long smoothbore cannon with muzzle brake, commander cupola, weathered olive drab and gunmetal steel, chipped paint, dust-caked tracks, oil streaks, symmetrical design, game asset",
+  "aiModel": "meshy-6",
+  "character": false,
+  "previewId": "019f2015-b995-779c-bc1a-426edb40ff6e",
+  "refineId": "019f2017-5dae-77aa-9a0a-feaf66944bbb",
+  "topology": "triangle",
+  "polycount": 80000,
+  "lowpoly": false,
+  "pbr": true,
+  "removeLighting": true,
+  "pose": null,
+  "consumed_credits": 30,
+  "balance_after": 1809,
+  "bytes": 12260488,
+  "seconds": 194,
+  "generatedAt": "2026-07-01T23:51:55.691Z"
+}

@@ -1,0 +1,19 @@
+{
+  "name": "crates",
+  "prompt": "stack of military supply crates, olive drab steel ammunition boxes and wooden crates with stenciled markings, scuffed edges, cargo straps, game asset",
+  "aiModel": "meshy-6",
+  "character": false,
+  "previewId": "019f2036-f817-7839-90cf-4f9b75ea6606",
+  "refineId": "019f2039-a76f-7e37-b105-fa31a2065769",
+  "topology": "triangle",
+  "polycount": 12000,
+  "lowpoly": false,
+  "pbr": true,
+  "removeLighting": true,
+  "pose": null,
+  "consumed_credits": 30,
+  "balance_after": 1569,
+  "bytes": 9505400,
+  "seconds": 294,
+  "generatedAt": "2026-07-02T00:29:54.213Z"
+}

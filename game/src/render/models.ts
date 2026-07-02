@@ -17,7 +17,7 @@ import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.j
  */
 
 export type ModelKey =
-  | "tank" | "apc" | "artillery" | "hq" | "turret" | "mortar-turret"
+  | "tank" | "apc" | "artillery" | "hq" | "turret"
   | "barricade" | "sandbags" | "crates" | "rock";
 
 // Horizontal footprint (max of width/length, world units) each model is scaled to —
@@ -28,7 +28,6 @@ const TARGET_SIZE: Record<ModelKey, number> = {
   artillery: 4.2,
   hq: 3.6,
   turret: 2.3,
-  "mortar-turret": 2.1,
   barricade: 1.9,
   sandbags: 1.7,
   crates: 1.5,

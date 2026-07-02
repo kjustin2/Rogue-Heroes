@@ -1,0 +1,19 @@
+{
+  "name": "barricade",
+  "prompt": "long concrete jersey barrier, elongated highway barrier wall segment three times longer than tall, sloped sides, exposed steel rebar at chipped ends, bullet pockmarks, weathered gray concrete, game asset",
+  "aiModel": "meshy-6",
+  "character": false,
+  "previewId": "019f204b-63e2-7e12-9fd5-5b6fd2efe7b8",
+  "refineId": "019f204c-68e0-7b5f-81f4-78087884cfff",
+  "topology": "triangle",
+  "polycount": 12000,
+  "lowpoly": false,
+  "pbr": true,
+  "removeLighting": true,
+  "pose": null,
+  "consumed_credits": 30,
+  "balance_after": 1479,
+  "bytes": 9026624,
+  "seconds": 158,
+  "generatedAt": "2026-07-02T00:49:56.714Z"
+}

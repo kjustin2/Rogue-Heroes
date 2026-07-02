@@ -1,0 +1,19 @@
+{
+  "name": "sandbags",
+  "prompt": "military sandbag wall emplacement, two stacked rows of burlap sandbags in a shallow arc, worn faded khaki fabric, dusty, game asset",
+  "aiModel": "meshy-6",
+  "character": false,
+  "previewId": "019f2031-bc5a-7aa3-b9d9-54e8043d9289",
+  "refineId": "019f2035-4f64-7af0-aad2-6927cd7b9b00",
+  "topology": "triangle",
+  "polycount": 12000,
+  "lowpoly": false,
+  "pbr": true,
+  "removeLighting": true,
+  "pose": null,
+  "consumed_credits": 30,
+  "balance_after": 1599,
+  "bytes": 7282972,
+  "seconds": 341,
+  "generatedAt": "2026-07-02T00:24:59.064Z"
+}

@@ -1,0 +1,19 @@
+{
+  "name": "artillery",
+  "prompt": "near-future self-propelled howitzer, tracked chassis, extra long artillery barrel with slotted muzzle brake, hydraulic recoil cylinders, rear stabilizer spades, weathered gunmetal and olive drab, dusty chipped paint, symmetrical design, game asset",
+  "aiModel": "meshy-6",
+  "character": false,
+  "previewId": "019f201d-1ed8-7882-8421-0ef81110dac2",
+  "refineId": "019f201e-d9a8-78bf-a7f8-3600964e5243",
+  "topology": "triangle",
+  "polycount": 40000,
+  "lowpoly": false,
+  "pbr": true,
+  "removeLighting": true,
+  "pose": null,
+  "consumed_credits": 30,
+  "balance_after": 1749,
+  "bytes": 10808040,
+  "seconds": 200,
+  "generatedAt": "2026-07-02T00:00:06.834Z"
+}

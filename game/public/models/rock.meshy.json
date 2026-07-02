@@ -1,0 +1,19 @@
+{
+  "name": "rock",
+  "prompt": "large weathered desert boulder cluster, layered sandstone rock formation, wind-eroded, sun-bleached, dusty base, game asset",
+  "aiModel": "meshy-6",
+  "character": false,
+  "previewId": "019f203b-7879-7e78-8a0f-21422d08ceff",
+  "refineId": "019f203d-eace-7c0d-b389-b97ee56692d8",
+  "topology": "triangle",
+  "polycount": 12000,
+  "lowpoly": false,
+  "pbr": true,
+  "removeLighting": true,
+  "pose": null,
+  "consumed_credits": 30,
+  "balance_after": 1539,
+  "bytes": 8246132,
+  "seconds": 267,
+  "generatedAt": "2026-07-02T00:34:23.183Z"
+}
