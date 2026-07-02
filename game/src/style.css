@@ -3647,3 +3647,661 @@ body.menus-open .menu-bg span {
 }
 .reduced-motion .new-badge,
 .reduced-motion .btn.confirm.just-revealed { animation: none; }
+
+/* ============================================================
+   BLIZZARD CHROME LAYER (additive re-skin)
+   Machined gunmetal + weathered-brass frame treatment for the
+   menu/HUD chrome: beveled panel frames with rivets + chamfered
+   corners, metallic buttons with pressed/edge-light states,
+   embossed logo with a sheen sweep, bracketed selection states.
+   Selector-safe: only existing classes are re-skinned; nothing
+   is renamed or removed. All new animations are disabled under
+   body.reduced-motion (see the block at the very end).
+   ============================================================ */
+
+:root {
+  --brass-lite: #f2d9a2;
+  --brass: #c09a56;
+  --brass-deep: #6a5026;
+  --frame-line: rgba(176, 152, 104, 0.52);
+}
+
+/* ---- Battle HUD panels: riveted, chamfered metal frames ---- */
+.topbar,
+.panel,
+.commandbar,
+.log {
+  border-color: var(--frame-line);
+  background:
+    /* chamfered "cut plate" corners: darkened triangle + brass edge line */
+    linear-gradient(225deg, rgba(8, 6, 3, 0.62) 0 9px, rgba(232, 201, 138, 0.5) 9px 10.5px, transparent 10.5px),
+    linear-gradient(45deg, rgba(8, 6, 3, 0.62) 0 9px, rgba(232, 201, 138, 0.4) 9px 10.5px, transparent 10.5px),
+    /* brass corner rivets on the two square corners */
+    radial-gradient(3.5px at 9px 9px, var(--brass-lite) 0%, var(--brass) 42%, #33270f 74%, rgba(0, 0, 0, 0.55) 88%, transparent 100%),
+    radial-gradient(3.5px at calc(100% - 9px) calc(100% - 9px), var(--brass-lite) 0%, var(--brass) 42%, #33270f 74%, rgba(0, 0, 0, 0.55) 88%, transparent 100%),
+    /* original warm wash + hairline ribbing */
+    linear-gradient(135deg, rgba(255, 210, 140, 0.1), transparent 24%),
+    linear-gradient(315deg, rgba(255, 135, 95, 0.1), transparent 30%),
+    repeating-linear-gradient(90deg, rgba(230, 200, 140, 0.028) 0 1px, transparent 1px 28px),
+    linear-gradient(180deg, var(--panel-strong), var(--panel));
+  box-shadow:
+    0 24px 70px var(--shadow),
+    0 0 0 1px rgba(0, 0, 0, 0.66),
+    0 1px 0 1px rgba(255, 226, 168, 0.05),
+    inset 0 1px 0 rgba(255, 238, 205, 0.15),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.4),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.5),
+    inset 0 0 26px rgba(0, 0, 0, 0.28),
+    inset 0 0 64px rgba(255, 190, 110, 0.04);
+}
+
+/* Restated so the "all orders set" roster keeps the new bevel. */
+.roster.all-set {
+  box-shadow:
+    0 24px 70px var(--shadow),
+    0 0 0 1px rgba(0, 0, 0, 0.66),
+    0 0 28px rgba(255, 202, 107, 0.14),
+    inset 0 1px 0 rgba(255, 238, 205, 0.15),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.4),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.5),
+    inset 0 0 26px rgba(0, 0, 0, 0.28);
+}
+
+/* ---- Panel titles: brass rivet stud + energized underline ---- */
+.panel-title::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid rgba(58, 42, 20, 0.9);
+  background: radial-gradient(circle at 35% 30%, #ffe9b8, var(--brass) 55%, var(--brass-deep));
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.7),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.45),
+    0 0 8px rgba(255, 202, 107, 0.3);
+}
+
+.panel-title::after {
+  background: linear-gradient(90deg,
+    rgba(255, 202, 107, 0.06),
+    rgba(255, 224, 156, 0.7) 12%,
+    rgba(140, 239, 255, 0.38) 22%,
+    rgba(255, 202, 107, 0.16) 42%,
+    rgba(255, 202, 107, 0.05));
+  background-size: 260% 100%;
+  animation: rail-shimmer 4.2s linear infinite;
+}
+@keyframes rail-shimmer {
+  from { background-position: 130% 0; }
+  to { background-position: -130% 0; }
+}
+
+/* ---- Buttons: machined metal chrome ---- */
+.btn,
+.tool {
+  border-color: rgba(168, 150, 110, 0.45);
+  background:
+    linear-gradient(180deg,
+      rgba(255, 244, 214, 0.16) 0%,
+      rgba(255, 255, 255, 0.06) 12%,
+      rgba(255, 255, 255, 0.02) 46%,
+      rgba(0, 0, 0, 0.18) 54%,
+      rgba(255, 255, 255, 0.015) 88%,
+      rgba(255, 236, 190, 0.05) 100%),
+    linear-gradient(90deg, rgba(140, 239, 255, 0.03), transparent 40%, rgba(255, 202, 107, 0.05)),
+    linear-gradient(180deg, #2b251b, #16120d 58%, #1d1811);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 240, 205, 0.2),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.6),
+    inset 1px 0 0 rgba(255, 255, 255, 0.045),
+    inset -1px 0 0 rgba(0, 0, 0, 0.32),
+    0 2px 5px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(0, 0, 0, 0.45);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+}
+
+/* Hover: amber edge-light (variants with their own chrome are excluded). */
+.btn:not(.confirm):not(.primary):not(.close-btn):not(.disabled):not([data-disabled="true"]):hover:not(:disabled),
+.tool:not(.active):not(.disabled):not([data-disabled="true"]):hover {
+  border-color: rgba(255, 214, 130, 0.92);
+  background:
+    linear-gradient(180deg,
+      rgba(255, 236, 190, 0.22) 0%,
+      rgba(255, 244, 214, 0.07) 14%,
+      rgba(255, 255, 255, 0.02) 46%,
+      rgba(0, 0, 0, 0.16) 54%,
+      rgba(255, 236, 190, 0.07) 100%),
+    linear-gradient(90deg, rgba(140, 239, 255, 0.04), transparent 40%, rgba(255, 202, 107, 0.1)),
+    linear-gradient(180deg, #332b1e, #191410 58%, #221b12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 210, 0.34),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.6),
+    inset 0 0 18px rgba(255, 202, 107, 0.1),
+    0 4px 14px rgba(0, 0, 0, 0.5),
+    0 0 18px rgba(255, 202, 107, 0.22),
+    0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+/* The top hairline becomes a sweeping edge-light on hover. */
+.btn:hover:not(:disabled):not(.disabled):not([data-disabled="true"])::before {
+  background: linear-gradient(90deg, transparent, rgba(255, 232, 180, 0.95) 50%, transparent);
+  background-size: 45% 100%;
+  background-repeat: no-repeat;
+  background-position: 220% 0;
+  opacity: 1;
+  animation: edge-sweep 0.6s cubic-bezier(0.3, 0, 0.4, 1);
+}
+@keyframes edge-sweep {
+  from { background-position: -80% 0; }
+  to { background-position: 220% 0; }
+}
+
+/* Pressed: real depression. */
+.btn:active:not(:disabled):not(.disabled):not([data-disabled="true"]),
+.tool:active:not(.disabled) {
+  filter: brightness(0.88);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(0, 0, 0, 0.4),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(0, 0, 0, 0.55);
+}
+
+/* Disabled: clearly flat, no machining. */
+.btn:disabled,
+.btn.disabled,
+.btn[data-disabled="true"],
+.tool.disabled,
+.tool[data-disabled="true"] {
+  background: rgba(24, 21, 16, 0.72);
+  border-color: rgba(140, 128, 100, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+  text-shadow: none;
+}
+
+/* Inner bevel for the chromed action variants (glow preserved). */
+.btn.primary,
+.btn.confirm {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 250, 230, 0.24),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.42),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.24),
+    0 2px 6px rgba(0, 0, 0, 0.45),
+    0 0 18px rgba(140, 239, 255, 0.1);
+}
+.close-btn,
+.mini-action,
+.log-toggle {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 213, 0.3),
+    inset 0 -2px 3px rgba(46, 20, 4, 0.55),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.28),
+    0 2px 6px rgba(0, 0, 0, 0.5),
+    0 0 20px rgba(255, 202, 107, 0.16);
+  text-shadow: 0 1px 2px rgba(40, 18, 4, 0.7);
+}
+
+/* ---- Main-menu logo: embossed metal + slow sheen sweep ---- */
+.title-logo {
+  background:
+    linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.85) 48%, rgba(196, 235, 248, 0.95) 50%, rgba(255, 255, 255, 0.85) 52%, transparent 70%),
+    linear-gradient(180deg, #ffffff 8%, #dcf2fa 34%, #93aebc 48%, #f0fbff 54%, #7d94a4 76%, #c3dce8 94%);
+  background-size: 300% 100%, 100% 100%;
+  background-repeat: no-repeat;
+  background-position: 160% 0, 0 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  text-shadow:
+    0 -1px 0 rgba(255, 255, 255, 0.22),
+    0 2px 1px rgba(0, 0, 0, 0.55),
+    0 5px 2px rgba(0, 0, 0, 0.3),
+    0 0 28px rgba(140, 239, 255, 0.32),
+    0 12px 38px rgba(0, 0, 0, 0.65);
+  animation: logo-sheen 7s ease-in-out infinite;
+}
+@keyframes logo-sheen {
+  0%, 52% { background-position: 160% 0, 0 0; }
+  86%, 100% { background-position: -160% 0, 0 0; }
+}
+.title-logo span {
+  background: linear-gradient(180deg, #ffe9b0 0%, #ffca6b 46%, #b87f2e 54%, #ffd98c 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  text-shadow:
+    0 -1px 0 rgba(255, 240, 200, 0.25),
+    0 2px 3px rgba(0, 0, 0, 0.55),
+    0 0 22px rgba(255, 202, 107, 0.45);
+}
+
+/* Kicker: letterspaced stencil line flanked by rails. */
+.title-kicker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  font-weight: 700;
+  letter-spacing: 0.56em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6), 0 0 14px rgba(140, 239, 255, 0.35);
+}
+.title-kicker::before,
+.title-kicker::after {
+  content: "";
+  flex: 0 0 46px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(140, 239, 255, 0.7));
+  box-shadow: 0 0 8px rgba(140, 239, 255, 0.4);
+}
+.title-kicker::after {
+  margin-left: -0.56em;
+  background: linear-gradient(270deg, transparent, rgba(140, 239, 255, 0.7));
+}
+
+/* ---- Main-menu buttons: forged plates with cut corners + glint ---- */
+.menu-action {
+  position: relative;
+  z-index: 0;
+  border-color: transparent;
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  background: linear-gradient(175deg,
+    rgba(236, 214, 165, 0.72) 0%,
+    rgba(150, 130, 92, 0.55) 30%,
+    rgba(70, 60, 42, 0.6) 62%,
+    rgba(190, 160, 110, 0.55) 100%);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+}
+.menu-action::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  clip-path: polygon(13.5px 0, 100% 0, 100% calc(100% - 13.5px), calc(100% - 13.5px) 100%, 0 100%, 0 13.5px);
+  background:
+    linear-gradient(180deg,
+      rgba(255, 244, 214, 0.14) 0%,
+      rgba(255, 255, 255, 0.05) 14%,
+      rgba(255, 255, 255, 0.015) 48%,
+      rgba(0, 0, 0, 0.2) 55%,
+      rgba(255, 255, 255, 0.02) 100%),
+    linear-gradient(180deg, #241f16, #100d09 60%, #191510);
+  pointer-events: none;
+}
+.menu-action:hover {
+  border-color: transparent;
+  background: linear-gradient(175deg,
+    rgba(255, 226, 160, 0.95) 0%,
+    rgba(200, 165, 110, 0.72) 32%,
+    rgba(120, 95, 58, 0.7) 62%,
+    rgba(255, 210, 140, 0.8) 100%);
+  box-shadow: none;
+}
+.menu-action:hover::before {
+  background:
+    linear-gradient(180deg,
+      rgba(255, 226, 170, 0.18) 0%,
+      rgba(255, 255, 255, 0.05) 18%,
+      rgba(0, 0, 0, 0.18) 55%,
+      rgba(255, 202, 107, 0.06) 100%),
+    linear-gradient(180deg, #2b2417, #16110b 60%, #1e180f);
+  box-shadow: inset 0 0 24px rgba(255, 202, 107, 0.14);
+}
+.menu-action--exit {
+  background: linear-gradient(175deg,
+    rgba(255, 170, 130, 0.62) 0%,
+    rgba(150, 90, 62, 0.52) 32%,
+    rgba(80, 45, 32, 0.55) 62%,
+    rgba(220, 140, 100, 0.5) 100%);
+}
+.menu-action--exit::before {
+  background:
+    linear-gradient(180deg,
+      rgba(255, 160, 120, 0.12) 0%,
+      rgba(255, 255, 255, 0.03) 16%,
+      rgba(0, 0, 0, 0.2) 55%,
+      rgba(255, 128, 78, 0.05) 100%),
+    linear-gradient(180deg, #241310, #120908 60%, #190e0b);
+}
+.menu-action--exit:hover {
+  border-color: transparent;
+  background: linear-gradient(175deg,
+    rgba(255, 180, 140, 0.9) 0%,
+    rgba(190, 110, 75, 0.7) 32%,
+    rgba(110, 58, 40, 0.7) 62%,
+    rgba(255, 160, 115, 0.75) 100%);
+  box-shadow: none;
+}
+.menu-action--exit:hover::before {
+  box-shadow: inset 0 0 24px rgba(255, 128, 78, 0.16);
+}
+
+/* Glint sweep shared by the hero menu buttons. */
+.menu-action::after,
+.title-start::after,
+.endscreen__btn::after {
+  content: "";
+  position: absolute;
+  top: -30%;
+  bottom: -30%;
+  left: -75%;
+  width: 46%;
+  background: linear-gradient(105deg,
+    transparent 8%,
+    rgba(255, 250, 235, 0.2) 42%,
+    rgba(255, 252, 240, 0.5) 50%,
+    rgba(255, 250, 235, 0.2) 58%,
+    transparent 92%);
+  transform: skewX(-20deg);
+  opacity: 0;
+  pointer-events: none;
+}
+.menu-action:hover::after,
+.title-start:hover::after,
+.endscreen__btn:hover::after {
+  animation: chrome-glint 0.7s cubic-bezier(0.25, 0.1, 0.3, 1);
+}
+@keyframes chrome-glint {
+  0% { left: -75%; opacity: 0; }
+  12% { opacity: 1; }
+  100% { left: 140%; opacity: 0; }
+}
+
+/* ---- Primary CTA (Campaign / Deploy): cut corners + machined cyan ---- */
+.title-start {
+  position: relative;
+  clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
+  border-color: rgba(232, 252, 255, 0.9);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0) 42%),
+    linear-gradient(180deg, #c8f8ff 0%, #8ce4f6 46%, #57c8e4 53%, #7fdcf2 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -2px 4px rgba(8, 60, 80, 0.45),
+    inset 0 0 0 1px rgba(4, 40, 55, 0.25);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+.title-start:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -2px 4px rgba(8, 60, 80, 0.5),
+    inset 0 0 26px rgba(255, 255, 255, 0.5);
+}
+/* The idle pulse now breathes inside the plate (outer glow would be clipped). */
+@keyframes start-pulse {
+  0%, 100% {
+    filter: brightness(1);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      inset 0 -2px 4px rgba(8, 60, 80, 0.45),
+      inset 0 0 0 1px rgba(4, 40, 55, 0.25),
+      inset 0 0 14px rgba(255, 255, 255, 0);
+  }
+  50% {
+    filter: brightness(1.07);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.95),
+      inset 0 -2px 4px rgba(8, 60, 80, 0.45),
+      inset 0 0 0 1px rgba(4, 40, 55, 0.25),
+      inset 0 0 22px rgba(255, 255, 255, 0.55);
+  }
+}
+.endscreen__btn {
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.5),
+    0 0 26px rgba(140, 239, 255, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -2px 4px rgba(8, 60, 80, 0.4);
+}
+
+/* ---- Menu cards (map / mode / difficulty): cut plates + brackets ---- */
+.menu-card {
+  position: relative;
+  z-index: 0;
+  border-color: transparent;
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  background: linear-gradient(170deg,
+    rgba(190, 170, 125, 0.5) 0%,
+    rgba(105, 92, 66, 0.42) 30%,
+    rgba(52, 46, 34, 0.5) 62%,
+    rgba(150, 128, 88, 0.45) 100%);
+}
+.menu-card::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  clip-path: polygon(11.5px 0, 100% 0, 100% calc(100% - 11.5px), calc(100% - 11.5px) 100%, 0 100%, 0 11.5px);
+  background:
+    linear-gradient(180deg, rgba(255, 244, 214, 0.05), transparent 32%),
+    linear-gradient(180deg, rgba(19, 24, 28, 0.92), rgba(9, 12, 15, 0.9));
+  pointer-events: none;
+}
+.menu-card:hover {
+  border-color: transparent;
+  background: linear-gradient(170deg,
+    rgba(255, 222, 150, 0.82) 0%,
+    rgba(170, 140, 92, 0.6) 32%,
+    rgba(90, 76, 50, 0.65) 62%,
+    rgba(230, 190, 125, 0.72) 100%);
+  transform: translateY(-2px);
+}
+.menu-card:hover::before {
+  background:
+    linear-gradient(180deg, rgba(255, 234, 180, 0.09), transparent 36%),
+    linear-gradient(180deg, rgba(26, 32, 38, 0.94), rgba(12, 15, 19, 0.92));
+  box-shadow: inset 0 0 26px rgba(255, 202, 107, 0.1);
+}
+.menu-card.selected {
+  border-color: transparent;
+  background: linear-gradient(170deg,
+    rgba(255, 214, 130, 0.95) 0%,
+    rgba(200, 160, 95, 0.75) 30%,
+    rgba(120, 92, 48, 0.8) 62%,
+    rgba(255, 202, 107, 0.85) 100%);
+  box-shadow: none;
+}
+.menu-card.selected::before {
+  background:
+    linear-gradient(180deg, rgba(255, 214, 140, 0.15), transparent 42%),
+    linear-gradient(180deg, rgba(31, 33, 28, 0.94), rgba(17, 15, 11, 0.94));
+  box-shadow: inset 0 0 30px rgba(255, 202, 107, 0.17);
+}
+/* Selected state: animated amber targeting brackets. */
+.menu-card.selected::after {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--amber), var(--amber)) 0 0 / 15px 2px,
+    linear-gradient(var(--amber), var(--amber)) 0 0 / 2px 15px,
+    linear-gradient(var(--amber), var(--amber)) 100% 0 / 15px 2px,
+    linear-gradient(var(--amber), var(--amber)) 100% 0 / 2px 15px,
+    linear-gradient(var(--amber), var(--amber)) 0 100% / 15px 2px,
+    linear-gradient(var(--amber), var(--amber)) 0 100% / 2px 15px,
+    linear-gradient(var(--amber), var(--amber)) 100% 100% / 15px 2px,
+    linear-gradient(var(--amber), var(--amber)) 100% 100% / 2px 15px;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 0 4px rgba(255, 202, 107, 0.7));
+  animation: bracket-pulse 1.8s ease-in-out infinite;
+}
+@keyframes bracket-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.014); }
+}
+
+/* Section labels get a brass rail so groups read as console modules. */
+.menu-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.menu-label::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(140, 239, 255, 0.42), rgba(255, 202, 107, 0.22), transparent);
+}
+.menu-heading {
+  text-shadow:
+    0 -1px 0 rgba(255, 255, 255, 0.12),
+    0 2px 4px rgba(0, 0, 0, 0.6),
+    0 0 22px rgba(140, 239, 255, 0.18);
+}
+
+/* ---- Secondary menu controls: small machined tabs ---- */
+.menu-back,
+.menu-toggle,
+.menu-chip {
+  border-color: rgba(168, 150, 110, 0.5);
+  background:
+    linear-gradient(180deg,
+      rgba(255, 244, 214, 0.12) 0%,
+      rgba(255, 255, 255, 0.03) 45%,
+      rgba(0, 0, 0, 0.16) 55%,
+      rgba(255, 255, 255, 0.02) 100%),
+    linear-gradient(180deg, #262019, #14100b);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 240, 205, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.55),
+    0 2px 5px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.menu-back:hover,
+.menu-toggle:hover,
+.menu-chip:hover {
+  border-color: rgba(255, 214, 130, 0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 210, 0.28),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.55),
+    0 3px 9px rgba(0, 0, 0, 0.45),
+    0 0 14px rgba(255, 202, 107, 0.2);
+}
+.menu-toggle.on,
+.menu-chip.on {
+  text-shadow: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -2px 3px rgba(8, 60, 80, 0.4),
+    0 2px 6px rgba(0, 0, 0, 0.4),
+    0 0 14px rgba(140, 239, 255, 0.3);
+}
+
+/* ---- Overlay cards (settings/armory/campaign/pause/end): riveted frames ---- */
+.overlay-card,
+.endscreen__card {
+  border-color: var(--frame-line);
+  box-shadow:
+    0 30px 90px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(0, 0, 0, 0.7),
+    0 1px 0 1px rgba(255, 226, 168, 0.05),
+    inset 0 1px 0 rgba(255, 238, 205, 0.14),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.4),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.5),
+    inset 0 0 46px rgba(0, 0, 0, 0.28);
+}
+.overlay-card {
+  background:
+    linear-gradient(225deg, rgba(8, 6, 3, 0.6) 0 11px, rgba(232, 201, 138, 0.5) 11px 12.5px, transparent 12.5px),
+    linear-gradient(45deg, rgba(8, 6, 3, 0.6) 0 11px, rgba(232, 201, 138, 0.4) 11px 12.5px, transparent 12.5px),
+    linear-gradient(135deg, rgba(140, 239, 255, 0.1), transparent 32%),
+    repeating-linear-gradient(90deg, rgba(230, 200, 140, 0.024) 0 1px, transparent 1px 30px),
+    linear-gradient(180deg, var(--panel-strong), var(--panel));
+}
+.endscreen__card {
+  background:
+    linear-gradient(225deg, rgba(8, 6, 3, 0.6) 0 11px, rgba(232, 201, 138, 0.5) 11px 12.5px, transparent 12.5px),
+    linear-gradient(45deg, rgba(8, 6, 3, 0.6) 0 11px, rgba(232, 201, 138, 0.4) 11px 12.5px, transparent 12.5px),
+    linear-gradient(135deg, rgba(140, 239, 255, 0.12), transparent 30%),
+    linear-gradient(180deg, var(--panel-strong), var(--panel));
+}
+.overlay-card::after,
+.endscreen__card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(4px at 11px 11px, #f7e0ae 0%, var(--brass) 40%, #514021 72%, rgba(0, 0, 0, 0.5) 86%, transparent 100%),
+    radial-gradient(4px at calc(100% - 11px) calc(100% - 11px), #f7e0ae 0%, var(--brass) 40%, #514021 72%, rgba(0, 0, 0, 0.5) 86%, transparent 100%);
+}
+
+/* ---- Campaign mission cards + armory cards: bevel, lift, edge glow ---- */
+.campaign-card,
+.armory-card {
+  border-color: rgba(150, 132, 96, 0.38);
+  background:
+    linear-gradient(180deg, rgba(255, 244, 214, 0.05), transparent 26%),
+    linear-gradient(180deg, rgba(18, 21, 24, 0.88), rgba(9, 11, 13, 0.86));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 238, 205, 0.07),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.campaign-card {
+  transition:
+    transform 0.14s cubic-bezier(0.2, 0.7, 0.3, 1),
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    background-color 0.16s ease;
+}
+.campaign-card:hover:not(:disabled) {
+  border-color: rgba(255, 214, 130, 0.78);
+  background:
+    linear-gradient(180deg, rgba(255, 234, 180, 0.07), transparent 30%),
+    linear-gradient(180deg, rgba(26, 30, 34, 0.92), rgba(13, 15, 18, 0.9));
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 210, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 6px 18px rgba(0, 0, 0, 0.45),
+    0 0 18px rgba(255, 202, 107, 0.16);
+}
+
+/* ---- Reduced motion: kill every animation this layer added ---- */
+.reduced-motion .panel-title::after,
+.reduced-motion .title-logo,
+.reduced-motion .menu-card.selected::after,
+.reduced-motion .menu-action::after,
+.reduced-motion .menu-action:hover::after,
+.reduced-motion .title-start::after,
+.reduced-motion .title-start:hover::after,
+.reduced-motion .endscreen__btn::after,
+.reduced-motion .endscreen__btn:hover::after,
+.reduced-motion .btn::before,
+.reduced-motion .btn:hover::before {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel-title::after,
+  .title-logo,
+  .menu-card.selected::after,
+  .menu-action:hover::after,
+  .title-start:hover::after,
+  .endscreen__btn:hover::after,
+  .btn:hover::before {
+    animation: none !important;
+  }
+}
+
+/* Menu header row: brass baseline so screen titles read as console headers. */
+.menu-head {
+  position: relative;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(176, 152, 104, 0.26);
+}
+.menu-head::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 38%;
+  height: 1px;
+  background: linear-gradient(90deg, var(--amber), transparent);
+  box-shadow: 0 0 8px rgba(255, 202, 107, 0.35);
+  pointer-events: none;
+}

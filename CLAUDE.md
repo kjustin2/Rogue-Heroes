@@ -175,6 +175,16 @@ These are catalogs/specs with no engine dependencies — the tuning surface of t
   two bases + neutral cover — **no units start on the field**).
 - `damageModel.ts` — entity/part factories (`createSoldier`, `createTank`, `createBase`…),
   cover profiles, and the damage/status functions.
+- `units.ts` also holds `SUPPORT_POWERS` — off-map strikes the Home Base calls in
+  (airstrike / cluster / orbital lance; money + base CP + per-power cooldown, some
+  tech-gated). Targeting mirrors the build flow (`setPendingSupport` → `queueSupportAt`);
+  strikes reuse the map-event `pendingStrikes` machinery plus timed `pendingFx` visuals
+  ("jet"/"beam" VisualEvents the renderer animates).
+
+> Gameplay notes: pillars/trees **topple** when destroyed (fall away from the killing
+> blow, crush along the landing line — `resolveTopple`, guarded by the serialized
+> `toppled` set). Locked troops/tech/support render as CLASSIFIED/ENCRYPTED cards in the
+> HUD until their doctrine is researched (discovery pacing; reveal tracker in `hud.ts`).
 
 ### Terrain is a mutable singleton (`src/game/terrain.ts`)
 
