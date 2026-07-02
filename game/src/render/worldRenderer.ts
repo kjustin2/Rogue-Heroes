@@ -704,6 +704,18 @@ export class WorldRenderer {
     group.userData.motionTime = motionTime;
     group.userData.moving = moving;
     group.userData.recoil = this.recoilByActor.get(entity.id) ?? 0;
+    // Rolling vehicles kick up a dust wake behind their tracks.
+    if (moving && isVehicleKind(entity.kind)) {
+      const lastDust = (group.userData.lastDustAt as number | undefined) ?? 0;
+      if (motionTime - lastDust > 0.6) {
+        group.userData.lastDustAt = motionTime;
+        const rear = {
+          x: entity.position.x - Math.sin(entity.yaw) * entity.radius * 0.9,
+          z: entity.position.z - Math.cos(entity.yaw) * entity.radius * 0.9,
+        };
+        this.spawnSmokeColumn(rear, 2, this.propTint.getHex(), 0.3, 1.1, entity.elevation + 0.1);
+      }
+    }
     // Body rises on each footfall (two per stride) for a walking bounce, locked to distance.
     const bob = moving && isInfantryKind(entity.kind) ? Math.abs(Math.sin(motionTime * 1.6)) * 0.05 : 0;
     // Ease the rendered ground height so stepping on/off cover or terrain ledges glides
@@ -1408,11 +1420,56 @@ export class WorldRenderer {
       mesh.receiveShadow = false;
       this.debrisRoot.add(mesh);
     }
+    // Losing the core (or a volatile store) is a kill moment: a short-lived column of
+    // dark smoke rises from the wreck. Puffs share the pooled ember geometry; their
+    // materials are per-puff (opacity animates) and disposed when the puff expires.
+    if (part.role === "core" || part.role === "volatile") {
+      const puffs = entity.kind === "cover" ? 3 : isVehicleKind(entity.kind) || entity.kind === "base" ? 7 : 4;
+      this.spawnSmokeColumn(entity.position, puffs, 0x2c2724, 0.45, 2.6, entity.height * 0.4);
+    }
+  }
+
+  // Rising, growing, fading smoke puffs (kill columns, vehicle dust). Cleaned up by
+  // animateDebris when their life runs out.
+  private spawnSmokeColumn(position: Vec2, count: number, color: number, opacity: number, lifeSeconds: number, baseY: number): void {
+    const born = performance.now() / 1000;
+    for (let i = 0; i < count; i += 1) {
+      const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+      const puff = new THREE.Mesh(projectileGeometry("ember"), material);
+      puff.position.set(
+        position.x + (Math.sin(i * 2.4) * 0.28),
+        baseY + 0.15 + i * 0.06,
+        position.z + (Math.cos(i * 3.1) * 0.28),
+      );
+      puff.scale.setScalar(2.6 + (i % 3) * 1.1);
+      puff.userData.smoke = { born: born + i * 0.12, life: lifeSeconds, rise: 0.55 + (i % 3) * 0.22, baseOpacity: opacity, baseScale: puff.scale.x };
+      puff.userData.origin = puff.position.clone();
+      this.debrisRoot.add(puff);
+    }
   }
 
   private animateDebris(): void {
     const now = performance.now() / 1000;
+    // Smoke puffs rise, grow, fade, then free their (per-puff) material. Iterate a copy
+    // since expired puffs are removed mid-loop.
+    for (const object of [...this.debrisRoot.children]) {
+      const smoke = object.userData.smoke as { born: number; life: number; rise: number; baseOpacity: number; baseScale: number } | undefined;
+      if (!smoke) continue;
+      const mesh = object as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+      const age = now - smoke.born;
+      if (age < 0) continue;
+      if (age > smoke.life) {
+        mesh.material.dispose();
+        this.debrisRoot.remove(mesh);
+        continue;
+      }
+      const origin = mesh.userData.origin as THREE.Vector3;
+      mesh.position.y = origin.y + smoke.rise * age;
+      mesh.scale.setScalar(smoke.baseScale * (1 + age * 0.9));
+      mesh.material.opacity = smoke.baseOpacity * (1 - age / smoke.life);
+    }
     for (const object of this.debrisRoot.children) {
+      if (object.userData.smoke) continue;
       const mesh = object as PartMesh;
       const origin = mesh.userData.origin as THREE.Vector3 | undefined;
       const velocity = mesh.userData.velocity as THREE.Vector3 | undefined;
@@ -1813,12 +1870,38 @@ export class WorldRenderer {
         const fade = TRAIL_OPACITIES[Math.min(TRAIL_OPACITIES.length - 1, history.length - 1 - i)];
         this.projectileRoot.add(makeLine(a, b, style.trailColor, fade, a.y, b.y));
       }
-      // White-hot head segment reads as a tracer and feeds the bloom pass.
+      // Heavy rounds drag a smoke wake behind the tracer; puffs grow and thin with age.
+      if (projectile.kind === "shell" || (projectile.kind === "grenade" && projectile.state !== "rolling")) {
+        for (let i = history.length - 3; i >= 0; i -= 2) {
+          const p = history[i];
+          const back = history.length - 1 - i;
+          const fadeIdx = Math.min(SMOKE_OPACITIES.length - 1, Math.floor(back / 2));
+          const puff = new THREE.Mesh(projectileGeometry("ember"), projectileMaterial(`trail-smoke-${fadeIdx}`, 0x8d8578, SMOKE_OPACITIES[fadeIdx]));
+          puff.position.set(p.x, p.y, p.z);
+          puff.scale.setScalar((projectile.kind === "shell" ? 3.4 : 2.2) + back * 0.9);
+          this.projectileRoot.add(puff);
+        }
+      }
+      // White-hot head segment reads as a tracer and feeds the bloom pass. Each weapon
+      // family gets its own signature: fat plasma streak (bolt), heavy shell tracer,
+      // needle-thin brilliant line (sniper), standard rifle tracer.
+      const sniper = projectile.sourceKind === "sniper";
+      const headRadius = projectile.kind === "bolt" ? 0.048 : projectile.kind === "shell" ? 0.036 : sniper ? 0.018 : 0.028;
+      const headBlend = projectile.kind === "bolt" ? 0.7 : sniper ? 0.8 : 0.55;
       this.projectileRoot.add(makeTubeLine(
         projectile.previous, projectile.position,
-        blendHex(style.trailColor, 0xffffff, 0.55), 0.9,
-        projectile.previousHeight, 0.028, projectile.height,
+        blendHex(style.trailColor, 0xffffff, headBlend), 0.9,
+        projectile.previousHeight, headRadius, projectile.height,
       ));
+      // Sniper rounds leave a long luminous vapor line across their last few meters.
+      if (sniper && history.length >= 4) {
+        const tail = history[history.length - 4];
+        this.projectileRoot.add(makeTubeLine(
+          tail, projectile.position,
+          blendHex(style.trailColor, 0xffffff, 0.5), 0.4,
+          tail.y, 0.012, projectile.height,
+        ));
+      }
       this.projectileRoot.add(makeProjectileShadow(projectile, style.trailColor));
 
       const flash = makeMuzzleFlash(projectile);
@@ -1904,6 +1987,11 @@ export class WorldRenderer {
         impactRing.rotation.x = -Math.PI / 2;
         impactRing.position.set(effect.to.x, 0.11, effect.to.z);
         this.effectRoot.add(impactRing);
+        // A few hot sparks kicked off the impact point.
+        const sparks = new THREE.Group();
+        sparks.position.set(effect.to.x, 0.65, effect.to.z);
+        addEmbers(sparks, 3, 0xffd27a, 0.25 + t * 0.55, 0.12, effect.age);
+        this.effectRoot.add(sparks);
       }
     }
   }
@@ -2640,6 +2728,8 @@ const _paintTmp = new THREE.Color();
 // Quantized comet-tail opacities (newest segment first) — fixed values keep the cached
 // line-material pool bounded.
 const TRAIL_OPACITIES = [0.62, 0.4, 0.26, 0.16, 0.09, 0.05, 0.03];
+// Quantized smoke-wake opacities (behind shells/grenades), same cache discipline.
+const SMOKE_OPACITIES = [0.26, 0.17, 0.1, 0.05];
 
 const tubeGeometries = new Map<string, THREE.CylinderGeometry>();
 const endpointGeometries = new Map<string, THREE.RingGeometry>();

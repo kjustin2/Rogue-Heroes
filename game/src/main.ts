@@ -33,6 +33,8 @@ import {
 } from "./game/sim";
 import type { AimMode, Team } from "./game/damageModel";
 import { isInfantryKind } from "./game/damageModel";
+import { TECH_TREE, troopsUnlockedBy } from "./game/tech";
+import { troopSpec } from "./game/units";
 import { sfx } from "./audio";
 import { music } from "./music";
 import { progression, COSMETICS, COSMETIC_CATEGORIES, type Cosmetic } from "./progression";
@@ -197,7 +199,21 @@ const hud = new Hud(uiRoot, sim, {
     return ok;
   },
   queueShootAt: (point) => sim.queueShootAt(point),
-  researchTech: (nodeId) => sim.researchTech(nodeId),
+  researchTech: (nodeId) => {
+    const ok = sim.researchTech(nodeId);
+    if (ok) {
+      // Reveal flourish: declassify the doctrine's units by name the moment it lands.
+      const revealed = troopsUnlockedBy(nodeId).map((kind) => troopSpec(kind).label);
+      const decrypted = TECH_TREE.filter((n) => n.tier === 4 && n.requires.includes(nodeId)).length;
+      if (revealed.length) {
+        showToast(`Declassified: ${revealed.join(" + ")} now deployable`);
+        sfx.deploy();
+      } else if (decrypted) {
+        showToast("R&D files decrypted — check the tech deck");
+      }
+    }
+    return ok;
+  },
   cancelOrder: (id: string) => sim.cancelOrder(id),
   explainGrenadeTarget: (id: string) => sim.explainGrenadeTarget(id),
   explainRamTarget: (id: string) => sim.explainRamTarget(id),
@@ -1233,6 +1249,30 @@ function showRoundTransition(turn: number): void {
 
 sim.bus.on("TURN_START", ({ turn }) => showRoundTransition(turn));
 
+// Enemy-intel ticker: when the AI finishes a doctrine mid-battle, warn the player — a
+// readable escalation beat you can race ("their Armor Bay is online; rush or dig in").
+let seenEnemyTech = new Set<string>();
+function watchEnemyIntel(): void {
+  const enemyBase = sim.entities.find((e) => e.kind === "base" && e.team === "enemy");
+  if (!enemyBase) return;
+  const owned = enemyBase.unlockedTech ?? [];
+  for (const id of seenEnemyTech) {
+    if (!owned.includes(id)) {
+      seenEnemyTech = new Set();
+      break;
+    }
+  }
+  for (const id of owned) {
+    if (seenEnemyTech.has(id)) continue;
+    seenEnemyTech.add(id);
+    // Pre-seeded tech (campaign setups) lands on turn 1 — only mid-battle research is news.
+    if (inBattle && sim.turn > 1) {
+      const node = TECH_TREE.find((n) => n.id === id);
+      if (node) showToast(`INTEL — enemy ${node.name} online`);
+    }
+  }
+}
+
 function showToast(text: string): void {
   const toast = document.createElement("div");
   toast.className = "toast";
@@ -1307,6 +1347,7 @@ function frame(now: number): void {
   // The action-pace setting only scales time while orders resolve; planning stays real-time.
   sim.update(sim.phase === "resolve" ? dt * settings.resolveSpeed : dt);
   processBattleEvents();
+  watchEnemyIntel();
   feel.update(dt);
   music.setState(
     sim.phase === "resolve" ? "resolve"

@@ -3598,3 +3598,52 @@ body.menus-open .menu-bg span {
 }
 @keyframes battle-loading-spin { to { transform: rotate(360deg); } }
 .reduced-motion .battle-loading__spinner { animation-duration: 1.6s; }
+
+/* ---- Discovery pacing: classified assets, encrypted R&D, reveal flourish ---- */
+.btn.confirm.classified {
+  background:
+    repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.35) 0 6px, rgba(60, 54, 40, 0.35) 6px 12px),
+    rgba(16, 15, 11, 0.8);
+  border-color: rgba(140, 126, 92, 0.3);
+  color: rgba(214, 200, 168, 0.5);
+  opacity: 0.82;
+}
+.btn.confirm.classified .classified-name {
+  display: block;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: rgba(255, 202, 107, 0.42);
+}
+.btn.confirm.classified span:last-child {
+  color: rgba(214, 200, 168, 0.55);
+  font-size: 0.68rem;
+}
+.new-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--amber);
+  color: #241a06;
+  font-style: normal;
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  vertical-align: 2px;
+  animation: new-badge-pulse 1.4s ease-in-out infinite;
+}
+.btn.confirm.just-revealed {
+  animation: just-revealed-flash 1.6s ease-out 1;
+  border-color: rgba(255, 202, 107, 0.75);
+}
+@keyframes new-badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+@keyframes just-revealed-flash {
+  0% { background: rgba(255, 202, 107, 0.55); box-shadow: 0 0 26px rgba(255, 202, 107, 0.8); }
+  100% { background: rgba(255, 202, 107, 0); box-shadow: 0 0 0 rgba(255, 202, 107, 0); }
+}
+.reduced-motion .new-badge,
+.reduced-motion .btn.confirm.just-revealed { animation: none; }

@@ -17,6 +17,45 @@ import {
 } from "../game/sim";
 import type { Intent, ShotPreview, TacticalOrder, TacticalSim, TurnDamageEntry, TurnReport } from "../game/sim";
 
+// Discovery pacing state: which doctrines we've already seen researched, and when each
+// troop/specialization was first revealed (drives the NEW badge + reveal flash). Module
+// scope — there is one HUD. Reset detection: if the base no longer has a tech we've
+// seen, a new battle started.
+const NEW_BADGE_MS = 45000;
+const revealTracker = {
+  seenTech: new Set<string>(),
+  seeded: false,
+  revealedTroopAt: new Map<string, number>(),
+  revealedTechAt: new Map<string, number>(),
+};
+
+function isRecentlyRevealed(at: number | undefined): boolean {
+  return at !== undefined && Date.now() - at < NEW_BADGE_MS;
+}
+
+function syncRevealTracking(base: CombatEntity): void {
+  const owned = base.unlockedTech ?? [];
+  for (const id of revealTracker.seenTech) {
+    if (!owned.includes(id)) {
+      // Battle reset — start the discovery arc over.
+      revealTracker.seenTech.clear();
+      revealTracker.revealedTroopAt.clear();
+      revealTracker.revealedTechAt.clear();
+      revealTracker.seeded = false;
+      break;
+    }
+  }
+  const fresh = owned.filter((id) => !revealTracker.seenTech.has(id));
+  for (const id of fresh) {
+    revealTracker.seenTech.add(id);
+    if (!revealTracker.seeded) continue; // don't badge tech from a restored save
+    const now = Date.now();
+    for (const spec of TROOP_CATALOG) if (spec.tech === id) revealTracker.revealedTroopAt.set(spec.kind, now);
+    for (const node of TECH_TREE) if (node.tier === 4 && node.requires.includes(id)) revealTracker.revealedTechAt.set(node.id, now);
+  }
+  revealTracker.seeded = true;
+}
+
 const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "move", label: "Move", tip: "Select Move, then click ground or a cover object. Costs 1 CP. Soldiers move farther than heavy units." },
   { id: "shoot", label: "Shoot", tip: "Select Shoot, pick an enemy part, then confirm. The map line previews cover, high ground, estimated damage, and shot accuracy." },
@@ -1073,37 +1112,57 @@ function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
     ? "Spend the base's command point: deploy a troop, research a doctrine, or boost income."
     : `${base.name} has used its command point this turn.`;
 
+  syncRevealTracking(base);
   const troopButtons = TROOP_CATALOG.map((spec) => {
+    const locked = Boolean(spec.tech) && !isTechUnlocked(base, spec.tech as string);
+    const techName = TECH_TREE.find((n) => n.id === spec.tech)?.name ?? "a doctrine";
+    // Discovery pacing: a locked troop is a CLASSIFIED asset — no name, role, or price.
+    // The only intel is which doctrine declassifies it, so buying a doctrine is a
+    // reveal moment instead of a checklist tick.
+    if (locked) {
+      return `<button class="btn confirm disabled classified" data-spawn="${spec.kind}" data-disabled="true" data-tip="${escapeAttr(`Classified asset. Research ${techName} to reveal it.`)}">
+        <span class="classified-name">▮▮▮▮▮▮</span>
+        <span>${escapeHtml(techName)}</span>
+      </button>`;
+    }
     const reason = sim.spawnFailureReason(base, spec.kind);
     const cooldown = sim.troopCooldown(base, spec.kind);
-    const locked = Boolean(spec.tech) && !isTechUnlocked(base, spec.tech as string);
     const ready = !reason;
-    const sub = locked ? "Locked" : cooldown > 0 ? `${cooldown} rd` : `$${spec.cost}`;
-    const techName = TECH_TREE.find((n) => n.id === spec.tech)?.name ?? "a doctrine";
-    const tip = locked
-      ? `${spec.label} (${spec.role}): ${spec.tip} Research ${techName} to unlock.`
-      : reason
-        ? `${spec.label}: ${reason}.`
-        : `${spec.label} (${spec.role}): ${spec.tip} Costs 1 CP and $${spec.cost}; ${spec.cooldown}-round cooldown.`;
-    return `<button class="btn confirm ${ready ? "" : "disabled"} ${locked ? "locked" : ""}" data-spawn="${spec.kind}" data-disabled="${!ready}" data-tip="${escapeAttr(tip)}">
-      ${escapeHtml(spec.label)}
+    const isNew = isRecentlyRevealed(revealTracker.revealedTroopAt.get(spec.kind));
+    const sub = cooldown > 0 ? `${cooldown} rd` : `$${spec.cost}`;
+    const tip = reason
+      ? `${spec.label}: ${reason}.`
+      : `${spec.label} (${spec.role}): ${spec.tip} Costs 1 CP and $${spec.cost}; ${spec.cooldown}-round cooldown.`;
+    return `<button class="btn confirm ${ready ? "" : "disabled"} ${isNew ? "just-revealed" : ""}" data-spawn="${spec.kind}" data-disabled="${!ready}" data-tip="${escapeAttr(tip)}">
+      ${escapeHtml(spec.label)}${isNew ? `<em class="new-badge">NEW</em>` : ""}
       <span>${sub}</span>
     </button>`;
   }).join("");
 
   const techButtons = TECH_TREE.map((node) => {
     const unlocked = isTechUnlocked(base, node.id);
+    // Tier-4 specializations stay encrypted until their parent doctrine is bought —
+    // each doctrine decrypts a rival pair of upgrades you didn't know existed.
+    const prereqsMet = node.requires.every((id) => isTechUnlocked(base, id));
+    if (node.tier === 4 && !prereqsMet) {
+      const parentName = TECH_TREE.find((n) => n.id === node.requires[0])?.name ?? "a doctrine";
+      return `<button class="btn confirm disabled classified" data-tech="${node.id}" data-disabled="true" data-tip="${escapeAttr(`Encrypted R&D file. Research ${parentName} to decrypt it.`)}">
+        <span class="classified-name">ENCRYPTED</span>
+        <span>${escapeHtml(parentName)}</span>
+      </button>`;
+    }
     const reason = sim.researchFailureReason(base, node.id);
     const ready = !reason;
     const lockedOut = Boolean(reason && /locked out/i.test(reason));
+    const isNew = node.tier === 4 && !unlocked && isRecentlyRevealed(revealTracker.revealedTechAt.get(node.id));
     const sub = unlocked ? "Done" : lockedOut ? "Locked" : `$${node.cost}`;
     const tip = unlocked
       ? `${node.name}: ${node.blurb} (researched)`
       : reason
         ? `${node.name}: ${reason}.`
         : `${node.name}: ${node.blurb} Costs 1 CP and $${node.cost}.`;
-    return `<button class="btn confirm ${unlocked ? "done" : ready ? "" : "disabled"}" data-tech="${node.id}" data-disabled="${unlocked || !ready}" data-tip="${escapeAttr(tip)}">
-      ${escapeHtml(node.name)}
+    return `<button class="btn confirm ${unlocked ? "done" : ready ? "" : "disabled"} ${isNew ? "just-revealed" : ""}" data-tech="${node.id}" data-disabled="${unlocked || !ready}" data-tip="${escapeAttr(tip)}">
+      ${escapeHtml(node.name)}${isNew ? `<em class="new-badge">NEW</em>` : ""}
       <span>${sub}</span>
     </button>`;
   }).join("");
