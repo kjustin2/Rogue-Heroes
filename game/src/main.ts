@@ -1443,6 +1443,9 @@ function processBattleEvents(): void {
     } else if (effect.type === "impact") {
       sfx.impact();
       if (stage.isInView(effect.to)) feel.addTrauma(0.05);
+    } else if (effect.type === "topple") {
+      sfx.crash();
+      if (stage.isInView(effect.to)) feel.addTrauma(0.14);
     } else if (effect.type === "jet") {
       sfx.jet();
       feel.addTrauma(0.08);

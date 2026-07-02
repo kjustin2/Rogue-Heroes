@@ -1612,6 +1612,20 @@ describe("tactical enemy AI", () => {
     expect(sim.supportFailureReason(base, "laser")).toBeUndefined();
   });
 
+  it("a felled pillar topples away from the attacker and crushes what it lands on", () => {
+    const shooter = createSoldier("p-shooter", "Shooter", "player", { x: 0, z: 0 });
+    const pillar = createCover("pillar-1", "Support Pillar", { x: 3, z: 0 }, { coverKind: "pillar" });
+    const bystander = createSoldier("e-bystander", "Bystander", "enemy", { x: 5.2, z: 0 });
+    const sim = new TacticalSim([shooter, pillar, bystander]);
+    const hpBefore = bystander.parts.reduce((sum, p) => sum + p.hp, 0);
+    // Kill the pillar with the shooter as the damage source: it falls away (+x) onto the bystander.
+    sim.debugDamage(pillar.id, pillar.parts[0].id, 9999, shooter.id);
+    expect(pillar.status.alive).toBe(false);
+    expect(sim.toppled.has("pillar-1")).toBe(true);
+    expect(sim.effects.some((e) => e.type === "topple")).toBe(true);
+    expect(bystander.parts.reduce((sum, p) => sum + p.hp, 0)).toBeLessThan(hpBefore);
+  });
+
   it("never stalls: a unit that cannot fire still pushes the objective in destroy mode", () => {
     // Regression: destroy mode had no fallback objective, so a unit that couldn't take a
     // shot (here: disarmed, on a no-retreat profile) got no goal at all and stood forever.

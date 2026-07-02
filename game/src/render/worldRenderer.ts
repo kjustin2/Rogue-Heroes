@@ -74,6 +74,7 @@ export class WorldRenderer {
   private skyTexture: THREE.CanvasTexture | null = null;
   private lastModelsVersion = modelsVersion();
   private readonly ghostStickyUntil = new Map<string, number>();
+  private commandPhase = true;
   // Recent flight positions per live projectile — drawn as a fading comet tail.
   private readonly trailHistory = new Map<string, { x: number; y: number; z: number }[]>();
   private debug: WorldRenderDebug = emptyDebug();
@@ -175,6 +176,7 @@ export class WorldRenderer {
 
   update(sim: TacticalSim, targetId?: string, targetPartId?: string, camera?: THREE.Camera, groundAim?: Vec2): void {
     this.debug = emptyDebug();
+    this.commandPhase = sim.phase === "command";
     // A GLB finished loading since last frame: rebuild every entity group so units that
     // were born with procedural fallback meshes pick up their real model.
     if (modelsVersion() !== this.lastModelsVersion) {
@@ -831,6 +833,7 @@ export class WorldRenderer {
     beacon.position.set(0, dims.y + 0.06, dims.z * 0.2);
     beacon.userData.decor = true;
     group.add(beacon);
+    group.userData.accentMaterial = mat; // paintModel pulses it like a running light
   }
 
   // Nudge a GLB prop's albedo toward the map palette (mirror of tintPropToMap, but on the
@@ -872,6 +875,13 @@ export class WorldRenderer {
   private paintModel(group: THREE.Group, entity: CombatEntity, selected: boolean, targeted: boolean, ghosted: boolean): void {
     const mats = group.userData.glbMaterials as { material: THREE.MeshStandardMaterial; base: number }[] | undefined;
     if (!mats) return;
+    // Running-light pulse on the team accent trim — parked armor still reads alive.
+    const accentMat = group.userData.accentMaterial as THREE.MeshStandardMaterial | undefined;
+    if (accentMat) {
+      accentMat.emissiveIntensity = entity.status.alive
+        ? 0.6 + (Math.sin(performance.now() * 0.0035 + (hash(entity.id) % 63)) + 1) * 0.22
+        : 0;
+    }
     let totalHp = 0;
     let totalMax = 0;
     let flash = 0;
@@ -1580,6 +1590,15 @@ export class WorldRenderer {
     material.emissiveIntensity = part.hp > 0
       ? (mesh.userData.baseEmissiveIntensity as number) + (unitGlow ? 0.14 : 0) + (coverGlow ? 0.18 : 0) + (selected ? 0.58 : 0) + (targetedPart ? 0.72 : targeted ? 0.34 : 0)
       : 0;
+    // Living-army cues: idle infantry breathe, and a player unit with CP left during the
+    // command phase carries a slow pulse on its weapon — "this one can still act".
+    if (isInfantryKind(entity.kind) && part.role === "core" && entity.status.alive && part.hp > 0 && !parent?.userData.moving) {
+      mesh.scale.y *= 1 + Math.sin(performance.now() * 0.0021 + (hash(entity.id) % 63)) * 0.012;
+    }
+    if (this.commandPhase && entity.team === "player" && entity.status.alive && entity.commandPoints > 0 && part.role === "weapon" && part.hp > 0 && !selected && !targeted) {
+      material.emissive.setHex(entity.accent ?? this.playerAccent);
+      material.emissiveIntensity = Math.max(material.emissiveIntensity, 0.14 + (Math.sin(performance.now() * 0.004 + (hash(entity.id) % 63)) + 1) * 0.09);
+    }
     material.transparent = ghosted && part.hp > 0;
     material.opacity = ghosted && part.hp > 0 ? (targeted ? 0.48 : 0.34) : 1;
     material.depthWrite = !(ghosted && part.hp > 0);
@@ -2041,6 +2060,34 @@ export class WorldRenderer {
         const y = terrainHeightAt({ x: midX, z: midZ }) + 0.12;
         this.effectRoot.add(makeTubeLine(effect.from, effect.to, 0xff7a5a, fade * 0.9, y, 0.11));
         this.effectRoot.add(makeLine(effect.from, effect.to, 0xfff1dc, fade, y + 0.06));
+      } else if (effect.type === "topple") {
+        // A felled column pivots at its base and slams along the from->to line, kicking
+        // dust at the impact end. The dead cover mesh hides itself, so this IS the fall.
+        const dirX = effect.to.x - effect.from.x;
+        const dirZ = effect.to.z - effect.from.z;
+        const reach = Math.hypot(dirX, dirZ) || 1;
+        const fall = Math.min(1, t * 1.7);
+        const radius = Math.max(0.22, (effect.radius ?? 0.4) * 0.75);
+        const column = new THREE.Mesh(
+          new THREE.CylinderGeometry(radius, radius * 1.2, reach, 10),
+          new THREE.MeshStandardMaterial({ color: effect.color, roughness: 0.92, transparent: t > 0.72, opacity: t > 0.72 ? 1 - (t - 0.72) / 0.28 : 1 }),
+        );
+        column.position.y = reach / 2;
+        const pivot = new THREE.Group();
+        pivot.add(column);
+        pivot.position.set(effect.from.x, terrainHeightAt(effect.from) + 0.05, effect.from.z);
+        pivot.rotation.y = Math.atan2(dirX, dirZ);
+        pivot.rotation.x = fall * fall * (Math.PI / 2 - 0.06);
+        this.effectRoot.add(pivot);
+        if (fall >= 1) {
+          const dust = new THREE.Mesh(
+            new THREE.RingGeometry(0.4 + (t - 0.6) * 2.2, 0.7 + (t - 0.6) * 2.6, 24),
+            new THREE.MeshBasicMaterial({ color: 0xcfc2a4, transparent: true, opacity: opacity * 0.5, side: THREE.DoubleSide, depthWrite: false }),
+          );
+          dust.rotation.x = -Math.PI / 2;
+          dust.position.set(effect.to.x, terrainHeightAt(effect.to) + 0.08, effect.to.z);
+          this.effectRoot.add(dust);
+        }
       } else if (effect.type === "blast") {
         const ring = new THREE.Mesh(
           new THREE.RingGeometry((effect.radius ?? 1) * t, (effect.radius ?? 1) * t + 0.08, 32),
@@ -2359,7 +2406,13 @@ function makeProjectileModel(projectile: Projectile): THREE.Group {
     const bomb = src === "exturret";
     const body = new THREE.Mesh(projectileGeometry("shell-body"), projectileMaterial("shell-body", 0xbfd1cc, 0.98));
     const nose = new THREE.Mesh(projectileGeometry("shell-nose"), projectileMaterial("shell-nose", team, 0.98));
-    const exhaust = new THREE.Mesh(projectileGeometry("shell-exhaust"), projectileMaterial("shell-exhaust", 0xffd166, 0.72));
+    const exhaust = new THREE.Mesh(projectileGeometry("shell-exhaust"), projectileMaterial("shell-exhaust", 0xffd166, 0.72, true));
+    // A ragged flame cone licking off the tail, flickering with age.
+    const flame = new THREE.Mesh(projectileGeometry("rifle-tail"), projectileMaterial("shell-flame", 0xff9a3c, 0.8, true));
+    flame.position.y = -0.42;
+    flame.rotation.x = Math.PI;
+    flame.scale.set(1.6, 1.9 + Math.sin(projectile.age * 31) * 0.5, 1.6);
+    group.add(flame);
     const bandA = new THREE.Mesh(projectileGeometry("shell-band"), projectileMaterial("shell-band-a", 0x1d2426, 0.9));
     const bandB = new THREE.Mesh(projectileGeometry("shell-band"), projectileMaterial("shell-band-b", team, 0.88));
     nose.position.y = 0.33;
@@ -2390,12 +2443,16 @@ function makeProjectileModel(projectile: Projectile): THREE.Group {
   }
   if (projectile.kind === "bolt") {
     // Energy bolts: the APC autogun spits small fast bolts, the Home Base lobs a heavy haloed
-    // core, turrets fire the standard round. Cores pulse; containment rings counter-spin.
+    // core, turrets fire the standard round. Cores pulse inside an additive plasma shell;
+    // containment rings counter-spin.
     const small = src === "apc";
     const big = src === "base";
-    const core = new THREE.Mesh(projectileGeometry("bolt-core"), projectileMaterial("bolt-core", 0xffd166, 0.98));
-    const ringA = new THREE.Mesh(projectileGeometry("bolt-ring"), projectileMaterial("bolt-ring-a", 0xfff1a6, 0.62));
-    const ringB = new THREE.Mesh(projectileGeometry("bolt-ring"), projectileMaterial("bolt-ring-b", team, 0.5));
+    const core = new THREE.Mesh(projectileGeometry("bolt-core"), projectileMaterial("bolt-core", 0xfff6d8, 0.98, true));
+    const shell = new THREE.Mesh(projectileGeometry("bolt-core"), projectileMaterial("bolt-shell", 0xffd166, 0.5, true));
+    shell.scale.setScalar(1.7 + Math.sin(projectile.age * 22) * 0.18);
+    group.add(shell);
+    const ringA = new THREE.Mesh(projectileGeometry("bolt-ring"), projectileMaterial("bolt-ring-a", 0xfff1a6, 0.62, true));
+    const ringB = new THREE.Mesh(projectileGeometry("bolt-ring"), projectileMaterial("bolt-ring-b", team, 0.5, true));
     ringA.rotation.x = Math.PI / 2;
     ringB.rotation.x = Math.PI / 2;
     ringA.rotation.z = projectile.age * (small ? 10 : 6);
@@ -2418,7 +2475,15 @@ function makeProjectileModel(projectile: Projectile): THREE.Group {
     const mortar = src === "mortar";
     const body = new THREE.Mesh(projectileGeometry("grenade-body"), projectileMaterial("grenade-body", 0x2f342a, 0.98));
     const band = new THREE.Mesh(projectileGeometry("grenade-band"), projectileMaterial("grenade-band", 0xffbf69, 0.82));
-    const spark = new THREE.Mesh(projectileGeometry("grenade-spark"), projectileMaterial("grenade-spark", 0xfff1a6, 0.6));
+    const spark = new THREE.Mesh(projectileGeometry("grenade-spark"), projectileMaterial("grenade-spark", 0xfff1a6, 0.6, true));
+    // Armed-fuse blink: a red pip strobing faster as it flies — reads as "live ordnance".
+    const fuse = new THREE.Mesh(
+      projectileGeometry("ember"),
+      projectileMaterial("grenade-fuse", 0xff3b30, Math.sin(projectile.age * 26) > 0 ? 0.95 : 0.15, true),
+    );
+    fuse.position.y = 0.16;
+    fuse.scale.setScalar(1.5);
+    group.add(fuse);
     band.rotation.x = Math.PI / 2;
     band.rotation.z = projectile.age * (projectile.state === "rolling" ? 20 : 9);
     spark.position.y = projectile.state === "rolling" ? -0.02 : -0.18;
@@ -2956,11 +3021,11 @@ function projectileGeometry(key: string): THREE.BufferGeometry {
   return geometry;
 }
 
-function projectileMaterial(key: string, color: number, opacity: number): THREE.MeshBasicMaterial {
-  const materialKey = `projectile:${key}:${color}:${opacity.toFixed(2)}`;
+function projectileMaterial(key: string, color: number, opacity: number, additive = false): THREE.MeshBasicMaterial {
+  const materialKey = `projectile:${key}:${color}:${opacity.toFixed(2)}:${additive ? "a" : "n"}`;
   let material = materials.get(materialKey);
   if (!material) {
-    material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+    material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending });
     materials.set(materialKey, material);
   }
   return material as THREE.MeshBasicMaterial;

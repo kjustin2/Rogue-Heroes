@@ -253,6 +253,11 @@ export const MAPS: readonly MapDef[] = [
         { minX: -3.5, maxX: 3.5, minZ: -3.5, maxZ: 3.5, height: 0.6 }, // central gantry platform
         { minX: -13, maxX: -7, minZ: 4, maxZ: 9, height: 0.7 },        // west catwalk
         { minX: 7, maxX: 13, minZ: -9, maxZ: -4, height: 0.7 },        // east catwalk (mirror)
+        // The overpass: an elevated causeway spanning the center lane. Walk up a ramp
+        // (each step <= TERRAIN_STEP), hold the span, and shoot down into both lanes.
+        { minX: -10, maxX: -8, minZ: -1.3, maxZ: 1.3, height: 0.65 },  // west ramp
+        { minX: 8, maxX: 10, minZ: -1.3, maxZ: 1.3, height: 0.65 },    // east ramp
+        { minX: -8, maxX: 8, minZ: -1.3, maxZ: 1.3, height: 1.25 },    // causeway deck
       ],
     },
     playerBase: { x: -20, z: 0 },
@@ -262,7 +267,7 @@ export const MAPS: readonly MapDef[] = [
     hillRadius: 3.4,
     scatter: [
       { palette: ["crate", "crate", "rubble", "wall"], count: 9, spacing: 1.4, centerGap: 2.2 },
-      { palette: ["pillar", "conduit", "fuel"], count: 5, spacing: 1.8, centerGap: 3 },
+      { palette: ["pillar", "pillar", "conduit", "fuel", "ammo"], count: 7, spacing: 1.8, centerGap: 3 },
     ],
     signature: [
       { kind: "wall", x: -2.2, z: 4.5, mirror: true },

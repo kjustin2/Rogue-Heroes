@@ -64,6 +64,12 @@ export class Sfx {
     this.boom(90, 0.28, 0.7);
   }
 
+  // A heavy object slamming into the ground — toppling pillars/trees.
+  crash(): void {
+    this.boom(58, 0.42, 0.62);
+    this.crack(0.09, 0.5);
+  }
+
   // Strike aircraft flyby: a long filtered-noise sweep that rises then falls.
   jet(): void {
     if (!this.ready()) return;

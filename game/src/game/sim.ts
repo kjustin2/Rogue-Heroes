@@ -166,8 +166,9 @@ export interface TacticalOrder {
 
 export interface VisualEvent {
   id: string;
-  // "jet" = a strike aircraft flying from->to; "beam" = an orbital lance burning the from->to line.
-  type: "shot" | "impact" | "blast" | "ping" | "jet" | "beam";
+  // "jet" = a strike aircraft flying from->to; "beam" = an orbital lance burning the from->to
+  // line; "topple" = a tall cover column falling from `from` toward `to`.
+  type: "shot" | "impact" | "blast" | "ping" | "jet" | "beam" | "topple";
   from: Vec2;
   to: Vec2;
   color: number;
@@ -315,6 +316,8 @@ export class TacticalSim {
   readonly effects: VisualEvent[] = [];
   readonly defending = new Set<string>();
   readonly detonated = new Set<string>();
+  // Covers that already toppled (so a corpse caught in a later blast doesn't fall twice).
+  readonly toppled = new Set<string>();
   readonly log: string[] = [];
   readonly turnReports: TurnReport[] = [];
   readonly economy = new Map<Team, number>([["player", START_MONEY_PLAYER], ["enemy", START_MONEY_ENEMY], ["neutral", 0]]);
@@ -389,6 +392,7 @@ export class TacticalSim {
     this.projectiles.splice(0);
     this.defending.clear();
     this.detonated.clear();
+    this.toppled.clear();
     this.log.splice(0);
     this.turnReports.splice(0);
     this.activeTurnReport = undefined;
@@ -1294,9 +1298,14 @@ export class TacticalSim {
   }
 
   // Apply raw damage to a part (e.g. to stage a destroyed-part or near-dead state).
-  debugDamage(entityId: string, partId: string, amount: number): void {
+  // Passing a sourceId routes through the full damage funnel (explosions, toppling, kill
+  // effects) exactly as if that entity dealt the blow.
+  debugDamage(entityId: string, partId: string, amount: number, sourceId?: string): void {
     const entity = this.entity(entityId);
-    if (entity) applyDamage(entity, partId, amount);
+    if (!entity) return;
+    const result = applyDamage(entity, partId, amount);
+    const source = sourceId ? this.entity(sourceId) : undefined;
+    if (source) this.afterDamage(source, entity, result);
   }
 
   // Disable every unit on a team — used to stage victory/defeat end screens.
@@ -1334,6 +1343,7 @@ export class TacticalSim {
       modeState: this.modeState,
       troopSeq: this.troopSeq,
       detonated: [...this.detonated],
+      toppled: [...this.toppled],
     });
   }
 
@@ -1343,7 +1353,7 @@ export class TacticalSim {
       const data = JSON.parse(raw) as {
         map: string; mode: ModeId; difficulty?: Difficulty; turn?: number;
         economy: [Team, number][]; entities: CombatEntity[]; modeState: ModeState; troopSeq?: number;
-        detonated?: string[];
+        detonated?: string[]; toppled?: string[];
       };
       const map = mapDef(data.map);
       setActiveTerrain(map.terrain);
@@ -1364,6 +1374,8 @@ export class TacticalSim {
       // caught in a later blast doesn't detonate a second time after a save/load.
       this.detonated.clear();
       for (const id of data.detonated ?? []) this.detonated.add(id);
+      this.toppled.clear();
+      for (const id of data.toppled ?? []) this.toppled.add(id);
       this.log.splice(0);
       this.turnReports.splice(0);
       this.activeTurnReport = undefined;
@@ -2266,7 +2278,38 @@ export class TacticalSim {
     this.applyPartImplications(actor, target, messages);
     const volatileDestroyed = target.parts.some((p) => p.role === "volatile" && p.hp === 0);
     if (volatileDestroyed) this.resolveExplosion(actor, target);
+    // Tall rigid cover (pillars, trees) topples away from the killing blow and crushes
+    // whatever it lands on — positioning next to them is a readable risk/reward.
+    if (
+      target.kind === "cover" &&
+      !target.status.alive &&
+      (target.coverKind === "pillar" || target.coverKind === "tree") &&
+      !this.toppled.has(target.id)
+    ) {
+      this.toppled.add(target.id);
+      this.resolveTopple(actor, target);
+    }
     this.checkEndState();
+  }
+
+  // The falling column damages everything along its landing line (bases exempt, as ever).
+  private resolveTopple(actor: CombatEntity, cover: CombatEntity): void {
+    const dx = cover.position.x - actor.position.x;
+    const dz = cover.position.z - actor.position.z;
+    const len = Math.hypot(dx, dz);
+    const dir = len > 0.01 ? { x: dx / len, z: dz / len } : { x: 1, z: 0 };
+    const reach = Math.max(1.6, cover.height * 1.1);
+    const end = clampToArena({ x: cover.position.x + dir.x * reach, z: cover.position.z + dir.z * reach });
+    this.effect("topple", { ...cover.position }, end, cover.coverKind === "tree" ? 0x4f7a3a : 0xc8bca0, 1.0, cover.radius);
+    this.pushLog(`${cover.name} topples!`);
+    for (const e of this.entities) {
+      if (!e.status.alive || e.id === cover.id || e.kind === "base") continue;
+      const d = pointToSegmentDistance(e.position, cover.position, end);
+      if (d > cover.radius + e.radius * 0.6 + 0.25) continue;
+      const part = preferredPart(e, "center");
+      const result = applyDamage(e, part.id, 52);
+      this.afterDamage(actor, e, result, `Crushed by ${cover.name}`);
+    }
   }
 
   private applyPartImplications(actor: CombatEntity, target: CombatEntity, messages: string[]): void {
