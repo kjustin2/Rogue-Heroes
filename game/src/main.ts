@@ -40,7 +40,7 @@ import { sfx } from "./audio";
 import { music } from "./music";
 import { progression, COSMETICS, COSMETIC_CATEGORIES, type Cosmetic } from "./progression";
 import { battleReward } from "./progression";
-import { campaign, CAMPAIGN_TITLE, CAMPAIGN_SYNOPSIS, type CampaignMission } from "./campaign";
+import { campaign, CAMPAIGN_TITLE, CAMPAIGN_SYNOPSIS, rankFor, rankHpBonus, rankInsignia, type CampaignMission } from "./campaign";
 import { settings, ACTION_PACES, PACE_LABEL, RENDER_SCALES, RENDER_SCALE_LABEL, RENDER_SCALE_DPR, type ActionPace, type RenderScale } from "./settings";
 import { applyScenario, scenarioInfo } from "./game/scenarios";
 import { ARENA_BOUNDS } from "./game/terrain";
@@ -432,12 +432,65 @@ function startCampaignMission(mission: CampaignMission): void {
   campaign.setActive(mission.id);
   closeAllMenus();
   sim.configure(mapDef(mission.map), mission.mode, mission.difficulty);
+
+  // Requisition perk banked on the last victory screen.
+  const perk = campaign.consumeRequisition();
+  if (perk === "cash") {
+    sim.economy.set("player", (sim.economy.get("player") ?? 0) + 200);
+    showToast("Requisition delivered: +$200 starting funds");
+  } else if (perk === "doctrine") {
+    const base = sim.entities.find((e) => e.kind === "base" && e.team === "player");
+    if (base && !(base.unlockedTech ?? []).includes("recon")) {
+      base.unlockedTech = [...(base.unlockedTech ?? []), "recon"];
+      showToast("Requisition delivered: Recon Doctrine pre-researched");
+    }
+  }
+
+  // The veteran roster deploys free, named, ranked, and tougher — and dies for good.
+  const playerBase = sim.entities.find((e) => e.kind === "base" && e.team === "player");
+  if (playerBase) {
+    campaign.roster.forEach((member, index) => {
+      const angle = -0.8 + index * 0.5;
+      const spot = {
+        x: playerBase.position.x + Math.sin(angle + Math.PI / 2) * 3.4,
+        z: playerBase.position.z + Math.cos(angle + Math.PI / 2) * 3.4,
+      };
+      const unit = sim.debugSpawn(member.kind as TroopKind, "player", spot);
+      const rank = rankFor(member.kills);
+      unit.name = `${member.name} ${rankInsignia(rank)}`.trim();
+      const bonus = rankHpBonus(rank);
+      if (bonus > 1) for (const part of unit.parts) { part.maxHp = Math.round(part.maxHp * bonus); part.hp = part.maxHp; }
+    });
+    if (campaign.roster.length) showToast(`${campaign.roster.length} veteran${campaign.roster.length > 1 ? "s" : ""} deployed with you`);
+  }
+
+  // Finale set piece: the named Warden, tracked by the top-of-screen HP bar.
+  if (mission.boss) {
+    sim.debugSpawn(mission.boss.kind as TroopKind, "enemy", { x: mission.boss.x, z: mission.boss.z }, { bossName: mission.boss.name });
+  }
+  firedBeats.clear();
+
   world.applyMap(sim.mapDef.theme);
   world.setPlayerAccent(progression.accentColor());
   focusOnPlayerBase();
   lastEndPhase = undefined;
   inBattle = true;
   hud.update();
+}
+
+// Radio-drama beats: one-shot transmissions on their keyed turns during campaign battles.
+const firedBeats = new Set<string>();
+function watchCampaignBeats(): void {
+  const mission = activeCampaignMission;
+  if (!mission?.beats || sim.phase !== "command") return;
+  for (const beat of mission.beats) {
+    const key = `${mission.id}:${beat.turn}`;
+    if (beat.turn === sim.turn && !firedBeats.has(key)) {
+      firedBeats.add(key);
+      showToast(`📻 ${beat.text}`);
+      sfx.ui();
+    }
+  }
 }
 
 // Deploy with a brief full-screen loading veil. startBattle() rebuilds the whole arena
@@ -884,11 +937,11 @@ function showCampaign(): void {
       const unlocked = campaign.isUnlocked(i);
       const status = done ? "completed" : unlocked ? "available" : "locked";
       const label = done ? "✓ Cleared" : unlocked ? "Briefing ›" : "Locked";
-      return `<button class="campaign-card ${status}" data-mission="${m.id}" ${unlocked ? "" : "disabled"} type="button">
+      return `<button class="campaign-card ${status} ${m.branchLabel ? "campaign-card--branch" : ""}" data-mission="${m.id}" ${unlocked ? "" : "disabled"} type="button">
         <span class="campaign-card__no">${String(i + 1).padStart(2, "0")}</span>
         <span class="campaign-card__body">
-          <strong>${escapeHtml(m.name)}</strong>
-          <span class="campaign-card__region">${escapeHtml(m.region)} · ${escapeHtml(modeDef(m.mode).name)} · ${escapeHtml(difficultyLabel(m.difficulty))}</span>
+          <strong>${escapeHtml(m.name)}${m.branchLabel ? ` <em class="campaign-card__branch">${escapeHtml(m.branchLabel)}</em>` : ""}</strong>
+          <span class="campaign-card__region">${escapeHtml(m.region)} · ${escapeHtml(modeDef(m.mode).name)} · ${escapeHtml(difficultyLabel(m.difficulty))}${m.bonus ? ` · <span class="campaign-card__bonus">☆ ${escapeHtml(m.bonus.text)}</span>` : ""}</span>
         </span>
         <span class="campaign-card__status">${label}</span>
       </button>`;
@@ -904,7 +957,10 @@ function showCampaign(): void {
       </div>
       <p class="settings-note campaign-synopsis">${escapeHtml(CAMPAIGN_SYNOPSIS)}</p>
       <div class="campaign-progress">Progress · ${completedCount} / ${missions.length}${campaign.isAllComplete() ? " — Campaign complete ★" : ""}</div>
-      <div class="campaign-list">${cards}</div>
+      ${campaign.roster.length ? `<div class="campaign-roster campaign-roster--map"><span class="campaign-roster__title">Squad Roster — deploys free on every mission</span>${campaign.roster
+        .map((m) => `<span class="campaign-roster__member" data-tip="${escapeAttr(`${rankFor(m.kills)} ${m.kind} — ${m.kills} kills, ${m.missions} mission${m.missions === 1 ? "" : "s"}. Falls in battle = gone for good.`)}">${escapeHtml(m.name)} <em>${rankInsignia(rankFor(m.kills)) || "·"}</em></span>`)
+        .join("")}</div>` : ""}
+      <div class="campaign-list campaign-list--operation">${cards}</div>
     </div>
   `,
     "menu-screen",
@@ -959,16 +1015,36 @@ function showBriefing(mission: CampaignMission): void {
   });
 }
 
-function showCampaignVictory(mission: CampaignMission, reward: number): void {
+function showCampaignVictory(mission: CampaignMission, reward: number, bonusText?: string): void {
   const next = campaign.nextMission(mission.id);
   const complete = campaign.isAllComplete();
+  const roster = campaign.roster;
+  const rosterHtml = roster.length
+    ? `<div class="campaign-roster"><span class="campaign-roster__title">Squad Roster</span>${roster
+        .map((m) => {
+          const rank = rankFor(m.kills);
+          return `<span class="campaign-roster__member" data-tip="${escapeAttr(`${rank} — ${m.kills} kills over ${m.missions} mission${m.missions === 1 ? "" : "s"}. Veterans deploy free next mission (${Math.round((rankHpBonus(rank) - 1) * 100)}% bonus HP). If they fall, they're gone.`)}">${escapeHtml(m.name)} <em>${rankInsignia(rank) || "·"}</em></span>`;
+        })
+        .join("")}</div>`
+    : "";
+  const requisitionHtml = !complete && next
+    ? `<div class="campaign-requisition">
+        <span class="campaign-roster__title">Requisition — choose one for the next mission</span>
+        <div class="pause-buttons requisition-row">
+          <button class="menu-action" data-req="cash" type="button">+$200 starting funds</button>
+          <button class="menu-action" data-req="doctrine" type="button">Recon Doctrine pre-researched</button>
+        </div>
+      </div>`
+    : "";
   const screen = mountScreen(
     `
     <div class="overlay-card campaign-end victory">
       <div class="campaign-end__kicker">${complete ? "Campaign Complete ★" : "Mission Complete"}</div>
       <h2 class="menu-heading">${escapeHtml(mission.name)}</h2>
       <p class="campaign-end__story">${escapeHtml(mission.victory)}</p>
-      <div class="campaign-end__reward">+${reward} points</div>
+      <div class="campaign-end__reward">+${reward} points${bonusText ? ` · Bonus objective: ${escapeHtml(bonusText)} ✓` : ""}</div>
+      ${rosterHtml}
+      ${requisitionHtml}
       <div class="pause-buttons">
         ${!complete && next ? `<button class="title-start" data-next type="button">Next · ${escapeHtml(next.name)}</button>` : ""}
         <button class="menu-action" data-menu-btn type="button">${complete ? "Return to Menu" : "Mission Select"}</button>
@@ -979,6 +1055,13 @@ function showCampaignVictory(mission: CampaignMission, reward: number): void {
   );
   screen.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
+    const req = target.closest<HTMLElement>("[data-req]")?.dataset.req as "cash" | "doctrine" | undefined;
+    if (req) {
+      campaign.setRequisition(req);
+      for (const btn of screen.querySelectorAll<HTMLElement>("[data-req]")) btn.classList.toggle("active", btn.dataset.req === req);
+      sfx.select();
+      return;
+    }
     if (target.closest("[data-next]") && next) {
       screen.remove();
       showBriefing(next);
@@ -1372,6 +1455,7 @@ function frame(now: number): void {
   sim.update(sim.phase === "resolve" ? dt * settings.resolveSpeed : dt);
   processBattleEvents();
   watchEnemyIntel();
+  watchCampaignBeats();
   feel.update(dt);
   music.setState(
     sim.phase === "resolve" ? "resolve"
@@ -1492,11 +1576,21 @@ function handleEndState(): void {
   if (mission) {
     if (victory) {
       const firstClear = !campaign.isCompleted(mission.id);
-      const reward = (firstClear ? mission.reward : Math.round(mission.reward * 0.25)) + battleReward(true, sim.difficulty, sim.turn);
+      // Optional objective: +50% mission reward when passed.
+      const bonusPassed = mission.bonus
+        ? (mission.bonus.check === "noLosses" ? sim.playerLosses === 0 : sim.turn <= (mission.bonus.turns ?? 8))
+        : false;
+      const bonusReward = bonusPassed ? Math.round(mission.reward * 0.5) : 0;
+      const reward = (firstClear ? mission.reward : Math.round(mission.reward * 0.25)) + bonusReward + battleReward(true, sim.difficulty, sim.turn);
+      // Veteran roster: survivors carry forward with their kills; the fallen are gone.
+      const survivors = sim.entities
+        .filter((e) => e.team === "player" && e.status.alive && (isInfantryKind(e.kind) || ["tank", "apc", "artillery"].includes(e.kind)))
+        .map((e) => ({ name: e.name.replace(/ ★+$/, ""), kind: e.kind, kills: sim.killsBy.get(e.id) ?? 0 }));
+      campaign.recordBattleOutcome(survivors);
       campaign.markComplete(mission.id); // records progress + clears the active-mission save tag
       activeCampaignMission = undefined;
       progression.award(reward);
-      showCampaignVictory(mission, reward);
+      showCampaignVictory(mission, reward, bonusPassed ? mission.bonus?.text : undefined);
     } else {
       showCampaignDefeat(mission); // keep the mission active so Retry re-runs it
     }

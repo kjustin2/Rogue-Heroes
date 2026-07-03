@@ -355,6 +355,11 @@ export class TacticalSim {
   // Burning ground left by flamer hits (damages at turn start) and sapper proximity mines.
   readonly burnZones: { id: string; x: number; z: number; radius: number; turnsLeft: number }[] = [];
   readonly mines: { id: string; x: number; z: number; team: Team }[] = [];
+  // Battle bookkeeping for campaign veterancy/bonuses: kills per player unit, and how
+  // many player field units died this battle.
+  readonly killsBy = new Map<string, number>();
+  playerLosses = 0;
+  private readonly countedDead = new Set<string>();
   readonly log: string[] = [];
   readonly turnReports: TurnReport[] = [];
   readonly economy = new Map<Team, number>([["player", START_MONEY_PLAYER], ["enemy", START_MONEY_ENEMY], ["neutral", 0]]);
@@ -435,6 +440,9 @@ export class TacticalSim {
     this.salvage.clear();
     this.burnZones.splice(0);
     this.mines.splice(0);
+    this.killsBy.clear();
+    this.playerLosses = 0;
+    this.countedDead.clear();
     this.log.splice(0);
     this.turnReports.splice(0);
     this.activeTurnReport = undefined;
@@ -3640,6 +3648,17 @@ export class TacticalSim {
   }
 
   private recordDamage(actor: CombatEntity, target: CombatEntity, result: DamageResult, source?: string): void {
+    // Veterancy: credit player units with enemy unit kills (structures/cover excluded).
+    if (result.killed && actor.team === "player" && target.team === "enemy" && target.kind !== "cover" && !isBuildingKind(target.kind)) {
+      this.killsBy.set(actor.id, (this.killsBy.get(actor.id) ?? 0) + 1);
+    }
+    if (
+      target.team === "player" && !target.status.alive && target.kind !== "cover" &&
+      !isBuildingKind(target.kind) && !isDefenseKind(target.kind) && !this.countedDead.has(target.id)
+    ) {
+      this.countedDead.add(target.id);
+      this.playerLosses += 1;
+    }
     if (!this.activeTurnReport || result.amount <= 0) return;
     const part = target.parts.find((candidate) => candidate.id === result.partId);
     const partLabel = part?.label ?? result.partId;

@@ -4377,3 +4377,67 @@ body.menus-open .menu-bg span {
   box-shadow: 0 0 10px rgba(255, 176, 32, 0.6);
   transition: width 0.25s ease;
 }
+
+/* ---- Campaign 2.0: operation rail, branches, roster, requisition ---- */
+.campaign-list--operation {
+  position: relative;
+  padding-left: 14px;
+}
+.campaign-list--operation::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  background: linear-gradient(180deg, rgba(255, 202, 107, 0.55), rgba(198, 174, 122, 0.18));
+}
+.campaign-card--branch {
+  margin-left: 22px;
+  border-left: 2px solid rgba(255, 202, 107, 0.4);
+}
+.campaign-card__branch {
+  font-style: normal;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 202, 107, 0.45);
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+.campaign-card__bonus { color: var(--amber); }
+.campaign-roster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 4px;
+}
+.campaign-roster__title {
+  flex-basis: 100%;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.campaign-roster__member {
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(198, 174, 122, 0.4);
+  background: rgba(38, 36, 28, 0.6);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.campaign-roster__member em {
+  font-style: normal;
+  color: var(--amber);
+}
+.campaign-requisition { margin: 10px 0 2px; }
+.requisition-row .menu-action.active {
+  border-color: var(--amber);
+  box-shadow: 0 0 18px rgba(255, 202, 107, 0.35);
+}

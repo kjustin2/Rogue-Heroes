@@ -17,6 +17,39 @@ export interface CampaignMission {
   objective: string; // one-line player objective
   victory: string; // story beat shown on success
   reward: number; // bonus progression points on first clear
+  // Operation map: unlock when ANY of these mission ids is cleared (default: the
+  // previous mission in the list). Two missions sharing the same `requires` form a fork.
+  requires?: string[];
+  branchLabel?: string; // shown on forked missions ("Main assault" / "Alternate approach")
+  // Radio drama: one-shot command-phase transmissions keyed to turn numbers.
+  beats?: { turn: number; text: string }[];
+  // Optional objective: pass it on victory for +50% mission reward.
+  bonus?: { text: string; check: "noLosses" | "fast"; turns?: number };
+  // Finale-style set piece: a named elite spawned at mission start.
+  boss?: { kind: string; name: string; x: number; z: number };
+}
+
+// Veteran roster: survivors carry between campaign missions, earn ranks from kills,
+// and die for good when lost. Losing a veteran should hurt.
+export interface RosterMember {
+  name: string;
+  kind: string;
+  kills: number;
+  missions: number;
+}
+
+export type VeteranRank = "Regular" | "Veteran" | "Elite";
+
+export function rankFor(kills: number): VeteranRank {
+  return kills >= 5 ? "Elite" : kills >= 2 ? "Veteran" : "Regular";
+}
+
+export function rankHpBonus(rank: VeteranRank): number {
+  return rank === "Elite" ? 1.25 : rank === "Veteran" ? 1.12 : 1;
+}
+
+export function rankInsignia(rank: VeteranRank): string {
+  return rank === "Elite" ? "★★" : rank === "Veteran" ? "★" : "";
 }
 
 export const CAMPAIGN_TITLE = "Operation Vanguard";
@@ -38,6 +71,8 @@ export const CAMPAIGN: readonly CampaignMission[] = [
     ],
     victory: "The outpost burns. Word will spread on the wind: someone is still standing. The rebellion has a heartbeat again.",
     reward: 40,
+    bonus: { text: "Win before the second sandstorm (turn 8)", check: "fast", turns: 8 },
+    beats: [{ turn: 3, text: "Vanguard Actual, the noon storm is building on the ridge. Clock's running." }],
   },
   {
     id: "m2-the-foundry",
@@ -53,6 +88,7 @@ export const CAMPAIGN: readonly CampaignMission[] = [
     ],
     victory: "The foundry's furnaces go cold. The Concord's assembly lines just lost a tooth — and we gained a staging ground.",
     reward: 55,
+    bonus: { text: "Bring the whole squad home (no losses)", check: "noLosses" },
   },
   {
     id: "m3-hold-the-pass",
@@ -68,6 +104,10 @@ export const CAMPAIGN: readonly CampaignMission[] = [
     ],
     victory: "The signal goes out across the valley. Hundreds answer it. The Rogue Heroes are an army now, not a rumor.",
     reward: 60,
+    beats: [
+      { turn: 2, text: "Partisan net: 'We see your beacon, Vanguard. Hold the ridge and we rise.'" },
+      { turn: 5, text: "Concord traffic spike — they are throwing the reserve at your hill." },
+    ],
   },
   {
     id: "m4-signal-theft",
@@ -98,6 +138,27 @@ export const CAMPAIGN: readonly CampaignMission[] = [
     ],
     victory: "The relay dies under a mountain of fallen kings. The Concord's network is fraying. It knows we're coming now.",
     reward: 85,
+    requires: ["m4-signal-theft"],
+    branchLabel: "Main assault",
+    bonus: { text: "Bring the whole squad home (no losses)", check: "noLosses" },
+  },
+  {
+    id: "m5b-sever-the-line",
+    name: "Sever the Line",
+    region: "Crossfire Basin — Rail Spur",
+    map: "crossfire",
+    mode: "domination",
+    difficulty: "hard",
+    requires: ["m4-signal-theft"],
+    branchLabel: "Alternate approach",
+    objective: "Dominate the three rail sectors and cut the Concord's supply line.",
+    briefing: [
+      "The decrypted core offers a second road to the Core: the rail spur through Crossfire Basin feeds every relay in the region.",
+      "Hold the three loading sectors long enough and the line starves. The Concord will contest every meter — bank your sector-rounds and don't overextend.",
+    ],
+    victory: "The rail spur runs silent. Relays down the whole line flicker and starve. Either road leads to the Core now — and both are open.",
+    reward: 85,
+    beats: [{ turn: 4, text: "Supply chief on the wire: 'Every round you hold a sector, another relay browns out. Keep squeezing.'" }],
   },
   {
     id: "m6-no-mans-basin",
@@ -113,6 +174,7 @@ export const CAMPAIGN: readonly CampaignMission[] = [
     ],
     victory: "You held the basin through the barrage. The road to the Core Relay is open. There's no turning back.",
     reward: 95,
+    requires: ["m5-buried-kings", "m5b-sever-the-line"],
   },
   {
     id: "m7-backfire",
@@ -128,6 +190,9 @@ export const CAMPAIGN: readonly CampaignMission[] = [
     ],
     victory: "The counterattack shatters against you in the dust. Battered but unbroken, the Vanguard marches on the Core.",
     reward: 110,
+    beats: [
+      { turn: 2, text: "Spotters: 'Second echelon forming up in the storm wall. This isn't a raid — it's everything they have.'" },
+    ],
   },
   {
     id: "m8-core-relay",
@@ -143,6 +208,11 @@ export const CAMPAIGN: readonly CampaignMission[] = [
     ],
     victory: "The Core goes silent. Across the continent, ten thousand drones simply stop. The war is over — and the Rogue Heroes ended it. Welcome home, Commander.",
     reward: 160,
+    boss: { kind: "tank", name: "CORE WARDEN", x: 14, z: 3 },
+    beats: [
+      { turn: 2, text: "The Core speaks on an open channel: 'VANGUARD ACTUAL. YOUR PROBABILITY OF SUCCESS IS ZERO.'" },
+      { turn: 4, text: "Prove it wrong, Commander. The Warden is its shield — bring it down and the Core is naked." },
+    ],
   },
 ];
 
@@ -152,6 +222,10 @@ export class Campaign {
   completed = new Set<string>();
   // The mission the current in-progress save belongs to (so Continue resumes campaign context).
   activeMissionId: string | undefined;
+  // Veteran roster carried between missions, and the one-shot requisition perk chosen
+  // on the last victory screen (applied to the next mission start, then cleared).
+  roster: RosterMember[] = [];
+  requisition: "cash" | "doctrine" | undefined;
 
   constructor() {
     this.load();
@@ -161,9 +235,11 @@ export class Campaign {
     try {
       const raw = localStorage.getItem(KEY);
       if (!raw) return;
-      const state = JSON.parse(raw) as { completed?: string[]; active?: string };
+      const state = JSON.parse(raw) as { completed?: string[]; active?: string; roster?: RosterMember[]; requisition?: "cash" | "doctrine" };
       this.completed = new Set(state.completed ?? []);
       this.activeMissionId = state.active ?? undefined;
+      this.roster = state.roster ?? [];
+      this.requisition = state.requisition ?? undefined;
     } catch {
       // ignore corrupt/unavailable storage
     }
@@ -171,10 +247,41 @@ export class Campaign {
 
   private save(): void {
     try {
-      localStorage.setItem(KEY, JSON.stringify({ completed: [...this.completed], active: this.activeMissionId }));
+      localStorage.setItem(KEY, JSON.stringify({ completed: [...this.completed], active: this.activeMissionId, roster: this.roster, requisition: this.requisition }));
     } catch {
       // ignore
     }
+  }
+
+  // Merge a mission's outcome into the roster: survivors gain kills and a mission pip,
+  // roster members who didn't make it back are gone for good, and standout newcomers
+  // join. Capped at 6 — a squad, not an army.
+  recordBattleOutcome(survivors: Array<{ name: string; kind: string; kills: number }>): void {
+    const survived = new Map(survivors.map((s) => [s.name, s]));
+    const next: RosterMember[] = [];
+    for (const member of this.roster) {
+      const s = survived.get(member.name);
+      if (!s) continue; // fell in battle — permanent
+      next.push({ ...member, kills: member.kills + s.kills, missions: member.missions + 1 });
+      survived.delete(member.name);
+    }
+    for (const s of survived.values()) next.push({ name: s.name, kind: s.kind, kills: s.kills, missions: 1 });
+    next.sort((a, b) => b.kills - a.kills || b.missions - a.missions);
+    this.roster = next.slice(0, 6);
+    this.save();
+  }
+
+  setRequisition(perk: "cash" | "doctrine" | undefined): void {
+    this.requisition = perk;
+    this.save();
+  }
+
+  /** Take (and clear) the pending requisition perk when the next mission starts. */
+  consumeRequisition(): "cash" | "doctrine" | undefined {
+    const perk = this.requisition;
+    this.requisition = undefined;
+    this.save();
+    return perk;
   }
 
   missions(): readonly CampaignMission[] {
@@ -189,8 +296,12 @@ export class Campaign {
     return this.completed.has(id);
   }
 
-  // A mission is playable if it's the first, already cleared, or its predecessor is cleared.
+  // A mission is playable when its `requires` list (ANY-of) is satisfied, or — for
+  // plain ladder missions — when the previous mission in the list is cleared.
   isUnlocked(index: number): boolean {
+    const mission = CAMPAIGN[index];
+    if (!mission) return false;
+    if (mission.requires) return mission.requires.some((id) => this.completed.has(id));
     if (index <= 0) return true;
     const prev = CAMPAIGN[index - 1];
     return Boolean(prev && this.completed.has(prev.id));
@@ -225,6 +336,8 @@ export class Campaign {
   reset(): void {
     this.completed.clear();
     this.activeMissionId = undefined;
+    this.roster = [];
+    this.requisition = undefined;
     this.save();
   }
 }
