@@ -3318,7 +3318,8 @@ body.menus-open .menu-bg span {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .bind-key:hover { border-color: var(--cyan); box-shadow: 0 0 10px rgba(140, 239, 255, 0.25); }
-.bind-key.on {
+.menu-toggle.bind-key.on {
+  background: linear-gradient(180deg, rgba(64, 48, 20, 0.95), rgba(40, 30, 12, 0.95));
   border-color: var(--amber, #ffb347);
   color: var(--amber, #ffb347);
   box-shadow: 0 0 12px rgba(255, 179, 71, 0.4);
@@ -3511,13 +3512,21 @@ body.menus-open .menu-bg span {
   background: linear-gradient(180deg, rgba(140, 239, 255, 0.12), rgba(255, 255, 255, 0.03)), rgba(10, 18, 26, 0.7);
 }
 
-/* Toast */
-.toast {
+/* Toast — stacked in a column pinned above the order panel */
+#toasts {
   position: fixed;
   left: 50%;
-  bottom: 84px;
-  transform: translate(-50%, 12px);
+  bottom: 176px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
   z-index: 70;
+  pointer-events: none;
+}
+.toast {
+  transform: translateY(12px);
   padding: 10px 18px;
   border-radius: 999px;
   border: 1px solid rgba(255, 202, 107, 0.5);
@@ -3531,7 +3540,7 @@ body.menus-open .menu-bg span {
   pointer-events: none;
   transition: opacity 0.36s ease, transform 0.36s ease;
 }
-.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.show { opacity: 1; transform: translateY(0); }
 
 .reduced-motion .menu-bg span,
 .reduced-motion .menu-bg::before,

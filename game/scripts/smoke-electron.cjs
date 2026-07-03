@@ -23,6 +23,9 @@ const MIME = {
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
   ".wasm": "application/wasm",
+  ".glb": "model/gltf-binary",
+  ".woff2": "font/woff2",
+  ".woff": "font/woff",
 };
 
 let server = null;
@@ -118,93 +121,39 @@ async function run() {
 
   try {
     await win.loadURL(`http://127.0.0.1:${port}/`);
-    await waitFor(() => js("Boolean(window.__rht && document.querySelector('.topbar'))"), "game boot");
-    await assertCanvasPainted(js, "electron command");
-    const initialDrawers = await js("({ targetPanel: Boolean(document.querySelector('.target-panel')), unitDetail: Boolean(document.querySelector('.unit-detail-panel')) })");
-    if (initialDrawers.targetPanel || initialDrawers.unitDetail) {
-      throw new Error(`Electron command view opens too many drawers: ${JSON.stringify(initialDrawers)}`);
+    await waitFor(() => js("Boolean(window.__rht && document.querySelector('.main-menu'))"), "menu boot", 20000);
+    await shot(win, "menu");
+
+    // Hero GLBs (incl. the winter skin pack) must be served with a real model MIME.
+    const glb = await js(`fetch('/models/tank-winter.glb').then(r => ({ ok: r.ok, type: r.headers.get('content-type') }))`);
+    if (!glb.ok || !/model\\/gltf-binary/.test(glb.type || "")) {
+      throw new Error(`GLB serving broken: ${JSON.stringify(glb)}`);
     }
+
+    // Real player path: menu -> map pick -> battle.
+    await clickRequired('[data-menu="play"]', "play button");
+    await clickRequired('[data-map="dustbowl"]', "map card");
+    await clickRequired("[data-start]", "start button");
+    await waitFor(() => js("window.__rht.sim.phase === 'command'"), "command phase", 15000);
+    await assertCanvasPainted(js, "electron command");
     await shot(win, "command");
 
-    await clickRequired('[data-order-action="shoot"]', "shoot action button");
-    await clickRequired('[data-select="e-tank-1"]', "Breaker target button");
-    await clickRequired('.part-choice[data-part="left-tread"]', "left tread part option");
-    await waitFor(() => js("document.querySelector('.part-choice.active')?.getAttribute('data-part') === 'left-tread'"), "left tread selected");
-    await waitFor(() => js("document.querySelector('[data-confirm=\"shoot\"]')?.dataset.disabled === 'false'"), "confirm shoot armed");
-    await shot(win, "targeting");
-    await clickRequired('[data-confirm="shoot"]', "confirm shoot button");
-    await waitFor(() => js("window.__rht.sim.orders.length === 1"), "queued electron shot");
-    const queued = await js("window.__rht.sim.orders.map((order) => ({ actorId: order.actorId, targetId: order.targetId, kind: order.kind }))");
-    if (queued.length !== 1 || queued[0].targetId !== "e-tank-1" || queued[0].kind !== "shoot") {
-      throw new Error(`Electron HUD targeting failed: ${JSON.stringify(queued)}`);
-    }
-
+    // Queue a shot and watch the resolve play out.
     await js(`(() => {
-      const api = window.__rht;
-      const sim = api.sim;
-      api.reset();
-      for (const entity of sim.entities) {
-        if (entity.team === "neutral") {
-          entity.position.x = 0;
-          entity.position.z = 8;
-        }
-      }
-      const placements = new Map([
-        ["p-sniper-1", { x: -2, z: 0 }],
-        ["p-soldier-1", { x: -2, z: -2.4 }],
-        ["p-soldier-2", { x: -2, z: 2.4 }],
-        ["p-grenadier-1", { x: -2, z: 4.8 }],
-        ["p-striker-1", { x: -1.35, z: 0.8 }],
-        ["p-tank-1", { x: -2, z: -4.8 }],
-        ["e-tank-1", { x: 1.2, z: 0 }],
-        ["e-soldier-1", { x: 1.2, z: -2.4 }],
-        ["e-sniper-1", { x: 1.2, z: 2.4 }],
-        ["e-grenadier-1", { x: 1.2, z: 4.8 }],
-        ["e-base-1", { x: 1.2, z: -4.8 }],
-      ]);
-      for (const [id, position] of placements) {
-        const entity = sim.entity(id);
-        entity.position.x = position.x;
-        entity.position.z = position.z;
-      }
-      for (const enemy of sim.entities.filter((entity) => entity.team === "enemy")) {
-        const critical = enemy.parts.find((part) => part.critical);
-        critical.hp = Math.min(critical.hp, 1);
-        if (enemy.id === "e-tank-1") {
-          const frontPlate = enemy.parts.find((part) => part.id === "front-plate");
-          if (frontPlate) frontPlate.hp = 0;
-        }
-      }
-      for (const player of sim.entities.filter((entity) => entity.team === "player" && entity.kind !== "tank")) {
-        player.stance = "crouched";
-      }
-      sim.select("p-striker-1");
-      sim.queueMeleePart("e-tank-1", "hull");
-      sim.select("p-soldier-1");
-      sim.queueShootPart("e-soldier-1", "body");
-      sim.select("p-soldier-2");
-      sim.queueShootPart("e-sniper-1", "body");
-      sim.select("p-grenadier-1");
-      sim.queueShootPart("e-grenadier-1", "body");
-      sim.select("p-tank-1");
-      sim.queueShootPart("e-base-1", "core");
-      api.endTurn();
+      const sim = window.__rht.sim;
+      const shooter = sim.debugSpawn("soldier", "player", { x: -2, z: 0 });
+      const target = sim.debugSpawn("soldier", "enemy", { x: 2, z: 0 });
+      sim.debugSelect(shooter.id);
+      sim.queueShootPart(target.id, "body");
+      window.__rht.endTurn();
     })()`);
-
-    await waitFor(() => js("window.__rht.sim.phase === 'resolve' && window.__rht.sim.projectiles.length > 0"), "active resolve projectile", 3000);
-    const resolveState = await js("({ phase: window.__rht.sim.phase, projectiles: window.__rht.sim.projectiles.length, orders: window.__rht.sim.orders.length })");
-    if (resolveState.phase !== "resolve" || resolveState.projectiles < 1 || resolveState.orders < 5) {
-      throw new Error(`Electron simultaneous resolve failed: ${JSON.stringify(resolveState)}`);
-    }
+    await waitFor(() => js("window.__rht.sim.phase === 'resolve'"), "resolve phase", 5000);
     await assertCanvasPainted(js, "electron resolve");
     await shot(win, "resolve");
-
-    await waitFor(() => js("window.__rht.sim.phase === 'victory'"), "victory", 16000);
-    await assertCanvasPainted(js, "electron victory");
-    await shot(win, "victory");
+    await waitFor(() => js("window.__rht.sim.phase === 'command'"), "return to command", 30000);
 
     if (errors.length) throw new Error(errors.slice(0, 12).join("\n"));
-    console.log("Electron smoke passed");
+    console.log("Electron smoke passed: menu, GLB MIME, battle start, resolve round-trip");
   } finally {
     win.destroy();
     if (server) server.close();

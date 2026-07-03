@@ -1412,6 +1412,8 @@ export class WorldRenderer {
       this.cylinder(group, entity, part.id, 0.03, 1.1, [0.6, 1.6, -0.35], 0xd8dcd2, [0, 0, 0], { metalness: 0.3 });
       this.box(group, entity, part.id, [0.9, 0.12, 0.12], [0, 1.16, 0.45], holder, { emissive: holder, emissiveIntensity: 0.7 });
       this.box(group, entity, part.id, [0.5, 0.3, 0.08], [0, 0.62, 0.6], 0xffca6b, { emissive: 0xff9e2b, emissiveIntensity: 0.25 });
+      // Ground capture pad in the holder's color — marks "stand here to take this".
+      this.cylinder(group, entity, part.id, 1.05, 0.04, [0, 0.02, 0], holder, [0, 0, 0], { emissive: holder, emissiveIntensity: 0.45 });
     } else if (entity.coverKind === "wreck") {
       // Burnt-out hull: charred body, blown-open plate, a bare road wheel, ember glow in
       // the burn seam — reads as the vehicle that died here.

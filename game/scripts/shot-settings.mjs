@@ -37,6 +37,7 @@ try {
   // 1. Settings screen — scroll to the Controls section, arm a rebind button.
   await page.click('[data-menu="settings"]');
   await page.waitForSelector(".settings-row--head");
+  await delay(700); // panel fade-in
   await page.screenshot({ path: "shots/settings/01-settings-top.png" });
   await page.locator(".settings-row--head").scrollIntoViewIfNeeded();
   await page.screenshot({ path: "shots/settings/02-settings-controls.png" });

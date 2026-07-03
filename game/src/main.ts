@@ -1491,10 +1491,18 @@ function watchEnemyIntel(): void {
 }
 
 function showToast(text: string): void {
+  // Toasts stack in a shared column above the order panel — concurrent toasts
+  // (e.g. several medals at once) must never overlap in place.
+  let host = document.getElementById("toasts");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "toasts";
+    document.body.appendChild(host);
+  }
   const toast = document.createElement("div");
   toast.className = "toast";
   toast.textContent = text;
-  document.body.appendChild(toast);
+  host.appendChild(toast);
   window.setTimeout(() => toast.classList.add("show"), 16);
   window.setTimeout(() => {
     toast.classList.remove("show");

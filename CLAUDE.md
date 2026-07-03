@@ -56,7 +56,10 @@ characters. Generation is offline: `MESHY_API_KEY` in gitignored `game/.env`, th
 `node --env-file=.env scripts/build-models.mjs` (`--balance` first; ~30 credits/model;
 raw GLBs cache in `assets-raw/`). GLBs live in `game/public/models/` with `.meshy.json`
 sidecars; `src/render/models.ts` async-loads them and **falls back to procedural
-builders** — dev/CI never depend on assets.
+builders** — dev/CI never depend on assets. Cosmetic skin packs are Meshy *retextures*
+(~10 credits, `scripts/retexture-models.mjs`, reuses sidecar task ids) saved as
+`<name>-<skin>.glb`; `setModelSkin(skin)` swaps the cache, missing skins fall back to
+the standard hull.
 
 ## Perf / vision / improve loop
 
@@ -102,8 +105,10 @@ origin-keyed, so a new port every launch silently wipes all saves** (real 06-24 
 
 ## Persistence
 
-All localStorage, keyed `rht.*`: `rht.settings.v1`, `rht.progression.v1` (purely
-cosmetic), `rht.savedBattle.v1`.
+All localStorage, keyed `rht.*`: `rht.settings.v1` (incl. `keybinds`, `unitSkin`,
+`highContrastTeams`), `rht.progression.v1` (purely cosmetic), `rht.savedBattle.v1`,
+`rht.campaign.v1` (mission clears + roster/veterancy + requisition),
+`rht.commander.v1` (battle stats, medals, doctrine mastery — cosmetic).
 
 ## Owner's quality bars (each has bitten this repo)
 
