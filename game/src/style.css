@@ -4339,3 +4339,41 @@ body.menus-open .menu-bg span {
   text-shadow: 0 0 8px rgba(255, 202, 107, 0.5);
 }
 .forecast-cell:not(.now) i { opacity: 0.65; }
+
+/* ---- Boss / elite HP bar (top center) ---- */
+.boss-bar {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  width: min(420px, 40vw);
+  pointer-events: auto;
+  text-align: center;
+}
+.boss-bar__name {
+  display: inline-block;
+  margin-bottom: 3px;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #ffd166;
+  text-shadow: 0 0 12px rgba(255, 176, 32, 0.55), 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+.boss-bar__track {
+  height: 9px;
+  border: 1px solid rgba(255, 176, 32, 0.55);
+  border-radius: 3px;
+  background: rgba(10, 8, 4, 0.72);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+}
+.boss-bar__track i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(180deg, #ffd166, #d98a1a 60%, #a85f10);
+  box-shadow: 0 0 10px rgba(255, 176, 32, 0.6);
+  transition: width 0.25s ease;
+}

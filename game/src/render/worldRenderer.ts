@@ -446,6 +446,29 @@ export class WorldRenderer {
   private syncObjectives(sim: TacticalSim): void {
     this.disposeAndClear(this.objectiveRoot);
     const s = sim.modeState;
+    if (sim.mode === "domination" && s.hills) {
+      const radius = Math.max(3.0, s.hillRadius * 0.8);
+      s.hills.forEach((sector, index) => {
+        const holder = s.hillHolders?.[index];
+        const color = holder === "player" ? 0x6fd7ff : holder === "enemy" ? 0xff7c5e : 0xffe08a;
+        const y = terrainHeightAt(sector);
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(radius - 0.24, radius, 56),
+          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }),
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(sector.x, y + 0.06, sector.z);
+        this.objectiveRoot.add(ring);
+        const disc = new THREE.Mesh(
+          new THREE.CircleGeometry(radius, 40),
+          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.09, side: THREE.DoubleSide, depthWrite: false }),
+        );
+        disc.rotation.x = -Math.PI / 2;
+        disc.position.set(sector.x, y + 0.04, sector.z);
+        this.objectiveRoot.add(disc);
+      });
+      return;
+    }
     if (sim.mode === "hill") {
       const color = s.hillHolder === "player" ? 0x6fd7ff : s.hillHolder === "enemy" ? 0xff7c5e : 0xffe08a;
       const y = terrainHeightAt(s.hill);
@@ -1791,6 +1814,11 @@ export class WorldRenderer {
     if (this.commandPhase && entity.team === "player" && entity.status.alive && entity.commandPoints > 0 && part.role === "weapon" && part.hp > 0 && !selected && !targeted) {
       material.emissive.setHex(entity.accent ?? this.playerAccent);
       material.emissiveIntensity = Math.max(material.emissiveIntensity, 0.14 + (Math.sin(performance.now() * 0.004 + (hash(entity.id) % 63)) + 1) * 0.09);
+    }
+    // Elites/bosses wear a burning gold trim so they read as the priority target.
+    if (entity.elite && entity.status.alive && part.hp > 0 && !selected && !targeted && flash <= 0) {
+      material.emissive.setHex(0xffb020);
+      material.emissiveIntensity = Math.max(material.emissiveIntensity, 0.3 + (Math.sin(performance.now() * 0.005) + 1) * 0.12);
     }
     material.transparent = ghosted && part.hp > 0;
     material.opacity = ghosted && part.hp > 0 ? (targeted ? 0.48 : 0.34) : 1;

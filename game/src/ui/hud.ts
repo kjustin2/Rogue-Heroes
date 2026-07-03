@@ -324,6 +324,7 @@ export class Hud {
         ${eventChip(this.sim)}
         ${forecastChip(this.sim)}
       </div>
+      ${bossBar(this.sim)}
 
       <aside class="panel roster ${allOrdersSet ? "all-set" : ""}">
         <div class="panel-title">Squad${allOrdersSet ? `<span class="all-orders-chip">All set</span>` : ""}</div>
@@ -733,8 +734,26 @@ function modeChip(sim: TacticalSim): string {
     return `<span class="mode-chip" data-tip="${escapeAttr(def.blurb)}">${escapeHtml(sim.mapDef.name)} · ${escapeHtml(def.name)}</span>`;
   }
   const s = sim.modeState;
-  const label = sim.mode === "ctf" ? "Captures" : "Hold";
+  if (sim.mode === "survival") {
+    return `<span class="mode-chip score" data-tip="${escapeAttr(def.blurb)} ${escapeHtml(sim.mapDef.name)}.">${escapeHtml(def.name)} <strong class="score-you">Round ${sim.turn}</strong> <em>/ ${s.target}</em></span>`;
+  }
+  const label = sim.mode === "ctf" ? "Captures" : sim.mode === "domination" ? "Sectors" : "Hold";
   return `<span class="mode-chip score" data-tip="${escapeAttr(def.blurb)} ${escapeHtml(sim.mapDef.name)}.">${escapeHtml(def.name)} <strong class="score-you">${s.playerScore}</strong> – <strong class="score-foe">${s.enemyScore}</strong> <em>/ ${s.target} ${label}</em></span>`;
+}
+
+// Boss/elite HP bar pinned to the top of the screen while a named or elite hostile lives.
+function bossBar(sim: TacticalSim): string {
+  const boss = sim.entities.find((e) => e.team === "enemy" && e.status.alive && (e.bossName || e.elite));
+  if (!boss) return "";
+  const hp = boss.parts.reduce((sum, p) => sum + p.hp, 0);
+  const max = boss.parts.reduce((sum, p) => sum + p.maxHp, 0);
+  const fraction = Math.max(0, Math.min(1, hp / Math.max(1, max)));
+  return `
+    <div class="boss-bar" data-tip="${escapeAttr(`${boss.name}: elite hostile. Destroy its critical parts to bring it down.`)}">
+      <span class="boss-bar__name">${escapeHtml(boss.bossName ?? boss.name)}</span>
+      <div class="boss-bar__track"><i style="width:${(fraction * 100).toFixed(1)}%"></i></div>
+    </div>
+  `;
 }
 
 // A warning chip for the active/upcoming dynamic map event (sandstorm, barrage, collapse).

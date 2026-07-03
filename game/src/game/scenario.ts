@@ -4,8 +4,10 @@ import type { ModeId } from "./modes";
 
 // A battle starts with NO units on the field — only each side's Home Base plus the map's
 // neutral cover and any capturable field structures. Both commanders deploy from turn one.
-export function createScenario(map: MapDef = MAPS[0], _mode: ModeId = "destroy"): CombatEntity[] {
+export function createScenario(map: MapDef = MAPS[0], mode: ModeId = "destroy"): CombatEntity[] {
   const playerBase = createBase("p-base-1", "Home Base", "player", { ...map.playerBase });
+  // Last Stand has no enemy base — the threat is the waves themselves.
+  if (mode === "survival") return [playerBase, ...buildMapObjects(map), ...buildNeutralStructures(map)];
   const enemyBase = createBase("e-base-1", "Relay Base", "enemy", { ...map.enemyBase });
   // The enemy commander begins with one doctrine researched so it can field variety early.
   enemyBase.unlockedTech = ["assault"];

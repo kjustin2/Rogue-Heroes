@@ -95,6 +95,9 @@ export interface CombatEntity {
   // Neutral field structures (derelict turrets, supply depots) that flip to the team
   // with units standing beside them at the start of a turn.
   capturable?: boolean;
+  // Campaign elites/bosses: tougher, gold-trimmed, and tracked by the top-of-screen HP bar.
+  elite?: boolean;
+  bossName?: string;
   // Optional cosmetic accent (hex color) for the player's unit markings — purely visual.
   accent?: number;
 }

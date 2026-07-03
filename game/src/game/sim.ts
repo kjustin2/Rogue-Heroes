@@ -329,6 +329,9 @@ export interface ModeState {
   hillRadius: number;
   hillHolder?: Team;
   flags: FlagState[];
+  // Domination: the three scored sectors and who held each last round (for the renderer).
+  hills?: Vec2[];
+  hillHolders?: (Team | undefined)[];
 }
 
 export class TacticalSim {
@@ -469,6 +472,12 @@ export class TacticalSim {
   private buildModeState(): ModeState {
     const def = modeDef(this.mode);
     const flags = flagPositions(this.mapDef);
+    // Domination sectors: the central hill plus a point toward each base — symmetric,
+    // so neither side spawns on top of two of the three.
+    const midpoint = (a: Vec2, b: Vec2): Vec2 => ({ x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 });
+    const hills = this.mode === "domination"
+      ? [{ ...this.mapDef.hill }, midpoint(this.mapDef.playerBase, this.mapDef.hill), midpoint(this.mapDef.enemyBase, this.mapDef.hill)]
+      : undefined;
     return {
       mode: this.mode,
       target: def.scoreTarget,
@@ -480,6 +489,8 @@ export class TacticalSim {
         { team: "player", home: { ...flags.player }, pos: { ...flags.player } },
         { team: "enemy", home: { ...flags.enemy }, pos: { ...flags.enemy } },
       ],
+      hills,
+      hillHolders: hills ? hills.map(() => undefined) : undefined,
     };
   }
 
@@ -1288,6 +1299,8 @@ export class TacticalSim {
 
   endTurn(): void {
     if (this.phase !== "command") return;
+    // Last Stand: reinforcement waves crest every other round before the enemy acts.
+    if (this.mode === "survival" && this.turn % 2 === 1 && this.phase === "command") this.spawnSurvivalWave();
     this.queueEnemyOrders();
     this.scheduleMapStrikes();
     this.scheduleSupportStrikes();
@@ -1310,10 +1323,16 @@ export class TacticalSim {
   // These bypass the economy/CP rules on purpose — they are dev tooling, not gameplay.
 
   // Drop a combat unit straight onto the field, ready to act (no cost, no cooldown).
-  debugSpawn(kind: TroopKind, team: Team, position: Vec2): CombatEntity {
+  debugSpawn(kind: TroopKind, team: Team, position: Vec2, options: { elite?: boolean; bossName?: string } = {}): CombatEntity {
     const id = `${team === "player" ? "p" : "e"}-dbg-${++this.troopSeq}`;
-    const unit = makeTroop(kind, id, `${troopSpec(kind).label} ${this.troopSeq}`, team, clampToArena(position));
+    const unit = makeTroop(kind, id, options.bossName ?? `${troopSpec(kind).label} ${this.troopSeq}`, team, clampToArena(position));
     if (team === "enemy") scaleEntityHp(unit, DIFFICULTY_MODS[this.difficulty].enemyHp);
+    // Elites/bosses: substantially tougher, gold-trimmed, tracked by the top HP bar.
+    if (options.elite || options.bossName) {
+      unit.elite = true;
+      unit.bossName = options.bossName;
+      scaleEntityHp(unit, options.bossName ? 2.6 : 1.5);
+    }
     unit.commandPoints = unit.maxCommandPoints;
     this.entities.push(unit);
     this.syncEntityElevation(unit);
@@ -3179,6 +3198,61 @@ export class TacticalSim {
   private resolveModeObjectives(): void {
     if (this.mode === "ctf") this.resolveCtf();
     else if (this.mode === "hill") this.resolveHill();
+    else if (this.mode === "domination") this.resolveDomination();
+    else if (this.mode === "survival" && this.turn >= this.modeState.target) {
+      this.phase = "victory";
+      this.pushLog(`You survived all ${this.modeState.target} rounds — the line held!`);
+    }
+  }
+
+  // Domination: each of the three sectors banks a point per round for whichever side
+  // holds it uncontested. First to the target wins.
+  private resolveDomination(): void {
+    const s = this.modeState;
+    if (!s.hills) return;
+    const radius = Math.max(3.0, s.hillRadius * 0.8);
+    s.hillHolders = s.hills.map((sector, index) => {
+      const playerHeld = this.fieldUnits("player").some((e) => dist(e.position, sector) <= radius);
+      const enemyHeld = this.fieldUnits("enemy").some((e) => dist(e.position, sector) <= radius);
+      if (playerHeld && !enemyHeld) {
+        s.playerScore += 1;
+        return "player";
+      }
+      if (enemyHeld && !playerHeld) {
+        s.enemyScore += 1;
+        return "enemy";
+      }
+      return playerHeld && enemyHeld ? undefined : s.hillHolders?.[index];
+    });
+    if (s.playerScore >= s.target) {
+      this.phase = "victory";
+      this.pushLog("Sectors dominated — victory!");
+    } else if (s.enemyScore >= s.target) {
+      this.phase = "defeat";
+      this.pushLog("The enemy dominates the sectors — defeat.");
+    } else {
+      this.pushLog(`Sector score ${s.playerScore}–${s.enemyScore} of ${s.target}`);
+    }
+  }
+
+  // Last Stand: spawn an escalating assault wave at the enemy map edge every other turn.
+  private spawnSurvivalWave(): void {
+    const wave = Math.ceil(this.turn / 2);
+    const count = Math.min(6, 1 + wave);
+    const ladder: TroopKind[] = ["soldier", "scout", "heavy", "striker", "grenadier", "sniper", "apc", "tank", "mortar", "artillery"];
+    const pool = ladder.slice(0, Math.min(ladder.length, 2 + wave));
+    const bounds = this.mapDef.terrain.bounds;
+    for (let i = 0; i < count; i += 1) {
+      const kind = pool[Math.floor(this.rng.range(0, pool.length)) % pool.length];
+      const z = this.rng.range(bounds.minZ + 3, bounds.maxZ - 3);
+      const unit = makeTroop(kind, `e-wave-${++this.troopSeq}`, `${troopSpec(kind).label} ${this.troopSeq}`, "enemy", clampToArena({ x: bounds.maxX - 2.5, z }));
+      scaleEntityHp(unit, DIFFICULTY_MODS[this.difficulty].enemyHp);
+      unit.commandPoints = 0; // arrives braced; acts next turn
+      this.entities.push(unit);
+      this.syncEntityElevation(unit);
+    }
+    this.effect("ping", { x: bounds.maxX - 2.5, z: 0 }, { x: bounds.maxX - 2.5, z: 0 }, 0xff765f, 1.0, 4);
+    this.pushLog(`Wave ${wave} inbound — ${count} hostiles hit the east edge`);
   }
 
   // ---- Dynamic map events ---------------------------------------------------------------
@@ -3523,7 +3597,8 @@ export class TacticalSim {
   }
 
   private checkEndState(): void {
-    if (!factionLiving(this.entities, "enemy").length) {
+    // Last Stand has no enemy base: clearing a wave is breathing room, not victory.
+    if (this.mode !== "survival" && !factionLiving(this.entities, "enemy").length) {
       this.phase = "victory";
       this.pushLog("Enemy force disabled");
     } else if (!factionLiving(this.entities, "player").length) {

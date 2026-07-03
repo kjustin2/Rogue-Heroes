@@ -1612,6 +1612,26 @@ describe("tactical enemy AI", () => {
     expect(sim.supportFailureReason(base, "laser")).toBeUndefined();
   });
 
+  it("last stand: no enemy base, waves spawn, and wiping a wave is not victory", () => {
+    const sim = new TacticalSim({ mode: "survival" });
+    expect(sim.entities.some((e) => e.kind === "base" && e.team === "enemy")).toBe(false);
+    sim.endTurn(); // wave 1 crests before the enemy acts
+    expect(sim.entities.filter((e) => e.team === "enemy").length).toBeGreaterThan(0);
+    let guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+    expect(sim.phase).toBe("command"); // still fighting — no false victory between waves
+  });
+
+  it("domination: holding a sector uncontested banks score", () => {
+    const sim = new TacticalSim({ mode: "domination" });
+    expect(sim.modeState.hills?.length).toBe(3);
+    sim.debugSpawn("soldier", "player", sim.modeState.hills![1]); // the player-side sector
+    sim.endTurn();
+    let guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+    expect(sim.modeState.playerScore).toBeGreaterThan(0);
+  });
+
   it("flamer shots leave burning ground that expires after two turns", () => {
     const flamer = createFlamer("p-fl", "Torch", "player", { x: 0, z: 0 });
     const victim = createSoldier("e-v", "Victim", "enemy", { x: 5, z: 0 });

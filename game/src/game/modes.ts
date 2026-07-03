@@ -1,6 +1,6 @@
 // Game modes. The win/lose logic lives in the sim; this is the shared metadata.
 
-export type ModeId = "destroy" | "ctf" | "hill";
+export type ModeId = "destroy" | "ctf" | "hill" | "domination" | "survival";
 
 export interface ModeDef {
   id: ModeId;
@@ -27,6 +27,18 @@ export const MODES: readonly ModeDef[] = [
     name: "Hold the Hill",
     blurb: "Dominate the central zone. Bank 8 rounds of uncontested control to win.",
     scoreTarget: 8,
+  },
+  {
+    id: "domination",
+    name: "Domination",
+    blurb: "Three marked sectors score every round you hold them uncontested. First side to bank 12 sector-rounds wins.",
+    scoreTarget: 12,
+  },
+  {
+    id: "survival",
+    name: "Last Stand",
+    blurb: "No enemy base — just escalating assault waves. Keep your Home Base alive through round 12 to win.",
+    scoreTarget: 12,
   },
 ];
 
