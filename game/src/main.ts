@@ -204,6 +204,11 @@ const hud = new Hud(uiRoot, sim, {
     if (ok) sfx.select();
     return ok;
   },
+  queueMine: () => {
+    const ok = sim.queueMine();
+    if (ok) sfx.build();
+    return ok;
+  },
   beginSupport: (kind) => {
     sim.setPendingSupport(kind);
     sfx.ui();
@@ -1529,6 +1534,7 @@ declare global {
       beginSupport(kind: SupportPowerKind): void;
       queueSupportAt(point: Vec2): boolean;
       queueOverwatch(): boolean;
+      queueMine(): boolean;
       upgradeBaseIncome(): boolean;
       upgradeBaseCommand(): boolean;
       researchTech(nodeId: string): boolean;
@@ -1583,6 +1589,7 @@ window.__rht = {
   beginSupport: (kind) => sim.setPendingSupport(kind),
   queueSupportAt: (point) => sim.queueSupportAt(point),
   queueOverwatch: () => sim.queueOverwatch(),
+  queueMine: () => sim.queueMine(),
   upgradeBaseIncome: () => sim.upgradeBaseIncome(),
   upgradeBaseCommand: () => sim.upgradeBaseCommand(),
   researchTech: (nodeId) => sim.researchTech(nodeId),

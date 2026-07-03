@@ -11,6 +11,9 @@ export type EntityKind =
   | "mortar"
   | "medic"
   | "engineer"
+  | "flamer"
+  | "droneop"
+  | "sapper"
   | "tank"
   | "apc"
   | "artillery"
@@ -378,6 +381,55 @@ export function createMedic(id: string, name: string, team: Team, position: Vec2
   });
 }
 
+export function createFlamer(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  return createInfantry(id, name, "flamer", team, position, {
+    radius: 0.66,
+    height: 1.64,
+    bodyHp: 52,
+    headHp: 15,
+    weaponHp: 20,
+    legsHp: 26,
+    packHp: 24,
+    weaponLabel: "Flame Projector",
+    packLabel: "Fuel Tanks",
+    packRole: "volatile", // shoot the tanks and the flamer goes up
+    grenades: 0,
+  });
+}
+
+export function createDroneOp(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  return createInfantry(id, name, "droneop", team, position, {
+    radius: 0.62,
+    height: 1.64,
+    bodyHp: 42,
+    headHp: 15,
+    weaponHp: 16,
+    legsHp: 24,
+    packHp: 26,
+    weaponLabel: "Machine Pistol",
+    packLabel: "Recon Drone",
+    packRole: "utility",
+    packTags: ["spotter-aura"], // the hovering drone spots for everyone nearby
+    grenades: 0,
+  });
+}
+
+export function createSapper(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  return createInfantry(id, name, "sapper", team, position, {
+    radius: 0.64,
+    height: 1.64,
+    bodyHp: 46,
+    headHp: 15,
+    weaponHp: 18,
+    legsHp: 24,
+    packHp: 24,
+    weaponLabel: "Demo Launcher",
+    packLabel: "Mine Satchel",
+    packRole: "utility",
+    grenades: 0,
+  });
+}
+
 export function createEngineer(id: string, name: string, team: Team, position: Vec2): CombatEntity {
   return createInfantry(id, name, "engineer", team, position, {
     radius: 0.64,
@@ -398,7 +450,7 @@ export function createEngineer(id: string, name: string, team: Team, position: V
 function createInfantry(
   id: string,
   name: string,
-  kind: "soldier" | "scout" | "sniper" | "striker" | "heavy" | "grenadier" | "mortar" | "medic" | "engineer",
+  kind: "soldier" | "scout" | "sniper" | "striker" | "heavy" | "grenadier" | "mortar" | "medic" | "engineer" | "flamer" | "droneop" | "sapper",
   team: Team,
   position: Vec2,
   config: {
@@ -631,7 +683,10 @@ export function isInfantryKind(kind: EntityKind): boolean {
     kind === "grenadier" ||
     kind === "mortar" ||
     kind === "medic" ||
-    kind === "engineer"
+    kind === "engineer" ||
+    kind === "flamer" ||
+    kind === "droneop" ||
+    kind === "sapper"
   );
 }
 

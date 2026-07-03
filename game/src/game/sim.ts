@@ -24,6 +24,9 @@ import {
   createScout,
   createSniper,
   createCover,
+  createDroneOp,
+  createFlamer,
+  createSapper,
   createSoldier,
   createStriker,
   createTank,
@@ -62,7 +65,7 @@ export { MODES, modeDef, type ModeId, type ModeDef } from "./modes";
 export { MAPS, mapDef, flagPositions, mapCenter, type MapDef, type MapTheme } from "./maps";
 
 export type Phase = "command" | "resolve" | "victory" | "defeat";
-export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "overwatch" | "interact" | "inspect" | "inspect-detail" | "build" | "support";
+export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "overwatch" | "mine" | "interact" | "inspect" | "inspect-detail" | "build" | "support";
 export type OrderKind = "move" | "shoot" | "grenade" | "ram" | "defend" | "melee";
 
 // Hard cap on how many combat units one side can field at once.
@@ -114,6 +117,15 @@ const SALVAGE_REACH = 0.9;
 // Capturable neutral structures.
 const CAPTURE_REACH = 1.0;
 const DEPOT_INCOME = 25;
+// Flamer burning ground.
+const BURN_RADIUS = 1.6;
+const BURN_TURNS = 2;
+const BURN_DAMAGE = 14;
+// Sapper proximity mines.
+const MINE_COST = 15;
+const MINE_TRIGGER = 0.85;
+const MINE_SPLASH = 1.5;
+const MINE_DAMAGE = 30;
 
 export function difficultyLabel(d: Difficulty): string {
   return DIFFICULTY_MODS[d].label;
@@ -337,6 +349,9 @@ export class TacticalSim {
   // CP), consumed when a hostile moves inside watch radius during resolve, cleared at the
   // start of the next command phase.
   readonly overwatching = new Map<string, number>();
+  // Burning ground left by flamer hits (damages at turn start) and sapper proximity mines.
+  readonly burnZones: { id: string; x: number; z: number; radius: number; turnsLeft: number }[] = [];
+  readonly mines: { id: string; x: number; z: number; team: Team }[] = [];
   readonly log: string[] = [];
   readonly turnReports: TurnReport[] = [];
   readonly economy = new Map<Team, number>([["player", START_MONEY_PLAYER], ["enemy", START_MONEY_ENEMY], ["neutral", 0]]);
@@ -415,6 +430,8 @@ export class TacticalSim {
     this.overwatching.clear();
     this.wrecked.clear();
     this.salvage.clear();
+    this.burnZones.splice(0);
+    this.mines.splice(0);
     this.log.splice(0);
     this.turnReports.splice(0);
     this.activeTurnReport = undefined;
@@ -1369,6 +1386,8 @@ export class TacticalSim {
       overwatch: [...this.overwatching],
       wrecked: [...this.wrecked],
       salvage: [...this.salvage],
+      burnZones: this.burnZones,
+      mines: this.mines,
     });
   }
 
@@ -1380,6 +1399,8 @@ export class TacticalSim {
         economy: [Team, number][]; entities: CombatEntity[]; modeState: ModeState; troopSeq?: number;
         detonated?: string[]; toppled?: string[]; overwatch?: [string, number][];
         wrecked?: string[]; salvage?: [string, number][];
+        burnZones?: { id: string; x: number; z: number; radius: number; turnsLeft: number }[];
+        mines?: { id: string; x: number; z: number; team: Team }[];
       };
       const map = mapDef(data.map);
       setActiveTerrain(map.terrain);
@@ -1408,6 +1429,8 @@ export class TacticalSim {
       for (const id of data.wrecked ?? []) this.wrecked.add(id);
       this.salvage.clear();
       for (const [id, amount] of data.salvage ?? []) this.salvage.set(id, amount);
+      this.burnZones.splice(0, this.burnZones.length, ...(data.burnZones ?? []));
+      this.mines.splice(0, this.mines.length, ...(data.mines ?? []));
       this.log.splice(0);
       this.turnReports.splice(0);
       this.activeTurnReport = undefined;
@@ -1605,6 +1628,7 @@ export class TacticalSim {
       this.syncEntityElevation(actor);
       actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
       this.checkOverwatch(actor);
+      this.checkMines(actor);
       if (dist(actor.position, order.destination) < 0.08 || order.elapsed >= order.duration) order.done = true;
       return;
     }
@@ -1671,6 +1695,7 @@ export class TacticalSim {
     actor.position = moveToward(actor.position, target.position, moveSpeed(actor) * 1.25 * dt);
     this.syncEntityElevation(actor);
     this.checkOverwatch(actor);
+    this.checkMines(actor);
     if (!order.fired && dist(actor.position, target.position) <= actor.radius + target.radius + 0.25) {
       order.fired = true;
       this.resolveRam(actor, target);
@@ -2253,11 +2278,80 @@ export class TacticalSim {
 
   private removeProjectile(id: string): void {
     const index = this.projectiles.findIndex((projectile) => projectile.id === id);
-    if (index >= 0) this.projectiles.splice(index, 1);
+    if (index < 0) return;
+    const projectile = this.projectiles[index];
+    // Flamer rounds torch the ground where they end: burning terrain for the next turns.
+    if (projectile.sourceKind === "flamer") {
+      const point = clampToArena({ ...projectile.position });
+      this.burnZones.push({ id: `burn-${++this.effectSeq}`, x: point.x, z: point.z, radius: BURN_RADIUS, turnsLeft: BURN_TURNS });
+      this.effect("blast", point, point, 0xff7a2a, 0.6, BURN_RADIUS);
+    }
+    this.projectiles.splice(index, 1);
+  }
+
+  // Burning ground: at the start of each turn, everything standing in a burn zone takes
+  // fire damage (both teams — fire doesn't check dog tags). Crouching doesn't help; move.
+  private runBurnTick(): void {
+    if (!this.burnZones.length) return;
+    for (const zone of this.burnZones) {
+      for (const e of this.entities) {
+        if (!e.status.alive || e.kind === "base") continue;
+        if (dist(e.position, zone) > zone.radius + e.radius * 0.5) continue;
+        const part = preferredPart(e, "center");
+        applyDamage(e, part.id, BURN_DAMAGE);
+        this.effect("impact", { ...e.position }, { ...e.position }, 0xff7a2a, 0.5, e.radius + 0.3);
+        this.pushLog(`${e.name} is burned by the fire (${BURN_DAMAGE})`);
+        if (!e.status.alive) this.checkEndState();
+      }
+      zone.turnsLeft -= 1;
+    }
+    this.burnZones.splice(0, this.burnZones.length, ...this.burnZones.filter((zone) => zone.turnsLeft > 0));
+  }
+
+  // ---- Sapper mines ----
+
+  mineFailureReason(actor: CombatEntity | undefined): string | undefined {
+    if (!actor) return "Select a unit first";
+    if (actor.kind !== "sapper") return "Only sappers carry mines";
+    if (actor.commandPoints <= 0) return `${actor.name} has no command points`;
+    if (this.money(actor.team) < MINE_COST) return `Not enough money for a mine ($${MINE_COST})`;
+    if (this.mines.some((m) => m.team === actor.team && dist(m, actor.position) < 1.2)) return "There is already a mine here";
+    return undefined;
+  }
+
+  /** Player API: the selected sapper plants a proximity mine at its feet (1 CP + $15). */
+  queueMine(): boolean {
+    const actor = this.requirePlayerActor();
+    if (!actor) return false;
+    const failure = this.mineFailureReason(actor);
+    if (failure) return this.reject(failure);
+    spendCommandPoint(actor);
+    this.addMoney(actor.team, -MINE_COST);
+    this.mines.push({ id: `mine-${++this.effectSeq}`, x: actor.position.x, z: actor.position.z, team: actor.team });
+    this.pushLog(`${actor.name} plants a proximity mine`);
+    return true;
+  }
+
+  // Called while units move during resolve (same hook as overwatch): a hostile stepping
+  // on a mine detonates it.
+  private checkMines(mover: CombatEntity): void {
+    if (!this.mines.length || !mover.status.alive || mover.kind === "cover" || mover.team === "neutral") return;
+    for (let i = this.mines.length - 1; i >= 0; i -= 1) {
+      const mine = this.mines[i];
+      if (mine.team === mover.team) continue;
+      if (dist(mine, mover.position) > MINE_TRIGGER + mover.radius * 0.5) continue;
+      this.mines.splice(i, 1);
+      this.effect("blast", { x: mine.x, z: mine.z }, { x: mine.x, z: mine.z }, 0xffb02e, 0.8, MINE_SPLASH);
+      this.pushLog(`${mover.name} triggers a mine!`);
+      this.applyExplosiveRadius(this.entity(`${mine.team === "player" ? "p" : "e"}-base-1`) ?? mover, { x: mine.x, z: mine.z }, MINE_SPLASH, MINE_DAMAGE, `${mover.name} is caught in the mine blast`);
+    }
   }
 
   private estimateShotDamage(actor: CombatEntity, target: CombatEntity, targetPart: DamagePart, aim: AimMode, cover: boolean, attackMode: AttackMode = "weapon"): number {
-    const base = baseShotDamage(actor.kind, attackMode);
+    let base = baseShotDamage(actor.kind, attackMode);
+    // Sapper demolition rounds: purpose-built to breach — 3x vs cover and walls
+    // (pairs with toppling: fell a pillar onto whoever hides behind it).
+    if (actor.kind === "sapper" && (target.kind === "cover" || target.kind === "wall")) base *= 3;
     const range = dist(actor.position, target.position);
     const falloff = clamp(1.08 - range / 26, 0.65, 1);
     const vulnerability = cover ? 1 : vulnerabilityMultiplier(target, targetPart);
@@ -3069,6 +3163,7 @@ export class TacticalSim {
     this.runEconomyTick();
     this.runSalvageTick();
     this.runCaptureTick();
+    this.runBurnTick();
     this.resolveSupportAuras();
     // Forced events are single-turn debug overrides; clear them, then announce the new turn's events.
     this.forcedZones = [];
@@ -3544,6 +3639,9 @@ function makeTroopBase(kind: TroopKind, id: string, name: string, team: Team, po
     case "mortar": return createMortar(id, name, team, position);
     case "medic": return createMedic(id, name, team, position);
     case "engineer": return createEngineer(id, name, team, position);
+    case "flamer": return createFlamer(id, name, team, position);
+    case "droneop": return createDroneOp(id, name, team, position);
+    case "sapper": return createSapper(id, name, team, position);
     default: return createSoldier(id, name, team, position);
   }
 }
@@ -3784,6 +3882,9 @@ function projectileRange(entity: CombatEntity, attackMode: AttackMode = "weapon"
   if (entity.kind === "grenadier") return 22;
   if (entity.kind === "scout") return 22;
   if (entity.kind === "medic" || entity.kind === "engineer") return 18;
+  if (entity.kind === "flamer") return 7.5; // flame projector: brutal but short
+  if (entity.kind === "droneop") return 16;
+  if (entity.kind === "sapper") return 14;
   return 26;
 }
 
@@ -3827,6 +3928,9 @@ function baseShotDamage(kind: EntityKind, attackMode: AttackMode = "weapon"): nu
   if (kind === "apc") return 30;
   if (kind === "scout") return 22;
   if (kind === "striker") return 24;
+  if (kind === "flamer") return 34;
+  if (kind === "droneop") return 16;
+  if (kind === "sapper") return 26;
   if (kind === "medic" || kind === "engineer") return 18;
   return 31;
 }

@@ -290,6 +290,61 @@ export class WorldRenderer {
         }
       }
     }
+    // Burning ground: flickering fire ring + rising flame cones + an orange ground glow.
+    const flicker = (Math.sin(performance.now() * 0.02) + 1) * 0.5;
+    for (const burn of sim.burnZones) {
+      const y = terrainHeightAt(burn) + 0.07;
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(burn.radius - 0.25, burn.radius, 40),
+        new THREE.MeshBasicMaterial({ color: 0xff6b1a, transparent: true, opacity: 0.35 + flicker * 0.3, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(burn.x, y, burn.z);
+      this.environmentRoot.add(ring);
+      const glow = new THREE.Mesh(
+        new THREE.CircleGeometry(burn.radius * 0.9, 24),
+        new THREE.MeshBasicMaterial({ color: 0xff7a2a, transparent: true, opacity: 0.12 + flicker * 0.08, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }),
+      );
+      glow.rotation.x = -Math.PI / 2;
+      glow.position.set(burn.x, y - 0.02, burn.z);
+      this.environmentRoot.add(glow);
+      for (let f = 0; f < 4; f += 1) {
+        const t = performance.now() * 0.003 + f * 1.7 + (hash(burn.id) % 10);
+        const flame = new THREE.Mesh(
+          projectileGeometry("rifle-tail"),
+          projectileMaterial(`burn-flame-${f % 2}`, f % 2 ? 0xffb02e : 0xff6b1a, 0.55, true),
+        );
+        flame.position.set(
+          burn.x + Math.sin(t) * burn.radius * 0.55,
+          y + 0.25 + Math.abs(Math.sin(t * 2.3)) * 0.3,
+          burn.z + Math.cos(t * 1.3) * burn.radius * 0.55,
+        );
+        flame.scale.set(2.2, 2.6 + Math.sin(t * 5) * 0.8, 2.2);
+        this.environmentRoot.add(flame);
+      }
+    }
+    // Friendly mines only — the enemy never sees yours until they step on one.
+    const minePulse = Math.sin(performance.now() * 0.009) > 0.2;
+    for (const mine of sim.mines) {
+      if (mine.team !== "player") continue;
+      const y = terrainHeightAt(mine) + 0.05;
+      const disc = new THREE.Mesh(
+        new THREE.CircleGeometry(0.26, 16),
+        new THREE.MeshBasicMaterial({ color: 0x39434a, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }),
+      );
+      disc.rotation.x = -Math.PI / 2;
+      disc.position.set(mine.x, y, mine.z);
+      this.environmentRoot.add(disc);
+      if (minePulse) {
+        const pip = new THREE.Mesh(
+          projectileGeometry("ember"),
+          projectileMaterial("mine-pip", 0xff3b30, 0.95, true),
+        );
+        pip.position.set(mine.x, y + 0.09, mine.z);
+        pip.scale.setScalar(1.4);
+        this.environmentRoot.add(pip);
+      }
+    }
     const pulse = (Math.sin(performance.now() * 0.006) + 1) * 0.5;
     for (const zone of env.zones) {
       const color = zone.kind === "barrage" ? 0xff5a3c : 0xffb24a;
@@ -1152,6 +1207,38 @@ export class WorldRenderer {
       for (const x of [-0.18, 0.12]) this.box(group, entity, "body", [0.08, 0.18, 0.06], [x, 0.5, 0.18], 0xbfc6cc, { accent: true, metalness: 0.4 });
       this.box(group, entity, "head", [0.48, 0.18, 0.46], [0, 1.5, 0.0], 0xffce4a, { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.35 });
       this.box(group, entity, "head", [0.16, 0.1, 0.08], [0, 1.5, 0.24], 0xbfe8ff, { accent: true, emissive: 0xbfe8ff, emissiveIntensity: 0.9 });
+    } else if (entity.kind === "flamer") {
+      // Incendiary specialist: fat twin-nozzle projector with a pilot flame, hazard-striped
+      // shoulder guard, and big glowing fuel tanks on the back — unmistakably "fire".
+      this.box(group, entity, "rifle", [0.2, 0.2, 0.82], [0.47, 0.92, 0.3], 0x3a3230, { metalness: 0.3 });
+      this.cylinder(group, entity, "rifle", 0.09, 0.3, [0.47, 0.92, 0.78], 0x1d1a18, [Math.PI / 2, 0, 0], { metalness: 0.36 });
+      this.sphere(group, entity, "rifle", 0.06, [0.47, 0.92, 0.96], 0xffb02e, { accent: true, emissive: 0xff6b1a, emissiveIntensity: 0.95 });
+      this.box(group, entity, "rifle", [0.1, 0.1, 0.34], [0.47, 1.04, 0.4], 0x5a2f10, { accent: true });
+      this.box(group, entity, "body", [0.34, 0.16, 0.4], [-0.36, 1.08, 0.02], 0xffb02e, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.2 });
+      this.cylinder(group, entity, "pack", 0.13, 0.62, [-0.14, 0.86, -0.44], 0xc23a10, [0, 0, 0], { accent: true, emissive: 0xff5a1a, emissiveIntensity: 0.3, metalness: 0.3 });
+      this.cylinder(group, entity, "pack", 0.13, 0.62, [0.14, 0.86, -0.44], 0xd84a14, [0, 0, 0], { accent: true, emissive: 0xff5a1a, emissiveIntensity: 0.3, metalness: 0.3 });
+      this.box(group, entity, "head", [0.46, 0.2, 0.46], [0, 1.5, 0], 0x8a2f10, { accent: true, metalness: 0.2 });
+    } else if (entity.kind === "droneop") {
+      // Drone operator: a signal wand, a control slate on the chest, and the recon drone
+      // itself hovering overhead with a spinning-ring rotor and a scanning eye.
+      this.box(group, entity, "rifle", [0.12, 0.12, 0.5], [0.46, 0.92, 0.22], 0x3a4450, { metalness: 0.3 });
+      this.box(group, entity, "body", [0.3, 0.22, 0.06], [0, 0.96, 0.23], 0x0e1a26, { accent: true, emissive: 0x6fd7ff, emissiveIntensity: 0.55 });
+      this.box(group, entity, "head", [0.46, 0.18, 0.46], [0, 1.49, 0], 0x2c4a6a, { accent: true });
+      this.box(group, entity, "head", [0.2, 0.08, 0.24], [0.16, 1.52, 0.14], 0x9fdcff, { accent: true, emissive: 0x6fd7ff, emissiveIntensity: 0.7 });
+      // The drone (pack part, so shooting the pack downs the optics — cause and effect).
+      this.box(group, entity, "pack", [0.34, 0.09, 0.34], [0, 2.25, -0.1], 0x35485c, { accent: true, metalness: 0.3 });
+      this.cylinder(group, entity, "pack", 0.26, 0.05, [0, 2.33, -0.1], 0x9fdcff, [0, 0, 0], { accent: true, emissive: 0x6fd7ff, emissiveIntensity: 0.5 });
+      this.sphere(group, entity, "pack", 0.07, [0, 2.18, 0.08], 0xff5a4d, { accent: true, emissive: 0xff3b30, emissiveIntensity: 0.85 });
+    } else if (entity.kind === "sapper") {
+      // Combat sapper: stubby demolition launcher with a fat drum, mine discs clipped to
+      // the belt, blast apron, and a heavy face shield — the wall-breaker.
+      this.box(group, entity, "rifle", [0.22, 0.22, 0.6], [0.47, 0.92, 0.26], 0x4a4232, { metalness: 0.3 });
+      this.cylinder(group, entity, "rifle", 0.14, 0.2, [0.47, 0.8, 0.2], 0x2a2620, [0, 0, Math.PI / 2], { accent: true, metalness: 0.3 });
+      this.box(group, entity, "rifle", [0.14, 0.14, 0.16], [0.47, 0.92, 0.62], 0xffca6b, { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.4 });
+      for (const x of [-0.18, 0.02, 0.22]) this.cylinder(group, entity, "body", 0.07, 0.04, [x, 0.58, 0.22], 0x8a7a3a, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.3 });
+      this.box(group, entity, "body", [0.44, 0.5, 0.07], [0, 0.72, 0.2], 0x5a4a1a, { accent: true });
+      this.box(group, entity, "head", [0.48, 0.26, 0.1], [0, 1.38, 0.2], 0x3a342a, { accent: true, metalness: 0.24 });
+      this.box(group, entity, "head", [0.44, 0.16, 0.44], [0, 1.5, 0], 0x8a7a3a, { accent: true });
     } else {
       // Line infantry (soldier): standard bayoneted rifle, a brimmed helmet with a comms
       // bead, chest webbing/pouches and a slung frag — the plain baseline trooper.
@@ -2866,6 +2953,9 @@ function infantryPalette(kind: string): { body: number; trim: number; pack: numb
     case "mortar": return { body: 0xe0a64f, trim: 0xfff0c8, pack: 0x6a4a1a };
     case "medic": return { body: 0xff7f8f, trim: 0xffffff, pack: 0x7a1f2a };
     case "engineer": return { body: 0xe0c24a, trim: 0xfff6c0, pack: 0x6a5a18 };
+    case "flamer": return { body: 0xff8a4a, trim: 0xffe2c4, pack: 0x8a2f10 };
+    case "droneop": return { body: 0x9fb8d8, trim: 0xf0f6ff, pack: 0x2c4a6a };
+    case "sapper": return { body: 0xd8c06a, trim: 0xfff2c8, pack: 0x5a4a1a };
     default: return { body: 0x26f0c8, trim: 0xeaffff, pack: 0x1d5f66 };
   }
 }

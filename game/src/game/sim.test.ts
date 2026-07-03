@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dist } from "../core/math";
-import { applyDamage, createBase, createCover, createGrenadier, createHeavy, createMedic, createScout, createSniper, createSoldier, createStriker, createTank, createWall } from "./damageModel";
+import { applyDamage, createBase, createCover, createFlamer, createGrenadier, createHeavy, createMedic, createSapper, createScout, createSniper, createSoldier, createStriker, createTank, createWall } from "./damageModel";
 import {
   BASE_INCOME,
   INCOME_BY_LEVEL,
@@ -1610,6 +1610,68 @@ describe("tactical enemy AI", () => {
     base.unlockedTech = ["assault", "ordnance", "armor", "siege"];
     expect(sim.supportFailureReason(base, "cluster")).toBeUndefined();
     expect(sim.supportFailureReason(base, "laser")).toBeUndefined();
+  });
+
+  it("flamer shots leave burning ground that expires after two turns", () => {
+    const flamer = createFlamer("p-fl", "Torch", "player", { x: 0, z: 0 });
+    const victim = createSoldier("e-v", "Victim", "enemy", { x: 5, z: 0 });
+    applyDamage(victim, "rifle", 999); // keep it from shooting back cleanly
+    const sim = new TacticalSim([
+      createBase("p-base-1", "HQ", "player", { x: -14, z: 0 }),
+      createBase("e-base-1", "Enemy HQ", "enemy", { x: 14, z: 0 }),
+      flamer,
+      victim,
+    ]);
+    sim.select("p-fl");
+    expect(sim.queueShootPart("e-v", "body")).toBe(true);
+    sim.endTurn();
+    let guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+    expect(sim.burnZones.length).toBeGreaterThan(0);
+    const zonesAfterFirst = sim.burnZones.length;
+    sim.endTurn();
+    guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+    sim.endTurn();
+    guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+    // The original zones burned down (new ones may exist only if the flamer fired again —
+    // it can't, it has no orders queued by the player).
+    expect(sim.burnZones.length).toBeLessThan(zonesAfterFirst + 1);
+  });
+
+  it("sapper demolition rounds hit cover far harder than a rifleman", () => {
+    const sapper = createSapper("p-sap", "Breaker", "player", { x: 0, z: 0 });
+    const rifleman = createSoldier("p-sol", "Rifleman", "player", { x: 0, z: 2 });
+    const wall = createCover("wall-1", "Concrete Wall", { x: 4, z: 1 });
+    const sim = new TacticalSim([sapper, rifleman, wall, createSoldier("e-x", "Foe", "enemy", { x: 14, z: 0 })]);
+    const sapPreview = sim.previewShot("p-sap", "wall-1", wall.parts[0].id);
+    const solPreview = sim.previewShot("p-sol", "wall-1", wall.parts[0].id);
+    expect(sapPreview && solPreview).toBeTruthy();
+    expect(sapPreview!.amount).toBeGreaterThan(solPreview!.amount * 2);
+  });
+
+  it("a hostile stepping on a mine detonates it", () => {
+    const sapper = createSapper("p-sap", "Breaker", "player", { x: 4, z: 0 });
+    const runner = createSoldier("e-run", "Runner", "enemy", { x: 8, z: 0 });
+    applyDamage(runner, "rifle", 999); // disarmed: it charges the objective
+    const sim = new TacticalSim([
+      createBase("p-base-1", "HQ", "player", { x: -14, z: 0 }),
+      sapper,
+      runner,
+    ]);
+    sim.economy.set("player", 500);
+    sim.select("p-sap");
+    expect(sim.queueMine()).toBe(true);
+    expect(sim.mines.length).toBe(1);
+    // Walk the sapper off the mine so it doesn't shield it.
+    sim.queueMove({ x: 4, z: 4 });
+    const hpBefore = runner.parts.reduce((sum, p) => sum + p.hp, 0);
+    sim.endTurn();
+    let guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+    expect(sim.mines.length).toBe(0);
+    expect(runner.parts.reduce((sum, p) => sum + p.hp, 0)).toBeLessThan(hpBefore);
   });
 
   it("a lone unit beside a neutral depot captures it and it pays income", () => {

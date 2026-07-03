@@ -67,6 +67,7 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "melee", label: "Strike", tip: "Melee unit only. Rush a nearby hostile and hit hard at close range." },
   { id: "defend", label: "Crouch", tip: "Infantry only. Improves accuracy and makes head shots harder, but slows the next move." },
   { id: "overwatch", label: "Overwatch", tip: "Hold fire until a hostile MOVES within watch range this resolve, then take a snap reaction shot (reduced accuracy). Costs 1 CP." },
+  { id: "mine", label: "Mine", tip: "Sapper only. Plant a proximity mine at this spot ($15 + 1 CP). Hostiles that step on it eat a splash blast. Invisible to the enemy." },
 ];
 
 export interface HudCallbacks {
@@ -87,6 +88,7 @@ export interface HudCallbacks {
   queueMeleePart(id: string, partId: string): boolean;
   queueDefend(stance?: InfantryStance): boolean;
   queueOverwatch(): boolean;
+  queueMine(): boolean;
   queueSpawnTroop(kind: TroopKind): boolean;
   upgradeBaseIncome(): boolean;
   upgradeBaseCommand(): boolean;
@@ -465,6 +467,9 @@ export class Hud {
     }
     if (confirm === "overwatch") {
       if (this.callbacks.queueOverwatch()) this.afterConfirmedOrder();
+    }
+    if (confirm === "mine") {
+      if (this.callbacks.queueMine()) this.afterConfirmedOrder();
     }
 
     const coverAction = target.closest<HTMLElement>("[data-cover-action]")?.dataset.coverAction;
@@ -853,6 +858,7 @@ function orderPlanner(
     action === "inspect" || action === "inspect-detail" ? inspectTargetState(actor, target, action === "inspect-detail", sim) : "",
     action === "defend" ? defendState(canDefend, defendTip) : "",
     action === "overwatch" ? overwatchState(actor, sim) : "",
+    action === "mine" ? mineState(actor, sim) : "",
     !actor ? orderSummaryState(actor, target) : "",
   ].filter(Boolean).join("");
 
@@ -1107,6 +1113,20 @@ function defendState(canDefend: boolean, tip: string): string {
     <button class="btn confirm ${canDefend ? "" : "disabled"}" data-confirm="defend" data-disabled="${!canDefend}" data-tip="${escapeAttr("Crouch improves accuracy and avoids direct head shots during resolve, but slows the next move.")}">
       Confirm Crouch
       <span>+accuracy</span>
+    </button>
+  `;
+}
+
+function mineState(actor: CombatEntity | undefined, sim: TacticalSim): string {
+  const reason = actor ? sim.mineFailureReason(actor) : "Select a sapper first";
+  return `
+    <div class="target-summary ${reason ? "blocked" : ""}">
+      <strong>${reason ? "Mine unavailable" : "Mine ready"}</strong>
+      <span>${reason ? escapeHtml(reason) : "Plants a proximity mine at the sapper's feet. Hostiles that step on it take a splash blast. Your mines are invisible to the enemy."}</span>
+    </div>
+    <button class="btn confirm ${reason ? "disabled" : ""}" data-confirm="mine" data-disabled="${Boolean(reason)}" data-tip="${escapeAttr("Plant a proximity mine here ($15 + 1 CP).")}">
+      Plant Mine
+      <span>$15</span>
     </button>
   `;
 }
@@ -1581,6 +1601,7 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
   if (action === "melee") return actor.kind !== "striker" || !actor.status.canMove;
   if (action === "defend") return !isInfantryKind(actor.kind) || !actor.status.canMove;
   if (action === "overwatch") return Boolean(sim.overwatchFailureReason(actor));
+  if (action === "mine") return Boolean(sim.mineFailureReason(actor));
   return false;
 }
 
@@ -1590,6 +1611,7 @@ function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: Tac
   if (action === "melee") return actor.kind === "striker" && actor.status.canMove;
   if (action === "defend") return isInfantryKind(actor.kind) && actor.status.canMove;
   if (action === "overwatch") return actor.status.canShoot && !isBuildingKind(actor.kind) && !isDefenseKind(actor.kind);
+  if (action === "mine") return actor.kind === "sapper";
   if (action === "grenade") return actor.kind === "soldier" && actor.maxGrenades > 0;
   if (action === "shoot") return actor.status.canShoot;
   if (action === "move") return actor.status.canMove;
