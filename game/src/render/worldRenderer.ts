@@ -75,6 +75,9 @@ export class WorldRenderer {
   private lastModelsVersion = modelsVersion();
   private readonly ghostStickyUntil = new Map<string, number>();
   private commandPhase = true;
+  // Persistent battle scars: scorch decals under every blast, capped FIFO.
+  private readonly craterRoot = new THREE.Group();
+  private readonly scorchedIds = new Set<string>();
   // Recent flight positions per live projectile — drawn as a fading comet tail.
   private readonly trailHistory = new Map<string, { x: number; y: number; z: number }[]>();
   private debug: WorldRenderDebug = emptyDebug();
@@ -84,7 +87,7 @@ export class WorldRenderer {
   private readonly flashLights: { light: THREE.PointLight; strength: number; until: number; duration: number }[] = [];
 
   constructor(private readonly scene: THREE.Scene) {
-    this.scene.add(this.sceneryRoot, this.debrisRoot, this.entityRoot, this.markerRoot, this.orderRoot, this.previewRoot, this.projectileRoot, this.effectRoot, this.objectiveRoot, this.groundAimRoot, this.auraRoot, this.damageNumberRoot, this.environmentRoot);
+    this.scene.add(this.sceneryRoot, this.craterRoot, this.debrisRoot, this.entityRoot, this.markerRoot, this.orderRoot, this.previewRoot, this.projectileRoot, this.effectRoot, this.objectiveRoot, this.groundAimRoot, this.auraRoot, this.damageNumberRoot, this.environmentRoot);
     for (let i = 0; i < 3; i += 1) {
       // Tight radius + fast decay: a wide pool reads as a brown stain on the ground
       // rather than a flash.
@@ -448,6 +451,9 @@ export class WorldRenderer {
   // Re-theme the whole scene for a map: fog, sky, ground, terrain, grid, and lights.
   applyMap(theme: MapTheme): void {
     this.baseFogColor = theme.fog;
+    // New battlefield: the last battle's scars don't carry over.
+    this.disposeAndClear(this.craterRoot);
+    this.scorchedIds.clear();
     // Trimmed below the authored density: under the graded post stack the full value
     // dissolves the frame edges into a cream wash and units stop reading at distance.
     this.baseFogDensity = theme.fogDensity * 0.72;
@@ -722,9 +728,11 @@ export class WorldRenderer {
         this.spawnSmokeColumn(rear, 2, this.propTint.getHex(), 0.3, 1.1, entity.elevation + 0.1);
       }
     }
-    // Dead vehicles smolder: a lazy wisp every ~1.5s keeps wrecks reading as fresh battle
-    // damage instead of parked units with the lights off.
-    if (!entity.status.alive && (isVehicleKind(entity.kind) || entity.kind === "base")) {
+    // Wrecks (and a killed base) smolder: a lazy wisp every ~1.5s keeps battle damage
+    // reading as fresh instead of static scenery.
+    const smolders = (entity.kind === "cover" && entity.coverKind === "wreck" && entity.status.alive) ||
+      (!entity.status.alive && entity.kind === "base");
+    if (smolders) {
       const now = performance.now();
       const lastSmolder = (group.userData.lastSmolderAt as number | undefined) ?? 0;
       if (now - lastSmolder > 1500) {
@@ -1266,6 +1274,14 @@ export class WorldRenderer {
       this.box(group, entity, part.id, [0.28, 0.16, 0.82], [-0.52, 0.2, 0.06], 0xd6a15f);
       this.box(group, entity, part.id, [0.28, 0.16, 0.82], [0.06, 0.58, 0.06], 0xd6a15f);
       this.box(group, entity, part.id, [0.28, 0.16, 0.82], [0.52, 0.96, 0.06], 0xd6a15f);
+    } else if (entity.coverKind === "wreck") {
+      // Burnt-out hull: charred body, blown-open plate, a bare road wheel, ember glow in
+      // the burn seam — reads as the vehicle that died here.
+      this.box(group, entity, part.id, [1.7, 0.55, 1.05], [0, 0.3, 0], 0x201d1a, { metalness: 0.22 });
+      this.box(group, entity, part.id, [1.15, 0.4, 0.8], [-0.1, 0.68, 0], 0x2b2622, { metalness: 0.18, rotation: [0.06, 0.22, -0.12] });
+      this.box(group, entity, part.id, [0.9, 0.1, 0.7], [0.45, 0.62, 0.1], 0x171512, { rotation: [0.4, -0.3, 0.5] });
+      this.cylinder(group, entity, part.id, 0.22, 0.14, [0.7, 0.24, 0.55], 0x0f0d0b, [Math.PI / 2, 0, 0.4]);
+      this.box(group, entity, part.id, [0.5, 0.14, 0.3], [-0.3, 0.55, -0.2], 0xff7d26, { emissive: 0xff5a1a, emissiveIntensity: 0.55 });
     } else if (entity.coverKind === "rock") {
       this.box(group, entity, part.id, [1.25, 0.95, 1.05], [0, 0.5, 0], 0x8a857c);
       this.box(group, entity, part.id, [0.82, 0.62, 0.7], [0.22, 1.05, -0.12], 0x9c968b);
@@ -2181,6 +2197,18 @@ export class WorldRenderer {
           this.effectRoot.add(dust);
         }
       } else if (effect.type === "blast") {
+        // Battle scar: the first frame of every blast burns a scorch decal into the ground
+        // that persists for the whole battle (FIFO-capped so long sieges stay cheap).
+        if (!this.scorchedIds.has(effect.id)) {
+          this.scorchedIds.add(effect.id);
+          const scorch = new THREE.Mesh(_scorchGeometry(), _scorchMaterial());
+          scorch.rotation.x = -Math.PI / 2;
+          scorch.rotation.z = (hash(effect.id) % 628) / 100;
+          scorch.position.set(effect.to.x, terrainHeightAt(effect.to) + 0.012 + (this.craterRoot.children.length % 7) * 0.0015, effect.to.z);
+          scorch.scale.setScalar(Math.max(0.8, (effect.radius ?? 1) * 0.85));
+          this.craterRoot.add(scorch);
+          if (this.craterRoot.children.length > 40) this.craterRoot.remove(this.craterRoot.children[0]);
+        }
         const ring = new THREE.Mesh(
           new THREE.RingGeometry((effect.radius ?? 1) * t, (effect.radius ?? 1) * t + 0.08, 32),
           new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: opacity * 0.7, side: THREE.DoubleSide })
@@ -2983,6 +3011,47 @@ function pickProxyMaterial(): THREE.MeshBasicMaterial {
 
 // Infantry part ids that earn a silhouette outline (each outline = one extra draw call).
 const OUTLINED_PARTS = new Set(["body", "head", "legs"]);
+
+// Shared scorch-decal resources (one texture/material/geometry for every crater).
+let _scorchMat: THREE.MeshBasicMaterial | undefined;
+let _scorchGeo: THREE.CircleGeometry | undefined;
+function _scorchMaterial(): THREE.MeshBasicMaterial {
+  if (!_scorchMat) {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 96;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      const g = ctx.createRadialGradient(48, 48, 6, 48, 48, 48);
+      g.addColorStop(0, "rgba(12,9,6,0.66)");
+      g.addColorStop(0.45, "rgba(20,14,9,0.42)");
+      g.addColorStop(0.8, "rgba(30,22,14,0.16)");
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 96, 96);
+      // A few radial streaks so craters aren't perfect discs.
+      ctx.strokeStyle = "rgba(10,7,5,0.35)";
+      ctx.lineWidth = 3;
+      for (let i = 0; i < 7; i += 1) {
+        const a = (i / 7) * Math.PI * 2 + 0.4;
+        ctx.beginPath();
+        ctx.moveTo(48 + Math.cos(a) * 14, 48 + Math.sin(a) * 14);
+        ctx.lineTo(48 + Math.cos(a) * (34 + (i % 3) * 8), 48 + Math.sin(a) * (34 + (i % 3) * 8));
+        ctx.stroke();
+      }
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    _scorchMat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false });
+    _scorchMat.userData.shared = true;
+  }
+  return _scorchMat;
+}
+function _scorchGeometry(): THREE.CircleGeometry {
+  if (!_scorchGeo) {
+    _scorchGeo = new THREE.CircleGeometry(1, 20);
+    _scorchGeo.userData.shared = true;
+  }
+  return _scorchGeo;
+}
 
 // Soft radial contact-shadow blob shared by every unit — anchors them to the ground far
 // better than the distant PCF sun shadow alone. One shared texture/material/geometry;

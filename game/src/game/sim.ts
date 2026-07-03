@@ -23,6 +23,7 @@ import {
   createMortar,
   createScout,
   createSniper,
+  createCover,
   createSoldier,
   createStriker,
   createTank,
@@ -105,6 +106,11 @@ const DIFFICULTY_MODS: Record<Difficulty, DifficultyMods> = {
 };
 // Reaction fire is snap fire: the spread multiplier applied to an overwatch shot.
 const OVERWATCH_SPREAD_PENALTY = 1.55;
+// Salvage economy: each vehicle wreck holds this much money, stripped this fast by an
+// adjacent unit at the start of each turn.
+const SALVAGE_PER_WRECK = 60;
+const SALVAGE_PER_TURN = 30;
+const SALVAGE_REACH = 0.9;
 
 export function difficultyLabel(d: Difficulty): string {
   return DIFFICULTY_MODS[d].label;
@@ -321,6 +327,9 @@ export class TacticalSim {
   readonly detonated = new Set<string>();
   // Covers that already toppled (so a corpse caught in a later blast doesn't fall twice).
   readonly toppled = new Set<string>();
+  // Vehicles that already left a wreck behind, and salvage money remaining per wreck id.
+  readonly wrecked = new Set<string>();
+  readonly salvage = new Map<string, number>();
   // Units on overwatch: actorId -> reaction shots remaining. Set during command (costs a
   // CP), consumed when a hostile moves inside watch radius during resolve, cleared at the
   // start of the next command phase.
@@ -401,6 +410,8 @@ export class TacticalSim {
     this.detonated.clear();
     this.toppled.clear();
     this.overwatching.clear();
+    this.wrecked.clear();
+    this.salvage.clear();
     this.log.splice(0);
     this.turnReports.splice(0);
     this.activeTurnReport = undefined;
@@ -1353,6 +1364,8 @@ export class TacticalSim {
       detonated: [...this.detonated],
       toppled: [...this.toppled],
       overwatch: [...this.overwatching],
+      wrecked: [...this.wrecked],
+      salvage: [...this.salvage],
     });
   }
 
@@ -1363,6 +1376,7 @@ export class TacticalSim {
         map: string; mode: ModeId; difficulty?: Difficulty; turn?: number;
         economy: [Team, number][]; entities: CombatEntity[]; modeState: ModeState; troopSeq?: number;
         detonated?: string[]; toppled?: string[]; overwatch?: [string, number][];
+        wrecked?: string[]; salvage?: [string, number][];
       };
       const map = mapDef(data.map);
       setActiveTerrain(map.terrain);
@@ -1387,6 +1401,10 @@ export class TacticalSim {
       this.toppled.clear();
       for (const id of data.toppled ?? []) this.toppled.add(id);
       for (const [id, shots] of data.overwatch ?? []) this.overwatching.set(id, shots);
+      this.wrecked.clear();
+      for (const id of data.wrecked ?? []) this.wrecked.add(id);
+      this.salvage.clear();
+      for (const [id, amount] of data.salvage ?? []) this.salvage.set(id, amount);
       this.log.splice(0);
       this.turnReports.splice(0);
       this.activeTurnReport = undefined;
@@ -2369,7 +2387,47 @@ export class TacticalSim {
       this.toppled.add(target.id);
       this.resolveTopple(actor, target);
     }
+    // Battlefield scars: a killed vehicle burns out into a wreck — hard neutral cover
+    // that also holds salvage money for whichever team parks a unit beside it.
+    if (isVehicleKind(target.kind) && !target.status.alive && !this.wrecked.has(target.id)) {
+      this.wrecked.add(target.id);
+      const wreck = createCover(`wreck-${target.id}`, `${target.name} Wreck`, { ...target.position }, { coverKind: "wreck" });
+      wreck.yaw = target.yaw;
+      this.entities.push(wreck);
+      this.syncEntityElevation(wreck);
+      this.salvage.set(wreck.id, SALVAGE_PER_WRECK);
+      this.pushLog(`${target.name} burns out — the wreck is hard cover and holds $${SALVAGE_PER_WRECK} salvage`);
+    }
     this.checkEndState();
+  }
+
+  // Auto-salvage at the start of each turn: every wreck with money left pays out to the
+  // first team with a living field unit adjacent to it. Park a unit by a wreck to strip it.
+  private runSalvageTick(): void {
+    for (const [wreckId, remaining] of this.salvage) {
+      if (remaining <= 0) {
+        this.salvage.delete(wreckId);
+        continue;
+      }
+      const wreck = this.entity(wreckId);
+      if (!wreck || !wreck.status.alive) {
+        this.salvage.delete(wreckId);
+        continue;
+      }
+      for (const team of ["player", "enemy"] as const) {
+        const scavenger = this.entities.find((e) =>
+          e.team === team && e.status.alive && !isBuildingKind(e.kind) && !isDefenseKind(e.kind) && e.kind !== "cover" &&
+          dist(e.position, wreck.position) <= wreck.radius + e.radius + SALVAGE_REACH,
+        );
+        if (!scavenger) continue;
+        const take = Math.min(SALVAGE_PER_TURN, remaining);
+        this.addMoney(team, take);
+        this.salvage.set(wreckId, remaining - take);
+        this.effect("ping", { ...wreck.position }, { ...wreck.position }, 0xffd166, 0.8, wreck.radius + 0.5);
+        this.pushLog(`${scavenger.name} strips $${take} from ${wreck.name} ($${remaining - take} left)`);
+        break; // one team per wreck per turn — first come, first served
+      }
+    }
   }
 
   // The falling column damages everything along its landing line (bases exempt, as ever).
@@ -2984,6 +3042,7 @@ export class TacticalSim {
     this.resolveClock = 0;
     for (const entity of this.entities) repairForNewTurn(entity);
     this.runEconomyTick();
+    this.runSalvageTick();
     this.resolveSupportAuras();
     // Forced events are single-turn debug overrides; clear them, then announce the new turn's events.
     this.forcedZones = [];

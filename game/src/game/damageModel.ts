@@ -32,7 +32,8 @@ export type CoverKind =
   | "crate"
   | "sandbag"
   | "rubble"
-  | "pillar";
+  | "pillar"
+  | "wreck";
 export type PartRole = "core" | "head" | "weapon" | "mobility" | "armor" | "utility" | "volatile";
 export type AimMode = "center" | "head" | "weapon" | "mobility" | "utility" | "core" | "weakest";
 export type InfantryStance = "standing" | "crouched" | "prone";
@@ -564,6 +565,8 @@ export const COVER_PROFILES: Record<CoverKind, CoverProfile> = {
   sandbag: { hp: 54, radius: 0.95, height: 0.72, volatile: false, label: "Sandbag Wall" },
   rubble: { hp: 66, radius: 1.0, height: 0.9, volatile: false, label: "Rubble Pile" },
   pillar: { hp: 120, radius: 0.7, height: 2.6, volatile: false, label: "Stone Pillar" },
+  // Burnt-out vehicle hull left behind when armor dies: hard cover + a salvage prize.
+  wreck: { hp: 70, radius: 1.05, height: 0.95, volatile: false, label: "Burnt Wreck" },
 };
 
 export function createCover(id: string, name: string, position: Vec2, options: boolean | CoverOptions = false): CombatEntity {

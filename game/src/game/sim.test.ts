@@ -1612,6 +1612,29 @@ describe("tactical enemy AI", () => {
     expect(sim.supportFailureReason(base, "laser")).toBeUndefined();
   });
 
+  it("a killed vehicle leaves a wreck that pays salvage to an adjacent unit", () => {
+    const shooter = createSoldier("p-s", "Shooter", "player", { x: 0.5, z: 0 });
+    const tank = createTank("e-tank", "Doomed", "enemy", { x: 2, z: 0 });
+    const sim = new TacticalSim([
+      createBase("p-base-1", "HQ", "player", { x: -14, z: 0 }),
+      createBase("e-base-1", "Enemy HQ", "enemy", { x: 14, z: 0 }),
+      shooter,
+      tank,
+    ]);
+    sim.debugDamage("e-tank", "hull", 9999, "p-s");
+    expect(tank.status.alive).toBe(false);
+    const wreck = sim.entities.find((e) => e.coverKind === "wreck");
+    expect(wreck).toBeDefined();
+    expect(sim.salvage.get(wreck!.id)).toBe(60);
+
+    // The shooter stands beside the wreck; ending the turn strips one salvage tick.
+    sim.endTurn();
+    let guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+    expect(sim.phase).toBe("command");
+    expect(sim.salvage.get(wreck!.id)).toBe(30);
+  });
+
   it("overwatch: a watcher snaps a reaction shot at the first hostile that moves in range", () => {
     const watcher = createSoldier("p-watch", "Watcher", "player", { x: 0, z: 0 });
     const runner = createSoldier("e-run", "Runner", "enemy", { x: 9, z: 0 });
