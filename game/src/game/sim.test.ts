@@ -1612,6 +1612,28 @@ describe("tactical enemy AI", () => {
     expect(sim.supportFailureReason(base, "laser")).toBeUndefined();
   });
 
+  it("overwatch: a watcher snaps a reaction shot at the first hostile that moves in range", () => {
+    const watcher = createSoldier("p-watch", "Watcher", "player", { x: 0, z: 0 });
+    const runner = createSoldier("e-run", "Runner", "enemy", { x: 9, z: 0 });
+    applyDamage(runner, "rifle", 999); // disarmed: it will charge instead of shooting
+    const sim = new TacticalSim([watcher, runner]);
+    sim.select("p-watch");
+    expect(sim.queueOverwatch()).toBe(true);
+    expect(watcher.commandPoints).toBe(watcher.maxCommandPoints - 1);
+    expect(sim.overwatching.get("p-watch")).toBe(1);
+    // Double-set is rejected.
+    expect(sim.queueOverwatch()).toBe(false);
+
+    sim.endTurn();
+    let reaction = false;
+    for (let i = 0; i < 400 && sim.phase === "resolve"; i += 1) {
+      sim.update(0.05);
+      if (sim.projectiles.some((p) => p.actorId === "p-watch")) reaction = true;
+    }
+    expect(reaction).toBe(true);
+    expect(sim.overwatching.size).toBe(0); // consumed (or expired) with the resolve
+  });
+
   it("a felled pillar topples away from the attacker and crushes what it lands on", () => {
     const shooter = createSoldier("p-shooter", "Shooter", "player", { x: 0, z: 0 });
     const pillar = createCover("pillar-1", "Support Pillar", { x: 3, z: 0 }, { coverKind: "pillar" });

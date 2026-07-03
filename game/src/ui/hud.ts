@@ -66,6 +66,7 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "ram", label: "Ram", tip: "Tank only. Select a close target or wall, then confirm. Costs 1 CP, deals 72 damage, and damages your front armor." },
   { id: "melee", label: "Strike", tip: "Melee unit only. Rush a nearby hostile and hit hard at close range." },
   { id: "defend", label: "Crouch", tip: "Infantry only. Improves accuracy and makes head shots harder, but slows the next move." },
+  { id: "overwatch", label: "Overwatch", tip: "Hold fire until a hostile MOVES within watch range this resolve, then take a snap reaction shot (reduced accuracy). Costs 1 CP." },
 ];
 
 export interface HudCallbacks {
@@ -85,6 +86,7 @@ export interface HudCallbacks {
   queueMelee(id: string): boolean;
   queueMeleePart(id: string, partId: string): boolean;
   queueDefend(stance?: InfantryStance): boolean;
+  queueOverwatch(): boolean;
   queueSpawnTroop(kind: TroopKind): boolean;
   upgradeBaseIncome(): boolean;
   upgradeBaseCommand(): boolean;
@@ -460,6 +462,9 @@ export class Hud {
     if (confirm === "defend") {
       if (this.callbacks.queueDefend("crouched")) this.afterConfirmedOrder();
     }
+    if (confirm === "overwatch") {
+      if (this.callbacks.queueOverwatch()) this.afterConfirmedOrder();
+    }
 
     const coverAction = target.closest<HTMLElement>("[data-cover-action]")?.dataset.coverAction;
     if (coverAction && this.targetId) {
@@ -821,6 +826,7 @@ function orderPlanner(
     action === "interact" ? coverInteractionState(actor, target, sim) : "",
     action === "inspect" || action === "inspect-detail" ? inspectTargetState(actor, target, action === "inspect-detail", sim) : "",
     action === "defend" ? defendState(canDefend, defendTip) : "",
+    action === "overwatch" ? overwatchState(actor, sim) : "",
     !actor ? orderSummaryState(actor, target) : "",
   ].filter(Boolean).join("");
 
@@ -1075,6 +1081,21 @@ function defendState(canDefend: boolean, tip: string): string {
     <button class="btn confirm ${canDefend ? "" : "disabled"}" data-confirm="defend" data-disabled="${!canDefend}" data-tip="${escapeAttr("Crouch improves accuracy and avoids direct head shots during resolve, but slows the next move.")}">
       Confirm Crouch
       <span>+accuracy</span>
+    </button>
+  `;
+}
+
+function overwatchState(actor: CombatEntity | undefined, sim: TacticalSim): string {
+  const reason = actor ? sim.overwatchFailureReason(actor) : "Select a unit first";
+  const radius = actor ? sim.overwatchRadius(actor).toFixed(1) : "0";
+  return `
+    <div class="target-summary ${reason ? "blocked" : ""}">
+      <strong>${reason ? "Overwatch unavailable" : "Overwatch armed"}</strong>
+      <span>${reason ? escapeHtml(reason) : `Holds fire until a hostile moves within ${radius}m this resolve, then snaps a reaction shot (wider spread than an aimed shot).`}</span>
+    </div>
+    <button class="btn confirm ${reason ? "disabled" : ""}" data-confirm="overwatch" data-disabled="${Boolean(reason)}" data-tip="${escapeAttr("Set overwatch: the amber ring marks the kill zone. The first hostile to move inside it eats a snap shot.")}">
+      Confirm Overwatch
+      <span>1 CP</span>
     </button>
   `;
 }
@@ -1533,6 +1554,7 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
   if (action === "ram") return actor.kind !== "tank" || !actor.status.canMove;
   if (action === "melee") return actor.kind !== "striker" || !actor.status.canMove;
   if (action === "defend") return !isInfantryKind(actor.kind) || !actor.status.canMove;
+  if (action === "overwatch") return Boolean(sim.overwatchFailureReason(actor));
   return false;
 }
 
@@ -1541,6 +1563,7 @@ function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: Tac
   if (action === "ram") return actor.kind === "tank" && actor.status.canMove;
   if (action === "melee") return actor.kind === "striker" && actor.status.canMove;
   if (action === "defend") return isInfantryKind(actor.kind) && actor.status.canMove;
+  if (action === "overwatch") return actor.status.canShoot && !isBuildingKind(actor.kind) && !isDefenseKind(actor.kind);
   if (action === "grenade") return actor.kind === "soldier" && actor.maxGrenades > 0;
   if (action === "shoot") return actor.status.canShoot;
   if (action === "move") return actor.status.canMove;

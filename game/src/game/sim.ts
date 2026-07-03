@@ -61,7 +61,7 @@ export { MODES, modeDef, type ModeId, type ModeDef } from "./modes";
 export { MAPS, mapDef, flagPositions, mapCenter, type MapDef, type MapTheme } from "./maps";
 
 export type Phase = "command" | "resolve" | "victory" | "defeat";
-export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "interact" | "inspect" | "inspect-detail" | "build" | "support";
+export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "overwatch" | "interact" | "inspect" | "inspect-detail" | "build" | "support";
 export type OrderKind = "move" | "shoot" | "grenade" | "ram" | "defend" | "melee";
 
 // Hard cap on how many combat units one side can field at once.
@@ -103,6 +103,9 @@ const DIFFICULTY_MODS: Record<Difficulty, DifficultyMods> = {
   normal: { label: "Veteran", enemyHp: 1, enemyDamage: 1, enemyIncome: 1 },
   hard: { label: "Elite", enemyHp: 1.3, enemyDamage: 1.28, enemyIncome: 1.45 },
 };
+// Reaction fire is snap fire: the spread multiplier applied to an overwatch shot.
+const OVERWATCH_SPREAD_PENALTY = 1.55;
+
 export function difficultyLabel(d: Difficulty): string {
   return DIFFICULTY_MODS[d].label;
 }
@@ -318,6 +321,10 @@ export class TacticalSim {
   readonly detonated = new Set<string>();
   // Covers that already toppled (so a corpse caught in a later blast doesn't fall twice).
   readonly toppled = new Set<string>();
+  // Units on overwatch: actorId -> reaction shots remaining. Set during command (costs a
+  // CP), consumed when a hostile moves inside watch radius during resolve, cleared at the
+  // start of the next command phase.
+  readonly overwatching = new Map<string, number>();
   readonly log: string[] = [];
   readonly turnReports: TurnReport[] = [];
   readonly economy = new Map<Team, number>([["player", START_MONEY_PLAYER], ["enemy", START_MONEY_ENEMY], ["neutral", 0]]);
@@ -393,6 +400,7 @@ export class TacticalSim {
     this.defending.clear();
     this.detonated.clear();
     this.toppled.clear();
+    this.overwatching.clear();
     this.log.splice(0);
     this.turnReports.splice(0);
     this.activeTurnReport = undefined;
@@ -1344,6 +1352,7 @@ export class TacticalSim {
       troopSeq: this.troopSeq,
       detonated: [...this.detonated],
       toppled: [...this.toppled],
+      overwatch: [...this.overwatching],
     });
   }
 
@@ -1353,7 +1362,7 @@ export class TacticalSim {
       const data = JSON.parse(raw) as {
         map: string; mode: ModeId; difficulty?: Difficulty; turn?: number;
         economy: [Team, number][]; entities: CombatEntity[]; modeState: ModeState; troopSeq?: number;
-        detonated?: string[]; toppled?: string[];
+        detonated?: string[]; toppled?: string[]; overwatch?: [string, number][];
       };
       const map = mapDef(data.map);
       setActiveTerrain(map.terrain);
@@ -1370,12 +1379,14 @@ export class TacticalSim {
       this.projectiles.splice(0);
       this.effects.splice(0);
       this.defending.clear();
+      this.overwatching.clear();
       // Restore which volatile covers already blew up, so a destroyed-but-still-present cover
       // caught in a later blast doesn't detonate a second time after a save/load.
       this.detonated.clear();
       for (const id of data.detonated ?? []) this.detonated.add(id);
       this.toppled.clear();
       for (const id of data.toppled ?? []) this.toppled.add(id);
+      for (const [id, shots] of data.overwatch ?? []) this.overwatching.set(id, shots);
       this.log.splice(0);
       this.turnReports.splice(0);
       this.activeTurnReport = undefined;
@@ -1439,6 +1450,73 @@ export class TacticalSim {
       duration: 1.35,
     });
     return true;
+  }
+
+  // ---- Overwatch / reaction fire ----
+
+  /** Watch radius: slightly inside weapon range so the reaction shot can actually connect. */
+  overwatchRadius(actor: CombatEntity): number {
+    return projectileRange(actor) * 0.9;
+  }
+
+  overwatchFailureReason(actor: CombatEntity | undefined): string | undefined {
+    if (!actor) return "Select a unit first";
+    if (!actor.status.canShoot) return `${actor.name} cannot shoot`;
+    if (this.overwatching.has(actor.id)) return `${actor.name} is already on overwatch`;
+    if (actor.commandPoints <= 0) return `${actor.name} has no command points`;
+    if (isBuildingKind(actor.kind)) return "The base cannot overwatch";
+    return undefined;
+  }
+
+  /** Player API: put the selected unit on overwatch (1 CP, 1 reaction shot this resolve). */
+  queueOverwatch(): boolean {
+    const actor = this.requirePlayerActor();
+    if (!actor) return false;
+    const failure = this.overwatchFailureReason(actor);
+    if (failure) return this.reject(failure);
+    spendCommandPoint(actor);
+    this.overwatching.set(actor.id, 1);
+    this.pushLog(`${actor.name} sets overwatch — first hostile to move in range eats a reaction shot`);
+    this.bus.emit("ORDER_QUEUED", { actorId: actor.id, kind: "shoot" });
+    return true;
+  }
+
+  // Called while any unit is moving during resolve: opposing watchers inside radius take
+  // their reaction shot (single round, widened spread — snap fire, not an aimed shot).
+  private checkOverwatch(mover: CombatEntity): void {
+    if (this.overwatching.size === 0 || !mover.status.alive || mover.kind === "cover" || mover.team === "neutral") return;
+    for (const [watcherId, shots] of this.overwatching) {
+      if (shots <= 0) {
+        this.overwatching.delete(watcherId);
+        continue;
+      }
+      const watcher = this.entity(watcherId);
+      if (!watcher || !watcher.status.alive || !watcher.status.canShoot) {
+        this.overwatching.delete(watcherId);
+        continue;
+      }
+      if (watcher.team === mover.team) continue;
+      if (dist(watcher.position, mover.position) > this.overwatchRadius(watcher)) continue;
+      this.overwatching.set(watcherId, shots - 1);
+      if ((this.overwatching.get(watcherId) ?? 0) <= 0) this.overwatching.delete(watcherId);
+      const part = preferredPart(mover, "center");
+      const reaction: TacticalOrder = {
+        id: `order-${++this.orderSeq}`,
+        actorId: watcher.id,
+        kind: "shoot",
+        targetId: mover.id,
+        targetPartId: part.id,
+        aim: "center",
+        elapsed: 0,
+        duration: 0,
+        fired: true,
+        done: true,
+      };
+      watcher.yaw = Math.atan2(mover.position.x - watcher.position.x, mover.position.z - watcher.position.z);
+      this.spawnShotProjectile(reaction, watcher, mover, OVERWATCH_SPREAD_PENALTY, false);
+      this.pushLog(`${watcher.name} reaction fire — ${mover.name} moved into the kill zone`);
+      this.effect("ping", { ...watcher.position }, { ...mover.position }, 0xffd166, 0.5, watcher.radius + 0.5);
+    }
   }
 
   private queueGrenadeFor(actor: CombatEntity, target: CombatEntity, aim: AimMode, partId?: string): boolean {
@@ -1505,6 +1583,7 @@ export class TacticalSim {
       this.separateFromUnits(actor);
       this.syncEntityElevation(actor);
       actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
+      this.checkOverwatch(actor);
       if (dist(actor.position, order.destination) < 0.08 || order.elapsed >= order.duration) order.done = true;
       return;
     }
@@ -1570,6 +1649,7 @@ export class TacticalSim {
     actor.yaw = Math.atan2(target.position.x - actor.position.x, target.position.z - actor.position.z);
     actor.position = moveToward(actor.position, target.position, moveSpeed(actor) * 1.25 * dt);
     this.syncEntityElevation(actor);
+    this.checkOverwatch(actor);
     if (!order.fired && dist(actor.position, target.position) <= actor.radius + target.radius + 0.25) {
       order.fired = true;
       this.resolveRam(actor, target);
@@ -2892,6 +2972,7 @@ export class TacticalSim {
     this.orders.splice(0);
     this.projectiles.splice(0);
     this.defending.clear();
+    this.overwatching.clear(); // unspent reaction shots expire with the resolve
     this.refreshDefendingStances();
     this.finalizeTurnReport();
     // An elimination win/loss this turn takes precedence — don't also tick objectives.

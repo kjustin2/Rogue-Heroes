@@ -1779,6 +1779,27 @@ export class WorldRenderer {
   // so the player can see which allies benefit. Command phase only to avoid resolve clutter.
   private syncAuras(sim: TacticalSim): void {
     this.disposeAndClear(this.auraRoot);
+    const owPulse = (Math.sin(performance.now() * 0.005) + 1) * 0.5;
+    // Overwatch kill zones show in BOTH phases — the amber ring is the whole promise.
+    for (const [watcherId] of sim.overwatching) {
+      const watcher = sim.entity(watcherId);
+      if (!watcher || !watcher.status.alive) continue;
+      const radius = sim.overwatchRadius(watcher);
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(radius - 0.18, radius, 72),
+        new THREE.MeshBasicMaterial({ color: 0xffbf4d, transparent: true, opacity: 0.22 + owPulse * 0.16, side: THREE.DoubleSide, depthWrite: false }),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(watcher.position.x, watcher.elevation + 0.06, watcher.position.z);
+      this.auraRoot.add(ring);
+      const eye = new THREE.Mesh(
+        new THREE.RingGeometry(0.28, 0.4, 24),
+        new THREE.MeshBasicMaterial({ color: 0xffbf4d, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false, depthTest: false }),
+      );
+      eye.rotation.x = -Math.PI / 2;
+      eye.position.set(watcher.position.x, watcher.elevation + watcher.height + 0.5, watcher.position.z);
+      this.auraRoot.add(eye);
+    }
     if (sim.phase !== "command") return;
     const pulse = (Math.sin(performance.now() * 0.004) + 1) * 0.5;
     for (const entity of sim.entities) {
