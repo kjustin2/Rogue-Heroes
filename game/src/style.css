@@ -3976,7 +3976,14 @@ body.menus-open .menu-bg span {
   box-shadow: inset 0 0 24px rgba(255, 128, 78, 0.16);
 }
 
-/* Glint sweep shared by the hero menu buttons. */
+/* Glint sweep shared by the hero menu buttons. The sweeping ::after travels to
+   left:140%; absolutely-positioned children count toward scrollable overflow, so without
+   clipping the hover flashes a horizontal scrollbar on the menu screen. */
+.menu-action,
+.title-start,
+.endscreen__btn {
+  overflow: clip;
+}
 .menu-action::after,
 .title-start::after,
 .endscreen__btn::after {

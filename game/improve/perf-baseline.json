@@ -1,64 +1,64 @@
 {
-  "at": "2026-07-03T12:46:07.545Z",
+  "at": "2026-07-03T16:39:48.991Z",
   "command": {
     "label": "command-stress",
-    "fps": 82.99,
-    "windowMs": 3499,
+    "fps": 50.45,
+    "windowMs": 3507.5,
     "frame": {
-      "count": 291,
-      "mean": 12.05,
-      "p50": 14.6,
-      "p95": 16.1,
-      "p99": 16.1,
-      "max": 23.7,
+      "count": 178,
+      "mean": 19.82,
+      "p50": 20.8,
+      "p95": 27.8,
+      "p99": 27.9,
+      "max": 27.9,
       "jank": 0,
       "jankRatio": 0
     },
     "render": {
-      "calls": 1347,
-      "triangles": 426338,
-      "geometries": 1449,
+      "calls": 1479,
+      "triangles": 456070,
+      "geometries": 1635,
       "textures": 39,
       "programs": 24
     },
-    "sceneObjects": 2099
+    "sceneObjects": 2295
   },
   "resolve": {
     "label": "resolve-stress",
-    "fps": 57.24,
-    "windowMs": 6000.8,
+    "fps": 34.38,
+    "windowMs": 6029,
     "frame": {
-      "count": 344,
-      "mean": 17.47,
-      "p50": 15.7,
-      "p95": 24.1,
-      "p99": 31.9,
-      "max": 55.5,
-      "jank": 2,
-      "jankRatio": 0.006
+      "count": 208,
+      "mean": 29.09,
+      "p50": 27.8,
+      "p95": 41.8,
+      "p99": 55.6,
+      "max": 83.4,
+      "jank": 59,
+      "jankRatio": 0.284
     },
     "render": {
-      "calls": 1657,
-      "triangles": 642041,
-      "geometries": 1727,
-      "textures": 59,
+      "calls": 1823,
+      "triangles": 678117,
+      "geometries": 1919,
+      "textures": 58,
       "programs": 24
     },
-    "sceneObjects": 2173
+    "sceneObjects": 2369
   },
   "light": {
     "label": "command-light",
-    "fps": 120.05,
-    "windowMs": 2999.1,
+    "fps": 133.69,
+    "windowMs": 2993.5,
     "frame": {
-      "count": 361,
-      "mean": 8.33,
-      "p50": 7.8,
-      "p95": 8.1,
-      "p99": 8.6,
-      "max": 227.9,
+      "count": 401,
+      "mean": 7.48,
+      "p50": 6.9,
+      "p95": 7.1,
+      "p99": 7.1,
+      "max": 222.3,
       "jank": 1,
-      "jankRatio": 0.003
+      "jankRatio": 0.002
     },
     "render": {
       "calls": 346,
