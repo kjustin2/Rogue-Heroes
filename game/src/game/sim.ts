@@ -111,6 +111,9 @@ const OVERWATCH_SPREAD_PENALTY = 1.55;
 const SALVAGE_PER_WRECK = 60;
 const SALVAGE_PER_TURN = 30;
 const SALVAGE_REACH = 0.9;
+// Capturable neutral structures.
+const CAPTURE_REACH = 1.0;
+const DEPOT_INCOME = 25;
 
 export function difficultyLabel(d: Difficulty): string {
   return DIFFICULTY_MODS[d].label;
@@ -2401,6 +2404,28 @@ export class TacticalSim {
     this.checkEndState();
   }
 
+  // Capturable neutral structures: at the start of each turn, an uncontested field unit
+  // standing beside one flips it to their team (derelict turrets come online for the
+  // captor next turn; depots start paying income on the following economy tick).
+  private runCaptureTick(): void {
+    for (const structure of this.entities) {
+      if (!structure.capturable || !structure.status.alive) continue;
+      const adjacentTeams = new Set<Team>();
+      for (const unit of this.entities) {
+        if (!unit.status.alive || unit.kind === "cover" || isBuildingKind(unit.kind) || isDefenseKind(unit.kind)) continue;
+        if (unit.team !== "player" && unit.team !== "enemy") continue;
+        if (dist(unit.position, structure.position) <= structure.radius + unit.radius + CAPTURE_REACH) adjacentTeams.add(unit.team);
+      }
+      if (adjacentTeams.size !== 1) continue; // contested or empty — no flip
+      const [team] = adjacentTeams;
+      if (structure.team === team) continue;
+      structure.team = team;
+      if (structure.kind === "turret") structure.commandPoints = 0; // comes online next turn
+      this.effect("ping", { ...structure.position }, { ...structure.position }, team === "player" ? 0x75d8ff : 0xff765f, 0.9, structure.radius + 0.8);
+      this.pushLog(`${team === "player" ? "You" : "The enemy"} captured ${structure.name}${structure.coverKind === "depot" ? ` (+$${DEPOT_INCOME}/turn)` : ""}`);
+    }
+  }
+
   // Auto-salvage at the start of each turn: every wreck with money left pays out to the
   // first team with a living field unit adjacent to it. Park a unit by a wreck to strip it.
   private runSalvageTick(): void {
@@ -3043,6 +3068,7 @@ export class TacticalSim {
     for (const entity of this.entities) repairForNewTurn(entity);
     this.runEconomyTick();
     this.runSalvageTick();
+    this.runCaptureTick();
     this.resolveSupportAuras();
     // Forced events are single-turn debug overrides; clear them, then announce the new turn's events.
     this.forcedZones = [];
@@ -3069,6 +3095,21 @@ export class TacticalSim {
   }
 
   // Whether reduced-accuracy sandstorm weather is in effect on a given turn.
+  // Environmental forecast for the HUD bar: event kinds active now and over the next
+  // `horizon` turns, so storms and barrages are plans instead of surprises.
+  forecast(horizon = 2): { turn: number; kinds: MapEventKind[] }[] {
+    const out: { turn: number; kinds: MapEventKind[] }[] = [];
+    for (let offset = 0; offset <= horizon; offset += 1) {
+      const t = this.turn + offset;
+      const kinds: MapEventKind[] = [];
+      if (this.sandstormActive(t)) kinds.push("sandstorm");
+      if (this.ionStormActive(t)) kinds.push("ionstorm");
+      for (const zone of this.eventZonesForTurn(t)) if (!kinds.includes(zone.kind)) kinds.push(zone.kind);
+      out.push({ turn: t, kinds });
+    }
+    return out;
+  }
+
   sandstormActive(turn: number = this.turn): boolean {
     return this.forcedSandstorm || this.mapEvents().some((e) => e.kind === "sandstorm" && eventOccursWindow(e, turn));
   }
@@ -3355,6 +3396,12 @@ export class TacticalSim {
   }
 
   private runEconomyTick(): void {
+    // Held supply depots pay their owner every turn.
+    for (const depot of this.entities) {
+      if (depot.coverKind !== "depot" || !depot.status.alive) continue;
+      if (depot.team !== "player" && depot.team !== "enemy") continue;
+      this.addMoney(depot.team, DEPOT_INCOME);
+    }
     for (const entity of this.entities) {
       if (!entity.status.alive || entity.kind !== "base") continue;
       // Home Base income, scaled by reactor health, upgrade level, and (for the bot) difficulty.

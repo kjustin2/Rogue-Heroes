@@ -75,6 +75,8 @@ export interface MapDef {
   scatter: ScatterGroup[];
   signature?: SignatureObject[];
   events?: MapEventConfig[];
+  // Capturable neutral field structures; mirror places a point-symmetric twin for fairness.
+  neutrals?: Array<{ kind: "turret" | "depot"; x: number; z: number; mirror?: boolean }>;
 }
 
 export function mapCenter(map: MapDef): Vec2 {
@@ -238,6 +240,8 @@ export const MAPS: readonly MapDef[] = [
     ],
     // Recurring sandstorms sweep the open basin — accuracy and visibility drop in waves.
     events: [{ kind: "sandstorm", startTurn: 3, duration: 2, period: 6 }],
+    // Twin supply depots on the flanks: hold them for extra income.
+    neutrals: [{ kind: "depot", x: -13, z: 8, mirror: true }],
   },
   {
     id: "ironworks",
@@ -281,6 +285,8 @@ export const MAPS: readonly MapDef[] = [
     ],
     // Overstressed gantries give way: cover around the central platform crumbles periodically.
     events: [{ kind: "collapse", startTurn: 5, period: 5, zone: { x: 0, z: 0, radius: 7 } }],
+    // Derelict foundry turrets guard the catwalk flanks — first squad to reach one owns it.
+    neutrals: [{ kind: "turret", x: -10, z: -6.5, mirror: true }],
   },
   {
     id: "verdant",

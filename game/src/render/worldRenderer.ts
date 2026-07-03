@@ -701,8 +701,16 @@ export class WorldRenderer {
 
   private syncEntity(entity: CombatEntity, selectedId: string, targetId: string | undefined, targetPartId: string | undefined, defending: boolean, ghosted: boolean): void {
     let group = this.groups.get(entity.id);
+    // Captured structures change team: rebuild so team-colored trim/glow follows the flag.
+    if (group && group.userData.team !== entity.team) {
+      disposeSubtree(group);
+      this.entityRoot.remove(group);
+      this.groups.delete(entity.id);
+      group = undefined;
+    }
     if (!group) {
       group = this.buildEntity(entity);
+      group.userData.team = entity.team;
       this.groups.set(entity.id, group);
       this.entityRoot.add(group);
     }
@@ -1274,6 +1282,17 @@ export class WorldRenderer {
       this.box(group, entity, part.id, [0.28, 0.16, 0.82], [-0.52, 0.2, 0.06], 0xd6a15f);
       this.box(group, entity, part.id, [0.28, 0.16, 0.82], [0.06, 0.58, 0.06], 0xd6a15f);
       this.box(group, entity, part.id, [0.28, 0.16, 0.82], [0.52, 0.96, 0.06], 0xd6a15f);
+    } else if (entity.coverKind === "depot") {
+      // Capturable supply depot: fuel hut + drum stack + comms whip; the beacon strip
+      // takes the holder's color (neutral = warm white) via the team rebuild.
+      const holder = entity.team === "player" ? 0x5fe6ff : entity.team === "enemy" ? 0xff6d57 : 0xffe9c4;
+      this.box(group, entity, part.id, [1.5, 0.95, 1.15], [0, 0.5, 0], 0x6a6455, { metalness: 0.16 });
+      this.box(group, entity, part.id, [1.68, 0.14, 1.3], [0, 1.03, 0], 0x4a453a, { metalness: 0.2 });
+      this.cylinder(group, entity, part.id, 0.24, 0.7, [-0.45, 0.36, 0.75], 0x54584a, [0, 0, 0], { metalness: 0.3 });
+      this.cylinder(group, entity, part.id, 0.24, 0.7, [0.15, 0.36, 0.82], 0x615a48, [0, 0, 0], { metalness: 0.3 });
+      this.cylinder(group, entity, part.id, 0.03, 1.1, [0.6, 1.6, -0.35], 0xd8dcd2, [0, 0, 0], { metalness: 0.3 });
+      this.box(group, entity, part.id, [0.9, 0.12, 0.12], [0, 1.16, 0.45], holder, { emissive: holder, emissiveIntensity: 0.7 });
+      this.box(group, entity, part.id, [0.5, 0.3, 0.08], [0, 0.62, 0.6], 0xffca6b, { emissive: 0xff9e2b, emissiveIntensity: 0.25 });
     } else if (entity.coverKind === "wreck") {
       // Burnt-out hull: charred body, blown-open plate, a bare road wheel, ember glow in
       // the burn seam — reads as the vehicle that died here.

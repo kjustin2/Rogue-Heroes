@@ -1612,6 +1612,28 @@ describe("tactical enemy AI", () => {
     expect(sim.supportFailureReason(base, "laser")).toBeUndefined();
   });
 
+  it("a lone unit beside a neutral depot captures it and it pays income", () => {
+    const depot = createCover("dep-1", "Supply Depot", { x: 3, z: 0 }, { coverKind: "depot" });
+    depot.capturable = true;
+    const grunt = createSoldier("p-g", "Grunt", "player", { x: 1.8, z: 0 });
+    const sim = new TacticalSim([
+      createBase("p-base-1", "HQ", "player", { x: -14, z: 0 }),
+      createBase("e-base-1", "Enemy HQ", "enemy", { x: 14, z: 0 }),
+      grunt,
+      depot,
+    ]);
+    sim.endTurn();
+    let guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+    expect(depot.team).toBe("player");
+
+    const before = sim.money("player");
+    sim.endTurn();
+    guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+    expect(sim.money("player") - before).toBeGreaterThanOrEqual(25); // base income + depot cut
+  });
+
   it("a killed vehicle leaves a wreck that pays salvage to an adjacent unit", () => {
     const shooter = createSoldier("p-s", "Shooter", "player", { x: 0.5, z: 0 });
     const tank = createTank("e-tank", "Doomed", "enemy", { x: 2, z: 0 });

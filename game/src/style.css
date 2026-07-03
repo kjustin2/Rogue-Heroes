@@ -4312,3 +4312,30 @@ body.menus-open .menu-bg span {
   box-shadow: 0 0 8px rgba(255, 202, 107, 0.35);
   pointer-events: none;
 }
+
+/* ---- Environmental forecast chip ---- */
+.forecast-chip {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+.forecast-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.forecast-cell em {
+  font-style: normal;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.forecast-cell.now em { color: var(--amber); }
+.forecast-cell i {
+  font-style: normal;
+  font-size: 0.86rem;
+  color: var(--amber);
+  text-shadow: 0 0 8px rgba(255, 202, 107, 0.5);
+}
+.forecast-cell:not(.now) i { opacity: 0.65; }

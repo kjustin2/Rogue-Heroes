@@ -320,6 +320,7 @@ export class Hud {
         ${turnChip(this.sim)}
         ${modeChip(this.sim)}
         ${eventChip(this.sim)}
+        ${forecastChip(this.sim)}
       </div>
 
       <aside class="panel roster ${allOrdersSet ? "all-set" : ""}">
@@ -736,6 +737,31 @@ function eventChip(sim: TacticalSim): string {
   const notice = sim.environment().notice;
   if (!notice) return "";
   return `<span class="mode-chip event-chip" data-tip="Dynamic battlefield event">${escapeHtml(notice)}</span>`;
+}
+
+const EVENT_GLYPHS: Record<string, { glyph: string; label: string }> = {
+  sandstorm: { glyph: "≋", label: "Sandstorm — accuracy drops" },
+  ionstorm: { glyph: "⌁", label: "Ion storm — units limited to 1 CP" },
+  barrage: { glyph: "☄", label: "Artillery barrage on the marked zone" },
+  collapse: { glyph: "▽", label: "Structural collapse in the marked zone" },
+};
+
+// Environmental forecast: icons for events hitting NOW / next turn / the turn after,
+// so a storm is something you plan around rather than a surprise.
+function forecastChip(sim: TacticalSim): string {
+  const entries = sim.forecast(2).filter((cell) => cell.kinds.length);
+  if (!entries.length) return "";
+  const cells = entries.map((cell) => {
+    const offset = cell.turn - sim.turn;
+    const when = offset === 0 ? "NOW" : `T+${offset}`;
+    const glyphs = cell.kinds.map((kind) => {
+      const info = EVENT_GLYPHS[kind] ?? { glyph: "?", label: kind };
+      const timing = offset === 0 ? "this turn" : `in ${offset} turn${offset > 1 ? "s" : ""}`;
+      return `<i data-tip="${escapeAttr(`${info.label} (${timing}).`)}">${info.glyph}</i>`;
+    }).join("");
+    return `<span class="forecast-cell ${offset === 0 ? "now" : ""}"><em>${when}</em>${glyphs}</span>`;
+  }).join("");
+  return `<span class="mode-chip forecast-chip" data-tip="Environmental forecast for the next two turns.">${cells}</span>`;
 }
 
 function buildingDetail(entity: CombatEntity): string {

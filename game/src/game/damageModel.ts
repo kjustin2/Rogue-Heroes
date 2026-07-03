@@ -33,7 +33,8 @@ export type CoverKind =
   | "sandbag"
   | "rubble"
   | "pillar"
-  | "wreck";
+  | "wreck"
+  | "depot";
 export type PartRole = "core" | "head" | "weapon" | "mobility" | "armor" | "utility" | "volatile";
 export type AimMode = "center" | "head" | "weapon" | "mobility" | "utility" | "core" | "weakest";
 export type InfantryStance = "standing" | "crouched" | "prone";
@@ -88,6 +89,9 @@ export interface CombatEntity {
   spawnCooldowns?: Partial<Record<EntityKind, number>>;
   // Rounds until each off-map support power can be called again (Home Base only).
   supportCooldowns?: Partial<Record<string, number>>;
+  // Neutral field structures (derelict turrets, supply depots) that flip to the team
+  // with units standing beside them at the start of a turn.
+  capturable?: boolean;
   // Optional cosmetic accent (hex color) for the player's unit markings — purely visual.
   accent?: number;
 }
@@ -567,6 +571,8 @@ export const COVER_PROFILES: Record<CoverKind, CoverProfile> = {
   pillar: { hp: 120, radius: 0.7, height: 2.6, volatile: false, label: "Stone Pillar" },
   // Burnt-out vehicle hull left behind when armor dies: hard cover + a salvage prize.
   wreck: { hp: 70, radius: 1.05, height: 0.95, volatile: false, label: "Burnt Wreck" },
+  // Capturable supply depot: pays income each turn to whichever team holds it.
+  depot: { hp: 110, radius: 1.1, height: 1.4, volatile: false, label: "Supply Depot" },
 };
 
 export function createCover(id: string, name: string, position: Vec2, options: boolean | CoverOptions = false): CombatEntity {
