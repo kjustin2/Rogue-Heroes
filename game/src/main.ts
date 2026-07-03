@@ -13,7 +13,7 @@ import "@fontsource/inter/600.css";
 import { dist, type Vec2 } from "./core/math";
 import { Stage } from "./render/stage";
 import { WorldRenderer, type WorldRenderDebug } from "./render/worldRenderer";
-import { preloadAll as preloadModels, loadedTemplates, modelsVersion } from "./render/models";
+import { preloadAll as preloadModels, loadedTemplates, modelsVersion, setModelSkin } from "./render/models";
 import { FeelDirector } from "./render/feel";
 import { Hud } from "./ui/hud";
 import {
@@ -42,7 +42,7 @@ import { progression, COSMETICS, COSMETIC_CATEGORIES, type Cosmetic } from "./pr
 import { battleReward } from "./progression";
 import { campaign, CAMPAIGN_TITLE, CAMPAIGN_SYNOPSIS, rankFor, rankHpBonus, rankInsignia, type CampaignMission } from "./campaign";
 import { commander, MEDALS } from "./commander";
-import { settings, ACTION_PACES, PACE_LABEL, RENDER_SCALES, RENDER_SCALE_LABEL, RENDER_SCALE_DPR, type ActionPace, type RenderScale } from "./settings";
+import { settings, ACTION_PACES, PACE_LABEL, RENDER_SCALES, RENDER_SCALE_LABEL, RENDER_SCALE_DPR, DEFAULT_KEYBINDS, KEYBIND_LABELS, keyDisplay, type ActionPace, type RenderScale, type BindableAction } from "./settings";
 import { applyScenario, scenarioInfo } from "./game/scenarios";
 import { ARENA_BOUNDS } from "./game/terrain";
 import { PerfMonitor, type PerfSnapshot, type RenderInfo } from "./render/perfMonitor";
@@ -68,11 +68,13 @@ const LOWFX = new URLSearchParams(location.search).has("lowfx");
 stage.setQuality(LOWFX ? "performance" : settings.renderScale);
 stage.setPixelRatioCap(RENDER_SCALE_DPR[settings.renderScale]);
 preloadModels(); // kick GLB loads immediately; renderer swaps them in as they arrive
+setModelSkin(settings.unitSkin);
 const sim = new TacticalSim();
 const world = new WorldRenderer(stage.scene);
 world.setPlayerAccent(progression.accentColor());
 const feel = new FeelDirector(stage);
 feel.setReducedMotion(settings.reducedMotion);
+world.setHighContrastTeams(settings.highContrastTeams);
 sfx.setMuted(settings.muted);
 sfx.setVolume(settings.volume);
 music.setVolume(settings.musicVolume);
@@ -360,51 +362,50 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   if (event.repeat) return;
-  if (event.code === "Space") {
-    event.preventDefault();
-    if (sim.phase === "command") sfx.turn();
-    sim.endTurn();
-  } else if (event.code === "Tab") {
-    event.preventDefault();
-    sim.cyclePlayer(event.shiftKey ? -1 : 1);
-    if (sim.selected) stage.focusOn(sim.selected.position);
-    hud.update();
-  } else if (event.code === "Digit1") {
-    hud.activateActionSlot(1);
-  } else if (event.code === "Digit2") {
-    hud.activateActionSlot(2);
-  } else if (event.code === "Digit3") {
-    hud.activateActionSlot(3);
-  } else if (event.code === "Digit4") {
-    hud.activateActionSlot(4);
-  } else if (event.code === "Digit5") {
-    hud.activateActionSlot(5);
-  } else if (event.code === "Digit6") {
-    hud.activateActionSlot(6);
-  } else if (event.code === "KeyM") {
-    hud.setAction("move");
-  } else if (event.code === "KeyF") {
-    hud.setAction("shoot");
-  } else if (event.code === "KeyG") {
-    hud.setAction("grenade");
-  } else if (event.code === "KeyX") {
-    hud.setAction("ram");
-  } else if (event.code === "KeyV") {
-    hud.setAction("defend");
-  } else if (event.code === "KeyB") {
-    hud.setAction("melee");
-  } else if (event.code === "KeyC") {
-    if (sim.queueDefend("crouched")) hud.setAction("select");
-  } else if (event.code === "KeyL") {
-    hud.toggleLog();
-  } else if (event.code === "Enter") {
-    event.preventDefault();
-    clickArmedConfirm();
-  } else if (event.code === "Escape") {
+  // Digits, Escape, and R are fixed; everything else routes through the rebindable map.
+  const digit = /^Digit([1-6])$/.exec(event.code);
+  if (digit) {
+    hud.activateActionSlot(Number(digit[1]));
+    return;
+  }
+  if (event.code === "Escape") {
     event.preventDefault();
     if (!hud.handleEscape()) openPauseMenu();
-  } else if (event.code === "KeyR") {
+    return;
+  }
+  if (event.code === "KeyR") {
     hud.resetGame();
+    return;
+  }
+  const bound = (Object.entries(settings.keybinds) as [BindableAction, string][]).find(([, code]) => code === event.code)?.[0];
+  if (!bound) return;
+  switch (bound) {
+    case "endTurn":
+      event.preventDefault();
+      if (sim.phase === "command") sfx.turn();
+      sim.endTurn();
+      break;
+    case "cycle":
+      event.preventDefault();
+      sim.cyclePlayer(event.shiftKey ? -1 : 1);
+      if (sim.selected) stage.focusOn(sim.selected.position);
+      hud.update();
+      break;
+    case "move": hud.setAction("move"); break;
+    case "shoot": hud.setAction("shoot"); break;
+    case "grenade": hud.setAction("grenade"); break;
+    case "ram": hud.setAction("ram"); break;
+    case "defend": hud.setAction("defend"); break;
+    case "melee": hud.setAction("melee"); break;
+    case "overwatch": hud.setAction("overwatch"); break;
+    case "crouch":
+      if (sim.queueDefend("crouched")) hud.setAction("select");
+      break;
+    case "log": hud.toggleLog(); break;
+    case "confirm":
+      event.preventDefault();
+      clickArmedConfirm();
+      break;
   }
 });
 
@@ -847,6 +848,20 @@ function showSettings(): void {
         <label>Reduced motion</label>
         <button class="menu-toggle ${settings.reducedMotion ? "on" : ""}" data-set="motion" type="button">${settings.reducedMotion ? "On" : "Off"}</button>
       </div>
+      <div class="settings-row">
+        <label>Vehicle skin</label>
+        <button class="menu-toggle ${settings.unitSkin === "winter" ? "on" : ""}" data-set="skin" type="button" data-tip="Cosmetic arctic-camo retexture pack for vehicles and structures. Purely visual.">${settings.unitSkin === "winter" ? "Winter" : "Standard"}</button>
+      </div>
+      <div class="settings-row">
+        <label>High-contrast teams</label>
+        <button class="menu-toggle ${settings.highContrastTeams ? "on" : ""}" data-set="teams" type="button" data-tip="Colorblind-friendly team palette: your force reads blue, hostiles read orange.">${settings.highContrastTeams ? "On" : "Off"}</button>
+      </div>
+      <div class="settings-row settings-row--head"><label>Controls</label><button class="menu-toggle" data-set="binds-reset" type="button" data-tip="Restore every key to its default.">Reset</button></div>
+      ${(Object.keys(KEYBIND_LABELS) as BindableAction[]).map((action) => `
+        <div class="settings-row settings-row--bind">
+          <label>${escapeHtml(KEYBIND_LABELS[action])}</label>
+          <button class="menu-toggle bind-key" data-rebind="${action}" type="button" data-tip="Click, then press the new key.">${escapeHtml(keyDisplay(settings.keybinds[action]))}</button>
+        </div>`).join("")}
       <p class="settings-note">Action speed changes how fast queued orders play out. Settings are saved to this device.</p>
     </div>
   `,
@@ -884,6 +899,35 @@ function showSettings(): void {
       settings.reducedMotion = !settings.reducedMotion;
       document.body.classList.toggle("reduced-motion", settings.reducedMotion);
       feel.setReducedMotion(settings.reducedMotion);
+    } else if (set === "teams") {
+      settings.highContrastTeams = !settings.highContrastTeams;
+      world.setHighContrastTeams(settings.highContrastTeams);
+    } else if (set === "skin") {
+      settings.unitSkin = settings.unitSkin === "winter" ? "" : "winter";
+      setModelSkin(settings.unitSkin);
+    } else if (set === "binds-reset") {
+      settings.keybinds = { ...DEFAULT_KEYBINDS };
+    }
+    // Rebind flow: arm the clicked key button, capture the next keypress, swap conflicts.
+    const rebind = target.closest<HTMLElement>("[data-rebind]")?.dataset.rebind as BindableAction | undefined;
+    if (rebind) {
+      const btn = target.closest<HTMLElement>("[data-rebind]")!;
+      btn.textContent = "Press a key…";
+      btn.classList.add("on");
+      const capture = (keyEvent: KeyboardEvent): void => {
+        keyEvent.preventDefault();
+        keyEvent.stopPropagation();
+        window.removeEventListener("keydown", capture, true);
+        if (keyEvent.code !== "Escape") {
+          const taken = (Object.entries(settings.keybinds) as [BindableAction, string][]).find(([, code]) => code === keyEvent.code)?.[0];
+          if (taken && taken !== rebind) settings.keybinds[taken] = settings.keybinds[rebind]; // swap
+          settings.keybinds[rebind] = keyEvent.code;
+          settings.save();
+        }
+        showSettings();
+      };
+      window.addEventListener("keydown", capture, true);
+      return; // don't re-render yet — wait for the captured key
     }
     settings.save();
     showSettings();
@@ -1751,6 +1795,9 @@ declare global {
       describeScene(): SceneDescription;
       sceneGraph(): { total: number; topLevel: number };
       setDebugOverlay(on: boolean): boolean;
+      // Cosmetic toggles (skin pack + colorblind palette) for screenshot harnesses.
+      setModelSkin(skin: string): void;
+      setHighContrastTeams(on: boolean): void;
       // Dynamic map events: read current weather/zone state; force one for screenshots/tests.
       environment(): { sandstorm: number; ionstorm: number; notice?: string; zones: Array<{ kind: string; x: number; z: number; radius: number }> };
       forceEvent(kind: "sandstorm" | "barrage" | "collapse" | "ionstorm"): void;
@@ -1816,6 +1863,8 @@ window.__rht = {
   describeScene: () => buildSceneDescription(),
   sceneGraph: () => ({ total: countSceneObjects(), topLevel: stage.scene.children.length }),
   setDebugOverlay: (on) => { debugOverlay.setEnabled(on); return debugOverlay.isEnabled(); },
+  setModelSkin: (skin: string) => setModelSkin(skin),
+  setHighContrastTeams: (on: boolean) => world.setHighContrastTeams(on),
   environment: () => sim.environment(),
   forceEvent: (kind) => sim.debugForceEvent(kind),
   startCampaign: (id) => { const m = campaign.mission(id); if (m) startCampaignMission(m); },

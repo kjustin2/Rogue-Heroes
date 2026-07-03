@@ -37,8 +37,21 @@ const TARGET_SIZE: Record<ModelKey, number> = {
 const loader = new GLTFLoader();
 loader.setMeshoptDecoder(MeshoptDecoder);
 
-const cache = new Map<ModelKey, THREE.Group | "loading" | "failed">();
+const cache = new Map<string, THREE.Group | "loading" | "failed">();
 let version = 0;
+// Cosmetic skin pack suffix ("" = standard, "winter" = <name>-winter.glb). Kinds without
+// a skinned file silently fall back to their standard model.
+let activeSkin = "";
+
+export function setModelSkin(skin: string): void {
+  if (skin === activeSkin) return;
+  activeSkin = skin;
+  version += 1; // renderers rebuild; instantiate() resolves against the new skin
+}
+
+function cacheKeyFor(key: ModelKey, skin: string): string {
+  return skin ? `${key}-${skin}` : key;
+}
 
 /** Bumps whenever a model finishes loading; renderers watch it to rebuild groups. */
 export function modelsVersion(): number {
@@ -64,7 +77,12 @@ export function loadedTemplates(): THREE.Group[] {
  * normalized bounding-box size.
  */
 export function instantiate(key: ModelKey): THREE.Group | null {
-  const template = ensureLoad(key);
+  let template = ensureLoad(key, activeSkin);
+  // Skinned variant missing (still loading counts as missing only if FAILED): fall back
+  // to the standard hull so a partial skin pack never blanks a unit.
+  if (!template && activeSkin && cache.get(cacheKeyFor(key, activeSkin)) === "failed") {
+    template = ensureLoad(key, "");
+  }
   if (!template) return null;
   const clone = template.clone(true);
   const mats: { material: THREE.MeshStandardMaterial; base: number }[] = [];
@@ -81,20 +99,22 @@ export function instantiate(key: ModelKey): THREE.Group | null {
   return clone;
 }
 
-function ensureLoad(key: ModelKey): THREE.Group | null {
-  const hit = cache.get(key);
+function ensureLoad(key: ModelKey, skin = ""): THREE.Group | null {
+  const cacheKey = cacheKeyFor(key, skin);
+  const hit = cache.get(cacheKey);
   if (hit !== undefined) return hit instanceof THREE.Group ? hit : null;
-  cache.set(key, "loading");
-  const url = `${import.meta.env.BASE_URL}models/${key}.glb`;
+  cache.set(cacheKey, "loading");
+  const url = `${import.meta.env.BASE_URL}models/${cacheKey}.glb`;
   loader.load(
     url,
     (gltf) => {
-      cache.set(key, normalize(gltf.scene, TARGET_SIZE[key]));
+      cache.set(cacheKey, normalize(gltf.scene, TARGET_SIZE[key]));
       version += 1;
     },
     undefined,
     () => {
-      cache.set(key, "failed"); // no asset — procedural fallback stays in charge
+      cache.set(cacheKey, "failed"); // no asset — fallback (standard skin or procedural)
+      if (skin) version += 1; // let instantiate() re-resolve to the standard hull
     },
   );
   return null;

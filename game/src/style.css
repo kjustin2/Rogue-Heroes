@@ -3295,6 +3295,40 @@ body.menus-open .menu-bg span {
 .settings-note { margin-top: 14px; color: var(--text-muted); font-size: 0.84rem; }
 .settings-row input[type="range"] { width: 200px; accent-color: var(--cyan); }
 
+/* Controls / keybinds */
+.settings-row--head {
+  padding-top: 20px;
+  border-bottom: 1px solid rgba(140, 239, 255, 0.28);
+}
+.settings-row--head label { color: var(--cyan); text-transform: uppercase; font-size: 0.82rem; letter-spacing: 0.14em; }
+.settings-row--bind { padding: 7px 4px; }
+.settings-row--bind label { font-weight: 600; color: #b9cdc9; }
+.bind-key {
+  min-width: 92px;
+  padding: 5px 12px;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #e8f6ff;
+  background: linear-gradient(180deg, rgba(60, 82, 96, 0.85), rgba(28, 40, 50, 0.9));
+  border: 1px solid rgba(140, 239, 255, 0.35);
+  border-bottom-width: 3px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.bind-key:hover { border-color: var(--cyan); box-shadow: 0 0 10px rgba(140, 239, 255, 0.25); }
+.bind-key.on {
+  border-color: var(--amber, #ffb347);
+  color: var(--amber, #ffb347);
+  box-shadow: 0 0 12px rgba(255, 179, 71, 0.4);
+  animation: bindPulse 0.9s ease-in-out infinite;
+}
+@keyframes bindPulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(255, 179, 71, 0.25); }
+  50% { box-shadow: 0 0 16px rgba(255, 179, 71, 0.55); }
+}
+
 /* Armory */
 .armory-grid {
   display: grid;

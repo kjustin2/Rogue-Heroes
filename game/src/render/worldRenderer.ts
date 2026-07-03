@@ -73,6 +73,7 @@ export class WorldRenderer {
   private propTint = new THREE.Color(0x8a7a5c);
   private skyTexture: THREE.CanvasTexture | null = null;
   private lastModelsVersion = modelsVersion();
+  private lastTeamsVersion = 0;
   private readonly ghostStickyUntil = new Map<string, number>();
   private commandPhase = true;
   // Persistent battle scars: scorch decals under every blast, capped FIFO.
@@ -182,8 +183,9 @@ export class WorldRenderer {
     this.commandPhase = sim.phase === "command";
     // A GLB finished loading since last frame: rebuild every entity group so units that
     // were born with procedural fallback meshes pick up their real model.
-    if (modelsVersion() !== this.lastModelsVersion) {
+    if (modelsVersion() !== this.lastModelsVersion || TEAMS.version !== this.lastTeamsVersion) {
       this.lastModelsVersion = modelsVersion();
+      this.lastTeamsVersion = TEAMS.version;
       for (const [id, group] of this.groups) {
         disposeSubtree(group);
         this.entityRoot.remove(group);
@@ -526,6 +528,13 @@ export class WorldRenderer {
     this.playerAccent = color;
   }
 
+  // Colorblind support: swap the team read palette (blue vs orange) and rebuild every
+  // entity group so build-time team glows repaint too.
+  setHighContrastTeams(on: boolean): void {
+    Object.assign(TEAMS, on ? TEAMS_HIGH_CONTRAST : TEAMS_DEFAULT);
+    TEAMS.version += 1;
+  }
+
   // Re-theme the whole scene for a map: fog, sky, ground, terrain, grid, and lights.
   applyMap(theme: MapTheme): void {
     this.baseFogColor = theme.fog;
@@ -747,7 +756,7 @@ export class WorldRenderer {
     for (const entity of sim.entities) {
       if (entity.kind === "cover" || !entity.status.alive) continue;
       liveMarkerIds.add(entity.id);
-      const color = entity.team === "player" ? (entity.accent ?? this.playerAccent) : entity.team === "enemy" ? 0xff8f7f : 0xf6d776;
+      const color = entity.team === "player" ? (entity.accent ?? this.playerAccent) : entity.team === "enemy" ? TEAMS.enemyMarker : 0xf6d776;
       let marker = this.unitMarkers.get(entity.id);
       if (!marker) {
         marker = makeUnitMarker(entity, color);
@@ -930,7 +939,7 @@ export class WorldRenderer {
   // the procedural units use.
   private addModelAccents(group: THREE.Group, entity: CombatEntity): void {
     if (entity.team === "neutral") return;
-    const color = entity.team === "enemy" ? 0xff6d57 : (entity.accent ?? this.playerAccent);
+    const color = entity.team === "enemy" ? TEAMS.enemyAccent : (entity.accent ?? this.playerAccent);
     const dims = group.userData.dims as THREE.Vector3;
     const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.85, roughness: 0.4, metalness: 0.1 });
     mat.userData.shared = false;
@@ -1005,7 +1014,7 @@ export class WorldRenderer {
     const injury = 1 - clamp01(totalHp / Math.max(1, totalMax));
     const alive = entity.status.alive;
     const unitGlow = entity.kind !== "cover" && entity.team !== "neutral";
-    const glowColor = entity.team === "enemy" ? 0x4f160f : 0x063a44;
+    const glowColor = entity.team === "enemy" ? TEAMS.enemyGlowDim : TEAMS.playerGlowDim;
     for (const record of mats) {
       const material = record.material;
       const color = _paintColor.set(record.base).lerp(_paintTmp.set(0x33120f), injury * 0.5);
@@ -1034,7 +1043,7 @@ export class WorldRenderer {
   }
 
   private buildTank(group: THREE.Group, entity: CombatEntity): void {
-    const factionGlow = entity.team === "enemy" ? 0xff6d57 : 0x50d7ff;
+    const factionGlow = entity.team === "enemy" ? TEAMS.enemyAccent : 0x50d7ff;
     const factionPanel = entity.team === "enemy" ? 0x6a2722 : 0x123f55;
     // Shared chassis: hull, sloped front plate, treads, road wheels, exhausts.
     this.box(group, entity, "hull", [2.35, 0.72, 1.35], [0, 0.58, 0], 0x6fb7d7);
@@ -1118,7 +1127,7 @@ export class WorldRenderer {
     const bodyColor = palette.body;
     const trimColor = palette.trim;
     const packColor = palette.pack;
-    const teamGlow = entity.team === "enemy" ? 0xff6d57 : 0x5ff1ff;
+    const teamGlow = entity.team === "enemy" ? TEAMS.enemyAccent : TEAMS.playerAccentGlow;
     // --- Shaped trooper chassis: rounded armor over tapered limbs (shared by all kinds;
     // each kind's signature kit attaches on top at the same anchor heights as before). ---
     // Hip girdle + utility belt.
@@ -1291,7 +1300,7 @@ export class WorldRenderer {
   }
 
   private buildBase(group: THREE.Group, entity: CombatEntity): void {
-    const factionGlow = entity.team === "enemy" ? 0xff765f : 0x5fe6ff;
+    const factionGlow = entity.team === "enemy" ? TEAMS.enemyAccent : 0x5fe6ff;
     this.box(group, entity, "core", [2.45, 1.35, 2.05], [0, 0.68, 0], 0xd06458);
     this.box(group, entity, "core", [2.72, 0.22, 2.32], [0, 1.48, 0], 0x51231f, { metalness: 0.18 });
     for (const x of [-1.42, 1.42]) this.box(group, entity, "core", [0.26, 1.52, 0.28], [x, 0.82, -0.52], 0x7c3f39, { metalness: 0.14 });
@@ -1314,7 +1323,7 @@ export class WorldRenderer {
   }
 
   private buildDefense(group: THREE.Group, entity: CombatEntity): void {
-    const glow = entity.team === "enemy" ? 0xff6d57 : 0x5fe6ff;
+    const glow = entity.team === "enemy" ? TEAMS.enemyAccent : 0x5fe6ff;
     if (entity.kind === "wall") {
       const h = entity.height;
       this.box(group, entity, "barrier", [2.15, h, 0.62], [0, h / 2, 0], 0x8a9099, { metalness: 0.2 });
@@ -1801,7 +1810,7 @@ export class WorldRenderer {
     const unitGlow = entity.kind !== "cover" && entity.team !== "neutral";
     const coverGlow = entity.kind === "cover" && part.hp > 0;
     const coverGlowColor = entity.coverKind === "cliff" ? 0x4a2284 : part.role === "volatile" ? 0x7a4200 : entity.coverKind === "ridge" ? 0x5a3a13 : 0x5c4620;
-    const unitGlowColor = entity.team === "enemy" ? 0x4f160f : 0x063a44;
+    const unitGlowColor = entity.team === "enemy" ? TEAMS.enemyGlowDim : TEAMS.playerGlowDim;
     material.emissive.setHex(part.hp > 0 && targetedPart ? 0x4f3000 : part.hp > 0 && selected ? 0x0b3844 : accent ? baseEmissive : unitGlow ? unitGlowColor : coverGlow ? coverGlowColor : baseEmissive);
     material.emissiveIntensity = part.hp > 0
       ? (mesh.userData.baseEmissiveIntensity as number) + (unitGlow ? 0.14 : 0) + (coverGlow ? 0.18 : 0) + (selected ? 0.58 : 0) + (targetedPart ? 0.72 : targeted ? 0.34 : 0)
@@ -1866,7 +1875,7 @@ export class WorldRenderer {
     this.selectionBeacon.visible = Boolean(selected);
     this.selectionLight.visible = Boolean(selected);
     if (!selected) return;
-    const color = selected.team === "player" ? (selected.accent ?? this.playerAccent) : selected.team === "enemy" ? 0xff8f7f : 0xf6d776;
+    const color = selected.team === "player" ? (selected.accent ?? this.playerAccent) : selected.team === "enemy" ? TEAMS.enemyMarker : 0xf6d776;
     const scale = Math.max(0.72, selected.radius * 0.96);
     const pulse = (Math.sin(performance.now() * 0.009) + 1) * 0.5;
     const pulseScale = 1.06 + pulse * 0.09;
@@ -2855,7 +2864,7 @@ function roleColor(entity: CombatEntity, role: PartRole, fallback: number): numb
     if (role === "head") return 0xffc5a8;
     if (role === "utility") return 0xff9c75;
     if (role === "volatile") return 0xff7d38;
-    return blendHex(fallback, 0xe66e5c, 0.68);
+    return blendHex(fallback, TEAMS.enemyBlend, 0.68);
   }
   if (entity.team === "player") {
     if (role === "weapon") return 0xeaffff;
@@ -3148,6 +3157,27 @@ function pickProxyMaterial(): THREE.MeshBasicMaterial {
 
 // Infantry part ids that earn a silhouette outline (each outline = one extra draw call).
 const OUTLINED_PARTS = new Set(["body", "head", "legs"]);
+
+// Team read colors, swappable for the colorblind high-contrast palette (blue vs orange).
+// Mutated in place; bumping TEAMS.version makes the renderer rebuild every entity group.
+const TEAMS = {
+  version: 0,
+  enemyAccent: 0xff6d57,
+  enemyMarker: 0xff8f7f,
+  enemyGlowDim: 0x4f160f,
+  enemyBlend: 0xe66e5c,
+  playerGlowDim: 0x063a44,
+  playerAccentGlow: 0x5ff1ff,
+};
+const TEAMS_DEFAULT = { ...TEAMS };
+const TEAMS_HIGH_CONTRAST = {
+  enemyAccent: 0xffa11e,
+  enemyMarker: 0xffb020,
+  enemyGlowDim: 0x4f3300,
+  enemyBlend: 0xf0a030,
+  playerGlowDim: 0x0a2a5c,
+  playerAccentGlow: 0x66aaff,
+};
 
 // Shared scorch-decal resources (one texture/material/geometry for every crater).
 let _scorchMat: THREE.MeshBasicMaterial | undefined;

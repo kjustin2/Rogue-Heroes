@@ -17,6 +17,44 @@ export const RENDER_SCALES: readonly RenderScale[] = ["performance", "balanced",
 export const RENDER_SCALE_LABEL: Record<RenderScale, string> = { performance: "Performance", balanced: "Balanced", quality: "Quality", ultra: "Ultra" };
 export const RENDER_SCALE_DPR: Record<RenderScale, number> = { performance: 0.62, balanced: 1, quality: 1.5, ultra: 2 };
 
+// Rebindable battle keys (KeyboardEvent.code values). Camera (WASD/arrows), digits,
+// Escape, and R stay fixed.
+export type BindableAction =
+  | "endTurn" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "overwatch" | "crouch" | "log" | "confirm" | "cycle";
+export const DEFAULT_KEYBINDS: Record<BindableAction, string> = {
+  endTurn: "Space",
+  move: "KeyM",
+  shoot: "KeyF",
+  grenade: "KeyG",
+  ram: "KeyX",
+  defend: "KeyV",
+  melee: "KeyB",
+  overwatch: "KeyO",
+  crouch: "KeyC",
+  log: "KeyL",
+  confirm: "Enter",
+  cycle: "Tab",
+};
+export const KEYBIND_LABELS: Record<BindableAction, string> = {
+  endTurn: "End turn",
+  move: "Move order",
+  shoot: "Shoot order",
+  grenade: "Grenade order",
+  ram: "Ram order",
+  defend: "Crouch panel",
+  melee: "Strike order",
+  overwatch: "Overwatch panel",
+  crouch: "Quick crouch",
+  log: "Toggle log",
+  confirm: "Confirm action",
+  cycle: "Cycle units",
+};
+export function keyDisplay(code: string): string {
+  if (code.startsWith("Key")) return code.slice(3);
+  if (code.startsWith("Digit")) return code.slice(5);
+  return code;
+}
+
 export class GameSettings {
   muted = false;
   volume = 0.6;
@@ -25,6 +63,11 @@ export class GameSettings {
   reducedMotion = false;
   actionPace: ActionPace = "normal";
   renderScale: RenderScale = "quality";
+  // High-contrast team palette (blue vs orange) for colorblind players.
+  highContrastTeams = false;
+  // Cosmetic vehicle skin pack ("" = standard, "winter" = arctic camo retextures).
+  unitSkin = "";
+  keybinds: Record<BindableAction, string> = { ...DEFAULT_KEYBINDS };
 
   constructor() {
     this.load();
@@ -47,6 +90,9 @@ export class GameSettings {
       if (typeof s.reducedMotion === "boolean") this.reducedMotion = s.reducedMotion;
       if (s.actionPace === "slow" || s.actionPace === "normal" || s.actionPace === "fast") this.actionPace = s.actionPace;
       if (s.renderScale && RENDER_SCALES.includes(s.renderScale)) this.renderScale = s.renderScale;
+      if (typeof s.highContrastTeams === "boolean") this.highContrastTeams = s.highContrastTeams;
+      if (typeof s.unitSkin === "string") this.unitSkin = s.unitSkin;
+      if (s.keybinds && typeof s.keybinds === "object") this.keybinds = { ...DEFAULT_KEYBINDS, ...s.keybinds };
     } catch {
       // ignore
     }
@@ -54,7 +100,7 @@ export class GameSettings {
 
   save(): void {
     try {
-      localStorage.setItem(KEY, JSON.stringify({ muted: this.muted, volume: this.volume, musicVolume: this.musicVolume, difficulty: this.difficulty, reducedMotion: this.reducedMotion, actionPace: this.actionPace, renderScale: this.renderScale }));
+      localStorage.setItem(KEY, JSON.stringify({ muted: this.muted, volume: this.volume, musicVolume: this.musicVolume, difficulty: this.difficulty, reducedMotion: this.reducedMotion, actionPace: this.actionPace, renderScale: this.renderScale, highContrastTeams: this.highContrastTeams, unitSkin: this.unitSkin, keybinds: this.keybinds }));
     } catch {
       // ignore
     }
