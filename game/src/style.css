@@ -4441,3 +4441,95 @@ body.menus-open .menu-bg span {
   border-color: var(--amber);
   box-shadow: 0 0 18px rgba(255, 202, 107, 0.35);
 }
+
+/* ---- Kill-cam / cinematic letterbox ---- */
+body.killcam::before,
+body.killcam::after {
+  content: "";
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 9vh;
+  background: #000;
+  z-index: 60;
+  pointer-events: none;
+  animation: letterbox-in 0.35s ease-out;
+}
+body.killcam::before { top: 0; }
+body.killcam::after { bottom: 0; }
+@keyframes letterbox-in {
+  from { height: 0; }
+  to { height: 9vh; }
+}
+.mission-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 61;
+  cursor: pointer;
+}
+.mission-intro__skip {
+  position: absolute;
+  right: 24px;
+  bottom: calc(9vh + 14px);
+  padding: 6px 16px;
+  border: 1px solid rgba(255, 202, 107, 0.5);
+  border-radius: 4px;
+  background: rgba(12, 10, 6, 0.72);
+  color: var(--amber);
+  font-family: var(--font-ui);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+}
+
+/* ---- Commander service record ---- */
+.commander-profile {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: rgba(24, 23, 18, 0.6);
+}
+.commander-profile__stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.commander-profile__stats div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.commander-profile__stats span {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.commander-profile__stats strong {
+  font-family: var(--font-ui);
+  font-size: 1.05rem;
+  color: #f0ead8;
+}
+.commander-profile__medals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.medal {
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(198, 174, 122, 0.3);
+  font-size: 0.68rem;
+  opacity: 0.4;
+}
+.medal.earned {
+  opacity: 1;
+  border-color: rgba(255, 202, 107, 0.6);
+  color: #ffe9a8;
+  background: rgba(58, 44, 12, 0.5);
+  box-shadow: 0 0 10px rgba(255, 202, 107, 0.2);
+}

@@ -41,6 +41,7 @@ import { music } from "./music";
 import { progression, COSMETICS, COSMETIC_CATEGORIES, type Cosmetic } from "./progression";
 import { battleReward } from "./progression";
 import { campaign, CAMPAIGN_TITLE, CAMPAIGN_SYNOPSIS, rankFor, rankHpBonus, rankInsignia, type CampaignMission } from "./campaign";
+import { commander, MEDALS } from "./commander";
 import { settings, ACTION_PACES, PACE_LABEL, RENDER_SCALES, RENDER_SCALE_LABEL, RENDER_SCALE_DPR, type ActionPace, type RenderScale } from "./settings";
 import { applyScenario, scenarioInfo } from "./game/scenarios";
 import { ARENA_BOUNDS } from "./game/terrain";
@@ -234,6 +235,14 @@ const hud = new Hud(uiRoot, sim, {
         sfx.deploy();
       } else if (decrypted) {
         showToast("R&D files decrypted — check the tech deck");
+      }
+      // Doctrine mastery: lifetime research counters with tier-up toasts.
+      const before = commander.masteryTier(nodeId);
+      commander.recordResearch(nodeId);
+      const after = commander.masteryTier(nodeId);
+      if (after > before) {
+        const node = TECH_TREE.find((n) => n.id === nodeId);
+        showToast(`Doctrine mastery ${"I".repeat(after)} — ${node?.name ?? nodeId} (lifetime)`);
       }
     }
     return ok;
@@ -476,6 +485,36 @@ function startCampaignMission(mission: CampaignMission): void {
   lastEndPhase = undefined;
   inBattle = true;
   hud.update();
+  runMissionIntro();
+}
+
+// Mission-intro cinematic: a letterboxed rail flyover — enemy lines, the contested
+// center, then home — skippable with a click. Pure camera work; the sim is untouched.
+function runMissionIntro(): void {
+  if (settings.reducedMotion) return;
+  const enemyBase = sim.entities.find((e) => e.kind === "base" && e.team === "enemy");
+  const playerBase = sim.entities.find((e) => e.kind === "base" && e.team === "player");
+  const overlay = document.createElement("div");
+  overlay.className = "mission-intro";
+  overlay.innerHTML = `<button class="mission-intro__skip" type="button">Skip ▸</button>`;
+  document.body.appendChild(overlay);
+  document.body.classList.add("killcam");
+  const timers: number[] = [];
+  const finish = (): void => {
+    for (const t of timers) window.clearTimeout(t);
+    document.body.classList.remove("killcam");
+    overlay.remove();
+    focusOnPlayerBase();
+  };
+  overlay.addEventListener("click", finish);
+  if (enemyBase) stage.guideTo({ focus: enemyBase.position, zoom: 0.8 }, { mode: "resolve", strength: 2.2, durationMs: 1500 });
+  timers.push(window.setTimeout(() => {
+    stage.guideTo({ focus: sim.modeState.hill, zoom: 1.0 }, { mode: "resolve", strength: 2.2, durationMs: 1400 });
+  }, 1500));
+  timers.push(window.setTimeout(() => {
+    if (playerBase) stage.guideTo({ focus: playerBase.position, zoom: 0.9 }, { mode: "resolve", strength: 2.4, durationMs: 1300 });
+  }, 2900));
+  timers.push(window.setTimeout(finish, 4300));
 }
 
 // Radio-drama beats: one-shot transmissions on their keyed turns during campaign battles.
@@ -882,6 +921,32 @@ function armoryCardHtml(c: Cosmetic): string {
   </div>`;
 }
 
+// Lifetime service record: stats, medals (earned lit, unearned ghosted), doctrine mastery.
+function commanderProfileHtml(): string {
+  const s = commander.stats;
+  const top = commander.topUnitKind();
+  const medals = MEDALS.map((m) => {
+    const earned = s.medals.includes(m.id);
+    return `<span class="medal ${earned ? "earned" : ""}" data-tip="${escapeAttr(`${m.name}: ${m.blurb}${earned ? " (earned)" : ""}`)}">🎖 ${escapeHtml(m.name)}</span>`;
+  }).join("");
+  const mastered = TECH_TREE.filter((n) => n.tier < 4 && commander.masteryTier(n.id) > 0)
+    .map((n) => `<span class="medal earned" data-tip="${escapeAttr(`${n.name} researched ${s.doctrineUse[n.id] ?? 0} times lifetime.`)}">${escapeHtml(n.name)} ${"I".repeat(commander.masteryTier(n.id))}</span>`)
+    .join("");
+  return `
+    <div class="armory-category-title">Service Record</div>
+    <div class="commander-profile">
+      <div class="commander-profile__stats">
+        <div><span>Battles</span><strong>${s.battles}</strong></div>
+        <div><span>Wins / Losses</span><strong>${s.wins} / ${s.losses}</strong></div>
+        <div><span>Unit Kills</span><strong>${s.kills}</strong></div>
+        <div><span>Deadliest Unit</span><strong>${top ? escapeHtml(top) : "—"}</strong></div>
+      </div>
+      <div class="commander-profile__medals">${medals}</div>
+      ${mastered ? `<div class="commander-profile__medals">${mastered}</div>` : ""}
+    </div>
+  `;
+}
+
 function showArmory(): void {
   closeAllMenus();
   const sections = COSMETIC_CATEGORIES.map((cat) => {
@@ -897,6 +962,7 @@ function showArmory(): void {
         ${pointsBadge()}
       </div>
       <p class="settings-note">Earn points in battle to unlock unit accents, commander titles, and emblems — then equip your loadout.</p>
+      ${commanderProfileHtml()}
       ${sections}
     </div>
   `,
@@ -1571,6 +1637,43 @@ function handleEndState(): void {
   const victory = sim.phase === "victory";
   if (victory) sfx.victory();
   else sfx.defeat();
+  // Commander ledger: lifetime stats + medal checks for every real battle.
+  if (!tutorialActive) {
+    const killsByKind: Record<string, number> = {};
+    for (const [id, count] of sim.killsBy) {
+      const kind = sim.entity(id)?.kind ?? "unknown";
+      killsByKind[kind] = (killsByKind[kind] ?? 0) + count;
+    }
+    const freshMedals = commander.recordBattle({
+      victory,
+      turns: sim.turn,
+      losses: sim.playerLosses,
+      killsByKind,
+      toppleHappened: sim.toppled.size > 0,
+    });
+    for (const medal of freshMedals) showToast(`🎖 Medal earned — ${medal.name}: ${medal.blurb}`);
+  }
+  // Kill-cam: a 1.6s letterboxed zoom onto the decisive spot before the end screens land.
+  if (!settings.reducedMotion) {
+    const focusTarget = victory
+      ? sim.entities.find((e) => e.kind === "base" && e.team === "enemy") ?? sim.entities.find((e) => e.team === "enemy" && !e.status.alive)
+      : sim.entities.find((e) => e.kind === "base" && e.team === "player");
+    if (focusTarget) {
+      stage.guideTo({ focus: focusTarget.position, zoom: 0.62 }, { mode: "resolve", strength: 3.4, durationMs: 1500 });
+      document.body.classList.add("killcam");
+      const endPhase = sim.phase;
+      window.setTimeout(() => {
+        document.body.classList.remove("killcam");
+        if (sim.phase === endPhase) concludeEndState(victory);
+      }, 1600);
+      return;
+    }
+  }
+  concludeEndState(victory);
+}
+
+// The end-of-battle overlays/toasts, split out so the kill-cam can delay them.
+function concludeEndState(victory: boolean): void {
   // Campaign battles advance the story ladder and show their own end overlay.
   const mission = activeCampaignMission;
   if (mission) {
