@@ -722,6 +722,16 @@ export class WorldRenderer {
         this.spawnSmokeColumn(rear, 2, this.propTint.getHex(), 0.3, 1.1, entity.elevation + 0.1);
       }
     }
+    // Dead vehicles smolder: a lazy wisp every ~1.5s keeps wrecks reading as fresh battle
+    // damage instead of parked units with the lights off.
+    if (!entity.status.alive && (isVehicleKind(entity.kind) || entity.kind === "base")) {
+      const now = performance.now();
+      const lastSmolder = (group.userData.lastSmolderAt as number | undefined) ?? 0;
+      if (now - lastSmolder > 1500) {
+        group.userData.lastSmolderAt = now;
+        this.spawnSmokeColumn(entity.position, 1, 0x25211d, 0.3, 1.9, entity.elevation + entity.height * 0.45);
+      }
+    }
     // Body rises on each footfall (two per stride) for a walking bounce, locked to distance.
     const bob = moving && isInfantryKind(entity.kind) ? Math.abs(Math.sin(motionTime * 1.6)) * 0.05 : 0;
     // Ease the rendered ground height so stepping on/off cover or terrain ledges glides
@@ -750,12 +760,16 @@ export class WorldRenderer {
         group.rotation.x -= recoil * 0.02;
       }
     }
+    // One id->part map per entity per frame instead of a parts.find per part MESH —
+    // paintPart runs for ~20 meshes on an 8-part unit, so the linear scans added up.
+    _partById.clear();
+    for (const part of entity.parts) _partById.set(part.id, part);
     group.traverse((object) => {
       if (!("isMesh" in object)) return;
       const mesh = object as PartMesh;
       const partId = mesh.userData.partId as string | undefined;
       if (!partId) return;
-      const part = entity.parts.find((p) => p.id === partId);
+      const part = _partById.get(partId);
       if (!part) return;
       this.syncDebris(entity, part);
       if (mesh.userData.pickProxy) {
@@ -782,7 +796,10 @@ export class WorldRenderer {
 
   private buildEntity(entity: CombatEntity): THREE.Group {
     const model = this.buildFromModel(entity);
-    if (model) return model;
+    if (model) {
+      if (entity.kind !== "cover") model.add(makeContactShadow(entity.radius));
+      return model;
+    }
     const group = new THREE.Group();
     group.userData.entityId = entity.id;
     if (isVehicleKind(entity.kind)) this.buildTank(group, entity);
@@ -790,6 +807,7 @@ export class WorldRenderer {
     if (entity.kind === "base") this.buildBase(group, entity);
     if (isDefenseKind(entity.kind)) this.buildDefense(group, entity);
     if (entity.kind === "cover") this.buildCover(group, entity);
+    if (entity.kind !== "cover") group.add(makeContactShadow(entity.radius));
     return group;
   }
 
@@ -1337,10 +1355,10 @@ export class WorldRenderer {
     mesh.userData.basePosition = mesh.position.clone();
     mesh.userData.baseRotation = mesh.rotation.clone();
     mesh.userData.baseScale = mesh.scale.clone();
-    // Outlines only on infantry: small silhouettes need the edge punch to read at tactics
-    // distance, while big structures/vehicles look toy-like with them (and they cost a
-    // draw call per part mesh — dropping them roughly halves the entity draw calls).
-    if (isInfantryKind(entity.kind)) this.outline(mesh);
+    // Outlines only on infantry, and only on the silhouette-critical parts (torso, head,
+    // legs): those are the shapes that must read at tactics distance, and each outline is
+    // a whole extra draw call — trinkets/weapons don't earn one at 0.38 opacity.
+    if (isInfantryKind(entity.kind) && OUTLINED_PARTS.has(partId)) this.outline(mesh);
     group.add(mesh);
     return mesh;
   }
@@ -1379,7 +1397,7 @@ export class WorldRenderer {
     mesh.userData.basePosition = mesh.position.clone();
     mesh.userData.baseRotation = mesh.rotation.clone();
     mesh.userData.baseScale = mesh.scale.clone();
-    if (isInfantryKind(entity.kind)) this.outline(mesh);
+    if (isInfantryKind(entity.kind) && OUTLINED_PARTS.has(partId)) this.outline(mesh);
     group.add(mesh);
     return mesh;
   }
@@ -1919,7 +1937,7 @@ export class WorldRenderer {
         this.trailHistory.set(projectile.id, history);
       }
       history.push({ x: projectile.position.x, y: projectile.height, z: projectile.position.z });
-      if (history.length > 8) history.shift();
+      if (history.length > 6) history.shift();
       for (let i = history.length - 1; i > 0; i -= 1) {
         const a = history[i - 1];
         const b = history[i];
@@ -2876,6 +2894,43 @@ function pickProxyMaterial(): THREE.MeshBasicMaterial {
   return _pickProxyMaterial;
 }
 
+// Infantry part ids that earn a silhouette outline (each outline = one extra draw call).
+const OUTLINED_PARTS = new Set(["body", "head", "legs"]);
+
+// Soft radial contact-shadow blob shared by every unit — anchors them to the ground far
+// better than the distant PCF sun shadow alone. One shared texture/material/geometry;
+// one mesh (and draw call) per unit.
+let _contactShadowMaterial: THREE.MeshBasicMaterial | undefined;
+let _contactShadowGeometry: THREE.CircleGeometry | undefined;
+function makeContactShadow(radius: number): THREE.Mesh {
+  if (!_contactShadowMaterial) {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 64;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      const gradient = ctx.createRadialGradient(32, 32, 4, 32, 32, 32);
+      gradient.addColorStop(0, "rgba(0,0,0,0.42)");
+      gradient.addColorStop(0.6, "rgba(0,0,0,0.22)");
+      gradient.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 64, 64);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    _contactShadowMaterial = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false });
+    _contactShadowMaterial.userData.shared = true;
+  }
+  if (!_contactShadowGeometry) {
+    _contactShadowGeometry = new THREE.CircleGeometry(1, 24);
+    _contactShadowGeometry.userData.shared = true;
+  }
+  const blob = new THREE.Mesh(_contactShadowGeometry, _contactShadowMaterial);
+  blob.rotation.x = -Math.PI / 2;
+  blob.position.y = 0.024;
+  blob.scale.setScalar(Math.max(0.55, radius * 1.25));
+  blob.userData.decor = true;
+  return blob;
+}
+
 export function disposeSubtree(obj: THREE.Object3D): void {
   obj.traverse((node) => {
     if ((node as THREE.Sprite).isSprite) return;
@@ -2889,6 +2944,8 @@ export function disposeSubtree(obj: THREE.Object3D): void {
 // Scratch colors reused by paintPart's per-frame, per-mesh hot path (avoids allocating).
 const _paintColor = new THREE.Color();
 const _paintTmp = new THREE.Color();
+// Scratch id->part map reused by syncEntity's per-frame traverse.
+const _partById = new Map<string, DamagePart>();
 
 // Quantized comet-tail opacities (newest segment first) — fixed values keep the cached
 // line-material pool bounded.
