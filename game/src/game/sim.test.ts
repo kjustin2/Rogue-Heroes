@@ -579,6 +579,45 @@ describe("tactical simulation loop", () => {
     expect(far.log[0]).toBe("Cutlass is too far to strike");
   });
 
+  it("lets rifle infantry bayonet-strike in melee for less than a striker", () => {
+    const enemy = createSoldier("enemy", "Cutlass", "enemy", { x: 1.1, z: 0 });
+    const sim = new TacticalSim([
+      createSoldier("rifleman", "Rook", "player", { x: 0, z: 0 }),
+      enemy,
+    ]);
+    sim.select("rifleman");
+    expect(sim.previewMelee("enemy").ok).toBe(true);
+    const riflemanDmg = sim.previewMeleeDamage("enemy");
+    expect(riflemanDmg).toBeGreaterThan(0);
+
+    // The same target struck by a Striker: the specialist hits materially harder.
+    const strikerSim = new TacticalSim([
+      createStriker("striker", "Kade", "player", { x: 0, z: 0 }),
+      createSoldier("enemy2", "Cutlass", "enemy", { x: 1.1, z: 0 }),
+    ]);
+    strikerSim.select("striker");
+    const strikerDmg = strikerSim.previewMeleeDamage("enemy2");
+    expect(strikerDmg ?? 0).toBeGreaterThan(riflemanDmg ?? 0);
+
+    // A disarmed rifleman (weapon destroyed) can no longer strike.
+    const disarmed = new TacticalSim([
+      createSoldier("rook2", "Rook", "player", { x: 0, z: 0 }),
+      createSoldier("enemy3", "Cutlass", "enemy", { x: 1.1, z: 0 }),
+    ]);
+    const rook = disarmed.entity("rook2")!;
+    applyDamage(rook, "rifle", 999);
+    disarmed.select("rook2");
+    expect(disarmed.previewMelee("enemy3").ok).toBe(false);
+
+    // The rifleman's strike actually lands and wounds the target.
+    expect(sim.queueMelee("enemy")).toBe(true);
+    sim.endTurn();
+    advance(sim, 2.4);
+    const hp = enemy.parts.reduce((s, p) => s + p.hp, 0);
+    const maxHp = enemy.parts.reduce((s, p) => s + p.maxHp, 0);
+    expect(hp).toBeLessThan(maxHp);
+  });
+
   it("lets infantry climb low objects but rejects tall walls", () => {
     const low = createCover("crate", "Low Cache", { x: 2, z: 0 }, { coverKind: "ammo", radius: 0.7, height: 0.9 });
     const wall = createCover("wall", "Concrete Wall", { x: 4, z: 0 }, { coverKind: "wall", height: 1.6 });
@@ -1716,6 +1755,45 @@ describe("tactical enemy AI", () => {
     expect(sim.money("player") - before).toBeGreaterThanOrEqual(25); // base income + depot cut
   });
 
+  it("queueCapture sends a distant unit to seize a neutral depot, then holds it for free", () => {
+    const depot = createCover("dep-1", "Supply Depot", { x: 4, z: 0 }, { coverKind: "depot" });
+    depot.capturable = true;
+    const grabber = createSoldier("p-grab", "Vega", "player", { x: 0, z: 0 });
+    const sim = new TacticalSim([
+      createBase("p-base-1", "HQ", "player", { x: -14, z: 0 }),
+      createBase("e-base-1", "Enemy HQ", "enemy", { x: 14, z: 0 }),
+      grabber,
+      depot,
+    ]);
+    sim.select("p-grab");
+    expect(sim.captureFailureReason(grabber, depot)).toBeUndefined();
+    expect(sim.captureInReach(grabber, depot)).toBe(false); // too far to hold yet
+    expect(sim.queueCapture("dep-1")).toBe(true); // queues a move toward it
+    expect(sim.orders.some((o) => o.actorId === "p-grab" && o.kind === "move")).toBe(true);
+    sim.endTurn();
+    let guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+    expect(depot.team).toBe("player");
+    // Now yours: capturing again is rejected as redundant, not re-run.
+    expect(sim.queueCapture("dep-1")).toBe(false);
+
+    // A unit already beside a still-neutral depot holds it without spending a command point.
+    const held = createCover("dep-2", "Supply Depot", { x: 1.4, z: 0 }, { coverKind: "depot" });
+    held.capturable = true;
+    const near = new TacticalSim([
+      createBase("p-base-2", "HQ", "player", { x: -14, z: 0 }),
+      createBase("e-base-2", "Enemy HQ", "enemy", { x: 14, z: 0 }),
+      createSoldier("p-hold", "Rhee", "player", { x: 0, z: 0 }),
+      held,
+    ]);
+    near.select("p-hold");
+    const holder = near.entity("p-hold")!;
+    const cp = holder.commandPoints;
+    expect(near.captureInReach(holder, held)).toBe(true);
+    expect(near.queueCapture("dep-2")).toBe(true);
+    expect(holder.commandPoints).toBe(cp); // holding is passive — no CP spent
+  });
+
   it("a killed vehicle leaves a wreck that pays salvage to an adjacent unit", () => {
     const shooter = createSoldier("p-s", "Shooter", "player", { x: 0.5, z: 0 });
     const tank = createTank("e-tank", "Doomed", "enemy", { x: 2, z: 0 });
@@ -1759,6 +1837,40 @@ describe("tactical enemy AI", () => {
     }
     expect(reaction).toBe(true);
     expect(sim.overwatching.size).toBe(0); // consumed (or expired) with the resolve
+  });
+
+  it("directional overwatch only fires on hostiles inside the watched arc", () => {
+    // Watcher watches toward +Z; a disarmed hostile charges in from -X (behind the arc).
+    const watcher = createSoldier("p-watch", "Watcher", "player", { x: 0, z: 0 });
+    const flanker = createSoldier("e-run", "Flanker", "enemy", { x: -9, z: 0 });
+    applyDamage(flanker, "rifle", 999); // disarmed → it charges (moves) instead of shooting
+    const sim = new TacticalSim([watcher, flanker]);
+    sim.select("p-watch");
+    expect(sim.queueOverwatchToward({ x: 0, z: 10 })).toBe(true); // watch +Z, away from the flanker
+    sim.endTurn();
+    let firedOutside = false;
+    let guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) {
+      sim.update(0.05);
+      if (sim.projectiles.some((p) => p.actorId === "p-watch")) firedOutside = true;
+    }
+    expect(firedOutside).toBe(false); // the flanker approached from outside the watch cone
+
+    // Same charge, but the watcher watches toward the enemy (-X): the reaction shot triggers.
+    const watcher2 = createSoldier("p-watch2", "Watcher", "player", { x: 0, z: 0 });
+    const charger = createSoldier("e-run2", "Charger", "enemy", { x: -9, z: 0 });
+    applyDamage(charger, "rifle", 999);
+    const sim2 = new TacticalSim([watcher2, charger]);
+    sim2.select("p-watch2");
+    expect(sim2.queueOverwatchToward({ x: -10, z: 0 })).toBe(true); // watch -X, toward the charger
+    sim2.endTurn();
+    let firedInside = false;
+    guard = 0;
+    while (sim2.phase === "resolve" && guard++ < 400) {
+      sim2.update(0.05);
+      if (sim2.projectiles.some((p) => p.actorId === "p-watch2")) firedInside = true;
+    }
+    expect(firedInside).toBe(true);
   });
 
   it("a felled pillar topples away from the attacker and crushes what it lands on", () => {

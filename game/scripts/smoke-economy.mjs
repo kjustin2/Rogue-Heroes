@@ -88,6 +88,7 @@ try {
   // 2) Next turn: upgrade income from the base.
   await resolveToCommand(page);
   await page.click(`[data-select="${baseId}"]`);
+  await page.click('[data-base-tab="upgrade"]'); // base deck is tabbed now
   await page.waitForSelector('[data-base-upgrade="income"]', { timeout: 4000 });
   const incomeBefore = await page.evaluate(() => window.__rht.sim.entities.find((e) => e.kind === "base" && e.team === "player").incomeLevel ?? 0);
   const moneyBeforeIncome = await page.evaluate(() => window.__rht.money("player"));
@@ -102,6 +103,7 @@ try {
   // 3) Next turn: research a tech-tree doctrine to unlock new troops.
   await resolveToCommand(page);
   await page.click(`[data-select="${baseId}"]`);
+  await page.click('[data-base-tab="tech"]');
   await page.waitForSelector('[data-tech="assault"]', { timeout: 4000 });
   await page.click('[data-tech="assault"]');
   const techAfter = await page.evaluate(() => (window.__rht.sim.entities.find((e) => e.kind === "base" && e.team === "player").unlockedTech ?? []).includes("assault"));
@@ -110,6 +112,7 @@ try {
   // 4) Next turn: the now-unlocked Striker can be deployed.
   await resolveToCommand(page);
   await page.click(`[data-select="${baseId}"]`);
+  await page.click('[data-base-tab="deploy"]'); // switch back from the tech tab
   await page.waitForSelector('[data-spawn="striker"]:not([data-disabled="true"])', { timeout: 4000 });
   await page.click('[data-spawn="striker"]');
   const striker = await page.evaluate(() => window.__rht.sim.entities.some((e) => e.kind === "striker" && e.team === "player" && e.id.startsWith("p-spawn-")));

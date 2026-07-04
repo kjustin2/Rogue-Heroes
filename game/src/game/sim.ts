@@ -109,6 +109,9 @@ const DIFFICULTY_MODS: Record<Difficulty, DifficultyMods> = {
 };
 // Reaction fire is snap fire: the spread multiplier applied to an overwatch shot.
 const OVERWATCH_SPREAD_PENALTY = 1.55;
+// Half-angle of the overwatch watch cone. The player picks a facing; only hostiles moving
+// inside this arc (±60°, a 120° wedge) around it trip the reaction shot.
+export const OVERWATCH_ARC_HALF = Math.PI / 3;
 // Salvage economy: each vehicle wreck holds this much money, stripped this fast by an
 // adjacent unit at the start of each turn.
 const SALVAGE_PER_WRECK = 60;
@@ -116,7 +119,7 @@ const SALVAGE_PER_TURN = 30;
 const SALVAGE_REACH = 0.9;
 // Capturable neutral structures.
 const CAPTURE_REACH = 1.0;
-const DEPOT_INCOME = 25;
+export const DEPOT_INCOME = 25;
 // Flamer burning ground.
 const BURN_RADIUS = 1.6;
 const BURN_TURNS = 2;
@@ -352,6 +355,10 @@ export class TacticalSim {
   // CP), consumed when a hostile moves inside watch radius during resolve, cleared at the
   // start of the next command phase.
   readonly overwatching = new Map<string, number>();
+  // Direction each watcher is facing (yaw). A reaction shot only triggers for a hostile that
+  // moves inside the watch radius AND within OVERWATCH_ARC_HALF of this facing — the player
+  // picks the arc when arming overwatch, so it covers an approach lane, not the whole field.
+  readonly overwatchFacing = new Map<string, number>();
   // Burning ground left by flamer hits (damages at turn start) and sapper proximity mines.
   readonly burnZones: { id: string; x: number; z: number; radius: number; turnsLeft: number }[] = [];
   readonly mines: { id: string; x: number; z: number; team: Team }[] = [];
@@ -436,6 +443,7 @@ export class TacticalSim {
     this.detonated.clear();
     this.toppled.clear();
     this.overwatching.clear();
+    this.overwatchFacing.clear();
     this.wrecked.clear();
     this.salvage.clear();
     this.burnZones.splice(0);
@@ -647,6 +655,41 @@ export class TacticalSim {
     return queued;
   }
 
+  // ---- Capturing neutral field structures (supply depots, derelict turrets) ----
+
+  /** Distance at which a unit is close enough to hold/flip a capturable structure. */
+  captureInReach(actor: CombatEntity, structure: CombatEntity): boolean {
+    return dist(actor.position, structure.position) <= structure.radius + actor.radius + CAPTURE_REACH;
+  }
+
+  captureFailureReason(actor: CombatEntity | undefined, structure: CombatEntity | undefined): string | undefined {
+    if (!structure || !structure.capturable) return "This object cannot be captured";
+    if (!actor || actor.team !== "player") return "Select one of your units first";
+    if (structure.team === "player") return `${structure.name} is already yours`;
+    if (!actor.status.canMove) return `${actor.name} cannot move to seize it`;
+    return undefined;
+  }
+
+  // Player API: send the selected unit to hold a capturable structure. Standing beside it
+  // uncontested at the start of the next turn flips it to your team (a depot then pays income;
+  // a derelict turret comes online next turn). If the unit is already in reach this simply
+  // confirms the hold and spends no command point.
+  queueCapture(structureId: string): boolean {
+    const actor = this.requirePlayerActor();
+    const structure = this.entity(structureId);
+    const failure = this.captureFailureReason(actor, structure);
+    if (failure) return this.reject(failure);
+    if (!actor || !structure) return false;
+    if (this.captureInReach(actor, structure)) {
+      this.pushLog(`${actor.name} holds ${structure.name} — it flips to you next turn unless the enemy contests it`);
+      return true;
+    }
+    const destination = this.coverDestination(actor, structure);
+    const queued = this.queueMoveToDestination(destination, structure.id);
+    if (queued) this.pushLog(`${actor.name} moves to seize ${structure.name}`);
+    return queued;
+  }
+
   queueShoot(targetId: string): boolean {
     const actor = this.requirePlayerActor();
     const target = this.entity(targetId);
@@ -806,7 +849,7 @@ export class TacticalSim {
       ? preferredPartByIdOrAim(target, partId, "weakest")
       : preferredPart(target, target.kind === "cover" ? "center" : "weakest");
     const base = target.kind === "cover" ? MELEE_BASE_COVER : MELEE_BASE_UNIT;
-    const amount = Math.round(base * (target.kind === "cover" ? 1 : vulnerabilityMultiplier(target, targetPart)) * this.teamDamageScale(actor));
+    const amount = Math.round(base * (target.kind === "cover" ? 1 : vulnerabilityMultiplier(target, targetPart)) * this.teamDamageScale(actor) * meleeStrikeMultiplier(actor));
     return { amount, part: targetPart };
   }
 
@@ -817,10 +860,13 @@ export class TacticalSim {
     return { position: { ...projected.position }, elevation: projected.elevation, stance: projected.stance };
   }
 
-  selectedActionRange(): { kind: "ram" | "melee" | "grenade" | "move"; radius: number; position: Vec2; elevation: number } | undefined {
+  selectedActionRange(): { kind: "ram" | "melee" | "grenade" | "move" | "overwatch"; radius: number; position: Vec2; elevation: number } | undefined {
     const actor = this.selected;
     if (!actor || actor.team !== "player" || this.phase !== "command") return undefined;
     const projected = this.projectedActorForPreview(actor);
+    if (this.intent === "overwatch" && !this.overwatchFailureReason(actor)) {
+      return { kind: "overwatch", radius: this.overwatchRadius(actor), position: { ...projected.position }, elevation: projected.elevation };
+    }
     // Show how far the unit can move this turn, centred on where it WILL stand after any
     // already-queued move (so a second move previews from the projected spot, not the origin).
     if (this.intent === "move" && actor.status.canMove && moveRange(actor) > 0) {
@@ -832,7 +878,7 @@ export class TacticalSim {
     if (this.intent === "ram" && actor.kind === "tank" && actor.status.canMove) {
       return { kind: "ram", radius: ramRange(actor) + actor.radius, position: { ...projected.position }, elevation: projected.elevation };
     }
-    if (this.intent === "melee" && actor.kind === "striker" && actor.status.canMove) {
+    if (this.intent === "melee" && isInfantryKind(actor.kind) && actor.status.canMove) {
       return { kind: "melee", radius: meleeRange(actor) + actor.radius, position: { ...projected.position }, elevation: projected.elevation };
     }
     return undefined;
@@ -1411,6 +1457,7 @@ export class TacticalSim {
       detonated: [...this.detonated],
       toppled: [...this.toppled],
       overwatch: [...this.overwatching],
+      overwatchFacing: [...this.overwatchFacing],
       wrecked: [...this.wrecked],
       salvage: [...this.salvage],
       burnZones: this.burnZones,
@@ -1424,7 +1471,7 @@ export class TacticalSim {
       const data = JSON.parse(raw) as {
         map: string; mode: ModeId; difficulty?: Difficulty; turn?: number;
         economy: [Team, number][]; entities: CombatEntity[]; modeState: ModeState; troopSeq?: number;
-        detonated?: string[]; toppled?: string[]; overwatch?: [string, number][];
+        detonated?: string[]; toppled?: string[]; overwatch?: [string, number][]; overwatchFacing?: [string, number][];
         wrecked?: string[]; salvage?: [string, number][];
         burnZones?: { id: string; x: number; z: number; radius: number; turnsLeft: number }[];
         mines?: { id: string; x: number; z: number; team: Team }[];
@@ -1445,6 +1492,7 @@ export class TacticalSim {
       this.effects.splice(0);
       this.defending.clear();
       this.overwatching.clear();
+      this.overwatchFacing.clear();
       // Restore which volatile covers already blew up, so a destroyed-but-still-present cover
       // caught in a later blast doesn't detonate a second time after a save/load.
       this.detonated.clear();
@@ -1452,6 +1500,7 @@ export class TacticalSim {
       this.toppled.clear();
       for (const id of data.toppled ?? []) this.toppled.add(id);
       for (const [id, shots] of data.overwatch ?? []) this.overwatching.set(id, shots);
+      for (const [id, facing] of data.overwatchFacing ?? []) this.overwatchFacing.set(id, facing);
       this.wrecked.clear();
       for (const id of data.wrecked ?? []) this.wrecked.add(id);
       this.salvage.clear();
@@ -1539,15 +1588,30 @@ export class TacticalSim {
     return undefined;
   }
 
-  /** Player API: put the selected unit on overwatch (1 CP, 1 reaction shot this resolve). */
+  /** Player API: put the selected unit on overwatch (1 CP, 1 reaction shot this resolve),
+   *  watching in the direction it currently faces. */
   queueOverwatch(): boolean {
     const actor = this.requirePlayerActor();
     if (!actor) return false;
+    return this.armOverwatch(actor, actor.yaw);
+  }
+
+  /** Overwatch aimed at a chosen ground point: the unit turns to face it and watches that lane. */
+  queueOverwatchToward(point: Vec2): boolean {
+    const actor = this.requirePlayerActor();
+    if (!actor) return false;
+    const facing = Math.atan2(point.x - actor.position.x, point.z - actor.position.z);
+    return this.armOverwatch(actor, facing);
+  }
+
+  private armOverwatch(actor: CombatEntity, facing: number): boolean {
     const failure = this.overwatchFailureReason(actor);
     if (failure) return this.reject(failure);
     spendCommandPoint(actor);
+    actor.yaw = facing; // the unit visibly turns to watch its chosen lane
     this.overwatching.set(actor.id, 1);
-    this.pushLog(`${actor.name} sets overwatch — first hostile to move in range eats a reaction shot`);
+    this.overwatchFacing.set(actor.id, facing);
+    this.pushLog(`${actor.name} sets overwatch — the first hostile to move into its watch arc eats a reaction shot`);
     this.bus.emit("ORDER_QUEUED", { actorId: actor.id, kind: "shoot" });
     return true;
   }
@@ -1568,6 +1632,14 @@ export class TacticalSim {
       }
       if (watcher.team === mover.team) continue;
       if (dist(watcher.position, mover.position) > this.overwatchRadius(watcher)) continue;
+      // Directional overwatch: only fire if the mover is inside the watched arc (older saves
+      // with no stored facing fall back to a full 360° watch).
+      const facing = this.overwatchFacing.get(watcherId);
+      if (facing !== undefined) {
+        const bearing = Math.atan2(mover.position.x - watcher.position.x, mover.position.z - watcher.position.z);
+        const delta = Math.abs(Math.atan2(Math.sin(bearing - facing), Math.cos(bearing - facing)));
+        if (delta > OVERWATCH_ARC_HALF) continue;
+      }
       this.overwatching.set(watcherId, shots - 1);
       if ((this.overwatching.get(watcherId) ?? 0) <= 0) this.overwatching.delete(watcherId);
       const part = preferredPart(mover, "center");
@@ -1790,11 +1862,11 @@ export class TacticalSim {
   }
 
   private meleeFailureReason(actor: CombatEntity | undefined, target: CombatEntity | undefined): string | undefined {
-    if (!actor || !target || actor.id === target.id) return "Select a striker and target first";
+    if (!actor || !target || actor.id === target.id) return "Select a unit and target first";
     if (target.team === "player") return "Cannot strike friendly units";
-    if (actor.kind !== "striker") return "Only melee units can strike";
+    if (!isInfantryKind(actor.kind)) return "Only infantry can strike in melee";
     if (!actor.status.canMove) return `${actor.name} cannot strike without mobility`;
-    if (!hasIntactMeleeWeapon(actor)) return `${actor.name} has no melee weapon`;
+    if (!hasIntactMeleeWeapon(actor)) return `${actor.name} has no weapon to strike with`;
     const projected = this.projectedActorForPreview(actor);
     const reach = meleeRange(actor) + actor.radius + target.radius;
     if (dist(projected.position, target.position) > reach) return `${target.name} is too far to strike`;
@@ -3177,6 +3249,7 @@ export class TacticalSim {
     this.projectiles.splice(0);
     this.defending.clear();
     this.overwatching.clear(); // unspent reaction shots expire with the resolve
+    this.overwatchFacing.clear();
     this.refreshDefendingStances();
     this.finalizeTurnReport();
     // An elimination win/loss this turn takes precedence — don't also tick objectives.
@@ -3767,7 +3840,15 @@ function ramRange(entity: CombatEntity): number {
 }
 
 function meleeRange(entity: CombatEntity): number {
-  return entity.kind === "striker" ? 0.72 : 0;
+  if (entity.kind === "striker") return 0.72; // dedicated melee specialist: longer reach
+  if (isInfantryKind(entity.kind)) return 0.5; // riflemen bayonet/rifle-butt at arm's length
+  return 0;
+}
+
+// Strikers hit at full melee power; other infantry only rifle-butt for a fraction, so melee
+// stays a finisher for them rather than a replacement for shooting.
+function meleeStrikeMultiplier(entity: CombatEntity): number {
+  return entity.kind === "striker" ? 1 : 0.5;
 }
 
 function grenadeThrowRange(entity: CombatEntity): number {

@@ -95,15 +95,22 @@ try {
   await page.click('[data-spawn="soldier"]');
   if (!(await page.evaluate(() => window.__rht.sim.entities.some((e) => e.id.startsWith("p-spawn-"))))) fail("Deploy button did not spawn");
   await refreshBaseCp(page, baseId);
+  // The base deck is now split into subcategory tabs — open each tab before its buttons.
+  await page.click('[data-base-tab="tech"]');
+  await page.waitForSelector('[data-tech="recon"]');
   await page.click('[data-tech="recon"]');
   if (!(await page.evaluate(() => (window.__rht.sim.entities.find((e) => e.kind === "base" && e.team === "player").unlockedTech ?? []).includes("recon")))) fail("Tech button did not research");
   await refreshBaseCp(page, baseId);
+  await page.click('[data-base-tab="upgrade"]');
+  await page.waitForSelector('[data-base-upgrade="income"]');
   await page.click('[data-base-upgrade="income"]');
   if (await page.evaluate(() => (window.__rht.sim.entities.find((e) => e.kind === "base" && e.team === "player").incomeLevel ?? 0)) < 1) fail("Income upgrade button failed");
   await refreshBaseCp(page, baseId);
   await page.click('[data-base-upgrade="command"]');
   if (await page.evaluate(() => window.__rht.sim.entities.find((e) => e.kind === "base" && e.team === "player").maxCommandPoints) !== 2) fail("Command upgrade button failed");
   await refreshBaseCp(page, baseId);
+  await page.click('[data-base-tab="defenses"]');
+  await page.waitForSelector('[data-build="turret"]');
   await page.click('[data-build="turret"]');
   await page.evaluate(() => {
     const sim = window.__rht.sim;

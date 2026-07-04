@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec2 } from "../core/math";
 import { isDefenseKind, isInfantryKind, isVehicleKind, type CombatEntity, type DamagePart, type PartRole } from "../game/damageModel";
 import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
+import { OVERWATCH_ARC_HALF } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec } from "../game/maps";
 import { ARENA_BOUNDS, arenaDepth, arenaWidth, terrainBlocks, terrainHeightAt } from "../game/terrain";
 import { instantiate, modelsVersion, type ModelKey } from "./models";
@@ -1941,17 +1942,22 @@ export class WorldRenderer {
   private syncAuras(sim: TacticalSim): void {
     this.disposeAndClear(this.auraRoot);
     const owPulse = (Math.sin(performance.now() * 0.005) + 1) * 0.5;
-    // Overwatch kill zones show in BOTH phases — the amber ring is the whole promise.
+    // Overwatch kill zones show in BOTH phases — the amber wedge is the whole promise.
     for (const [watcherId] of sim.overwatching) {
       const watcher = sim.entity(watcherId);
       if (!watcher || !watcher.status.alive) continue;
       const radius = sim.overwatchRadius(watcher);
+      const y = watcher.elevation + 0.06;
+      const facing = sim.overwatchFacing.get(watcherId);
+      // Filled directional wedge marking the watched arc (or a full disc for a legacy save with
+      // no stored facing), plus a faint full-range ring so the total reach still reads.
+      this.auraRoot.add(makeWatchCone(watcher.position, y - 0.006, radius, facing ?? 0, facing === undefined ? Math.PI : OVERWATCH_ARC_HALF, 0xffbf4d, 0.24 + owPulse * 0.12));
       const ring = new THREE.Mesh(
-        new THREE.RingGeometry(radius - 0.18, radius, 72),
-        new THREE.MeshBasicMaterial({ color: 0xffbf4d, transparent: true, opacity: 0.22 + owPulse * 0.16, side: THREE.DoubleSide, depthWrite: false }),
+        new THREE.RingGeometry(radius - 0.16, radius, 72),
+        new THREE.MeshBasicMaterial({ color: 0xffbf4d, transparent: true, opacity: 0.16 + owPulse * 0.12, side: THREE.DoubleSide, depthWrite: false }),
       );
       ring.rotation.x = -Math.PI / 2;
-      ring.position.set(watcher.position.x, watcher.elevation + 0.06, watcher.position.z);
+      ring.position.set(watcher.position.x, y, watcher.position.z);
       this.auraRoot.add(ring);
       const eye = new THREE.Mesh(
         new THREE.RingGeometry(0.28, 0.4, 24),
@@ -2059,6 +2065,19 @@ export class WorldRenderer {
     // Targeting a support power: draw the strike footprint instead of a weapon arc.
     if (sim.pendingSupport) {
       this.drawSupportReticle(sim, sim.pendingSupport, point);
+      return;
+    }
+    // Aiming overwatch: preview the watch cone toward the cursor so the player sees the arc and
+    // radius before committing. The click direction becomes the watched facing.
+    if (sim.intent === "overwatch") {
+      const watcher = sim.selected;
+      if (watcher && !sim.overwatchFailureReason(watcher)) {
+        const facing = Math.atan2(point.x - watcher.position.x, point.z - watcher.position.z);
+        const radius = sim.overwatchRadius(watcher);
+        const y = watcher.elevation + 0.05;
+        this.groundAimRoot.add(makeWatchCone(watcher.position, y, radius, facing, OVERWATCH_ARC_HALF, 0xffbf4d, 0.3));
+        this.groundAimRoot.add(makeEndpoint({ x: watcher.position.x + Math.sin(facing) * radius, z: watcher.position.z + Math.cos(facing) * radius }, 0xffd166, 0.55, terrainHeightAt(point) + 0.05));
+      }
       return;
     }
     const aim = sim.groundAimPreview(point);
@@ -2475,6 +2494,34 @@ function makeSplashDisc(position: Vec2, color: number, radius: number): THREE.Gr
   ring.rotation.x = -Math.PI / 2;
   ring.position.set(position.x, y + 0.012, position.z);
   group.add(fill, ring);
+  return group;
+}
+
+// A flat filled wedge on the ground — the overwatch watch cone — with its bisector pointing
+// along `facing` (a yaw, atan2(dx,dz) convention). The sector is built symmetric about the
+// mesh's local +X (which maps to world +X once laid flat), then the parent group is turned by
+// `facing - PI/2` so the wedge points where the unit is watching. A full-circle wedge
+// (halfAngle = PI) is the legacy 360° watch fallback.
+function makeWatchCone(center: Vec2, y: number, radius: number, facing: number, halfAngle: number, color: number, opacity: number): THREE.Group {
+  const group = new THREE.Group();
+  // Translucent wedge fill.
+  const fill = new THREE.Mesh(
+    new THREE.CircleGeometry(radius, 48, -halfAngle, halfAngle * 2),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false })
+  );
+  fill.rotation.x = -Math.PI / 2;
+  group.add(fill);
+  // A bright outer arc band so the kill-zone edge reads clearly on any ground color.
+  const band = Math.max(0.16, radius * 0.045);
+  const arc = new THREE.Mesh(
+    new THREE.RingGeometry(radius - band, radius, 48, 1, -halfAngle, halfAngle * 2),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: Math.min(0.95, opacity + 0.55), side: THREE.DoubleSide, depthWrite: false })
+  );
+  arc.rotation.x = -Math.PI / 2;
+  arc.position.y = 0.006;
+  group.add(arc);
+  group.position.set(center.x, y, center.z);
+  group.rotation.y = facing - Math.PI / 2;
   return group;
 }
 
@@ -3209,7 +3256,18 @@ function _scorchMaterial(): THREE.MeshBasicMaterial {
       }
     }
     const texture = new THREE.CanvasTexture(canvas);
-    _scorchMat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false });
+    // polygonOffset pulls the decal toward the camera in depth space so it always wins the
+    // depth test against the coplanar ground — without it, the ~12mm ground gap collapses into
+    // one depth bucket as the camera pulls back and the terrain occludes the scorch (it "vanishes"
+    // when you zoom out). depthWrite stays off so units standing on the scar still draw over it.
+    _scorchMat = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    });
     _scorchMat.userData.shared = true;
   }
   return _scorchMat;

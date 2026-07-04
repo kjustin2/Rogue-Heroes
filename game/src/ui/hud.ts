@@ -7,6 +7,9 @@ import {
   DEFENSE_CATALOG,
   SUPPORT_POWERS,
   supportPowerSpec,
+  troopsUnlockedBy,
+  troopSpec,
+  DEPOT_INCOME,
   INCOME_BY_LEVEL,
   generatorEfficiency,
   baseIncome,
@@ -15,6 +18,7 @@ import {
   isTechUnlocked,
   modeDef,
   type TroopKind,
+  type TechNode,
   type DefenseKind,
   type SupportPowerKind,
 } from "../game/sim";
@@ -35,6 +39,11 @@ const revealTracker = {
 function isRecentlyRevealed(at: number | undefined): boolean {
   return at !== undefined && Date.now() - at < NEW_BADGE_MS;
 }
+
+// Which subcategory of the Home Base command deck is open. Module scope — there is one HUD,
+// and it mirrors the existing revealTracker pattern above (the base panel is a pure render).
+type BaseTab = "deploy" | "tech" | "defenses" | "support" | "upgrade";
+let activeBaseTab: BaseTab = "deploy";
 
 function syncRevealTracking(base: CombatEntity): void {
   const owned = base.unlockedTech ?? [];
@@ -64,7 +73,7 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "shoot", label: "Shoot", tip: "Select Shoot, pick an enemy part, then confirm. The map line previews cover, high ground, estimated damage, and shot accuracy." },
   { id: "grenade", label: "Grenade", tip: "Soldier only. Throw a limited-supply grenade in a short arc with splash damage." },
   { id: "ram", label: "Ram", tip: "Tank only. Select a close target or wall, then confirm. Costs 1 CP, deals 72 damage, and damages your front armor." },
-  { id: "melee", label: "Strike", tip: "Melee unit only. Rush a nearby hostile and hit hard at close range." },
+  { id: "melee", label: "Strike", tip: "Infantry only. Strike a hostile at close range. Strikers hit hardest with their Arc Blade; other infantry bayonet/rifle-butt for less. Needs an intact weapon." },
   { id: "defend", label: "Crouch", tip: "Infantry only. Improves accuracy and makes head shots harder, but slows the next move." },
   { id: "overwatch", label: "Overwatch", tip: "Hold fire until a hostile MOVES within watch range this resolve, then take a snap reaction shot (reduced accuracy). Costs 1 CP." },
   { id: "mine", label: "Mine", tip: "Sapper only. Plant a proximity mine at this spot ($15 + 1 CP). Hostiles that step on it eat a splash blast. Invisible to the enemy." },
@@ -80,6 +89,7 @@ export interface HudCallbacks {
   queueMoveToCover(id: string): boolean;
   queueTakeCover(id: string): boolean;
   queueClimbCover(id: string): boolean;
+  queueCapture(id: string): boolean;
   queueShootPart(id: string, partId: string): boolean;
   queueGrenadePart(id: string, partId: string): boolean;
   queueGrenadeAt(destination: Vec2): boolean;
@@ -88,6 +98,7 @@ export interface HudCallbacks {
   queueMeleePart(id: string, partId: string): boolean;
   queueDefend(stance?: InfantryStance): boolean;
   queueOverwatch(): boolean;
+  queueOverwatchToward(point: Vec2): boolean;
   queueMine(): boolean;
   queueSpawnTroop(kind: TroopKind): boolean;
   upgradeBaseIncome(): boolean;
@@ -269,6 +280,14 @@ export class Hud {
       }
       return;
     }
+    // Overwatch: the clicked ground point picks the watch direction (the unit turns to face it).
+    if (this.action === "overwatch" && this.sim.phase === "command") {
+      if (this.callbacks.queueOverwatchToward(destination)) {
+        this.action = "select";
+        this.callbacks.setIntent("select");
+      }
+      return;
+    }
     // Explosive shooters (tank, artillery, mortar, grenadier, mortar turret) can target a spot.
     if (this.action === "shoot" && this.sim.phase === "command" && this.sim.selectedCanGroundTarget()) {
       if (this.callbacks.queueShootAt(destination)) this.afterConfirmedOrder();
@@ -417,6 +436,9 @@ export class Hud {
       if (this.callbacks.queueSpawnTroop(spawnKind)) this.afterConfirmedOrder();
     }
 
+    const baseTab = target.closest<HTMLElement>("[data-base-tab]")?.dataset.baseTab as BaseTab | undefined;
+    if (baseTab) activeBaseTab = baseTab;
+
     const baseUpgrade = target.closest<HTMLElement>("[data-base-upgrade]")?.dataset.baseUpgrade;
     if (baseUpgrade === "income") {
       if (this.callbacks.upgradeBaseIncome()) this.afterConfirmedOrder();
@@ -483,6 +505,8 @@ export class Hud {
         if (this.callbacks.queueTakeCover(this.targetId)) this.afterConfirmedOrder();
       } else if (coverAction === "climb") {
         if (this.callbacks.queueClimbCover(this.targetId)) this.afterConfirmedOrder();
+      } else if (coverAction === "capture") {
+        if (this.callbacks.queueCapture(this.targetId)) this.afterConfirmedOrder();
       }
     }
 
@@ -855,7 +879,7 @@ function orderPlanner(
   const ramStatus = target ? sim.previewRam(target.id) : undefined;
   const meleeStatus = target ? sim.previewMelee(target.id) : undefined;
   const canRam = Boolean(actor && target && target.team !== "player" && actor.kind === "tank" && actor.status.canMove && actor.commandPoints > 0 && sim.phase === "command" && ramStatus?.ok);
-  const canMelee = Boolean(actor && target && target.team !== "player" && selectedPart && actor.kind === "striker" && actor.status.canMove && actor.commandPoints > 0 && sim.phase === "command" && meleeStatus?.ok);
+  const canMelee = Boolean(actor && target && target.team !== "player" && selectedPart && isInfantryKind(actor.kind) && actor.status.canMove && actor.commandPoints > 0 && sim.phase === "command" && meleeStatus?.ok);
   const canDefend = Boolean(actor && isInfantryKind(actor.kind) && actor.status.canMove && actor.commandPoints > 0 && sim.phase === "command");
   const ramTip = actor?.kind === "tank"
     ? "Costs 1 CP. Deals 72 damage to the target and 14 damage to your front armor."
@@ -1046,8 +1070,45 @@ function meleeState(target: CombatEntity | undefined, targetPartId: string | und
   `;
 }
 
+// Plain-language "what is this and what does it do" line for a field object, so a depot or a
+// volatile barrel isn't just an unlabelled HP bar. Undefined for ordinary cover.
+function coverBlurb(entity: CombatEntity): string | undefined {
+  const kind = entity.coverKind;
+  if (entity.capturable || kind === "depot") {
+    const owner = entity.team === "player" ? "You hold it" : entity.team === "enemy" ? "Enemy-held" : "Unclaimed";
+    if (kind === "depot") {
+      return `Supply Depot — ${owner}. Send a unit to stand beside it and it flips to your team next turn, paying $${DEPOT_INCOME}/turn while you keep a unit close. The enemy can seize it back the same way.`;
+    }
+    return `Derelict structure — ${owner}. Move a unit beside it to capture; a captured turret comes back online next turn and fires for you.`;
+  }
+  if (kind === "wreck") return "Burnt-out wreck — hard cover. Park a unit beside it to strip its salvage money.";
+  if (kind === "fuel" || kind === "ammo" || kind === "conduit") {
+    return `${kindLabel(entity)} — VOLATILE. Shoot it and it detonates, splashing everything nearby. Lure enemies in close, then set it off — and keep your own units clear of the blast.`;
+  }
+  return undefined;
+}
+
+// Capture affordance for a neutral/enemy-held structure: sends the selected unit to hold it.
+function captureButton(actor: CombatEntity | undefined, target: CombatEntity, sim: TacticalSim): string {
+  const reason = sim.captureFailureReason(actor, target);
+  const inReach = Boolean(actor && !reason && sim.captureInReach(actor, target));
+  const ready = !reason;
+  const label = inReach ? "Holding" : "Move to Capture";
+  const sub = inReach ? "flips next turn" : ready ? "send unit" : "unavailable";
+  const tip = reason
+    ? reason
+    : inReach
+      ? `${actor?.name ?? "This unit"} is in position — end the turn with it here (uncontested) to take ${target.name}.`
+      : `Send ${actor?.name ?? "a unit"} to stand beside ${target.name}; it flips to you at the start of next turn if the enemy doesn't contest it.`;
+  return `<button class="btn confirm ${ready ? "" : "disabled"} ${inReach ? "active" : ""}" data-cover-action="capture" data-disabled="${!ready}" data-tip="${escapeAttr(tip)}">
+    ${label}
+    <span>${sub}</span>
+  </button>`;
+}
+
 function coverInteractionState(actor: CombatEntity | undefined, target: CombatEntity | undefined, sim: TacticalSim): string {
   if (!target || target.kind !== "cover") return "";
+  const blurb = coverBlurb(target);
   const isCliff = target.coverKind === "cliff";
   const canClimb = Boolean(actor && isInfantryKind(actor.kind) && (isCliff || (target.height <= 1.22 && target.coverKind !== "wall" && target.coverKind !== "ridge")));
   const coverReach = actor && !isCliff ? sim.previewTakeCover(target.id) : undefined;
@@ -1066,7 +1127,9 @@ function coverInteractionState(actor: CombatEntity | undefined, target: CombatEn
       <strong>${escapeHtml(target.name)}</strong>
       <span>${escapeHtml(summary)}</span>
     </div>
+    ${blurb ? `<div class="cover-blurb ${target.capturable ? "capture" : target.coverKind === "fuel" || target.coverKind === "ammo" || target.coverKind === "conduit" ? "volatile" : ""}">${escapeHtml(blurb)}</div>` : ""}
     <div class="cover-actions">
+      ${target.capturable ? captureButton(actor, target, sim) : ""}
       ${actor && isInfantryKind(actor.kind) && !isCliff ? `<button class="btn confirm ${canTakeCover ? "" : "disabled"}" data-cover-action="cover" data-disabled="${!canTakeCover}" data-tip="${escapeAttr(coverReach?.ok ? "Move beside this object and crouch if the unit has enough CP." : coverReach?.reason ?? "Get closer to take cover here.")}">
         Take Cover
         <span>${canTakeCover ? "move+crouch" : "too far"}</span>
@@ -1100,7 +1163,7 @@ function inspectTargetState(actor: CombatEntity | undefined, target: CombatEntit
         Grenade
         <span>${actor.grenades}/${actor.maxGrenades}</span>
       </button>` : ""}
-      ${actor?.kind === "striker" ? `<button class="btn confirm" data-order-action="melee" data-tip="Melee strike with a striker unit.">
+      ${actor && isInfantryKind(actor.kind) ? `<button class="btn confirm" data-order-action="melee" data-tip="${escapeAttr(actor.kind === "striker" ? "Arc Blade strike — Strikers hit hardest in melee." : "Bayonet/rifle-butt strike when adjacent. Riflemen hit for less than a Striker.")}">
         Strike
         <span>close</span>
       </button>` : ""}
@@ -1155,11 +1218,11 @@ function overwatchState(actor: CombatEntity | undefined, sim: TacticalSim): stri
   const radius = actor ? sim.overwatchRadius(actor).toFixed(1) : "0";
   return `
     <div class="target-summary ${reason ? "blocked" : ""}">
-      <strong>${reason ? "Overwatch unavailable" : "Overwatch armed"}</strong>
-      <span>${reason ? escapeHtml(reason) : `Holds fire until a hostile moves within ${radius}m this resolve, then snaps a reaction shot (wider spread than an aimed shot).`}</span>
+      <strong>${reason ? "Overwatch unavailable" : "Pick a watch direction"}</strong>
+      <span>${reason ? escapeHtml(reason) : `Click the ground in the direction to watch — the amber wedge (${radius}m radius, 120° arc) is the kill zone. The first hostile to move into it eats a snap reaction shot (wider spread than an aimed shot).`}</span>
     </div>
-    <button class="btn confirm ${reason ? "disabled" : ""}" data-confirm="overwatch" data-disabled="${Boolean(reason)}" data-tip="${escapeAttr("Set overwatch: the amber ring marks the kill zone. The first hostile to move inside it eats a snap shot.")}">
-      Confirm Overwatch
+    <button class="btn confirm ${reason ? "disabled" : ""}" data-confirm="overwatch" data-disabled="${Boolean(reason)}" data-tip="${escapeAttr("Watch straight ahead (the way this unit currently faces). Or click a spot on the map to aim the watch cone in that direction.")}">
+      Watch Ahead
       <span>1 CP</span>
     </button>
   `;
@@ -1213,23 +1276,53 @@ function baseSummary(base: CombatEntity, sim: TacticalSim): string {
   `;
 }
 
+// The Home Base command deck, split into clickable subcategories so it isn't one long wall of
+// buttons. A tab bar switches between Deploy / Tech / Defenses / Support / Base; only the active
+// section renders. activeBaseTab is module state (there is one HUD).
 function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
   if (!base.status.alive) return `<div class="order-note">${escapeHtml(base.name)} is disabled.</div>`;
-  const money = sim.money(base.team);
   const hasCp = base.commandPoints > 0;
-  const incomeCost = incomeUpgradeCost(base);
-
   const note = hasCp
-    ? "Spend the base's command point: deploy a troop, research a doctrine, or boost income."
+    ? "Spend the base's command point in one of the tabs: deploy a troop, research a doctrine, build a defense, call support, or upgrade the base."
     : `${base.name} has used its command point this turn.`;
-
   syncRevealTracking(base);
-  const troopButtons = TROOP_CATALOG.map((spec) => {
+
+  // An armed support strike snaps to its tab so the targeting note stays visible. (A pending
+  // BUILD is handled by baseCommandPanel's slim placement bar before this body renders.)
+  if (sim.pendingSupport) activeBaseTab = "support";
+
+  const tabs: Array<{ id: BaseTab; label: string; tip: string }> = [
+    { id: "deploy", label: "Deploy", tip: "Deploy a troop onto the battlefield." },
+    { id: "tech", label: "Tech", tip: "Research doctrines and specializations on the tech tree." },
+    { id: "defenses", label: "Defenses", tip: "Build stationary defenses near your base." },
+    { id: "support", label: "Support", tip: "Call an off-map support strike." },
+    { id: "upgrade", label: "Base", tip: "Upgrade the base's income and command points." },
+  ];
+  const tabBar = `<div class="base-tabs">${tabs.map((t) =>
+    `<button class="base-tab ${activeBaseTab === t.id ? "active" : ""}" data-base-tab="${t.id}" data-tip="${escapeAttr(t.tip)}">${escapeHtml(t.label)}</button>`
+  ).join("")}</div>`;
+
+  const section =
+    activeBaseTab === "tech" ? techTreePanel(base, sim)
+    : activeBaseTab === "defenses" ? defenseDeckHtml(base, sim)
+    : activeBaseTab === "support" ? supportDeckHtml(base, sim)
+    : activeBaseTab === "upgrade" ? upgradeDeckHtml(base, sim)
+    : `<div class="spawn-options part-options">${troopDeckHtml(base, sim)}</div>`;
+
+  return `
+    <div class="order-note">${escapeHtml(note)}</div>
+    ${baseSummary(base, sim)}
+    ${tabBar}
+    <div class="base-tab-body base-tab-body--${activeBaseTab}">${section}</div>
+  `;
+}
+
+function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
+  return TROOP_CATALOG.map((spec) => {
     const locked = Boolean(spec.tech) && !isTechUnlocked(base, spec.tech as string);
     const techName = TECH_TREE.find((n) => n.id === spec.tech)?.name ?? "a doctrine";
-    // Discovery pacing: a locked troop is a CLASSIFIED asset — no name, role, or price.
-    // The only intel is which doctrine declassifies it, so buying a doctrine is a
-    // reveal moment instead of a checklist tick.
+    // Discovery pacing: a locked troop is a CLASSIFIED asset — no name, role, or price. The
+    // only intel is which doctrine declassifies it, so buying a doctrine is a reveal moment.
     if (locked) {
       return `<button class="btn confirm disabled classified" data-spawn="${spec.kind}" data-disabled="true" data-tip="${escapeAttr(`Classified asset. Research ${techName} to reveal it.`)}">
         <span class="classified-name">▮▮▮▮▮▮</span>
@@ -1249,48 +1342,12 @@ function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
       <span>${sub}</span>
     </button>`;
   }).join("");
+}
 
-  const techButtons = TECH_TREE.map((node) => {
-    const unlocked = isTechUnlocked(base, node.id);
-    // Tier-4 specializations stay encrypted until their parent doctrine is bought —
-    // each doctrine decrypts a rival pair of upgrades you didn't know existed.
-    const prereqsMet = node.requires.every((id) => isTechUnlocked(base, id));
-    if (node.tier === 4 && !prereqsMet) {
-      const parentName = TECH_TREE.find((n) => n.id === node.requires[0])?.name ?? "a doctrine";
-      return `<button class="btn confirm disabled classified" data-tech="${node.id}" data-disabled="true" data-tip="${escapeAttr(`Encrypted R&D file. Research ${parentName} to decrypt it.`)}">
-        <span class="classified-name">ENCRYPTED</span>
-        <span>${escapeHtml(parentName)}</span>
-      </button>`;
-    }
-    const reason = sim.researchFailureReason(base, node.id);
-    const ready = !reason;
-    const lockedOut = Boolean(reason && /locked out/i.test(reason));
-    const isNew = node.tier === 4 && !unlocked && isRecentlyRevealed(revealTracker.revealedTechAt.get(node.id));
-    const sub = unlocked ? "Done" : lockedOut ? "Locked" : `$${node.cost}`;
-    const tip = unlocked
-      ? `${node.name}: ${node.blurb} (researched)`
-      : reason
-        ? `${node.name}: ${reason}.`
-        : `${node.name}: ${node.blurb} Costs 1 CP and $${node.cost}.`;
-    return `<button class="btn confirm ${unlocked ? "done" : ready ? "" : "disabled"} ${isNew ? "just-revealed" : ""}" data-tech="${node.id}" data-disabled="${unlocked || !ready}" data-tip="${escapeAttr(tip)}">
-      ${escapeHtml(node.name)}${isNew ? `<em class="new-badge">NEW</em>` : ""}
-      <span>${sub}</span>
-    </button>`;
-  }).join("");
-
-  const incomeReady = hasCp && incomeCost !== undefined && money >= incomeCost;
-  const nextIncome = INCOME_BY_LEVEL[(base.incomeLevel ?? 0) + 1];
-  const incomeTip = incomeCost === undefined
-    ? "Income is fully upgraded."
-    : `Raise income to $${nextIncome}/rd before reactor scaling. Costs 1 CP and $${incomeCost}.`;
-
-  const cmdCost = commandUpgradeCost(base);
-  const cmdReady = hasCp && cmdCost !== undefined && money >= cmdCost;
-  const cmdTip = cmdCost === undefined
-    ? "Command is already upgraded to 2 command points per turn."
-    : `Upgrade the base to 2 command points per turn so it can act twice. Costs 1 CP and $${cmdCost}.`;
-
-  const defenseButtons = DEFENSE_CATALOG.map((spec) => {
+function defenseDeckHtml(base: CombatEntity, sim: TacticalSim): string {
+  const money = sim.money(base.team);
+  const hasCp = base.commandPoints > 0;
+  const buttons = DEFENSE_CATALOG.map((spec) => {
     const affordable = hasCp && money >= spec.cost;
     const active = sim.pendingBuild === spec.kind;
     const tip = `${spec.label} (${spec.role}): ${spec.tip} Costs 1 CP and $${spec.cost}. Then click a spot inside the green ring near your base.`;
@@ -1299,15 +1356,17 @@ function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
       <span>${active ? "Placing…" : `$${spec.cost}`}</span>
     </button>`;
   }).join("");
-
   const pendingLabel = sim.pendingBuild ? DEFENSE_CATALOG.find((d) => d.kind === sim.pendingBuild)?.label ?? "defense" : "";
   const buildNote = sim.pendingBuild
     ? `<div class="order-note order-note--progress">Placing ${escapeHtml(pendingLabel)} — click a spot inside the green ring near your base. <button class="icon-btn" data-build-cancel="1" data-tip="Cancel placement.">Cancel</button></div>`
     : "";
+  return `${buildNote}<div class="defense-options part-options">${buttons}</div>`;
+}
 
-  // Off-map support powers: tech-locked ones stay classified (same discovery language as
-  // the troop deck); unlocked ones show cost / cooldown, and the armed one shows Targeting.
-  const supportButtons = SUPPORT_POWERS.map((spec) => {
+function supportDeckHtml(base: CombatEntity, sim: TacticalSim): string {
+  // Off-map support powers: tech-locked ones stay classified (same discovery language as the
+  // troop deck); unlocked ones show cost / cooldown, and the armed one shows Targeting.
+  const buttons = SUPPORT_POWERS.map((spec) => {
     const techLocked = Boolean(spec.tech) && !isTechUnlocked(base, spec.tech as string);
     if (techLocked) {
       const techName = TECH_TREE.find((n) => n.id === spec.tech)?.name ?? "a doctrine";
@@ -1329,26 +1388,27 @@ function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
       <span>${sub}</span>
     </button>`;
   }).join("");
-
   const supportNote = sim.pendingSupport
     ? `<div class="order-note order-note--progress">Targeting ${escapeHtml(supportPowerSpec(sim.pendingSupport).label)} — click the strike point anywhere on the field. <button class="icon-btn" data-support-cancel="1" data-tip="Cancel the strike call.">Cancel</button></div>`
     : "";
+  return `${supportNote}<div class="support-options part-options">${buttons}</div>`;
+}
 
-  return `
-    <div class="order-note">${escapeHtml(note)}</div>
-    ${baseSummary(base, sim)}
-    ${buildNote}
-    <div class="base-section-title">Deploy Troop</div>
-    <div class="spawn-options part-options">${troopButtons}</div>
-    <div class="base-section-title">Tech Tree</div>
-    <div class="tech-options part-options">${techButtons}</div>
-    <div class="base-section-title">Build Defenses</div>
-    <div class="defense-options part-options">${defenseButtons}</div>
-    <div class="base-section-title">Call Support</div>
-    ${supportNote}
-    <div class="support-options part-options">${supportButtons}</div>
-    <div class="base-section-title">Upgrade Base</div>
-    <div class="upgrade-options part-options">
+function upgradeDeckHtml(base: CombatEntity, sim: TacticalSim): string {
+  const money = sim.money(base.team);
+  const hasCp = base.commandPoints > 0;
+  const incomeCost = incomeUpgradeCost(base);
+  const incomeReady = hasCp && incomeCost !== undefined && money >= incomeCost;
+  const nextIncome = INCOME_BY_LEVEL[(base.incomeLevel ?? 0) + 1];
+  const incomeTip = incomeCost === undefined
+    ? "Income is fully upgraded."
+    : `Raise income to $${nextIncome}/rd before reactor scaling. Costs 1 CP and $${incomeCost}.`;
+  const cmdCost = commandUpgradeCost(base);
+  const cmdReady = hasCp && cmdCost !== undefined && money >= cmdCost;
+  const cmdTip = cmdCost === undefined
+    ? "Command is already upgraded to 2 command points per turn."
+    : `Upgrade the base to 2 command points per turn so it can act twice. Costs 1 CP and $${cmdCost}.`;
+  return `<div class="upgrade-options part-options">
       <button class="btn confirm ${incomeReady ? "" : "disabled"}" data-base-upgrade="income" data-disabled="${!incomeReady}" data-tip="${escapeAttr(incomeTip)}">
         Income
         <span>${incomeCost === undefined ? "Maxed" : `$${incomeCost}`}</span>
@@ -1357,8 +1417,70 @@ function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
         Command +1 CP
         <span>${cmdCost === undefined ? "Done" : `$${cmdCost}`}</span>
       </button>
+    </div>`;
+}
+
+// The tech tree drawn as an actual branching tree: two root doctrines (Recon, Assault), each
+// with its unlocked doctrines/specializations nested beneath it (every node requires at most one
+// prerequisite, so the graph is a clean forest). Nesting + connector lines make "what unlocks
+// what" legible at a glance.
+function techTreePanel(base: CombatEntity, sim: TacticalSim): string {
+  const roots = TECH_TREE.filter((node) => node.requires.length === 0);
+  return `
+    <div class="tech-tree">
+      ${roots.map((root) => techBranch(root, base, sim)).join("")}
+    </div>
+    <div class="tech-legend">
+      <span class="tl done">Researched</span>
+      <span class="tl ready">Available</span>
+      <span class="tl blocked">Locked</span>
+      <span class="tl locked">Locked out</span>
     </div>
   `;
+}
+
+function techBranch(node: TechNode, base: CombatEntity, sim: TacticalSim): string {
+  const children = TECH_TREE.filter((n) => n.requires.includes(node.id));
+  return `
+    <div class="tech-branch">
+      ${techNodeCard(node, base, sim)}
+      ${children.length ? `<div class="tech-children">${children.map((child) => techBranch(child, base, sim)).join("")}</div>` : ""}
+    </div>
+  `;
+}
+
+function techNodeCard(node: TechNode, base: CombatEntity, sim: TacticalSim): string {
+  const unlocked = isTechUnlocked(base, node.id);
+  const prereqsMet = node.requires.every((id) => isTechUnlocked(base, id));
+  const troopUnlocks = troopsUnlockedBy(node.id).map((kind) => troopSpec(kind).label);
+  const unlockLine = troopUnlocks.length
+    ? `<span class="tech-unlocks">Unlocks ${escapeHtml(troopUnlocks.join(" + "))}</span>`
+    : node.effect ? `<span class="tech-unlocks spec">Specialization upgrade</span>` : "";
+
+  // Tier-4 specializations stay encrypted until their parent doctrine is researched.
+  if (node.tier === 4 && !prereqsMet) {
+    const parentName = TECH_TREE.find((n) => n.id === node.requires[0])?.name ?? "a doctrine";
+    return `<button class="tech-node classified" data-tech="${node.id}" data-disabled="true" data-tip="${escapeAttr(`Encrypted R&D file. Research ${parentName} to decrypt it.`)}">
+      <strong class="classified-name">ENCRYPTED</strong>
+      <span class="tech-sub">Research ${escapeHtml(parentName)}</span>
+    </button>`;
+  }
+  const reason = sim.researchFailureReason(base, node.id);
+  const ready = !reason;
+  const lockedOut = Boolean(reason && /locked out/i.test(reason));
+  const isNew = node.tier === 4 && !unlocked && isRecentlyRevealed(revealTracker.revealedTechAt.get(node.id));
+  const state = unlocked ? "done" : lockedOut ? "locked" : ready ? "ready" : "blocked";
+  const sub = unlocked ? "✓ Researched" : lockedOut ? "Locked out" : `$${node.cost}`;
+  const tip = unlocked
+    ? `${node.name}: ${node.blurb} (researched)`
+    : reason
+      ? `${node.name}: ${reason}.`
+      : `${node.name}: ${node.blurb} Costs 1 CP and $${node.cost}.`;
+  return `<button class="tech-node ${state} ${isNew ? "just-revealed" : ""}" data-tech="${node.id}" data-disabled="${unlocked || !ready}" data-tip="${escapeAttr(tip)}">
+    <strong>${escapeHtml(node.name)}${isNew ? `<em class="new-badge">NEW</em>` : ""}</strong>
+    ${unlockLine}
+    <span class="tech-sub">${sub}</span>
+  </button>`;
 }
 
 function moveState(actor: CombatEntity | undefined): string {
@@ -1617,17 +1739,23 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
   if (action === "shoot") return !actor.status.canShoot;
   if (action === "grenade") return actor.kind !== "soldier" || actor.grenades <= 0;
   if (action === "ram") return actor.kind !== "tank" || !actor.status.canMove;
-  if (action === "melee") return actor.kind !== "striker" || !actor.status.canMove;
+  if (action === "melee") return !isInfantryKind(actor.kind) || !actor.status.canMove || !hasStrikeWeapon(actor);
   if (action === "defend") return !isInfantryKind(actor.kind) || !actor.status.canMove;
   if (action === "overwatch") return Boolean(sim.overwatchFailureReason(actor));
   if (action === "mine") return Boolean(sim.mineFailureReason(actor));
   return false;
 }
 
+// Mirrors the sim's melee-weapon check: a unit needs an intact weapon part to bayonet/strike,
+// so the Strike affordance stays hidden for a disarmed unit instead of offering a failing order.
+function hasStrikeWeapon(actor: CombatEntity): boolean {
+  return actor.parts.some((part) => part.role === "weapon" && part.hp > 0);
+}
+
 function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: TacticalSim): boolean {
   if (!actor || sim.phase !== "command") return false;
   if (action === "ram") return actor.kind === "tank" && actor.status.canMove;
-  if (action === "melee") return actor.kind === "striker" && actor.status.canMove;
+  if (action === "melee") return isInfantryKind(actor.kind) && actor.status.canMove && hasStrikeWeapon(actor);
   if (action === "defend") return isInfantryKind(actor.kind) && actor.status.canMove;
   if (action === "overwatch") return actor.status.canShoot && !isBuildingKind(actor.kind) && !isDefenseKind(actor.kind);
   if (action === "mine") return actor.kind === "sapper";

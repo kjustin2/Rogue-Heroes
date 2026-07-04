@@ -178,6 +178,11 @@ const hud = new Hud(uiRoot, sim, {
   queueMoveToCover: (id: string) => sim.queueMoveToCover(id),
   queueTakeCover: (id: string) => sim.queueTakeCover(id),
   queueClimbCover: (id: string) => sim.queueClimbCover(id),
+  queueCapture: (id: string) => {
+    const ok = sim.queueCapture(id);
+    if (ok) sfx.select();
+    return ok;
+  },
   queueShootPart: (id: string, partId: string) => sim.queueShootPart(id, partId),
   queueGrenadePart: (id: string, partId: string) => sim.queueGrenadePart(id, partId),
   queueGrenadeAt: (destination) => sim.queueGrenadeAt(destination),
@@ -204,6 +209,11 @@ const hud = new Hud(uiRoot, sim, {
   },
   queueOverwatch: () => {
     const ok = sim.queueOverwatch();
+    if (ok) sfx.select();
+    return ok;
+  },
+  queueOverwatchToward: (point) => {
+    const ok = sim.queueOverwatchToward(point);
     if (ok) sfx.select();
     return ok;
   },
@@ -1619,7 +1629,8 @@ requestAnimationFrame(frame);
 function groundAimHover(): Vec2 | undefined {
   if (anyOverlayOpen() || sim.phase !== "command") return undefined;
   if (sim.pendingSupport) return hoverWorld; // strike-call targeting reticle
-  const aiming = sim.intent === "grenade" || (sim.intent === "shoot" && sim.selectedCanGroundTarget());
+  // Overwatch aims a watch cone at the cursor; grenade/shell aim a landing arc.
+  const aiming = sim.intent === "grenade" || sim.intent === "overwatch" || (sim.intent === "shoot" && sim.selectedCanGroundTarget());
   return aiming ? hoverWorld : undefined;
 }
 
@@ -1783,6 +1794,8 @@ declare global {
       beginSupport(kind: SupportPowerKind): void;
       queueSupportAt(point: Vec2): boolean;
       queueOverwatch(): boolean;
+      queueOverwatchToward(point: Vec2): boolean;
+      queueCapture(id: string): boolean;
       queueMine(): boolean;
       upgradeBaseIncome(): boolean;
       upgradeBaseCommand(): boolean;
@@ -1841,6 +1854,8 @@ window.__rht = {
   beginSupport: (kind) => sim.setPendingSupport(kind),
   queueSupportAt: (point) => sim.queueSupportAt(point),
   queueOverwatch: () => sim.queueOverwatch(),
+  queueOverwatchToward: (point) => sim.queueOverwatchToward(point),
+  queueCapture: (id) => sim.queueCapture(id),
   queueMine: () => sim.queueMine(),
   upgradeBaseIncome: () => sim.upgradeBaseIncome(),
   upgradeBaseCommand: () => sim.upgradeBaseCommand(),
