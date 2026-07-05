@@ -56,7 +56,7 @@ import {
   type Team,
 } from "./damageModel";
 import { createScenario } from "./scenario";
-import { DEFAULT_TERRAIN, TERRAIN_STEP, ARENA_BOUNDS, clampToArena, setActiveTerrain, terrainHeightAt } from "./terrain";
+import { DEFAULT_TERRAIN, TERRAIN_STEP, ARENA_BOUNDS, clampToArena, setActiveTerrain, terrainHeightAt, pointInWater } from "./terrain";
 import { TROOP_CATALOG, troopSpec, defenseSpec, supportPowerSpec, type TroopKind, type DefenseKind, type SupportPowerKind } from "./units";
 import { TECH_TREE, techNode, aggregateTechEffect, type TechNode, type TechEffect } from "./tech";
 import { modeDef, type ModeId } from "./modes";
@@ -1971,6 +1971,18 @@ export class TacticalSim {
         z: start.z + (destination.z - start.z) * t,
       };
       const height = terrainHeightAt(point);
+
+      // Impassable water (unless a bridge crosses here): stop the unit at the shoreline.
+      if (pointInWater(point)) {
+        const back = Math.min(0.34 / pathLength, t);
+        const stopT = clamp(t - back, 0, 1);
+        const stopped = clampToArena({
+          x: start.x + (destination.x - start.x) * stopT,
+          z: start.z + (destination.z - start.z) * stopT,
+        });
+        if (!silent) this.pushLog(`${actor.name} can't cross the water — find a bridge`);
+        return stopped;
+      }
 
       if (height - footing > TERRAIN_STEP) {
         const back = Math.min(0.34 / pathLength, t);

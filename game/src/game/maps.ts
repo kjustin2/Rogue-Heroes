@@ -1,7 +1,7 @@
 import { Rng } from "../core/rng";
 import { dist, type Vec2 } from "../core/math";
 import { COVER_PROFILES, createCover, type CombatEntity, type CoverKind } from "./damageModel";
-import { onTerrainEdge, terrainHeightAt, type TerrainSpec } from "./terrain";
+import { onTerrainEdge, pointInWater, terrainHeightAt, type TerrainSpec } from "./terrain";
 
 // A drifting ambient particle bed that gives each map its own living atmosphere.
 export type AmbientKind = "dust" | "embers" | "pollen" | "snow" | "ash";
@@ -185,7 +185,7 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
     for (const o of placed) {
       if (dist(p, o) < o.r + r) return true;
     }
-    return steepHere(p);
+    return steepHere(p) || pointInWater(p); // never drop cover into a water channel
   };
 
   const add = (kind: CoverKind, p: Vec2): void => {
@@ -278,6 +278,10 @@ const RAW_MAPS: readonly MapDef[] = [
         { minX: -6, maxX: 6, minZ: -18, maxZ: -13, height: 1.7 },      // south range — mid slope
         { minX: -4, maxX: 4, minZ: -17.5, maxZ: -14, height: 2.55 },   // south range — upper
         { minX: -2, maxX: 2, minZ: -17, maxZ: -15, height: 3.4 },      // south range — peak
+        // Sheer sandstone spires mid-basin — too tall to climb (a wall), set off the central lane
+        // so armor still has its straight shot but flankers must weave around them.
+        { minX: -14, maxX: -12, minZ: -9, maxZ: -3, height: 2.4 },     // west spire wall
+        { minX: 12, maxX: 14, minZ: 3, maxZ: 9, height: 2.4 },         // east spire wall (mirror)
       ],
     },
     playerBase: { x: -31, z: 0 },
@@ -408,6 +412,18 @@ const RAW_MAPS: readonly MapDef[] = [
       blocks: [
         { minX: -18, maxX: 18, minZ: -5, maxZ: 5, height: 0.5 },   // central land bridge
         { minX: -3, maxX: 3, minZ: -3, maxZ: 3, height: 1.0 },     // contested high point
+      ],
+      // Frozen channels flood the flanks: you cross the middle on the land bridge, or take one of
+      // the timber bridges out wide. The centre lane is always open, so there's never a soft-lock.
+      water: [
+        { minX: -15, maxX: 15, minZ: 7, maxZ: 18 },    // north frozen channel
+        { minX: -15, maxX: 15, minZ: -18, maxZ: -7 },  // south frozen channel
+      ],
+      bridges: [
+        { minX: -10, maxX: -7, minZ: 7, maxZ: 18 },    // NW crossing
+        { minX: 7, maxX: 10, minZ: 7, maxZ: 18 },      // NE crossing
+        { minX: -10, maxX: -7, minZ: -18, maxZ: -7 },  // SW crossing
+        { minX: 7, maxX: 10, minZ: -18, maxZ: -7 },    // SE crossing
       ],
     },
     playerBase: { x: -34, z: 0 },

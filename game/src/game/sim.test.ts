@@ -13,7 +13,7 @@ import {
   troopSpec,
   type Projectile,
 } from "./sim";
-import { terrainHeightAt } from "./terrain";
+import { terrainHeightAt, setActiveTerrain, DEFAULT_TERRAIN } from "./terrain";
 
 describe("tactical simulation loop", () => {
   it("resolves queued target fire back into a new command phase", () => {
@@ -679,6 +679,41 @@ describe("tactical simulation loop", () => {
     expect(sim.queueMoveToCover("cliff")).toBe(false);
     expect(sim.orders).toHaveLength(0);
     expect(sim.log[0]).toBe("Hammer cannot climb the cliff");
+  });
+
+  it("water blocks ground movement but bridges and flyers cross it", () => {
+    const waterTerrain = {
+      bounds: { minX: -20, maxX: 20, minZ: -20, maxZ: 20 },
+      water: [{ minX: -3, maxX: 3, minZ: -20, maxZ: 20 }], // a channel across the middle
+      bridges: [{ minX: -3, maxX: 3, minZ: -2, maxZ: 2 }], // one crossing at z ~= 0
+    };
+
+    // A ground unit crossing OFF the bridge (z=8) stops at the west shore.
+    const walker = createSoldier("w", "Walker", "player", { x: -6, z: 8 });
+    const sim = new TacticalSim([walker]);
+    setActiveTerrain(waterTerrain); // the constructor resets terrain, so set water after
+    sim.select("w");
+    expect(sim.queueMove({ x: 8, z: 8 })).toBe(true);
+    expect(sim.orders[0].destination?.x ?? 0).toBeLessThan(-3); // stopped before the water edge
+    expect(sim.log.some((l) => l.includes("can't cross the water"))).toBe(true);
+
+    // The same crossing ALONG the bridge (z=0) goes straight through.
+    const crosser = createSoldier("c", "Crosser", "player", { x: -6, z: 0 });
+    const bridgeSim = new TacticalSim([crosser]);
+    setActiveTerrain(waterTerrain);
+    bridgeSim.select("c");
+    expect(bridgeSim.queueMove({ x: 8, z: 0 })).toBe(true);
+    expect(bridgeSim.orders[0].destination?.x ?? -99).toBeGreaterThan(0.5); // crossed via the bridge
+
+    // A flyer overflies the water entirely.
+    const flyer = createGunship("f", "Hawk", "player", { x: -6, z: 8 });
+    const airSim = new TacticalSim([flyer]);
+    setActiveTerrain(waterTerrain);
+    airSim.select("f");
+    expect(airSim.queueMove({ x: 8, z: 8 })).toBe(true);
+    expect(airSim.orders[0].destination?.x ?? -99).toBeGreaterThan(3); // crossed the channel
+
+    setActiveTerrain(DEFAULT_TERRAIN); // restore the shared terrain singleton for later tests
   });
 
   it("queues crouch behind cover and slows the next move", () => {

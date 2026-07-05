@@ -4,7 +4,7 @@ import { isDefenseKind, isInfantryKind, isVehicleKind, type CombatEntity, type D
 import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
 import { OVERWATCH_ARC_HALF } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec } from "../game/maps";
-import { ARENA_BOUNDS, arenaDepth, arenaWidth, terrainBlocks, terrainHeightAt } from "../game/terrain";
+import { ARENA_BOUNDS, arenaDepth, arenaWidth, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
 import { instantiate, modelsVersion, type ModelKey } from "./models";
 
 type PartMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
@@ -712,6 +712,7 @@ export class WorldRenderer {
     this.sceneryRoot.add(floor);
 
     this.sceneryRoot.add(makeTerrainBlocks(theme.ground, theme.groundAccent));
+    this.sceneryRoot.add(makeWaterAndBridges(theme));
 
     const grid = new THREE.GridHelper(width, Math.round(width), theme.grid, theme.grid);
     grid.position.y = 0.02;
@@ -3353,6 +3354,53 @@ function makeTerrainBlocks(groundColor: number, accentColor: number): THREE.Grou
     );
     edges.position.copy(body.position);
     group.add(edges);
+  }
+  return group;
+}
+
+// Impassable water footprints render as a translucent, faintly reflective surface just above the
+// floor; walkable bridge strips are raised timber decks that read clearly as the way across.
+function makeWaterAndBridges(theme: MapTheme): THREE.Group {
+  const group = new THREE.Group();
+  const water = terrainWater();
+  if (!water.length) return group;
+  const waterColor = new THREE.Color(0x2f6d94).lerp(new THREE.Color(theme.fog), 0.22);
+  // Low metalness + higher roughness so it reads as water without a mirror-bright specular hotspot.
+  const waterMat = new THREE.MeshStandardMaterial({ color: waterColor, transparent: true, opacity: 0.78, roughness: 0.5, metalness: 0.15, depthWrite: false });
+  for (const r of water) {
+    const w = r.maxX - r.minX;
+    const d = r.maxZ - r.minZ;
+    const plane = new THREE.Mesh(new THREE.BoxGeometry(w, 0.09, d), waterMat);
+    plane.position.set((r.minX + r.maxX) / 2, 0.03, (r.minZ + r.maxZ) / 2);
+    plane.receiveShadow = true;
+    group.add(plane);
+  }
+  const deckMat = new THREE.MeshStandardMaterial({ color: 0x6b5136, roughness: 0.82, metalness: 0.04 });
+  const railMat = new THREE.MeshStandardMaterial({ color: 0x4a3722, roughness: 0.85, metalness: 0.04 });
+  for (const r of terrainBridges()) {
+    const w = r.maxX - r.minX;
+    const d = r.maxZ - r.minZ;
+    const cx = (r.minX + r.maxX) / 2;
+    const cz = (r.minZ + r.maxZ) / 2;
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(w, 0.16, d), deckMat);
+    deck.position.set(cx, 0.09, cz);
+    deck.castShadow = true;
+    deck.receiveShadow = true;
+    group.add(deck);
+    // Low side rails along the bridge's long axis so it reads as a crossing, not just a plank.
+    const along = w >= d;
+    const railLen = along ? w : d;
+    const railThick = 0.14;
+    for (const side of [-1, 1]) {
+      const rail = new THREE.Mesh(
+        new THREE.BoxGeometry(along ? railLen : railThick, 0.34, along ? railThick : railLen),
+        railMat,
+      );
+      const off = (along ? d : w) / 2 - railThick / 2;
+      rail.position.set(cx + (along ? 0 : side * off), 0.26, cz + (along ? side * off : 0));
+      rail.castShadow = true;
+      group.add(rail);
+    }
   }
   return group;
 }
