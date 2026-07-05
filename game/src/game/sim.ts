@@ -3269,13 +3269,36 @@ export class TacticalSim {
       if (dist(actor.position, c) < step * 0.3) continue; // didn't meaningfully move
       const progress = startToGoal - dist(c, goal); // positive = closer to the goal
       const sheltered = this.isShelteredAt(c, threat) ? 2.4 : 0;
-      const score = progress + sheltered;
+      // Steer clear of live enemy overwatch cones: a tile inside one hands the player a free
+      // reaction shot, so it's weighted below a slightly-less-direct route that stays out of arc.
+      const exposed = this.standingInOverwatch(c, actor.team) ? 2.8 : 0;
+      const score = progress + sheltered - exposed;
       if (score > bestScore) {
         bestScore = score;
         best = c;
       }
     }
     return best;
+  }
+
+  // True if standing at `pos` would trip a live hostile overwatch cone (same radius + arc test
+  // checkOverwatch fires with). The AI routes around these so it doesn't feed itself free shots.
+  private standingInOverwatch(pos: Vec2, moverTeam: Team): boolean {
+    if (this.overwatching.size === 0) return false;
+    for (const [watcherId, shots] of this.overwatching) {
+      if (shots <= 0) continue;
+      const watcher = this.entity(watcherId);
+      if (!watcher || !watcher.status.alive || !watcher.status.canShoot || watcher.team === moverTeam) continue;
+      if (dist(watcher.position, pos) > this.overwatchRadius(watcher)) continue;
+      const facing = this.overwatchFacing.get(watcherId);
+      if (facing !== undefined) {
+        const bearing = Math.atan2(pos.x - watcher.position.x, pos.z - watcher.position.z);
+        const delta = Math.abs(Math.atan2(Math.sin(bearing - facing), Math.cos(bearing - facing)));
+        if (delta > OVERWATCH_ARC_HALF) continue;
+      }
+      return true;
+    }
+    return false;
   }
 
   // True if standing at `pos` puts sturdy cover between the unit and the threat.

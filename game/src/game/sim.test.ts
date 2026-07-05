@@ -1873,6 +1873,26 @@ describe("tactical enemy AI", () => {
     expect(firedInside).toBe(true);
   });
 
+  it("AI overwatch avoidance: a live watch cone flags tiles the enemy pathing then steers around", () => {
+    const watcher = createSoldier("p-watch", "Watcher", "player", { x: 0, z: 0 });
+    const mover = createSoldier("e-run", "Runner", "enemy", { x: 0, z: 6 });
+    const sim = new TacticalSim([watcher, mover]);
+    sim.select("p-watch");
+    expect(sim.queueOverwatchToward({ x: 0, z: 10 })).toBe(true); // watch toward +Z
+    const s = sim as unknown as {
+      standingInOverwatch(pos: { x: number; z: number }, team: string): boolean;
+      overwatchRadius(a: typeof watcher): number;
+    };
+    // Straight ahead, inside the 120° arc and within radius → flagged for the enemy.
+    expect(s.standingInOverwatch({ x: 0, z: 4 }, "enemy")).toBe(true);
+    // Behind the watcher (outside the arc) is safe.
+    expect(s.standingInOverwatch({ x: 0, z: -4 }, "enemy")).toBe(false);
+    // A watcher never threatens its own team.
+    expect(s.standingInOverwatch({ x: 0, z: 4 }, "player")).toBe(false);
+    // Beyond the watch radius is safe even dead-center in the arc.
+    expect(s.standingInOverwatch({ x: 0, z: s.overwatchRadius(watcher) + 3 }, "enemy")).toBe(false);
+  });
+
   it("air layer: a gunship flies at altitude, forfeits capture, and is shredded by dedicated AA", () => {
     // Flies at terrain + agl (the constructor syncs elevation).
     const flyer = createGunship("g", "Hawk", "player", { x: 0, z: 0 });
