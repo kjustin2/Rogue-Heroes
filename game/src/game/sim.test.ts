@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dist } from "../core/math";
-import { applyDamage, createBase, createCover, createFlak, createFlamer, createGrenadier, createGunship, createHeavy, createMedic, createSapper, createScout, createSniper, createSoldier, createStriker, createTank, createWall } from "./damageModel";
+import { applyDamage, createBase, createBomber, createCover, createFlak, createFlamer, createGrenadier, createGunship, createHeavy, createInterceptor, createMedic, createSapper, createScout, createSniper, createSoldier, createStriker, createTank, createWall } from "./damageModel";
 import {
   BASE_INCOME,
   INCOME_BY_LEVEL,
@@ -2039,6 +2039,33 @@ describe("tactical enemy AI", () => {
     while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
     expect(crate.parts.reduce((s, p) => s + p.hp, 0)).toBeLessThan(before); // blast hit the crate beneath
     expect(sim.projectiles.length).toBe(0); // ground-detonated — didn't roll off or vanish
+  });
+
+  it("air-to-air: a gunship and an interceptor can gun each other, but not ground targets", () => {
+    const sim = new TacticalSim([
+      createGunship("g", "Hawk", "player", { x: 0, z: 0 }),
+      createInterceptor("i", "MiG", "enemy", { x: 5, z: 0 }),
+    ]);
+    sim.select("g");
+    expect(sim.queueShoot("i")).toBe(true); // the gunship's autocannon finally has a target — an enemy plane
+
+    const air = new TacticalSim([
+      createInterceptor("i2", "MiG", "player", { x: 0, z: 0 }),
+      createGunship("g2", "Hawk", "enemy", { x: 5, z: 0 }),
+      createSoldier("grunt", "Grunt", "enemy", { x: 3, z: 0 }),
+    ]);
+    air.select("i2");
+    expect(air.queueShoot("g2")).toBe(true);    // interceptor guns the enemy flyer
+    expect(air.queueShoot("grunt")).toBe(false); // but never a ground target (air-to-air only)
+  });
+
+  it("a bomber has no gun and only drops bombs straight down", () => {
+    const bomber = createBomber("b", "Fortress", "player", { x: 0, z: 0 });
+    expect(bomber.status.canShoot).toBe(false); // no weapon part at all
+    const sim = new TacticalSim([bomber, createSoldier("e", "Foe", "enemy", { x: 3, z: 0 })]);
+    sim.select("b");
+    expect(sim.queueShoot("e")).toBe(false); // can't shoot
+    expect(sim.queueBombDrop()).toBe(true);  // but it bombs
   });
 
   it("AI air counter-play: the enemy commander wants Flak when the player fields a flyer", () => {

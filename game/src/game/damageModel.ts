@@ -18,6 +18,9 @@ export type EntityKind =
   | "apc"
   | "artillery"
   | "gunship"
+  | "interceptor"
+  | "bomber"
+  | "transport"
   | "flak"
   | "base"
   | "turret"
@@ -291,6 +294,68 @@ export function createGunship(id: string, name: string, team: Team, position: Ve
       part("rotor", "Rotor", "mobility", 26),
       part("gun", "Autocannon", "weapon", 30, { vsAir: 1.4 }),
       part("pack", "Bomb Rack", "volatile", 22),
+    ],
+  };
+  recomputeStatus(entity);
+  return entity;
+}
+
+// Interceptor: a fast air-superiority fighter. Gun-only (strong vsAir), no bombs — it exists to
+// win the air and hunt other flyers. Light airframe, so ground AA still shreds it.
+export function createInterceptor(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  const entity: CombatEntity = {
+    id,
+    name,
+    kind: "interceptor",
+    team,
+    position,
+    yaw: team === "player" ? Math.PI * 0.5 : -Math.PI * 0.5,
+    radius: 1.05,
+    height: 0.8,
+    elevation: 0,
+    stance: "standing",
+    commandPoints: 2,
+    maxCommandPoints: 2,
+    grenades: 0,
+    maxGrenades: 0,
+    flying: true,
+    agl: 7.5,
+    status: statusFor("interceptor"),
+    parts: [
+      part("hull", "Fuselage", "core", 42, { critical: true }),
+      part("wing", "Wings", "mobility", 22),
+      part("gun", "Cannon", "weapon", 26, { vsAir: 2.0 }),
+    ],
+  };
+  recomputeStatus(entity);
+  return entity;
+}
+
+// Bomber: a slow, tough heavy bomber. No gun at all — it only drops bombs (straight down), carries a
+// big load, and soaks hits, but it's helpless against interceptors and needs an escort.
+export function createBomber(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  const entity: CombatEntity = {
+    id,
+    name,
+    kind: "bomber",
+    team,
+    position,
+    yaw: team === "player" ? Math.PI * 0.5 : -Math.PI * 0.5,
+    radius: 1.4,
+    height: 1.05,
+    elevation: 0,
+    stance: "standing",
+    commandPoints: 2,
+    maxCommandPoints: 2,
+    grenades: 4, // heavy bomb load
+    maxGrenades: 4,
+    flying: true,
+    agl: 8,
+    status: statusFor("bomber"),
+    parts: [
+      part("hull", "Fuselage", "core", 78, { critical: true }),
+      part("engine", "Engines", "mobility", 32),
+      part("pack", "Bomb Bay", "volatile", 30),
     ],
   };
   recomputeStatus(entity);
@@ -776,13 +841,13 @@ export function isInfantryKind(kind: EntityKind): boolean {
 export function isVehicleKind(kind: EntityKind): boolean {
   // Gunship + Flak Track are hard-surface vehicle chassis (they get vehicle move/shoot plumbing);
   // the gunship's flight is an extra flag on the entity, not a new class.
-  return kind === "tank" || kind === "apc" || kind === "artillery" || kind === "gunship" || kind === "flak";
+  return kind === "tank" || kind === "apc" || kind === "artillery" || kind === "gunship" || kind === "interceptor" || kind === "bomber" || kind === "transport" || kind === "flak";
 }
 
 // Air units. The `flying`/`agl` entity fields are authoritative at runtime; this is the by-kind
 // default used when building a unit and when the sim needs the intent from the catalog.
 export function isAirKind(kind: EntityKind): boolean {
-  return kind === "gunship";
+  return kind === "gunship" || kind === "interceptor" || kind === "bomber" || kind === "transport";
 }
 
 // Infantry that fight in melee rather than with ranged weapons.

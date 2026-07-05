@@ -28,6 +28,8 @@ import {
   createFlamer,
   createFlak,
   createGunship,
+  createInterceptor,
+  createBomber,
   createSapper,
   createSoldier,
   createStriker,
@@ -1912,7 +1914,7 @@ export class TacticalSim {
   private grenadeFailureReason(actor: CombatEntity | undefined, target: CombatEntity | undefined): string | undefined {
     if (!actor || !target || actor.id === target.id) return "Select a unit and target first";
     if (actor.team === target.team) return "Cannot throw grenades at friendly units";
-    if (actor.kind !== "soldier" && actor.kind !== "gunship") return "Only soldiers and gunships carry bombs/grenades";
+    if (actor.kind !== "soldier" && actor.kind !== "gunship" && actor.kind !== "bomber") return "This unit carries no bombs/grenades";
     if (target.flying) return "Bombs can't hit aircraft — use guns on flyers";
     if (!actor.status.alive) return `${actor.name} is disabled`;
     if (actor.grenades <= 0) return `${actor.name} is out of grenades`;
@@ -1927,7 +1929,7 @@ export class TacticalSim {
 
   private grenadeLocationFailureReason(actor: CombatEntity | undefined, point: Vec2): string | undefined {
     if (!actor) return "Select a unit first";
-    if (actor.kind !== "soldier" && actor.kind !== "gunship") return "Only soldiers and gunships carry bombs/grenades";
+    if (actor.kind !== "soldier" && actor.kind !== "gunship" && actor.kind !== "bomber") return "This unit carries no bombs/grenades";
     if (!actor.status.alive) return `${actor.name} is disabled`;
     if (actor.grenades <= 0) return `${actor.name} is out of grenades`;
     if (actor.commandPoints <= 0) return `${actor.name} has no command points`;
@@ -3474,13 +3476,16 @@ export class TacticalSim {
     const haveAntiArmor = mine.some((u) => u.kind === "tank" || u.kind === "artillery" || u.kind === "heavy" || u.kind === "grenadier" || u.kind === "mortar");
     const playerFlyers = players.filter((p) => p.flying).length;
     const haveAntiAir = mine.some((u) => u.kind === "flak" || u.kind === "heavy" || u.kind === "sniper");
+    const haveAir = mine.some((u) => u.flying);
     const pref: TroopKind[] = [];
-    // Contest the air lane first — a Flak Track (or, failing tech, heavy/sniper) answers a flyer.
+    // Contest the air lane: a Flak Track from the ground AND scramble an Interceptor to dogfight
+    // enemy aircraft — this is also what finally gives a player gunship a real air-to-air target.
     if (playerFlyers > 0 && !haveAntiAir) pref.push("flak", "heavy", "sniper");
+    if (playerFlyers > 0 && !haveAir) pref.push("interceptor", "flak");
     if (playerVehicles > 0 && !haveAntiArmor) pref.push("tank", "heavy", "grenadier", "artillery");
     if (playerInfantry >= 3) pref.push("grenadier", "mortar", "heavy");
-    // Round out into a balanced force when there's nothing specific to counter.
-    pref.push("heavy", "striker", "soldier", "scout", "apc", "tank", "sniper");
+    // Round out into a balanced force, occasionally reaching for the sky to keep the pressure on.
+    pref.push("heavy", "striker", "soldier", "scout", "apc", "tank", "sniper", "interceptor", "gunship");
     return [...new Set(pref)];
   }
 
@@ -4080,6 +4085,8 @@ function makeTroopBase(kind: TroopKind, id: string, name: string, team: Team, po
     case "apc": return createApc(id, name, team, position);
     case "artillery": return createArtillery(id, name, team, position);
     case "gunship": return createGunship(id, name, team, position);
+    case "interceptor": return createInterceptor(id, name, team, position);
+    case "bomber": return createBomber(id, name, team, position);
     case "flak": return createFlak(id, name, team, position);
     case "scout": return createScout(id, name, team, position);
     case "sniper": return createSniper(id, name, team, position);
@@ -4107,6 +4114,9 @@ function moveRange(entity: CombatEntity): number {
 
 function baseMoveRange(entity: CombatEntity): number {
   if (entity.kind === "gunship") return 12.5; // fast flyer — its reach is its whole identity
+  if (entity.kind === "interceptor") return 14; // fastest thing in the sky
+  if (entity.kind === "bomber") return 8; // heavy and slow
+  if (entity.kind === "transport") return 11;
   if (entity.kind === "flak") return 6.0;
   if (entity.kind === "apc") return 7.2;
   if (entity.kind === "tank") return 5.4;
@@ -4147,11 +4157,12 @@ function meleeStrikeMultiplier(entity: CombatEntity): number {
 
 function grenadeThrowRange(entity: CombatEntity): number {
   if (entity.kind === "gunship") return 11; // bomb-drop reach
+  if (entity.kind === "bomber") return 12; // heavy bomb-drop reach
   return entity.kind === "soldier" ? 9.2 : 0;
 }
 
 function canUseHandGrenade(entity: CombatEntity): boolean {
-  return (entity.kind === "soldier" || entity.kind === "gunship") && entity.status.alive && entity.grenades > 0;
+  return (entity.kind === "soldier" || entity.kind === "gunship" || entity.kind === "bomber") && entity.status.alive && entity.grenades > 0;
 }
 
 // Aircraft that bomb (gunship, and later the Bomber): their bomb falls STRAIGHT DOWN from the
@@ -4314,7 +4325,7 @@ function impactRadius(entity: CombatEntity, part: DamagePart): number {
 function projectileKind(entity: CombatEntity, attackMode: AttackMode = "weapon"): ProjectileKind {
   if (attackMode === "grenade") return "grenade";
   if (entity.kind === "tank" || entity.kind === "artillery" || entity.kind === "exturret") return "shell";
-  if (entity.kind === "apc" || entity.kind === "base" || entity.kind === "turret" || entity.kind === "gunship" || entity.kind === "flak") return "bolt";
+  if (entity.kind === "apc" || entity.kind === "base" || entity.kind === "turret" || entity.kind === "gunship" || entity.kind === "interceptor" || entity.kind === "flak") return "bolt";
   if (entity.kind === "grenadier" || entity.kind === "mortar") return "grenade";
   return "rifle";
 }
@@ -4325,6 +4336,9 @@ function moveSpeed(entity: CombatEntity): number {
 
 function baseMoveSpeed(entity: CombatEntity): number {
   if (entity.kind === "gunship") return 9.5;
+  if (entity.kind === "interceptor") return 11.5;
+  if (entity.kind === "bomber") return 6.4;
+  if (entity.kind === "transport") return 8.5;
   if (entity.kind === "flak") return 6.2;
   if (entity.kind === "apc") return 7.4;
   if (entity.kind === "tank") return 5.5;
@@ -4355,6 +4369,7 @@ function projectileRange(entity: CombatEntity, attackMode: AttackMode = "weapon"
   if (entity.kind === "base") return 30;
   if (entity.kind === "flak") return 32; // long reach so its overwatch cone blankets the air lane
   if (entity.kind === "gunship") return 22;
+  if (entity.kind === "interceptor") return 26; // reaches across the sky to gun other flyers
   if (entity.kind === "artillery") return 42;
   if (entity.kind === "sniper") return 34;
   if (entity.kind === "mortar") return 30;
@@ -4399,6 +4414,7 @@ function baseShotDamage(kind: EntityKind, attackMode: AttackMode = "weapon"): nu
   if (attackMode === "grenade") return 30;
   // Top-tier siege/armor hit much harder than line troops to justify their high cost + HP.
   if (kind === "gunship") return 22; // light autocannon (air-to-air); bombs use the grenade path
+  if (kind === "interceptor") return 26; // dedicated air-superiority cannon
   if (kind === "flak") return 16;   // weak vs ground — it exists to shred air, not brawl armor
   if (kind === "artillery") return 78;
   if (kind === "tank") return 66;
@@ -4506,6 +4522,7 @@ function kindAccuracyLabel(kind: EntityKind, attackMode: AttackMode = "weapon"):
   if (kind === "apc") return "autogun";
   if (kind === "heavy") return "auto-cannon";
   if (kind === "gunship") return "gunship autocannon";
+  if (kind === "interceptor") return "interceptor cannon";
   if (kind === "flak") return "flak cannon";
   if (kind === "scout") return "carbine";
   if (kind === "base") return "command relay";

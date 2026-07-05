@@ -969,6 +969,16 @@ function shootState(
       </div>
     `;
   }
+  // An aircraft's autocannon is air-to-air ONLY — targeting a ground unit reads as "why can't I
+  // confirm?", so say it plainly and offer no confirm button.
+  if (actor.flying && actor.status.canShoot && !target.flying) {
+    return `
+      <div class="target-summary blocked">
+        <strong>${escapeHtml(target.name)} is a ground target</strong>
+        <span>The autocannon only engages AIRCRAFT — use ${bombVerb(actor)} on ground targets.</span>
+      </div>
+    `;
+  }
   const parts = sim.targetableParts(target);
   const blockedPart = blocker ? blocker.parts.find((part) => part.id === preview?.impactPartId) : undefined;
   const groundBlocked = Boolean(preview?.blockedByGround);
@@ -1766,7 +1776,7 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
   if (!actor || sim.phase !== "command" || actor.commandPoints <= 0) return true;
   if (action === "move") return !actor.status.canMove;
   if (action === "shoot") return !actor.status.canShoot;
-  if (action === "grenade") return (actor.kind !== "soldier" && actor.kind !== "gunship") || actor.grenades <= 0;
+  if (action === "grenade") return !(actor.kind === "soldier" || actor.flying) || actor.grenades <= 0;
   if (action === "ram") return actor.kind !== "tank" || !actor.status.canMove;
   if (action === "melee") return !isInfantryKind(actor.kind) || !actor.status.canMove || !hasStrikeWeapon(actor);
   if (action === "defend") return !isInfantryKind(actor.kind) || !actor.status.canMove;
@@ -1788,7 +1798,7 @@ function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: Tac
   if (action === "defend") return isInfantryKind(actor.kind) && actor.status.canMove;
   if (action === "overwatch") return actor.status.canShoot && !isBuildingKind(actor.kind) && !isDefenseKind(actor.kind);
   if (action === "mine") return actor.kind === "sapper";
-  if (action === "grenade") return (actor.kind === "soldier" || actor.kind === "gunship") && actor.maxGrenades > 0;
+  if (action === "grenade") return (actor.kind === "soldier" || actor.flying === true) && actor.maxGrenades > 0;
   if (action === "shoot") return actor.status.canShoot;
   if (action === "move") return actor.status.canMove;
   return false;

@@ -530,7 +530,7 @@ function deployRoster(roster: readonly RosterMember[]): void {
 // The player units that walked away, as roster-merge input (star suffixes stripped so a
 // veteran's name stays stable across battles). Air and armor carry forward like infantry.
 function collectSurvivors(): Array<{ name: string; kind: string; kills: number }> {
-  const carriable = ["tank", "apc", "artillery", "gunship", "flak"];
+  const carriable = ["tank", "apc", "artillery", "gunship", "interceptor", "bomber", "transport", "flak"];
   return sim.entities
     .filter((e) => e.team === "player" && e.status.alive && (isInfantryKind(e.kind) || carriable.includes(e.kind)))
     .map((e) => ({ name: e.name.replace(/ ★+$/, ""), kind: e.kind, kills: sim.killsBy.get(e.id) ?? 0 }));

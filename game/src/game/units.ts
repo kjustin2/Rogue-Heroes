@@ -17,7 +17,10 @@ export type TroopKind =
   | "apc"
   | "artillery"
   | "flak"
-  | "gunship";
+  | "gunship"
+  | "interceptor"
+  | "bomber"
+  | "transport";
 
 export interface TroopSpec {
   kind: TroopKind;
@@ -46,7 +49,9 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "apc", label: "APC", role: "Vehicle", cost: 250, cooldown: 2, tech: "armor", tip: "Fast armored flanker; durable and quick, shrugs off small arms." },
   { kind: "artillery", label: "Artillery", role: "Siege", cost: 440, cooldown: 4, tech: "siege", tip: "Long-range siege gun; devastating at distance and tough, but helpless up close." },
   { kind: "flak", label: "Flak Track", role: "Anti-Air", cost: 260, cooldown: 2, tech: "armor", tip: "Dedicated anti-air: shreds aircraft at long range and its overwatch cone blankets the air lane. Weak against ground armor — it's a specialist, not a brawler." },
-  { kind: "gunship", label: "Gunship", role: "Air", cost: 400, cooldown: 3, tech: "airwing", tip: "Fast flyer: overflies all terrain and cover. Its autocannon duels other aircraft; it drops bombs on ground targets (aim a spot, blast radius shown). Fragile — one flak burst threatens it — and it cannot capture." },
+  { kind: "gunship", label: "Gunship", role: "Air", cost: 400, cooldown: 3, tech: "airwing", tip: "Fast flyer: overflies all terrain and cover. Its autocannon duels other aircraft; it drops bombs straight down on ground targets (fly over them, blast radius shown). Fragile — one flak burst threatens it — and it cannot capture." },
+  { kind: "interceptor", label: "Interceptor", role: "Air Superiority", cost: 320, cooldown: 2, tech: "airwing", tip: "Fast, gun-only fighter that rules the air — its cannon shreds other aircraft. No bombs; it exists to win the dogfight. Fragile to ground flak." },
+  { kind: "bomber", label: "Bomber", role: "Heavy Bomber", cost: 470, cooldown: 4, tech: "airwing", tip: "Slow, tough heavy bomber with a big bomb load (drops straight down). No gun at all — helpless against interceptors, so send an escort." },
 ];
 
 export function troopSpec(kind: TroopKind): TroopSpec {
