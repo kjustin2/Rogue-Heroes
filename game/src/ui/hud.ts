@@ -93,6 +93,7 @@ export interface HudCallbacks {
   queueShootPart(id: string, partId: string): boolean;
   queueGrenadePart(id: string, partId: string): boolean;
   queueGrenadeAt(destination: Vec2): boolean;
+  queueBombDrop(): boolean;
   queueRam(id: string): boolean;
   queueMelee(id: string): boolean;
   queueMeleePart(id: string, partId: string): boolean;
@@ -472,12 +473,15 @@ export class Hud {
     const select = target.closest<HTMLElement>("[data-select]")?.dataset.select;
     if (select) this.chooseBoardEntity(select);
 
-    const confirm = target.closest<HTMLElement>("[data-confirm]")?.dataset.confirm as Intent | undefined;
+    const confirm = target.closest<HTMLElement>("[data-confirm]")?.dataset.confirm; // "shoot"|"grenade"|"bomb"|"ram"|"melee"
     if (confirm === "shoot" && this.targetId && this.targetPartId) {
       if (this.callbacks.queueShootPart(this.targetId, this.targetPartId)) this.afterConfirmedOrder();
     }
     if (confirm === "grenade" && this.targetId && this.targetPartId) {
       if (this.callbacks.queueGrenadePart(this.targetId, this.targetPartId)) this.afterConfirmedOrder();
+    }
+    if (confirm === "bomb") {
+      if (this.callbacks.queueBombDrop()) this.afterConfirmedOrder();
     }
     if (confirm === "ram" && this.targetId) {
       if (this.callbacks.queueRam(this.targetId)) this.afterConfirmedOrder();
@@ -923,10 +927,10 @@ function orderPlanner(
           <div class="action-row">
             ${ORDER_ACTIONS.filter((option) => actionVisible(option.id, actor, sim)).map((option, index) => {
               const disabled = actionDisabled(option.id, actor, sim);
-              // A gunship's "grenade" verb is a bomb drop; relabel it so the air unit reads right.
-              const label = option.id === "grenade" && actor?.kind === "gunship" ? "Bomb" : option.label;
-              const tip = option.id === "grenade" && actor?.kind === "gunship"
-                ? "Drop a bomb on a GROUND spot (click the ground) — blast radius shown. Cannot target aircraft."
+              // An aircraft's "grenade" verb is a bomb drop; relabel it so the air unit reads right.
+              const label = option.id === "grenade" ? bombVerb(actor) : option.label;
+              const tip = option.id === "grenade" && actor?.flying
+                ? "Drop a bomb straight down beneath the aircraft — blast radius shown. Fly over the target; cannot hit aircraft."
                 : option.id === "ram" ? ramTip : option.id === "defend" ? defendTip : option.tip;
               return `<button class="tool action action-${option.id} ${action === option.id ? "active" : ""} ${disabled ? "disabled" : ""}" data-order-action="${option.id}" data-disabled="${disabled}" data-tip="${escapeAttr(tip)}"><strong>${index + 1}. ${label}</strong><span>${actionCostLabel(option.id, actor)}</span></button>`;
             }).join("")}
@@ -996,6 +1000,12 @@ function shootState(
   `;
 }
 
+// A flying bomb-dropper's "grenade" verb reads as "Bomb" everywhere in the UI (deck, confirm,
+// tooltip, queued summary); ground units keep "Grenade".
+function bombVerb(actor: CombatEntity | undefined): string {
+  return actor?.flying ? "Bomb" : "Grenade";
+}
+
 function grenadeState(
   actor: CombatEntity | undefined,
   target: CombatEntity | undefined,
@@ -1007,6 +1017,21 @@ function grenadeState(
   sim: TacticalSim
 ): string {
   if (!actor) return `<div class="order-note">No active unit.</div>`;
+  if (actor.flying) {
+    // Aircraft bomb straight down beneath themselves — no target or aim, just confirm.
+    const canDrop = actor.grenades > 0 && actor.commandPoints > 0 && actor.status.alive && sim.phase === "command";
+    const note = !actor.status.alive ? `${actor.name} is disabled`
+      : actor.grenades <= 0 ? "Out of bombs"
+      : actor.commandPoints <= 0 ? "No command points"
+      : "Bomb drops straight down beneath the aircraft — fly over the target. Blast radius shown below.";
+    return `
+      <div class="order-note">${escapeHtml(note)}</div>
+      <button class="btn confirm ${canDrop ? "" : "disabled"}" data-confirm="bomb" data-disabled="${!canDrop}" data-tip="Drop a bomb straight down beneath the aircraft. Cannot hit aircraft.">
+        Confirm Bomb
+        <span>${actor.grenades}/${actor.maxGrenades} left</span>
+      </button>
+    `;
+  }
   if (!target) return `<div class="order-note">Click ground to throw at a location, or choose a hostile/cover target.</div>`;
   if (target.team === "player") {
     return `
@@ -1775,8 +1800,9 @@ function orderSummary(order: TacticalOrder, sim: TacticalSim): string {
   if (order.kind === "move") return "Queued: move";
   if (order.kind === "ram") return `Queued: ram ${target?.name ?? "target"}`;
   if (order.kind === "melee") return `Queued: strike ${target?.name ?? "target"}${part ? ` / ${part.label}` : ""}`;
-  if (order.kind === "grenade" && order.destination && !target) return "Queued: grenade ground";
-  if (order.kind === "grenade") return `Queued: grenade ${target?.name ?? "target"}${part ? ` / ${part.label}` : ""}`;
+  const verb = bombVerb(sim.entity(order.actorId)).toLowerCase();
+  if (order.kind === "grenade" && order.destination && !target) return `Queued: ${verb} ${verb === "bomb" ? "drop" : "ground"}`;
+  if (order.kind === "grenade") return `Queued: ${verb} ${target?.name ?? "target"}${part ? ` / ${part.label}` : ""}`;
   if (order.kind === "defend") return "Queued: crouch";
   return `Queued: shoot ${target?.name ?? "target"}${part ? ` / ${part.label}` : ""}`;
 }

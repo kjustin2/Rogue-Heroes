@@ -1977,13 +1977,32 @@ describe("tactical enemy AI", () => {
     expect(sim.queueShoot("ground")).toBe(false);
     expect(sim.queueShoot("air")).toBe(true);
 
-    // Bombs (grenade) are ground-only: an airborne target is rejected.
+    // Bombs drop straight DOWN as a ground blast beneath the aircraft — they can't be lobbed up at a
+    // flyer. Dropping a bomb just plants a ground-target detonation under the plane (x≈0), never at
+    // the enemy flyer at x=3.
     const bomber = new TacticalSim([
       createGunship("g2", "Hawk", "player", { x: 0, z: 0 }),
       createGunship("air2", "Bandit", "enemy", { x: 3, z: 0 }),
     ]);
     bomber.select("g2");
-    expect(bomber.queueGrenade("air2")).toBe(false);
+    expect(bomber.queueBombDrop()).toBe(true);
+    const drop = bomber.orders.find((o) => o.actorId === "g2" && o.kind === "grenade");
+    expect(drop?.destination).toBeTruthy(); // a ground drop, not aimed at the flyer
+    expect(Math.abs(drop?.destination?.x ?? 99)).toBeLessThan(1); // lands beneath the plane, not at x=3
+  });
+
+  it("a gunship bomb drops straight down and ground-detonates on what's beneath it (no roll/vanish)", () => {
+    const gunship = createGunship("g", "Hawk", "player", { x: 5, z: 0 });
+    const crate = createCover("c", "Crate", { x: 5, z: 0.3 }, { coverKind: "crate" }); // right under the plane
+    const sim = new TacticalSim([gunship, crate]);
+    const before = crate.parts.reduce((s, p) => s + p.hp, 0);
+    sim.select("g");
+    expect(sim.queueBombDrop()).toBe(true);
+    sim.endTurn();
+    let guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+    expect(crate.parts.reduce((s, p) => s + p.hp, 0)).toBeLessThan(before); // blast hit the crate beneath
+    expect(sim.projectiles.length).toBe(0); // ground-detonated — didn't roll off or vanish
   });
 
   it("AI air counter-play: the enemy commander wants Flak when the player fields a flyer", () => {

@@ -2471,15 +2471,17 @@ export class WorldRenderer {
           tail.y, 0.012, projectile.height,
         ));
       }
-      this.projectileRoot.add(makeProjectileShadow(projectile, style.trailColor));
+      this.projectileRoot.add(withoutCulling(makeProjectileShadow(projectile, style.trailColor)));
 
       const flash = makeMuzzleFlash(projectile);
-      if (flash) this.projectileRoot.add(flash);
+      if (flash) this.projectileRoot.add(withoutCulling(flash));
 
+      // The head model + shadow + flash must NEVER frustum-cull: a fast/high round (e.g. a gunship's
+      // arc or a shot near a screen edge) would otherwise vanish while the un-culled trail lingers.
       const model = makeProjectileModel(projectile);
       model.position.set(projectile.position.x, projectile.height, projectile.position.z);
       orientAlongShot(model, projectile.previous, projectile.position);
-      this.projectileRoot.add(model);
+      this.projectileRoot.add(withoutCulling(model));
     }
     for (const id of this.trailHistory.keys()) if (!liveIds.has(id)) this.trailHistory.delete(id);
   }
@@ -2964,6 +2966,13 @@ function addEmbers(group: THREE.Group, count: number, color: number, spread: num
     ember.scale.setScalar(1 - i * 0.22);
     group.add(ember);
   }
+}
+
+// Disable frustum culling on an object and all its descendants (projectile head/shadow/flash),
+// so a round leaving the camera frustum can't disappear mid-flight while its trail keeps drawing.
+function withoutCulling<T extends THREE.Object3D>(obj: T): T {
+  obj.traverse((o) => { o.frustumCulled = false; });
+  return obj;
 }
 
 function makeProjectileModel(projectile: Projectile): THREE.Group {

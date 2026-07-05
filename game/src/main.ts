@@ -193,6 +193,7 @@ const hud = new Hud(uiRoot, sim, {
   queueShootPart: (id: string, partId: string) => sim.queueShootPart(id, partId),
   queueGrenadePart: (id: string, partId: string) => sim.queueGrenadePart(id, partId),
   queueGrenadeAt: (destination) => sim.queueGrenadeAt(destination),
+  queueBombDrop: () => sim.queueBombDrop(),
   queueRam: (id: string) => sim.queueRam(id),
   queueMelee: (id: string) => sim.queueMelee(id),
   queueMeleePart: (id: string, partId: string) => sim.queueMeleePart(id, partId),
@@ -2059,6 +2060,7 @@ declare global {
       queueClimbCover(id: string): boolean;
       queueGrenadePart(id: string, partId: string): boolean;
       queueGrenadeAt(destination: Vec2): boolean;
+      queueBombDrop(): boolean;
       queueShootAt(destination: Vec2): boolean;
       queueMelee(id: string): boolean;
       queueMeleePart(id: string, partId: string): boolean;
@@ -2121,6 +2123,7 @@ window.__rht = {
   queueClimbCover: (id) => sim.queueClimbCover(id),
   queueGrenadePart: (id, partId) => sim.queueGrenadePart(id, partId),
   queueGrenadeAt: (destination) => sim.queueGrenadeAt(destination),
+  queueBombDrop: () => sim.queueBombDrop(),
   queueShootAt: (destination) => sim.queueShootAt(destination),
   queueMelee: (id) => sim.queueMelee(id),
   queueMeleePart: (id, partId) => sim.queueMeleePart(id, partId),

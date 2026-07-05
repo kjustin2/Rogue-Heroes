@@ -721,6 +721,7 @@ export class TacticalSim {
 
   queueGrenade(targetId: string): boolean {
     const actor = this.requirePlayerActor();
+    if (actor && isAirBomber(actor)) return this.queueGrenadeAt(actor.position); // a plane just drops straight down
     const target = this.entity(targetId);
     if (!actor || !target || actor.id === target.id) return false;
     if (target.team === "player") return this.reject("Cannot target friendly units");
@@ -729,6 +730,7 @@ export class TacticalSim {
 
   queueGrenadePart(targetId: string, partId: string): boolean {
     const actor = this.requirePlayerActor();
+    if (actor && isAirBomber(actor)) return this.queueGrenadeAt(actor.position);
     const target = this.entity(targetId);
     if (!actor || !target || actor.id === target.id) return false;
     if (target.team === "player") return this.reject("Cannot target friendly units");
@@ -738,7 +740,8 @@ export class TacticalSim {
   queueGrenadeAt(destination: Vec2): boolean {
     const actor = this.requirePlayerActor();
     if (!actor) return false;
-    const point = clampToArena(destination);
+    // An aircraft bombs straight down beneath itself; ground units lob to the clicked spot.
+    const point = isAirBomber(actor) ? { x: actor.position.x, z: actor.position.z } : clampToArena(destination);
     const failure = this.grenadeLocationFailureReason(actor, point);
     if (failure) return this.reject(failure);
     if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
@@ -751,6 +754,14 @@ export class TacticalSim {
       duration: 1.15,
     });
     return true;
+  }
+
+  // An aircraft drops a bomb straight down beneath itself — no target needed, aimed by position.
+  queueBombDrop(): boolean {
+    const actor = this.requirePlayerActor();
+    if (!actor) return false;
+    if (!isAirBomber(actor)) return this.reject(`${actor.name} can't drop bombs`);
+    return this.queueGrenadeAt(actor.position);
   }
 
   // Fire a unit's explosive round (tank/artillery shell, mortar/grenadier round, turret) at a
@@ -785,7 +796,9 @@ export class TacticalSim {
     const grenade = this.intent === "grenade" && canUseHandGrenade(actor);
     const shell = this.intent === "shoot" && canGroundShellAttack(actor) && actor.status.canShoot;
     if (!grenade && !shell) return undefined;
-    const to = clampToArena(point);
+    // An aircraft's bomb always lands directly beneath it — the disc previews the drop, not a lob.
+    const airDrop = grenade && isAirBomber(actor);
+    const to = airDrop ? { x: actor.position.x, z: actor.position.z } : clampToArena(point);
     const projected = this.projectedActorForPreview(actor);
     projected.yaw = Math.atan2(to.x - projected.position.x, to.z - projected.position.z);
     const attackMode: AttackMode = grenade ? "grenade" : "weapon";
@@ -793,9 +806,9 @@ export class TacticalSim {
     const fromHeight = muzzleHeight(projected, attackMode);
     const kind = grenade ? "grenade" : projectileKind(actor, "weapon");
     const horizontal = dist(from, to);
-    const reachable = horizontal <= (grenade ? grenadeThrowRange(actor) : projectileRange(actor, "weapon"));
+    const reachable = airDrop || horizontal <= (grenade ? grenadeThrowRange(actor) : projectileRange(actor, "weapon"));
     const toHeight = terrainHeightAt(to) + 0.14;
-    const arcHeight = grenade ? projectileArcHeight("grenade", horizontal) : Math.max(projectileArcHeight(kind, horizontal), 0.6);
+    const arcHeight = airDrop ? 0 : grenade ? projectileArcHeight("grenade", horizontal) : Math.max(projectileArcHeight(kind, horizontal), 0.6);
     const radius = explosiveBlast(kind).radius;
     const ground = firstGroundBetweenShot(from, to, fromHeight, toHeight, arcHeight);
     const obstacle = ground ? undefined : this.firstEntityBetweenShot(from, to, fromHeight, toHeight, actor.id, "", arcHeight);
@@ -2152,10 +2165,14 @@ export class TacticalSim {
 
   private launchGrenadeAtPoint(order: TacticalOrder, actor: CombatEntity, point: Vec2): string {
     this.syncEntityElevation(actor);
+    // A bomber's bomb always drops beneath the aircraft's CURRENT position (so a moving plane still
+    // drops straight down), plummets steeply, and doesn't arc up.
+    const airDrop = isAirBomber(actor);
+    const dropPoint = airDrop ? { x: actor.position.x, z: actor.position.z } : point;
     const origin = muzzlePoint(actor, "grenade");
     const originHeight = muzzleHeight(actor, "grenade");
-    const intendedPoint = { ...point };
-    const intendedHeight = terrainHeightAt(point) + 0.14;
+    const intendedPoint = { ...dropPoint };
+    const intendedHeight = terrainHeightAt(dropPoint) + 0.14;
     const baseYaw = Math.atan2(intendedPoint.x - origin.x, intendedPoint.z - origin.z);
     const horizontalDistance = Math.max(0.001, dist(origin, intendedPoint));
     const basePitch = Math.atan2(intendedHeight - originHeight, horizontalDistance);
@@ -2173,7 +2190,8 @@ export class TacticalSim {
       previous: { ...origin },
       origin,
       direction,
-      verticalSlope: Math.tan(clamp(basePitch, -0.42, 0.42)),
+      // Bombs plummet steeply (wide down-clamp); a lobbed grenade keeps the shallow ±0.42 arc.
+      verticalSlope: Math.tan(clamp(basePitch, airDrop ? -1.5 : -0.42, 0.42)),
       travel: 0,
       maxTravel,
       aimPoint: intendedPoint,
@@ -2189,7 +2207,7 @@ export class TacticalSim {
       spreadRadians: 0,
       yawErrorRadians: 0,
       pitchErrorRadians: 0,
-      arcHeight: projectileArcHeight("grenade", horizontalDistance),
+      arcHeight: airDrop ? 0 : projectileArcHeight("grenade", horizontalDistance),
       arcDistance: horizontalDistance,
       attackMode: "grenade",
       groundTarget: true,
@@ -2200,7 +2218,7 @@ export class TacticalSim {
       ignoredEntityIds: [],
     };
     this.projectiles.push(projectile);
-    this.pushLog(`${actor.name} throws a grenade at the ground`);
+    this.pushLog(airDrop ? `${actor.name} drops a bomb` : `${actor.name} throws a grenade at the ground`);
     return projectile.id;
   }
 
@@ -4109,6 +4127,12 @@ function grenadeThrowRange(entity: CombatEntity): number {
 
 function canUseHandGrenade(entity: CombatEntity): boolean {
   return (entity.kind === "soldier" || entity.kind === "gunship") && entity.status.alive && entity.grenades > 0;
+}
+
+// Aircraft that bomb (gunship, and later the Bomber): their bomb falls STRAIGHT DOWN from the
+// aircraft instead of being lobbed at a distant point, so it's aimed by flying over the target.
+function isAirBomber(entity: CombatEntity): boolean {
+  return entity.flying === true && grenadeThrowRange(entity) > 0;
 }
 
 function limitMoveDestination(entity: CombatEntity, start: Vec2, destination: Vec2): Vec2 {
