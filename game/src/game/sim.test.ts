@@ -1936,6 +1936,53 @@ describe("tactical enemy AI", () => {
     expect(bomber.queueGrenade("air2")).toBe(false);
   });
 
+  it("AI air counter-play: the enemy commander wants Flak when the player fields a flyer", () => {
+    const sim = new TacticalSim([
+      createGunship("pg", "Hawk", "player", { x: 0, z: 0 }),
+      createSoldier("es", "Grunt", "enemy", { x: 6, z: 0 }),
+    ]);
+    const pref = (sim as unknown as { enemyTroopPreference(): string[] }).enemyTroopPreference();
+    expect(pref[0]).toBe("flak"); // contest the air lane before anything else
+  });
+
+  it("AI air counter-play: over several turns the enemy actually fields anti-air against a flyer", () => {
+    const sim = new TacticalSim([
+      createBase("p-base", "HQ", "player", { x: -16, z: 0 }),
+      createBase("e-base", "Enemy HQ", "enemy", { x: 16, z: 0 }),
+      createGunship("pg", "Hawk", "player", { x: -8, z: 0 }),
+    ]);
+    let fieldedAA = false;
+    for (let turn = 0; turn < 24 && !fieldedAA && !sim.gameOver; turn += 1) {
+      sim.debugGrant("enemy", 500); // keep money from ever being the blocker
+      sim.endTurn();
+      let guard = 0;
+      while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+      fieldedAA = sim.entities.some((e) => e.team === "enemy" && e.status.alive && (e.kind === "flak" || e.kind === "heavy" || e.kind === "sniper"));
+    }
+    expect(fieldedAA).toBe(true);
+  });
+
+  it("AI air: an enemy gunship bombs a ground target rather than firing its air-to-air gun", () => {
+    const sim = new TacticalSim([
+      createGunship("eg", "Vulture", "enemy", { x: 0, z: 0 }),
+      createSoldier("ps", "Rook", "player", { x: 6, z: 0 }), // ground, inside bomb range
+    ]);
+    sim.endTurn(); // enemy plans its orders
+    expect(sim.orders.some((o) => o.actorId === "eg" && o.kind === "grenade")).toBe(true); // bombed
+    expect(sim.orders.some((o) => o.actorId === "eg" && o.kind === "shoot")).toBe(false); // no wasted gun
+  });
+
+  it("AI targeting: a rifleman passes over a flyer it can't hurt for a ground unit it can", () => {
+    const sim = new TacticalSim([
+      createSoldier("r", "Rifle", "enemy", { x: 0, z: 0 }),
+      createGunship("f", "Flyer", "player", { x: 2, z: 0 }), // high value, but a rifle barely scratches it
+      createSoldier("g", "Grunt", "player", { x: 3, z: 0 }), // lower value, but killable
+    ]);
+    const pick = (sim as unknown as { pickShootTarget(s: unknown, c: unknown[], m: Map<string, number>, r: number): { id: string } | undefined })
+      .pickShootTarget(sim.entity("r"), [sim.entity("f"), sim.entity("g")], new Map(), 30);
+    expect(pick?.id).toBe("g");
+  });
+
   it("a unit that runs over a cash cache banks it", () => {
     const soldier = createSoldier("p", "Vega", "player", { x: 0, z: 0 });
     const sim = new TacticalSim([

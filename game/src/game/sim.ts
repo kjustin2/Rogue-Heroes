@@ -3156,6 +3156,18 @@ export class TacticalSim {
         spendCommandPoint(enemy);
         continue;
       }
+      // Air units: the autocannon is air-to-air ONLY, so a gunship guns enemy flyers but drops
+      // BOMBS on ground targets (aimed at the spot, like a grenade). Deterministic — a gunship
+      // commits rather than rolling for it.
+      if (isAirKind(enemy.kind) && enemy.commandPoints > 0) {
+        const flyers = (players.length ? players : allPlayers).filter((p) => p.flying && p.status.alive);
+        const airTgt = flyers.length ? nearest(enemy, flyers) : undefined;
+        if (airTgt && enemy.status.canShoot && dist(enemy.position, airTgt.position) <= range && this.queueShootFor(enemy, airTgt, "center")) continue;
+        if (target && enemy.grenades > 0 && !this.grenadeFailureReason(enemy, target)) {
+          this.queueGrenadeFor(enemy, target, "center");
+          continue;
+        }
+      }
       // Fire when a target is in weapon range. Smart bots focus-fire the highest-value killable
       // unit they can reach; the greedy bot just shoots whatever is nearest and in range.
       const shootTarget = profile.focusFire
@@ -3171,7 +3183,10 @@ export class TacticalSim {
         if (this.queueShootFor(enemy, shootTarget, aim)) {
           fired = true;
           const burst = enemy.kind === "heavy" ? 3 : 1;
-          committed.set(shootTarget.id, (committed.get(shootTarget.id) ?? 0) + baseShotDamage(enemy.kind) * burst);
+          // Predict actual damage (folds in falloff, cover-less vsAir, flank, tech) so focus-fire
+          // hands off only when the target is really dead — not when flat base damage says so.
+          const perShot = this.estimateShotDamage(enemy, shootTarget, preferredPart(shootTarget, aim), aim, false);
+          committed.set(shootTarget.id, (committed.get(shootTarget.id) ?? 0) + perShot * burst);
         }
       }
       // Otherwise advance: carriers run the flag home, crippled units fall back to base, others
@@ -3239,15 +3254,21 @@ export class TacticalSim {
       .map((t) => {
         const com = committed.get(t.id) ?? 0;
         const hp = remainingHp(t);
+        // What THIS shooter would actually land — so a rifleman won't waste shots on a flyer it
+        // can barely scratch (vsAir ≈ 0.14) and units pass over targets they can't meaningfully hurt.
+        const perShot = this.estimateShotDamage(shooter, t, preferredPart(t, "center"), "center", false);
         return {
           t,
+          // A flyer the shooter can barely scratch (poor vsAir) drops below any target it can
+          // actually kill — so riflemen stop wasting fire on aircraft the flak should handle.
+          ineffective: t.flying && perShot < remainingHp(t) * 0.15 ? 1 : 0,
           saturated: com >= hp ? 1 : 0, // already getting enough fire to die — deprioritize
           engaged: com > 0 ? 0 : 1, // pile onto a unit we've already started on
           value: AI_TARGET_VALUE[t.kind] ?? 4,
           hp,
         };
       })
-      .sort((a, b) => a.saturated - b.saturated || a.engaged - b.engaged || b.value - a.value || a.hp - b.hp);
+      .sort((a, b) => a.ineffective - b.ineffective || a.saturated - b.saturated || a.engaged - b.engaged || b.value - a.value || a.hp - b.hp);
     return ranked[0]?.t;
   }
 
@@ -3358,7 +3379,11 @@ export class TacticalSim {
     const playerInfantry = players.filter((p) => isInfantryKind(p.kind)).length;
     const mine = this.fieldUnits("enemy");
     const haveAntiArmor = mine.some((u) => u.kind === "tank" || u.kind === "artillery" || u.kind === "heavy" || u.kind === "grenadier" || u.kind === "mortar");
+    const playerFlyers = players.filter((p) => p.flying).length;
+    const haveAntiAir = mine.some((u) => u.kind === "flak" || u.kind === "heavy" || u.kind === "sniper");
     const pref: TroopKind[] = [];
+    // Contest the air lane first — a Flak Track (or, failing tech, heavy/sniper) answers a flyer.
+    if (playerFlyers > 0 && !haveAntiAir) pref.push("flak", "heavy", "sniper");
     if (playerVehicles > 0 && !haveAntiArmor) pref.push("tank", "heavy", "grenadier", "artillery");
     if (playerInfantry >= 3) pref.push("grenadier", "mortar", "heavy");
     // Round out into a balanced force when there's nothing specific to counter.
@@ -4453,8 +4478,8 @@ function nearest(origin: CombatEntity, candidates: CombatEntity[]): CombatEntity
 // How keen the enemy commander is to shoot a given player unit. Soft, high-impact units
 // (support, siege, snipers) rank above durable bruisers so focus-fire kills what matters.
 const AI_TARGET_VALUE: Partial<Record<EntityKind, number>> = {
-  artillery: 9, mortar: 8, sniper: 8, medic: 8, engineer: 7, grenadier: 7,
-  scout: 6, base: 6, heavy: 5, exturret: 5, striker: 5, soldier: 4, turret: 4,
+  artillery: 9, mortar: 8, sniper: 8, medic: 8, gunship: 8, engineer: 7, grenadier: 7,
+  scout: 6, base: 6, flak: 6, heavy: 5, exturret: 5, striker: 5, soldier: 4, turret: 4,
   apc: 3, tank: 3, wall: 1, cover: 0,
 };
 

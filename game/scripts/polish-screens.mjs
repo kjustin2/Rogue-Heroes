@@ -31,41 +31,72 @@ try {
   const page = await (await browser.newContext({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 2 })).newPage();
 
   await page.goto(URL, { waitUntil: "networkidle" });
-  await page.waitForSelector(".title-screen");
+  await page.waitForSelector(".main-menu");
   await delay(900); // let fonts + the first frames settle
   await page.screenshot({ path: join(OUT, "polish-1-title.png") });
 
-  // Enter the battle and select the home base to show its command deck (deploy + upgrades).
-  await page.click("[data-start]");
-  await delay(700);
-  const baseId = await page.evaluate(() => {
-    const b = window.__rht.sim.entities.find((e) => e.kind === "base" && e.team === "player");
-    return b ? b.id : null;
-  });
-  if (baseId) {
-    await page.click(`[data-select="${baseId}"]`);
-    await delay(500);
-  }
-  await page.screenshot({ path: join(OUT, "polish-2-battle.png") });
+  // Settings screen (a canonical review shot).
+  await page.click('[data-menu="settings"]');
+  await page.waitForSelector('[data-set="skin"]');
+  await delay(400);
+  await page.screenshot({ path: join(OUT, "polish-2-settings.png") });
 
-  // Select a squad unit through the roster (proper flow) and arm Shoot to show the command deck.
-  const tankId = await page.evaluate(() => {
-    const unit = window.__rht.sim.entities.find((e) => e.team === "player" && e.kind === "tank");
-    return unit ? unit.id : null;
+  // Back to the menu, then into a skirmish (menu → Skirmish → pick map → Deploy).
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForSelector(".main-menu");
+  await page.click('[data-menu="play"]');
+  await page.waitForSelector("[data-start]");
+  await page.click('[data-map="ironworks"]');
+  await delay(150);
+  await page.click("[data-start]");
+  await page.waitForFunction(() => window.__rht?.sim?.phase === "command", null, { timeout: 12000 });
+  await delay(700);
+
+  // Populate the field so the action shots show real units, then frame the home base deck.
+  const ids = await page.evaluate(() => {
+    const sim = window.__rht.sim;
+    sim.debugGrant("player", 3000);
+    sim.debugSpawn("soldier", "player", { x: -3, z: 3 });
+    const tank = sim.debugSpawn("tank", "player", { x: -5, z: -1 });
+    sim.debugSpawn("gunship", "player", { x: -2, z: 6 });
+    sim.debugSpawn("soldier", "enemy", { x: 4, z: 2 });
+    sim.debugSpawn("tank", "enemy", { x: 6, z: -2 });
+    const base = sim.entities.find((e) => e.kind === "base" && e.team === "player");
+    window.__rht.deselect();
+    return { tank: tank.id, base: base ? base.id : null };
   });
-  if (tankId) {
-    await page.click(`[data-select="${tankId}"]`);
+  if (ids.base) { await page.click(`[data-select="${ids.base}"]`); await delay(500); }
+  await page.screenshot({ path: join(OUT, "polish-3-battle.png") });
+
+  // Select a tank and arm Shoot to show the unit command deck + range.
+  if (ids.tank) {
+    await page.click(`[data-select="${ids.tank}"]`);
     await delay(150);
     const shootBtn = await page.$('[data-order-action="shoot"]');
     if (shootBtn) await shootBtn.click();
     await delay(350);
   }
-  await page.screenshot({ path: join(OUT, "polish-3-command.png") });
+  await page.screenshot({ path: join(OUT, "polish-4-command.png") });
 
-  // Force a victory to capture the end screen.
-  await page.evaluate(() => { window.__rht.sim.phase = "victory"; });
-  await delay(400);
-  await page.screenshot({ path: join(OUT, "polish-4-victory.png") });
+  // Pause menu (Escape must open pause, never exit fullscreen). Deselect first so Escape opens
+  // pause directly rather than first cancelling the unit's targeting.
+  await page.evaluate(() => window.__rht.deselect());
+  await delay(100);
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".pause-overlay .pause-card");
+  await delay(300);
+  await page.screenshot({ path: join(OUT, "polish-5-pause.png") });
+  await page.keyboard.press("Escape"); // close pause
+  await delay(300);
+
+  // Force a victory to capture the end state (skirmish shows a points toast over the field).
+  await page.evaluate(() => {
+    document.querySelectorAll(".pause-overlay").forEach((el) => el.remove());
+    window.__rht.deselect();
+    window.__rht.sim.debugSetPhase("victory");
+  });
+  await delay(2200); // kill-cam + toast settle
+  await page.screenshot({ path: join(OUT, "polish-6-victory.png") });
 
   console.log("Polish screenshots saved to shots/polish-*.png");
 } finally {
