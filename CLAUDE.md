@@ -83,8 +83,22 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
 - **Per-part damage** (`damageModel.ts`): entities are bags of parts; `applyDamage`
   hits a part, `recomputeStatus` derives `canMove`/`canShoot`/`alive`.
 - **Terrain is a mutable singleton** (`src/game/terrain.ts`): `setActiveTerrain` swaps
-  global blocks + `ARENA_BOUNDS`; `configure()`-ing a map mutates shared state. Tests
-  building `TacticalSim` from raw entities rely on `DEFAULT_TERRAIN`'s fixed mesa.
+  global blocks + `ARENA_BOUNDS` (+ `water`/`bridges`); `configure()`-ing a map mutates shared
+  state. Tests building `TacticalSim` from raw entities rely on `DEFAULT_TERRAIN`'s fixed mesa —
+  a test that needs water/bigger bounds must `setActiveTerrain(...)` AFTER constructing the sim
+  (the constructor resets terrain) and restore `DEFAULT_TERRAIN` at the end.
+- **Impassable terrain** is emergent, not tile-flagged: a stacked terrain step >`TERRAIN_STEP`
+  (0.95) reads as a cliff/wall, and `water` rects block ground movement (via `pointInWater` in
+  `blockedBySteepTerrain`) unless a `bridge` rect crosses (flyers overfly both). Water sits at
+  ground height so it does NOT block flat line-of-fire. "Large hills"/"walls" reuse stacked
+  `TerrainBlock`s or the `wall`/`cliff` cover kinds — no new primitive.
+- **Every map is enlarged at load** by `scaleMapDef` in `maps.ts` (large ~2×, medium ~1.5×,
+  small ~1.3× area; authored `RAW_MAPS` literals stay at base scale). Only positions/extents
+  scale — object sizes and terrain heights are fixed; scatter counts grow with area. `MapDef.size`
+  is stamped from the authored area so `mapSize()` stays correct. Arena-dependent render constants
+  (shadow frustum, max zoom, fill-light range, particle count) are sized for the largest map.
+- **Unit move distances carry a global `MOVE_RANGE_SCALE`** (`sim.ts`, on both `moveRange` and
+  `moveSpeed`) so the bigger maps don't slog. Changing it shifts move-distance test expectations.
 - **`serialize()`/`restore()`** JSON round-trip the battle; always resumes in `command`.
 - Data catalogs are the tuning surface: `units.ts` (troops/defenses/support powers),
   `tech.ts`, `modes.ts`, `maps.ts`, `scenario.ts` (bases + cover only — no starting units).
