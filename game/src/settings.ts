@@ -68,6 +68,10 @@ export class GameSettings {
   // Cosmetic vehicle skin pack ("" = standard, "winter" = arctic camo retextures).
   unitSkin = "";
   keybinds: Record<BindableAction, string> = { ...DEFAULT_KEYBINDS };
+  // Debug/sandbox cheats — only shown + applied when the game is launched with the ?debug flag
+  // (see the Debug section in Settings / the README). Persisted like any other setting.
+  debugInfiniteMoney = false;
+  debugFreeCooldown = false;
 
   constructor() {
     this.load();
@@ -93,6 +97,8 @@ export class GameSettings {
       if (typeof s.highContrastTeams === "boolean") this.highContrastTeams = s.highContrastTeams;
       if (typeof s.unitSkin === "string") this.unitSkin = s.unitSkin;
       if (s.keybinds && typeof s.keybinds === "object") this.keybinds = { ...DEFAULT_KEYBINDS, ...s.keybinds };
+      if (typeof s.debugInfiniteMoney === "boolean") this.debugInfiniteMoney = s.debugInfiniteMoney;
+      if (typeof s.debugFreeCooldown === "boolean") this.debugFreeCooldown = s.debugFreeCooldown;
     } catch {
       // ignore
     }
@@ -100,7 +106,7 @@ export class GameSettings {
 
   save(): void {
     try {
-      localStorage.setItem(KEY, JSON.stringify({ muted: this.muted, volume: this.volume, musicVolume: this.musicVolume, difficulty: this.difficulty, reducedMotion: this.reducedMotion, actionPace: this.actionPace, renderScale: this.renderScale, highContrastTeams: this.highContrastTeams, unitSkin: this.unitSkin, keybinds: this.keybinds }));
+      localStorage.setItem(KEY, JSON.stringify({ muted: this.muted, volume: this.volume, musicVolume: this.musicVolume, difficulty: this.difficulty, reducedMotion: this.reducedMotion, actionPace: this.actionPace, renderScale: this.renderScale, highContrastTeams: this.highContrastTeams, unitSkin: this.unitSkin, keybinds: this.keybinds, debugInfiniteMoney: this.debugInfiniteMoney, debugFreeCooldown: this.debugFreeCooldown }));
     } catch {
       // ignore
     }

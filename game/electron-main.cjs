@@ -79,7 +79,9 @@ function createWindow() {
 
   Menu.setApplicationMenu(null);
   win.once("ready-to-show", () => win.show());
-  win.loadURL("app://rht/index.html");
+  // Launch with --debug (or RHT_DEBUG=1) to unlock the in-game Debug/Sandbox settings section.
+  const debug = process.argv.includes("--debug") || process.env.RHT_DEBUG === "1";
+  win.loadURL(`app://rht/index.html${debug ? "?debug" : ""}`);
   if (process.env.RHT_DEVTOOLS === "1") win.webContents.openDevTools({ mode: "detach" });
 }
 

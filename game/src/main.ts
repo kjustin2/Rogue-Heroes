@@ -72,6 +72,9 @@ const stage = new Stage(canvas);
 // perf bench) stalls on the HalfFloat bloom chain; real GPUs get the graded stack.
 const LOWFX = new URLSearchParams(location.search).has("lowfx");
 stage.setQuality(LOWFX ? "performance" : settings.renderScale);
+// ?debug unlocks the Debug section in Settings (infinite money, free cooldowns). Launch the game
+// with ?debug in the URL, or the packaged app with --debug / RHT_DEBUG=1. See the README.
+const DEBUG_UNLOCKED = new URLSearchParams(location.search).has("debug");
 stage.setPixelRatioCap(RENDER_SCALE_DPR[settings.renderScale]);
 preloadModels(); // kick GLB loads immediately; renderer swaps them in as they arrive
 setModelSkin(settings.unitSkin);
@@ -936,6 +939,16 @@ function showSettings(): void {
         <label>High-contrast teams</label>
         <button class="menu-toggle ${settings.highContrastTeams ? "on" : ""}" data-set="teams" type="button" data-tip="Colorblind-friendly team palette: your force reads blue, hostiles read orange.">${settings.highContrastTeams ? "On" : "Off"}</button>
       </div>
+      ${DEBUG_UNLOCKED ? `
+      <div class="settings-row settings-row--head"><label>🛠 Debug / Sandbox</label></div>
+      <div class="settings-row">
+        <label>Infinite money</label>
+        <button class="menu-toggle ${settings.debugInfiniteMoney ? "on" : ""}" data-set="debug-money" type="button" data-tip="Keeps your treasury topped up every command phase.">${settings.debugInfiniteMoney ? "On" : "Off"}</button>
+      </div>
+      <div class="settings-row">
+        <label>Free deploy cooldowns</label>
+        <button class="menu-toggle ${settings.debugFreeCooldown ? "on" : ""}" data-set="debug-cd" type="button" data-tip="Zeroes deploy cooldowns so you can reinforce instantly.">${settings.debugFreeCooldown ? "On" : "Off"}</button>
+      </div>` : ""}
       <div class="settings-row settings-row--head"><label>Controls</label><button class="menu-toggle" data-set="binds-reset" type="button" data-tip="Restore every key to its default.">Reset</button></div>
       ${(Object.keys(KEYBIND_LABELS) as BindableAction[]).map((action) => `
         <div class="settings-row settings-row--bind">
@@ -990,6 +1003,11 @@ function showSettings(): void {
         settings.unitSkin = settings.unitSkin === "winter" ? "" : "winter";
         setModelSkin(settings.unitSkin);
       }
+    } else if (set === "debug-money") {
+      settings.debugInfiniteMoney = !settings.debugInfiniteMoney;
+      if (settings.debugInfiniteMoney && inBattle) sim.debugGrant("player", 999999);
+    } else if (set === "debug-cd") {
+      settings.debugFreeCooldown = !settings.debugFreeCooldown;
     } else if (set === "binds-reset") {
       settings.keybinds = { ...DEFAULT_KEYBINDS };
     }
@@ -1767,6 +1785,16 @@ function showToast(text: string): void {
 
 // Drop any lingering toasts immediately — called before a full-screen end overlay so transient
 // start-of-battle notices can't overlap its buttons.
+// Debug/sandbox cheats, applied each command frame while unlocked (via ?debug + the Debug settings
+// section): keep the treasury topped up, and/or zero the deploy cooldowns for instant reinforcement.
+function applyDebugCheats(): void {
+  if (settings.debugInfiniteMoney && sim.money("player") < 90000) sim.debugGrant("player", 999999);
+  if (settings.debugFreeCooldown) {
+    const base = sim.entities.find((e) => e.kind === "base" && e.team === "player");
+    if (base?.spawnCooldowns) for (const key of Object.keys(base.spawnCooldowns)) (base.spawnCooldowns as Record<string, number>)[key] = 0;
+  }
+}
+
 // Clicking a ground cash cache surfaces how much it pays and how to collect it.
 function inspectPickup(id: string): void {
   const cache = sim.pickups.find((p) => p.id === id);
@@ -1840,6 +1868,7 @@ function frame(now: number): void {
   });
   // The action-pace setting only scales time while orders resolve; planning stays real-time.
   sim.update(sim.phase === "resolve" ? dt * settings.resolveSpeed : dt);
+  if (DEBUG_UNLOCKED && inBattle && sim.phase === "command") applyDebugCheats();
   processBattleEvents();
   watchEnemyIntel();
   watchCampaignBeats();

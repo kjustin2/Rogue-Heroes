@@ -22,6 +22,21 @@ npm run standalone
 Use `npm run desktop` to launch Electron against an already-built `dist/`
 folder.
 
+## Debug / Sandbox mode
+
+Launch the game with a debug flag to unlock a **Debug / Sandbox** section at the
+bottom of the in-game **Settings** menu:
+
+- **Dev/browser:** open the game with `?debug`, e.g. `http://localhost:5175/?debug`.
+- **Packaged Electron:** launch with `--debug` (e.g. `npm run desktop -- --debug`)
+  or set the `RHT_DEBUG=1` environment variable.
+
+The Debug section is hidden entirely unless the flag is present. Toggles (persisted
+like any other setting):
+
+- **Infinite money** — keeps your treasury topped up every command phase.
+- **Free deploy cooldowns** — zeroes deploy cooldowns so you can reinforce instantly.
+
 ## Verify
 
 ```powershell
