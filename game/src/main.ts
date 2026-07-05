@@ -350,12 +350,23 @@ window.addEventListener("wheel", (event) => {
 function shouldLetUiScroll(event: WheelEvent): boolean {
   // Any open full-screen menu/overlay scrolls instead of zooming the world.
   if (anyOverlayOpen()) return true;
-  const target = event.target instanceof Element ? event.target : undefined;
-  const scroller = target?.closest<HTMLElement>(".menu-content, .commandbar, .panel, .target-panel, .unit-detail-panel, .roster, .compact-log.expanded, .battle-log-panel, .turn-report-list, .overlay-card");
-  if (!scroller || scroller.scrollHeight <= scroller.clientHeight + 1) return false;
-  if (event.deltaY > 0) return scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 1;
-  if (event.deltaY < 0) return scroller.scrollTop > 0;
-  return true;
+  // Walk up from the element under the cursor and find ANY actually-scrollable ancestor (by its
+  // computed overflow + real overflow content), rather than a hardcoded class list that misses new
+  // scroll containers like the tech-tree tab. If the cursor is over a scrollable menu, the wheel
+  // scrolls that menu (chaining to a parent scroller that can still move); it never zooms the world
+  // out from under a menu the player is reading — even at the menu's scroll boundary.
+  let node: HTMLElement | null = event.target instanceof HTMLElement ? event.target : null;
+  let overScrollable = false;
+  while (node && node !== document.body) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight + 1) {
+      overScrollable = true;
+      if (event.deltaY > 0 && node.scrollTop + node.clientHeight < node.scrollHeight - 1) return true;
+      if (event.deltaY < 0 && node.scrollTop > 0) return true;
+    }
+    node = node.parentElement;
+  }
+  return overScrollable;
 }
 
 window.addEventListener("keydown", (event) => {

@@ -83,6 +83,10 @@ function createWindow() {
   if (process.env.RHT_DEVTOOLS === "1") win.webContents.openDevTools({ mode: "detach" });
 }
 
+// Use classic (non-overlay) scrollbars so the themed ::-webkit-scrollbar styling is always visible
+// instead of an auto-hiding thin overlay bar. Must be set before the app is ready.
+app.commandLine.appendSwitch("disable-features", "OverlayScrollbar");
+
 app.whenReady().then(() => {
   serveAppProtocol();
   createWindow();

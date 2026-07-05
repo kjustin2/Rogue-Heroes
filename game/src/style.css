@@ -4778,3 +4778,60 @@ body.killcam::after { bottom: 0; }
 .tech-legend .tl.ready::before { background: var(--amber); border-color: var(--amber); }
 .tech-legend .tl.blocked::before { background: rgba(255, 255, 255, 0.1); }
 .tech-legend .tl.locked::before { background: var(--red); border-color: var(--red); border-style: dashed; }
+
+/* ============================================================
+   THEMED SCROLLBARS (Chromium/Electron)
+   A machined brass thumb floating in an inset gunmetal groove, with a warm glow on hover — matches
+   the weathered-brass-on-gunmetal chrome. ::-webkit-scrollbar overrides scrollbar-color in Chromium.
+   ============================================================ */
+* {
+  scrollbar-color: var(--amber) rgba(18, 16, 11, 0.55); /* non-webkit fallback */
+}
+::-webkit-scrollbar {
+  width: 13px;
+  height: 13px;
+}
+::-webkit-scrollbar-track {
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.12) 45%, rgba(0, 0, 0, 0.42));
+  border-radius: 9px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 240, 210, 0.05),
+    inset 0 2px 5px rgba(0, 0, 0, 0.55);
+}
+::-webkit-scrollbar-track:horizontal {
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.12) 45%, rgba(0, 0, 0, 0.42));
+}
+/* Floating pill: a transparent border + padding-box clip insets the thumb from the groove walls. */
+::-webkit-scrollbar-thumb {
+  border-radius: 9px;
+  border: 3px solid transparent;
+  background:
+    linear-gradient(180deg, rgba(255, 228, 172, 0.96), rgba(216, 158, 78, 0.94) 46%, rgba(150, 104, 46, 0.96)) padding-box;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 250, 232, 0.55),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.42),
+    0 0 6px rgba(255, 202, 107, 0.22);
+  min-height: 42px;
+  transition: background 0.14s ease, box-shadow 0.14s ease;
+}
+::-webkit-scrollbar-thumb:horizontal {
+  background:
+    linear-gradient(90deg, rgba(255, 228, 172, 0.96), rgba(216, 158, 78, 0.94) 46%, rgba(150, 104, 46, 0.96)) padding-box;
+  min-height: 0;
+  min-width: 42px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background:
+    linear-gradient(180deg, rgba(255, 242, 204, 1), rgba(255, 202, 107, 0.98) 46%, rgba(198, 138, 60, 0.98)) padding-box;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 244, 0.7),
+    0 0 12px rgba(255, 202, 107, 0.55);
+}
+::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(180deg, rgba(255, 236, 196, 1), rgba(255, 190, 92, 1)) padding-box;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 244, 0.8), 0 0 14px rgba(255, 202, 107, 0.7);
+}
+::-webkit-scrollbar-corner { background: transparent; }
+.reduced-motion ::-webkit-scrollbar-thumb { transition: none; }
