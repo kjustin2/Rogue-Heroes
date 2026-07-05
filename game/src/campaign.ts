@@ -52,6 +52,27 @@ export function rankInsignia(rank: VeteranRank): string {
   return rank === "Elite" ? "★★" : rank === "Veteran" ? "★" : "";
 }
 
+// Merge a battle's survivors into a carried roster: survivors gain their kills + a mission pip,
+// members who didn't make it back are dropped (permadeath), standout newcomers join, capped to a
+// squad. Shared by the story campaign and the skirmish run so both carry veterans identically.
+export function mergeRoster(
+  prev: readonly RosterMember[],
+  survivors: ReadonlyArray<{ name: string; kind: string; kills: number }>,
+  cap = 6,
+): RosterMember[] {
+  const survived = new Map(survivors.map((s) => [s.name, s]));
+  const next: RosterMember[] = [];
+  for (const member of prev) {
+    const s = survived.get(member.name);
+    if (!s) continue; // fell in battle — permanent
+    next.push({ ...member, kills: member.kills + s.kills, missions: member.missions + 1 });
+    survived.delete(member.name);
+  }
+  for (const s of survived.values()) next.push({ name: s.name, kind: s.kind, kills: s.kills, missions: 1 });
+  next.sort((a, b) => b.kills - a.kills || b.missions - a.missions);
+  return next.slice(0, cap);
+}
+
 export const CAMPAIGN_TITLE = "Operation Vanguard";
 export const CAMPAIGN_SYNOPSIS =
   "The Concord — a continent-spanning war AI — turned its own drone armies on the frontier and called it peace. Every free company fell but one. You are Vanguard Actual, commander of the last of the Rogue Heroes. Sever the Concord's relay network region by region, reach its Core, and switch the war off for good.";
@@ -257,17 +278,7 @@ export class Campaign {
   // roster members who didn't make it back are gone for good, and standout newcomers
   // join. Capped at 6 — a squad, not an army.
   recordBattleOutcome(survivors: Array<{ name: string; kind: string; kills: number }>): void {
-    const survived = new Map(survivors.map((s) => [s.name, s]));
-    const next: RosterMember[] = [];
-    for (const member of this.roster) {
-      const s = survived.get(member.name);
-      if (!s) continue; // fell in battle — permanent
-      next.push({ ...member, kills: member.kills + s.kills, missions: member.missions + 1 });
-      survived.delete(member.name);
-    }
-    for (const s of survived.values()) next.push({ name: s.name, kind: s.kind, kills: s.kills, missions: 1 });
-    next.sort((a, b) => b.kills - a.kills || b.missions - a.missions);
-    this.roster = next.slice(0, 6);
+    this.roster = mergeRoster(this.roster, survivors);
     this.save();
   }
 

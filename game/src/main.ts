@@ -41,7 +41,8 @@ import { sfx } from "./audio";
 import { music } from "./music";
 import { progression, COSMETICS, COSMETIC_CATEGORIES, type Cosmetic } from "./progression";
 import { battleReward } from "./progression";
-import { campaign, CAMPAIGN_TITLE, CAMPAIGN_SYNOPSIS, rankFor, rankHpBonus, rankInsignia, type CampaignMission } from "./campaign";
+import { campaign, CAMPAIGN_TITLE, CAMPAIGN_SYNOPSIS, rankFor, rankHpBonus, rankInsignia, type CampaignMission, type RosterMember } from "./campaign";
+import { run, RUN_LENGTH } from "./run";
 import { commander, MEDALS } from "./commander";
 import { settings, ACTION_PACES, PACE_LABEL, RENDER_SCALES, RENDER_SCALE_LABEL, RENDER_SCALE_DPR, DEFAULT_KEYBINDS, KEYBIND_LABELS, keyDisplay, type ActionPace, type RenderScale, type BindableAction } from "./settings";
 import { applyScenario, scenarioInfo } from "./game/scenarios";
@@ -484,22 +485,7 @@ function startCampaignMission(mission: CampaignMission): void {
   }
 
   // The veteran roster deploys free, named, ranked, and tougher — and dies for good.
-  const playerBase = sim.entities.find((e) => e.kind === "base" && e.team === "player");
-  if (playerBase) {
-    campaign.roster.forEach((member, index) => {
-      const angle = -0.8 + index * 0.5;
-      const spot = {
-        x: playerBase.position.x + Math.sin(angle + Math.PI / 2) * 3.4,
-        z: playerBase.position.z + Math.cos(angle + Math.PI / 2) * 3.4,
-      };
-      const unit = sim.debugSpawn(member.kind as TroopKind, "player", spot);
-      const rank = rankFor(member.kills);
-      unit.name = `${member.name} ${rankInsignia(rank)}`.trim();
-      const bonus = rankHpBonus(rank);
-      if (bonus > 1) for (const part of unit.parts) { part.maxHp = Math.round(part.maxHp * bonus); part.hp = part.maxHp; }
-    });
-    if (campaign.roster.length) showToast(`${campaign.roster.length} veteran${campaign.roster.length > 1 ? "s" : ""} deployed with you`);
-  }
+  deployRoster(campaign.roster);
 
   // Finale set piece: the named Warden, tracked by the top-of-screen HP bar.
   if (mission.boss) {
@@ -514,6 +500,62 @@ function startCampaignMission(mission: CampaignMission): void {
   inBattle = true;
   hud.update();
   runMissionIntro();
+}
+
+// Deploy a carried veteran roster at the player base: free, named, ranked, tougher, permadeath.
+// Shared by campaign missions and skirmish-run sectors.
+function deployRoster(roster: readonly RosterMember[]): void {
+  const playerBase = sim.entities.find((e) => e.kind === "base" && e.team === "player");
+  if (!playerBase || !roster.length) return;
+  roster.forEach((member, index) => {
+    const angle = -0.8 + index * 0.5;
+    const spot = {
+      x: playerBase.position.x + Math.sin(angle + Math.PI / 2) * 3.4,
+      z: playerBase.position.z + Math.cos(angle + Math.PI / 2) * 3.4,
+    };
+    const unit = sim.debugSpawn(member.kind as TroopKind, "player", spot);
+    const rank = rankFor(member.kills);
+    unit.name = `${member.name} ${rankInsignia(rank)}`.trim();
+    const bonus = rankHpBonus(rank);
+    if (bonus > 1) for (const part of unit.parts) { part.maxHp = Math.round(part.maxHp * bonus); part.hp = part.maxHp; }
+  });
+  showToast(`${roster.length} veteran${roster.length > 1 ? "s" : ""} deployed with you`);
+}
+
+// The player units that walked away, as roster-merge input (star suffixes stripped so a
+// veteran's name stays stable across battles). Air and armor carry forward like infantry.
+function collectSurvivors(): Array<{ name: string; kind: string; kills: number }> {
+  const carriable = ["tank", "apc", "artillery", "gunship", "flak"];
+  return sim.entities
+    .filter((e) => e.team === "player" && e.status.alive && (isInfantryKind(e.kind) || carriable.includes(e.kind)))
+    .map((e) => ({ name: e.name.replace(/ ★+$/, ""), kind: e.kind, kills: sim.killsBy.get(e.id) ?? 0 }));
+}
+
+// Configure and launch the current sector of an active skirmish run. Mirrors startCampaignMission
+// (roster carry + a starting-funds bonus) minus the story/boss scaffolding.
+function startRunBattle(): void {
+  tutorialActive = false;
+  activeCampaignMission = undefined;
+  campaign.setActive(undefined);
+  closeAllMenus();
+  const battle = run.current();
+  sim.configure(mapDef(battle.map), battle.mode, battle.difficulty);
+
+  const cash = run.consumeCash();
+  if (cash > 0) {
+    sim.economy.set("player", (sim.economy.get("player") ?? 0) + cash);
+    showToast(`Salvage banked: +$${cash} starting funds`);
+  }
+  deployRoster(run.roster);
+  firedBeats.clear();
+
+  world.applyMap(sim.mapDef.theme);
+  world.setPlayerAccent(progression.accentColor());
+  focusOnPlayerBase();
+  lastEndPhase = undefined;
+  inBattle = true;
+  hud.update();
+  showToast(`Sector ${run.sectorNumber} of ${RUN_LENGTH} · ${mapDef(battle.map).name} · ${modeDef(battle.mode).name}`);
 }
 
 // Mission-intro cinematic: a letterboxed rail flyover — enemy lines, the contested
@@ -685,6 +727,7 @@ function showMainMenu(): void {
       <div class="main-menu__buttons">
         <button class="title-start" data-menu="campaign" type="button">Campaign</button>
         ${hasSave ? `<button class="menu-action" data-menu="continue" type="button">Continue Battle</button>` : ""}
+        <button class="menu-action" data-menu="run" type="button">Skirmish Run${run.active ? ` · Sector ${run.sectorNumber}/${RUN_LENGTH}` : ""}</button>
         <button class="menu-action" data-menu="play" type="button">Skirmish</button>
         <button class="menu-action" data-menu="tutorial" type="button">Tutorial</button>
         <button class="menu-action" data-menu="armory" type="button">Armory</button>
@@ -700,6 +743,7 @@ function showMainMenu(): void {
     const target = event.target as HTMLElement;
     const action = target.closest<HTMLElement>("[data-menu]")?.dataset.menu;
     if (action === "campaign") showCampaign();
+    else if (action === "run") showRunIntro();
     else if (action === "play") showStartScreen();
     else if (action === "continue") loadSavedBattle();
     else if (action === "tutorial") startTutorial();
@@ -1244,6 +1288,176 @@ function showCampaignDefeat(mission: CampaignMission): void {
   });
 }
 
+// Compact veteran-roster strip for the run overlays (reuses the campaign roster styling).
+function runRosterHtml(): string {
+  if (!run.roster.length) return "";
+  const members = run.roster
+    .map((m) => {
+      const rank = rankFor(m.kills);
+      return `<span class="campaign-roster__member" data-tip="${escapeAttr(`${rank} ${m.kind} — ${m.kills} kills over ${m.missions} sector${m.missions === 1 ? "" : "s"}. Redeploys free next sector. Falls in battle = gone for good.`)}">${escapeHtml(m.name)} <em>${rankInsignia(rank) || "·"}</em></span>`;
+    })
+    .join("");
+  return `<div class="campaign-roster"><span class="campaign-roster__title">Squad Roster — veterans of this run</span>${members}</div>`;
+}
+
+// Between-sector screen: a cleared, non-final sector. run.index already points at the next one.
+function showRunSector(reward: number): void {
+  const next = run.current();
+  const cashLine = run.bankedCash > 0 ? ` · Salvage banked: +$${run.bankedCash}` : "";
+  const screen = mountScreen(
+    `
+    <div class="overlay-card campaign-end victory">
+      <div class="campaign-end__kicker">Sector ${run.index} Cleared</div>
+      <h2 class="menu-heading">Skirmish Run</h2>
+      <p class="campaign-end__story">The line holds. Regroup and push to the next sector — your veterans and salvage come with you.</p>
+      <div class="campaign-end__reward">+${reward} points${cashLine}</div>
+      ${runRosterHtml()}
+      <div class="campaign-progress">Next · Sector ${run.sectorNumber} of ${RUN_LENGTH} — ${escapeHtml(mapDef(next.map).name)} · ${escapeHtml(modeDef(next.mode).name)} · ${escapeHtml(difficultyLabel(next.difficulty))}</div>
+      <div class="pause-buttons">
+        <button class="title-start" data-next type="button">Deploy · Sector ${run.sectorNumber}</button>
+        <button class="menu-action" data-menu-btn type="button">Abandon Run</button>
+      </div>
+    </div>
+  `,
+    "pause-overlay campaign-overlay",
+  );
+  screen.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("[data-next]")) {
+      screen.remove();
+      deployRunWithLoadingScreen();
+    } else if (target.closest("[data-menu-btn]")) {
+      run.end();
+      screen.remove();
+      showMainMenu();
+    }
+  });
+}
+
+function showRunComplete(reward: number): void {
+  const screen = mountScreen(
+    `
+    <div class="overlay-card campaign-end victory">
+      <div class="campaign-end__kicker">Run Complete ★</div>
+      <h2 class="menu-heading">Skirmish Run</h2>
+      <p class="campaign-end__story">All ${RUN_LENGTH} sectors cleared in one unbroken push. The frontier is yours, Commander — for now.</p>
+      <div class="campaign-end__reward">+${reward} points</div>
+      ${runRosterHtml()}
+      <div class="pause-buttons">
+        <button class="title-start" data-menu-btn type="button">Return to Menu</button>
+      </div>
+    </div>
+  `,
+    "pause-overlay campaign-overlay",
+  );
+  screen.addEventListener("click", (event) => {
+    if ((event.target as HTMLElement).closest("[data-menu-btn]")) {
+      screen.remove();
+      showMainMenu();
+    }
+  });
+}
+
+function showRunDefeat(): void {
+  const cleared = run.index; // sectors banked before the loss
+  const screen = mountScreen(
+    `
+    <div class="overlay-card campaign-end defeat">
+      <div class="campaign-end__kicker">Run Over</div>
+      <h2 class="menu-heading">Skirmish Run</h2>
+      <p class="campaign-end__story">The Vanguard is overrun on Sector ${cleared + 1}. ${cleared > 0 ? `You held ${cleared} sector${cleared === 1 ? "" : "s"} before the line broke.` : "No ground held — regroup and run it again."}</p>
+      <div class="pause-buttons">
+        <button class="title-start" data-new type="button">New Run</button>
+        <button class="menu-action" data-menu-btn type="button">Return to Menu</button>
+      </div>
+    </div>
+  `,
+    "pause-overlay campaign-overlay",
+  );
+  screen.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("[data-new]")) {
+      screen.remove();
+      beginNewRun();
+    } else if (target.closest("[data-menu-btn]")) {
+      screen.remove();
+      showMainMenu();
+    }
+  });
+}
+
+// Loading veil around a run sector start (mirrors deployWithLoadingScreen for campaign/skirmish).
+function deployRunWithLoadingScreen(): void {
+  const battle = run.current();
+  const veil = document.createElement("div");
+  veil.className = "battle-loading";
+  veil.innerHTML = `<div class="battle-loading__inner">
+    <div class="battle-loading__spinner"></div>
+    <div class="battle-loading__label"><span>Deploying to</span><strong>${escapeAttr(mapDef(battle.map).name)}</strong></div>
+  </div>`;
+  document.body.appendChild(veil);
+  requestAnimationFrame(() => veil.classList.add("show"));
+  const startedAt = performance.now();
+  const minVisible = settings.reducedMotion ? 250 : 600;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    startRunBattle();
+    const hold = Math.max(0, minVisible - (performance.now() - startedAt));
+    window.setTimeout(() => {
+      veil.classList.add("leaving");
+      window.setTimeout(() => veil.remove(), 360);
+    }, hold);
+  }));
+}
+
+// Fresh run: pick a new seed (app-side, so a real clock is fine here) and drop into sector 1.
+function beginNewRun(): void {
+  run.begin(Math.floor(performance.now() * 1000) ^ (progression.points * 2654435761));
+  deployRunWithLoadingScreen();
+}
+
+// Skirmish Run entry: start a fresh ladder, or resume/abandon one already in progress.
+function showRunIntro(): void {
+  closeAllMenus();
+  const active = run.active;
+  const battle = active ? run.current() : undefined;
+  const body = active && battle
+    ? `<p class="settings-note">A run is in progress. Resume where you left off, or scrap it and start fresh.</p>
+       <div class="campaign-progress">Sector ${run.sectorNumber} of ${RUN_LENGTH} — ${escapeHtml(mapDef(battle.map).name)} · ${escapeHtml(modeDef(battle.mode).name)} · ${escapeHtml(difficultyLabel(battle.difficulty))}</div>
+       ${runRosterHtml()}`
+    : `<p class="settings-note">${RUN_LENGTH} back-to-back battles on random maps and modes, difficulty climbing each sector. Survivors carry forward as veterans — and stay dead if they fall. Clear all ${RUN_LENGTH} to win the run; lose once and it's over.</p>`;
+  const buttons = active
+    ? `<button class="title-start" data-resume type="button">Resume Run</button>
+       <button class="menu-action" data-new type="button">Abandon & New Run</button>`
+    : `<button class="title-start" data-new type="button">Begin Run</button>`;
+  const screen = mountScreen(
+    `
+    <div class="title-screen__content menu-content overlay-card">
+      <div class="title-kicker">Skirmish Run</div>
+      <h2 class="menu-heading">Roguelike Ladder</h2>
+      ${body}
+      <div class="pause-buttons">
+        ${buttons}
+        <button class="menu-action" data-back type="button">Back</button>
+      </div>
+    </div>
+  `,
+    "menu-screen",
+  );
+  screen.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("[data-resume]")) {
+      screen.remove();
+      deployRunWithLoadingScreen();
+    } else if (target.closest("[data-new]")) {
+      screen.remove();
+      beginNewRun();
+    } else if (target.closest("[data-back]")) {
+      screen.remove();
+      showMainMenu();
+    }
+  });
+}
+
 // ---- In-battle pause menu ----
 function openPauseMenu(): void {
   if (document.querySelector(".pause-overlay")) return;
@@ -1544,6 +1758,12 @@ function showToast(text: string): void {
   }, 2600);
 }
 
+// Drop any lingering toasts immediately — called before a full-screen end overlay so transient
+// start-of-battle notices can't overlap its buttons.
+function clearToasts(): void {
+  document.getElementById("toasts")?.replaceChildren();
+}
+
 // First-time onboarding hints beyond the 7-step tutorial — each fires once ever (persisted to
 // localStorage) and never during the tutorial itself. Reuses the existing toast surface.
 const HINTS_KEY = "rht.hints.v1";
@@ -1761,6 +1981,7 @@ function handleEndState(): void {
 
 // The end-of-battle overlays/toasts, split out so the kill-cam can delay them.
 function concludeEndState(victory: boolean): void {
+  clearToasts(); // no lingering start-of-battle notice should overlap the end overlay
   // Campaign battles advance the story ladder and show their own end overlay.
   const mission = activeCampaignMission;
   if (mission) {
@@ -1773,16 +1994,33 @@ function concludeEndState(victory: boolean): void {
       const bonusReward = bonusPassed ? Math.round(mission.reward * 0.5) : 0;
       const reward = (firstClear ? mission.reward : Math.round(mission.reward * 0.25)) + bonusReward + battleReward(true, sim.difficulty, sim.turn);
       // Veteran roster: survivors carry forward with their kills; the fallen are gone.
-      const survivors = sim.entities
-        .filter((e) => e.team === "player" && e.status.alive && (isInfantryKind(e.kind) || ["tank", "apc", "artillery"].includes(e.kind)))
-        .map((e) => ({ name: e.name.replace(/ ★+$/, ""), kind: e.kind, kills: sim.killsBy.get(e.id) ?? 0 }));
-      campaign.recordBattleOutcome(survivors);
+      campaign.recordBattleOutcome(collectSurvivors());
       campaign.markComplete(mission.id); // records progress + clears the active-mission save tag
       activeCampaignMission = undefined;
       progression.award(reward);
       showCampaignVictory(mission, reward, bonusPassed ? mission.bonus?.text : undefined);
     } else {
       showCampaignDefeat(mission); // keep the mission active so Retry re-runs it
+    }
+    return;
+  }
+  // Skirmish run: a cleared sector carries survivors + cash and advances; a loss ends the run.
+  if (run.active) {
+    if (victory) {
+      const leftover = sim.economy.get("player") ?? 0;
+      const reward = battleReward(true, sim.difficulty, sim.turn);
+      progression.award(reward);
+      const complete = run.advance(collectSurvivors(), leftover); // mutates roster/index BEFORE the overlay reads them
+      if (complete) {
+        const bonus = 120; // clearing the whole ladder is worth a chunk on top of the last battle
+        progression.award(bonus);
+        showRunComplete(reward + bonus);
+      } else {
+        showRunSector(reward);
+      }
+    } else {
+      run.end();
+      showRunDefeat();
     }
     return;
   }
@@ -1825,6 +2063,7 @@ declare global {
       upgradeBaseCommand(): boolean;
       researchTech(nodeId: string): boolean;
       startBattle(mapId: string, modeId: ModeId, difficulty?: Difficulty): void;
+      startRun(seed?: number): void;
       money(team: Team): number;
       cancelOrder(id: string): void;
       camera(): { x: number; z: number; zoom: number; yaw: number; pitch: number };
@@ -1885,6 +2124,7 @@ window.__rht = {
   upgradeBaseCommand: () => sim.upgradeBaseCommand(),
   researchTech: (nodeId) => sim.researchTech(nodeId),
   startBattle: (mapId, modeId, difficulty) => startBattle(mapId, modeId, difficulty),
+  startRun: (seed?: number) => { run.begin(seed ?? 12345); startRunBattle(); },
   money: (team) => sim.money(team),
   cancelOrder: (id) => sim.cancelOrder(id),
   camera: () => stage.viewState(),
