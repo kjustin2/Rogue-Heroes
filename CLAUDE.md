@@ -99,6 +99,24 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   (shadow frustum, max zoom, fill-light range, particle count) are sized for the largest map.
 - **Unit move distances carry a global `MOVE_RANGE_SCALE`** (`sim.ts`, on both `moveRange` and
   `moveSpeed`) so the bigger maps don't slog. Changing it shifts move-distance test expectations.
+- **Air layer** (`flying`/`agl` on the entity; `isAirKind` lists the flyers): gunship (helicopter,
+  air-to-air gun + straight-down bombs), interceptor (jet, air-to-air gun only), bomber (jet, bombs
+  only, no gun), transport (helicopter, unarmed airlift). Aircraft GUNS are air-to-air ONLY
+  (`isAirKind(actor) && !target.flying` rejects); BOMBS drop straight down beneath the plane
+  (`isAirBomber` → `queueBombDrop`/`launchGrenadeAtPoint` re-targets to the actor's XZ). Ground units
+  CAN hit flyers (that's the anti-air). The enemy `enemyTroopPreference` scrambles air when the
+  player flies, which is what gives a player gunship air-to-air targets. New flyer = the full
+  add-air-unit checklist (create*, `isAirKind`/`isVehicleKind`, catalog, per-kind fns, `build*`
+  model + dispatch, bomb gating, `carriable`).
+- **Air transport carry** (`passengerIds`/`carriedById` on entities → rides `serialize()`): `load`/
+  `unload` order kinds; carried units are hidden + inert + untargetable (excluded in render/targeting/
+  separation), snapped to the transport each frame, dropped on unload or when the transport dies.
+- **Debug/Sandbox mode**: launch with `?debug` (dev URL) or `--debug`/`RHT_DEBUG=1` (Electron appends
+  `?debug`); `DEBUG_UNLOCKED` reveals a Debug section in Settings (infinite money, free cooldowns),
+  applied each command frame via `applyDebugCheats`. See `game/README.md`.
+- **The AI checks line of sight before firing** (`aiShotBlocker` reuses the rng-free player shot
+  preview): it breaches a destructible blocker (cover/wall) rather than wasting the shot, or holds
+  fire on terrain/friendly blocks. Keep the aim rng draw ahead of the block decision (determinism).
 - **`serialize()`/`restore()`** JSON round-trip the battle; always resumes in `command`.
 - Data catalogs are the tuning surface: `units.ts` (troops/defenses/support powers),
   `tech.ts`, `modes.ts`, `maps.ts`, `scenario.ts` (bases + cover only — no starting units).
@@ -120,7 +138,7 @@ origin-keyed, so a new port every launch silently wipes all saves** (real 06-24 
 ## Persistence
 
 All localStorage, keyed `rht.*`: `rht.settings.v1` (incl. `keybinds`, `unitSkin`,
-`highContrastTeams`), `rht.progression.v1` (purely cosmetic), `rht.savedBattle.v1`,
+`highContrastTeams`, `debugInfiniteMoney`/`debugFreeCooldown`), `rht.progression.v1` (purely cosmetic), `rht.savedBattle.v1`,
 `rht.campaign.v1` (mission clears + roster/veterancy + requisition),
 `rht.run.v1` (Skirmish Run: seed + sector index + carried roster/banked cash — the
 in-battle sim itself still saves to `rht.savedBattle.v1`, so a paused sector resumes
