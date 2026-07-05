@@ -2538,8 +2538,14 @@ export class TacticalSim {
   // catches an exposed side/rear. Returns 0 (dead ahead) .. 1 (directly behind). Only mobile units
   // that actually turn to face a threat can be flanked — cover, the base, and static defenses can't.
   private flankFactor(actor: CombatEntity, target: CombatEntity): number {
+    return this.flankFactorAt(actor.position, target);
+  }
+
+  // Flank strength a shooter WOULD have standing at `pos` — lets the AI mover reward tiles that
+  // wrap into a target's exposed rear, not just the tile a stationary shooter already occupies.
+  private flankFactorAt(pos: Vec2, target: CombatEntity): number {
     if (target.kind === "cover" || target.kind === "base" || isDefenseKind(target.kind)) return 0;
-    const bearing = Math.atan2(actor.position.x - target.position.x, actor.position.z - target.position.z);
+    const bearing = Math.atan2(pos.x - target.position.x, pos.z - target.position.z);
     const delta = Math.abs(Math.atan2(Math.sin(bearing - target.yaw), Math.cos(bearing - target.yaw)));
     if (delta <= OVERWATCH_ARC_HALF) return 0; // inside the front 120° cone — facing the shooter
     return clamp((delta - OVERWATCH_ARC_HALF) / (Math.PI - OVERWATCH_ARC_HALF), 0, 1);
@@ -3210,20 +3216,26 @@ export class TacticalSim {
         } else if (wantsTarget) {
           goal = target!.position;
           advancing = true;
-        } else if (!fired && objective && dist(enemy.position, objective) > 2.2) {
-          // No shot landed this turn and no target pulled us: push the mode objective.
-          // This ALSO applies in destroy mode (objective = the player base) — without it,
-          // a unit whose line of fire was blocked or that idled just inside its range
-          // band had no goal at all and the whole army could stall at its own base.
-          // Units that DID fire still hold at weapon range as designed.
-          goal = objective;
-          advancing = true;
+        } else if (!fired) {
+          // No shot landed and no target pulled us. First grab free economy the AI used to walk
+          // past — a nearby cash cache or an uncaptured resource structure — then fall back to
+          // pushing the mode objective. This ALSO applies in destroy mode (objective = the player
+          // base) — without it a unit whose fire was blocked, or that idled just inside its range
+          // band, had no goal at all and the whole army could stall at its own base.
+          const loot = this.nearestLoot(enemy);
+          if (loot) {
+            goal = loot;
+            advancing = true;
+          } else if (objective && dist(enemy.position, objective) > 2.2) {
+            goal = objective;
+            advancing = true;
+          }
         }
         if (goal) {
           const step = isVehicleKind(enemy.kind) ? Math.max(3.2, moveRange(enemy)) : moveRange(enemy);
           // When pushing toward a threat, prefer a tile that ends sheltered behind cover.
           const destination = profile.useCover && advancing && target
-            ? this.coverBiasedDestination(enemy, goal, target.position, step)
+            ? this.coverBiasedDestination(enemy, goal, target, step)
             : this.navigateToward(enemy, goal, step);
           if (dist(enemy.position, destination) > 0.2) {
             spendCommandPoint(enemy);
@@ -3273,8 +3285,10 @@ export class TacticalSim {
   }
 
   // Advance toward a goal but prefer a reachable tile that ends behind sturdy cover relative to
-  // the threat, so the bot doesn't cross open ground when a flanking-but-covered step exists.
-  private coverBiasedDestination(actor: CombatEntity, goal: Vec2, threat: Vec2, step: number): Vec2 {
+  // the threat (and, all else equal, one that wraps into the target's exposed rear), so the bot
+  // doesn't cross open ground when a flanking-but-covered step exists.
+  private coverBiasedDestination(actor: CombatEntity, goal: Vec2, target: CombatEntity, step: number): Vec2 {
+    const threat = target.position;
     const direct = this.navigateToward(actor, goal, step);
     const candidates: Vec2[] = [direct];
     const baseAngle = Math.atan2(goal.x - actor.position.x, goal.z - actor.position.z);
@@ -3293,7 +3307,10 @@ export class TacticalSim {
       // Steer clear of live enemy overwatch cones: a tile inside one hands the player a free
       // reaction shot, so it's weighted below a slightly-less-direct route that stays out of arc.
       const exposed = this.standingInOverwatch(c, actor.team) ? 2.8 : 0;
-      const score = progress + sheltered - exposed;
+      // Small pull toward the target's exposed rear — enough to circle when it costs little
+      // progress, never enough to march the long way around.
+      const flankBias = this.flankFactorAt(c, target) * 1.2;
+      const score = progress + sheltered - exposed + flankBias;
       if (score > bestScore) {
         bestScore = score;
         best = c;
@@ -3332,6 +3349,25 @@ export class TacticalSim {
       dist(e.position, pos) <= e.radius + 1.1 &&
       coverIsTowardThreat(e.position, pos, threat)
     );
+  }
+
+  // A nearby cash cache or an uncaptured resource structure (depot / derelict turret) worth
+  // diverting an idle unit to grab — the free economy the AI used to ignore. Ground units only.
+  private nearestLoot(actor: CombatEntity): Vec2 | undefined {
+    if (actor.flying) return undefined; // flyers can't grab pickups or hold captures
+    const SEEK = 13;
+    let best: Vec2 | undefined;
+    let bestDist = SEEK;
+    for (const p of this.pickups) {
+      const d = dist(actor.position, p);
+      if (d < bestDist) { bestDist = d; best = { x: p.x, z: p.z }; }
+    }
+    for (const s of this.entities) {
+      if (!s.capturable || !s.status.alive || s.team === "enemy") continue; // already ours
+      const d = dist(actor.position, s.position);
+      if (d < bestDist) { bestDist = d; best = { ...s.position }; }
+    }
+    return best;
   }
 
   // The point the enemy army pushes toward, by mode.

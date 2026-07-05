@@ -1945,6 +1945,21 @@ describe("tactical enemy AI", () => {
     expect(pref[0]).toBe("flak"); // contest the air lane before anything else
   });
 
+  it("AI economy: an idle enemy diverts to grab a nearby cash cache", () => {
+    const enemy = createSoldier("e", "Scav", "enemy", { x: 0, z: 0 });
+    applyDamage(enemy, "rifle", 999); // disarmed → no shot to take
+    enemy.grenades = 0; // and no grenade to lob, so its only useful move is toward loot
+    const sim = new TacticalSim([
+      createBase("p-base", "HQ", "player", { x: 2, z: 0 }), // close, so it holds instead of chasing
+      enemy,
+    ]);
+    sim.pickups.push({ id: "cache", x: -4, z: 0, amount: 60 });
+    sim.endTurn();
+    const move = sim.orders.find((o) => o.actorId === "e" && o.kind === "move");
+    expect(move).toBeTruthy();
+    expect(move?.destination?.x ?? 0).toBeLessThan(-0.5); // headed toward the cache at x=-4
+  });
+
   it("AI air counter-play: over several turns the enemy actually fields anti-air against a flyer", () => {
     const sim = new TacticalSim([
       createBase("p-base", "HQ", "player", { x: -16, z: 0 }),
