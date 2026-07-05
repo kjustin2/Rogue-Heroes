@@ -52,6 +52,7 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "gunship", label: "Gunship", role: "Air", cost: 400, cooldown: 3, tech: "airwing", tip: "Fast flyer: overflies all terrain and cover. Its autocannon duels other aircraft; it drops bombs straight down on ground targets (fly over them, blast radius shown). Fragile — one flak burst threatens it — and it cannot capture." },
   { kind: "interceptor", label: "Interceptor", role: "Air Superiority", cost: 320, cooldown: 2, tech: "airwing", tip: "Fast, gun-only fighter that rules the air — its cannon shreds other aircraft. No bombs; it exists to win the dogfight. Fragile to ground flak." },
   { kind: "bomber", label: "Bomber", role: "Heavy Bomber", cost: 470, cooldown: 4, tech: "airwing", tip: "Slow, tough heavy bomber with a big bomb load (drops straight down). No gun at all — helpless against interceptors, so send an escort." },
+  { kind: "transport", label: "Transport", role: "Airlift", cost: 240, cooldown: 3, tech: "airwing", tip: "Unarmed helicopter that airlifts friendly ground units: Load one nearby, fly it across the map, and Unload it anywhere. Overflies everything; if it's shot down, its passengers fall out where it dies." },
 ];
 
 export function troopSpec(kind: TroopKind): TroopSpec {

@@ -114,6 +114,10 @@ export interface CombatEntity {
   // movement, forfeits terrain defense, and cannot capture. Undefined/false = a ground unit.
   flying?: boolean;
   agl?: number;
+  // Air transport: units this aircraft is currently carrying (moved with it, hidden, inert). The
+  // carried unit points back via `carriedById`. Both ride serialize() inside the entity list.
+  passengerIds?: string[];
+  carriedById?: string;
 }
 
 export interface CoverOptions {
@@ -356,6 +360,38 @@ export function createBomber(id: string, name: string, team: Team, position: Vec
       part("hull", "Fuselage", "core", 78, { critical: true }),
       part("engine", "Engines", "mobility", 32),
       part("pack", "Bomb Bay", "volatile", 30),
+    ],
+  };
+  recomputeStatus(entity);
+  return entity;
+}
+
+// Transport: an unarmed helicopter that airlifts friendly ground units — load one (or two) aboard,
+// fly them across the map, and drop them off. Flies low so the pickup/drop reads. Permadeath cargo.
+export function createTransport(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  const entity: CombatEntity = {
+    id,
+    name,
+    kind: "transport",
+    team,
+    position,
+    yaw: team === "player" ? Math.PI * 0.5 : -Math.PI * 0.5,
+    radius: 1.3,
+    height: 1.0,
+    elevation: 0,
+    stance: "standing",
+    commandPoints: 2,
+    maxCommandPoints: 2,
+    grenades: 0,
+    maxGrenades: 0,
+    flying: true,
+    agl: 5.5,
+    passengerIds: [],
+    status: statusFor("transport"),
+    parts: [
+      part("hull", "Cabin", "core", 60, { critical: true }),
+      part("rotor", "Rotor", "mobility", 28),
+      part("tail", "Tail Rotor", "utility", 20),
     ],
   };
   recomputeStatus(entity);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dist } from "../core/math";
-import { applyDamage, createBase, createBomber, createCover, createFlak, createFlamer, createGrenadier, createGunship, createHeavy, createInterceptor, createMedic, createSapper, createScout, createSniper, createSoldier, createStriker, createTank, createWall } from "./damageModel";
+import { applyDamage, createBase, createBomber, createCover, createFlak, createFlamer, createGrenadier, createGunship, createHeavy, createInterceptor, createMedic, createSapper, createScout, createSniper, createSoldier, createStriker, createTank, createTransport, createWall } from "./damageModel";
 import {
   BASE_INCOME,
   INCOME_BY_LEVEL,
@@ -2057,6 +2057,53 @@ describe("tactical enemy AI", () => {
     air.select("i2");
     expect(air.queueShoot("g2")).toBe(true);    // interceptor guns the enemy flyer
     expect(air.queueShoot("grunt")).toBe(false); // but never a ground target (air-to-air only)
+  });
+
+  it("a transport airlifts a unit: load, carry (hidden + inert), serialize, then unload elsewhere", () => {
+    const transport = createTransport("t", "Chinook", "player", { x: 0, z: 0 });
+    const rider = createSoldier("r", "Rook", "player", { x: 1, z: 0 });
+    const sim = new TacticalSim([transport, rider]);
+    sim.select("t");
+    expect(sim.queueLoad("r")).toBe(true);
+    sim.endTurn();
+    let guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+    expect(rider.carriedById).toBe("t");
+    expect(transport.passengerIds).toContain("r");
+
+    // The carry link rides serialize()/restore().
+    const restored = new TacticalSim();
+    expect(restored.restore(sim.serialize())).toBe(true);
+    expect(restored.entity("r")?.carriedById).toBe("t");
+    expect(restored.entity("t")?.passengerIds).toContain("r");
+
+    // Unload at a distant spot: the transport flies there and sets the rider down.
+    sim.select("t");
+    expect(sim.queueUnload({ x: 12, z: 0 })).toBe(true);
+    sim.endTurn();
+    guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+    expect(rider.carriedById).toBeUndefined();
+    expect(transport.passengerIds?.length ?? 0).toBe(0);
+    expect(rider.position.x).toBeGreaterThan(8); // dropped near the unload point, not back at the start
+  });
+
+  it("a downed transport drops its passengers where it falls", () => {
+    const transport = createTransport("t", "Chinook", "player", { x: 3, z: 0 });
+    const rider = createSoldier("r", "Rook", "player", { x: 3.4, z: 0 });
+    const sim = new TacticalSim([transport, rider]);
+    sim.select("t");
+    sim.queueLoad("r");
+    sim.endTurn();
+    let guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+    expect(rider.carriedById).toBe("t");
+    // Blow up the transport mid-resolve → the passenger bails out and reappears on the ground.
+    applyDamage(transport, "hull", 999);
+    sim.debugSetPhase("resolve");
+    sim.update(0.05);
+    expect(rider.carriedById).toBeUndefined();
+    expect(rider.status.alive).toBe(true);
   });
 
   it("a bomber has no gun and only drops bombs straight down", () => {

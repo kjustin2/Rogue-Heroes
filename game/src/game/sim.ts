@@ -30,6 +30,7 @@ import {
   createGunship,
   createInterceptor,
   createBomber,
+  createTransport,
   createSapper,
   createSoldier,
   createStriker,
@@ -70,8 +71,8 @@ export { MODES, modeDef, type ModeId, type ModeDef } from "./modes";
 export { MAPS, mapDef, flagPositions, mapCenter, mapSize, type MapDef, type MapTheme, type MapSize } from "./maps";
 
 export type Phase = "command" | "resolve" | "victory" | "defeat";
-export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "overwatch" | "mine" | "interact" | "inspect" | "inspect-detail" | "build" | "support";
-export type OrderKind = "move" | "shoot" | "grenade" | "ram" | "defend" | "melee";
+export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "overwatch" | "mine" | "interact" | "inspect" | "inspect-detail" | "build" | "support" | "load" | "unload";
+export type OrderKind = "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "load" | "unload";
 
 // Hard cap on how many combat units one side can field at once.
 export const POP_CAP = 10;
@@ -128,6 +129,7 @@ export const DEPOT_INCOME = 25;
 // Loose cash caches scattered on the field: run a unit over one to bank it. How close a unit
 // must get to grab it, and the min/spread of cash per cache.
 const PICKUP_REACH = 0.95;
+const TRANSPORT_CAPACITY = 2; // how many ground units an air transport can carry at once
 // Flamer burning ground.
 const BURN_RADIUS = 1.6;
 const BURN_TURNS = 2;
@@ -764,6 +766,79 @@ export class TacticalSim {
     if (!actor) return false;
     if (!isAirBomber(actor)) return this.reject(`${actor.name} can't drop bombs`);
     return this.queueGrenadeAt(actor.position);
+  }
+
+  // ---- Air transport: load a friendly ground unit, fly it, and unload it ----
+
+  private loadFailureReason(actor: CombatEntity | undefined, passenger: CombatEntity | undefined): string | undefined {
+    if (!actor || actor.kind !== "transport") return "Only a transport can airlift units";
+    if (!actor.status.alive || !actor.status.canMove) return `${actor.name} can't fly`;
+    if (actor.commandPoints <= 0) return `${actor.name} has no command points`;
+    if ((actor.passengerIds?.length ?? 0) >= TRANSPORT_CAPACITY) return `${actor.name} is full (${TRANSPORT_CAPACITY} aboard)`;
+    if (!passenger || !passenger.status.alive) return "Pick a friendly unit to airlift";
+    if (passenger.id === actor.id || passenger.team !== actor.team) return "Can only airlift your own units";
+    if (passenger.flying || isBuildingKind(passenger.kind) || isDefenseKind(passenger.kind) || passenger.kind === "cover") return "That unit can't be airlifted";
+    if (passenger.carriedById) return `${passenger.name} is already aboard`;
+    return undefined;
+  }
+
+  /** Whether the selected transport could pick up the given unit (for HUD affordances). */
+  canAirlift(passengerId: string): boolean {
+    return !this.loadFailureReason(this.selected, this.entity(passengerId));
+  }
+
+  queueLoad(passengerId: string): boolean {
+    const actor = this.requirePlayerActor();
+    const passenger = this.entity(passengerId);
+    const failure = this.loadFailureReason(actor, passenger);
+    if (failure) return this.reject(failure);
+    if (!spendCommandPoint(actor!)) return this.reject(`${actor!.name} has no command points`);
+    this.addOrder({ actorId: actor!.id, kind: "load", targetId: passengerId, aim: "center", duration: 2.6 });
+    return true;
+  }
+
+  queueUnload(destination: Vec2): boolean {
+    const actor = this.requirePlayerActor();
+    if (!actor) return false;
+    if (actor.kind !== "transport") return this.reject(`${actor.name} isn't a transport`);
+    if (!(actor.passengerIds?.length)) return this.reject(`${actor.name} isn't carrying anyone`);
+    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
+    this.addOrder({ actorId: actor.id, kind: "unload", destination: clampToArena(destination), aim: "center", duration: 2.4 });
+    return true;
+  }
+
+  // Set a transport's passengers back on the ground at free spots near it, and clear the links.
+  private dropPassengers(transport: CombatEntity): void {
+    for (const pid of [...(transport.passengerIds ?? [])]) {
+      const passenger = this.entity(pid);
+      if (!passenger) continue;
+      passenger.carriedById = undefined;
+      passenger.position = this.freeSpawnNear(transport);
+      this.syncEntityElevation(passenger); // back to ground level
+      this.pushLog(`${transport.name} sets down ${passenger.name}`);
+    }
+    transport.passengerIds = [];
+  }
+
+  // Carried passengers ride with their transport each frame; if the transport is destroyed, they
+  // bail out where it falls (permadeath cargo — losing a loaded transport hurts).
+  private syncCarriedPassengers(): void {
+    for (const passenger of this.entities) {
+      if (!passenger.carriedById) continue;
+      const carrier = this.entity(passenger.carriedById);
+      if (!carrier || !carrier.status.alive) {
+        passenger.carriedById = undefined;
+        passenger.position = this.freeSpawnNear(carrier ?? passenger);
+        this.syncEntityElevation(passenger);
+        if (carrier) {
+          carrier.passengerIds = (carrier.passengerIds ?? []).filter((id) => id !== passenger.id);
+          this.pushLog(`${passenger.name} bails out of the falling ${carrier.name}`);
+        }
+        continue;
+      }
+      passenger.position = { ...carrier.position };
+      passenger.elevation = carrier.elevation; // rides at altitude with the transport (it's hidden anyway)
+    }
   }
 
   // Fire a unit's explosive round (tank/artillery shell, mortar/grenadier round, turret) at a
@@ -1582,6 +1657,7 @@ export class TacticalSim {
     }
     this.updateProjectiles(dt);
     this.updateMapStrikes(dt);
+    this.syncCarriedPassengers();
 
     const allDone = this.orders.every((o) => o.done);
     if (allDone && this.projectiles.length === 0 && this.pendingStrikes.length === 0 && this.pendingFx.length === 0 && this.resolveClock > 1.9) this.finishResolve();
@@ -1808,6 +1884,46 @@ export class TacticalSim {
         order.fired = true;
         order.projectileId = this.launchProjectile(order, actor, target);
       }
+      return;
+    }
+
+    // Airlift: fly to a friendly ground unit and take it aboard.
+    if (order.kind === "load") {
+      const passenger = this.entity(order.targetId);
+      if (!passenger || !passenger.status.alive || passenger.carriedById || !actor.status.canMove || (actor.passengerIds?.length ?? 0) >= TRANSPORT_CAPACITY) {
+        order.done = true;
+        return;
+      }
+      actor.yaw = Math.atan2(passenger.position.x - actor.position.x, passenger.position.z - actor.position.z);
+      if (dist(actor.position, passenger.position) <= actor.radius + passenger.radius + 0.7) {
+        (actor.passengerIds ??= []).push(passenger.id);
+        passenger.carriedById = actor.id;
+        passenger.position = { ...actor.position };
+        this.syncEntityElevation(passenger);
+        this.pushLog(`${actor.name} airlifts ${passenger.name} aboard`);
+        order.done = true;
+        return;
+      }
+      actor.position = moveToward(actor.position, passenger.position, moveSpeed(actor) * dt);
+      this.syncEntityElevation(actor);
+      if (order.elapsed >= order.duration) order.done = true;
+      return;
+    }
+
+    // Airlift: fly to a spot and set the passengers down.
+    if (order.kind === "unload") {
+      if (!order.destination || !actor.status.canMove || !(actor.passengerIds?.length)) {
+        order.done = true;
+        return;
+      }
+      actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
+      if (dist(actor.position, order.destination) <= actor.radius + 0.5 || order.elapsed >= order.duration) {
+        this.dropPassengers(actor);
+        order.done = true;
+        return;
+      }
+      actor.position = moveToward(actor.position, order.destination, moveSpeed(actor) * dt);
+      this.syncEntityElevation(actor);
       return;
     }
 
@@ -2849,7 +2965,7 @@ export class TacticalSim {
   private firstEntityHitBySegment(projectile: Projectile, from: Vec2, to: Vec2, fromHeight: number, toHeight: number): ProjectileHit | undefined {
     const hits: ProjectileHit[] = [];
     for (const entity of this.entities) {
-      if (entity.id === projectile.actorId || projectile.ignoredEntityIds.includes(entity.id) || !entity.status.alive) continue;
+      if (entity.id === projectile.actorId || projectile.ignoredEntityIds.includes(entity.id) || !entity.status.alive || entity.carriedById) continue;
       this.syncEntityElevation(entity);
       const parts = impactPartOrder(entity, projectile);
       for (const part of parts) {
@@ -3024,7 +3140,7 @@ export class TacticalSim {
   private separateFromUnits(actor: CombatEntity, destination?: Vec2): void {
     if (actor.flying) return; // a flyer sits above the ground plane — it never jostles ground units
     for (const other of this.entities) {
-      if (other.id === actor.id || !other.status.alive) continue;
+      if (other.id === actor.id || !other.status.alive || other.carriedById) continue; // carried units aren't on the ground
       if (other.kind === "cover") {
         // Ridges are walkable high ground, and a low cover the unit has climbed ONTO is a valid
         // perch — skip those. If the unit's own move destination sits on this cover it is climbing
@@ -3172,8 +3288,9 @@ export class TacticalSim {
     for (const base of this.living("enemy")) {
       if (base.kind === "base") this.enemyBaseAct(base);
     }
-    const players = this.living("player").filter((entity) => !isBuildingKind(entity.kind));
-    const allPlayers = this.living("player");
+    // Carried passengers are aboard a transport — not targetable and not on the ground.
+    const players = this.living("player").filter((entity) => !isBuildingKind(entity.kind) && !entity.carriedById);
+    const allPlayers = this.living("player").filter((entity) => !entity.carriedById);
     if (!allPlayers.length) return;
     const objective = this.enemyObjective();
     const home = this.enemyHomePosition();
@@ -3181,7 +3298,7 @@ export class TacticalSim {
     // it so shooters pile onto one target until it's predicted dead, then spill to the next.
     const committed = new Map<string, number>();
     for (const enemy of this.living("enemy")) {
-      if (isBuildingKind(enemy.kind)) continue;
+      if (isBuildingKind(enemy.kind) || enemy.carriedById) continue; // carried units can't act
       const target = nearest(enemy, players.length ? players : allPlayers);
       const range = projectileRange(enemy);
       const separation = target ? dist(enemy.position, target.position) : Infinity;
@@ -4087,6 +4204,7 @@ function makeTroopBase(kind: TroopKind, id: string, name: string, team: Team, po
     case "gunship": return createGunship(id, name, team, position);
     case "interceptor": return createInterceptor(id, name, team, position);
     case "bomber": return createBomber(id, name, team, position);
+    case "transport": return createTransport(id, name, team, position);
     case "flak": return createFlak(id, name, team, position);
     case "scout": return createScout(id, name, team, position);
     case "sniper": return createSniper(id, name, team, position);

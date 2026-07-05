@@ -77,6 +77,8 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "defend", label: "Crouch", tip: "Infantry only. Improves accuracy and makes head shots harder, but slows the next move." },
   { id: "overwatch", label: "Overwatch", tip: "Hold fire until a hostile MOVES within watch range this resolve, then take a snap reaction shot (reduced accuracy). Costs 1 CP." },
   { id: "mine", label: "Mine", tip: "Sapper only. Plant a proximity mine at this spot ($15 + 1 CP). Hostiles that step on it eat a splash blast. Invisible to the enemy." },
+  { id: "load", label: "Load", tip: "Transport only. Click a friendly ground unit to airlift it aboard. Costs 1 CP." },
+  { id: "unload", label: "Unload", tip: "Transport only. Click ground to fly there and set your passengers down. Costs 1 CP." },
 ];
 
 export interface HudCallbacks {
@@ -94,6 +96,8 @@ export interface HudCallbacks {
   queueGrenadePart(id: string, partId: string): boolean;
   queueGrenadeAt(destination: Vec2): boolean;
   queueBombDrop(): boolean;
+  queueLoad(passengerId: string): boolean;
+  queueUnload(destination: Vec2): boolean;
   queueRam(id: string): boolean;
   queueMelee(id: string): boolean;
   queueMeleePart(id: string, partId: string): boolean;
@@ -161,6 +165,14 @@ export class Hud {
   chooseBoardEntity(id: string): void {
     const entity = this.sim.entity(id);
     if (!entity) return;
+    // Airlift: with Load armed, clicking a friendly ground unit takes it aboard the transport.
+    if (this.action === "load" && this.sim.phase === "command") {
+      if (this.callbacks.queueLoad(entity.id)) {
+        this.action = "select";
+        this.callbacks.setIntent("select");
+      }
+      return;
+    }
     if (entity.kind === "cover" && this.action === "move" && this.sim.selected?.kind === "tank") {
       if (this.callbacks.queueMoveToCover(entity.id)) {
         this.action = "select";
@@ -277,6 +289,14 @@ export class Hud {
         this.action = "select";
         this.targetId = undefined;
         this.targetPartId = undefined;
+        this.callbacks.setIntent("select");
+      }
+      return;
+    }
+    // Unload: the clicked ground point is where the transport flies to and sets its passengers down.
+    if (this.action === "unload" && this.sim.phase === "command") {
+      if (this.callbacks.queueUnload(destination)) {
+        this.action = "select";
         this.callbacks.setIntent("select");
       }
       return;
@@ -1782,6 +1802,8 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
   if (action === "defend") return !isInfantryKind(actor.kind) || !actor.status.canMove;
   if (action === "overwatch") return Boolean(sim.overwatchFailureReason(actor));
   if (action === "mine") return Boolean(sim.mineFailureReason(actor));
+  if (action === "load") return actor.kind !== "transport" || !actor.status.canMove || (actor.passengerIds?.length ?? 0) >= 2;
+  if (action === "unload") return actor.kind !== "transport" || !(actor.passengerIds?.length);
   return false;
 }
 
@@ -1798,6 +1820,7 @@ function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: Tac
   if (action === "defend") return isInfantryKind(actor.kind) && actor.status.canMove;
   if (action === "overwatch") return actor.status.canShoot && !isBuildingKind(actor.kind) && !isDefenseKind(actor.kind);
   if (action === "mine") return actor.kind === "sapper";
+  if (action === "load" || action === "unload") return actor.kind === "transport";
   if (action === "grenade") return (actor.kind === "soldier" || actor.flying === true) && actor.maxGrenades > 0;
   if (action === "shoot") return actor.status.canShoot;
   if (action === "move") return actor.status.canMove;
@@ -1809,6 +1832,8 @@ function orderSummary(order: TacticalOrder, sim: TacticalSim): string {
   const part = target?.parts.find((candidate) => candidate.id === order.targetPartId);
   if (order.kind === "move") return "Queued: move";
   if (order.kind === "ram") return `Queued: ram ${target?.name ?? "target"}`;
+  if (order.kind === "load") return `Queued: airlift ${target?.name ?? "unit"}`;
+  if (order.kind === "unload") return "Queued: unload";
   if (order.kind === "melee") return `Queued: strike ${target?.name ?? "target"}${part ? ` / ${part.label}` : ""}`;
   const verb = bombVerb(sim.entity(order.actorId)).toLowerCase();
   if (order.kind === "grenade" && order.destination && !target) return `Queued: ${verb} ${verb === "bomb" ? "drop" : "ground"}`;

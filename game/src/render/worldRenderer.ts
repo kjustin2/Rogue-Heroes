@@ -234,7 +234,17 @@ export class WorldRenderer {
       }
     }
     this.computeRecoil(sim.projectiles);
-    for (const entity of sim.entities) this.syncEntity(entity, sim.selectedId, targetId, targetPartId, sim.defending.has(entity.id), this.ghostedEntityIds.has(entity.id));
+    for (const entity of sim.entities) {
+      // A unit carried by an air transport is aboard/hidden — don't draw it (nor make it clickable).
+      if (entity.carriedById) {
+        const group = this.groups.get(entity.id);
+        if (group) group.visible = false;
+        continue;
+      }
+      const existing = this.groups.get(entity.id);
+      if (existing && !existing.visible) existing.visible = true; // reappears when dropped off
+      this.syncEntity(entity, sim.selectedId, targetId, targetPartId, sim.defending.has(entity.id), this.ghostedEntityIds.has(entity.id));
+    }
     this.syncUnitMarkers(sim);
     this.syncSelection(sim);
     this.syncTarget(sim, targetId);
@@ -1026,6 +1036,7 @@ export class WorldRenderer {
     if (entity.kind === "gunship") this.buildGunship(group, entity);
     else if (entity.kind === "interceptor") this.buildInterceptor(group, entity);
     else if (entity.kind === "bomber") this.buildBomber(group, entity);
+    else if (entity.kind === "transport") this.buildTransport(group, entity);
     else if (entity.kind === "flak") this.buildFlak(group, entity);
     else if (isVehicleKind(entity.kind)) this.buildTank(group, entity);
     if (isInfantryKind(entity.kind)) this.buildSoldier(group, entity);
@@ -1303,6 +1314,24 @@ export class WorldRenderer {
     for (const z of [-0.55, 0, 0.55]) this.box(group, entity, "pack", [0.32, 0.36, 0.42], [0, -0.62, z], 0xffb02e, { emissive: 0xff7d26, emissiveIntensity: 0.3 }); // bombs
     const shadow = makeContactShadow(entity.radius * 1.35);
     shadow.position.y = -(entity.agl ?? 8);
+    group.add(shadow);
+  }
+
+  // Transport: a boxy cargo helicopter — fat cabin, big main rotor, tail boom + rotor, skids.
+  // Clearly a lift bird, distinct from the sleek attack gunship.
+  private buildTransport(group: THREE.Group, entity: CombatEntity): void {
+    const factionGlow = entity.team === "enemy" ? TEAMS.enemyAccent : 0x50d7ff;
+    this.box(group, entity, "hull", [1.2, 0.9, 2.2], [0, 0, 0], 0x6a7a6a, { metalness: 0.18 });       // cargo cabin
+    this.box(group, entity, "hull", [0.9, 0.5, 0.7], [0, 0.2, 1.2], 0x9fc0d0, { metalness: 0.2 });     // cockpit glass
+    this.box(group, entity, "hull", [0.32, 0.32, 1.5], [0, 0.22, -1.5], 0x46564e);                     // tail boom
+    this.box(group, entity, "hull", [0.5, 0.42, 0.12], [0, 0.46, -2.15], 0x46564e, { emissive: factionGlow, emissiveIntensity: 0.2 }); // tail fin
+    this.cylinder(group, entity, "rotor", 0.08, 0.42, [0, 0.64, 0.05], 0x2a3236);                      // rotor mast
+    this.box(group, entity, "rotor", [3.8, 0.05, 0.18], [0, 0.84, 0.05], 0x14181a);                    // main blades
+    this.box(group, entity, "rotor", [0.18, 0.05, 3.8], [0, 0.84, 0.05], 0x14181a);
+    this.box(group, entity, "tail", [0.06, 0.8, 0.06], [0.22, 0.22, -2.2], 0x14181a);                  // tail rotor
+    for (const x of [-0.55, 0.55]) this.box(group, entity, "hull", [0.06, 0.06, 1.7], [x, -0.62, 0.1], 0x2a3236); // skids
+    const shadow = makeContactShadow(entity.radius * 1.3);
+    shadow.position.y = -(entity.agl ?? 5.5);
     group.add(shadow);
   }
 
