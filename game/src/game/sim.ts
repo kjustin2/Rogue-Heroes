@@ -3218,13 +3218,24 @@ export class TacticalSim {
           : enemy.kind === "grenadier" || enemy.kind === "mortar"
             ? "center"
             : isVehicleKind(shootTarget.kind) ? "mobility" : this.rng.chance(0.35) ? "weapon" : "center";
-        if (this.queueShootFor(enemy, shootTarget, aim)) {
+        // Line of sight: don't waste a shot on a target the round can't reach. If a DESTRUCTIBLE
+        // blocker (cover, or an enemy-of-ours foe unit) is in the way, breach it instead — break it
+        // down to open the lane. If terrain or a friendly blocks it, hold fire and advance for a
+        // clean line. (rng was already drawn above, so this decision never shifts the RNG stream.)
+        const block = profile.useCover ? this.aiShotBlocker(enemy, shootTarget) : undefined;
+        let fireTarget: CombatEntity | undefined = shootTarget;
+        let fireAim: AimMode = aim;
+        if (block) {
+          if (block.terrain || block.blocker?.team === enemy.team) fireTarget = undefined; // can't breach — reposition
+          else if (block.blocker) { fireTarget = block.blocker; fireAim = "center"; } // shoot through the blocker
+        }
+        if (fireTarget && this.queueShootFor(enemy, fireTarget, fireAim)) {
           fired = true;
           const burst = enemy.kind === "heavy" ? 3 : 1;
           // Predict actual damage (folds in falloff, cover-less vsAir, flank, tech) so focus-fire
           // hands off only when the target is really dead — not when flat base damage says so.
-          const perShot = this.estimateShotDamage(enemy, shootTarget, preferredPart(shootTarget, aim), aim, false);
-          committed.set(shootTarget.id, (committed.get(shootTarget.id) ?? 0) + perShot * burst);
+          const perShot = this.estimateShotDamage(enemy, fireTarget, preferredPart(fireTarget, fireAim), fireAim, false);
+          committed.set(fireTarget.id, (committed.get(fireTarget.id) ?? 0) + perShot * burst);
         }
       }
       // Otherwise advance: carriers run the flag home, crippled units fall back to base, others
@@ -3292,6 +3303,20 @@ export class TacticalSim {
   // Focus-fire target picker: among the shooter's in-range options, concentrate fire on a
   // single unit until it is predicted dead (overkilled targets sink to the bottom), preferring
   // high-value units (support/siege) and finishing wounded ones first.
+  // What the enemy's shot at `target` would actually hit if it isn't the target itself: terrain
+  // (can't breach), or a blocking entity/cover (breach it). Undefined = clear line. Reuses the
+  // player-facing shot preview (rng-free) so the AI "sees" the same block the player would.
+  private aiShotBlocker(actor: CombatEntity, target: CombatEntity): { terrain: boolean; blocker?: CombatEntity } | undefined {
+    const part = preferredPart(target, "center");
+    const preview = this.previewAttack(actor.id, target.id, part.id, "weapon");
+    if (!preview) return undefined;
+    if (preview.blockedByGround) return { terrain: true };
+    if (preview.impactEntityId && preview.impactEntityId !== target.id) {
+      return { terrain: false, blocker: this.entity(preview.impactEntityId) };
+    }
+    return undefined;
+  }
+
   private pickShootTarget(shooter: CombatEntity, candidates: CombatEntity[], committed: Map<string, number>, range: number): CombatEntity | undefined {
     const ranked = candidates
       .filter((t) => t.status.alive && dist(shooter.position, t.position) <= range + 0.01)

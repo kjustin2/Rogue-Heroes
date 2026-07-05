@@ -1991,6 +1991,42 @@ describe("tactical enemy AI", () => {
     expect(Math.abs(drop?.destination?.x ?? 99)).toBeLessThan(1); // lands beneath the plane, not at x=3
   });
 
+  it("AI breaches a destructible wall blocking its shot instead of wasting rounds; fires clean when the lane is open", () => {
+    const sim = new TacticalSim([
+      createSoldier("e", "Gunner", "enemy", { x: 0, z: 0 }),
+      createCover("w", "Concrete Wall", { x: 3, z: 0 }, { coverKind: "wall" }), // squarely in the lane
+      createSoldier("p", "Rook", "player", { x: 6, z: 0 }),
+    ]);
+    sim.endTurn();
+    const shoot = sim.orders.find((o) => o.actorId === "e" && o.kind === "shoot");
+    expect(shoot?.targetId).toBe("w"); // breach the wall to open the lane, not a wasted shot at the hidden foe
+
+    // With a clear lane it shoots the target directly.
+    const clear = new TacticalSim([
+      createSoldier("e", "Gunner", "enemy", { x: 0, z: 0 }),
+      createSoldier("p", "Rook", "player", { x: 6, z: 0 }),
+    ]);
+    clear.endTurn();
+    const clearShot = clear.orders.find((o) => o.actorId === "e" && o.kind === "shoot");
+    expect(clearShot?.targetId).toBe("p");
+  });
+
+  it("a ground anti-air unit's shot connects with a flyer at altitude", () => {
+    const flyer = createGunship("g", "Bandit", "enemy", { x: 6, z: 0 });
+    applyDamage(flyer, "rotor", 999); // immobilised but still airborne — holds still at agl
+    const sim = new TacticalSim([
+      createFlak("f", "Flak", "player", { x: 0, z: 0 }),
+      flyer,
+    ]);
+    const before = flyer.parts.reduce((s, p) => s + p.hp, 0);
+    sim.select("f");
+    expect(sim.queueShoot("g")).toBe(true); // a flyer is a legal target for a ground unit
+    sim.endTurn();
+    let guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+    expect(flyer.parts.reduce((s, p) => s + p.hp, 0)).toBeLessThan(before); // the round reached the airborne target
+  });
+
   it("a gunship bomb drops straight down and ground-detonates on what's beneath it (no roll/vanish)", () => {
     const gunship = createGunship("g", "Hawk", "player", { x: 5, z: 0 });
     const crate = createCover("c", "Crate", { x: 5, z: 0.3 }, { coverKind: "crate" }); // right under the plane
