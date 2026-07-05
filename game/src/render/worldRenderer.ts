@@ -358,6 +358,25 @@ export class WorldRenderer {
         this.environmentRoot.add(pip);
       }
     }
+    // Cash caches: a spinning gold diamond bobbing over a warm ground glow — "run over this for money".
+    const cachePulse = (Math.sin(performance.now() * 0.005) + 1) * 0.5;
+    for (const cache of sim.pickups) {
+      const y = terrainHeightAt(cache) + 0.05;
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.5, 0.74, 32),
+        new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.26 + cachePulse * 0.24, side: THREE.DoubleSide, depthWrite: false }),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(cache.x, y, cache.z);
+      this.environmentRoot.add(ring);
+      const coin = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.26),
+        new THREE.MeshStandardMaterial({ color: 0xffcf4d, emissive: 0xffb020, emissiveIntensity: 0.65, metalness: 0.75, roughness: 0.32 }),
+      );
+      coin.position.set(cache.x, y + 0.52 + cachePulse * 0.16, cache.z);
+      coin.rotation.set(0.32, performance.now() * 0.0032, 0);
+      this.environmentRoot.add(coin);
+    }
     const pulse = (Math.sin(performance.now() * 0.006) + 1) * 0.5;
     for (const zone of env.zones) {
       const color = zone.kind === "barrage" ? 0xff5a3c : 0xffb24a;

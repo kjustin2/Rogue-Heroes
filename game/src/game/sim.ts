@@ -53,7 +53,7 @@ import {
   type Team,
 } from "./damageModel";
 import { createScenario } from "./scenario";
-import { DEFAULT_TERRAIN, TERRAIN_STEP, clampToArena, setActiveTerrain, terrainHeightAt } from "./terrain";
+import { DEFAULT_TERRAIN, TERRAIN_STEP, ARENA_BOUNDS, clampToArena, setActiveTerrain, terrainHeightAt } from "./terrain";
 import { TROOP_CATALOG, troopSpec, defenseSpec, supportPowerSpec, type TroopKind, type DefenseKind, type SupportPowerKind } from "./units";
 import { TECH_TREE, techNode, aggregateTechEffect, type TechNode, type TechEffect } from "./tech";
 import { modeDef, type ModeId } from "./modes";
@@ -69,7 +69,7 @@ export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" 
 export type OrderKind = "move" | "shoot" | "grenade" | "ram" | "defend" | "melee";
 
 // Hard cap on how many combat units one side can field at once.
-export const POP_CAP = 8;
+export const POP_CAP = 10;
 
 // Income paid each round at each upgrade level (scaled by reactor health). Tuned down from
 // the early build so the opening turns aren't flooded with cash.
@@ -120,6 +120,9 @@ const SALVAGE_REACH = 0.9;
 // Capturable neutral structures.
 const CAPTURE_REACH = 1.0;
 export const DEPOT_INCOME = 25;
+// Loose cash caches scattered on the field: run a unit over one to bank it. How close a unit
+// must get to grab it, and the min/spread of cash per cache.
+const PICKUP_REACH = 0.95;
 // Flamer burning ground.
 const BURN_RADIUS = 1.6;
 const BURN_TURNS = 2;
@@ -363,6 +366,9 @@ export class TacticalSim {
   // Burning ground left by flamer hits (damages at turn start) and sapper proximity mines.
   readonly burnZones: { id: string; x: number; z: number; radius: number; turnsLeft: number }[] = [];
   readonly mines: { id: string; x: number; z: number; team: Team }[] = [];
+  // Loose cash caches scattered on the field at battle start: a unit that runs over one banks its
+  // cash for that team, then it's gone. A "grab the loot" incentive to spread out and take ground.
+  readonly pickups: { id: string; x: number; z: number; amount: number }[] = [];
   // Battle bookkeeping for campaign veterancy/bonuses: kills per player unit, and how
   // many player field units died this battle.
   readonly killsBy = new Map<string, number>();
@@ -449,6 +455,7 @@ export class TacticalSim {
     this.salvage.clear();
     this.burnZones.splice(0);
     this.mines.splice(0);
+    this.placePickups();
     this.killsBy.clear();
     this.playerLosses = 0;
     this.countedDead.clear();
@@ -1463,6 +1470,7 @@ export class TacticalSim {
       salvage: [...this.salvage],
       burnZones: this.burnZones,
       mines: this.mines,
+      pickups: this.pickups,
     });
   }
 
@@ -1476,6 +1484,7 @@ export class TacticalSim {
         wrecked?: string[]; salvage?: [string, number][];
         burnZones?: { id: string; x: number; z: number; radius: number; turnsLeft: number }[];
         mines?: { id: string; x: number; z: number; team: Team }[];
+        pickups?: { id: string; x: number; z: number; amount: number }[];
       };
       const map = mapDef(data.map);
       setActiveTerrain(map.terrain);
@@ -1508,6 +1517,7 @@ export class TacticalSim {
       for (const [id, amount] of data.salvage ?? []) this.salvage.set(id, amount);
       this.burnZones.splice(0, this.burnZones.length, ...(data.burnZones ?? []));
       this.mines.splice(0, this.mines.length, ...(data.mines ?? []));
+      this.pickups.splice(0, this.pickups.length, ...(data.pickups ?? []));
       this.log.splice(0);
       this.turnReports.splice(0);
       this.activeTurnReport = undefined;
@@ -1729,6 +1739,7 @@ export class TacticalSim {
       actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
       this.checkOverwatch(actor);
       this.checkMines(actor);
+      this.checkPickups(actor);
       if (dist(actor.position, order.destination) < 0.08 || order.elapsed >= order.duration) order.done = true;
       return;
     }
@@ -1796,6 +1807,7 @@ export class TacticalSim {
     this.syncEntityElevation(actor);
     this.checkOverwatch(actor);
     this.checkMines(actor);
+    this.checkPickups(actor);
     if (!order.fired && dist(actor.position, target.position) <= actor.radius + target.radius + 0.25) {
       order.fired = true;
       this.resolveRam(actor, target);
@@ -2451,6 +2463,62 @@ export class TacticalSim {
     }
   }
 
+  // Same move-resolve hook as mines/overwatch: a unit that runs over a cash cache banks it.
+  private checkPickups(mover: CombatEntity): void {
+    if (!this.pickups.length || !mover.status.alive || mover.kind === "cover") return;
+    if (mover.team !== "player" && mover.team !== "enemy") return;
+    for (let i = this.pickups.length - 1; i >= 0; i -= 1) {
+      const pickup = this.pickups[i];
+      if (dist(pickup, mover.position) > mover.radius + PICKUP_REACH) continue;
+      this.pickups.splice(i, 1);
+      this.addMoney(mover.team, pickup.amount);
+      this.effect("ping", { x: pickup.x, z: pickup.z }, { x: pickup.x, z: pickup.z }, 0xffe08a, 0.95, 1.1);
+      this.pushLog(`${mover.name} grabs a $${pickup.amount} field cache`);
+    }
+  }
+
+  // Scatter a handful of cash caches at battle start — deterministic per map (a self-contained
+  // hash, NO this.rng consumption, so event/AI RNG order is untouched). Bigger arenas carry more.
+  private placePickups(): void {
+    this.pickups.splice(0);
+    const b = ARENA_BOUNDS;
+    const w = b.maxX - b.minX;
+    const d = b.maxZ - b.minZ;
+    const count = Math.max(3, Math.min(8, Math.round((w * d) / 300)));
+    let seed = 0x9e37;
+    for (const ch of this.mapDef.id) seed = (seed * 31 + ch.charCodeAt(0)) & 0x7fffffff;
+    for (let i = 0; i < count; i += 1) {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      const fx = (seed >> 8) % 1000 / 1000;
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      const fz = (seed >> 8) % 1000 / 1000;
+      const point = { x: b.minX + w * (0.12 + fx * 0.76), z: b.minZ + d * (0.12 + fz * 0.76) };
+      const amount = 45 + (seed % 4) * 15; // 45..90
+      if (this.pickupSpotClear(point)) this.pickups.push({ id: `pickup-${i}`, x: point.x, z: point.z, amount });
+    }
+  }
+
+  // A cache must sit on open ground a unit can actually reach — not inside a base/defense/solid
+  // cover, and not adjacent to a base (loot is earned by taking ground, not handed out at spawn).
+  private pickupSpotClear(p: Vec2): boolean {
+    for (const e of this.entities) {
+      if (e.kind === "base" && dist(p, e.position) < 8.5) return false;
+      if ((e.kind === "cover" || e.kind === "base" || isDefenseKind(e.kind)) && dist(p, e.position) < e.radius + 1.3) return false;
+    }
+    return true;
+  }
+
+  // Flanking: a shot from OUTSIDE the target's facing wedge (reusing the overwatch cone as "front")
+  // catches an exposed side/rear. Returns 0 (dead ahead) .. 1 (directly behind). Only mobile units
+  // that actually turn to face a threat can be flanked — cover, the base, and static defenses can't.
+  private flankFactor(actor: CombatEntity, target: CombatEntity): number {
+    if (target.kind === "cover" || target.kind === "base" || isDefenseKind(target.kind)) return 0;
+    const bearing = Math.atan2(actor.position.x - target.position.x, actor.position.z - target.position.z);
+    const delta = Math.abs(Math.atan2(Math.sin(bearing - target.yaw), Math.cos(bearing - target.yaw)));
+    if (delta <= OVERWATCH_ARC_HALF) return 0; // inside the front 120° cone — facing the shooter
+    return clamp((delta - OVERWATCH_ARC_HALF) / (Math.PI - OVERWATCH_ARC_HALF), 0, 1);
+  }
+
   private estimateShotDamage(actor: CombatEntity, target: CombatEntity, targetPart: DamagePart, aim: AimMode, cover: boolean, attackMode: AttackMode = "weapon"): number {
     let base = baseShotDamage(actor.kind, attackMode);
     // Sapper demolition rounds: purpose-built to breach — 3x vs cover and walls
@@ -2462,7 +2530,9 @@ export class TacticalSim {
     const explosiveActor = actor.kind === "tank" || actor.kind === "artillery" || actor.kind === "grenadier" || actor.kind === "mortar" || actor.kind === "exturret";
     const shellObjectBoost = ((attackMode === "weapon" && explosiveActor) || attackMode === "grenade") && target.kind === "cover" ? 1.72 : 1;
     const aimMultiplier = attackMode === "grenade" ? 1 : aimDamageMultiplier(aim);
-    return Math.round(base * falloff * (cover ? 1.05 : aimMultiplier) * vulnerability * shellObjectBoost * this.supportDamageMultiplier(actor) * this.teamDamageScale(actor) * this.techDamageScale(actor, target));
+    // Flanking: a direct shot into an exposed side/rear hits harder (area grenades don't flank).
+    const flank = attackMode === "weapon" ? 1 + this.flankFactor(actor, target) * 0.28 : 1;
+    return Math.round(base * falloff * (cover ? 1.05 : aimMultiplier) * vulnerability * shellObjectBoost * flank * this.supportDamageMultiplier(actor) * this.teamDamageScale(actor) * this.techDamageScale(actor, target));
   }
 
   // Difficulty scaling: enemy units hit harder on higher difficulties.
@@ -2802,6 +2872,14 @@ export class TacticalSim {
     if (elevationDelta > 0.45) {
       spreadDegrees *= 0.86;
       notes.push("high-ground angle");
+    }
+
+    // Flanking: a shot into the target's exposed side/rear is tighter (it isn't dodging/covering
+    // toward you). Direct fire only — area grenades don't flank.
+    const flank = attackMode === "weapon" ? this.flankFactor(actor, target) : 0;
+    if (flank > 0.01) {
+      spreadDegrees *= 1 - flank * 0.28;
+      notes.push("flanking");
     }
 
     const assist = this.accuracyAssistMultiplier(actor);

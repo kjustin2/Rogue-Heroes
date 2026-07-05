@@ -1873,6 +1873,40 @@ describe("tactical enemy AI", () => {
     expect(firedInside).toBe(true);
   });
 
+  it("a unit that runs over a cash cache banks it", () => {
+    const soldier = createSoldier("p", "Vega", "player", { x: 0, z: 0 });
+    const sim = new TacticalSim([
+      createBase("p-base-1", "HQ", "player", { x: -14, z: 0 }),
+      createBase("e-base-1", "Enemy HQ", "enemy", { x: 14, z: 0 }),
+      soldier,
+    ]);
+    sim.pickups.push({ id: "c1", x: 0, z: 2, amount: 60 });
+    const before = sim.money("player");
+    sim.select("p");
+    expect(sim.queueMove({ x: 0, z: 2 })).toBe(true);
+    sim.endTurn();
+    let guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+    expect(sim.pickups.length).toBe(0); // grabbed and gone
+    expect(sim.money("player") - before).toBeGreaterThanOrEqual(60);
+  });
+
+  it("a shot into an exposed rear flanks for more damage than a head-on shot", () => {
+    const rearTarget = createSoldier("e1", "Back", "enemy", { x: 0, z: 0 });
+    rearTarget.yaw = 0; // faces +z
+    const rearSim = new TacticalSim([createSoldier("p1", "Flanker", "player", { x: 0, z: -4 }), rearTarget]);
+    rearSim.select("p1");
+    const rearDmg = rearSim.previewShot("p1", "e1", "body")?.amount ?? 0;
+
+    const frontTarget = createSoldier("e2", "Front", "enemy", { x: 0, z: 0 });
+    frontTarget.yaw = 0; // faces +z
+    const frontSim = new TacticalSim([createSoldier("p2", "Ahead", "player", { x: 0, z: 4 }), frontTarget]);
+    frontSim.select("p2");
+    const frontDmg = frontSim.previewShot("p2", "e2", "body")?.amount ?? 0;
+
+    expect(rearDmg).toBeGreaterThan(frontDmg);
+  });
+
   it("separation pushes a unit clear of solid cover instead of leaving it clipped inside", () => {
     const wall = createCover("wall", "Wall Block", { x: 0, z: 0 }, { coverKind: "wall" });
     const soldier = createSoldier("p", "Rook", "player", { x: 0.3, z: 0 }); // starts overlapping the wall
