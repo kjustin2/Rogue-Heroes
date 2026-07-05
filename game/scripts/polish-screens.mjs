@@ -78,16 +78,14 @@ try {
   }
   await page.screenshot({ path: join(OUT, "polish-4-command.png") });
 
-  // Pause menu (Escape must open pause, never exit fullscreen). Deselect first so Escape opens
-  // pause directly rather than first cancelling the unit's targeting.
+  // Pause menu (via the HUD Menu button — deterministic in headless where Escape sequencing
+  // depends on selection/intent state).
   await page.evaluate(() => window.__rht.deselect());
   await delay(100);
-  await page.keyboard.press("Escape");
+  await page.click('[data-command="open-menu"]');
   await page.waitForSelector(".pause-overlay .pause-card");
   await delay(300);
   await page.screenshot({ path: join(OUT, "polish-5-pause.png") });
-  await page.keyboard.press("Escape"); // close pause
-  await delay(300);
 
   // Force a victory to capture the end state (skirmish shows a points toast over the field).
   await page.evaluate(() => {

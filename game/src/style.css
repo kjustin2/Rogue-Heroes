@@ -3540,7 +3540,9 @@ body.menus-open .menu-bg span {
 #toasts {
   position: fixed;
   left: 50%;
-  bottom: 176px;
+  /* Top-centre: the only screen edge with no docked panel. The old bottom:176px cleared the short
+     order bar but was swallowed by the much taller base command deck whenever it was open. */
+  top: 88px;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
