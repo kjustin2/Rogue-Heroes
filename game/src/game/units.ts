@@ -15,7 +15,9 @@ export type TroopKind =
   | "sapper"
   | "tank"
   | "apc"
-  | "artillery";
+  | "artillery"
+  | "flak"
+  | "gunship";
 
 export interface TroopSpec {
   kind: TroopKind;
@@ -43,6 +45,8 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "tank", label: "Tank", role: "Armor", cost: 400, cooldown: 3, tech: "armor", tip: "Heavily armored bruiser: massive HP, big gun, and can ram and crush cover." },
   { kind: "apc", label: "APC", role: "Vehicle", cost: 250, cooldown: 2, tech: "armor", tip: "Fast armored flanker; durable and quick, shrugs off small arms." },
   { kind: "artillery", label: "Artillery", role: "Siege", cost: 440, cooldown: 4, tech: "siege", tip: "Long-range siege gun; devastating at distance and tough, but helpless up close." },
+  { kind: "flak", label: "Flak Track", role: "Anti-Air", cost: 260, cooldown: 2, tech: "armor", tip: "Dedicated anti-air: shreds aircraft at long range and its overwatch cone blankets the air lane. Weak against ground armor — it's a specialist, not a brawler." },
+  { kind: "gunship", label: "Gunship", role: "Air", cost: 400, cooldown: 3, tech: "airwing", tip: "Fast flyer: overflies all terrain and cover. Its autocannon duels other aircraft; it drops bombs on ground targets (aim a spot, blast radius shown). Fragile — one flak burst threatens it — and it cannot capture." },
 ];
 
 export function troopSpec(kind: TroopKind): TroopSpec {

@@ -17,6 +17,8 @@ export type EntityKind =
   | "tank"
   | "apc"
   | "artillery"
+  | "gunship"
+  | "flak"
   | "base"
   | "turret"
   | "exturret"
@@ -53,6 +55,9 @@ export interface DamagePart {
   exposed: boolean;
   critical?: boolean;
   tags?: string[];
+  // Anti-air: ×damage this weapon part deals to a FLYING target (1 = normal, <1 barely scratches
+  // air, >1 = purpose-built AA). Only read when the target is flying.
+  vsAir?: number;
 }
 
 export interface EntityStatus {
@@ -102,6 +107,10 @@ export interface CombatEntity {
   bossName?: string;
   // Optional cosmetic accent (hex color) for the player's unit markings — purely visual.
   accent?: number;
+  // Air layer: a flyer floats at terrain height + `agl` and ignores ground terrain/cover for
+  // movement, forfeits terrain defense, and cannot capture. Undefined/false = a ground unit.
+  flying?: boolean;
+  agl?: number;
 }
 
 export interface CoverOptions {
@@ -252,6 +261,71 @@ export function createArtillery(id: string, name: string, team: Team, position: 
     turretLabel: "Traverse Ring",
     cannonLabel: "Siege Gun",
   });
+}
+
+// Gunship: a flying attack craft. It floats at +agl, ignores ground terrain/cover for movement,
+// forfeits all terrain defense, and CANNOT capture. It attacks in two modes (driven by the sim):
+// its autocannon is air-to-air (strong vsAir; only fires on other flyers), and it carries bombs
+// (modeled as grenades) it drops on GROUND spots with a visible blast radius. Deliberately fragile.
+export function createGunship(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  const entity: CombatEntity = {
+    id,
+    name,
+    kind: "gunship",
+    team,
+    position,
+    yaw: team === "player" ? Math.PI * 0.5 : -Math.PI * 0.5,
+    radius: 1.15,
+    height: 0.95,
+    elevation: 0,
+    stance: "standing",
+    commandPoints: 2,
+    maxCommandPoints: 2,
+    grenades: 3, // bombs
+    maxGrenades: 3,
+    flying: true,
+    agl: 6,
+    status: statusFor("gunship"),
+    parts: [
+      part("hull", "Airframe", "core", 56, { critical: true }),
+      part("rotor", "Rotor", "mobility", 26),
+      part("gun", "Autocannon", "weapon", 30, { vsAir: 1.4 }),
+      part("pack", "Bomb Rack", "volatile", 22),
+    ],
+  };
+  recomputeStatus(entity);
+  return entity;
+}
+
+// Flak Track: the dedicated ground anti-air specialist — devastating vs flyers (high vsAir), long
+// range so its overwatch cone blankets the air lane, but thin and weak against ground armor.
+export function createFlak(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  const entity: CombatEntity = {
+    id,
+    name,
+    kind: "flak",
+    team,
+    position,
+    yaw: team === "player" ? Math.PI * 0.5 : -Math.PI * 0.5,
+    radius: 1.3,
+    height: 1.5,
+    elevation: 0,
+    stance: "standing",
+    commandPoints: 2,
+    maxCommandPoints: 2,
+    grenades: 0,
+    maxGrenades: 0,
+    status: statusFor("flak"),
+    parts: [
+      part("hull", "Chassis", "core", 76, { critical: true }),
+      part("gun", "Flak Cannon", "weapon", 40, { vsAir: 2.4 }),
+      part("left-tread", "Left Tread", "mobility", 30),
+      part("right-tread", "Right Tread", "mobility", 30),
+      part("radar", "Tracking Radar", "utility", 24),
+    ],
+  };
+  recomputeStatus(entity);
+  return entity;
 }
 
 export function createSoldier(id: string, name: string, team: Team, position: Vec2): CombatEntity {
@@ -700,7 +774,15 @@ export function isInfantryKind(kind: EntityKind): boolean {
 }
 
 export function isVehicleKind(kind: EntityKind): boolean {
-  return kind === "tank" || kind === "apc" || kind === "artillery";
+  // Gunship + Flak Track are hard-surface vehicle chassis (they get vehicle move/shoot plumbing);
+  // the gunship's flight is an extra flag on the entity, not a new class.
+  return kind === "tank" || kind === "apc" || kind === "artillery" || kind === "gunship" || kind === "flak";
+}
+
+// Air units. The `flying`/`agl` entity fields are authoritative at runtime; this is the by-kind
+// default used when building a unit and when the sim needs the intent from the catalog.
+export function isAirKind(kind: EntityKind): boolean {
+  return kind === "gunship";
 }
 
 // Infantry that fight in melee rather than with ranged weapons.

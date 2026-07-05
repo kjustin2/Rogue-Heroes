@@ -26,6 +26,8 @@ import {
   createCover,
   createDroneOp,
   createFlamer,
+  createFlak,
+  createGunship,
   createSapper,
   createSoldier,
   createStriker,
@@ -36,6 +38,7 @@ import {
   factionLiving,
   isBuildingKind,
   isDefenseKind,
+  isAirKind,
   isInfantryKind,
   isPartIntact,
   isVehicleKind,
@@ -1324,7 +1327,9 @@ export class TacticalSim {
     const arcHeight = projectileArcHeight(kind, dist(from, aimPoint));
     const ground = firstGroundBetweenShot(from, aimPoint, fromHeight, aimHeight, arcHeight);
     const warning = ground ? undefined : this.firstEntityBetweenShot(from, aimPoint, fromHeight, aimHeight, actor.id, intendedTarget.id, arcHeight);
-    const cover = ground || warning ? undefined : this.firstCoverBetweenShot(from, aimPoint, fromHeight, aimHeight, intendedTarget.id, arcHeight);
+    // A shot at a FLYING target sails up over ground cover (flyers forfeit terrain defense), so no
+    // low prop intercepts it.
+    const cover = ground || warning || intendedTarget.flying ? undefined : this.firstCoverBetweenShot(from, aimPoint, fromHeight, aimHeight, intendedTarget.id, arcHeight);
     const impactTarget = warning ?? cover ?? intendedTarget;
     const impactPart = warning ? preferredPart(warning, warning.kind === "cover" ? "center" : "weakest") : cover ? preferredPart(cover, "center") : intendedPart;
     const aim = cover || warning ? "center" : aimForPart(intendedPart);
@@ -1568,6 +1573,9 @@ export class TacticalSim {
 
   private queueShootFor(actor: CombatEntity, target: CombatEntity, aim: AimMode, partId?: string): boolean {
     if (!actor.status.canShoot) return this.reject(`${actor.name} cannot shoot`);
+    // Plane guns are air-to-air: a gunship's autocannon only engages other flyers (it drops bombs
+    // on the ground instead). Ground units CAN shoot up at flyers — that is the anti-air.
+    if (isAirKind(actor.kind) && !target.flying) return this.reject(`${actor.name}'s autocannon only engages aircraft — drop bombs on ground targets`);
     if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
     const requestedPart = partId ? this.targetableParts(target).find((part) => part.id === partId) : undefined;
     if (partId && !requestedPart) return this.reject(`${target.name} does not have that targetable part`);
@@ -1887,9 +1895,10 @@ export class TacticalSim {
   }
 
   private grenadeFailureReason(actor: CombatEntity | undefined, target: CombatEntity | undefined): string | undefined {
-    if (!actor || !target || actor.id === target.id) return "Select a soldier and target first";
+    if (!actor || !target || actor.id === target.id) return "Select a unit and target first";
     if (actor.team === target.team) return "Cannot throw grenades at friendly units";
-    if (actor.kind !== "soldier") return "Only soldiers carry hand grenades";
+    if (actor.kind !== "soldier" && actor.kind !== "gunship") return "Only soldiers and gunships carry bombs/grenades";
+    if (target.flying) return "Bombs can't hit aircraft — use guns on flyers";
     if (!actor.status.alive) return `${actor.name} is disabled`;
     if (actor.grenades <= 0) return `${actor.name} is out of grenades`;
     if (actor.commandPoints <= 0) return `${actor.name} has no command points`;
@@ -1902,8 +1911,8 @@ export class TacticalSim {
   }
 
   private grenadeLocationFailureReason(actor: CombatEntity | undefined, point: Vec2): string | undefined {
-    if (!actor) return "Select a soldier first";
-    if (actor.kind !== "soldier") return "Only soldiers carry hand grenades";
+    if (!actor) return "Select a unit first";
+    if (actor.kind !== "soldier" && actor.kind !== "gunship") return "Only soldiers and gunships carry bombs/grenades";
     if (!actor.status.alive) return `${actor.name} is disabled`;
     if (actor.grenades <= 0) return `${actor.name} is out of grenades`;
     if (actor.commandPoints <= 0) return `${actor.name} has no command points`;
@@ -1918,6 +1927,7 @@ export class TacticalSim {
     if (pathLength < 0.05) return destination;
     const terrainBlock = this.blockedBySteepTerrain(actor, start, destination, allowedCoverId, pathLength, silent);
     if (terrainBlock) return terrainBlock;
+    if (actor.flying) return destination; // flyers overfly all ground cover/structures
     // Solid objects that block ground movement: cover (except walkable ridges) and any
     // Home Base. Ridges are high ground you can stand on; the cover being taken is exempt.
     const blockers = this.entities
@@ -1946,6 +1956,7 @@ export class TacticalSim {
   }
 
   private blockedBySteepTerrain(actor: CombatEntity, start: Vec2, destination: Vec2, allowedCoverId: string | undefined, pathLength: number, silent = false): Vec2 | undefined {
+    if (actor.flying) return undefined; // flyers ignore ground terrain entirely — they overfly it
     const allowedCover = this.entity(allowedCoverId);
     if (allowedCover && isCliffCover(allowedCover) && isInfantryKind(actor.kind)) return undefined;
     const samples = Math.max(12, Math.ceil(pathLength * 4));
@@ -2465,7 +2476,7 @@ export class TacticalSim {
 
   // Same move-resolve hook as mines/overwatch: a unit that runs over a cash cache banks it.
   private checkPickups(mover: CombatEntity): void {
-    if (!this.pickups.length || !mover.status.alive || mover.kind === "cover") return;
+    if (!this.pickups.length || !mover.status.alive || mover.kind === "cover" || mover.flying) return;
     if (mover.team !== "player" && mover.team !== "enemy") return;
     for (let i = this.pickups.length - 1; i >= 0; i -= 1) {
       const pickup = this.pickups[i];
@@ -2508,6 +2519,21 @@ export class TacticalSim {
     return true;
   }
 
+  // Anti-air multiplier vs a flying target: read the shooter's intact weapon part vsAir if it has
+  // one (Flak Track 2.4, Gunship autocannon 1.4), else a by-kind default — snipers/heavies/turrets
+  // can loose some rounds skyward; everyone else barely scratches a flyer, teaching "bring AA".
+  private vsAirMultiplier(actor: CombatEntity): number {
+    const weapon = actor.parts.find((p) => p.role === "weapon" && p.hp > 0);
+    if (weapon?.vsAir !== undefined) return weapon.vsAir;
+    switch (actor.kind) {
+      case "sniper": return 0.6;
+      case "heavy": return 0.5;
+      case "turret": return 0.45;
+      case "exturret": return 0.3;
+      default: return 0.14;
+    }
+  }
+
   // Flanking: a shot from OUTSIDE the target's facing wedge (reusing the overwatch cone as "front")
   // catches an exposed side/rear. Returns 0 (dead ahead) .. 1 (directly behind). Only mobile units
   // that actually turn to face a threat can be flanked — cover, the base, and static defenses can't.
@@ -2532,7 +2558,10 @@ export class TacticalSim {
     const aimMultiplier = attackMode === "grenade" ? 1 : aimDamageMultiplier(aim);
     // Flanking: a direct shot into an exposed side/rear hits harder (area grenades don't flank).
     const flank = attackMode === "weapon" ? 1 + this.flankFactor(actor, target) * 0.28 : 1;
-    return Math.round(base * falloff * (cover ? 1.05 : aimMultiplier) * vulnerability * shellObjectBoost * flank * this.supportDamageMultiplier(actor) * this.teamDamageScale(actor) * this.techDamageScale(actor, target));
+    // Anti-air: a shot at a FLYING target is scaled by the shooter's vsAir — dedicated AA shreds it,
+    // most ground units barely scratch it. This single number IS the AA read on the shot preview.
+    const vsAir = target.flying ? this.vsAirMultiplier(actor) : 1;
+    return Math.round(base * falloff * (cover ? 1.05 : aimMultiplier) * vulnerability * shellObjectBoost * flank * vsAir * this.supportDamageMultiplier(actor) * this.teamDamageScale(actor) * this.techDamageScale(actor, target));
   }
 
   // Difficulty scaling: enemy units hit harder on higher difficulties.
@@ -2680,7 +2709,7 @@ export class TacticalSim {
       if (!structure.capturable || !structure.status.alive) continue;
       const adjacentTeams = new Set<Team>();
       for (const unit of this.entities) {
-        if (!unit.status.alive || unit.kind === "cover" || isBuildingKind(unit.kind) || isDefenseKind(unit.kind)) continue;
+        if (!unit.status.alive || unit.flying || unit.kind === "cover" || isBuildingKind(unit.kind) || isDefenseKind(unit.kind)) continue;
         if (unit.team !== "player" && unit.team !== "enemy") continue;
         if (dist(unit.position, structure.position) <= structure.radius + unit.radius + CAPTURE_REACH) adjacentTeams.add(unit.team);
       }
@@ -2709,7 +2738,7 @@ export class TacticalSim {
       }
       for (const team of ["player", "enemy"] as const) {
         const scavenger = this.entities.find((e) =>
-          e.team === team && e.status.alive && !isBuildingKind(e.kind) && !isDefenseKind(e.kind) && e.kind !== "cover" &&
+          e.team === team && e.status.alive && !e.flying && !isBuildingKind(e.kind) && !isDefenseKind(e.kind) && e.kind !== "cover" &&
           dist(e.position, wreck.position) <= wreck.radius + e.radius + SALVAGE_REACH,
         );
         if (!scavenger) continue;
@@ -2953,6 +2982,7 @@ export class TacticalSim {
   // each other (or through walls/turrets). Only the mover is nudged, so two units closing in
   // slide past instead of stacking.
   private separateFromUnits(actor: CombatEntity, destination?: Vec2): void {
+    if (actor.flying) return; // a flyer sits above the ground plane — it never jostles ground units
     for (const other of this.entities) {
       if (other.id === actor.id || !other.status.alive) continue;
       if (other.kind === "cover") {
@@ -2989,6 +3019,9 @@ export class TacticalSim {
   }
 
   private elevationForEntityAt(entity: CombatEntity, position: Vec2): number {
+    // Flyers float a constant height above whatever is beneath them (clears mesas and valleys at
+    // the same visible clearance) — the air layer's altitude axis.
+    if (entity.flying) return terrainHeightAt(position) + (entity.agl ?? 6);
     let elevation = terrainHeightAt(position);
     if (entity.kind === "cover" || !isInfantryKind(entity.kind)) return elevation;
     const climbable = this.entities.find((candidate) =>
@@ -3892,6 +3925,8 @@ function makeTroopBase(kind: TroopKind, id: string, name: string, team: Team, po
     case "tank": return createTank(id, name, team, position);
     case "apc": return createApc(id, name, team, position);
     case "artillery": return createArtillery(id, name, team, position);
+    case "gunship": return createGunship(id, name, team, position);
+    case "flak": return createFlak(id, name, team, position);
     case "scout": return createScout(id, name, team, position);
     case "sniper": return createSniper(id, name, team, position);
     case "striker": return createStriker(id, name, team, position);
@@ -3908,6 +3943,8 @@ function makeTroopBase(kind: TroopKind, id: string, name: string, team: Team, po
 }
 
 function moveRange(entity: CombatEntity): number {
+  if (entity.kind === "gunship") return 12.5; // fast flyer — its reach is its whole identity
+  if (entity.kind === "flak") return 6.0;
   if (entity.kind === "apc") return 7.2;
   if (entity.kind === "tank") return 5.4;
   if (entity.kind === "artillery") return 3.6;
@@ -3946,11 +3983,12 @@ function meleeStrikeMultiplier(entity: CombatEntity): number {
 }
 
 function grenadeThrowRange(entity: CombatEntity): number {
+  if (entity.kind === "gunship") return 11; // bomb-drop reach
   return entity.kind === "soldier" ? 9.2 : 0;
 }
 
 function canUseHandGrenade(entity: CombatEntity): boolean {
-  return entity.kind === "soldier" && entity.status.alive && entity.grenades > 0;
+  return (entity.kind === "soldier" || entity.kind === "gunship") && entity.status.alive && entity.grenades > 0;
 }
 
 function limitMoveDestination(entity: CombatEntity, start: Vec2, destination: Vec2): Vec2 {
@@ -4107,12 +4145,14 @@ function impactRadius(entity: CombatEntity, part: DamagePart): number {
 function projectileKind(entity: CombatEntity, attackMode: AttackMode = "weapon"): ProjectileKind {
   if (attackMode === "grenade") return "grenade";
   if (entity.kind === "tank" || entity.kind === "artillery" || entity.kind === "exturret") return "shell";
-  if (entity.kind === "apc" || entity.kind === "base" || entity.kind === "turret") return "bolt";
+  if (entity.kind === "apc" || entity.kind === "base" || entity.kind === "turret" || entity.kind === "gunship" || entity.kind === "flak") return "bolt";
   if (entity.kind === "grenadier" || entity.kind === "mortar") return "grenade";
   return "rifle";
 }
 
 function moveSpeed(entity: CombatEntity): number {
+  if (entity.kind === "gunship") return 9.5;
+  if (entity.kind === "flak") return 6.2;
   if (entity.kind === "apc") return 7.4;
   if (entity.kind === "tank") return 5.5;
   if (entity.kind === "artillery") return 3.8;
@@ -4140,6 +4180,8 @@ function projectileSpeed(entity: CombatEntity, attackMode: AttackMode = "weapon"
 function projectileRange(entity: CombatEntity, attackMode: AttackMode = "weapon"): number {
   if (attackMode === "grenade") return grenadeThrowRange(entity);
   if (entity.kind === "base") return 30;
+  if (entity.kind === "flak") return 32; // long reach so its overwatch cone blankets the air lane
+  if (entity.kind === "gunship") return 22;
   if (entity.kind === "artillery") return 42;
   if (entity.kind === "sniper") return 34;
   if (entity.kind === "mortar") return 30;
@@ -4183,6 +4225,8 @@ function projectileProximityRadius(kind: ProjectileKind): number {
 function baseShotDamage(kind: EntityKind, attackMode: AttackMode = "weapon"): number {
   if (attackMode === "grenade") return 30;
   // Top-tier siege/armor hit much harder than line troops to justify their high cost + HP.
+  if (kind === "gunship") return 22; // light autocannon (air-to-air); bombs use the grenade path
+  if (kind === "flak") return 16;   // weak vs ground — it exists to shred air, not brawl armor
   if (kind === "artillery") return 78;
   if (kind === "tank") return 66;
   if (kind === "exturret") return 58; // mortar turret
@@ -4288,6 +4332,8 @@ function kindAccuracyLabel(kind: EntityKind, attackMode: AttackMode = "weapon"):
   if (kind === "turret") return "turret autogun";
   if (kind === "apc") return "autogun";
   if (kind === "heavy") return "auto-cannon";
+  if (kind === "gunship") return "gunship autocannon";
+  if (kind === "flak") return "flak cannon";
   if (kind === "scout") return "carbine";
   if (kind === "base") return "command relay";
   return "rifle";

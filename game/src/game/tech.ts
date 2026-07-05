@@ -41,6 +41,7 @@ export const TECH_TREE: readonly TechNode[] = [
   { id: "ordnance", name: "Ordnance Lab", branch: "assault", cost: 300, requires: ["assault"], tier: 2, blurb: "Grenadiers and Mortar Teams — area denial." },
   { id: "armor", name: "Armor Bay", branch: "armor", cost: 340, requires: ["assault"], tier: 2, blurb: "Tanks and APCs — rolling steel." },
   { id: "siege", name: "Siege Works", branch: "armor", cost: 380, requires: ["armor"], tier: 3, blurb: "Artillery — break fortified positions from afar." },
+  { id: "airwing", name: "Air Wing", branch: "armor", cost: 420, requires: ["armor"], tier: 3, blurb: "Gunships — open the vertical axis (Flak Track counters enemy air)." },
   // Assault specialization — offense vs. durability.
   { id: "breach", name: "Breaching Rounds", branch: "assault", cost: 260, requires: ["assault"], tier: 4, excludes: ["bulwark"], effect: { infantryDamage: 1.18 }, blurb: "+18% infantry weapon damage. Locks out Bulwark Training." },
   { id: "bulwark", name: "Bulwark Training", branch: "assault", cost: 260, requires: ["assault"], tier: 4, excludes: ["breach"], effect: { infantryHp: 1.15 }, blurb: "Infantry deploy with +15% HP. Locks out Breaching Rounds." },

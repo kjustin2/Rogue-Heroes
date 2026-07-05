@@ -923,8 +923,12 @@ function orderPlanner(
           <div class="action-row">
             ${ORDER_ACTIONS.filter((option) => actionVisible(option.id, actor, sim)).map((option, index) => {
               const disabled = actionDisabled(option.id, actor, sim);
-              const tip = option.id === "ram" ? ramTip : option.id === "defend" ? defendTip : option.tip;
-              return `<button class="tool action action-${option.id} ${action === option.id ? "active" : ""} ${disabled ? "disabled" : ""}" data-order-action="${option.id}" data-disabled="${disabled}" data-tip="${escapeAttr(tip)}"><strong>${index + 1}. ${option.label}</strong><span>${actionCostLabel(option.id, actor)}</span></button>`;
+              // A gunship's "grenade" verb is a bomb drop; relabel it so the air unit reads right.
+              const label = option.id === "grenade" && actor?.kind === "gunship" ? "Bomb" : option.label;
+              const tip = option.id === "grenade" && actor?.kind === "gunship"
+                ? "Drop a bomb on a GROUND spot (click the ground) — blast radius shown. Cannot target aircraft."
+                : option.id === "ram" ? ramTip : option.id === "defend" ? defendTip : option.tip;
+              return `<button class="tool action action-${option.id} ${action === option.id ? "active" : ""} ${disabled ? "disabled" : ""}" data-order-action="${option.id}" data-disabled="${disabled}" data-tip="${escapeAttr(tip)}"><strong>${index + 1}. ${label}</strong><span>${actionCostLabel(option.id, actor)}</span></button>`;
             }).join("")}
           </div>
         </div>
@@ -1737,7 +1741,7 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
   if (!actor || sim.phase !== "command" || actor.commandPoints <= 0) return true;
   if (action === "move") return !actor.status.canMove;
   if (action === "shoot") return !actor.status.canShoot;
-  if (action === "grenade") return actor.kind !== "soldier" || actor.grenades <= 0;
+  if (action === "grenade") return (actor.kind !== "soldier" && actor.kind !== "gunship") || actor.grenades <= 0;
   if (action === "ram") return actor.kind !== "tank" || !actor.status.canMove;
   if (action === "melee") return !isInfantryKind(actor.kind) || !actor.status.canMove || !hasStrikeWeapon(actor);
   if (action === "defend") return !isInfantryKind(actor.kind) || !actor.status.canMove;
@@ -1759,7 +1763,7 @@ function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: Tac
   if (action === "defend") return isInfantryKind(actor.kind) && actor.status.canMove;
   if (action === "overwatch") return actor.status.canShoot && !isBuildingKind(actor.kind) && !isDefenseKind(actor.kind);
   if (action === "mine") return actor.kind === "sapper";
-  if (action === "grenade") return actor.kind === "soldier" && actor.maxGrenades > 0;
+  if (action === "grenade") return (actor.kind === "soldier" || actor.kind === "gunship") && actor.maxGrenades > 0;
   if (action === "shoot") return actor.status.canShoot;
   if (action === "move") return actor.status.canMove;
   return false;

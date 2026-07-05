@@ -933,6 +933,12 @@ export class WorldRenderer {
     } else {
       group.scale.setScalar(entity.status.alive ? 1 : 0.94);
     }
+    // Flyers hover: a gentle idle bob + pitch so an airborne unit never sits dead-still in the sky.
+    if (entity.flying && entity.status.alive) {
+      const t = performance.now() * 0.0018 + (hash(entity.id) % 63);
+      group.position.y += Math.sin(t) * 0.18;
+      group.rotation.x += Math.sin(t * 0.8) * 0.03;
+    }
     // Hit flinch: the struck unit lurches away from the shooter with a quick pitch + roll
     // shudder and a brief downward absorb, so a landed hit reads as a physical reaction.
     const flinch = entity.status.alive && entity.kind !== "cover" ? this.entityFlinch(entity.id) : undefined;
@@ -997,12 +1003,16 @@ export class WorldRenderer {
     }
     const group = new THREE.Group();
     group.userData.entityId = entity.id;
-    if (isVehicleKind(entity.kind)) this.buildTank(group, entity);
+    if (entity.kind === "gunship") this.buildGunship(group, entity);
+    else if (entity.kind === "flak") this.buildFlak(group, entity);
+    else if (isVehicleKind(entity.kind)) this.buildTank(group, entity);
     if (isInfantryKind(entity.kind)) this.buildSoldier(group, entity);
     if (entity.kind === "base") this.buildBase(group, entity);
     if (isDefenseKind(entity.kind)) this.buildDefense(group, entity);
     if (entity.kind === "cover") this.buildCover(group, entity);
-    if (entity.kind !== "cover") group.add(makeContactShadow(entity.radius));
+    // Flyers add their own ground shadow (dropped to terrain level) in buildGunship; everyone else
+    // gets a contact shadow at their feet.
+    if (entity.kind !== "cover" && !entity.flying) group.add(makeContactShadow(entity.radius));
     return group;
   }
 
@@ -1212,6 +1222,48 @@ export class WorldRenderer {
       this.box(group, entity, "cannon", [0.34, 0.34, 0.26], [0, 1.16, 1.66], 0x14181a, { accent: true, metalness: 0.4 });
       this.box(group, entity, "turret", [0.72, 0.2, 0.32], [0, 1.12, -0.46], 0x6a5a36, { accent: true });
     }
+  }
+
+  // Attack gunship: sleek fuselage, a spinning main rotor + tail rotor, a chin autocannon, an
+  // underslung bomb rack, and a ground shadow dropped to the terrain so it reads as airborne.
+  private buildGunship(group: THREE.Group, entity: CombatEntity): void {
+    const factionGlow = entity.team === "enemy" ? TEAMS.enemyAccent : 0x50d7ff;
+    const factionPanel = entity.team === "enemy" ? 0x6a2722 : 0x123f55;
+    this.box(group, entity, "hull", [1.0, 0.58, 2.0], [0, 0, 0], 0x5a93ad, { metalness: 0.22 });        // body
+    this.box(group, entity, "hull", [0.72, 0.4, 0.8], [0, 0.16, 0.72], 0x9fc0d0, { metalness: 0.22 });   // cockpit
+    this.box(group, entity, "hull", [0.3, 0.28, 1.4], [0, 0.06, -1.25], 0x466070, { metalness: 0.2 });   // tail boom
+    this.box(group, entity, "hull", [0.5, 0.34, 0.12], [0, 0.28, -1.85], factionPanel, { emissive: factionGlow, emissiveIntensity: 0.22 }); // tail fin
+    // Main rotor (mobility): a mast + two crossed blades — spun each frame in syncEntity.
+    this.cylinder(group, entity, "rotor", 0.06, 0.4, [0, 0.5, 0.05], 0x2a3236);
+    this.box(group, entity, "rotor", [3.0, 0.04, 0.16], [0, 0.7, 0.05], 0x14181a);
+    this.box(group, entity, "rotor", [0.16, 0.04, 3.0], [0, 0.7, 0.05], 0x14181a);
+    this.box(group, entity, "rotor", [0.06, 0.72, 0.06], [0.2, 0.06, -1.9], 0x14181a);                    // tail rotor
+    // Chin autocannon (weapon).
+    this.box(group, entity, "gun", [0.26, 0.26, 0.7], [0, -0.3, 0.92], 0xd9e6df, { metalness: 0.35 });
+    this.box(group, entity, "gun", [0.32, 0.32, 0.16], [0, -0.3, 1.32], 0xffffff, { emissive: factionGlow, emissiveIntensity: 0.4 });
+    // Bomb rack (pack/volatile).
+    this.box(group, entity, "pack", [0.72, 0.16, 0.95], [0, -0.44, -0.05], 0x3a4042, { metalness: 0.22 });
+    for (const x of [-0.24, 0.24]) this.box(group, entity, "pack", [0.16, 0.3, 0.55], [x, -0.58, -0.05], 0xffb02e, { emissive: 0xff7d26, emissiveIntensity: 0.32 });
+    for (const x of [-0.42, 0.42]) this.box(group, entity, "hull", [0.06, 0.06, 1.3], [x, -0.52, 0.1], 0x2a3236); // skids
+    const shadow = makeContactShadow(entity.radius * 1.25);
+    shadow.position.y = -(entity.agl ?? 6); // drop the shadow to the terrain directly below
+    group.add(shadow);
+  }
+
+  // Flak Track: a low tracked chassis with an elevated multi-barrel AA gun that visibly points UP,
+  // plus a tracking-radar dish — reads clearly as "the thing that shoots the sky".
+  private buildFlak(group: THREE.Group, entity: CombatEntity): void {
+    const factionGlow = entity.team === "enemy" ? TEAMS.enemyAccent : 0x50d7ff;
+    this.box(group, entity, "hull", [2.0, 0.55, 1.25], [0, 0.5, 0], 0x5a7a6a, { metalness: 0.16 });
+    this.box(group, entity, "hull", [1.7, 0.16, 1.3], [0, 0.8, 0], 0x2a3a34, { metalness: 0.2 });
+    this.box(group, entity, "left-tread", [0.3, 0.45, 1.62], [-1.1, 0.28, 0], 0x22282a);
+    this.box(group, entity, "right-tread", [0.3, 0.45, 1.62], [1.1, 0.28, 0], 0x22282a);
+    for (const side of [-1, 1]) for (const z of [-0.5, 0, 0.5]) this.cylinder(group, entity, side < 0 ? "left-tread" : "right-tread", 0.24, 0.14, [side * 1.12, 0.28, z], 0x0d1112);
+    this.box(group, entity, "gun", [0.72, 0.42, 0.72], [0, 1.02, -0.08], 0x46606e, { metalness: 0.2 }); // gun mount
+    for (const x of [-0.15, 0.15]) this.cylinder(group, entity, "gun", 0.07, 1.15, [x, 1.55, 0.15], 0xd9e6df, [0.95, 0, 0], { metalness: 0.35 }); // barrels angled up
+    this.box(group, entity, "gun", [0.42, 0.16, 0.16], [0, 2.05, 0.6], 0xffffff, { emissive: factionGlow, emissiveIntensity: 0.42 }); // muzzle
+    this.cylinder(group, entity, "radar", 0.05, 0.55, [-0.72, 1.2, -0.42], 0x3a4042);
+    this.box(group, entity, "radar", [0.52, 0.5, 0.06], [-0.72, 1.6, -0.42], 0x8fb0c0, { emissive: factionGlow, emissiveIntensity: 0.22, rotation: [0.32, 0.42, 0], accent: true });
   }
 
   private buildSoldier(group: THREE.Group, entity: CombatEntity): void {
@@ -1973,6 +2025,10 @@ export class WorldRenderer {
       mesh.rotation.z += part.role === "mobility" ? 0.06 : 0.03;
       material.emissive.setHex(0xff5f35);
       material.emissiveIntensity = 0.18 + (1 - ratio) * 0.28;
+    }
+    // Gunship rotor: spin fast whenever it's alive so it reads as an idling/flying aircraft.
+    if (entity.kind === "gunship" && part.id === "rotor" && entity.status.alive) {
+      mesh.rotation.y += performance.now() * 0.03;
     }
     if (entity.kind === "tank" && part.role === "mobility" && mesh.geometry.type === "CylinderGeometry" && mesh.parent?.userData.moving) {
       mesh.rotation.y += ((mesh.parent.userData.motionTime as number | undefined) ?? 0) * 2.2;

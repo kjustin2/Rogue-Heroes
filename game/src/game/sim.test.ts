@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dist } from "../core/math";
-import { applyDamage, createBase, createCover, createFlamer, createGrenadier, createHeavy, createMedic, createSapper, createScout, createSniper, createSoldier, createStriker, createTank, createWall } from "./damageModel";
+import { applyDamage, createBase, createCover, createFlak, createFlamer, createGrenadier, createGunship, createHeavy, createMedic, createSapper, createScout, createSniper, createSoldier, createStriker, createTank, createWall } from "./damageModel";
 import {
   BASE_INCOME,
   INCOME_BY_LEVEL,
@@ -1871,6 +1871,49 @@ describe("tactical enemy AI", () => {
       if (sim2.projectiles.some((p) => p.actorId === "p-watch2")) firedInside = true;
     }
     expect(firedInside).toBe(true);
+  });
+
+  it("air layer: a gunship flies at altitude, forfeits capture, and is shredded by dedicated AA", () => {
+    // Flies at terrain + agl (the constructor syncs elevation).
+    const flyer = createGunship("g", "Hawk", "player", { x: 0, z: 0 });
+    const airSim = new TacticalSim([flyer]);
+    expect(flyer.flying).toBe(true);
+    expect(flyer.elevation).toBeGreaterThan(4); // ~agl 6 above the flat ground
+
+    // Anti-air: the Flak Track's vsAir cannon does far more to a gunship than a rifleman can.
+    const flakSim = new TacticalSim([
+      createFlak("f", "Flak", "player", { x: 0, z: 0 }),
+      createGunship("gt", "Bandit", "enemy", { x: 3, z: 0 }),
+    ]);
+    flakSim.select("f");
+    const flakDmg = flakSim.previewShot("f", "gt", "hull")?.amount ?? 0;
+    const rifleSim = new TacticalSim([
+      createSoldier("s", "Rook", "player", { x: 0, z: 0 }),
+      createGunship("gt2", "Bandit", "enemy", { x: 3, z: 0 }),
+    ]);
+    rifleSim.select("s");
+    const rifleDmg = rifleSim.previewShot("s", "gt2", "hull")?.amount ?? 0;
+    expect(flakDmg).toBeGreaterThan(rifleDmg * 3); // dedicated AA vs a rifle barely scratching air
+  });
+
+  it("plane attack modes: gunship guns are air-to-air, bombs are ground-only", () => {
+    const sim = new TacticalSim([
+      createGunship("g", "Hawk", "player", { x: 0, z: 0 }),
+      createGunship("air", "Bandit", "enemy", { x: 4, z: 0 }),
+      createSoldier("ground", "Grunt", "enemy", { x: 2.4, z: 0 }),
+    ]);
+    sim.select("g");
+    // Autocannon (shoot) only engages aircraft: a ground target is rejected, a flyer is allowed.
+    expect(sim.queueShoot("ground")).toBe(false);
+    expect(sim.queueShoot("air")).toBe(true);
+
+    // Bombs (grenade) are ground-only: an airborne target is rejected.
+    const bomber = new TacticalSim([
+      createGunship("g2", "Hawk", "player", { x: 0, z: 0 }),
+      createGunship("air2", "Bandit", "enemy", { x: 3, z: 0 }),
+    ]);
+    bomber.select("g2");
+    expect(bomber.queueGrenade("air2")).toBe(false);
   });
 
   it("a unit that runs over a cash cache banks it", () => {
