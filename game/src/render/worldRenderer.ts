@@ -253,6 +253,7 @@ export class WorldRenderer {
       this.syncShotPreview(sim, targetId, targetPartId);
       this.syncGroundAim(sim, groundAim);
     }
+    resetFxLinePool(); // recycle the projectile/effect trail lines instead of reallocating them
     this.syncProjectiles(sim.projectiles);
     this.syncEffects(sim.effects);
     this.syncFlashLights();
@@ -2417,7 +2418,7 @@ export class WorldRenderer {
         const a = history[i - 1];
         const b = history[i];
         const fade = TRAIL_OPACITIES[Math.min(TRAIL_OPACITIES.length - 1, history.length - 1 - i)];
-        this.projectileRoot.add(makeLine(a, b, style.trailColor, fade, a.y, b.y));
+        this.projectileRoot.add(fxLine(a, b, style.trailColor, fade, a.y, b.y));
       }
       // Heavy rounds drag a smoke wake behind the tracer; puffs grow and thin with age.
       if (projectile.kind === "shell" || (projectile.kind === "grenade" && projectile.state !== "rolling")) {
@@ -2552,7 +2553,7 @@ export class WorldRenderer {
         this.effectRoot.add(core);
         const y = terrainHeightAt({ x: midX, z: midZ }) + 0.12;
         this.effectRoot.add(makeTubeLine(effect.from, effect.to, 0xff7a5a, fade * 0.9, y, 0.11));
-        this.effectRoot.add(makeLine(effect.from, effect.to, 0xfff1dc, fade, y + 0.06));
+        this.effectRoot.add(fxLine(effect.from, effect.to, 0xfff1dc, fade, y + 0.06));
       } else if (effect.type === "topple") {
         // A felled column pivots at its base and slams along the from->to line, kicking
         // dust at the impact end. The dead cover mesh hides itself, so this IS the fall.
@@ -3178,6 +3179,33 @@ function makeLine(from: { x: number; z: number }, to: { x: number; z: number }, 
   ]);
   const mat = lineMaterial(color, opacity);
   return new THREE.Line(geo, mat);
+}
+
+// A frame-scoped pool of 2-vertex lines for the projectile + effect roots — both are disposed and
+// rebuilt EVERY frame during resolve, so `makeLine` there was the dominant per-frame allocator
+// (up to 5 trail segments per round) and the source of the resolve-phase GC jank. Pooled geometry
+// is tagged shared so disposeSubtree only detaches it; the index resets once per frame. NOT for the
+// command-phase overlay roots — those are conditionally skipped and keep their lines across frames.
+const fxLinePool: THREE.Line[] = [];
+let fxLineIdx = 0;
+function resetFxLinePool(): void { fxLineIdx = 0; }
+function fxLine(from: { x: number; z: number }, to: { x: number; z: number }, color: number, opacity: number, y = 0.16, toY = y): THREE.Line {
+  let line = fxLinePool[fxLineIdx];
+  if (!line) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
+    geo.userData.shared = true; // pooled — disposeSubtree detaches but never frees it
+    line = new THREE.Line(geo, lineMaterial(color, opacity));
+    line.frustumCulled = false; // tiny overlay lines always near the action — skip the cull test
+    fxLinePool[fxLineIdx] = line;
+  }
+  fxLineIdx += 1;
+  const pos = line.geometry.getAttribute("position") as THREE.BufferAttribute;
+  pos.setXYZ(0, from.x, y, from.z);
+  pos.setXYZ(1, to.x, toY, to.z);
+  pos.needsUpdate = true;
+  line.material = lineMaterial(color, opacity);
+  return line;
 }
 
 function makeTubeLine(
