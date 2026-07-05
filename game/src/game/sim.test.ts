@@ -730,18 +730,18 @@ describe("tactical simulation loop", () => {
       createSoldier("player", "Rook", "player", { x: 0, z: 0 }),
     ]);
     normal.select("player");
-    expect(normal.queueMove({ x: 5, z: 0 })).toBe(true);
+    expect(normal.queueMove({ x: 8, z: 0 })).toBe(true);
     normal.endTurn();
-    advance(normal, 1.2);
+    advance(normal, 0.25); // sample mid-move — at the faster speeds a full move finishes quickly
 
     const crouched = new TacticalSim([
       createSoldier("player", "Rook", "player", { x: 0, z: 0 }),
     ]);
     crouched.select("player");
     expect(crouched.queueDefend("crouched")).toBe(true);
-    expect(crouched.queueMove({ x: 5, z: 0 })).toBe(true);
+    expect(crouched.queueMove({ x: 8, z: 0 })).toBe(true);
     crouched.endTurn();
-    advance(crouched, 1.2);
+    advance(crouched, 0.25);
 
     expect(crouched.entity("player")!.position.x).toBeLessThan(normal.entity("player")!.position.x);
   });
@@ -2256,9 +2256,10 @@ describe("dynamic map events", () => {
 
   it("an artillery barrage damages units caught in the zone", () => {
     const victim = createSoldier("victim", "Victim", "enemy", { x: 0, z: 0 });
-    victim.commandPoints = 0; // hold still, so the shells are unambiguously what hit it
+    // Observer sits inside the victim's no-chase radius so the enemy holds at the zone (it can't be
+    // pinned via commandPoints — repairForNewTurn resets those at the start of the enemy turn).
     const sim = new TacticalSim([
-      createSoldier("obs", "Observer", "player", { x: 26, z: 10 }),
+      createSoldier("obs", "Observer", "player", { x: 3.5, z: 0 }),
       victim,
     ]);
     sim.debugForceEvent("barrage", { x: 0, z: 0, radius: 0.5 });

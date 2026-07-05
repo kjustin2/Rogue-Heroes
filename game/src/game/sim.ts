@@ -74,9 +74,9 @@ export type OrderKind = "move" | "shoot" | "grenade" | "ram" | "defend" | "melee
 // Hard cap on how many combat units one side can field at once.
 export const POP_CAP = 10;
 
-// Income paid each round at each upgrade level (scaled by reactor health). Tuned down from
-// the early build so the opening turns aren't flooded with cash.
-export const INCOME_BY_LEVEL = [85, 130, 185, 250] as const;
+// Income paid each round at each upgrade level (scaled by reactor health). Bumped up a notch to
+// accelerate the early game so the opening turns build toward a real army faster.
+export const INCOME_BY_LEVEL = [110, 160, 215, 285] as const;
 export const MAX_INCOME_LEVEL = INCOME_BY_LEVEL.length - 1;
 // Cost to raise income from level i to level i+1.
 export const INCOME_UPGRADE_COST = [200, 300, 420] as const;
@@ -84,9 +84,9 @@ export const INCOME_UPGRADE_COST = [200, 300, 420] as const;
 // Income at level 0; retained as a named constant for clarity and tests.
 export const BASE_INCOME = INCOME_BY_LEVEL[0];
 
-// Treasury each side opens with. Lean enough that the first deployment is a real choice.
-export const START_MONEY_PLAYER = 320;
-export const START_MONEY_ENEMY = 280;
+// Treasury each side opens with. A little fuller than before so the first turns move faster.
+export const START_MONEY_PLAYER = 380;
+export const START_MONEY_ENEMY = 320;
 
 // Cost to upgrade the Home Base to 2 command points per turn. A second CP effectively doubles
 // a base's tempo, so it is priced as a heavy, mid-game investment.
@@ -4074,7 +4074,7 @@ function makeTroopBase(kind: TroopKind, id: string, name: string, team: Team, po
 // Global mobility boost: every unit covers much more ground per order so the (now larger) maps
 // don't turn into slow marches. Applied to both range AND animation speed, so a longer move still
 // resolves in the same wall-clock time. Base per-kind values below stay the tuning surface.
-const MOVE_RANGE_SCALE = 1.4;
+const MOVE_RANGE_SCALE = 2.0;
 
 function moveRange(entity: CombatEntity): number {
   return baseMoveRange(entity) * MOVE_RANGE_SCALE;
