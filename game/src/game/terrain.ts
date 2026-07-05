@@ -19,10 +19,24 @@ export interface TerrainBlock {
   height: number;
 }
 
+// A flat rectangular footprint on the ground plane (no height). Used for impassable water and
+// the walkable bridge strips that cross it.
+export interface TerrainRect {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
+
 export interface TerrainSpec {
   bounds: ArenaBounds;
   blocks?: TerrainBlock[];
   maxHeight?: number;
+  // Impassable water: ground units cannot enter these footprints (flyers overfly). Water sits at
+  // ground level so it does not block flat line-of-fire.
+  water?: TerrainRect[];
+  // Walkable strips that cross water — a unit inside a bridge rect ignores the water blocker.
+  bridges?: TerrainRect[];
 }
 
 // The tallest single step a unit can climb in one stride. One authored block level sits
@@ -38,6 +52,8 @@ export const ARENA_BOUNDS: ArenaBounds = { ...DEFAULT_BOUNDS };
 
 let activeBlocks: TerrainBlock[] = [];
 let activeMax = 1.9;
+let activeWater: TerrainRect[] = [];
+let activeBridges: TerrainRect[] = [];
 
 // The default terrain keeps a single raised mesa in the +z half so unit tests that don't
 // load a map still see deterministic high ground (used by the line-of-sight / cover tests).
@@ -56,6 +72,26 @@ export function setActiveTerrain(spec: TerrainSpec): void {
   ARENA_BOUNDS.maxZ = spec.bounds.maxZ;
   activeBlocks = (spec.blocks ?? []).map((b) => ({ ...b }));
   activeMax = spec.maxHeight ?? 1.9;
+  activeWater = (spec.water ?? []).map((r) => ({ ...r }));
+  activeBridges = (spec.bridges ?? []).map((r) => ({ ...r }));
+}
+
+const inRect = (p: Vec2, r: TerrainRect): boolean => p.x >= r.minX && p.x <= r.maxX && p.z >= r.minZ && p.z <= r.maxZ;
+
+export function terrainWater(): readonly TerrainRect[] {
+  return activeWater;
+}
+
+export function terrainBridges(): readonly TerrainRect[] {
+  return activeBridges;
+}
+
+// True when a point sits in impassable water and NOT on a bridge that crosses it. Ground movement
+// is blocked here; flyers and the renderer ignore it.
+export function pointInWater(point: Vec2): boolean {
+  if (activeWater.length === 0) return false;
+  if (!activeWater.some((r) => inRect(point, r))) return false;
+  return !activeBridges.some((r) => inRect(point, r));
 }
 
 // Initialize to the default terrain so terrainHeightAt is always meaningful.

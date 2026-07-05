@@ -641,7 +641,10 @@ export class WorldRenderer {
       this.ambientVel = null;
     }
     if (!spec) return;
-    const count = Math.max(40, Math.round((spec.density ?? 1) * 170));
+    // Scale particle count with arena area (capped) so the enlarged maps keep their atmosphere
+    // instead of looking sparse; ~2200 is the reference (pre-scale medium) area.
+    const areaScale = Math.min(2.2, Math.max(0.7, (arenaWidth() * arenaDepth()) / 2200));
+    const count = Math.max(40, Math.round((spec.density ?? 1) * 170 * areaScale));
     const positions = new Float32Array(count * 3);
     const vel = new Float32Array(count * 3);
     const m = ambientMotion(spec.kind);
@@ -779,9 +782,12 @@ export class WorldRenderer {
       this.sceneryRoot.add(disc);
     }
 
-    const playerLight = new THREE.PointLight(theme.playerLight, 0.7, 12);
+    // Team-tint fill at each base end. Range tracks arena width so the glow still reaches toward
+    // the centre on the enlarged maps instead of pooling at the corners.
+    const fillRange = Math.max(12, arenaWidth() * 0.42);
+    const playerLight = new THREE.PointLight(theme.playerLight, 0.7, fillRange);
     playerLight.position.set(ARENA_BOUNDS.minX + 6, 4, 0);
-    const enemyLight = new THREE.PointLight(theme.enemyLight, 0.7, 12);
+    const enemyLight = new THREE.PointLight(theme.enemyLight, 0.7, fillRange);
     enemyLight.position.set(ARENA_BOUNDS.maxX - 6, 4, 0);
     this.sceneryRoot.add(playerLight, enemyLight);
   }

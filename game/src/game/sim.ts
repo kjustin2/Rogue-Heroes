@@ -4026,7 +4026,16 @@ function makeTroopBase(kind: TroopKind, id: string, name: string, team: Team, po
   }
 }
 
+// Global mobility boost: every unit covers much more ground per order so the (now larger) maps
+// don't turn into slow marches. Applied to both range AND animation speed, so a longer move still
+// resolves in the same wall-clock time. Base per-kind values below stay the tuning surface.
+const MOVE_RANGE_SCALE = 1.4;
+
 function moveRange(entity: CombatEntity): number {
+  return baseMoveRange(entity) * MOVE_RANGE_SCALE;
+}
+
+function baseMoveRange(entity: CombatEntity): number {
   if (entity.kind === "gunship") return 12.5; // fast flyer — its reach is its whole identity
   if (entity.kind === "flak") return 6.0;
   if (entity.kind === "apc") return 7.2;
@@ -4235,6 +4244,10 @@ function projectileKind(entity: CombatEntity, attackMode: AttackMode = "weapon")
 }
 
 function moveSpeed(entity: CombatEntity): number {
+  return baseMoveSpeed(entity) * MOVE_RANGE_SCALE; // match the range boost so moves resolve as fast
+}
+
+function baseMoveSpeed(entity: CombatEntity): number {
   if (entity.kind === "gunship") return 9.5;
   if (entity.kind === "flak") return 6.2;
   if (entity.kind === "apc") return 7.4;

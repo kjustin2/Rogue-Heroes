@@ -119,13 +119,15 @@ export class Stage {
     key.position.set(-8, 18, 10);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
-    // Sized to cover the largest battlefield (the LARGE maps span x = ±37, z = ±22).
-    key.shadow.camera.left = -41;
-    key.shadow.camera.right = 41;
-    key.shadow.camera.top = 27;
-    key.shadow.camera.bottom = -27;
+    // Sized to cover the largest enlarged battlefield (LARGE maps now span ~x = ±52, z = ±31 after
+    // scaleMapDef). Kept at 2048² — wider frustum means slightly softer shadows on the biggest maps,
+    // traded for no shadow-map perf hit.
+    key.shadow.camera.left = -56;
+    key.shadow.camera.right = 56;
+    key.shadow.camera.top = 34;
+    key.shadow.camera.bottom = -34;
     key.shadow.camera.near = 2;
-    key.shadow.camera.far = 72;
+    key.shadow.camera.far = 82;
     key.shadow.bias = -0.0006;
     // Higher normal bias than the box-only era: the GLB hulls' curved/angled plates
     // self-shadow-acne (reads as flickering stripes) at the old 0.02.
@@ -386,7 +388,8 @@ export class Stage {
 
   zoomBy(delta: number): void {
     this.suppressGuide();
-    this.zoom = Math.max(0.62, Math.min(1.55, this.zoom + delta));
+    // Max raised from 1.55 so the enlarged large maps (~104u wide) can be framed by pulling back.
+    this.zoom = Math.max(0.62, Math.min(2.6, this.zoom + delta));
     this.updateCamera();
   }
 

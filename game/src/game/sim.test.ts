@@ -901,8 +901,10 @@ describe("tactical simulation loop", () => {
   });
 
   it("gives grenadiers arced projectiles with splash damage around close impacts", () => {
-    const target = createSoldier("target", "Target", "enemy", { x: 6, z: 0 });
-    const bystander = createSoldier("bystander", "Bystander", "enemy", { x: 6.4, z: 0.85 });
+    // Both disarmed enemies sit inside the grenadier's no-chase radius (<6u) so they hold instead
+    // of charging across the firing line — the test isolates the grenade arc + splash, not enemy AI.
+    const target = createSoldier("target", "Target", "enemy", { x: 5.5, z: 0 });
+    const bystander = createSoldier("bystander", "Bystander", "enemy", { x: 5.8, z: 0.9 });
     applyDamage(target, "rifle", 99);
     applyDamage(bystander, "rifle", 99);
     const sim = new TacticalSim([

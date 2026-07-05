@@ -65,6 +65,9 @@ export interface MapDef {
   blurb: string;
   feel: string;
   seed: number;
+  // Size tier — stamped by scaleMapDef from the authored (pre-scale) area so mapSize() stays
+  // correct after every map is enlarged. Authored literals omit it.
+  size?: MapSize;
   theme: MapTheme;
   terrain: TerrainSpec;
   playerBase: Vec2;
@@ -86,12 +89,58 @@ export function mapCenter(map: MapDef): Vec2 {
 
 export type MapSize = "small" | "medium" | "large";
 
-// Size tier derived from playable area, so the map-select screen can group Small/Medium/Large
-// and players can pick the scale of fight they want. Thresholds tuned to the authored roster.
-export function mapSize(map: MapDef): MapSize {
-  const b = map.terrain.bounds;
-  const area = (b.maxX - b.minX) * (b.maxZ - b.minZ);
+// Size tier from playable area, so the map-select screen can group Small/Medium/Large. Every map is
+// enlarged at load (see scaleMapDef), so the tier is stamped from the authored area onto `size`.
+function tierFromArea(bounds: TerrainSpec["bounds"]): MapSize {
+  const area = (bounds.maxX - bounds.minX) * (bounds.maxZ - bounds.minZ);
   return area < 1650 ? "small" : area < 2500 ? "medium" : "large";
+}
+
+export function mapSize(map: MapDef): MapSize {
+  return map.size ?? tierFromArea(map.terrain.bounds);
+}
+
+// Every battlefield is enlarged at load so the whole roster plays bigger — large maps ~2× area,
+// medium ~1.5×, small ~1.3× (linear factors below). Object SIZES and terrain HEIGHTS stay fixed;
+// only positions/extents scale, and scatter counts grow with area so bigger maps aren't sparse.
+const SCALE_BY_SIZE: Record<MapSize, number> = { small: 1.14, medium: 1.22, large: 1.41 };
+
+function scaleRect<T extends { minX: number; maxX: number; minZ: number; maxZ: number }>(r: T, f: number): T {
+  return { ...r, minX: r.minX * f, maxX: r.maxX * f, minZ: r.minZ * f, maxZ: r.maxZ * f };
+}
+
+// Pure: return an enlarged copy of an authored map. Stamps the pre-scale size tier onto `size`.
+function scaleMapDef(def: MapDef): MapDef {
+  const size = tierFromArea(def.terrain.bounds);
+  const f = SCALE_BY_SIZE[size];
+  const t = def.terrain;
+  return {
+    ...def,
+    size,
+    terrain: {
+      ...t,
+      bounds: scaleRect(t.bounds, f),
+      blocks: t.blocks?.map((b) => ({ ...scaleRect(b, f), height: b.height })), // footprints scale, height fixed
+      water: t.water?.map((r) => scaleRect(r, f)),
+      bridges: t.bridges?.map((r) => scaleRect(r, f)),
+    },
+    playerBase: { x: def.playerBase.x * f, z: def.playerBase.z * f },
+    enemyBase: { x: def.enemyBase.x * f, z: def.enemyBase.z * f },
+    flagOffset: def.flagOffset * f,
+    hill: { x: def.hill.x * f, z: def.hill.z * f },
+    hillRadius: def.hillRadius * f,
+    // Same object sizes/gaps, but more of them so the bigger arena keeps its density.
+    scatter: def.scatter.map((g) => ({
+      ...g,
+      count: Math.round(g.count * f * f),
+      centerGap: g.centerGap === undefined ? undefined : g.centerGap * f,
+      minZ: g.minZ === undefined ? undefined : g.minZ * f,
+      maxZ: g.maxZ === undefined ? undefined : g.maxZ * f,
+    })),
+    signature: def.signature?.map((s) => ({ ...s, x: s.x * f, z: s.z * f })), // positions scale, object size fixed
+    neutrals: def.neutrals?.map((n) => ({ ...n, x: n.x * f, z: n.z * f })),
+    events: def.events?.map((e) => (e.zone ? { ...e, zone: { x: e.zone.x * f, z: e.zone.z * f, radius: e.zone.radius * f } } : e)),
+  };
 }
 
 export function flagPositions(map: MapDef): { player: Vec2; enemy: Vec2 } {
@@ -200,7 +249,7 @@ function steepHere(p: Vec2): boolean {
 // The six battlefields. Each has its own size, terrain, palette, and character.
 // ---------------------------------------------------------------------------
 
-export const MAPS: readonly MapDef[] = [
+const RAW_MAPS: readonly MapDef[] = [
   {
     id: "dustbowl",
     name: "Dust Bowl",
@@ -459,6 +508,9 @@ export const MAPS: readonly MapDef[] = [
     events: [{ kind: "barrage", startTurn: 3, period: 4, zone: { x: 0, z: 0, radius: 6 }, power: 34 }],
   },
 ];
+
+// Every consumer sees the enlarged maps; the authored RAW_MAPS above stay readable at base scale.
+export const MAPS: readonly MapDef[] = RAW_MAPS.map(scaleMapDef);
 
 export function mapDef(id: string): MapDef {
   return MAPS.find((map) => map.id === id) ?? MAPS[0];
