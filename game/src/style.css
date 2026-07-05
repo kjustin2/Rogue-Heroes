@@ -4835,3 +4835,21 @@ body.killcam::after { bottom: 0; }
 }
 ::-webkit-scrollbar-corner { background: transparent; }
 .reduced-motion ::-webkit-scrollbar-thumb { transition: none; }
+
+/* Map size tier badge on the map-select cards (Small / Medium / Large). */
+.map-size-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  border: 1px solid transparent;
+}
+.map-size-badge.size-small { color: var(--cyan); border-color: rgba(140, 239, 255, 0.5); background: rgba(140, 239, 255, 0.1); }
+.map-size-badge.size-medium { color: var(--amber); border-color: rgba(255, 202, 107, 0.5); background: rgba(255, 202, 107, 0.1); }
+.map-size-badge.size-large { color: var(--orange); border-color: rgba(255, 135, 95, 0.55); background: rgba(255, 135, 95, 0.12); }

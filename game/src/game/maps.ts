@@ -84,6 +84,16 @@ export function mapCenter(map: MapDef): Vec2 {
   return { x: (b.minX + b.maxX) / 2, z: (b.minZ + b.maxZ) / 2 };
 }
 
+export type MapSize = "small" | "medium" | "large";
+
+// Size tier derived from playable area, so the map-select screen can group Small/Medium/Large
+// and players can pick the scale of fight they want. Thresholds tuned to the authored roster.
+export function mapSize(map: MapDef): MapSize {
+  const b = map.terrain.bounds;
+  const area = (b.maxX - b.minX) * (b.maxZ - b.minZ);
+  return area < 1650 ? "small" : area < 2500 ? "medium" : "large";
+}
+
 export function flagPositions(map: MapDef): { player: Vec2; enemy: Vec2 } {
   const center = mapCenter(map);
   return {
@@ -199,7 +209,7 @@ export const MAPS: readonly MapDef[] = [
     seed: 0x44555354,
     theme: { ground: 0x9c6f3e, groundAccent: 0xc79a5c, grid: 0xd6ad6d, fog: 0xd9b27a, fogDensity: 0.012, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0xe8c98f, ambient: { kind: "dust", color: 0xe6c98a, density: 1.1 } },
     terrain: {
-      bounds: { minX: -30, maxX: 30, minZ: -19, maxZ: 19 },
+      bounds: { minX: -35, maxX: 35, minZ: -22, maxZ: 22 }, // LARGE: wide basin, long armor/sniper lanes
       maxHeight: 3.6,
       blocks: [
         { minX: -4.5, maxX: 4.5, minZ: -4.5, maxZ: 4.5, height: 0.7 }, // central rise (the contested hill)
@@ -221,13 +231,13 @@ export const MAPS: readonly MapDef[] = [
         { minX: -2, maxX: 2, minZ: -17, maxZ: -15, height: 3.4 },      // south range — peak
       ],
     },
-    playerBase: { x: -25, z: 0 },
-    enemyBase: { x: 25, z: 0 },
+    playerBase: { x: -31, z: 0 },
+    enemyBase: { x: 31, z: 0 },
     flagOffset: 3.4,
     hill: { x: 0, z: 0 },
     hillRadius: 4.2,
     scatter: [
-      { palette: ["rock", "rock", "sandbag", "barricade"], count: 7, spacing: 2.4, centerGap: 3 },
+      { palette: ["rock", "rock", "sandbag", "barricade", "bunker"], count: 7, spacing: 2.4, centerGap: 3 },
       { palette: ["fuel", "ammo"], count: 3, spacing: 3.0, centerGap: 5 },
     ],
     signature: [
@@ -236,6 +246,7 @@ export const MAPS: readonly MapDef[] = [
       { kind: "fuel", x: -12, z: 3, mirror: true },
       { kind: "ammo", x: -11.5, z: -3, mirror: true },
       { kind: "rock", x: -8, z: -10, mirror: true, radius: 1.1 },
+      { kind: "bunker", x: -9, z: 7, mirror: true },
       { kind: "barricade", x: -2, z: 7, mirror: true },
     ],
     // Recurring sandstorms sweep the open basin — accuracy and visibility drop in waves.
@@ -270,7 +281,7 @@ export const MAPS: readonly MapDef[] = [
     hill: { x: 0, z: 0 },
     hillRadius: 3.4,
     scatter: [
-      { palette: ["crate", "crate", "rubble", "wall"], count: 9, spacing: 1.4, centerGap: 2.2 },
+      { palette: ["crate", "container", "rubble", "wall"], count: 9, spacing: 1.4, centerGap: 2.2 },
       { palette: ["pillar", "pillar", "conduit", "fuel", "ammo"], count: 7, spacing: 1.8, centerGap: 3 },
     ],
     signature: [
@@ -281,6 +292,7 @@ export const MAPS: readonly MapDef[] = [
       { kind: "crate", x: -5, z: -2.6, mirror: true },
       { kind: "conduit", x: -9.5, z: 1.5, mirror: true },
       { kind: "pillar", x: -11, z: -2.2, mirror: true },
+      { kind: "container", x: -13.5, z: -2.5, mirror: true },
       { kind: "fuel", x: -8, z: 11, mirror: true },
     ],
     // Overstressed gantries give way: cover around the central platform crumbles periodically.
@@ -341,7 +353,7 @@ export const MAPS: readonly MapDef[] = [
     seed: 0x46524f5a,
     theme: { ground: 0xa9c2d6, groundAccent: 0xd6e6f0, grid: 0xbfd6e6, fog: 0xcfe0ec, fogDensity: 0.016, playerLight: 0x7fd7ff, enemyLight: 0xff8f7f, sky: 0xdcebf4, ambient: { kind: "snow", color: 0xeaf4ff, density: 1.2 } },
     terrain: {
-      bounds: { minX: -32, maxX: 32, minZ: -16, maxZ: 16 },
+      bounds: { minX: -37, maxX: 37, minZ: -19, maxZ: 19 }, // LARGE: long land bridge, deep flanks
       maxHeight: 1.4,
       // A raised central causeway funnels the fight; bases sit on the flat outer ground.
       blocks: [
@@ -349,13 +361,13 @@ export const MAPS: readonly MapDef[] = [
         { minX: -3, maxX: 3, minZ: -3, maxZ: 3, height: 1.0 },     // contested high point
       ],
     },
-    playerBase: { x: -28, z: 0 },
-    enemyBase: { x: 28, z: 0 },
+    playerBase: { x: -34, z: 0 },
+    enemyBase: { x: 34, z: 0 },
     flagOffset: 3.4,
     hill: { x: 0, z: 0 },
     hillRadius: 3.6,
     scatter: [
-      { palette: ["rubble", "rock", "wall"], count: 5, spacing: 1.6, minZ: -6, maxZ: 6, centerGap: 2.5 },
+      { palette: ["rubble", "rock", "wall", "container"], count: 5, spacing: 1.6, minZ: -6, maxZ: 6, centerGap: 2.5 },
       { palette: ["crate", "sandbag"], count: 2, spacing: 1.8, minZ: -5, maxZ: 5, centerGap: 3 },
     ],
     signature: [
@@ -432,7 +444,7 @@ export const MAPS: readonly MapDef[] = [
     hill: { x: 0, z: 0 },
     hillRadius: 3.8,
     scatter: [
-      { palette: ["sandbag", "crate", "barricade"], count: 7, spacing: 2.0, centerGap: 3 },
+      { palette: ["sandbag", "crate", "barricade", "bunker"], count: 7, spacing: 2.0, centerGap: 3 },
       { palette: ["ammo", "fuel"], count: 2, spacing: 3.0, centerGap: 5 },
     ],
     signature: [

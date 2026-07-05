@@ -36,6 +36,8 @@ export type CoverKind =
   | "sandbag"
   | "rubble"
   | "pillar"
+  | "container"
+  | "bunker"
   | "wreck"
   | "depot";
 export type PartRole = "core" | "head" | "weapon" | "mobility" | "armor" | "utility" | "volatile";
@@ -624,6 +626,10 @@ export const COVER_PROFILES: Record<CoverKind, CoverProfile> = {
   sandbag: { hp: 54, radius: 0.95, height: 0.72, volatile: false, label: "Sandbag Wall" },
   rubble: { hp: 66, radius: 1.0, height: 0.9, volatile: false, label: "Rubble Pile" },
   pillar: { hp: 120, radius: 0.7, height: 2.6, volatile: false, label: "Stone Pillar" },
+  // Shipping container: a long metal box — great line-of-sight blocker, fairly tough.
+  container: { hp: 96, radius: 1.1, height: 1.55, volatile: false, label: "Shipping Container" },
+  // Concrete bunker: low, wide, and very tough — a hard point to fight around, not through.
+  bunker: { hp: 140, radius: 1.15, height: 1.05, volatile: false, label: "Bunker" },
   // Burnt-out vehicle hull left behind when armor dies: hard cover + a salvage prize.
   wreck: { hp: 70, radius: 1.05, height: 0.95, volatile: false, label: "Burnt Wreck" },
   // Capturable supply depot: pays income each turn to whichever team holds it.

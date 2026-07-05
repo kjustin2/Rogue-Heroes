@@ -1539,6 +1539,21 @@ export class WorldRenderer {
       this.cylinder(group, entity, part.id, 0.42, 2.5, [0, 1.3, 0], 0xc8bca0, [0, 0, 0]);
       this.box(group, entity, part.id, [1.0, 0.22, 1.0], [0, 0.12, 0], 0xb0a488);
       this.box(group, entity, part.id, [1.0, 0.22, 1.0], [0, 2.5, 0], 0xb0a488);
+    } else if (entity.coverKind === "container") {
+      // Corrugated shipping container: a long ribbed metal box with door hardware.
+      this.box(group, entity, part.id, [1.95, 1.42, 1.02], [0, 0.72, 0], 0x3f6b52, { metalness: 0.3 });
+      for (const x of [-0.72, -0.36, 0, 0.36, 0.72]) this.box(group, entity, part.id, [0.06, 1.38, 1.05], [x, 0.72, 0], 0x2f5340);
+      this.box(group, entity, part.id, [1.99, 0.14, 1.06], [0, 1.41, 0], 0x4a7a5e, { metalness: 0.3 });
+      this.box(group, entity, part.id, [1.99, 0.14, 1.06], [0, 0.05, 0], 0x27402f, { metalness: 0.3 });
+      this.box(group, entity, part.id, [0.52, 1.12, 0.06], [0.48, 0.68, 0.54], 0x5a8a6e, { emissive: 0x14251b, emissiveIntensity: 0.12 });
+      for (const y of [0.4, 0.96]) this.box(group, entity, part.id, [0.08, 0.06, 0.1], [0.72, y, 0.56], 0xd8dcd2, { metalness: 0.4 });
+    } else if (entity.coverKind === "bunker") {
+      // Low concrete pillbox: wide sloped body, a dark firing slit, a vent stack.
+      this.box(group, entity, part.id, [2.0, 0.85, 1.32], [0, 0.42, 0], 0x8a8478, { metalness: 0.04 });
+      this.box(group, entity, part.id, [2.14, 0.16, 1.44], [0, 0.93, 0], 0x736d62, { metalness: 0.04 });
+      this.box(group, entity, part.id, [1.5, 0.5, 1.0], [0, 1.18, 0], 0x807a6e, { metalness: 0.04 });
+      this.box(group, entity, part.id, [1.42, 0.16, 0.1], [0, 0.62, 0.66], 0x14110d);
+      this.cylinder(group, entity, part.id, 0.12, 0.55, [-0.72, 1.2, -0.3], 0x5a5449, [0, 0, 0], { metalness: 0.2 });
     } else {
       this.box(group, entity, part.id, [1.82, 1.25, 0.56], [0, 0.63, 0], 0xb98b5b);
       this.box(group, entity, part.id, [1.66, 0.22, 0.62], [0, 1.37, 0], 0xe0b673);

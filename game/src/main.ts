@@ -22,6 +22,7 @@ import {
   MODES,
   DIFFICULTIES,
   mapDef,
+  mapSize,
   modeDef,
   difficultyLabel,
   type Intent,
@@ -712,7 +713,7 @@ function showStartScreen(): void {
 
   const mapList = MAPS.map(
     (m) => `<button class="menu-card map-card ${m.id === selectedMap ? "selected" : ""}" data-map="${m.id}" type="button">
-      <strong>${m.name}</strong>
+      <strong>${m.name}<em class="map-size-badge size-${mapSize(m)}">${mapSize(m)}</em></strong>
       <span>${m.feel}</span>
     </button>`,
   ).join("");

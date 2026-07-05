@@ -119,11 +119,11 @@ export class Stage {
     key.position.set(-8, 18, 10);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
-    // Sized to cover the largest battlefield (Frozen Causeway spans x = ±32).
-    key.shadow.camera.left = -36;
-    key.shadow.camera.right = 36;
-    key.shadow.camera.top = 24;
-    key.shadow.camera.bottom = -24;
+    // Sized to cover the largest battlefield (the LARGE maps span x = ±37, z = ±22).
+    key.shadow.camera.left = -41;
+    key.shadow.camera.right = 41;
+    key.shadow.camera.top = 27;
+    key.shadow.camera.bottom = -27;
     key.shadow.camera.near = 2;
     key.shadow.camera.far = 72;
     key.shadow.bias = -0.0006;

@@ -62,7 +62,7 @@ import { MAPS, mapDef, mapCenter, flagPositions, type MapDef, type MapEventConfi
 export { TROOP_CATALOG, troopSpec, DEFENSE_CATALOG, defenseSpec, SUPPORT_POWERS, supportPowerSpec, type TroopKind, type TroopSpec, type DefenseKind, type DefenseSpec, type SupportPowerKind, type SupportPowerSpec } from "./units";
 export { TECH_TREE, techNode, troopsUnlockedBy, type TechNode } from "./tech";
 export { MODES, modeDef, type ModeId, type ModeDef } from "./modes";
-export { MAPS, mapDef, flagPositions, mapCenter, type MapDef, type MapTheme } from "./maps";
+export { MAPS, mapDef, flagPositions, mapCenter, mapSize, type MapDef, type MapTheme, type MapSize } from "./maps";
 
 export type Phase = "command" | "resolve" | "victory" | "defeat";
 export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "overwatch" | "mine" | "interact" | "inspect" | "inspect-detail" | "build" | "support";
