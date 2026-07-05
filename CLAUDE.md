@@ -108,7 +108,10 @@ origin-keyed, so a new port every launch silently wipes all saves** (real 06-24 
 All localStorage, keyed `rht.*`: `rht.settings.v1` (incl. `keybinds`, `unitSkin`,
 `highContrastTeams`), `rht.progression.v1` (purely cosmetic), `rht.savedBattle.v1`,
 `rht.campaign.v1` (mission clears + roster/veterancy + requisition),
-`rht.commander.v1` (battle stats, medals, doctrine mastery — cosmetic).
+`rht.run.v1` (Skirmish Run: seed + sector index + carried roster/banked cash — the
+in-battle sim itself still saves to `rht.savedBattle.v1`, so a paused sector resumes
+via Continue like a campaign mission), `rht.commander.v1` (battle stats, medals,
+doctrine mastery — cosmetic).
 
 ## Owner's quality bars (each has bitten this repo)
 
