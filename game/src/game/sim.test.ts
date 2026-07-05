@@ -1876,7 +1876,7 @@ describe("tactical enemy AI", () => {
   it("air layer: a gunship flies at altitude, forfeits capture, and is shredded by dedicated AA", () => {
     // Flies at terrain + agl (the constructor syncs elevation).
     const flyer = createGunship("g", "Hawk", "player", { x: 0, z: 0 });
-    const airSim = new TacticalSim([flyer]);
+    new TacticalSim([flyer]); // constructor syncs elevation from terrain + agl
     expect(flyer.flying).toBe(true);
     expect(flyer.elevation).toBeGreaterThan(4); // ~agl 6 above the flat ground
 

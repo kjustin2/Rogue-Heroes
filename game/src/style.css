@@ -4853,3 +4853,11 @@ body.killcam::after { bottom: 0; }
 .map-size-badge.size-small { color: var(--cyan); border-color: rgba(140, 239, 255, 0.5); background: rgba(140, 239, 255, 0.1); }
 .map-size-badge.size-medium { color: var(--amber); border-color: rgba(255, 202, 107, 0.5); background: rgba(255, 202, 107, 0.1); }
 .map-size-badge.size-large { color: var(--orange); border-color: rgba(255, 135, 95, 0.55); background: rgba(255, 135, 95, 0.12); }
+
+/* A cosmetic toggle still locked behind progression (e.g. the mastery-gated Winter skin). */
+.menu-toggle.locked {
+  opacity: 0.62;
+  cursor: not-allowed;
+  color: var(--text-muted);
+  border-style: dashed;
+}

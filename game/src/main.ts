@@ -62,6 +62,10 @@ const ui = document.getElementById("ui");
 if (!canvas || !ui) throw new Error("Missing game canvas or UI root");
 const uiRoot = ui;
 
+// Total doctrine-mastery stars needed to unlock the Winter skin pack — a slow, earned cosmetic
+// (respecting the "meta unlocks slow" bar) instead of a free toggle.
+const WINTER_SKIN_MASTERY = 3;
+
 const stage = new Stage(canvas);
 // ?lowfx=1 forces the composer-free performance path — headless SwiftShader (smokes,
 // perf bench) stalls on the HalfFloat bloom chain; real GPUs get the graded stack.
@@ -873,7 +877,9 @@ function showSettings(): void {
       </div>
       <div class="settings-row">
         <label>Vehicle skin</label>
-        <button class="menu-toggle ${settings.unitSkin === "winter" ? "on" : ""}" data-set="skin" type="button" data-tip="Cosmetic arctic-camo retexture pack for vehicles and structures. Purely visual.">${settings.unitSkin === "winter" ? "Winter" : "Standard"}</button>
+        ${commander.totalMastery() >= WINTER_SKIN_MASTERY
+          ? `<button class="menu-toggle ${settings.unitSkin === "winter" ? "on" : ""}" data-set="skin" type="button" data-tip="Cosmetic arctic-camo retexture pack for vehicles and structures — purely visual. Unlocked by doctrine mastery.">${settings.unitSkin === "winter" ? "Winter" : "Standard"}</button>`
+          : `<button class="menu-toggle locked" data-set="skin" type="button" data-tip="Locked cosmetic. Reach ${WINTER_SKIN_MASTERY} total doctrine-mastery stars (keep researching doctrines across your battles) to unlock the Winter skin pack.">🔒 ${commander.totalMastery()}/${WINTER_SKIN_MASTERY}</button>`}
       </div>
       <div class="settings-row">
         <label>High-contrast teams</label>
@@ -927,8 +933,12 @@ function showSettings(): void {
       settings.highContrastTeams = !settings.highContrastTeams;
       world.setHighContrastTeams(settings.highContrastTeams);
     } else if (set === "skin") {
-      settings.unitSkin = settings.unitSkin === "winter" ? "" : "winter";
-      setModelSkin(settings.unitSkin);
+      if (commander.totalMastery() < WINTER_SKIN_MASTERY) {
+        showToast(`Winter skin unlocks at ${WINTER_SKIN_MASTERY} doctrine-mastery stars — keep researching doctrines`);
+      } else {
+        settings.unitSkin = settings.unitSkin === "winter" ? "" : "winter";
+        setModelSkin(settings.unitSkin);
+      }
     } else if (set === "binds-reset") {
       settings.keybinds = { ...DEFAULT_KEYBINDS };
     }

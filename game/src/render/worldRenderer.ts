@@ -1820,6 +1820,21 @@ export class WorldRenderer {
       mesh.receiveShadow = false;
       this.debrisRoot.add(mesh);
     }
+    // A quick, bright, LOCALIZED spark flash AT the destroyed part (never a screen flash) so the
+    // eye catches exactly what broke — the snapped track, the blown turret, the dropped gun. Rides
+    // the auto-expiring smoke-puff path with a short bright life.
+    const partY = Math.max(0.25, entity.elevation + entity.height * (part.role === "mobility" ? 0.28 : part.role === "head" ? 0.92 : 0.58));
+    const sparkColor = part.role === "volatile" ? 0xff7d26 : part.role === "mobility" || part.role === "weapon" ? 0xffe6b0 : 0xffd27a;
+    for (let i = 0; i < 4; i += 1) {
+      const material = new THREE.MeshBasicMaterial({ color: sparkColor, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending });
+      const flash = new THREE.Mesh(projectileGeometry("ember"), material);
+      const a = ((seed + i * 149) % 360) * (Math.PI / 180);
+      flash.position.set(entity.position.x + Math.sin(a) * entity.radius * 0.4, partY, entity.position.z + Math.cos(a) * entity.radius * 0.4);
+      flash.scale.setScalar(1.4 + (i % 2) * 0.6);
+      flash.userData.smoke = { born: born + i * 0.02, life: 0.32, rise: 1.4, baseOpacity: 0.95, baseScale: flash.scale.x };
+      flash.userData.origin = flash.position.clone();
+      this.debrisRoot.add(flash);
+    }
     // Losing the core (or a volatile store) is a kill moment: a short-lived column of
     // dark smoke rises from the wreck. Puffs share the pooled ember geometry; their
     // materials are per-puff (opacity animates) and disposed when the puff expires.

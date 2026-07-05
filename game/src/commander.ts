@@ -63,6 +63,11 @@ export class Commander {
     return uses >= 10 ? 3 : uses >= 6 ? 2 : uses >= 3 ? 1 : 0;
   }
 
+  /** Total mastery "stars" summed across every doctrine — drives slow cosmetic unlocks. */
+  totalMastery(): number {
+    return Object.keys(this.stats.doctrineUse).reduce((sum, id) => sum + this.masteryTier(id), 0);
+  }
+
   /**
    * Record a finished battle and return any NEWLY earned medals (for toasts).
    * `killsByKind` is this battle's player kills grouped by victim kind.
