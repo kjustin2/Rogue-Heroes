@@ -78,6 +78,9 @@ export class Stage {
   private aberration: ChromaticAberrationEffect | null = null;
   /** 0..1 transient screen stress — punched up by blasts, decays fast (vignette/CA pulse). */
   private stress = 0;
+  /** When on, blasts don't punch the screen (vignette darken + chromatic aberration) — the
+   *  reduced-motion setting was suppressing camera shake but this full-screen pulse still fired. */
+  private reducedMotion = false;
   private readonly baseVignette = 0.32;
   private readonly baseAberration = 0.0011;
   private readonly keyLight: THREE.DirectionalLight;
@@ -177,7 +180,9 @@ export class Stage {
       effects.push(new HueSaturationEffect({ saturation: 0.04 }));
       effects.push(new BrightnessContrastEffect({ contrast: 0.09 }));
       const noise = new NoiseEffect({ premultiply: true });
-      noise.blendMode.opacity.value = 0.32;
+      // A light filmic grain. 0.32 read as visible static/dither over the low-frequency sky and on
+      // small distant infantry (competing with unit readability); ~0.16 keeps the texture subtle.
+      noise.blendMode.opacity.value = 0.16;
       effects.push(noise);
     }
     this.composer.addPass(new EffectPass(this.camera, ...effects));
@@ -224,7 +229,17 @@ export class Stage {
 
   /** Punch the screen — big blasts. amount 0..1; vignette/aberration pulse, fast decay. */
   punch(amount: number): void {
+    if (this.reducedMotion) return;
     this.stress = Math.min(1, this.stress + amount);
+  }
+
+  /** Reduced-motion: suppress the blast screen pulse and settle any in-flight vignette/aberration. */
+  setReducedMotion(on: boolean): void {
+    this.reducedMotion = on;
+    if (!on) return;
+    this.stress = 0;
+    if (this.vignette) this.vignette.darkness = this.baseVignette;
+    if (this.aberration) this.aberration.offset.set(this.baseAberration, this.baseAberration);
   }
 
   /** Feel-layer seam: additive camera position/look offsets, applied every updateCamera. */

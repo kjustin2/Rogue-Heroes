@@ -37,6 +37,10 @@ export class WorldRenderer {
   private readonly damageNumberRoot = new THREE.Group();
   private readonly floatingNumbers: { sprite: THREE.Sprite; bornMs: number; origin: Vec2; baseHeight: number; aspect: number }[] = [];
   private readonly flashByPart = new Map<string, number>();
+  // Whole-body hit flinch: struck entity id -> { when hit, magnitude 0..1, shove direction }.
+  // The unit lurches away from the shooter for a beat so a hit reads as a physical reaction,
+  // not just the white part-flash.
+  private readonly flinchByEntity = new Map<string, { at: number; mag: number; dx: number; dz: number }>();
   private lastDamageSeq = 0;
   // Dynamic map events: danger-zone rings + an eased sandstorm fog/haze blend.
   private readonly environmentRoot = new THREE.Group();
@@ -69,6 +73,11 @@ export class WorldRenderer {
   private ghostedEntityIds = new Set<string>();
   private playerAccent = 0x9dfcff;
   private lastOverlaySig = "";
+  // Content signatures so the aura/objective overlays only rebuild geometry when they actually
+  // change (auras add a coarse pulse bucket so their slow opacity pulse still animates). This kills
+  // the per-frame disposeAndClear + geometry churn that caused the "random pauses while planning".
+  private lastAurasSig = "";
+  private lastObjectivesSig = "";
   // A midtone derived from the active map palette; structural props are tinted toward it so
   // they read as part of the map instead of generic brown crates on every battlefield.
   private propTint = new THREE.Color(0x8a7a5c);
@@ -212,6 +221,7 @@ export class WorldRenderer {
     if (sim.entities.every((e) => e.parts.every((p) => p.hp === p.maxHp))) {
       this.destroyedPartKeys.clear();
       this.disposeAndClear(this.debrisRoot);
+      this.flinchByEntity.clear();
     }
     this.animateDebris();
     this.pickables.splice(0);
@@ -400,10 +410,21 @@ export class WorldRenderer {
     }
   }
 
-  private spawnDamageNumber(sim: TacticalSim, entry: { targetId: string; partId: string; targetTeam: CombatEntity["team"]; amount: number; killed: boolean; destroyed: boolean }, now: number): void {
+  private spawnDamageNumber(sim: TacticalSim, entry: { targetId: string; actorId?: string; partId: string; targetTeam: CombatEntity["team"]; amount: number; killed: boolean; destroyed: boolean }, now: number): void {
     const target = sim.entity(entry.targetId);
     if (!target) return;
     this.flashByPart.set(`${entry.targetId}:${entry.partId}`, now);
+    // Record a whole-body flinch, shoved away from the shooter (or backward off the unit's own
+    // facing when there's no attacker, e.g. a mine/burn tick). Bigger hits flinch harder.
+    if (target.kind !== "cover") {
+      const attacker = entry.actorId ? sim.entity(entry.actorId) : undefined;
+      let dx = attacker && attacker.id !== target.id ? target.position.x - attacker.position.x : -Math.sin(target.yaw);
+      let dz = attacker && attacker.id !== target.id ? target.position.z - attacker.position.z : -Math.cos(target.yaw);
+      const len = Math.hypot(dx, dz) || 1;
+      dx /= len;
+      dz /= len;
+      this.flinchByEntity.set(entry.targetId, { at: now, mag: Math.min(1, entry.amount / 42), dx, dz });
+    }
     // Cap concurrent numbers so a 40-unit splash melee can't spike draw calls — recycle the
     // oldest (the flash still records for every hit; you can't read 200 numbers anyway).
     while (this.floatingNumbers.length >= MAX_FLOATING_NUMBERS) {
@@ -438,6 +459,17 @@ export class WorldRenderer {
     return t >= 1 ? 0 : 1 - t;
   }
 
+  // Hit-flinch impulse for an entity struck in the last FLINCH_MS: strength [0..1] (snappy
+  // spring, peaks at the strike and settles fast) plus the normalized shove direction.
+  private entityFlinch(entityId: string): { f: number; dx: number; dz: number } | undefined {
+    const rec = this.flinchByEntity.get(entityId);
+    if (!rec) return undefined;
+    const t = (performance.now() - rec.at) / FLINCH_MS;
+    if (t >= 1) return undefined;
+    const decay = 1 - t;
+    return { f: rec.mag * decay * decay, dx: rec.dx, dz: rec.dz };
+  }
+
   // Dispose then detach every child of a per-frame / per-swap root, freeing GPU geometry
   // before the (cheap) JS objects are GC'd. Without this, every rebuild leaks buffers.
   private disposeAndClear(group: THREE.Group): void {
@@ -445,8 +477,24 @@ export class WorldRenderer {
     group.clear();
   }
 
-  // Flag poles (CTF) and the contested zone ring (Hold the Hill), redrawn each frame.
+  // Content signature for the objective overlay (constant opacity, so no pulse term is needed):
+  // it only needs to rebuild when a holder flips, a score/flag moves, or the mode changes.
+  private objectivesSignature(sim: TacticalSim): string {
+    const s = sim.modeState;
+    if (sim.mode === "domination" && s.hills) {
+      return `dom|${s.hillRadius}|${s.hills.map((h, i) => `${h.x.toFixed(1)},${h.z.toFixed(1)}:${s.hillHolders?.[i] ?? ""}`).join(";")}`;
+    }
+    if (sim.mode === "hill") return `hill|${s.hill.x.toFixed(1)},${s.hill.z.toFixed(1)}|${s.hillRadius}|${s.hillHolder ?? ""}`;
+    if (sim.mode === "ctf") return `ctf|${s.flags.map((f) => `${f.team}:${f.pos.x.toFixed(1)},${f.pos.z.toFixed(1)}:${f.home.x.toFixed(1)},${f.home.z.toFixed(1)}`).join(";")}`;
+    return "none";
+  }
+
+  // Flag poles (CTF) and the contested zone ring (Hold the Hill). Only rebuilt when the objective
+  // state changes — static geometry with constant opacity, so nothing is lost by not rebuilding.
   private syncObjectives(sim: TacticalSim): void {
+    const sig = this.objectivesSignature(sim);
+    if (sig === this.lastObjectivesSig) return;
+    this.lastObjectivesSig = sig;
     this.disposeAndClear(this.objectiveRoot);
     const s = sim.modeState;
     if (sim.mode === "domination" && s.hills) {
@@ -542,6 +590,12 @@ export class WorldRenderer {
     // New battlefield: the last battle's scars don't carry over.
     this.disposeAndClear(this.craterRoot);
     this.scorchedIds.clear();
+    // The aura/objective overlays are now signature-gated — clear their roots and reset the cached
+    // signatures so a new battle always rebuilds them (never keeps the prior battle's flags/rings).
+    this.disposeAndClear(this.auraRoot);
+    this.disposeAndClear(this.objectiveRoot);
+    this.lastAurasSig = "";
+    this.lastObjectivesSig = "";
     // Trimmed below the authored density: under the graded post stack the full value
     // dissolves the frame edges into a cream wash and units stop reading at distance.
     this.baseFogDensity = theme.fogDensity * 0.72;
@@ -811,6 +865,10 @@ export class WorldRenderer {
     group.userData.previousPosition = { ...entity.position };
     group.userData.motionTime = motionTime;
     group.userData.moving = moving;
+    // Ease a 0..1 walk weight so locomotion (limb swing, bob, lean) blends in and out instead of
+    // popping to the idle pose in a single frame when a unit starts/stops.
+    const walkWeight = ((group.userData.walkWeight as number | undefined) ?? 0) + ((moving ? 1 : 0) - ((group.userData.walkWeight as number | undefined) ?? 0)) * 0.2;
+    group.userData.walkWeight = walkWeight;
     group.userData.recoil = this.recoilByActor.get(entity.id) ?? 0;
     // Rolling vehicles kick up a dust wake behind their tracks.
     if (moving && isVehicleKind(entity.kind)) {
@@ -837,7 +895,9 @@ export class WorldRenderer {
       }
     }
     // Body rises on each footfall (two per stride) for a walking bounce, locked to distance.
-    const bob = moving && isInfantryKind(entity.kind) ? Math.abs(Math.sin(motionTime * 1.6)) * 0.05 : 0;
+    // Pelvis bob: highest at midstance (a leg planted under the body), lowest at the split — two
+    // rises per stride. The old |sin| peaked at the split, which read as a floaty inverted bounce.
+    const bob = isInfantryKind(entity.kind) ? (0.5 + 0.5 * Math.cos(motionTime * 1.6 * 2)) * 0.05 * walkWeight : 0;
     // Ease the rendered ground height so stepping on/off cover or terrain ledges glides
     // instead of snapping.
     const prevElevation = group.userData.renderElevation as number | undefined;
@@ -845,14 +905,26 @@ export class WorldRenderer {
     group.userData.renderElevation = renderElevation;
     group.position.set(entity.position.x, renderElevation + bob, entity.position.z);
     group.rotation.set(
-      moving && isInfantryKind(entity.kind) ? 0.06 : 0,
+      isInfantryKind(entity.kind) ? 0.06 * walkWeight : 0,
       entity.yaw,
-      moving && entity.kind === "tank" ? Math.sin(motionTime * 4.8) * 0.018 : 0
+      entity.kind === "tank" ? Math.sin(motionTime * 4.8) * 0.018 * walkWeight : 0
     );
     if (defending && isInfantryKind(entity.kind) && entity.status.alive) {
       group.scale.set(1.08, 1, 1.08);
     } else {
       group.scale.setScalar(entity.status.alive ? 1 : 0.94);
+    }
+    // Hit flinch: the struck unit lurches away from the shooter with a quick pitch + roll
+    // shudder and a brief downward absorb, so a landed hit reads as a physical reaction.
+    const flinch = entity.status.alive && entity.kind !== "cover" ? this.entityFlinch(entity.id) : undefined;
+    if (flinch) {
+      const kindScale = isVehicleKind(entity.kind) ? 0.4 : isInfantryKind(entity.kind) ? 1 : 0.6;
+      const s = flinch.f * kindScale;
+      group.position.x += flinch.dx * s * 0.16;
+      group.position.z += flinch.dz * s * 0.16;
+      group.position.y -= s * 0.04;
+      group.rotation.x += s * 0.12;
+      group.rotation.z += Math.sin(performance.now() * 0.075) * s * 0.05;
     }
     const renderGhosted = ghosted;
     if (group.userData.glb) {
@@ -1762,20 +1834,27 @@ export class WorldRenderer {
       }
     }
 
-    // Walk cycle: swing arms and legs from the shoulder/hip while the unit is moving.
+    // Walk cycle: swing arms and legs from the shoulder/hip while the unit moves, weighted by the
+    // eased walkWeight so it blends in/out. Legs additionally LIFT on their forward (swing) half so
+    // the planted leg reads as ground contact rather than a sweeping pendulum (the anti-skate cue).
     const limb = mesh.userData.limb as string | undefined;
     const parent = mesh.parent;
-    if (limb && part.hp > 0 && entity.status.alive && entity.stance !== "crouched" && parent?.userData.moving && basePosition) {
-      const motionTime = (parent.userData.motionTime as number | undefined) ?? 0;
+    const walkW = (parent?.userData.walkWeight as number | undefined) ?? 0;
+    if (limb && part.hp > 0 && entity.status.alive && entity.stance !== "crouched" && walkW > 0.02 && basePosition) {
+      const motionTime = (parent?.userData.motionTime as number | undefined) ?? 0;
       const isLeg = limb.startsWith("leg");
       const forwardPair = limb === "leg-l" || limb === "arm-r";
       // motionTime is distance-scaled, so a ~1.6 multiplier yields one stride per ~1.6m walked.
-      const swing = Math.sin(motionTime * 1.6 + (forwardPair ? 0 : Math.PI)) * (isLeg ? 0.5 : 0.42);
+      const theta = motionTime * 1.6 + (forwardPair ? 0 : Math.PI);
+      const swing = Math.sin(theta) * (isLeg ? 0.62 : 0.42) * walkW;
       const pivotY = isLeg ? 0.52 : 0.98;
       const reach = pivotY - basePosition.y;
+      // Foot lift during the forward-swing half (cos(theta) > 0), so one foot steps while the other
+      // stays planted — kills the "hovering/sliding feet" read even with a single-mesh leg.
+      const lift = isLeg ? Math.max(0, Math.cos(theta)) * 0.07 * walkW : 0;
       mesh.rotation.x = (baseRotation ? baseRotation.x : 0) + swing;
       mesh.position.z = basePosition.z + reach * Math.sin(swing);
-      mesh.position.y = pivotY - reach * Math.cos(swing);
+      mesh.position.y = pivotY - reach * Math.cos(swing) + lift;
     }
 
     // Firing recoil: the weapon kicks back toward the body and tips its muzzle up, and the
@@ -1818,10 +1897,22 @@ export class WorldRenderer {
     material.emissiveIntensity = part.hp > 0
       ? (mesh.userData.baseEmissiveIntensity as number) + (unitGlow ? 0.14 : 0) + (coverGlow ? 0.18 : 0) + (selected ? 0.58 : 0) + (targetedPart ? 0.72 : targeted ? 0.34 : 0)
       : 0;
-    // Living-army cues: idle infantry breathe, and a player unit with CP left during the
-    // command phase carries a slow pulse on its weapon — "this one can still act".
-    if (isInfantryKind(entity.kind) && part.role === "core" && entity.status.alive && part.hp > 0 && !parent?.userData.moving) {
-      mesh.scale.y *= 1 + Math.sin(performance.now() * 0.0021 + (hash(entity.id) % 63)) * 0.012;
+    // Living idle: standing infantry breathe, their arms + held weapon carry a slow sway, and the
+    // torso does a subtle weight-shift — phase-offset per unit so a squad doesn't move in lockstep,
+    // and weighted by (1 - walkWeight) so it fades out as the unit starts walking. Keeps the roster
+    // alive instead of frozen through the long planning phase, without any new geometry.
+    const idleW = isInfantryKind(entity.kind) && entity.status.alive && part.hp > 0 && entity.stance !== "crouched" ? 1 - walkW : 0;
+    if (idleW > 0.02) {
+      const t = performance.now() * 0.0017 + (hash(entity.id) % 100) * 0.11;
+      if (part.role === "core") {
+        mesh.scale.y *= 1 + Math.sin(t * 1.2) * 0.012 * idleW;
+        mesh.rotation.z += Math.sin(t * 0.6) * 0.02 * idleW;
+      } else if (limb === "arm-l" || limb === "arm-r") {
+        mesh.rotation.x += Math.sin(t + (limb === "arm-r" ? 0.5 : 0)) * 0.05 * idleW;
+      } else if (part.id === "rifle") {
+        mesh.rotation.x += Math.sin(t + 0.3) * 0.04 * idleW;
+        mesh.rotation.z += Math.sin(t * 0.8) * 0.02 * idleW;
+      }
     }
     if (this.commandPhase && entity.team === "player" && entity.status.alive && entity.commandPoints > 0 && part.role === "weapon" && part.hp > 0 && !selected && !targeted) {
       material.emissive.setHex(entity.accent ?? this.playerAccent);
@@ -1939,7 +2030,32 @@ export class WorldRenderer {
 
   // Faint rings showing the reach of support/spotter auras (medic, engineer, scout, sniper),
   // so the player can see which allies benefit. Command phase only to avoid resolve clutter.
+  // Signature for the aura/overwatch overlay: the watcher + aura-unit content, plus a ~15fps pulse
+  // bucket so the slow opacity pulse still animates while the geometry stays static between beats.
+  private aurasSignature(sim: TacticalSim): string {
+    let sig = `${sim.phase}|${Math.floor(performance.now() / 66)}`;
+    for (const [id] of sim.overwatching) {
+      const w = sim.entity(id);
+      if (w?.status.alive) sig += `|ow:${id}:${w.position.x.toFixed(1)},${w.position.z.toFixed(1)}:${(sim.overwatchFacing.get(id) ?? -9).toFixed(2)}`;
+    }
+    if (sim.phase === "command") {
+      for (const e of sim.entities) {
+        if (!e.status.alive || e.kind === "cover") continue;
+        let auraBits = "";
+        for (const part of e.parts) {
+          if (part.hp <= 0 || !part.tags) continue;
+          for (const t of part.tags) if (t.endsWith("-aura")) auraBits += t;
+        }
+        if (auraBits) sig += `|au:${e.id}:${e.position.x.toFixed(1)},${e.position.z.toFixed(1)}:${auraBits}`;
+      }
+    }
+    return sig;
+  }
+
   private syncAuras(sim: TacticalSim): void {
+    const sig = this.aurasSignature(sim);
+    if (sig === this.lastAurasSig) return;
+    this.lastAurasSig = sig;
     this.disposeAndClear(this.auraRoot);
     const owPulse = (Math.sin(performance.now() * 0.005) + 1) * 0.5;
     // Overwatch kill zones show in BOTH phases — the amber wedge is the whole promise.
@@ -2529,6 +2645,8 @@ function makeWatchCone(center: Vec2, y: number, radius: number, facing: number, 
 // cap on concurrent floating numbers (bounds worst-case draw calls in a huge melee).
 const DAMAGE_NUMBER_MS = 950;
 const DAMAGE_FLASH_MS = 320;
+// How long a whole-body hit flinch lasts (ms). Short + snappy — a strike, not a stumble.
+const FLINCH_MS = 300;
 const MAX_FLOATING_NUMBERS = 24;
 
 // Ceiling height (world units) the ambient particle bed drifts within.
@@ -2595,10 +2713,26 @@ function makeLabelSprite(text: string, color: number, size = 0.58, background = 
   return sprite;
 }
 
+// Preview-label keys are high-cardinality ("<amount> dmg / <hitChance>%" over every target/part/
+// range/cover combo), so this cache is LRU-capped — without a bound it grew a fresh CanvasTexture
+// (GPU memory) for every distinct label seen across a long match.
+const LABEL_TEXTURE_CAP = 120;
+
 function labelTexture(text: string, color: number, background: number): { texture: THREE.CanvasTexture; aspect: number } {
   const key = `${text}|${color.toString(16)}|${background.toString(16)}`;
   const cached = labelTextures.get(key);
-  if (cached) return cached;
+  if (cached) {
+    labelTextures.delete(key); // LRU touch: move to the most-recently-used end
+    labelTextures.set(key, cached);
+    return cached;
+  }
+  if (labelTextures.size >= LABEL_TEXTURE_CAP) {
+    const oldest = labelTextures.keys().next().value;
+    if (oldest !== undefined) {
+      labelTextures.get(oldest)?.texture.dispose();
+      labelTextures.delete(oldest);
+    }
+  }
 
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");
@@ -3321,6 +3455,18 @@ export function disposeSubtree(obj: THREE.Object3D): void {
     if (geometry && typeof geometry.dispose === "function" && !geometry.userData?.shared) {
       geometry.dispose();
     }
+    // Also free materials. Pooled/singleton materials are tagged userData.shared and skipped, and
+    // GLB clones own per-instance materials (models.ts instantiate clones them) whose textures stay
+    // shared with the template (material.dispose() never frees a texture) — so this only frees the
+    // per-entity (procedural part / outline / accent / GLB-clone) and per-frame overlay materials
+    // that previously leaked on every unit death, group rebuild, and overlay refresh.
+    const material = (node as Partial<THREE.Mesh>).material as THREE.Material | THREE.Material[] | undefined;
+    if (material) {
+      const list = Array.isArray(material) ? material : [material];
+      for (const mat of list) {
+        if (mat && typeof mat.dispose === "function" && !mat.userData?.shared) mat.dispose();
+      }
+    }
   });
 }
 
@@ -3382,6 +3528,7 @@ function lineMaterial(color: number, opacity: number, depthWrite = true): THREE.
   let material = materials.get(key);
   if (!material) {
     material = new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite });
+    material.userData.shared = true; // pooled across frames — disposeSubtree must never free it
     materials.set(key, material);
   }
   return material as THREE.LineBasicMaterial;
@@ -3392,6 +3539,7 @@ function tubeMaterial(color: number, opacity: number): THREE.MeshBasicMaterial {
   let material = materials.get(key);
   if (!material) {
     material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+    material.userData.shared = true; // pooled across frames — disposeSubtree must never free it
     materials.set(key, material);
   }
   return material as THREE.MeshBasicMaterial;
@@ -3402,6 +3550,7 @@ function endpointMaterial(color: number): THREE.MeshBasicMaterial {
   let material = materials.get(key);
   if (!material) {
     material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.82, side: THREE.DoubleSide, depthWrite: false });
+    material.userData.shared = true; // pooled across frames — disposeSubtree must never free it
     materials.set(key, material);
   }
   return material as THREE.MeshBasicMaterial;
@@ -3412,6 +3561,7 @@ function projectileShadowMaterial(color: number, opacity: number): THREE.MeshBas
   let material = materials.get(key);
   if (!material) {
     material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+    material.userData.shared = true; // pooled across frames — disposeSubtree must never free it
     materials.set(key, material);
   }
   return material as THREE.MeshBasicMaterial;
@@ -3466,6 +3616,7 @@ function projectileMaterial(key: string, color: number, opacity: number, additiv
   let material = materials.get(materialKey);
   if (!material) {
     material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending });
+    material.userData.shared = true; // pooled across frames — disposeSubtree must never free it
     materials.set(materialKey, material);
   }
   return material as THREE.MeshBasicMaterial;

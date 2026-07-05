@@ -1873,6 +1873,43 @@ describe("tactical enemy AI", () => {
     expect(firedInside).toBe(true);
   });
 
+  it("separation pushes a unit clear of solid cover instead of leaving it clipped inside", () => {
+    const wall = createCover("wall", "Wall Block", { x: 0, z: 0 }, { coverKind: "wall" });
+    const soldier = createSoldier("p", "Rook", "player", { x: 0.3, z: 0 }); // starts overlapping the wall
+    const sim = new TacticalSim([soldier, wall]);
+    sim.select("p");
+    expect(sim.queueMove({ x: 0.3, z: 1.4 })).toBe(true);
+    sim.endTurn();
+    let guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+    const d = Math.hypot(soldier.position.x - wall.position.x, soldier.position.z - wall.position.z);
+    expect(d).toBeGreaterThan(wall.radius + soldier.radius - 0.1); // pushed out, not clipping through the wall
+  });
+
+  it("a direct shot aims at the true elevation of a high-ground target (not the old flat clamp)", () => {
+    // Target on the DEFAULT_TERRAIN mesa (x -1.5..6, z 3.8..9, height 1.3), shooter just below it —
+    // a steep up-shot at the head. The old ±0.42 rad pitch clamp (tan ≈ 0.45) was flatter than the
+    // angle to the head, so the round passed under it despite a "clear hit" preview.
+    const shooter = createSoldier("p", "Rook", "player", { x: 2, z: 2.6 });
+    const target = createSoldier("e", "Vega", "enemy", { x: 2, z: 4.4 });
+    const sim = new TacticalSim([shooter, target]);
+    expect(target.elevation).toBeGreaterThan(1); // sanity: on the mesa
+    sim.select("p");
+    expect(sim.previewShot("p", "e", "head")?.blockedByGround).toBeFalsy();
+    expect(sim.queueShootPart("e", "head")).toBe(true);
+    sim.endTurn();
+    let proj: (typeof sim.projectiles)[number] | undefined;
+    let guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) {
+      sim.update(0.05);
+      proj = sim.projectiles.find((p) => p.actorId === "p");
+      if (proj) break;
+    }
+    expect(proj).toBeDefined();
+    // tan(0.42) ≈ 0.446 was the old ceiling; a true steep-up shot now exceeds it.
+    expect(proj!.verticalSlope).toBeGreaterThan(0.46);
+  });
+
   it("a felled pillar topples away from the attacker and crushes what it lands on", () => {
     const shooter = createSoldier("p-shooter", "Shooter", "player", { x: 0, z: 0 });
     const pillar = createCover("pillar-1", "Support Pillar", { x: 3, z: 0 }, { coverKind: "pillar" });

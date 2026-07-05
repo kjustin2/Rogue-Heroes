@@ -1,5 +1,5 @@
 {
-  "count": 8,
+  "count": 9,
   "consoleErrors": [],
   "results": [
     {
@@ -11,7 +11,7 @@
       "phase": "command",
       "players": 12,
       "enemies": 0,
-      "entities": 58,
+      "entities": 62,
       "canvasLit": true,
       "file": "roster.png"
     },
@@ -50,7 +50,7 @@
       "phase": "command",
       "players": 1,
       "enemies": 1,
-      "entities": 49,
+      "entities": 53,
       "canvasLit": true,
       "file": "grenade-arc.png"
     },
@@ -76,9 +76,22 @@
       "phase": "command",
       "players": 1,
       "enemies": 3,
-      "entities": 41,
+      "entities": 43,
       "canvasLit": true,
       "file": "base-defense.png"
+    },
+    {
+      "id": "stress",
+      "title": "Stress test (perf)",
+      "description": "A crowded battlefield — two large mixed armies plus fortifications — for benchmarking frame time, draw calls, and resolve-phase load.",
+      "ok": true,
+      "map": "dustbowl",
+      "phase": "command",
+      "players": 20,
+      "enemies": 20,
+      "entities": 88,
+      "canvasLit": true,
+      "file": "stress.png"
     },
     {
       "id": "victory",
@@ -89,7 +102,7 @@
       "phase": "victory",
       "players": 3,
       "enemies": 0,
-      "entities": 49,
+      "entities": 53,
       "canvasLit": true,
       "file": "victory.png"
     },
@@ -102,7 +115,7 @@
       "phase": "defeat",
       "players": 0,
       "enemies": 3,
-      "entities": 49,
+      "entities": 53,
       "canvasLit": true,
       "file": "defeat.png"
     }

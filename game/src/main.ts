@@ -74,6 +74,7 @@ const world = new WorldRenderer(stage.scene);
 world.setPlayerAccent(progression.accentColor());
 const feel = new FeelDirector(stage);
 feel.setReducedMotion(settings.reducedMotion);
+stage.setReducedMotion(settings.reducedMotion);
 world.setHighContrastTeams(settings.highContrastTeams);
 sfx.setMuted(settings.muted);
 sfx.setVolume(settings.volume);
@@ -909,6 +910,7 @@ function showSettings(): void {
       settings.reducedMotion = !settings.reducedMotion;
       document.body.classList.toggle("reduced-motion", settings.reducedMotion);
       feel.setReducedMotion(settings.reducedMotion);
+      stage.setReducedMotion(settings.reducedMotion);
     } else if (set === "teams") {
       settings.highContrastTeams = !settings.highContrastTeams;
       world.setHighContrastTeams(settings.highContrastTeams);

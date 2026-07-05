@@ -278,6 +278,7 @@ export interface Projectile {
 export interface TurnDamageEntry {
   id: string;
   actorName: string;
+  actorId: string;
   targetName: string;
   targetId: string;
   targetTeam: CombatEntity["team"];
@@ -1723,7 +1724,7 @@ export class TacticalSim {
       }
       const crouchMoveSlow = order.startedCrouched ? 0.66 : 1;
       actor.position = moveToward(actor.position, order.destination, moveSpeed(actor) * crouchMoveSlow * dt);
-      this.separateFromUnits(actor);
+      this.separateFromUnits(actor, order.destination);
       this.syncEntityElevation(actor);
       actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
       this.checkOverwatch(actor);
@@ -1998,7 +1999,11 @@ export class TacticalSim {
     const pitchSpread = errorSpread * 0.62;
     const pitchError = pitchSpread > 0 ? this.rng.range(-pitchSpread, pitchSpread) : 0;
     const yaw = baseYaw + yawError;
-    const pitch = clamp(basePitch + pitchError, -0.42, 0.42);
+    // Allow the shot to actually aim at the true elevation of the target. The old ±0.42 rad clamp
+    // was flatter than the angle to a target on a mesa/high cover, so the projectile passed under
+    // it and whiffed even though previewAttack (which uses the true unclamped line) reported a clean
+    // hit. ±1.2 rad covers any realistic elevation; the small aim scatter (pitchError) is unchanged.
+    const pitch = clamp(basePitch + pitchError, -1.2, 1.2);
     const direction = normalize({ x: Math.sin(yaw), z: Math.cos(yaw) });
     const maxTravel = Math.max(horizontalDistance + 10, projectileRange(actor, attackMode));
     const kind = projectileKind(actor, attackMode);
@@ -2869,9 +2874,19 @@ export class TacticalSim {
   // Push a moving unit out of any unit/structure it overlaps so squads can't walk through
   // each other (or through walls/turrets). Only the mover is nudged, so two units closing in
   // slide past instead of stacking.
-  private separateFromUnits(actor: CombatEntity): void {
+  private separateFromUnits(actor: CombatEntity, destination?: Vec2): void {
     for (const other of this.entities) {
-      if (other.id === actor.id || !other.status.alive || other.kind === "cover") continue;
+      if (other.id === actor.id || !other.status.alive) continue;
+      if (other.kind === "cover") {
+        // Ridges are walkable high ground, and a low cover the unit has climbed ONTO is a valid
+        // perch — skip those. If the unit's own move destination sits on this cover it is climbing
+        // onto it (or ascending a cliff), so don't fight the climb. Every OTHER solid prop pushes
+        // the mover out, so unit-vs-unit separation can't deflect someone into (and through) it.
+        if (other.coverKind === "ridge") continue;
+        if (destination && dist(other.position, destination) <= other.radius) continue;
+        const onTop = isClimbableCover(other) && dist(actor.position, other.position) <= Math.max(0.35, other.radius * 0.65);
+        if (onTop) continue;
+      }
       const minDist = actor.radius + other.radius;
       const dx = actor.position.x - other.position.x;
       const dz = actor.position.z - other.position.z;
@@ -3738,6 +3753,7 @@ export class TacticalSim {
     this.activeTurnReport.entries.push({
       id: `damage-${++this.damageSeq}`,
       actorName: actor.name,
+      actorId: actor.id,
       targetName: target.name,
       targetId: target.id,
       targetTeam: target.team,
