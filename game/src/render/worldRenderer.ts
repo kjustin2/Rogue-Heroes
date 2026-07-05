@@ -376,7 +376,19 @@ export class WorldRenderer {
       );
       coin.position.set(cache.x, y + 0.52 + cachePulse * 0.16, cache.z);
       coin.rotation.set(0.32, performance.now() * 0.0032, 0);
+      coin.userData.pickupId = cache.id;
       this.environmentRoot.add(coin);
+      // A flat, invisible-but-raycastable disc over the whole footprint so the cache is easy to
+      // click (the thin ring + floating coin alone are a fiddly target). Clicking it shows its payout.
+      const hit = new THREE.Mesh(
+        new THREE.CircleGeometry(0.74, 16),
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
+      );
+      hit.rotation.x = -Math.PI / 2;
+      hit.position.set(cache.x, y + 0.03, cache.z);
+      hit.userData.pickupId = cache.id;
+      this.environmentRoot.add(hit);
+      this.pickables.push(hit, coin);
     }
     const pulse = (Math.sin(performance.now() * 0.006) + 1) * 0.5;
     for (const zone of env.zones) {

@@ -1320,6 +1320,19 @@ describe("base economy and troop deployment", () => {
     expect(sim.queueShoot("foe")).toBe(false);
   });
 
+  it("a strike over a hardened HQ deals no damage but logs a deflection cue", () => {
+    const base = createBase("e-base", "Enemy HQ", "enemy", { x: 0, z: 0 });
+    const sim = new TacticalSim([
+      createBase("p-base", "HQ", "player", { x: -20, z: 0 }),
+      base,
+    ]);
+    sim.debugForceEvent("barrage", { x: 0, z: 0, radius: 6 }); // shell the enemy HQ's zone
+    sim.endTurn();
+    advance(sim, 6);
+    expect(base.parts.every((p) => p.hp === p.maxHp)).toBe(true); // HQ still takes zero strike damage
+    expect(sim.log.some((l) => l.includes("weathers the strike"))).toBe(true); // but it's reported
+  });
+
   it("starts both sides with only a Home Base on a fresh map", () => {
     const sim = new TacticalSim();
     const playerLiving = sim.living("player");

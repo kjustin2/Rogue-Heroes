@@ -353,6 +353,8 @@ export class TacticalSim {
   readonly effects: VisualEvent[] = [];
   readonly defending = new Set<string>();
   readonly detonated = new Set<string>();
+  // Bases already told "deflected" this resolve, so a multi-shell volley logs the cue once.
+  private readonly strikeDeflected = new Set<string>();
   // Covers that already toppled (so a corpse caught in a later blast doesn't fall twice).
   readonly toppled = new Set<string>();
   // Vehicles that already left a wreck behind, and salvage money remaining per wreck id.
@@ -3472,6 +3474,7 @@ export class TacticalSim {
     this.defending.clear();
     this.overwatching.clear(); // unspent reaction shots expire with the resolve
     this.overwatchFacing.clear();
+    this.strikeDeflected.clear(); // next volley may report a deflection again
     this.refreshDefendingStances();
     this.finalizeTurnReport();
     // An elimination win/loss this turn takes precedence — don't also tick objectives.
@@ -3706,7 +3709,19 @@ export class TacticalSim {
       : 0xff8c3a;
     this.effect("blast", strike.point, strike.point, color, 0.85, strike.radius);
     for (const e of this.entities) {
-      if (!e.status.alive || e.kind === "base") continue;
+      if (!e.status.alive) continue;
+      // Hardened HQs shrug off strikes by design — but flash a shield + log it once per volley so
+      // the strike never reads as a broken no-op ("I bombed the base and nothing happened").
+      if (e.kind === "base") {
+        if (dist(e.position, strike.point) <= strike.radius + e.radius * 0.5) {
+          this.effect("ping", { ...e.position }, { ...e.position }, 0x8fd0ff, 0.75, e.radius + 1.1);
+          if (!this.strikeDeflected.has(e.id)) {
+            this.strikeDeflected.add(e.id);
+            this.pushLog(`${e.name} weathers the strike — hardened HQ, no damage.`);
+          }
+        }
+        continue;
+      }
       const d = dist(e.position, strike.point);
       if (d > strike.radius + e.radius * 0.5) continue;
       const part = preferredPart(e, "center");

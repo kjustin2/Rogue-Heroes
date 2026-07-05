@@ -293,6 +293,10 @@ canvas.addEventListener("pointerdown", (event) => {
   if (anyOverlayOpen()) return;
   const pick = stage.pick(event.clientX, event.clientY, world.pickables);
   if (pick) {
+    if (pick.pickupId) {
+      inspectPickup(pick.pickupId);
+      return;
+    }
     const entity = sim.entity(pick.entityId);
     if (!entity) return;
     hud.chooseBoardEntity(entity.id);
@@ -1760,6 +1764,14 @@ function showToast(text: string): void {
 
 // Drop any lingering toasts immediately — called before a full-screen end overlay so transient
 // start-of-battle notices can't overlap its buttons.
+// Clicking a ground cash cache surfaces how much it pays and how to collect it.
+function inspectPickup(id: string): void {
+  const cache = sim.pickups.find((p) => p.id === id);
+  if (!cache) return;
+  showToast(`💰 Field cache — roll a unit over it to bank $${cache.amount}`);
+  sfx.ui();
+}
+
 function clearToasts(): void {
   document.getElementById("toasts")?.replaceChildren();
 }
@@ -2064,6 +2076,7 @@ declare global {
       researchTech(nodeId: string): boolean;
       startBattle(mapId: string, modeId: ModeId, difficulty?: Difficulty): void;
       startRun(seed?: number): void;
+      inspectPickup(id: string): void;
       money(team: Team): number;
       cancelOrder(id: string): void;
       camera(): { x: number; z: number; zoom: number; yaw: number; pitch: number };
@@ -2125,6 +2138,7 @@ window.__rht = {
   researchTech: (nodeId) => sim.researchTech(nodeId),
   startBattle: (mapId, modeId, difficulty) => startBattle(mapId, modeId, difficulty),
   startRun: (seed?: number) => { run.begin(seed ?? 12345); startRunBattle(); },
+  inspectPickup: (id: string) => inspectPickup(id),
   money: (team) => sim.money(team),
   cancelOrder: (id) => sim.cancelOrder(id),
   camera: () => stage.viewState(),
