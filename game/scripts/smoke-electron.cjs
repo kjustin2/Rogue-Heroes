@@ -96,6 +96,10 @@ async function run() {
   // ponytail: showInactive paints real frames for capturePage() without stealing
   // focus from the editor/terminal. Plain show:true yanked focus on every smoke run.
   win.showInactive();
+  // Tests run MUTED — no music/sfx blaring during background runs. Electron drives via
+  // executeJavaScript (not a webdriver), so the in-app navigator.webdriver mute gate does not
+  // apply here; mute at the Electron layer instead.
+  win.webContents.setAudioMuted(true);
 
   win.webContents.on("console-message", (event) => {
     if (event.level === "error") errors.push(`CONSOLE: ${event.message}`);

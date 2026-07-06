@@ -71,6 +71,12 @@ const stage = new Stage(canvas);
 // ?lowfx=1 forces the composer-free performance path — headless SwiftShader (smokes,
 // perf bench) stalls on the HalfFloat bloom chain; real GPUs get the graded stack.
 const LOWFX = new URLSearchParams(location.search).has("lowfx");
+// Silence audio under automation so background test runs never blare music. navigator.webdriver
+// is set by Playwright/Puppeteer in every headless smoke/screenshot run, so this mutes them all
+// with zero per-script changes; ?mute is a manual override. Runs before any sound can start
+// (audio only unlocks on a later pointer gesture), and music shares sfx's master gain, so pinning
+// sfx muted silences both layers.
+const AUTOMATED = navigator.webdriver === true || new URLSearchParams(location.search).has("mute");
 stage.setQuality(LOWFX ? "performance" : settings.renderScale);
 // ?debug unlocks the Debug section in Settings (infinite money, free cooldowns). Launch the game
 // with ?debug in the URL, or the packaged app with --debug / RHT_DEBUG=1. See the README.
@@ -85,7 +91,7 @@ const feel = new FeelDirector(stage);
 feel.setReducedMotion(settings.reducedMotion);
 stage.setReducedMotion(settings.reducedMotion);
 world.setHighContrastTeams(settings.highContrastTeams);
-sfx.setMuted(settings.muted);
+sfx.setMuted(settings.muted || AUTOMATED);
 sfx.setVolume(settings.volume);
 music.setVolume(settings.musicVolume);
 
@@ -974,7 +980,7 @@ function showSettings(): void {
     }
     if (set === "mute") {
       settings.muted = !settings.muted;
-      sfx.setMuted(settings.muted);
+      sfx.setMuted(settings.muted || AUTOMATED);
     } else if (set === "scale") {
       const value = target.closest<HTMLElement>("[data-value]")?.dataset.value as RenderScale | undefined;
       if (value) {
@@ -2135,6 +2141,8 @@ declare global {
       forceEvent(kind: "sandstorm" | "barrage" | "collapse" | "ionstorm"): void;
       startCampaign(id: string): void;
       save(): boolean;
+      // True when audio is silenced (settings mute or running under test automation).
+      audioMuted(): boolean;
     };
   }
 }
@@ -2208,6 +2216,7 @@ window.__rht = {
   forceEvent: (kind) => sim.debugForceEvent(kind),
   startCampaign: (id) => { const m = campaign.mission(id); if (m) startCampaignMission(m); },
   save: () => saveBattle(),
+  audioMuted: () => sfx.isMuted,
 };
 
 // Text-content escaping reuses the attribute escaper (it already neutralizes < > & " ').

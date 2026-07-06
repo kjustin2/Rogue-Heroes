@@ -34,6 +34,11 @@ export class Sfx {
     if (this.master) this.master.gain.value = muted ? 0 : this.volume;
   }
 
+  // Exposed via window.__rht.audioMuted() so smokes can assert test runs are actually silent.
+  get isMuted(): boolean {
+    return this.muted;
+  }
+
   // The music layer routes through the same context + master gain, so the global
   // volume/mute controls govern it too.
   get audioContext(): AudioContext | undefined {
