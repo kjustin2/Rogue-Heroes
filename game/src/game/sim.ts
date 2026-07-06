@@ -348,6 +348,15 @@ export interface ModeState {
   hillHolders?: (Team | undefined)[];
 }
 
+// A stable, order-independent separation angle for a pair of coincident units, so ejecting them
+// apart is deterministic (and reproducible for tests) rather than a fixed axis nudge.
+function pairAngle(a: string, b: string): number {
+  const s = a < b ? a + "|" + b : b + "|" + a;
+  let h = 0;
+  for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return ((h >>> 0) % 3600) / 3600 * Math.PI * 2;
+}
+
 export class TacticalSim {
   readonly bus = new EventBus();
   readonly rng = new Rng(0x726f6775);
@@ -3158,31 +3167,44 @@ export class TacticalSim {
   // slide past instead of stacking.
   private separateFromUnits(actor: CombatEntity, destination?: Vec2): void {
     if (actor.flying) return; // a flyer sits above the ground plane — it never jostles ground units
-    for (const other of this.entities) {
-      if (other.id === actor.id || !other.status.alive || other.carriedById) continue; // carried units aren't on the ground
-      if (other.kind === "cover") {
-        // Ridges are walkable high ground, and a low cover the unit has climbed ONTO is a valid
-        // perch — skip those. If the unit's own move destination sits on this cover it is climbing
-        // onto it (or ascending a cliff), so don't fight the climb. Every OTHER solid prop pushes
-        // the mover out, so unit-vs-unit separation can't deflect someone into (and through) it.
-        if (other.coverKind === "ridge") continue;
-        if (destination && dist(other.position, destination) <= other.radius) continue;
-        const onTop = isClimbableCover(other) && dist(actor.position, other.position) <= Math.max(0.35, other.radius * 0.65);
-        if (onTop) continue;
+    // Relax over a few passes: pushing off one neighbour can shove the mover into another, so a
+    // single pass leaves residual overlaps (units visually merged) in a crowd. Iterate until settled.
+    for (let iter = 0; iter < 4; iter += 1) {
+      let moved = false;
+      for (const other of this.entities) {
+        if (other.id === actor.id || !other.status.alive || other.carriedById) continue; // carried units aren't on the ground
+        if (other.kind === "cover") {
+          // Ridges are walkable high ground, and a low cover the unit has climbed ONTO is a valid
+          // perch — skip those. If the unit's own move destination sits on this cover it is climbing
+          // onto it (or ascending a cliff), so don't fight the climb. Every OTHER solid prop pushes
+          // the mover out, so unit-vs-unit separation can't deflect someone into (and through) it.
+          if (other.coverKind === "ridge") continue;
+          if (destination && dist(other.position, destination) <= other.radius) continue;
+          const onTop = isClimbableCover(other) && dist(actor.position, other.position) <= Math.max(0.35, other.radius * 0.65);
+          if (onTop) continue;
+        }
+        const minDist = actor.radius + other.radius;
+        const dx = actor.position.x - other.position.x;
+        const dz = actor.position.z - other.position.z;
+        const d = Math.hypot(dx, dz);
+        if (d > 0.0001 && d < minDist) {
+          const push = minDist - d;
+          actor.position.x += (dx / d) * push;
+          actor.position.z += (dz / d) * push;
+          moved = true;
+        } else if (d <= 0.0001) {
+          // Exactly coincident (two movers resolved to the same spot): the push direction is
+          // undefined, so eject a FULL separation along a deterministic per-pair angle. A tiny
+          // fixed nudge here was the "units stacked on top of each other" bug.
+          const angle = pairAngle(actor.id, other.id);
+          actor.position.x += Math.cos(angle) * minDist;
+          actor.position.z += Math.sin(angle) * minDist;
+          moved = true;
+        }
       }
-      const minDist = actor.radius + other.radius;
-      const dx = actor.position.x - other.position.x;
-      const dz = actor.position.z - other.position.z;
-      const d = Math.hypot(dx, dz);
-      if (d > 0.0001 && d < minDist) {
-        const push = minDist - d;
-        actor.position.x += (dx / d) * push;
-        actor.position.z += (dz / d) * push;
-      } else if (d <= 0.0001) {
-        actor.position.x += 0.06;
-      }
+      actor.position = clampToArena(actor.position);
+      if (!moved) break; // fully separated — stop early
     }
-    actor.position = clampToArena(actor.position);
   }
 
   private syncAllElevations(): void {
