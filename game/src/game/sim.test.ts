@@ -13,7 +13,7 @@ import {
   troopSpec,
   type Projectile,
 } from "./sim";
-import { terrainHeightAt, setActiveTerrain, DEFAULT_TERRAIN } from "./terrain";
+import { terrainHeightAt, setActiveTerrain, DEFAULT_TERRAIN, ARENA_BOUNDS } from "./terrain";
 
 describe("tactical simulation loop", () => {
   it("resolves queued target fire back into a new command phase", () => {
@@ -2086,6 +2086,51 @@ describe("tactical enemy AI", () => {
     expect(rider.carriedById).toBeUndefined();
     expect(transport.passengerIds?.length ?? 0).toBe(0);
     expect(rider.position.x).toBeGreaterThan(8); // dropped near the unload point, not back at the start
+  });
+
+  it("transport airlift rejects enemies, flyers, and a full hold", () => {
+    const t = createTransport("t", "Chinook", "player", { x: 0, z: 0 });
+    const sim = new TacticalSim([
+      t,
+      createSoldier("a", "A", "player", { x: 1, z: 0 }),
+      createGunship("f", "Hawk", "player", { x: -1, z: 0 }),
+      createSoldier("foe", "Foe", "enemy", { x: 2, z: 0 }),
+    ]);
+    sim.select("t");
+    expect(sim.queueLoad("foe")).toBe(false); // not your unit
+    expect(sim.queueLoad("f")).toBe(false);   // can't airlift a flyer
+    expect(sim.canAirlift("a")).toBe(true);
+    t.passengerIds = ["x", "y"]; // pretend full (capacity 2)
+    expect(sim.canAirlift("a")).toBe(false);
+    expect(sim.queueLoad("a")).toBe(false);
+  });
+
+  it("transport carries two and unloads them to distinct, in-arena spots", () => {
+    const t = createTransport("t", "Chinook", "player", { x: 0, z: 0 });
+    const a = createSoldier("a", "A", "player", { x: 0.6, z: 0 });
+    const b = createSoldier("b", "B", "player", { x: 0, z: 0.6 });
+    const sim = new TacticalSim([t, a, b]);
+    // Two load orders (2 CP) → picks both up during resolve.
+    sim.select("t");
+    expect(sim.queueLoad("a")).toBe(true);
+    expect(sim.queueLoad("b")).toBe(true);
+    sim.endTurn();
+    let guard = 0;
+    while (sim.phase === "resolve" && guard++ < 500) sim.update(0.05);
+    expect(t.passengerIds?.length).toBe(2);
+    // Unload: both set down at separate spots, none on top of the other.
+    sim.select("t");
+    expect(sim.queueUnload({ x: 8, z: 0 })).toBe(true);
+    sim.endTurn();
+    guard = 0;
+    while (sim.phase === "resolve" && guard++ < 500) sim.update(0.05);
+    expect(a.carriedById).toBeUndefined();
+    expect(b.carriedById).toBeUndefined();
+    expect(dist(a.position, b.position)).toBeGreaterThan(0.5); // not stacked on the same spot
+    for (const p of [a, b]) {
+      expect(Math.abs(p.position.x)).toBeLessThan(ARENA_BOUNDS.maxX); // in-arena
+      expect(Math.abs(p.position.z)).toBeLessThan(ARENA_BOUNDS.maxZ);
+    }
   });
 
   it("a downed transport drops its passengers where it falls", () => {
