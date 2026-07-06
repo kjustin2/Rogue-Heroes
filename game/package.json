@@ -14,6 +14,7 @@
     "smoke:flow": "node scripts/smoke-flow.mjs",
     "smoke:economy": "node scripts/smoke-economy.mjs",
     "smoke:buttons": "node scripts/smoke-buttons.mjs",
+    "smoke:deep": "node scripts/smoke-deep.mjs",
     "screens": "node scripts/polish-screens.mjs",
     "improve:capture": "node improve/capture-flow.mjs",
     "improve:check": "node improve/check-goals.mjs",
@@ -23,7 +24,7 @@
     "vision": "node improve/vision.mjs",
     "smoke:electron": "electron scripts/smoke-electron.cjs",
     "test:play": "npm run build && npm run smoke:electron",
-    "test:full": "npm run verify && npm run smoke:buttons && npm run smoke:flow && npm run smoke:economy",
+    "test:full": "npm run verify && npm run smoke:buttons && npm run smoke:flow && npm run smoke:economy && npm run smoke:deep",
     "desktop": "electron .",
     "standalone": "npm run build && electron .",
     "dist:exe": "npm run build && electron-builder --win portable"

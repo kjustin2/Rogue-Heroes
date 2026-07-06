@@ -32,18 +32,31 @@ symbols fail the build.
 
 ### Smokes (Playwright, `scripts/smoke-*.mjs`)
 
-Each smoke launches its own Vite server on a dedicated `--strictPort` (a sibling project
-squats 5175): flow `5179`, economy `5176`, buttons `5191`, screenshots `5177`/`5178`,
-perf `5182`, vision `5183`. They drive headless Chromium via `window.__rht`.
+**Shared harness: `improve/lib/harness.mjs`.** New smokes/shots MUST import it, not re-inline the
+server+Chromium boilerplate: `launchGame({port,query,viewport,init})` boots a muted headless page
+and returns `{page, errors, close}`; `close()` **process-tree-kills** the Vite server (`taskkill /T`
+on win32) so no orphan survives to serve stale code (the recurring Windows bug). `assertLit(page,label)`
+is the black-frame guard; `endTurnAndSettle`/`waitForCommand` step the sim. The 3 wired smokes +
+`smoke:deep` use it; the legacy `shot-*.mjs` still re-inline theirs (migrate on touch).
+
+Each smoke owns a dedicated `--strictPort` (a sibling project squats 5175): flow `5179`, economy
+`5176`, buttons `5191`, deep `5206`, screenshots `5177`/`5178`, perf `5182`, vision `5183`. They
+drive headless Chromium via `window.__rht`.
 
 - `npm run smoke:flow` — menu → deploy → multi-turn battle → reset
 - `npm run smoke:economy`, `npm run smoke:buttons`
+- `npm run smoke:deep` — consolidated regression net for the air/transport features through the
+  full sim→render→HUD path: air fleet render, air-to-air, transport load/carry/unload, straight-down
+  bomb, serialize round-trip, victory screen. Wired into `test:full`.
 - **`smoke:electron` gameplay assertions are stale** (assumes pre-placed units that no
   longer exist); use `smoke:flow` until fixed. `test:play` wraps it, so it inherits this.
 - Gameplay smokes must navigate the menu (`[data-menu="play"]` → `[data-map]` →
   `[data-start]`) and usually grant cash via `sim.economy.set("player", N)`.
 - **`?lowfx=1`** forces the composer-free render path — functional smokes and perf use it
   (SwiftShader stalls on the bloom chain); `vision`/gallery run full-FX.
+- **Audio is auto-muted under automation** (`navigator.webdriver`/`?mute` gate in `main.ts`, mirrored
+  by Chromium `--mute-audio` and the Electron smoke's `setAudioMuted(true)`) so background runs never
+  blare. `window.__rht.audioMuted()` asserts it; `smoke:flow` guards it.
 - Needs the Playwright Chromium cache or `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`.
 
 ## Meshy scope (deliberate per-repo exception)
