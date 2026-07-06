@@ -2513,7 +2513,7 @@ export class WorldRenderer {
           const puff = new THREE.Mesh(projectileGeometry("ember"), projectileMaterial(`trail-smoke-${fadeIdx}`, 0x8d8578, SMOKE_OPACITIES[fadeIdx]));
           puff.position.set(p.x, p.y, p.z);
           puff.scale.setScalar((projectile.kind === "shell" ? 3.4 : 2.2) + back * 0.9);
-          this.projectileRoot.add(puff);
+          this.projectileRoot.add(withoutCulling(puff));
         }
       }
       // White-hot head segment reads as a tracer and feeds the bloom pass. Each weapon
@@ -3323,6 +3323,7 @@ function makeTubeLine(
   mesh.position.copy(start).add(end).multiplyScalar(0.5);
   mesh.scale.y = length;
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
+  mesh.frustumCulled = false; // tracer/beam tubes hug the action — never cull (matches the trail/head)
   return mesh;
 }
 

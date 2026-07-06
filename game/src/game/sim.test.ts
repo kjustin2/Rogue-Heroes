@@ -2151,6 +2151,61 @@ describe("tactical enemy AI", () => {
     expect(rider.status.alive).toBe(true);
   });
 
+  it("a ground bomb blast does NOT reach a flyer at altitude (anti-air is direct-fire only)", () => {
+    const bomber = createBomber("b", "Fortress", "player", { x: 5, z: 0 });
+    const enemyAir = createTransport("t", "Bandit", "enemy", { x: 6, z: 0 }); // ~1u away horizontally, up at agl
+    applyDamage(enemyAir, "rotor", 999); // immobilise → holds position over the blast
+    const sim = new TacticalSim([bomber, enemyAir]);
+    const before = enemyAir.parts.reduce((s, p) => s + p.hp, 0);
+    sim.select("b");
+    expect(sim.queueBombDrop()).toBe(true); // bomb drops straight down at x~5 (ground)
+    sim.endTurn();
+    let guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+    expect(enemyAir.parts.reduce((s, p) => s + p.hp, 0)).toBe(before); // flyer above the blast is untouched
+  });
+
+  it("a flyer overflies a ground mine without tripping it", () => {
+    const transport = createTransport("t", "Chinook", "player", { x: -5, z: 0 });
+    const foe = createSoldier("e", "Grunt", "enemy", { x: 24, z: 15 }); // keeps the battle live, out of AA range
+    const sim = new TacticalSim([transport, foe]);
+    sim.mines.push({ id: "m1", x: 0, z: 0, team: "enemy" });
+    const before = transport.parts.reduce((s, p) => s + p.hp, 0);
+    sim.select("t");
+    sim.queueMove({ x: 5, z: 0 }); // fly straight over the mine
+    sim.endTurn();
+    let guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
+    expect(sim.mines.length).toBe(1); // ground pressure mine NOT tripped by the flyer
+    expect(transport.parts.reduce((s, p) => s + p.hp, 0)).toBe(before);
+  });
+
+  it("an air unit's overwatch guards the air lane — it never snaps its autocannon at a ground mover", () => {
+    const gunship = createGunship("g", "Hawk", "player", { x: 0, z: 0 });
+    const charger = createSoldier("e-run", "Charger", "enemy", { x: -9, z: 0 });
+    applyDamage(charger, "rifle", 999); // disarmed → charges (moves) toward the gunship
+    const sim = new TacticalSim([gunship, charger]);
+    sim.select("g");
+    expect(sim.queueOverwatchToward({ x: -10, z: 0 })).toBe(true);
+    sim.endTurn();
+    let fired = false, guard = 0;
+    while (sim.phase === "resolve" && guard++ < 400) {
+      sim.update(0.05);
+      if (sim.projectiles.some((p) => p.actorId === "g")) fired = true;
+    }
+    expect(fired).toBe(false); // no air-to-air gun snapping at a GROUND unit through overwatch
+  });
+
+  it("a move stops at a wall on the flat approach even when a terrain step lies farther along", () => {
+    // DEFAULT_TERRAIN has a mesa at z>=3.8; the wall sits nearer, on the flat approach.
+    const soldier = createSoldier("p", "Rook", "player", { x: 2, z: 0.5 });
+    const wall = createCover("w", "Concrete Wall", { x: 2, z: 2 }, { coverKind: "wall" });
+    const sim = new TacticalSim([soldier, wall]);
+    sim.select("p");
+    expect(sim.queueMove({ x: 2, z: 6 })).toBe(true);
+    expect(sim.orders[0].destination?.z ?? 99).toBeLessThan(1.6); // stops before the wall, not past it at the mesa
+  });
+
   it("a bomber has no gun and only drops bombs straight down", () => {
     const bomber = createBomber("b", "Fortress", "player", { x: 0, z: 0 });
     expect(bomber.status.canShoot).toBe(false); // no weapon part at all
@@ -2201,14 +2256,16 @@ describe("tactical enemy AI", () => {
     expect(fieldedAA).toBe(true);
   });
 
-  it("AI air: an enemy gunship bombs a ground target rather than firing its air-to-air gun", () => {
+  it("AI air: an enemy gunship over a ground target drops a straight-down bomb, never its air-to-air gun", () => {
     const sim = new TacticalSim([
       createGunship("eg", "Vulture", "enemy", { x: 0, z: 0 }),
-      createSoldier("ps", "Rook", "player", { x: 6, z: 0 }), // ground, inside bomb range
+      createSoldier("ps", "Rook", "player", { x: 1.4, z: 0 }), // a ground foe roughly beneath the plane
     ]);
     sim.endTurn(); // enemy plans its orders
-    expect(sim.orders.some((o) => o.actorId === "eg" && o.kind === "grenade")).toBe(true); // bombed
-    expect(sim.orders.some((o) => o.actorId === "eg" && o.kind === "shoot")).toBe(false); // no wasted gun
+    const bomb = sim.orders.find((o) => o.actorId === "eg" && o.kind === "grenade");
+    expect(bomb).toBeTruthy(); // dropped a bomb
+    expect(bomb?.destination).toBeTruthy(); // ...straight down (a ground-target drop), not lobbed at an entity
+    expect(sim.orders.some((o) => o.actorId === "eg" && o.kind === "shoot")).toBe(false); // no wasted air-to-air gun
   });
 
   it("AI targeting: a rifleman passes over a flyer it can't hurt for a ground unit it can", () => {

@@ -1743,6 +1743,9 @@ export class TacticalSim {
         continue;
       }
       if (watcher.team === mover.team) continue;
+      // An aircraft's autocannon is air-to-air ONLY — its overwatch guards the air lane and never
+      // snaps at ground units (closes the loophole where a plane could gun the ground via overwatch).
+      if (isAirKind(watcher.kind) && !mover.flying) continue;
       if (dist(watcher.position, mover.position) > this.overwatchRadius(watcher)) continue;
       // Directional overwatch: only fire if the mover is inside the watched arc (older saves
       // with no stored facing fall back to a full 360° watch).
@@ -2058,11 +2061,11 @@ export class TacticalSim {
   private blockedMoveDestination(actor: CombatEntity, start: Vec2, destination: Vec2, allowedCoverId?: string, silent = false): Vec2 {
     const pathLength = dist(start, destination);
     if (pathLength < 0.05) return destination;
-    const terrainBlock = this.blockedBySteepTerrain(actor, start, destination, allowedCoverId, pathLength, silent);
-    if (terrainBlock) return terrainBlock;
+    // Terrain (steep step / water) stop — computed silently; we log only if it's the winning stop.
+    const terrainStop = this.blockedBySteepTerrain(actor, start, destination, allowedCoverId, pathLength, true);
     if (actor.flying) return destination; // flyers overfly all ground cover/structures
-    // Solid objects that block ground movement: cover (except walkable ridges) and any
-    // Home Base. Ridges are high ground you can stand on; the cover being taken is exempt.
+    // Solid objects that block ground movement: cover (except walkable ridges) and any Home Base or
+    // defense. Ridges are high ground you can stand on; the cover being taken is exempt.
     const blockers = this.entities
       .filter((entity) =>
         entity.status.alive &&
@@ -2077,15 +2080,21 @@ export class TacticalSim {
       .filter((hit) => hit.progress > 0.02 && hit.progress <= 1 && hit.distance <= hit.entity.radius + actor.radius * 0.9)
       .sort((a, b) => a.progress - b.progress);
     const blocker = blockers[0];
-    if (!blocker) return destination;
-    const stopBack = (blocker.entity.radius + actor.radius + 0.28) / pathLength;
-    const t = clamp(blocker.progress - stopBack, 0, 1);
-    const stopped = {
-      x: start.x + (destination.x - start.x) * t,
-      z: start.z + (destination.z - start.z) * t,
-    };
-    if (!silent) this.pushLog(`${actor.name}'s move is blocked by ${blocker.entity.name}`);
-    return clampToArena(stopped);
+    let coverStop: Vec2 | undefined;
+    if (blocker) {
+      const stopBack = (blocker.entity.radius + actor.radius + 0.28) / pathLength;
+      const t = clamp(blocker.progress - stopBack, 0, 1);
+      coverStop = clampToArena({ x: start.x + (destination.x - start.x) * t, z: start.z + (destination.z - start.z) * t });
+    }
+    if (!terrainStop && !coverStop) return destination;
+    // BOTH a wall/cover AND a terrain step can lie on the path — stop at whichever comes FIRST (nearer
+    // to the start), so a wall on the flat approach isn't skipped by a farther terrain feature.
+    if (terrainStop && (!coverStop || dist(start, terrainStop) <= dist(start, coverStop))) {
+      if (!silent) this.blockedBySteepTerrain(actor, start, destination, allowedCoverId, pathLength, false); // re-run only to log the reason
+      return terrainStop;
+    }
+    if (!silent) this.pushLog(isCliffCover(blocker!.entity) ? `${actor.name} must use a cliff ascent` : `${actor.name}'s move is blocked by ${blocker!.entity.name}`);
+    return coverStop!;
   }
 
   private blockedBySteepTerrain(actor: CombatEntity, start: Vec2, destination: Vec2, allowedCoverId: string | undefined, pathLength: number, silent = false): Vec2 | undefined {
@@ -2170,8 +2179,10 @@ export class TacticalSim {
     // Allow the shot to actually aim at the true elevation of the target. The old ±0.42 rad clamp
     // was flatter than the angle to a target on a mesa/high cover, so the projectile passed under
     // it and whiffed even though previewAttack (which uses the true unclamped line) reported a clean
-    // hit. ±1.2 rad covers any realistic elevation; the small aim scatter (pitchError) is unchanged.
-    const pitch = clamp(basePitch + pitchError, -1.2, 1.2);
+    // hit. ±1.2 rad covers ground/high-cover; a near-overhead FLYER needs a steeper ±1.5 so the AA
+    // round reaches it instead of passing beneath. The small aim scatter (pitchError) is unchanged.
+    const pitchLimit = target.flying ? 1.5 : 1.2;
+    const pitch = clamp(basePitch + pitchError, -pitchLimit, pitchLimit);
     const direction = normalize({ x: Math.sin(yaw), z: Math.cos(yaw) });
     const maxTravel = Math.max(horizontalDistance + 10, projectileRange(actor, attackMode));
     const kind = projectileKind(actor, attackMode);
@@ -2572,7 +2583,7 @@ export class TacticalSim {
     if (!this.burnZones.length) return;
     for (const zone of this.burnZones) {
       for (const e of this.entities) {
-        if (!e.status.alive || e.kind === "base") continue;
+        if (!e.status.alive || e.kind === "base" || e.flying) continue; // flyers are above the flames
         if (dist(e.position, zone) > zone.radius + e.radius * 0.5) continue;
         const part = preferredPart(e, "center");
         applyDamage(e, part.id, BURN_DAMAGE);
@@ -2612,7 +2623,8 @@ export class TacticalSim {
   // Called while units move during resolve (same hook as overwatch): a hostile stepping
   // on a mine detonates it.
   private checkMines(mover: CombatEntity): void {
-    if (!this.mines.length || !mover.status.alive || mover.kind === "cover" || mover.team === "neutral") return;
+    // Flyers overfly ground pressure mines (like pickups/captures — they never touch the ground).
+    if (!this.mines.length || !mover.status.alive || mover.kind === "cover" || mover.team === "neutral" || mover.flying) return;
     for (let i = this.mines.length - 1; i >= 0; i -= 1) {
       const mine = this.mines[i];
       if (mine.team === mover.team) continue;
@@ -2786,7 +2798,9 @@ export class TacticalSim {
 
   private applyExplosiveRadius(actor: CombatEntity, point: Vec2, radius: number, baseDamage: number, message: string): void {
     for (const entity of this.entities) {
-      if (entity.id === actor.id || !entity.status.alive) continue;
+      // Flyers ride above the blast plane — a GROUND explosion never reaches them (anti-air is
+      // direct-fire only, not splash). The 2D distance below would otherwise hit them at altitude.
+      if (entity.id === actor.id || !entity.status.alive || entity.flying) continue;
       const d = dist(entity.position, point);
       if (d > radius + entity.radius * 0.45) continue;
       const part = preferredPart(entity, entity.kind === "cover" ? "center" : "weakest");
@@ -3320,9 +3334,16 @@ export class TacticalSim {
         const flyers = (players.length ? players : allPlayers).filter((p) => p.flying && p.status.alive);
         const airTgt = flyers.length ? nearest(enemy, flyers) : undefined;
         if (airTgt && enemy.status.canShoot && dist(enemy.position, airTgt.position) <= range && this.queueShootFor(enemy, airTgt, "center")) continue;
-        if (target && enemy.grenades > 0 && !this.grenadeFailureReason(enemy, target)) {
-          this.queueGrenadeFor(enemy, target, "center");
-          continue;
+        // Bombers drop STRAIGHT DOWN (like the player's), so they only bomb when a ground foe is
+        // roughly beneath them — otherwise they fall through to the move block to fly over one.
+        if (enemy.grenades > 0 && isAirBomber(enemy)) {
+          const beneath = (players.length ? players : allPlayers).find((p) => !p.flying && p.status.alive && !isBuildingKind(p.kind) && dist(enemy.position, p.position) <= 2.6);
+          if (beneath) {
+            spendCommandPoint(enemy);
+            enemy.grenades = Math.max(0, enemy.grenades - 1);
+            this.addOrder({ actorId: enemy.id, kind: "grenade", destination: { x: enemy.position.x, z: enemy.position.z }, aim: "center", duration: 1.15 });
+            continue;
+          }
         }
       }
       // Fire when a target is in weapon range. Smart bots focus-fire the highest-value killable
@@ -3874,7 +3895,7 @@ export class TacticalSim {
       : 0xff8c3a;
     this.effect("blast", strike.point, strike.point, color, 0.85, strike.radius);
     for (const e of this.entities) {
-      if (!e.status.alive) continue;
+      if (!e.status.alive || e.flying) continue; // flyers ride above the strike plane
       // Hardened HQs shrug off strikes by design — but flash a shield + log it once per volley so
       // the strike never reads as a broken no-op ("I bombed the base and nothing happened").
       if (e.kind === "base") {
