@@ -1557,6 +1557,7 @@ export class TacticalSim {
       turn: this.turn,
       economy: [...this.economy],
       entities: this.entities,
+      orders: this.orders, // queued-but-unresolved orders survive a save so CP stays consistent
       modeState: this.modeState,
       troopSeq: this.troopSeq,
       detonated: [...this.detonated],
@@ -1576,7 +1577,7 @@ export class TacticalSim {
     try {
       const data = JSON.parse(raw) as {
         map: string; mode: ModeId; difficulty?: Difficulty; turn?: number;
-        economy: [Team, number][]; entities: CombatEntity[]; modeState: ModeState; troopSeq?: number;
+        economy: [Team, number][]; entities: CombatEntity[]; orders?: TacticalOrder[]; modeState: ModeState; troopSeq?: number;
         detonated?: string[]; toppled?: string[]; overwatch?: [string, number][]; overwatchFacing?: [string, number][];
         wrecked?: string[]; salvage?: [string, number][];
         burnZones?: { id: string; x: number; z: number; radius: number; turnsLeft: number }[];
@@ -1594,7 +1595,11 @@ export class TacticalSim {
       this.modeState = data.modeState;
       this.turn = data.turn ?? 1;
       this.troopSeq = data.troopSeq ?? 0;
-      this.orders.splice(0);
+      // Resume queued orders whose actor still exists and that have NOT yet executed (never
+      // resurrect a fired shot or completed action), so a save mid-command-phase keeps command
+      // points consistent — dropping the order while keeping its spent CP silently robs the player.
+      const liveIds = new Set(this.entities.map((e) => e.id));
+      this.orders.splice(0, this.orders.length, ...(data.orders ?? []).filter((o) => liveIds.has(o.actorId) && !o.fired && !o.done));
       this.projectiles.splice(0);
       this.effects.splice(0);
       this.defending.clear();
