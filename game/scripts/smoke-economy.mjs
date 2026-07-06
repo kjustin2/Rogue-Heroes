@@ -1,41 +1,15 @@
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
-import { chromium } from "playwright-core";
+import { endTurnAndSettle, launchGame } from "../improve/lib/harness.mjs";
 
 const PORT = 5176;
-const URL = `http://127.0.0.1:${PORT}`;
 const OUT = "shots";
 
 mkdirSync(OUT, { recursive: true });
 
-const serverLog = [];
-let server = null;
-let browser = null;
+const { page, errors, close } = await launchGame({ port: PORT, query: "lowfx=1" });
 
 try {
-  if (!(await isServerReady(URL))) {
-    const viteBin = join(process.cwd(), "node_modules", "vite", "bin", "vite.js");
-    server = spawn(process.execPath, [viteBin, "--host", "127.0.0.1", "--strictPort", "--port", String(PORT)], {
-      cwd: process.cwd(),
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    server.stdout.on("data", (chunk) => serverLog.push(chunk.toString()));
-    server.stderr.on("data", (chunk) => serverLog.push(chunk.toString()));
-  }
-
-  await waitForServer(URL, 20000);
-  browser = await chromium.launch({ executablePath: findChromium(), headless: true });
-  const page = await (await browser.newContext({ viewport: { width: 1600, height: 900 } })).newPage();
-  const errors = [];
-  page.on("console", (msg) => {
-    if (msg.type() === "error") errors.push(msg.text());
-  });
-  page.on("pageerror", (err) => errors.push(`PAGEERROR: ${err.message}`));
-
-  await page.goto(`${URL}/?lowfx=1`, { waitUntil: "networkidle" });
   // Navigate the landing menu into a battle (Start Game -> Deploy) so HUD clicks land.
   await page.waitForSelector(".main-menu");
   await page.click('[data-menu="play"]');
@@ -86,7 +60,7 @@ try {
   if (!/\d/.test(moneyBar)) throw new Error(`Missing treasury bar in HUD: "${moneyBar}"`);
 
   // 2) Next turn: upgrade income from the base.
-  await resolveToCommand(page);
+  await endTurnAndSettle(page);
   await page.click(`[data-select="${baseId}"]`);
   await page.click('[data-base-tab="upgrade"]'); // base deck is tabbed now
   await page.waitForSelector('[data-base-upgrade="income"]', { timeout: 4000 });
@@ -101,7 +75,7 @@ try {
   if (afterIncome.money >= moneyBeforeIncome) throw new Error(`Income upgrade did not spend money: ${JSON.stringify({ moneyBeforeIncome, ...afterIncome })}`);
 
   // 3) Next turn: research a tech-tree doctrine to unlock new troops.
-  await resolveToCommand(page);
+  await endTurnAndSettle(page);
   await page.click(`[data-select="${baseId}"]`);
   await page.click('[data-base-tab="tech"]');
   await page.waitForSelector('[data-tech="assault"]', { timeout: 4000 });
@@ -110,7 +84,7 @@ try {
   if (!techAfter) throw new Error("Research did not unlock the Assault doctrine");
 
   // 4) Next turn: the now-unlocked Striker can be deployed.
-  await resolveToCommand(page);
+  await endTurnAndSettle(page);
   await page.click(`[data-select="${baseId}"]`);
   await page.click('[data-base-tab="deploy"]'); // switch back from the tech tab
   await page.waitForSelector('[data-spawn="striker"]:not([data-disabled="true"])', { timeout: 4000 });
@@ -124,53 +98,5 @@ try {
   const finalMoney = await page.evaluate(() => window.__rht.money("player"));
   console.log(`Economy passed: deployed troops, researched Assault, upgraded income, treasury $${finalMoney}`);
 } finally {
-  if (browser) await browser.close();
-  if (server) server.kill();
-}
-
-async function resolveToCommand(page) {
-  await page.evaluate(() => window.__rht.endTurn());
-  await page.waitForFunction(() => window.__rht.sim.phase === "command", undefined, { timeout: 16000 });
-}
-
-async function waitForServer(url, timeoutMs) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const res = await fetch(url);
-      if (res.ok) return;
-    } catch {
-      // server still starting
-    }
-    await delay(250);
-  }
-  throw new Error(`Server did not start at ${url}\n${serverLog.join("")}`);
-}
-
-async function isServerReady(url) {
-  try {
-    const res = await fetch(url);
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-function findChromium() {
-  if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH && existsSync(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH)) {
-    return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
-  }
-
-  const local = process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local");
-  const root = join(local, "ms-playwright");
-  if (!existsSync(root)) throw new Error(`Missing Playwright browser cache: ${root}`);
-
-  const matches = readdirSync(root)
-    .filter((name) => name.startsWith("chromium-"))
-    .map((name) => join(root, name, "chrome-win64", "chrome.exe"))
-    .filter((path) => existsSync(path))
-    .sort();
-
-  if (!matches.length) throw new Error(`No cached Chromium executable under ${root}`);
-  return matches[matches.length - 1];
+  await close();
 }

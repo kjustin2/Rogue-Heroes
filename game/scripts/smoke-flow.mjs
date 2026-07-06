@@ -1,43 +1,18 @@
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
-import { chromium } from "playwright-core";
+import { assertLit, launchGame } from "../improve/lib/harness.mjs";
 
 const PORT = 5179;
-const URL = `http://127.0.0.1:${PORT}`;
 const OUT = "shots";
 
 mkdirSync(OUT, { recursive: true });
 
-const serverLog = [];
-let server = null;
-let browser = null;
+const { page, errors, close } = await launchGame({ port: PORT, query: "lowfx=1" });
 
 try {
-  if (!(await isServerReady(URL))) {
-    const viteBin = join(process.cwd(), "node_modules", "vite", "bin", "vite.js");
-    server = spawn(process.execPath, [viteBin, "--host", "127.0.0.1", "--strictPort", "--port", String(PORT)], {
-      cwd: process.cwd(),
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    server.stdout.on("data", (chunk) => serverLog.push(chunk.toString()));
-    server.stderr.on("data", (chunk) => serverLog.push(chunk.toString()));
-  }
-
-  await waitForServer(URL, 20000);
-  browser = await chromium.launch({ executablePath: findChromium(), headless: true });
-  const page = await (await browser.newContext({ viewport: { width: 1600, height: 900 } })).newPage();
-  const errors = [];
-
-  page.on("console", (msg) => {
-    if (msg.type() === "error") errors.push(msg.text());
-  });
-  page.on("pageerror", (err) => errors.push(`PAGEERROR: ${err.message}`));
-
-  await page.goto(`${URL}/?lowfx=1`, { waitUntil: "networkidle" });
   await page.waitForSelector(".main-menu");
+  // Every automated run must be silent — permanent guard on the audio mute gate.
+  if (!(await page.evaluate(() => window.__rht.audioMuted()))) throw new Error("audio not muted under automation");
   await page.screenshot({ path: join(OUT, "6-menu.png") });
 
   // Enter the deploy screen, pick a specific map + mode through the menu, then deploy.
@@ -47,7 +22,7 @@ try {
   await page.click('[data-mode="ctf"]');
   await page.click("[data-start]");
   await page.waitForSelector(".title-screen", { state: "detached", timeout: 4000 }).catch(() => {});
-  await assertCanvasPainted(page, "flow command");
+  await assertLit(page, "flow command");
 
   const startState = await page.evaluate(() => ({
     map: window.__rht.sim.mapDef.id,
@@ -86,7 +61,7 @@ try {
     api.endTurn();
   });
   await page.waitForFunction(() => window.__rht.sim.phase === "resolve" || window.__rht.sim.turn >= 3, undefined, { timeout: 6000 });
-  await assertCanvasPainted(page, "flow resolve");
+  await assertLit(page, "flow resolve");
   await page.waitForFunction(() => window.__rht.sim.phase === "command" && window.__rht.sim.turn >= 3, undefined, { timeout: 16000 });
   await page.screenshot({ path: join(OUT, "7-flow-battle.png") });
 
@@ -111,70 +86,5 @@ try {
   if (errors.length) throw new Error(`Console errors:\n${errors.slice(0, 12).join("\n")}`);
   console.log(`Flow passed: menu picked ${startState.map}/${startState.mode}, deployed ${midState.players}, enemy fielded ${midState.enemies}, reset to empty.`);
 } finally {
-  if (browser) await browser.close();
-  if (server) server.kill();
-}
-
-async function waitForServer(url, timeoutMs) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const res = await fetch(url);
-      if (res.ok) return;
-    } catch {
-      // server still starting
-    }
-    await delay(250);
-  }
-  throw new Error(`Server did not start at ${url}\n${serverLog.join("")}`);
-}
-
-async function isServerReady(url) {
-  try {
-    const res = await fetch(url);
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-function findChromium() {
-  if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH && existsSync(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH)) {
-    return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
-  }
-
-  const local = process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local");
-  const root = join(local, "ms-playwright");
-  if (!existsSync(root)) throw new Error(`Missing Playwright browser cache: ${root}`);
-
-  const matches = readdirSync(root)
-    .filter((name) => name.startsWith("chromium-"))
-    .map((name) => join(root, name, "chrome-win64", "chrome.exe"))
-    .filter((path) => existsSync(path))
-    .sort();
-
-  if (!matches.length) throw new Error(`No cached Chromium executable under ${root}`);
-  return matches[matches.length - 1];
-}
-
-async function assertCanvasPainted(page, label) {
-  const sample = await page.evaluate(() => {
-    const canvas = document.getElementById("game");
-    if (!(canvas instanceof HTMLCanvasElement)) return { ok: false, reason: "missing canvas" };
-    const gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
-    if (!gl) return { ok: false, reason: "missing webgl context" };
-    const width = gl.drawingBufferWidth;
-    const height = gl.drawingBufferHeight;
-    const size = 18;
-    const x = Math.max(0, Math.floor(width / 2 - size / 2));
-    const y = Math.max(0, Math.floor(height / 2 - size / 2));
-    const pixels = new Uint8Array(size * size * 4);
-    gl.readPixels(x, y, size, size, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-    let lit = 0;
-    for (let i = 0; i < pixels.length; i += 4) {
-      if (pixels[i] + pixels[i + 1] + pixels[i + 2] > 24) lit += 1;
-    }
-    return { ok: lit > 20, lit, width, height };
-  });
-  if (!sample.ok) throw new Error(`Canvas pixel check failed for ${label}: ${JSON.stringify(sample)}`);
+  await close();
 }

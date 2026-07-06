@@ -2,11 +2,12 @@
 // cached Playwright Chromium, drive the game, and sample the WebGL canvas. Extracted so
 // capture-flow and any future scripted play-throughs share one battle-tested code path.
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { chromium } from "playwright-core";
 
 const serverLog = [];
 
@@ -25,6 +26,60 @@ export async function startServer(port, cwd = process.cwd()) {
   server.stderr.on("data", (chunk) => serverLog.push(chunk.toString()));
   await waitForServer(url, 25000);
   return { server, url };
+}
+
+// Kill a spawned Vite server AND its children. On Windows, server.kill() (SIGTERM) reaps only the
+// direct PID and leaves Vite's esbuild service children orphaned — they keep squatting the port and
+// serve STALE code on the next run (the recurring "stale server" bug). taskkill /T kills the tree.
+export function killServer(server) {
+  if (!server || server.killed) return;
+  if (process.platform === "win32" && server.pid) {
+    try {
+      spawnSync("taskkill", ["/pid", String(server.pid), "/T", "/F"], { stdio: "ignore" });
+      return;
+    } catch {
+      // fall through to a plain kill
+    }
+  }
+  try {
+    server.kill();
+  } catch {
+    // already gone
+  }
+}
+
+// Boot the game headless and hand back a driven page + error collector. Chromium launches with
+// --mute-audio as belt-and-suspenders over the in-app navigator.webdriver mute gate. close() tears
+// down the browser AND the server tree, so no orphaned Vite survives to serve stale code next run.
+export async function launchGame({ port, viewport = { width: 1600, height: 900 }, query = "", init, cwd = process.cwd() } = {}) {
+  const { server, url } = await startServer(port, cwd);
+  const browser = await chromium.launch({ executablePath: findChromium(), headless: true, args: ["--mute-audio"] });
+  const context = await browser.newContext({ viewport });
+  if (init) await context.addInitScript(init); // seed localStorage etc. before the app boots
+  const page = await context.newPage();
+  const errors = [];
+  page.on("console", (msg) => {
+    if (msg.type() === "error") errors.push(msg.text());
+  });
+  page.on("pageerror", (err) => errors.push(`PAGEERROR: ${err.message}`));
+  const q = query ? (query.startsWith("?") ? query : `?${query}`) : "";
+  await page.goto(`${url}/${q}`, { waitUntil: "networkidle" });
+  const close = async () => {
+    try {
+      await browser.close();
+    } finally {
+      killServer(server);
+    }
+  };
+  return { server, browser, context, page, errors, url, close };
+}
+
+// Black-frame guard: throw if the WebGL canvas center is essentially unlit. RH4's lesson — a clean
+// console over a black canvas is still a failure, so every capture point should assert paint.
+export async function assertLit(page, label) {
+  const s = await sampleCanvas(page);
+  if (!s.ok) throw new Error(`Black/unlit canvas at "${label}": ${JSON.stringify(s)}`);
+  return s;
 }
 
 export async function waitForServer(url, timeoutMs) {

@@ -1,38 +1,22 @@
 // Exercises every interactive button across the menus and the in-battle HUD, asserting that
 // each one does something sensible and that no console/page errors fire along the way.
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
-import { chromium } from "playwright-core";
+import { mkdirSync } from "node:fs";
+import { launchGame } from "../improve/lib/harness.mjs";
 
 const PORT = Number(process.env.SMOKE_PORT ?? 5191);
-const URL = `http://127.0.0.1:${PORT}`;
 const OUT = "shots";
 mkdirSync(OUT, { recursive: true });
-const serverLog = [];
-let server = null;
-let browser = null;
 
 const fail = (msg) => { throw new Error(msg); };
 
-try {
-  if (!(await ready(URL))) {
-    const viteBin = join(process.cwd(), "node_modules", "vite", "bin", "vite.js");
-    server = spawn(process.execPath, [viteBin, "--host", "127.0.0.1", "--strictPort", "--port", String(PORT)], { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] });
-    server.stdout.on("data", (c) => serverLog.push(c.toString()));
-    server.stderr.on("data", (c) => serverLog.push(c.toString()));
-  }
-  await waitForServer(URL, 20000);
-  browser = await chromium.launch({ executablePath: findChromium(), headless: true });
-  const page = await (await browser.newContext({ viewport: { width: 1500, height: 900 } })).newPage();
-  const errors = [];
-  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
-  page.on("pageerror", (e) => errors.push(`PAGEERROR: ${e.message}`));
-  await page.addInitScript(() => { try { localStorage.clear(); localStorage.setItem("rht.progression.v1", JSON.stringify({ points: 500, unlocked: ["default"], accent: "default" })); } catch {} });
-  await page.goto(`${URL}/?lowfx=1`, { waitUntil: "networkidle" });
+const { page, errors, close } = await launchGame({
+  port: PORT,
+  viewport: { width: 1500, height: 900 },
+  query: "lowfx=1",
+  init: () => { try { localStorage.clear(); localStorage.setItem("rht.progression.v1", JSON.stringify({ points: 500, unlocked: ["default"], accent: "default" })); } catch {} },
+});
 
+try {
   // 1) The game must boot to the main menu.
   await page.waitForSelector(".main-menu");
   for (const sel of ['[data-menu="play"]', '[data-menu="tutorial"]', '[data-menu="armory"]', '[data-menu="settings"]']) {
@@ -201,8 +185,7 @@ try {
   if (errors.length) fail(`Console errors:\n${errors.slice(0, 12).join("\n")}`);
   console.log("Buttons smoke passed: menus, base deck, unit actions, log, edit, pause/save, end turn, end screen.");
 } finally {
-  if (browser) await browser.close();
-  if (server) server.kill();
+  await close();
 }
 
 async function muted(page) {
@@ -211,14 +194,4 @@ async function muted(page) {
 async function refreshBaseCp(page, baseId) {
   await page.evaluate((id) => { const b = window.__rht.sim.entity(id); b.commandPoints = 6; window.__rht.sim.select(id); }, baseId);
   await page.click(`[data-select="${baseId}"]`);
-}
-async function waitForServer(url, t) { const s = Date.now(); while (Date.now() - s < t) { try { if ((await fetch(url)).ok) return; } catch {} await delay(250); } throw new Error("server\n" + serverLog.join("")); }
-async function ready(url) { try { return (await fetch(url)).ok; } catch { return false; } }
-function findChromium() {
-  if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH && existsSync(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH)) return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
-  const local = process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local");
-  const root = join(local, "ms-playwright");
-  const m = readdirSync(root).filter((n) => n.startsWith("chromium-")).map((n) => join(root, n, "chrome-win64", "chrome.exe")).filter((p) => existsSync(p)).sort();
-  if (!m.length) throw new Error("No cached Chromium");
-  return m[m.length - 1];
 }
