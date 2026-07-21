@@ -30,6 +30,11 @@ symbols fail the build.
 | Desktop app (build + Electron) | `npm run standalone` |
 | **One-command shareable .exe** | `npm run dist:exe` (portable, → `release/`) |
 
+**Stop dev servers before ending the turn.** The owner only tests via the standalone build
+(`npm run standalone` / the `.exe`) — never hand back with `npm run dev` (or any server/watcher)
+still running. Kill the process tree (`taskkill /T` on win32, as `harness.mjs close()` does) so no
+orphan squats the port and serves stale code.
+
 ### Smokes (Playwright, `scripts/smoke-*.mjs`)
 
 **Shared harness: `improve/lib/harness.mjs`.** New smokes/shots MUST import it, not re-inline the

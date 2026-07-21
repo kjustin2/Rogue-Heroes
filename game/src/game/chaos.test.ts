@@ -39,12 +39,15 @@ function auditInvariants(sim: TacticalSim, tag: string): string[] {
     // NO-WATER: a ground unit must never end resolved standing in an impassable water channel.
     if (isGround(e) && pointInWater(e.position)) v.push(`${tag}: ${e.id} standing in water @(${e.position.x.toFixed(1)},${e.position.z.toFixed(1)})`);
   }
-  // NO-OVERLAP: two living ground units must never be essentially coincident (walked through each other).
+  // NO-OVERLAP: two living ground units must never deeply interpenetrate (walked through each
+  // other). Flag when centers are closer than HALF the sum of radii — a clear visual merge, not
+  // just the exact-coincident case.
   const ground = living.filter(isGround);
   for (let i = 0; i < ground.length; i += 1) {
     for (let j = i + 1; j < ground.length; j += 1) {
       const d = Math.hypot(ground[i].position.x - ground[j].position.x, ground[i].position.z - ground[j].position.z);
-      if (d < 0.35) v.push(`${tag}: ${ground[i].id} & ${ground[j].id} coincident (d=${d.toFixed(2)})`);
+      const limit = (ground[i].radius + ground[j].radius) * 0.5;
+      if (d < limit) v.push(`${tag}: ${ground[i].id} & ${ground[j].id} overlap (d=${d.toFixed(2)} < ${limit.toFixed(2)})`);
     }
   }
   return v;
@@ -74,14 +77,14 @@ function chaosTurn(sim: TacticalSim, rng: () => number): void {
   for (let t = 0; t < 24 && sim.phase !== "command"; t += 0.05) sim.update(0.05); // resolve to completion
 }
 
-function runChaos(seed: number, terrain: "default" | "causeway"): string[] {
+function runChaos(seed: number, mapId?: string): string[] {
   const rng = mulberry32(seed);
   const roster = (team: "player" | "enemy", sign: number): CombatEntity[] => {
     const make = [createSoldier, createStriker, createScout, createHeavy, createTank];
     return make.map((f, i) => f(`${team}-${i}`, `${team}${i}`, team, { x: sign * (6 + i * 1.5), z: (i - 2) * 2.4 }));
   };
   const sim = new TacticalSim([...roster("player", -1), ...roster("enemy", 1)]);
-  if (terrain === "causeway") setActiveTerrain(mapDef("causeway").terrain); // exercise water/bridge blocking
+  if (mapId) setActiveTerrain(mapDef(mapId).terrain); // exercise this map's water/bridges/blocks
   sim.economy.set("player", 4000);
   sim.economy.set("enemy", 4000);
 
@@ -104,13 +107,17 @@ describe("chaos bot — random legal orders never break sim invariants", () => {
 
   for (const seed of [1337, 2024, 90210, 5, 777]) {
     it(`open terrain holds all invariants (seed ${seed})`, () => {
-      expect(runChaos(seed, "default")).toEqual([]);
+      expect(runChaos(seed)).toEqual([]);
     });
   }
 
-  for (const seed of [1337, 2024, 90210]) {
-    it(`water map: no ground unit ends in a channel (seed ${seed})`, () => {
-      expect(runChaos(seed, "causeway")).toEqual([]);
+  // Every real map's terrain (water channels, mesas, walls, chokepoints) gets stress-tested — these
+  // are exactly the shapes that trap the separation/collision resolver.
+  for (const mapId of ["causeway", "dustbowl", "ironworks", "verdant", "karak", "crossfire"]) {
+    it(`map ${mapId} holds all invariants`, () => {
+      const all: string[] = [];
+      for (const seed of [1337, 2024, 90210]) all.push(...runChaos(seed, mapId));
+      expect(all).toEqual([]);
     });
   }
 });
