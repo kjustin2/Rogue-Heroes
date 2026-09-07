@@ -63,11 +63,13 @@ import { DEFAULT_TERRAIN, TERRAIN_STEP, ARENA_BOUNDS, clampToArena, setActiveTer
 import { TROOP_CATALOG, troopSpec, defenseSpec, supportPowerSpec, unitStats, type TroopKind, type DefenseKind, type SupportPowerKind, type ProjectileKind } from "./units";
 import { TECH_TREE, techNode, aggregateTechEffect, type TechNode, type TechEffect } from "./tech";
 import { modeDef, type ModeId } from "./modes";
+import { DEFAULT_FACTION, factionDef, type FactionDef, type FactionId } from "./factions";
 import { MAPS, mapDef, mapCenter, flagPositions, type MapDef, type MapEventConfig, type MapEventKind } from "./maps";
 
 export { TROOP_CATALOG, troopSpec, DEFENSE_CATALOG, defenseSpec, SUPPORT_POWERS, supportPowerSpec, UNIT_STATS, unitStats, type TroopKind, type TroopSpec, type DefenseKind, type DefenseSpec, type SupportPowerKind, type SupportPowerSpec, type ProjectileKind, type UnitStats } from "./units";
 export { TECH_TREE, techNode, troopsUnlockedBy, type TechNode } from "./tech";
 export { MODES, modeDef, type ModeId, type ModeDef } from "./modes";
+export { FACTIONS, factionDef, DEFAULT_FACTION, type FactionId, type FactionDef } from "./factions";
 export { MAPS, mapDef, flagPositions, mapCenter, mapSize, type MapDef, type MapTheme, type MapSize } from "./maps";
 
 export type Phase = "command" | "resolve" | "victory" | "defeat";
@@ -457,7 +459,25 @@ export class TacticalSim {
   }
 
   // Restart on a (possibly new) map, mode, and difficulty, clearing all battle state.
-  configure(map: MapDef, mode: ModeId, difficulty: Difficulty = this.difficulty): void {
+  // Which faction each side is fielding. Sim-level rather than a field on the base entity:
+  // `survival` mode creates no enemy base at all (scenario.ts), and faction has to outlive the HQ
+  // anyway -- it still selects render skins and AI target bias for whatever survives it.
+  private factions: Record<Team, FactionId> = { player: DEFAULT_FACTION, enemy: DEFAULT_FACTION, neutral: DEFAULT_FACTION };
+
+  /** The faction definition a side is fielding. */
+  factionOf(team: Team): FactionDef {
+    return factionDef(this.factions[team]);
+  }
+
+  factionIdOf(team: Team): FactionId {
+    return this.factions[team];
+  }
+
+  // `factions` is optional and defaults to PRESERVING the current pick, because configure() also
+  // runs on reset() -- passing nothing must not silently drop the player back to the default.
+  configure(map: MapDef, mode: ModeId, difficulty: Difficulty = this.difficulty, factions?: Partial<Record<Team, FactionId>>): void {
+    if (factions?.player) this.factions.player = factions.player;
+    if (factions?.enemy) this.factions.enemy = factions.enemy;
     this.mapDef = map;
     this.mode = mode;
     this.difficulty = difficulty;
@@ -1059,6 +1079,8 @@ export class TacticalSim {
     if (!base.status.alive) return `${base.name} is disabled`;
     if (!base.status.canProduce) return `${base.name} cannot deploy troops`;
     const spec = troopSpec(kind);
+    const faction = this.factionOf(base.team);
+    if (!faction.roster.includes(kind)) return `${spec.label} is not in the ${faction.name} roster`;
     if (spec.tech && !isTechUnlocked(base, spec.tech)) {
       const node = techNode(spec.tech);
       return `${spec.label} needs ${node?.name ?? "research"} first`;
@@ -1184,6 +1206,8 @@ export class TacticalSim {
     if (!base || base.kind !== "base") return "Select your Home Base to call support";
     if (!base.status.alive) return `${base.name} is disabled`;
     const spec = supportPowerSpec(kind);
+    const supportFaction = this.factionOf(base.team);
+    if (!supportFaction.supports.includes(kind)) return `${spec.label} is not a ${supportFaction.name} asset`;
     if (spec.tech && !isTechUnlocked(base, spec.tech)) {
       const tech = techNode(spec.tech);
       return `Research ${tech?.name ?? "the required doctrine"} to unlock ${spec.label}`;
@@ -1268,6 +1292,8 @@ export class TacticalSim {
     if (!base.status.alive) return `${base.name} is disabled`;
     if (base.commandPoints <= 0) return `${base.name} has no command points`;
     const spec = defenseSpec(kind);
+    const buildFaction = this.factionOf(base.team);
+    if (!buildFaction.defenses.includes(kind)) return `${spec.label} is not a ${buildFaction.name} emplacement`;
     if (this.money(base.team) < spec.cost) return `Not enough money for ${spec.label} ($${spec.cost})`;
     if (dist(point, base.position) > this.defensePlacementRadius(base)) return `Place ${spec.label} closer to the base`;
     if (terrainHeightAt(point) > 1.2) return "Cannot build on a cliff top";
@@ -1327,6 +1353,8 @@ export class TacticalSim {
     if (!base.status.alive) return `${base.name} is disabled`;
     const node = techNode(nodeId);
     if (!node) return "Unknown research";
+    const researchFaction = this.factionOf(base.team);
+    if (!researchFaction.tech.includes(nodeId)) return `${node.name} is outside ${researchFaction.name} doctrine`;
     if (isTechUnlocked(base, nodeId)) return `${node.name} already researched`;
     if (!techPrereqsMet(base, node)) {
       const missing = node.requires.find((req) => !isTechUnlocked(base, req));
@@ -1567,6 +1595,7 @@ export class TacticalSim {
       map: this.mapDef.id,
       mode: this.mode,
       difficulty: this.difficulty,
+      factions: this.factions,
       turn: this.turn,
       economy: [...this.economy],
       entities: this.entities,
@@ -1589,7 +1618,7 @@ export class TacticalSim {
   restore(raw: string): boolean {
     try {
       const data = JSON.parse(raw) as {
-        map: string; mode: ModeId; difficulty?: Difficulty; turn?: number;
+        map: string; mode: ModeId; difficulty?: Difficulty; turn?: number; factions?: Partial<Record<Team, FactionId>>;
         economy: [Team, number][]; entities: CombatEntity[]; orders?: TacticalOrder[]; modeState: ModeState; troopSeq?: number;
         detonated?: string[]; toppled?: string[]; overwatch?: [string, number][]; overwatchFacing?: [string, number][];
         wrecked?: string[]; salvage?: [string, number][];
@@ -1602,6 +1631,13 @@ export class TacticalSim {
       this.mapDef = map;
       this.mode = data.mode;
       this.difficulty = data.difficulty ?? "normal";
+      // Rebuilt as a fresh literal rather than assigned: guarantees key order (so serialize output
+      // stays byte-stable), sanitizes a corrupt save, and lets pre-faction saves load.
+      this.factions = {
+        player: data.factions?.player ?? DEFAULT_FACTION,
+        enemy: data.factions?.enemy ?? DEFAULT_FACTION,
+        neutral: DEFAULT_FACTION,
+      };
       this.entities.splice(0, this.entities.length, ...data.entities);
       this.economy.clear();
       for (const [team, amount] of data.economy) this.economy.set(team, amount);
@@ -3655,6 +3691,26 @@ export class TacticalSim {
     this.spawnTroopFor(base, pick);
   }
 
+  // Does this unit answer armour? Asked of its STATS, not a hardcoded kind list, so a faction whose
+  // anti-armour answer is a unit this function has never heard of still counts. The shape -- an
+  // explosive round, sustained fire, or a genuinely heavy gun -- reproduces the old hardcoded set
+  // exactly (tank, artillery, heavy, grenadier, mortar) and is asserted to in factionAi.test.ts.
+  private answersArmor(entity: CombatEntity): boolean {
+    const stats = unitStats(entity.kind);
+    return stats.groundShell || stats.burst >= 4 || stats.shotDamage >= 60;
+  }
+
+  // Does this GROUND unit answer aircraft? A dedicated anti-air multiplier, or a flat-trajectory
+  // weapon that can actually track a flyer -- precision or volume, but never an arcing shell.
+  // Reproduces the old set (flak, heavy, sniper). Aircraft are excluded: owning a fighter is
+  // tracked separately as haveAir, and conflating the two stops the AI ever building ground AA.
+  private answersAir(entity: CombatEntity): boolean {
+    if (isAirKind(entity.kind)) return false;
+    if (entity.parts.some((part) => part.role === "weapon" && (part.vsAir ?? 1) > 1 && part.hp > 0)) return true;
+    const stats = unitStats(entity.kind);
+    return !stats.groundShell && (stats.shotDamage >= 40 || stats.burst >= 4);
+  }
+
   // Ordered troop wishlist for the enemy commander, reacting to the player's current army.
   // enemyBaseAct deploys the first entry it can afford and has teched, so earlier = higher want.
   private enemyTroopPreference(): TroopKind[] {
@@ -3662,9 +3718,10 @@ export class TacticalSim {
     const playerVehicles = players.filter((p) => isVehicleKind(p.kind)).length;
     const playerInfantry = players.filter((p) => isInfantryKind(p.kind)).length;
     const mine = this.fieldUnits("enemy");
-    const haveAntiArmor = mine.some((u) => u.kind === "tank" || u.kind === "artillery" || u.kind === "heavy" || u.kind === "grenadier" || u.kind === "mortar");
+    const faction = this.factionOf("enemy");
+    const haveAntiArmor = mine.some((u) => this.answersArmor(u));
     const playerFlyers = players.filter((p) => p.flying).length;
-    const haveAntiAir = mine.some((u) => u.kind === "flak" || u.kind === "heavy" || u.kind === "sniper");
+    const haveAntiAir = mine.some((u) => this.answersAir(u));
     const haveAir = mine.some((u) => u.flying);
     const pref: TroopKind[] = [];
     // Contest the air lane: a Flak Track from the ground AND scramble an Interceptor to dogfight
@@ -3673,9 +3730,14 @@ export class TacticalSim {
     if (playerFlyers > 0 && !haveAir) pref.push("interceptor", "flak");
     if (playerVehicles > 0 && !haveAntiArmor) pref.push("tank", "heavy", "grenadier", "artillery");
     if (playerInfantry >= 3) pref.push("grenadier", "mortar", "heavy");
-    // Round out into a balanced force, occasionally reaching for the sky to keep the pressure on.
-    pref.push("heavy", "striker", "soldier", "scout", "apc", "tank", "sniper", "interceptor", "gunship");
-    return [...new Set(pref)];
+    // Round out into a balanced force. The tail is the faction's own doctrine rather than a fixed
+    // build order, so each side plays to its roster.
+    pref.push(...faction.aiPreference);
+    // Every clause above names concrete kinds and a faction need not have them, so drop the ones it
+    // cannot field — this keeps the wishlist honest on its own terms. It is not what prevents a
+    // stalled turn: enemyBaseAct already intersects this list with what spawnFailureReason actually
+    // permits and falls back to the strongest affordable troop, so an empty result is handled there.
+    return [...new Set(pref)].filter((kind) => faction.roster.includes(kind));
   }
 
   // Collision-aware step for AI units: try the direct line, then sidestep around
