@@ -1,6 +1,9 @@
 // Catalog of every troop the Home Base can deploy. Data only — no engine dependencies.
 
-export type TroopKind =
+// THE single source of truth for entity kinds. damageModel re-exports EntityKind, so there is one
+// list, not four (TroopKind, EntityKind, and the two inline unions in the create* factories used to
+// drift independently — a missed list was a silent runtime fallthrough, now it is a compile error).
+export type InfantryKind =
   | "soldier"
   | "scout"
   | "sniper"
@@ -12,15 +15,40 @@ export type TroopKind =
   | "engineer"
   | "flamer"
   | "droneop"
-  | "sapper"
-  | "tank"
-  | "apc"
-  | "artillery"
-  | "flak"
-  | "gunship"
-  | "interceptor"
-  | "bomber"
-  | "transport";
+  | "sapper";
+
+export type GroundVehicleKind = "tank" | "apc" | "artillery" | "flak";
+
+export type AirKind = "gunship" | "interceptor" | "bomber" | "transport";
+
+/** Everything the Home Base can deploy onto the field. */
+export type TroopKind = InfantryKind | GroundVehicleKind | AirKind;
+
+/** Emplacements and scenery: never deployed as troops, but they are damageable entities. */
+export type StructureKind = "base" | "turret" | "exturret" | "wall" | "cover";
+
+/** Every kind that can exist as a CombatEntity. */
+export type EntityKind = TroopKind | StructureKind;
+
+// Runtime membership, kept exhaustive BY THE COMPILER: Record<K, true> rejects both a missing
+// member and a stray one, so these can never drift from the unions above the way the hand-written
+// `kind === "a" || kind === "b" || ...` predicates used to.
+const INFANTRY_SET: Record<InfantryKind, true> = {
+  soldier: true, scout: true, sniper: true, striker: true, heavy: true, grenadier: true,
+  mortar: true, medic: true, engineer: true, flamer: true, droneop: true, sapper: true,
+};
+const GROUND_VEHICLE_SET: Record<GroundVehicleKind, true> = { tank: true, apc: true, artillery: true, flak: true };
+const AIR_SET: Record<AirKind, true> = { gunship: true, interceptor: true, bomber: true, transport: true };
+
+export const INFANTRY_KINDS = Object.keys(INFANTRY_SET) as readonly InfantryKind[];
+export const GROUND_VEHICLE_KINDS = Object.keys(GROUND_VEHICLE_SET) as readonly GroundVehicleKind[];
+export const AIR_KINDS = Object.keys(AIR_SET) as readonly AirKind[];
+export const TROOP_KINDS: readonly TroopKind[] = [...INFANTRY_KINDS, ...GROUND_VEHICLE_KINDS, ...AIR_KINDS];
+
+export const isInfantry = (kind: EntityKind): boolean => kind in INFANTRY_SET;
+/** Aircraft ride the vehicle chassis plumbing; flight is an extra flag, not a separate class. */
+export const isGroundOrAirVehicle = (kind: EntityKind): boolean => kind in GROUND_VEHICLE_SET || kind in AIR_SET;
+export const isAir = (kind: EntityKind): boolean => kind in AIR_SET;
 
 export interface TroopSpec {
   kind: TroopKind;

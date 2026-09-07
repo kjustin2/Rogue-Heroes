@@ -1,32 +1,12 @@
 import type { Vec2 } from "../core/math";
+import type { EntityKind, GroundVehicleKind, InfantryKind } from "./units";
+import { isAir, isGroundOrAirVehicle, isInfantry } from "./units";
+
+// Entity kinds live in units.ts (pure data, no engine deps). Re-exported here so the ~40 modules
+// that already import EntityKind from damageModel keep working unchanged.
+export type { EntityKind } from "./units";
 
 export type Team = "player" | "enemy" | "neutral";
-export type EntityKind =
-  | "soldier"
-  | "scout"
-  | "sniper"
-  | "striker"
-  | "heavy"
-  | "grenadier"
-  | "mortar"
-  | "medic"
-  | "engineer"
-  | "flamer"
-  | "droneop"
-  | "sapper"
-  | "tank"
-  | "apc"
-  | "artillery"
-  | "gunship"
-  | "interceptor"
-  | "bomber"
-  | "transport"
-  | "flak"
-  | "base"
-  | "turret"
-  | "exturret"
-  | "wall"
-  | "cover";
 export type CoverKind =
   | "wall"
   | "barricade"
@@ -180,7 +160,7 @@ function statusFor(kind: EntityKind): EntityStatus {
 function createVehicle(
   id: string,
   name: string,
-  kind: "tank" | "apc" | "artillery",
+  kind: Exclude<GroundVehicleKind, "flak">,
   team: Team,
   position: Vec2,
   config: {
@@ -630,7 +610,7 @@ export function createEngineer(id: string, name: string, team: Team, position: V
 function createInfantry(
   id: string,
   name: string,
-  kind: "soldier" | "scout" | "sniper" | "striker" | "heavy" | "grenadier" | "mortar" | "medic" | "engineer" | "flamer" | "droneop" | "sapper",
+  kind: InfantryKind,
   team: Team,
   position: Vec2,
   config: {
@@ -858,32 +838,19 @@ export function cloneEntity(entity: CombatEntity): CombatEntity {
 }
 
 export function isInfantryKind(kind: EntityKind): boolean {
-  return (
-    kind === "soldier" ||
-    kind === "scout" ||
-    kind === "sniper" ||
-    kind === "striker" ||
-    kind === "heavy" ||
-    kind === "grenadier" ||
-    kind === "mortar" ||
-    kind === "medic" ||
-    kind === "engineer" ||
-    kind === "flamer" ||
-    kind === "droneop" ||
-    kind === "sapper"
-  );
+  return isInfantry(kind);
 }
 
 export function isVehicleKind(kind: EntityKind): boolean {
-  // Gunship + Flak Track are hard-surface vehicle chassis (they get vehicle move/shoot plumbing);
-  // the gunship's flight is an extra flag on the entity, not a new class.
-  return kind === "tank" || kind === "apc" || kind === "artillery" || kind === "gunship" || kind === "interceptor" || kind === "bomber" || kind === "transport" || kind === "flak";
+  // Aircraft are hard-surface vehicle chassis (they get vehicle move/shoot plumbing); flight is an
+  // extra flag on the entity, not a separate class. So isAirKind is a SUBSET of isVehicleKind.
+  return isGroundOrAirVehicle(kind);
 }
 
 // Air units. The `flying`/`agl` entity fields are authoritative at runtime; this is the by-kind
 // default used when building a unit and when the sim needs the intent from the catalog.
 export function isAirKind(kind: EntityKind): boolean {
-  return kind === "gunship" || kind === "interceptor" || kind === "bomber" || kind === "transport";
+  return isAir(kind);
 }
 
 // Infantry that fight in melee rather than with ranged weapons.
