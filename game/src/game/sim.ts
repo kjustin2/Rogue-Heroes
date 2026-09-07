@@ -60,12 +60,12 @@ import {
 } from "./damageModel";
 import { createScenario } from "./scenario";
 import { DEFAULT_TERRAIN, TERRAIN_STEP, ARENA_BOUNDS, clampToArena, setActiveTerrain, terrainHeightAt, pointInWater } from "./terrain";
-import { TROOP_CATALOG, troopSpec, defenseSpec, supportPowerSpec, type TroopKind, type DefenseKind, type SupportPowerKind } from "./units";
+import { TROOP_CATALOG, troopSpec, defenseSpec, supportPowerSpec, unitStats, type TroopKind, type DefenseKind, type SupportPowerKind, type ProjectileKind } from "./units";
 import { TECH_TREE, techNode, aggregateTechEffect, type TechNode, type TechEffect } from "./tech";
 import { modeDef, type ModeId } from "./modes";
 import { MAPS, mapDef, mapCenter, flagPositions, type MapDef, type MapEventConfig, type MapEventKind } from "./maps";
 
-export { TROOP_CATALOG, troopSpec, DEFENSE_CATALOG, defenseSpec, SUPPORT_POWERS, supportPowerSpec, type TroopKind, type TroopSpec, type DefenseKind, type DefenseSpec, type SupportPowerKind, type SupportPowerSpec } from "./units";
+export { TROOP_CATALOG, troopSpec, DEFENSE_CATALOG, defenseSpec, SUPPORT_POWERS, supportPowerSpec, UNIT_STATS, unitStats, type TroopKind, type TroopSpec, type DefenseKind, type DefenseSpec, type SupportPowerKind, type SupportPowerSpec, type ProjectileKind, type UnitStats } from "./units";
 export { TECH_TREE, techNode, troopsUnlockedBy, type TechNode } from "./tech";
 export { MODES, modeDef, type ModeId, type ModeDef } from "./modes";
 export { MAPS, mapDef, flagPositions, mapCenter, mapSize, type MapDef, type MapTheme, type MapSize } from "./maps";
@@ -245,7 +245,6 @@ export interface ShotPreview {
   warningText?: string;
 }
 
-export type ProjectileKind = "rifle" | "shell" | "bolt" | "grenade";
 export type AccuracyRating = "great" | "good" | "steady" | "average" | "poor" | "terrible";
 
 export interface Projectile {
@@ -3525,7 +3524,7 @@ export class TacticalSim {
           ineffective: t.flying && perShot < remainingHp(t) * 0.15 ? 1 : 0,
           saturated: com >= hp ? 1 : 0, // already getting enough fire to die — deprioritize
           engaged: com > 0 ? 0 : 1, // pile onto a unit we've already started on
-          value: AI_TARGET_VALUE[t.kind] ?? 4,
+          value: aiTargetValue(t.kind),
           hp,
         };
       })
@@ -4304,24 +4303,7 @@ function moveRange(entity: CombatEntity): number {
 }
 
 function baseMoveRange(entity: CombatEntity): number {
-  if (entity.kind === "gunship") return 12.5; // fast flyer — its reach is its whole identity
-  if (entity.kind === "interceptor") return 14; // fastest thing in the sky
-  if (entity.kind === "bomber") return 8; // heavy and slow
-  if (entity.kind === "transport") return 11;
-  if (entity.kind === "flak") return 6.0;
-  if (entity.kind === "apc") return 7.2;
-  if (entity.kind === "tank") return 5.4;
-  if (entity.kind === "artillery") return 3.6;
-  if (entity.kind === "scout") return 11.5;
-  if (entity.kind === "striker") return 10.8;
-  if (entity.kind === "heavy") return 4.8;
-  if (entity.kind === "mortar") return 5.0;
-  if (entity.kind === "sniper") return 6.0;
-  if (entity.kind === "grenadier") return 6.3;
-  if (entity.kind === "medic") return 6.4;
-  if (entity.kind === "engineer") return 5.8;
-  if (isInfantryKind(entity.kind)) return 6.7;
-  return 0;
+  return unitStats(entity.kind).moveRange;
 }
 
 function defenseRadius(kind: DefenseKind): number {
@@ -4331,25 +4313,21 @@ function defenseRadius(kind: DefenseKind): number {
 }
 
 function ramRange(entity: CombatEntity): number {
-  return entity.kind === "tank" ? 2.85 : 0;
+  return unitStats(entity.kind).ramRange;
 }
 
 function meleeRange(entity: CombatEntity): number {
-  if (entity.kind === "striker") return 0.72; // dedicated melee specialist: longer reach
-  if (isInfantryKind(entity.kind)) return 0.5; // riflemen bayonet/rifle-butt at arm's length
-  return 0;
+  return unitStats(entity.kind).meleeRange;
 }
 
 // Strikers hit at full melee power; other infantry only rifle-butt for a fraction, so melee
 // stays a finisher for them rather than a replacement for shooting.
 function meleeStrikeMultiplier(entity: CombatEntity): number {
-  return entity.kind === "striker" ? 1 : 0.5;
+  return unitStats(entity.kind).meleeMultiplier;
 }
 
 function grenadeThrowRange(entity: CombatEntity): number {
-  if (entity.kind === "gunship") return 11; // bomb-drop reach
-  if (entity.kind === "bomber") return 12; // heavy bomb-drop reach
-  return entity.kind === "soldier" ? 9.2 : 0;
+  return unitStats(entity.kind).grenadeRange;
 }
 
 function canUseHandGrenade(entity: CombatEntity): boolean {
@@ -4515,10 +4493,7 @@ function impactRadius(entity: CombatEntity, part: DamagePart): number {
 
 function projectileKind(entity: CombatEntity, attackMode: AttackMode = "weapon"): ProjectileKind {
   if (attackMode === "grenade") return "grenade";
-  if (entity.kind === "tank" || entity.kind === "artillery" || entity.kind === "exturret") return "shell";
-  if (entity.kind === "apc" || entity.kind === "base" || entity.kind === "turret" || entity.kind === "gunship" || entity.kind === "interceptor" || entity.kind === "flak") return "bolt";
-  if (entity.kind === "grenadier" || entity.kind === "mortar") return "grenade";
-  return "rifle";
+  return unitStats(entity.kind).projectile;
 }
 
 function moveSpeed(entity: CombatEntity): number {
@@ -4526,56 +4501,17 @@ function moveSpeed(entity: CombatEntity): number {
 }
 
 function baseMoveSpeed(entity: CombatEntity): number {
-  if (entity.kind === "gunship") return 9.5;
-  if (entity.kind === "interceptor") return 11.5;
-  if (entity.kind === "bomber") return 6.4;
-  if (entity.kind === "transport") return 8.5;
-  if (entity.kind === "flak") return 6.2;
-  if (entity.kind === "apc") return 7.4;
-  if (entity.kind === "tank") return 5.5;
-  if (entity.kind === "artillery") return 3.8;
-  if (entity.kind === "scout") return 11.8;
-  if (entity.kind === "striker") return 11.5;
-  if (entity.kind === "heavy") return 4.8;
-  if (entity.kind === "mortar") return 5.2;
-  if (entity.kind === "sniper") return 6.2;
-  if (entity.kind === "grenadier") return 5.8;
-  if (entity.kind === "medic") return 6.4;
-  if (entity.kind === "engineer") return 5.8;
-  if (isInfantryKind(entity.kind)) return 6.5;
-  return 0;
+  return unitStats(entity.kind).moveSpeed;
 }
 
 function projectileSpeed(entity: CombatEntity, attackMode: AttackMode = "weapon"): number {
   if (attackMode === "grenade") return 2.15;
-  if (entity.kind === "tank" || entity.kind === "artillery" || entity.kind === "exturret") return 2.45;
-  if (entity.kind === "apc" || entity.kind === "base" || entity.kind === "turret") return 2.8;
-  if (entity.kind === "grenadier" || entity.kind === "mortar") return 2.05;
-  if (entity.kind === "sniper") return 3.8;
-  return 3.2;
+  return unitStats(entity.kind).projectileSpeed;
 }
 
 function projectileRange(entity: CombatEntity, attackMode: AttackMode = "weapon"): number {
   if (attackMode === "grenade") return grenadeThrowRange(entity);
-  if (entity.kind === "base") return 30;
-  if (entity.kind === "flak") return 32; // long reach so its overwatch cone blankets the air lane
-  if (entity.kind === "gunship") return 22;
-  if (entity.kind === "interceptor") return 26; // reaches across the sky to gun other flyers
-  if (entity.kind === "artillery") return 42;
-  if (entity.kind === "sniper") return 34;
-  if (entity.kind === "mortar") return 30;
-  if (entity.kind === "tank") return 28;
-  if (entity.kind === "exturret") return 26;
-  if (entity.kind === "apc") return 24;
-  if (entity.kind === "heavy") return 26;
-  if (entity.kind === "turret") return 24;
-  if (entity.kind === "grenadier") return 22;
-  if (entity.kind === "scout") return 22;
-  if (entity.kind === "medic" || entity.kind === "engineer") return 18;
-  if (entity.kind === "flamer") return 7.5; // flame projector: brutal but short
-  if (entity.kind === "droneop") return 16;
-  if (entity.kind === "sapper") return 14;
-  return 26;
+  return unitStats(entity.kind).weaponRange;
 }
 
 function projectileMaxAge(maxTravel: number, speed: number): number {
@@ -4602,54 +4538,25 @@ function projectileProximityRadius(kind: ProjectileKind): number {
 }
 
 function baseShotDamage(kind: EntityKind, attackMode: AttackMode = "weapon"): number {
+  // The grenade figure is a per-MODE constant, not a per-unit stat, so it stays out of the table.
   if (attackMode === "grenade") return 30;
-  // Top-tier siege/armor hit much harder than line troops to justify their high cost + HP.
-  if (kind === "gunship") return 22; // light autocannon (air-to-air); bombs use the grenade path
-  if (kind === "interceptor") return 26; // dedicated air-superiority cannon
-  if (kind === "flak") return 16;   // weak vs ground — it exists to shred air, not brawl armor
-  if (kind === "artillery") return 78;
-  if (kind === "tank") return 66;
-  if (kind === "exturret") return 58; // mortar turret
-  if (kind === "base") return 42;
-  if (kind === "sniper") return 40;
-  // Heavy gunner fires a 4-round burst; this is the per-round figure, so a full burst that
-  // mostly connects out-damages a single rifle shot to reward closing the distance.
-  if (kind === "heavy") return 18;
-  if (kind === "mortar") return 44;
-  if (kind === "grenadier") return 38;
-  if (kind === "turret") return 30;
-  if (kind === "apc") return 30;
-  if (kind === "scout") return 22;
-  if (kind === "striker") return 24;
-  if (kind === "flamer") return 34;
-  if (kind === "droneop") return 16;
-  if (kind === "sapper") return 26;
-  if (kind === "medic" || kind === "engineer") return 18;
-  return 31;
+  return unitStats(kind).shotDamage;
 }
 
 // Durability tier: heavy armor / siege / emplacements carry far more health than line troops,
 // so they soak punishment in line with their cost. Applied to both teams at creation.
 function tierHpMultiplier(kind: EntityKind): number {
-  switch (kind) {
-    case "tank": return 1.3;
-    case "artillery": return 1.2;
-    case "exturret": return 1.25; // mortar turret
-    case "heavy": return 1.18;
-    case "apc": return 1.16;
-    case "mortar": return 1.12;
-    default: return 1;
-  }
+  return unitStats(kind).hpMultiplier;
 }
 
 // Heavy gunners spray a machine-gun burst; everyone else fires one round per shot.
 function burstCount(entity: CombatEntity): number {
-  return entity.kind === "heavy" ? 4 : 1;
+  return unitStats(entity.kind).burst;
 }
 
 // Units whose weapon can be aimed at a bare ground spot (explosive direct/indirect fire).
 function canGroundShellAttack(entity: CombatEntity): boolean {
-  return entity.kind === "tank" || entity.kind === "artillery" || entity.kind === "grenadier" || entity.kind === "mortar" || entity.kind === "exturret";
+  return unitStats(entity.kind).groundShell;
 }
 
 // Blast radius and base damage for an explosive round detonating on the ground.
@@ -4676,18 +4583,7 @@ const ACCURACY_LABELS: Record<AccuracyRating, string> = {
 
 function baseAccuracySpread(kind: EntityKind, attackMode: AttackMode = "weapon"): number {
   if (attackMode === "grenade") return 6.8;
-  if (kind === "sniper") return 0.22;
-  if (kind === "base") return 1.25;
-  if (kind === "artillery") return 5.4;
-  if (kind === "tank") return 2.65;
-  if (kind === "exturret") return 4.6;
-  if (kind === "apc") return 3.1;
-  if (kind === "heavy") return 3.6;
-  if (kind === "turret") return 2.3;
-  if (kind === "scout") return 3.0;
-  if (kind === "mortar") return 7.0;
-  if (kind === "grenadier") return 7.4;
-  return 2.15;
+  return unitStats(kind).spread;
 }
 
 // Extra spread added per metre of range beyond a per-unit comfortable distance. This is what
@@ -4695,29 +4591,13 @@ function baseAccuracySpread(kind: EntityKind, attackMode: AttackMode = "weapon")
 // medium range, and nudges heavy gunners to close in.
 function rangeSpreadPenalty(kind: EntityKind, attackMode: AttackMode, range: number): number {
   if (attackMode === "grenade") return 0;
-  const start = kind === "sniper" ? 12 : kind === "artillery" || kind === "mortar" || kind === "exturret" ? 20 : kind === "tank" ? 14 : 9;
-  const perMeter = kind === "sniper" ? 0.09 : kind === "heavy" ? 0.16 : kind === "scout" ? 0.12 : kind === "turret" ? 0.05 : 0.07;
-  return Math.max(0, range - start) * perMeter;
+  const stats = unitStats(kind);
+  return Math.max(0, range - stats.spreadStart) * stats.spreadPerMeter;
 }
 
 function kindAccuracyLabel(kind: EntityKind, attackMode: AttackMode = "weapon"): string {
   if (attackMode === "grenade") return "thrown grenade";
-  if (kind === "sniper") return "marksman";
-  if (kind === "grenadier") return "launcher";
-  if (kind === "mortar") return "mortar";
-  if (kind === "striker") return "sidearm";
-  if (kind === "artillery") return "siege gun";
-  if (kind === "tank") return "stabilized cannon";
-  if (kind === "exturret") return "mortar battery";
-  if (kind === "turret") return "turret autogun";
-  if (kind === "apc") return "autogun";
-  if (kind === "heavy") return "auto-cannon";
-  if (kind === "gunship") return "gunship autocannon";
-  if (kind === "interceptor") return "interceptor cannon";
-  if (kind === "flak") return "flak cannon";
-  if (kind === "scout") return "carbine";
-  if (kind === "base") return "command relay";
-  return "rifle";
+  return unitStats(kind).accuracyLabel;
 }
 
 function isClimbableCover(entity: CombatEntity): boolean {
@@ -4810,11 +4690,11 @@ function nearest(origin: CombatEntity, candidates: CombatEntity[]): CombatEntity
 
 // How keen the enemy commander is to shoot a given player unit. Soft, high-impact units
 // (support, siege, snipers) rank above durable bruisers so focus-fire kills what matters.
-const AI_TARGET_VALUE: Partial<Record<EntityKind, number>> = {
-  artillery: 9, mortar: 8, sniper: 8, medic: 8, gunship: 8, engineer: 7, grenadier: 7,
-  scout: 6, base: 6, flak: 6, heavy: 5, exturret: 5, striker: 5, soldier: 4, turret: 4,
-  apc: 3, tank: 3, wall: 1, cover: 0,
-};
+// How badly the AI wants to shoot a given kind. Now UNIT_STATS.aiValue; kinds with no preference
+// score 0, which is what the old Partial<Record> produced via its `?? 0` call sites.
+function aiTargetValue(kind: EntityKind): number {
+  return unitStats(kind).aiValue;
+}
 
 // Total HP across an entity's still-living parts — its effective remaining health.
 function remainingHp(entity: CombatEntity): number {

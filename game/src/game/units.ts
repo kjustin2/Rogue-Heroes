@@ -50,6 +50,118 @@ export const isInfantry = (kind: EntityKind): boolean => kind in INFANTRY_SET;
 export const isGroundOrAirVehicle = (kind: EntityKind): boolean => kind in GROUND_VEHICLE_SET || kind in AIR_SET;
 export const isAir = (kind: EntityKind): boolean => kind in AIR_SET;
 
+// ---- Per-kind combat statistics. ----
+//
+// These used to be ~13 separate `if (kind === "x") return N;` ladders at the bottom of sim.ts.
+// Collapsed here so a unit is described in ONE place and a faction roster can be reasoned about as
+// data. The sim's ladder functions are now one-line lookups into this table; their signatures and
+// values are unchanged.
+//
+// Deliberately NOT here: defenseRadius (keyed by DefenseKind), explosive blast / arc / proximity
+// (keyed by ProjectileKind), and muzzle geometry (structured by movement class with two overrides,
+// not a per-kind ladder). Tabling those would widen the record without making it more useful.
+
+export type ProjectileKind = "rifle" | "shell" | "bolt" | "grenade";
+
+export interface UnitStats {
+  /** Board distance per order, before MOVE_RANGE_SCALE. 0 = immobile. */
+  moveRange: number;
+  /** World units per second while resolving a move, before MOVE_RANGE_SCALE. */
+  moveSpeed: number;
+  shotDamage: number;
+  weaponRange: number;
+  projectile: ProjectileKind;
+  projectileSpeed: number;
+  /** Rounds per shoot order. Only the heavy gunner sprays. */
+  burst: number;
+  /** Base cone in degrees before range, stance, cover and tech modifiers. */
+  spread: number;
+  /** Metres of range that cost no extra spread; past this, spreadPerMeter applies. */
+  spreadStart: number;
+  spreadPerMeter: number;
+  accuracyLabel: string;
+  /** 0 = cannot melee. */
+  meleeRange: number;
+  /** Strikers hit at full power; other infantry rifle-butt for a fraction. */
+  meleeMultiplier: number;
+  /** 0 = cannot ram. */
+  ramRange: number;
+  /** Hand-grenade throw or straight-down bomb reach. 0 = neither. */
+  grenadeRange: number;
+  /** Weapon can be aimed at a bare ground spot (explosive direct/indirect fire). */
+  groundShell: boolean;
+  /** Durability tier applied to every part at creation. */
+  hpMultiplier: number;
+  /** How badly the AI wants to shoot this. 4 is the neutral middle, not 0. */
+  aiValue: number;
+}
+
+// Fallthrough values from the old ladders' trailing `return`s. Infantry mobility is a class default
+// (6.7 / 6.5) rather than a global one, so it is spelled out per infantry entry below.
+const UNIT_DEFAULTS: UnitStats = {
+  moveRange: 0,
+  moveSpeed: 0,
+  shotDamage: 31,
+  weaponRange: 26,
+  projectile: "rifle",
+  projectileSpeed: 3.2,
+  burst: 1,
+  spread: 2.15,
+  spreadStart: 9,
+  spreadPerMeter: 0.07,
+  accuracyLabel: "rifle",
+  meleeRange: 0,
+  meleeMultiplier: 0.5,
+  ramRange: 0,
+  grenadeRange: 0,
+  groundShell: false,
+  hpMultiplier: 1,
+  aiValue: 0,
+};
+
+const u = (overrides: Partial<UnitStats>): UnitStats => ({ ...UNIT_DEFAULTS, ...overrides });
+/** Every infantry kind shares mobility and bayonet reach unless it overrides them. */
+const foot = (overrides: Partial<UnitStats>): UnitStats => u({ moveRange: 6.7, moveSpeed: 6.5, meleeRange: 0.5, ...overrides });
+
+export const UNIT_STATS: Record<EntityKind, UnitStats> = {
+  // --- Infantry ---
+  soldier: foot({ shotDamage: 31, grenadeRange: 9.2, aiValue: 4 }),
+  scout: foot({ moveRange: 11.5, moveSpeed: 11.8, shotDamage: 22, weaponRange: 22, spread: 3.0, spreadPerMeter: 0.12, accuracyLabel: "carbine", aiValue: 6 }),
+  sniper: foot({ moveRange: 6.0, moveSpeed: 6.2, shotDamage: 40, weaponRange: 34, projectileSpeed: 3.8, spread: 0.22, spreadStart: 12, spreadPerMeter: 0.09, accuracyLabel: "marksman", aiValue: 8 }),
+  striker: foot({ moveRange: 10.8, moveSpeed: 11.5, shotDamage: 24, accuracyLabel: "sidearm", meleeRange: 0.72, meleeMultiplier: 1, aiValue: 5 }),
+  heavy: foot({ moveRange: 4.8, moveSpeed: 4.8, shotDamage: 18, burst: 4, spread: 3.6, spreadPerMeter: 0.16, accuracyLabel: "auto-cannon", hpMultiplier: 1.18, aiValue: 5 }),
+  grenadier: foot({ moveRange: 6.3, moveSpeed: 5.8, shotDamage: 38, weaponRange: 22, projectile: "grenade", projectileSpeed: 2.05, spread: 7.4, accuracyLabel: "launcher", groundShell: true, aiValue: 7 }),
+  mortar: foot({ moveRange: 5.0, moveSpeed: 5.2, shotDamage: 44, weaponRange: 30, projectile: "grenade", projectileSpeed: 2.05, spread: 7.0, spreadStart: 20, accuracyLabel: "mortar", groundShell: true, hpMultiplier: 1.12, aiValue: 8 }),
+  medic: foot({ moveRange: 6.4, moveSpeed: 6.4, shotDamage: 18, weaponRange: 18, aiValue: 8 }),
+  engineer: foot({ moveRange: 5.8, moveSpeed: 5.8, shotDamage: 18, weaponRange: 18, aiValue: 7 }),
+  flamer: foot({ shotDamage: 34, weaponRange: 7.5, aiValue: 4 }),
+  droneop: foot({ shotDamage: 16, weaponRange: 16, aiValue: 4 }),
+  sapper: foot({ shotDamage: 26, weaponRange: 14, aiValue: 4 }),
+
+  // --- Ground vehicles ---
+  tank: u({ moveRange: 5.4, moveSpeed: 5.5, shotDamage: 66, weaponRange: 28, projectile: "shell", projectileSpeed: 2.45, spread: 2.65, spreadStart: 14, accuracyLabel: "stabilized cannon", ramRange: 2.85, groundShell: true, hpMultiplier: 1.3, aiValue: 3 }),
+  apc: u({ moveRange: 7.2, moveSpeed: 7.4, shotDamage: 30, weaponRange: 24, projectile: "bolt", projectileSpeed: 2.8, spread: 3.1, accuracyLabel: "autogun", hpMultiplier: 1.16, aiValue: 3 }),
+  artillery: u({ moveRange: 3.6, moveSpeed: 3.8, shotDamage: 78, weaponRange: 42, projectile: "shell", projectileSpeed: 2.45, spread: 5.4, spreadStart: 20, accuracyLabel: "siege gun", groundShell: true, hpMultiplier: 1.2, aiValue: 9 }),
+  flak: u({ moveRange: 6.0, moveSpeed: 6.2, shotDamage: 16, weaponRange: 32, projectile: "bolt", accuracyLabel: "flak cannon", aiValue: 6 }),
+
+  // --- Aircraft. Guns are air-to-air; bombs use the grenade path and fall straight down. ---
+  gunship: u({ moveRange: 12.5, moveSpeed: 9.5, shotDamage: 22, weaponRange: 22, projectile: "bolt", accuracyLabel: "gunship autocannon", grenadeRange: 11, aiValue: 8 }),
+  interceptor: u({ moveRange: 14, moveSpeed: 11.5, shotDamage: 26, projectile: "bolt", accuracyLabel: "interceptor cannon", aiValue: 4 }),
+  bomber: u({ moveRange: 8, moveSpeed: 6.4, grenadeRange: 12, aiValue: 4 }),
+  transport: u({ moveRange: 11, moveSpeed: 8.5, aiValue: 4 }),
+
+  // --- Structures and scenery ---
+  base: u({ shotDamage: 42, weaponRange: 30, projectile: "bolt", projectileSpeed: 2.8, spread: 1.25, accuracyLabel: "command relay", aiValue: 6 }),
+  turret: u({ shotDamage: 30, weaponRange: 24, projectile: "bolt", projectileSpeed: 2.8, spread: 2.3, spreadPerMeter: 0.05, accuracyLabel: "turret autogun", aiValue: 4 }),
+  exturret: u({ shotDamage: 58, projectile: "shell", projectileSpeed: 2.45, spread: 4.6, spreadStart: 20, accuracyLabel: "mortar battery", groundShell: true, hpMultiplier: 1.25, aiValue: 5 }),
+  wall: u({ aiValue: 1 }),
+  cover: u({}),
+};
+
+export function unitStats(kind: EntityKind): UnitStats {
+  return UNIT_STATS[kind];
+}
+
 export interface TroopSpec {
   kind: TroopKind;
   label: string;
