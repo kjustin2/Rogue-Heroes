@@ -76,8 +76,17 @@ export interface UnitStats {
   burst: number;
   /** Base cone in degrees before range, stance, cover and tech modifiers. */
   spread: number;
-  /** Metres of range that cost no extra spread; past this, spreadPerMeter applies. */
-  spreadStart: number;
+  /**
+   * How much of a unit's OWN range it is accurate over, 0..1. Past weaponRange * accurateFraction
+   * every further metre costs spreadPerMeter of extra cone.
+   *
+   * Authored as a fraction rather than an absolute distance because weaponRange spans 7.5 to 42:
+   * a fixed "9 metres" meant the flamer (range 7.5) was pinpoint everywhere it could shoot while
+   * the flak track (range 32) was penalized across almost its whole envelope -- not a decision
+   * anyone made, just an artefact of two numbers being authored independently. Tying them together
+   * means retuning a weapon's reach carries its accuracy with it.
+   */
+  accurateFraction: number;
   spreadPerMeter: number;
   accuracyLabel: string;
   /** 0 = cannot melee. */
@@ -107,7 +116,7 @@ const UNIT_DEFAULTS: UnitStats = {
   projectileSpeed: 3.2,
   burst: 1,
   spread: 2.15,
-  spreadStart: 9,
+  accurateFraction: 0.35,
   spreadPerMeter: 0.07,
   accuracyLabel: "rifle",
   meleeRange: 0,
@@ -126,34 +135,34 @@ const foot = (overrides: Partial<UnitStats>): UnitStats => u({ moveRange: 6.7, m
 export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   // --- Infantry ---
   soldier: foot({ shotDamage: 31, grenadeRange: 9.2, aiValue: 4 }),
-  scout: foot({ moveRange: 11.5, moveSpeed: 11.8, shotDamage: 22, weaponRange: 22, spread: 3.0, spreadPerMeter: 0.12, accuracyLabel: "carbine", aiValue: 6 }),
-  sniper: foot({ moveRange: 6.0, moveSpeed: 6.2, shotDamage: 40, weaponRange: 34, projectileSpeed: 3.8, spread: 0.22, spreadStart: 12, spreadPerMeter: 0.09, accuracyLabel: "marksman", aiValue: 8 }),
+  scout: foot({ moveRange: 11.5, moveSpeed: 11.8, shotDamage: 22, weaponRange: 22, spread: 3.0, accurateFraction: 0.41, spreadPerMeter: 0.12, accuracyLabel: "carbine", aiValue: 6 }),
+  sniper: foot({ moveRange: 6.0, moveSpeed: 6.2, shotDamage: 40, weaponRange: 34, projectileSpeed: 3.8, spread: 0.22, accurateFraction: 0.35, spreadPerMeter: 0.09, accuracyLabel: "marksman", aiValue: 8 }),
   striker: foot({ moveRange: 10.8, moveSpeed: 11.5, shotDamage: 24, accuracyLabel: "sidearm", meleeRange: 0.72, meleeMultiplier: 1, aiValue: 5 }),
-  heavy: foot({ moveRange: 4.8, moveSpeed: 4.8, shotDamage: 18, burst: 4, spread: 3.6, spreadPerMeter: 0.16, accuracyLabel: "auto-cannon", hpMultiplier: 1.18, aiValue: 5 }),
-  grenadier: foot({ moveRange: 6.3, moveSpeed: 5.8, shotDamage: 38, weaponRange: 22, projectile: "grenade", projectileSpeed: 2.05, spread: 7.4, accuracyLabel: "launcher", groundShell: true, aiValue: 7 }),
-  mortar: foot({ moveRange: 5.0, moveSpeed: 5.2, shotDamage: 44, weaponRange: 30, projectile: "grenade", projectileSpeed: 2.05, spread: 7.0, spreadStart: 20, accuracyLabel: "mortar", groundShell: true, hpMultiplier: 1.12, aiValue: 8 }),
-  medic: foot({ moveRange: 6.4, moveSpeed: 6.4, shotDamage: 18, weaponRange: 18, aiValue: 8 }),
-  engineer: foot({ moveRange: 5.8, moveSpeed: 5.8, shotDamage: 18, weaponRange: 18, aiValue: 7 }),
-  flamer: foot({ shotDamage: 34, weaponRange: 7.5, aiValue: 4 }),
-  droneop: foot({ shotDamage: 16, weaponRange: 16, aiValue: 4 }),
-  sapper: foot({ shotDamage: 26, weaponRange: 14, aiValue: 4 }),
+  heavy: foot({ moveRange: 4.8, moveSpeed: 4.8, shotDamage: 18, burst: 4, spread: 3.6, accurateFraction: 0.35, spreadPerMeter: 0.16, accuracyLabel: "auto-cannon", hpMultiplier: 1.18, aiValue: 5 }),
+  grenadier: foot({ moveRange: 6.3, moveSpeed: 5.8, shotDamage: 38, weaponRange: 22, projectile: "grenade", projectileSpeed: 2.05, spread: 7.4, accurateFraction: 0.41, accuracyLabel: "launcher", groundShell: true, aiValue: 7 }),
+  mortar: foot({ moveRange: 5.0, moveSpeed: 5.2, shotDamage: 44, weaponRange: 30, projectile: "grenade", projectileSpeed: 2.05, spread: 7.0, accurateFraction: 0.67, accuracyLabel: "mortar", groundShell: true, hpMultiplier: 1.12, aiValue: 8 }),
+  medic: foot({ moveRange: 6.4, moveSpeed: 6.4, shotDamage: 18, weaponRange: 18, accurateFraction: 0.5, aiValue: 8 }),
+  engineer: foot({ moveRange: 5.8, moveSpeed: 5.8, shotDamage: 18, weaponRange: 18, accurateFraction: 0.5, aiValue: 7 }),
+  flamer: foot({ shotDamage: 34, weaponRange: 7.5, accurateFraction: 0.9, aiValue: 4 }),
+  droneop: foot({ shotDamage: 16, weaponRange: 16, accurateFraction: 0.56, aiValue: 4 }),
+  sapper: foot({ shotDamage: 26, weaponRange: 14, accurateFraction: 0.64, aiValue: 4 }),
 
   // --- Ground vehicles ---
-  tank: u({ moveRange: 5.4, moveSpeed: 5.5, shotDamage: 66, weaponRange: 28, projectile: "shell", projectileSpeed: 2.45, spread: 2.65, spreadStart: 14, accuracyLabel: "stabilized cannon", ramRange: 2.85, groundShell: true, hpMultiplier: 1.3, aiValue: 3 }),
-  apc: u({ moveRange: 7.2, moveSpeed: 7.4, shotDamage: 30, weaponRange: 24, projectile: "bolt", projectileSpeed: 2.8, spread: 3.1, accuracyLabel: "autogun", hpMultiplier: 1.16, aiValue: 3 }),
-  artillery: u({ moveRange: 3.6, moveSpeed: 3.8, shotDamage: 78, weaponRange: 42, projectile: "shell", projectileSpeed: 2.45, spread: 5.4, spreadStart: 20, accuracyLabel: "siege gun", groundShell: true, hpMultiplier: 1.2, aiValue: 9 }),
-  flak: u({ moveRange: 6.0, moveSpeed: 6.2, shotDamage: 16, weaponRange: 32, projectile: "bolt", accuracyLabel: "flak cannon", aiValue: 6 }),
+  tank: u({ moveRange: 5.4, moveSpeed: 5.5, shotDamage: 66, weaponRange: 28, projectile: "shell", projectileSpeed: 2.45, spread: 2.65, accurateFraction: 0.5, accuracyLabel: "stabilized cannon", ramRange: 2.85, groundShell: true, hpMultiplier: 1.3, aiValue: 3 }),
+  apc: u({ moveRange: 7.2, moveSpeed: 7.4, shotDamage: 30, weaponRange: 24, projectile: "bolt", projectileSpeed: 2.8, spread: 3.1, accurateFraction: 0.375, accuracyLabel: "autogun", hpMultiplier: 1.16, aiValue: 3 }),
+  artillery: u({ moveRange: 4.2, moveSpeed: 4.4, shotDamage: 78, weaponRange: 42, projectile: "shell", projectileSpeed: 2.45, spread: 5.4, accurateFraction: 0.48, accuracyLabel: "siege gun", groundShell: true, hpMultiplier: 1.2, aiValue: 9 }),
+  flak: u({ moveRange: 6.0, moveSpeed: 6.2, shotDamage: 16, weaponRange: 32, accurateFraction: 0.3, projectile: "bolt", accuracyLabel: "flak cannon", aiValue: 6 }),
 
   // --- Aircraft. Guns are air-to-air; bombs use the grenade path and fall straight down. ---
-  gunship: u({ moveRange: 12.5, moveSpeed: 9.5, shotDamage: 22, weaponRange: 22, projectile: "bolt", accuracyLabel: "gunship autocannon", grenadeRange: 11, aiValue: 8 }),
+  gunship: u({ moveRange: 12.5, moveSpeed: 9.5, shotDamage: 22, weaponRange: 22, accurateFraction: 0.41, projectile: "bolt", accuracyLabel: "gunship autocannon", grenadeRange: 11, aiValue: 8 }),
   interceptor: u({ moveRange: 14, moveSpeed: 11.5, shotDamage: 26, projectile: "bolt", accuracyLabel: "interceptor cannon", aiValue: 4 }),
   bomber: u({ moveRange: 8, moveSpeed: 6.4, grenadeRange: 12, aiValue: 4 }),
   transport: u({ moveRange: 11, moveSpeed: 8.5, aiValue: 4 }),
 
   // --- Structures and scenery ---
-  base: u({ shotDamage: 42, weaponRange: 30, projectile: "bolt", projectileSpeed: 2.8, spread: 1.25, accuracyLabel: "command relay", aiValue: 6 }),
-  turret: u({ shotDamage: 30, weaponRange: 24, projectile: "bolt", projectileSpeed: 2.8, spread: 2.3, spreadPerMeter: 0.05, accuracyLabel: "turret autogun", aiValue: 4 }),
-  exturret: u({ shotDamage: 58, projectile: "shell", projectileSpeed: 2.45, spread: 4.6, spreadStart: 20, accuracyLabel: "mortar battery", groundShell: true, hpMultiplier: 1.25, aiValue: 5 }),
+  base: u({ shotDamage: 42, weaponRange: 30, accurateFraction: 0.3, projectile: "bolt", projectileSpeed: 2.8, spread: 1.25, accuracyLabel: "command relay", aiValue: 6 }),
+  turret: u({ shotDamage: 30, weaponRange: 24, projectile: "bolt", projectileSpeed: 2.8, spread: 2.3, accurateFraction: 0.375, spreadPerMeter: 0.05, accuracyLabel: "turret autogun", aiValue: 4 }),
+  exturret: u({ shotDamage: 58, projectile: "shell", projectileSpeed: 2.45, spread: 4.6, accurateFraction: 0.77, accuracyLabel: "mortar battery", groundShell: true, hpMultiplier: 1.25, aiValue: 5 }),
   wall: u({ aiValue: 1 }),
   cover: u({}),
 };

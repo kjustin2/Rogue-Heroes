@@ -4358,7 +4358,7 @@ function makeTroopBase(kind: TroopKind, id: string, name: string, team: Team, po
 // Global mobility boost: every unit covers much more ground per order so the (now larger) maps
 // don't turn into slow marches. Applied to both range AND animation speed, so a longer move still
 // resolves in the same wall-clock time. Base per-kind values below stay the tuning surface.
-const MOVE_RANGE_SCALE = 2.0;
+export const MOVE_RANGE_SCALE = 2.0;
 
 function moveRange(entity: CombatEntity): number {
   return baseMoveRange(entity) * MOVE_RANGE_SCALE;
@@ -4654,7 +4654,10 @@ function baseAccuracySpread(kind: EntityKind, attackMode: AttackMode = "weapon")
 function rangeSpreadPenalty(kind: EntityKind, attackMode: AttackMode, range: number): number {
   if (attackMode === "grenade") return 0;
   const stats = unitStats(kind);
-  return Math.max(0, range - stats.spreadStart) * stats.spreadPerMeter;
+  // The accurate band is a share of the weapon's own reach, so changing a range moves its falloff
+  // with it instead of silently leaving the unit pinpoint or penalized everywhere.
+  const start = stats.weaponRange * stats.accurateFraction;
+  return Math.max(0, range - start) * stats.spreadPerMeter;
 }
 
 function kindAccuracyLabel(kind: EntityKind, attackMode: AttackMode = "weapon"): string {

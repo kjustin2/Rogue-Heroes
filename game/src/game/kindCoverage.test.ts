@@ -75,12 +75,13 @@ describe("UNIT_STATS describes every kind coherently", () => {
   });
 
   it("gives every kind a band at which it is still accurate", () => {
-    // spreadStart is the distance that costs no extra spread. It must be positive, or a unit is
-    // penalized at literally every range it can shoot. A spreadStart at or beyond a unit's own
-    // weapon range is fine and deliberate -- that unit is simply accurate everywhere it can reach,
-    // which is how the flamer (range 7.5, start 9) is meant to work.
+    // accurateFraction is the share of a weapon's own reach that costs no extra spread. It must be
+    // positive, or a unit is penalized at literally every range it can shoot, and at most 1, or the
+    // falloff never applies at all.
     for (const kind of ALL) {
-      expect(unitStats(kind).spreadStart, `${kind} spreadStart`).toBeGreaterThan(0);
+      const fraction = unitStats(kind).accurateFraction;
+      expect(fraction, `${kind} accurateFraction`).toBeGreaterThan(0);
+      expect(fraction, `${kind} accurateFraction`).toBeLessThanOrEqual(1);
     }
   });
 });
