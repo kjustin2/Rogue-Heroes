@@ -1,6 +1,9 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { endTurnAndSettle, launchGame } from "../improve/lib/harness.mjs";
+import { guard } from "./lib/guard.cjs";
+
+guard({ name: "smoke-economy" });
 
 const PORT = 5176;
 const OUT = "shots";

@@ -24,7 +24,8 @@
     "vision": "node improve/vision.mjs",
     "smoke:electron": "electron scripts/smoke-electron.cjs",
     "test:play": "npm run build && npm run smoke:electron",
-    "test:full": "npm run verify && npm run smoke:buttons && npm run smoke:flow && npm run smoke:economy && npm run smoke:deep",
+    "smoke:core": "npm run smoke:buttons && npm run smoke:flow && npm run smoke:economy && npm run smoke:deep",
+    "test:full": "npm run verify && npm run smoke:core",
     "desktop": "electron .",
     "standalone": "npm run build && electron .",
     "dist:exe": "npm run build && electron-builder --win portable"

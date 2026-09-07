@@ -2,6 +2,9 @@
 // each one does something sensible and that no console/page errors fire along the way.
 import { mkdirSync } from "node:fs";
 import { launchGame } from "../improve/lib/harness.mjs";
+import { guard } from "./lib/guard.cjs";
+
+guard({ name: "smoke-buttons" });
 
 const PORT = Number(process.env.SMOKE_PORT ?? 5191);
 const OUT = "shots";

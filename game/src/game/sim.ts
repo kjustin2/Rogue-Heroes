@@ -114,6 +114,11 @@ const DIFFICULTY_MODS: Record<Difficulty, DifficultyMods> = {
   hard: { label: "Elite", enemyHp: 1.3, enemyDamage: 1.28, enemyIncome: 1.45 },
 };
 // Reaction fire is snap fire: the spread multiplier applied to an overwatch shot.
+// Resolve-phase budgets, in simulated seconds. SETTLE is the graceful escape once nothing is
+// airborne; HARD_CEILING is the unconditional one that guarantees the phase always ends.
+const RESOLVE_SETTLE_TIMEOUT = 18;
+const RESOLVE_HARD_CEILING = 20;
+
 const OVERWATCH_SPREAD_PENALTY = 1.55;
 // Half-angle of the overwatch watch cone. The player picks a facing; only hostiles moving
 // inside this arc (±60°, a 120° wedge) around it trip the reaction shot.
@@ -1675,7 +1680,18 @@ export class TacticalSim {
 
     const allDone = this.orders.every((o) => o.done);
     if (allDone && this.projectiles.length === 0 && this.pendingStrikes.length === 0 && this.pendingFx.length === 0 && this.resolveClock > 1.9) this.finishResolve();
-    if (this.projectiles.length === 0 && this.pendingStrikes.length === 0 && this.resolveClock > 18) this.finishResolve();
+    if (this.projectiles.length === 0 && this.pendingStrikes.length === 0 && this.resolveClock > RESOLVE_SETTLE_TIMEOUT) this.finishResolve();
+    // HARD CEILING — resolve must always terminate. The settle timeout above is gated on nothing
+    // being airborne, which a slow shot fired late in a long resolve can block indefinitely
+    // (artillery: speed 2.45 over range 42 = 17s of flight, longer than the timeout itself). That
+    // hung the phase forever. Force-expire anything still in the air through the normal miss path
+    // and end the turn; a resolve is never allowed to outlive this budget.
+    if (this.phase === "resolve" && this.resolveClock > RESOLVE_HARD_CEILING) {
+      for (const projectile of [...this.projectiles]) this.expireProjectile(projectile);
+      this.pendingStrikes.splice(0);
+      this.pendingFx.splice(0);
+      this.finishResolve();
+    }
   }
 
   private queueShootFor(actor: CombatEntity, target: CombatEntity, aim: AimMode, partId?: string): boolean {
@@ -2365,6 +2381,17 @@ export class TacticalSim {
     return projectile.id;
   }
 
+  // Retire a shot that never connected, through the one miss path: drop it, complete its order so
+  // the actor is not left mid-order forever, and log the miss.
+  private expireProjectile(projectile: Projectile): void {
+    const actor = this.entity(projectile.actorId);
+    const intendedTarget = this.entity(projectile.targetId);
+    const order = this.orders.find((candidate) => candidate.id === projectile.orderId);
+    this.removeProjectile(projectile.id);
+    if (order) order.done = true;
+    if (intendedTarget) this.pushLog(`${actor ? actor.name : "Shot"} misses ${intendedTarget.name}`);
+  }
+
   private updateProjectiles(dt: number): void {
     for (const projectile of [...this.projectiles]) this.updateProjectile(projectile, dt);
   }
@@ -2388,9 +2415,7 @@ export class TacticalSim {
     }
 
     if (projectile.age > projectile.maxAge || projectile.travel >= projectile.maxTravel) {
-      this.removeProjectile(projectile.id);
-      if (order) order.done = true;
-      if (intendedTarget) this.pushLog(`${actor.name} misses ${intendedTarget.name}`);
+      this.expireProjectile(projectile);
       return;
     }
 

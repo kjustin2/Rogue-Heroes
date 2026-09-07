@@ -92,6 +92,10 @@ function runChaos(seed: number, mapId?: string): string[] {
   violations.push(...auditInvariants(sim, `seed${seed}/setup`));
   for (let turn = 0; turn < 8 && !sim.gameOver; turn += 1) {
     chaosTurn(sim, rng);
+    // TERMINATION ORACLE. This is the detector for the resolve soft-lock: the settle timeout is
+    // gated on nothing being airborne, which a slow shot fired late in a long resolve can block
+    // indefinitely (artillery flies ~17s, longer than the timeout itself). Found on crossfire /
+    // seed 2024 / turn 2; the unconditional hard ceiling in sim.update is what fixes it.
     if (sim.phase !== "command" && !sim.gameOver) violations.push(`seed${seed}/turn${turn}: resolve never settled (phase=${sim.phase})`);
     violations.push(...auditInvariants(sim, `seed${seed}/turn${turn}`));
     // Save/restore round-trip mid-run must not corrupt state or trip any oracle either.
