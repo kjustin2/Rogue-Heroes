@@ -256,7 +256,7 @@ const RAW_MAPS: readonly MapDef[] = [
     blurb: "Sun-baked flats walled in by two towering rock ranges.",
     feel: "Open desert basin between great mountain ranges — long sightlines reward snipers and armor; climb the slopes for overwatch.",
     seed: 0x44555354,
-    theme: { ground: 0x9c6f3e, groundAccent: 0xc79a5c, grid: 0xd6ad6d, fog: 0xd9b27a, fogDensity: 0.012, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0xe8c98f, ambient: { kind: "dust", color: 0xe6c98a, density: 1.1 } },
+    theme: { ground: 0x9c6f3e, groundAccent: 0xc98f4a, grid: 0xd6ad6d, fog: 0x8fa6b8, fogDensity: 0.009, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x7fa8c9, ambient: { kind: "dust", color: 0xe6c98a, density: 1.1 } },
     terrain: {
       bounds: { minX: -35, maxX: 35, minZ: -22, maxZ: 22 }, // LARGE: wide basin, long armor/sniper lanes
       maxHeight: 3.6,
@@ -313,7 +313,7 @@ const RAW_MAPS: readonly MapDef[] = [
     blurb: "A cramped foundry of steel and shipping crates.",
     feel: "Tight industrial maze — dense cover and chokepoints favor infantry brawls.",
     seed: 0x49524f4e,
-    theme: { ground: 0x3a3f47, groundAccent: 0x586170, grid: 0x6f7c8c, fog: 0x2b3038, fogDensity: 0.02, playerLight: 0x5fd7ff, enemyLight: 0xff6d57, sky: 0x394150, ambient: { kind: "embers", color: 0xff9a4a, density: 0.85 } },
+    theme: { ground: 0x39404a, groundAccent: 0x6b7482, grid: 0x6f7c8c, fog: 0x53412f, fogDensity: 0.014, playerLight: 0x5fd7ff, enemyLight: 0xff6d57, sky: 0x8a5a32, ambient: { kind: "embers", color: 0xff9a4a, density: 0.85 } },
     terrain: {
       bounds: { minX: -24, maxX: 24, minZ: -15, maxZ: 15 },
       maxHeight: 1.3,
@@ -359,7 +359,7 @@ const RAW_MAPS: readonly MapDef[] = [
     blurb: "A green valley walled by forested mountains around a central hill.",
     feel: "Towering wooded mountain flanks and a true high-ground center — hold the hill, watch the slopes.",
     seed: 0x56455244,
-    theme: { ground: 0x4a6b34, groundAccent: 0x6f8f4a, grid: 0x86a85f, fog: 0xa8c6a0, fogDensity: 0.011, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0xbcd6b0, ambient: { kind: "pollen", color: 0xd8f0a0, density: 1 } },
+    theme: { ground: 0x4a6b34, groundAccent: 0x86a03f, grid: 0x86a85f, fog: 0x93b0c4, fogDensity: 0.009, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x86b2d4, ambient: { kind: "pollen", color: 0xd8f0a0, density: 1 } },
     terrain: {
       bounds: { minX: -28, maxX: 28, minZ: -19, maxZ: 19 },
       maxHeight: 3.6,
@@ -404,7 +404,7 @@ const RAW_MAPS: readonly MapDef[] = [
     blurb: "A narrow land bridge between frozen basins.",
     feel: "Linear and funneled — a single icy causeway forces brutal head-on fights.",
     seed: 0x46524f5a,
-    theme: { ground: 0xa9c2d6, groundAccent: 0xd6e6f0, grid: 0xbfd6e6, fog: 0xcfe0ec, fogDensity: 0.016, playerLight: 0x7fd7ff, enemyLight: 0xff8f7f, sky: 0xdcebf4, ambient: { kind: "snow", color: 0xeaf4ff, density: 1.2 } },
+    theme: { ground: 0x8fa9c2, groundAccent: 0xc2d8e8, grid: 0xbfd6e6, fog: 0xc9b294, fogDensity: 0.011, playerLight: 0x7fd7ff, enemyLight: 0xff8f7f, sky: 0xd8b58a, ambient: { kind: "snow", color: 0xeaf4ff, density: 1.2 } },
     terrain: {
       bounds: { minX: -37, maxX: 37, minZ: -19, maxZ: 19 }, // LARGE: long land bridge, deep flanks
       maxHeight: 1.4,
@@ -452,7 +452,7 @@ const RAW_MAPS: readonly MapDef[] = [
     blurb: "Toppled colonnades over stepped stone mesas.",
     feel: "Vertical ruins — climb the mesas and fight among broken pillars and cliffs.",
     seed: 0x4b415241,
-    theme: { ground: 0x8a6a3c, groundAccent: 0xb08a4e, grid: 0xc6a567, fog: 0xc7a877, fogDensity: 0.013, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0xd8bd8c, ambient: { kind: "ash", color: 0xcbb083, density: 0.9 } },
+    theme: { ground: 0x8a6a3c, groundAccent: 0xb8843e, grid: 0xc6a567, fog: 0x6a5f86, fogDensity: 0.012, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x6e5f96, ambient: { kind: "ash", color: 0xcbb083, density: 0.9 } },
     terrain: {
       bounds: { minX: -26, maxX: 26, minZ: -18, maxZ: 18 },
       maxHeight: 2.1,
@@ -491,7 +491,7 @@ const RAW_MAPS: readonly MapDef[] = [
     blurb: "A symmetric bowl built for honest, balanced duels.",
     feel: "Balanced competitive arena — mirrored cover nests and a sunken central basin.",
     seed: 0x43524f53,
-    theme: { ground: 0x5a6348, groundAccent: 0x7c8760, grid: 0x97a277, fog: 0x9fb091, fogDensity: 0.012, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0xb6c4a6, ambient: { kind: "pollen", color: 0xc6d8a8, density: 0.7 } },
+    theme: { ground: 0x5a6348, groundAccent: 0x8a9152, grid: 0x97a277, fog: 0x94a3b4, fogDensity: 0.010, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x8fa3ba, ambient: { kind: "pollen", color: 0xc6d8a8, density: 0.7 } },
     terrain: {
       bounds: { minX: -26, maxX: 26, minZ: -17, maxZ: 17 },
       maxHeight: 1.6,

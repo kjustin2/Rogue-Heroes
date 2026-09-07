@@ -725,25 +725,24 @@ export class WorldRenderer {
 
     // Slightly darker than the authored ground tone so units (whose palette tops out
     // near-white) keep value separation from the floor under the warm key light.
+    const groundTexture = makeGroundTexture(theme);
+    // One texture tile per ~9 world units: large enough that the pattern does not read as tiling
+    // from the tactical camera, small enough to break up the biggest maps.
+    groundTexture.repeat.set(Math.max(2, width / 9), Math.max(2, depth / 9));
     const floor = new THREE.Mesh(
       new THREE.BoxGeometry(width, 0.18, depth),
-      new THREE.MeshStandardMaterial({ color: new THREE.Color(theme.ground).multiplyScalar(0.86), roughness: 0.95, metalness: 0.02 })
+      new THREE.MeshStandardMaterial({ map: groundTexture, color: new THREE.Color(theme.ground).multiplyScalar(0.96), roughness: 0.95, metalness: 0.02 })
     );
     floor.position.y = -0.11;
     floor.receiveShadow = true;
     this.sceneryRoot.add(floor);
 
-    this.sceneryRoot.add(makeTerrainBlocks(theme.ground, theme.groundAccent));
+    this.sceneryRoot.add(makeTerrainBlocks(theme.ground, theme.groundAccent, groundTexture));
     this.sceneryRoot.add(makeWaterAndBridges(theme));
+    this.sceneryRoot.add(makeSurroundings(theme, width, depth));
 
-    const grid = new THREE.GridHelper(width, Math.round(width), theme.grid, theme.grid);
-    grid.position.y = 0.02;
-    grid.scale.z = depth / width;
-    for (const material of Array.isArray(grid.material) ? grid.material : [grid.material]) {
-      material.opacity = 0.1;
-      material.transparent = true;
-    }
-    this.sceneryRoot.add(grid);
+    // No ground grid: movement is continuous, so a grid describes no rule the player can use and
+    // reads as an unfinished prototype. Range rings and move previews carry that information.
 
     const railColor = new THREE.Color(theme.ground).multiplyScalar(0.55);
     const railMat = new THREE.MeshStandardMaterial({ color: railColor, roughness: 0.9, metalness: 0.05 });
@@ -760,50 +759,13 @@ export class WorldRenderer {
       this.sceneryRoot.add(rail);
     }
 
-    // A coarse grid of large, low-opacity deck panels tinted toward the map accent gives the
-    // floor a tiled, map-themed feel without clutter (alternating tones, flat floor only).
-    const panelLight = new THREE.Color(theme.ground).lerp(new THREE.Color(theme.groundAccent), 0.28);
-    const panelDark = new THREE.Color(theme.ground).multiplyScalar(0.82);
-    const panelMatLight = new THREE.MeshBasicMaterial({ color: panelLight, transparent: true, opacity: 0.22, depthWrite: false });
-    const panelMatDark = new THREE.MeshBasicMaterial({ color: panelDark, transparent: true, opacity: 0.22, depthWrite: false });
-    const cols = 6;
-    const rows = 4;
-    const tileW = width / cols;
-    const tileD = depth / rows;
-    const gap = 0.32;
-    for (let r = 0; r < rows; r += 1) {
-      for (let c = 0; c < cols; c += 1) {
-        const x = ARENA_BOUNDS.minX + (c + 0.5) * tileW;
-        const z = ARENA_BOUNDS.minZ + (r + 0.5) * tileD;
-        if (terrainHeightAt({ x, z }) > 0.05) continue; // keep panels on the flat floor
-        const panel = new THREE.Mesh(
-          new THREE.PlaneGeometry(tileW - gap, tileD - gap),
-          (c + r) % 2 === 0 ? panelMatLight : panelMatDark,
-        );
-        panel.rotation.x = -Math.PI / 2;
-        panel.position.set(x, 0.008, z);
-        this.sceneryRoot.add(panel);
-      }
-    }
+    // (Removed: a 6x4 grid of translucent "deck panels". They tiled the floor with large flat
+    // rectangles of near-identical value, which is the opposite of the variation the ground needs,
+    // and they read as UI painted onto the world. The ground texture above replaces them.)
 
-    // Deterministic ground-accent patches give the floor texture without clutter.
-    const patchMat = new THREE.MeshBasicMaterial({ color: theme.groundAccent, transparent: true, opacity: 0.16, depthWrite: false });
-    let seed = 1337;
-    const rand = (): number => {
-      seed = (seed * 1664525 + 1013904223) >>> 0;
-      return seed / 0xffffffff;
-    };
-    for (let i = 0; i < 28; i += 1) {
-      const x = ARENA_BOUNDS.minX + rand() * width;
-      const z = ARENA_BOUNDS.minZ + rand() * depth;
-      const r = 0.8 + rand() * 1.9;
-      // Keep ground texture patches on the flat floor so they never float over a block edge.
-      if (terrainHeightAt({ x, z }) > 0.05) continue;
-      const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 20), patchMat);
-      disc.rotation.x = -Math.PI / 2;
-      disc.position.set(x, 0.014, z);
-      this.sceneryRoot.add(disc);
-    }
+    // (Removed: scattered translucent ground-accent discs. They were near-invisible against the
+    // old flat floor, but against a textured, properly lit one they read as brown stains sitting
+    // on the surface. The ground texture map carries this variation now.)
 
     // Team-tint fill at each base end. Range tracks arena width so the glow still reaches toward
     // the centre on the enlarged maps instead of pooling at the corners.
@@ -3409,13 +3371,148 @@ function infantryPalette(kind: string): { body: number; trim: number; pack: numb
 
 // Terrain is built from flat-topped raised rectangles. Render each as a crisp box: shaded
 // sides, an accent-toned cap, and a dark edge outline so steps read clearly from any angle.
-function makeTerrainBlocks(groundColor: number, accentColor: number): THREE.Group {
+// The playable arena is a raised slab, and before this the world simply ENDED at its rail: you
+// could see past the edge into the sky, which made the whole battlefield read as a tabletop
+// diorama floating in a void. This lays a continuous landscape around it -- an outer ground plane
+// far wider than the arena, plus a ring of distant ridges -- so the ground runs to the horizon and
+// dissolves into fog instead of stopping. Deterministic from the map seed; nothing here is
+// interactive, collidable, or shadow-casting, so it costs a handful of draw calls.
+// A flat-coloured floor is why the big maps measured as having almost no dynamic range: on
+// Dustbowl the ground fills most of the frame, so a single uniform tone put ~95% of the image
+// inside a 0.05 luminance band regardless of how the lighting was tuned. This bakes a mottled
+// value break-up into the floor material -- large soft patches, finer grain, and a few darker
+// weathered streaks. Procedural and deterministic, so no asset is required and the game still
+// runs with an empty asset dir.
+function makeGroundTexture(theme: MapTheme): THREE.CanvasTexture {
+  const size = 512;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  const ground = new THREE.Color(theme.ground);
+  const accent = new THREE.Color(theme.groundAccent);
+  const css = (c: THREE.Color, a = 1): string => `rgba(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)},${a})`;
+
+  ctx.fillStyle = css(ground);
+  ctx.fillRect(0, 0, size, size);
+
+  let seed = 0x1234567;
+  const rand = (): number => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 0xffffffff;
+  };
+
+  // Broad tonal patches: the low-frequency variation the eye reads as "ground", not "surface".
+  for (let i = 0; i < 90; i += 1) {
+    const x = rand() * size;
+    const y = rand() * size;
+    const r = 26 + rand() * 96;
+    const toward = rand();
+    const tone = ground.clone().lerp(accent, toward * 0.85).multiplyScalar(0.82 + rand() * 0.42);
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, css(tone, 0.5));
+    grad.addColorStop(1, css(tone, 0));
+    ctx.fillStyle = grad;
+    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+
+  // Darker weathered streaks: these are what actually open up the low end of the histogram.
+  for (let i = 0; i < 40; i += 1) {
+    const x = rand() * size;
+    const y = rand() * size;
+    const w = 30 + rand() * 150;
+    const h = 2 + rand() * 9;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rand() * Math.PI);
+    ctx.fillStyle = css(ground.clone().multiplyScalar(0.6), 0.22 + rand() * 0.2);
+    ctx.fillRect(-w / 2, -h / 2, w, h);
+    ctx.restore();
+  }
+
+  // Fine grain so the surface does not read as smooth plastic when the camera is close.
+  const grain = ctx.getImageData(0, 0, size, size);
+  for (let i = 0; i < grain.data.length; i += 4) {
+    const n = (rand() - 0.5) * 26;
+    grain.data[i] = Math.max(0, Math.min(255, grain.data[i] + n));
+    grain.data[i + 1] = Math.max(0, Math.min(255, grain.data[i + 1] + n));
+    grain.data[i + 2] = Math.max(0, Math.min(255, grain.data[i + 2] + n));
+  }
+  ctx.putImageData(grain, 0, 0);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+function makeSurroundings(theme: MapTheme, width: number, depth: number): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "surroundings";
+  const ground = new THREE.Color(theme.ground);
+  const fog = new THREE.Color(theme.fog);
+
+  // Outer plain: sits a hair below the arena slab so the slab's own edge still reads as a lip
+  // rather than z-fighting with it. Tinted toward fog so it recedes instead of competing.
+  const plainColor = ground.clone().lerp(fog, 0.35).multiplyScalar(0.78);
+  const plain = new THREE.Mesh(
+    new THREE.PlaneGeometry(width * 9, depth * 9),
+    new THREE.MeshStandardMaterial({ color: plainColor, roughness: 1, metalness: 0 }),
+  );
+  plain.rotation.x = -Math.PI / 2;
+  plain.position.y = -0.22;
+  group.add(plain);
+
+  // Distant ridges: a ring of low-poly bluffs well outside the play space. They give the eye a
+  // horizon line and a sense of scale, and being progressively fog-tinted by distance they read
+  // as depth rather than as props. Seeded so a map always looks like itself.
+  let seed = 0x9e3779b9;
+  const rand = (): number => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 0xffffffff;
+  };
+  const ridgeGeo = new THREE.BoxGeometry(1, 1, 1);
+  ridgeGeo.userData.shared = true;
+  const radius = Math.max(width, depth) * 0.78;
+  const rings = 3;
+  for (let ring = 0; ring < rings; ring += 1) {
+    const distance = radius * (1.15 + ring * 0.42);
+    // Farther ridges sit closer to pure fog colour, which is what sells the depth.
+    const blend = 0.42 + ring * 0.22;
+    const material = new THREE.MeshStandardMaterial({
+      color: ground.clone().lerp(fog, blend).multiplyScalar(0.9 - ring * 0.06),
+      roughness: 1,
+      metalness: 0,
+    });
+    const count = 26 + ring * 8;
+    for (let i = 0; i < count; i += 1) {
+      const angle = (i / count) * Math.PI * 2 + rand() * 0.16;
+      const jitter = 0.86 + rand() * 0.4;
+      const height = (3.2 + rand() * 7.5) * (1 + ring * 0.55);
+      const spanX = (7 + rand() * 16) * (1 + ring * 0.3);
+      const spanZ = (7 + rand() * 16) * (1 + ring * 0.3);
+      const bluff = new THREE.Mesh(ridgeGeo, material);
+      bluff.position.set(Math.cos(angle) * distance * jitter, height * 0.5 - 1.2, Math.sin(angle) * distance * jitter);
+      bluff.scale.set(spanX, height, spanZ);
+      bluff.rotation.y = rand() * Math.PI;
+      group.add(bluff);
+    }
+  }
+  return group;
+}
+
+function makeTerrainBlocks(groundColor: number, accentColor: number, surface?: THREE.Texture): THREE.Group {
   const group = new THREE.Group();
   const sideColor = new THREE.Color(groundColor).multiplyScalar(0.66);
-  const capColor = new THREE.Color(accentColor).lerp(new THREE.Color(0xffffff), 0.1);
+  // The cap used to be a near-white tint of the accent, which made every mesa read as a pale slab
+  // sitting ON the battlefield rather than a rise OF it. Keeping it near the ground tone and
+  // sharing the ground texture ties them together; the lit/shadowed side faces carry the height
+  // read instead, which is what the stronger key light is for.
+  const capColor = new THREE.Color(accentColor).lerp(new THREE.Color(groundColor), 0.45);
   const sideMaterial = new THREE.MeshStandardMaterial({ color: sideColor, roughness: 0.95, metalness: 0.03 });
   // polygonOffset keeps the cap's top from z-fighting the body when surfaces nearly coincide.
-  const capMaterial = new THREE.MeshStandardMaterial({ color: capColor, roughness: 0.9, metalness: 0.03, emissive: 0x1c1208, emissiveIntensity: 0.08, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  const capMaterial = new THREE.MeshStandardMaterial({ map: surface ?? null, color: capColor, roughness: 0.9, metalness: 0.03, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   const CAP = 0.1;
   for (const block of terrainBlocks()) {
     const w = block.maxX - block.minX;

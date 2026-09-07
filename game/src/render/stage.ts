@@ -14,6 +14,7 @@ import {
 } from "postprocessing";
 import { clamp, lerp, type Vec2 } from "../core/math";
 import { ARENA_BOUNDS } from "../game/terrain";
+import { GradeEffect } from "./gradeEffect";
 
 export interface PickResult {
   entityId: string;
@@ -77,6 +78,8 @@ export class Stage {
   private menuComposer: EffectComposer | null = null;
   private vignette: VignetteEffect | null = null;
   private aberration: ChromaticAberrationEffect | null = null;
+  private grade: GradeEffect | null = null;
+  private menuGrade: GradeEffect | null = null;
   /** 0..1 transient screen stress — punched up by blasts, decays fast (vignette/CA pulse). */
   private stress = 0;
   /** When on, blasts don't punch the screen (vignette darken + chromatic aberration) — the
@@ -110,14 +113,18 @@ export class Stage {
     this.camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 160);
     this.updateCamera();
 
-    // Soft, near-neutral sky fill + warm ground bounce. Kept low-saturation so shadows
-    // (where the warm key is blocked) don't pick up a teal cast.
-    const hemi = new THREE.HemisphereLight(0xd7dde4, 0x4a3424, 0.85);
+    // LIGHT BUDGET. The rig previously summed to ~5.0 across four sources, three of which were
+    // omnidirectional fill. That lifted shadowed surfaces almost to key brightness, so the image
+    // measured FLAT (luminance sigma ~0.05 against a 0.10 floor) -- there was light everywhere and
+    // shade nowhere. The key now dominates and the fills only keep shadows from going to mud.
+    const hemi = new THREE.HemisphereLight(0xd7dde4, 0x4a3424, 0.40);
     this.scene.add(hemi);
 
     // Warm dusty key "sun" with soft shadows covering the full arena.
-    const key = new THREE.DirectionalLight(0xffe6c0, 2.4);
-    key.position.set(-8, 18, 10);
+    const key = new THREE.DirectionalLight(0xffe6c0, 3.2);
+    // Lower sun angle than before: a steep noon key casts almost no visible shadow at this camera
+    // pitch, and the cast shadow is most of what gives the units and terrain their form.
+    key.position.set(-13, 14, 9);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     // Sized to cover the largest enlarged battlefield (LARGE maps now span ~x = ±52, z = ±31 after
@@ -137,12 +144,12 @@ export class Stage {
     this.scene.add(key);
 
     // Cool steel rim light makes units and buildings pop off the warm ground.
-    const rim = new THREE.DirectionalLight(0x8fdcff, 1.15);
+    const rim = new THREE.DirectionalLight(0x8fdcff, 0.62);
     rim.position.set(12, 9, -14);
     this.scene.add(rim);
 
     // Warm fill from the opposite side to lift shadow detail toward sand tones.
-    const fill = new THREE.DirectionalLight(0xffc890, 0.55);
+    const fill = new THREE.DirectionalLight(0xffc890, 0.20);
     fill.position.set(7, 5, 11);
     this.scene.add(fill);
 
@@ -159,6 +166,8 @@ export class Stage {
     this.menuComposer = null;
     this.vignette = null;
     this.aberration = null;
+    this.grade = null;
+    this.menuGrade = null;
     if (this.quality === "performance") return; // direct renderer.render path
 
     this.composer = new EffectComposer(this.renderer, { frameBufferType: THREE.HalfFloatType });
@@ -175,6 +184,12 @@ export class Stage {
       });
       effects.push(this.aberration);
     }
+    // Split-tone grade: shadows cool, highlights warm. This is the single biggest step away from
+    // "raw Three.js default" — the maps are each authored around ONE hue (all-green Verdant,
+    // all-ochre Karak) and collapse into a flat monochrome band without it. Runs on every tier
+    // that has a composer at all: no texture lookup, ~15 lines of ALU.
+    this.grade = new GradeEffect();
+    effects.push(this.grade);
     this.vignette = new VignetteEffect({ darkness: this.baseVignette, offset: 0.3 });
     effects.push(this.vignette);
     if (this.quality !== "balanced") {
@@ -195,8 +210,10 @@ export class Stage {
     // a disabled trailing pass in `postprocessing` leaves the output unrouted (black).
     this.menuComposer = new EffectComposer(this.renderer, { frameBufferType: THREE.HalfFloatType });
     this.menuComposer.addPass(new RenderPass(this.scene, this.camera));
+    this.menuGrade = new GradeEffect();
     this.menuComposer.addPass(new EffectPass(
       this.camera,
+      this.menuGrade,
       new VignetteEffect({ darkness: this.baseVignette, offset: 0.3 }),
       new HueSaturationEffect({ saturation: 0.1 }),
       new BrightnessContrastEffect({ contrast: 0.06 }),
@@ -205,6 +222,18 @@ export class Stage {
     const h = window.innerHeight;
     this.composer.setSize(w, h);
     this.menuComposer.setSize(w, h);
+  }
+
+  /**
+   * Push the whole image toward a mood colour: sandstorm ochre, ion-storm blue, victory warmth,
+   * defeat drain. Applied to both chains so a menu opened mid-battle keeps the same look.
+   */
+  setMoodTint(color: THREE.Color, amount: number, saturation = 0): void {
+    for (const grade of [this.grade, this.menuGrade]) {
+      if (!grade) continue;
+      grade.setTint(color, amount);
+      grade.saturation = saturation;
+    }
   }
 
   /** Switch graphics tier (wired to the renderScale setting; ?lowfx forces performance). */

@@ -152,4 +152,100 @@ export async function sampleCanvas(page) {
   });
 }
 
+
+// ---------------------------------------------------------------------------------------------
+// OBJECTIVE IMAGE GATE.
+//
+// "Does this look good" is not answerable by a test, but several specific ways a frame looks BAD
+// are measurable, and those are exactly the ones that survive a screenshot review because the eye
+// adapts to them: a washed-out low-contrast image, a frame that is really one colour with the
+// saturation turned up, blown highlights, crushed blacks. Reading the numbers stops a round from
+// being judged on whether the last change felt like an improvement.
+//
+// Sampled off the live WebGL canvas (preserveDrawingBuffer is on) rather than by decoding a PNG,
+// so it needs no image library. UI panels are excluded by sampling only the central region --
+// the HUD is dark chrome and would otherwise dominate every reading.
+export async function imageStats(page) {
+  return page.evaluate(() => {
+    const canvas = document.getElementById("game");
+    if (!(canvas instanceof HTMLCanvasElement)) return { ok: false, reason: "missing canvas" };
+    const w = 320;
+    const h = 180;
+    const scratch = document.createElement("canvas");
+    scratch.width = w;
+    scratch.height = h;
+    const ctx = scratch.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return { ok: false, reason: "no 2d context" };
+    // Central 76% of the frame: skips the HUD rails top/bottom and the side panels.
+    const inset = 0.12;
+    ctx.drawImage(canvas, canvas.width * inset, canvas.height * inset, canvas.width * (1 - inset * 2), canvas.height * (1 - inset * 2), 0, 0, w, h);
+    const data = ctx.getImageData(0, 0, w, h).data;
+
+    const lums = [];
+    const hues = new Array(36).fill(0);
+    let satSum = 0;
+    let blown = 0;
+    let crushed = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i] / 255;
+      const g = data[i + 1] / 255;
+      const b = data[i + 2] / 255;
+      const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      lums.push(l);
+      if (l > 0.97) blown += 1;
+      if (l < 0.02) crushed += 1;
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const delta = max - min;
+      satSum += max === 0 ? 0 : delta / max;
+      if (delta > 0.04) {
+        let hue;
+        if (max === r) hue = ((g - b) / delta) % 6;
+        else if (max === g) hue = (b - r) / delta + 2;
+        else hue = (r - g) / delta + 4;
+        hue = ((hue * 60) + 360) % 360;
+        hues[Math.floor(hue / 10)] += 1;
+      }
+    }
+    const n = lums.length;
+    lums.sort((a, b) => a - b);
+    const mean = lums.reduce((a, b) => a + b, 0) / n;
+    const variance = lums.reduce((a, l) => a + (l - mean) * (l - mean), 0) / n;
+    const pct = (q) => lums[Math.min(n - 1, Math.floor(q * n))];
+    const colored = hues.reduce((a, b) => a + b, 0);
+    const dominantHue = Math.max(...hues);
+
+    return {
+      ok: true,
+      // Mean brightness. Very low = murky, very high = washed.
+      meanLuma: +mean.toFixed(4),
+      // Spread of brightness. THE flatness signal: a low value is a frame with no light and shade.
+      contrast: +Math.sqrt(variance).toFixed(4),
+      // Dynamic range actually used, ignoring outliers.
+      range: +(pct(0.95) - pct(0.05)).toFixed(4),
+      meanSat: +(satSum / n).toFixed(4),
+      // Share of coloured pixels sitting in ONE 10-degree hue bucket. High = the frame is a single
+      // colour wash, which is how each of these maps currently reads.
+      hueConcentration: colored ? +(dominantHue / colored).toFixed(4) : 0,
+      blownPct: +(blown / n).toFixed(4),
+      crushedPct: +(crushed / n).toFixed(4),
+    };
+  });
+}
+
+// Score a stats reading against the thresholds, returning the list of failures (empty = pass).
+// Thresholds are deliberately loose -- they catch "this frame is broken", not "this frame is
+// beautiful", and a gate that fires on taste would just get ignored.
+export function gradeImageStats(stats, label = "frame") {
+  const bad = [];
+  if (!stats?.ok) return [`${label}: ${stats?.reason ?? "no stats"}`];
+  if (stats.meanLuma < 0.06) bad.push(`${label}: MURKY (meanLuma ${stats.meanLuma})`);
+  if (stats.meanLuma > 0.80) bad.push(`${label}: WASHED (meanLuma ${stats.meanLuma})`);
+  if (stats.contrast < 0.10) bad.push(`${label}: FLAT (contrast ${stats.contrast})`);
+  if (stats.range < 0.22) bad.push(`${label}: NARROW RANGE (${stats.range})`);
+  if (stats.hueConcentration > 0.72) bad.push(`${label}: MONOCHROME (${Math.round(stats.hueConcentration * 100)}% of colour in one hue)`);
+  if (stats.blownPct > 0.06) bad.push(`${label}: BLOWN (${Math.round(stats.blownPct * 100)}% clipped white)`);
+  return bad;
+}
+
 export { delay };

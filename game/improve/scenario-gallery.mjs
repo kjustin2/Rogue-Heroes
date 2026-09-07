@@ -11,13 +11,14 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
-import { startServer, findChromium, sampleCanvas, delay } from "./lib/harness.mjs";
+import { startServer, findChromium, sampleCanvas, imageStats, gradeImageStats, delay } from "./lib/harness.mjs";
 
 const PORT = Number(process.env.IMPROVE_PORT ?? 5181);
 const outDir = join(process.cwd(), "improve", "scenario-gallery");
 mkdirSync(outDir, { recursive: true });
 
 const results = [];
+const imageFlags = [];
 
 const main = async () => {
   const { server, url } = await startServer(PORT);
@@ -54,11 +55,22 @@ const main = async () => {
       const file = `${sc.id}.png`;
       await page.screenshot({ path: join(outDir, file) });
       const canvas = await sampleCanvas(page).catch(() => ({ ok: false }));
-      results.push({ ...sc, ...probe, canvasLit: canvas.ok, file });
-      console.log(`  ${probe.ok ? "✓" : "✗"} ${sc.id.padEnd(14)} ${probe.map.padEnd(10)} ${probe.phase.padEnd(8)} P${probe.players}/E${probe.enemies} -> ${file}`);
+      const stats = await imageStats(page).catch((e) => ({ ok: false, reason: String(e) }));
+      const flags = gradeImageStats(stats, sc.id);
+      imageFlags.push(...flags);
+      results.push({ ...sc, ...probe, canvasLit: canvas.ok, stats, flags, file });
+      const readout = stats.ok ? `L${stats.meanLuma} C${stats.contrast} R${stats.range} S${stats.meanSat} H${stats.hueConcentration}` : "no stats";
+      console.log(`  ${probe.ok ? "✓" : "✗"} ${sc.id.padEnd(14)} ${probe.map.padEnd(10)} ${probe.phase.padEnd(8)} P${probe.players}/E${probe.enemies}  ${readout}`);
+      for (const flag of flags) console.log(`      ! ${flag}`);
     }
 
-    writeFileSync(join(outDir, "index.json"), JSON.stringify({ count: results.length, consoleErrors, results }, null, 2));
+    writeFileSync(join(outDir, "index.json"), JSON.stringify({ count: results.length, consoleErrors, imageFlags, results }, null, 2));
+    if (imageFlags.length) {
+      console.log("\nImage gate: " + imageFlags.length + " flag(s)");
+      for (const flag of imageFlags) console.log("  ! " + flag);
+    } else {
+      console.log("\nImage gate: clean");
+    }
     if (consoleErrors.length) throw new Error(`Console errors:\n${consoleErrors.slice(0, 8).join("\n")}`);
     console.log(`\nGallery: ${results.length} scenarios -> ${outDir}`);
   } finally {

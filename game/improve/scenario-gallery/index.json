@@ -1,6 +1,14 @@
 {
   "count": 9,
   "consoleErrors": [],
+  "imageFlags": [
+    "roster: MONOCHROME (72% of colour in one hue)",
+    "firefight: FLAT (contrast 0.0919)",
+    "high-ground: FLAT (contrast 0.0657)",
+    "high-ground: NARROW RANGE (0.1866)",
+    "high-ground: MONOCHROME (85% of colour in one hue)",
+    "stress: FLAT (contrast 0.0956)"
+  ],
   "results": [
     {
       "id": "roster",
@@ -11,8 +19,21 @@
       "phase": "command",
       "players": 12,
       "enemies": 0,
-      "entities": 62,
+      "entities": 76,
       "canvasLit": true,
+      "stats": {
+        "ok": true,
+        "meanLuma": 0.1634,
+        "contrast": 0.1065,
+        "range": 0.3021,
+        "meanSat": 0.2475,
+        "hueConcentration": 0.7212,
+        "blownPct": 0,
+        "crushedPct": 0.0042
+      },
+      "flags": [
+        "roster: MONOCHROME (72% of colour in one hue)"
+      ],
       "file": "roster.png"
     },
     {
@@ -24,8 +45,19 @@
       "phase": "command",
       "players": 3,
       "enemies": 1,
-      "entities": 44,
+      "entities": 54,
       "canvasLit": true,
+      "stats": {
+        "ok": true,
+        "meanLuma": 0.2279,
+        "contrast": 0.1058,
+        "range": 0.355,
+        "meanSat": 0.5441,
+        "hueConcentration": 0.6413,
+        "blownPct": 0,
+        "crushedPct": 0
+      },
+      "flags": [],
       "file": "siege.png"
     },
     {
@@ -37,8 +69,21 @@
       "phase": "command",
       "players": 3,
       "enemies": 3,
-      "entities": 46,
+      "entities": 58,
       "canvasLit": true,
+      "stats": {
+        "ok": true,
+        "meanLuma": 0.2206,
+        "contrast": 0.0919,
+        "range": 0.276,
+        "meanSat": 0.3857,
+        "hueConcentration": 0.2926,
+        "blownPct": 0.0002,
+        "crushedPct": 0
+      },
+      "flags": [
+        "firefight: FLAT (contrast 0.0919)"
+      ],
       "file": "firefight.png"
     },
     {
@@ -50,8 +95,19 @@
       "phase": "command",
       "players": 1,
       "enemies": 1,
-      "entities": 53,
+      "entities": 67,
       "canvasLit": true,
+      "stats": {
+        "ok": true,
+        "meanLuma": 0.1534,
+        "contrast": 0.1236,
+        "range": 0.3723,
+        "meanSat": 0.2363,
+        "hueConcentration": 0.3703,
+        "blownPct": 0,
+        "crushedPct": 0.011
+      },
+      "flags": [],
       "file": "grenade-arc.png"
     },
     {
@@ -63,8 +119,23 @@
       "phase": "command",
       "players": 2,
       "enemies": 3,
-      "entities": 31,
+      "entities": 47,
       "canvasLit": true,
+      "stats": {
+        "ok": true,
+        "meanLuma": 0.452,
+        "contrast": 0.0657,
+        "range": 0.1866,
+        "meanSat": 0.2739,
+        "hueConcentration": 0.8544,
+        "blownPct": 0,
+        "crushedPct": 0
+      },
+      "flags": [
+        "high-ground: FLAT (contrast 0.0657)",
+        "high-ground: NARROW RANGE (0.1866)",
+        "high-ground: MONOCHROME (85% of colour in one hue)"
+      ],
       "file": "high-ground.png"
     },
     {
@@ -76,8 +147,19 @@
       "phase": "command",
       "players": 1,
       "enemies": 3,
-      "entities": 43,
+      "entities": 65,
       "canvasLit": true,
+      "stats": {
+        "ok": true,
+        "meanLuma": 0.2976,
+        "contrast": 0.1058,
+        "range": 0.2363,
+        "meanSat": 0.5248,
+        "hueConcentration": 0.6691,
+        "blownPct": 0.0003,
+        "crushedPct": 0
+      },
+      "flags": [],
       "file": "base-defense.png"
     },
     {
@@ -89,8 +171,21 @@
       "phase": "command",
       "players": 20,
       "enemies": 20,
-      "entities": 88,
+      "entities": 110,
       "canvasLit": true,
+      "stats": {
+        "ok": true,
+        "meanLuma": 0.2918,
+        "contrast": 0.0956,
+        "range": 0.2341,
+        "meanSat": 0.5295,
+        "hueConcentration": 0.6857,
+        "blownPct": 0.0001,
+        "crushedPct": 0
+      },
+      "flags": [
+        "stress: FLAT (contrast 0.0956)"
+      ],
       "file": "stress.png"
     },
     {
@@ -102,8 +197,19 @@
       "phase": "victory",
       "players": 3,
       "enemies": 0,
-      "entities": 53,
+      "entities": 67,
       "canvasLit": true,
+      "stats": {
+        "ok": true,
+        "meanLuma": 0.136,
+        "contrast": 0.1135,
+        "range": 0.2925,
+        "meanSat": 0.1999,
+        "hueConcentration": 0.4951,
+        "blownPct": 0,
+        "crushedPct": 0.0352
+      },
+      "flags": [],
       "file": "victory.png"
     },
     {
@@ -115,8 +221,19 @@
       "phase": "defeat",
       "players": 0,
       "enemies": 3,
-      "entities": 53,
+      "entities": 67,
       "canvasLit": true,
+      "stats": {
+        "ok": true,
+        "meanLuma": 0.143,
+        "contrast": 0.1127,
+        "range": 0.3376,
+        "meanSat": 0.1703,
+        "hueConcentration": 0.6264,
+        "blownPct": 0,
+        "crushedPct": 0.014
+      },
+      "flags": [],
       "file": "defeat.png"
     }
   ]
