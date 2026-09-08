@@ -63,6 +63,7 @@ export class WorldRenderer {
   // Per-actor firing recoil [0..1], rebuilt each frame from freshly-launched projectiles so a
   // unit's weapon kicks back (and its body rocks) the instant it shoots.
   private readonly recoilByActor = new Map<string, number>();
+  private readonly attackPhaseByActor = new Map<string, number>();
   private readonly ring: THREE.Mesh;
   private readonly selectionDisc: THREE.Mesh;
   private readonly selectionBeacon: THREE.Mesh;
@@ -235,6 +236,7 @@ export class WorldRenderer {
       }
     }
     this.computeRecoil(sim.projectiles);
+    this.computeAttackPhases(sim);
     for (const entity of sim.entities) {
       // A unit carried by an air transport is aboard/hidden — don't draw it (nor make it clickable).
       if (entity.carriedById) {
@@ -529,8 +531,12 @@ export class WorldRenderer {
     const out: { limb: string; rotX: number; posY: number; posZ: number }[] = [];
     group.traverse((node) => {
       const limb = node.userData?.limb as string | undefined;
-      if (!limb) return;
-      out.push({ limb, rotX: node.rotation.x, posY: node.position.y, posZ: node.position.z });
+      // Weapons are not limbs (they do not swing from a joint) but they ARE animated, by the attack
+      // choreography, and a stopped attack pose is just as invisible in a still as a stopped walk.
+      const partId = node.userData?.partId as string | undefined;
+      const label = limb ?? (partId === "rifle" || partId === "cannon" || partId === "gun" ? "weapon" : undefined);
+      if (!label) return;
+      out.push({ limb: label, rotX: node.rotation.x, posY: node.position.y, posZ: node.position.z });
     });
     return out;
   }
@@ -901,6 +907,20 @@ export class WorldRenderer {
 
   // Each gun/cannon round, on its first ~0.16s of flight, drives a recoil punch on the unit that
   // fired it. Grenades are thrown (no recoil). A rapid-firing unit gets a fresh punch per round.
+  // Which actors are mid-attack, and how far through. Read from the order itself so the pose can
+  // never drift out of step with the shot it belongs to.
+  private computeAttackPhases(sim: TacticalSim): void {
+    this.attackPhaseByActor.clear();
+    if (sim.phase !== "resolve") return;
+    for (const order of sim.orders) {
+      if (order.done) continue;
+      if (order.kind !== "shoot" && order.kind !== "melee" && order.kind !== "grenade") continue;
+      const duration = order.duration > 0 ? order.duration : 1;
+      const phase = Math.max(0, Math.min(1, order.elapsed / duration));
+      this.attackPhaseByActor.set(order.actorId, phase);
+    }
+  }
+
   private computeRecoil(projectiles: readonly Projectile[]): void {
     this.recoilByActor.clear();
     for (const projectile of projectiles) {
@@ -940,6 +960,8 @@ export class WorldRenderer {
     const walkWeight = ((group.userData.walkWeight as number | undefined) ?? 0) + ((moving ? 1 : 0) - ((group.userData.walkWeight as number | undefined) ?? 0)) * 0.2;
     group.userData.walkWeight = walkWeight;
     group.userData.recoil = this.recoilByActor.get(entity.id) ?? 0;
+    group.userData.attackPhase = this.attackPhaseByActor.get(entity.id);
+    group.userData.weaponFamily = weaponFamily(entity.kind);
     // Rolling vehicles kick up a dust wake behind their tracks.
     if (moving && isVehicleKind(entity.kind)) {
       const lastDust = (group.userData.lastDustAt as number | undefined) ?? 0;
@@ -2134,6 +2156,21 @@ export class WorldRenderer {
       mesh.rotation.x = (baseRotation ? baseRotation.x : 0) + swing;
       mesh.position.z = basePosition.z + reach * Math.sin(swing);
       mesh.position.y = pivotY - reach * Math.cos(swing) + lift;
+    }
+
+    // Attack choreography: wind up, contact, follow through. Applied BEFORE recoil so the recoil
+    // punch lands on top of the pose as an accent rather than replacing it.
+    const attackPhase = parent.userData.attackPhase as number | undefined;
+    if (attackPhase !== undefined && part.hp > 0 && entity.status.alive) {
+      const pose = attackPose((parent.userData.weaponFamily as WeaponFamily) ?? "rifle", attackPhase);
+      if (part.id === "rifle" || part.id === "cannon" || part.id === "gun") {
+        mesh.position.z -= pose.draw;
+        mesh.rotation.x -= pose.lift;
+      } else if (part.role === "core") {
+        mesh.rotation.x += pose.brace * 0.5;
+      } else if (limb === "arm-l" || limb === "arm-r") {
+        mesh.rotation.x -= pose.lift * 0.4;
+      }
     }
 
     // Firing recoil: the weapon kicks back toward the body and tips its muzzle up, and the
@@ -3527,6 +3564,70 @@ const INFANTRY_BUILDS: Partial<Record<EntityKind, Partial<InfantryBuild>>> = {
 };
 
 const DEFAULT_BUILD: InfantryBuild = { girth: 1, stature: 1, lean: 0 };
+
+// ATTACK CHOREOGRAPHY.
+//
+// Firing used to be one thing: a recoil punch on the frame the round left the barrel. That reads as
+// a unit twitching, not as a unit shooting, because the two halves that sell a shot are missing --
+// the ANTICIPATION before it (settling, bracing, raising the weapon) and the FOLLOW-THROUGH after
+// (absorbing it, recovering aim). A shot with no wind-up also gives the player nothing to read: by
+// the time the recoil happens the round has already been resolved.
+//
+// The phase is driven by the ORDER's own elapsed/duration, never by a clock of its own. Combat owns
+// durations; animation owns pose. That means an attack animation can never desync from the shot it
+// belongs to, and slowing the action pace slows the choreography with it for free.
+export type WeaponFamily = "rifle" | "burst" | "marksman" | "cannon" | "launcher" | "flamer" | "melee";
+
+export function weaponFamily(kind: EntityKind): WeaponFamily {
+  if (kind === "striker") return "melee";
+  if (kind === "heavy") return "burst";
+  if (kind === "sniper") return "marksman";
+  if (kind === "grenadier" || kind === "mortar") return "launcher";
+  if (kind === "flamer") return "flamer";
+  if (kind === "tank" || kind === "artillery" || kind === "exturret") return "cannon";
+  return "rifle";
+}
+
+/** Where in its swing/wind-up a family is at `phase` (0..1 across the order). */
+export interface AttackPose {
+  /** Weapon pull toward the body (negative = thrust forward). */
+  draw: number;
+  /** Weapon muzzle pitch, radians. Positive lifts the muzzle. */
+  lift: number;
+  /** Torso lean into the shot, radians. */
+  brace: number;
+}
+
+// Each family is authored as anticipation -> contact -> recovery around its own contact point.
+// A marksman settles for a long time and barely moves; a melee striker winds all the way back and
+// commits through the target; a launcher hoists the tube before it thumps.
+const FAMILY_SHAPE: Record<WeaponFamily, { contact: number; draw: number; lift: number; brace: number }> = {
+  rifle: { contact: 0.42, draw: 0.05, lift: 0.1, brace: 0.06 },
+  burst: { contact: 0.34, draw: 0.07, lift: 0.06, brace: 0.11 },
+  marksman: { contact: 0.62, draw: 0.02, lift: 0.03, brace: 0.03 },
+  cannon: { contact: 0.46, draw: 0.03, lift: 0.05, brace: 0.04 },
+  launcher: { contact: 0.44, draw: 0.09, lift: 0.34, brace: 0.09 },
+  flamer: { contact: 0.3, draw: 0.04, lift: 0.05, brace: 0.08 },
+  melee: { contact: 0.5, draw: 0.34, lift: 0.5, brace: 0.3 },
+};
+
+export function attackPose(family: WeaponFamily, phase: number): AttackPose {
+  const shape = FAMILY_SHAPE[family];
+  const t = Math.max(0, Math.min(1, phase));
+  if (t <= shape.contact) {
+    // Wind up. Eased so the weapon drifts back slowly and arrives at contact, rather than snapping.
+    const w = shape.contact <= 0 ? 1 : t / shape.contact;
+    const eased = w * w;
+    return { draw: shape.draw * eased, lift: shape.lift * eased, brace: shape.brace * eased };
+  }
+  // Follow through and settle. This has to START at the wind-up's peak, or the weapon jumps on the
+  // exact frame the shot fires -- a visible pop, which the continuity test caught on first run.
+  // A decaying cosine leaves the peak continuously, crosses rest, overshoots slightly the other
+  // way, and returns to zero: the shape of something absorbing a shot rather than easing off it.
+  const w = (t - shape.contact) / Math.max(0.05, 1 - shape.contact);
+  const settle = (1 - w) * Math.cos(w * Math.PI * 1.5);
+  return { draw: shape.draw * settle, lift: shape.lift * settle, brace: shape.brace * settle };
+}
 
 // THE HARD-EDGE PROBLEM.
 //

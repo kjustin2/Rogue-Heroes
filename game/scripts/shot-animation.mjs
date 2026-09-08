@@ -8,7 +8,9 @@
 // undefined and the legs went rigid.
 //
 // This measures the pose over a real move: the limbs must actually swing, the two legs must be
-// out of phase with each other, and the swing has to track DISTANCE rather than wall time.
+// out of phase with each other, and the swing has to track DISTANCE rather than wall time. It then
+// does the same for a shot: the weapon has to move while firing, or the unit twitches instead of
+// shooting and looks identical in every still.
 // Out: shots/animation/*.png
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -100,8 +102,62 @@ try {
 
   console.log(`  travelled ${travelled.toFixed(1)}u · leg swing ${legSwing.toFixed(2)} rad · arm swing ${spread(armR).toFixed(2)} rad · foot lift ${spread(footY).toFixed(3)}`);
 
+  // ---- Attack choreography, same idea: a weapon that never moves while firing is a unit that
+  // twitches rather than shoots, and it looks identical in every screenshot.
+  const shooterId = await page.evaluate(() => {
+    const sim = window.__rht.sim;
+    const shooter = sim.entities.find((e) => e.team === "player" && e.kind === "soldier");
+    const foe = sim.debugSpawn("soldier", "enemy", { x: (shooter?.position.x ?? 0) + 8, z: shooter?.position.z ?? 0 });
+    sim.select(shooter.id);
+    sim.queueShoot(foe.id);
+    return shooter.id;
+  });
+
+  // The weapon at rest, before the turn resolves. Everything below is measured against this.
+  const rest = await page.evaluate((id) => window.__rht.limbPose(id).filter((p) => p.limb === "weapon")[0], shooterId);
+  if (!rest) fail("no weapon mesh on the shooter");
+
+  await page.evaluate(() => window.__rht.endTurn());
+
+  const weapon = [];
+  for (let i = 0; i < 40; i += 1) {
+    const frame = await page.evaluate((id) => {
+      const sim = window.__rht.sim;
+      const order = sim.orders.find((o) => o.actorId === id && o.kind === "shoot");
+      return {
+        phase: sim.phase,
+        // `fired` flips the instant the round leaves the barrel, which is what separates
+        // anticipation from recoil.
+        fired: order ? Boolean(order.fired) : true,
+        pose: window.__rht.limbPose(id).filter((p) => p.limb === "weapon"),
+      };
+    }, shooterId);
+    if (frame.pose.length) weapon.push({ fired: frame.fired, ...frame.pose[0] });
+    if (frame.phase !== "resolve" && i > 6) break;
+    await page.waitForTimeout(60);
+  }
+  await page.screenshot({ path: join(OUT, "fire.png") });
+
+  if (weapon.length < 6) fail(`only ${weapon.length} samples saw a weapon mesh`);
+
+  // THE discriminator. Recoil already moved the weapon before this feature existed, so "the weapon
+  // moved" passes with the choreography torn out -- an earlier version of this check did exactly
+  // that. What only ANTICIPATION can produce is movement BEFORE the round leaves the barrel.
+  const preFire = weapon.filter((w) => !w.fired);
+  if (preFire.length < 2) fail(`only ${preFire.length} samples landed before the shot fired — cannot judge anticipation`);
+  const windUp = Math.max(...preFire.map((w) => Math.abs(w.rotX - rest.rotX) + Math.abs(w.posZ - rest.posZ)));
+  // 0.07 sits deliberately between the two measured states: idle sway alone moves the weapon about
+  // 0.03 from rest, real anticipation about 0.17. A threshold below that band passes with the
+  // choreography torn out, which is exactly what the first version of this check did.
+  if (windUp < 0.07) {
+    fail(`no anticipation: weapon deviated ${windUp.toFixed(4)} from rest before firing — it twitches on contact instead of winding up`);
+  }
+
+  const swing = spread(weapon.map((w) => w.rotX));
+  console.log(`  weapon wind-up ${windUp.toFixed(3)} before the shot · total pitch ${swing.toFixed(3)} rad`);
+
   if (errors.length) fail(`console errors:\n${errors.slice(0, 6).join("\n")}`);
-  console.log("Animation smoke passed: limbs swing, legs oppose, feet lift.");
+  console.log("Animation smoke passed: limbs swing, legs oppose, feet lift, weapons wind up and follow through.");
 } finally {
   await close();
 }
