@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createHeavy, createScout, createSoldier, createStriker, createTank, type CombatEntity } from "./damageModel";
 import { TacticalSim } from "./sim";
-import { ARENA_BOUNDS, DEFAULT_TERRAIN, pointInWater, setActiveTerrain } from "./terrain";
+import { ARENA_BOUNDS, DEFAULT_TERRAIN, nearestDryPoint, pointInWater, setActiveTerrain } from "./terrain";
 import { mapDef } from "./maps";
 
 // A seeded chaos bot: it fires RANDOM LEGAL orders at the sim for many turns and checks invariant
@@ -84,7 +84,15 @@ function runChaos(seed: number, mapId?: string): string[] {
     return make.map((f, i) => f(`${team}-${i}`, `${team}${i}`, team, { x: sign * (6 + i * 1.5), z: (i - 2) * 2.4 }));
   };
   const sim = new TacticalSim([...roster("player", -1), ...roster("enemy", 1)]);
-  if (mapId) setActiveTerrain(mapDef(mapId).terrain); // exercise this map's water/bridges/blocks
+  if (mapId) {
+    setActiveTerrain(mapDef(mapId).terrain); // exercise this map's water/bridges/blocks
+    // The roster is laid out at fixed coordinates before the map's terrain is active, so on a map
+    // whose channels happen to run through those coordinates it would start units standing in
+    // water -- a state the movement rules make unreachable, so the oracle would be reporting the
+    // test's own setup rather than a sim bug. Real spawns go through nearestDryPoint for the same
+    // reason; entities built directly here have to do it themselves.
+    for (const e of sim.entities) if (!e.flying) e.position = nearestDryPoint(e.position);
+  }
   sim.economy.set("player", 4000);
   sim.economy.set("enemy", 4000);
 

@@ -256,7 +256,7 @@ const RAW_MAPS: readonly MapDef[] = [
     blurb: "Sun-baked flats walled in by two towering rock ranges.",
     feel: "Open desert basin between great mountain ranges — long sightlines reward snipers and armor; climb the slopes for overwatch.",
     seed: 0x44555354,
-    theme: { ground: 0x9c6f3e, groundAccent: 0xc98f4a, grid: 0xd6ad6d, fog: 0x8fa6b8, fogDensity: 0.009, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x7fa8c9, ambient: { kind: "dust", color: 0xe6c98a, density: 1.1 } },
+    theme: { ground: 0x7a5530, groundAccent: 0xd9a05a, grid: 0xd6ad6d, fog: 0x8fa6b8, fogDensity: 0.009, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x7fa8c9, ambient: { kind: "dust", color: 0xe6c98a, density: 1.1 } },
     terrain: {
       bounds: { minX: -35, maxX: 35, minZ: -22, maxZ: 22 }, // LARGE: wide basin, long armor/sniper lanes
       maxHeight: 3.6,
@@ -313,10 +313,10 @@ const RAW_MAPS: readonly MapDef[] = [
     blurb: "A cramped foundry of steel and shipping crates.",
     feel: "Tight industrial maze — dense cover and chokepoints favor infantry brawls.",
     seed: 0x49524f4e,
-    theme: { ground: 0x39404a, groundAccent: 0x6b7482, grid: 0x6f7c8c, fog: 0x53412f, fogDensity: 0.014, playerLight: 0x5fd7ff, enemyLight: 0xff6d57, sky: 0x8a5a32, ambient: { kind: "embers", color: 0xff9a4a, density: 0.85 } },
+    theme: { ground: 0x272c34, groundAccent: 0x7d8794, grid: 0x6f7c8c, fog: 0x53412f, fogDensity: 0.014, playerLight: 0x5fd7ff, enemyLight: 0xff6d57, sky: 0x8a5a32, ambient: { kind: "embers", color: 0xff9a4a, density: 0.85 } },
     terrain: {
       bounds: { minX: -24, maxX: 24, minZ: -15, maxZ: 15 },
-      maxHeight: 1.3,
+      maxHeight: 2.6,
       blocks: [
         { minX: -3.5, maxX: 3.5, minZ: -3.5, maxZ: 3.5, height: 0.6 }, // central gantry platform
         { minX: -13, maxX: -7, minZ: 4, maxZ: 9, height: 0.7 },        // west catwalk
@@ -326,6 +326,12 @@ const RAW_MAPS: readonly MapDef[] = [
         { minX: -10, maxX: -8, minZ: -1.3, maxZ: 1.3, height: 0.65 },  // west ramp
         { minX: 8, maxX: 10, minZ: -1.3, maxZ: 1.3, height: 0.65 },    // east ramp
         { minX: -8, maxX: 8, minZ: -1.3, maxZ: 1.3, height: 1.25 },    // causeway deck
+        // Furnace stacks: sheer, unclimbable, and the tallest things on the map. On a small map
+        // vertical is the only way to add interest without adding ground to walk across.
+        { minX: -17, maxX: -14, minZ: -11, maxZ: -8, height: 2.4 },    // west furnace stack
+        { minX: 14, maxX: 17, minZ: 8, maxZ: 11, height: 2.4 },        // east furnace stack (mirror)
+        { minX: -12, maxX: -9.5, minZ: 9, maxZ: 12, height: 1.9 },     // west slag heap
+        { minX: 9.5, maxX: 12, minZ: -12, maxZ: -9, height: 1.9 },     // east slag heap (mirror)
       ],
     },
     playerBase: { x: -20, z: 0 },
@@ -359,7 +365,7 @@ const RAW_MAPS: readonly MapDef[] = [
     blurb: "A green valley walled by forested mountains around a central hill.",
     feel: "Towering wooded mountain flanks and a true high-ground center — hold the hill, watch the slopes.",
     seed: 0x56455244,
-    theme: { ground: 0x4a6b34, groundAccent: 0x86a03f, grid: 0x86a85f, fog: 0x93b0c4, fogDensity: 0.009, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x86b2d4, ambient: { kind: "pollen", color: 0xd8f0a0, density: 1 } },
+    theme: { ground: 0x35502a, groundAccent: 0x93b04a, grid: 0x86a85f, fog: 0x93b0c4, fogDensity: 0.009, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x86b2d4, ambient: { kind: "pollen", color: 0xd8f0a0, density: 1 } },
     terrain: {
       bounds: { minX: -28, maxX: 28, minZ: -19, maxZ: 19 },
       maxHeight: 3.6,
@@ -404,14 +410,23 @@ const RAW_MAPS: readonly MapDef[] = [
     blurb: "A narrow land bridge between frozen basins.",
     feel: "Linear and funneled — a single icy causeway forces brutal head-on fights.",
     seed: 0x46524f5a,
-    theme: { ground: 0x8fa9c2, groundAccent: 0xc2d8e8, grid: 0xbfd6e6, fog: 0xc9b294, fogDensity: 0.011, playerLight: 0x7fd7ff, enemyLight: 0xff8f7f, sky: 0xd8b58a, ambient: { kind: "snow", color: 0xeaf4ff, density: 1.2 } },
+    theme: { ground: 0x64798f, groundAccent: 0xe2eef6, grid: 0xbfd6e6, fog: 0xc9b294, fogDensity: 0.011, playerLight: 0x7fd7ff, enemyLight: 0xff8f7f, sky: 0xd8b58a, ambient: { kind: "snow", color: 0xeaf4ff, density: 1.2 } },
     terrain: {
       bounds: { minX: -37, maxX: 37, minZ: -19, maxZ: 19 }, // LARGE: long land bridge, deep flanks
-      maxHeight: 1.4,
+      maxHeight: 2.8,
       // A raised central causeway funnels the fight; bases sit on the flat outer ground.
       blocks: [
         { minX: -18, maxX: 18, minZ: -5, maxZ: 5, height: 0.5 },   // central land bridge
         { minX: -3, maxX: 3, minZ: -3, maxZ: 3, height: 1.0 },     // contested high point
+        // Pressure ridges: the ice has heaved up along the channel banks. They give the flanks
+        // cover and a silhouette, and they are what casts shadow across an otherwise white field.
+        { minX: -16, maxX: -9, minZ: 5.2, maxZ: 7, height: 0.8 },   // north bank ridge (west)
+        { minX: 9, maxX: 16, minZ: 5.2, maxZ: 7, height: 0.8 },     // north bank ridge (east)
+        { minX: -16, maxX: -9, minZ: -7, maxZ: -5.2, height: 0.8 }, // south bank ridge (west)
+        { minX: 9, maxX: 16, minZ: -7, maxZ: -5.2, height: 0.8 },   // south bank ridge (east)
+        // Grounded bergs out on the flanks: sheer, unclimbable, and tall enough to block a lane.
+        { minX: -25, maxX: -21, minZ: 10, maxZ: 15, height: 2.4 },  // west berg
+        { minX: 21, maxX: 25, minZ: -15, maxZ: -10, height: 2.4 },  // east berg (mirror)
       ],
       // Frozen channels flood the flanks: you cross the middle on the land bridge, or take one of
       // the timber bridges out wide. The centre lane is always open, so there's never a soft-lock.
@@ -452,17 +467,37 @@ const RAW_MAPS: readonly MapDef[] = [
     blurb: "Toppled colonnades over stepped stone mesas.",
     feel: "Vertical ruins — climb the mesas and fight among broken pillars and cliffs.",
     seed: 0x4b415241,
-    theme: { ground: 0x8a6a3c, groundAccent: 0xb8843e, grid: 0xc6a567, fog: 0x6a5f86, fogDensity: 0.012, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x6e5f96, ambient: { kind: "ash", color: 0xcbb083, density: 0.9 } },
+    theme: { ground: 0x664d2c, groundAccent: 0xc79149, grid: 0xc6a567, fog: 0x6a5f86, fogDensity: 0.012, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x6e5f96, ambient: { kind: "ash", color: 0xcbb083, density: 0.9 } },
     terrain: {
       bounds: { minX: -26, maxX: 26, minZ: -18, maxZ: 18 },
-      maxHeight: 2.1,
+      maxHeight: 3.6,
       blocks: [
         { minX: -4, maxX: 4, minZ: -3.5, maxZ: 3.5, height: 0.8 },   // central dais (lower step)
         { minX: -3, maxX: 3, minZ: -2.5, maxZ: 2.5, height: 1.5 },   // toppled altar (stacked)
         { minX: -22, maxX: -12, minZ: 6, maxZ: 14, height: 0.8 },    // NW stone mesa (lower)
-        { minX: -20, maxX: -14, minZ: 8, maxZ: 13, height: 1.6 },    // NW stone mesa (upper)
+        { minX: -20, maxX: -14, minZ: 8, maxZ: 13, height: 1.6 },    // NW stone mesa (mid)
+        { minX: -19, maxX: -16, minZ: 9, maxZ: 12, height: 2.4 },    // NW stone mesa (crown)
         { minX: 12, maxX: 22, minZ: -14, maxZ: -6, height: 0.8 },    // SE stone mesa (lower, mirror)
-        { minX: 14, maxX: 20, minZ: -13, maxZ: -8, height: 1.6 },    // SE stone mesa (upper)
+        { minX: 14, maxX: 20, minZ: -13, maxZ: -8, height: 1.6 },    // SE stone mesa (mid)
+        { minX: 16, maxX: 19, minZ: -12, maxZ: -9, height: 2.4 },    // SE stone mesa (crown)
+        // Tower stumps: two stacked steps in one jump, so they read as sheer ruin walls rather
+        // than climbable steps. They frame the centre and break the long straight shot.
+        { minX: -9, maxX: -6.5, minZ: -14, maxZ: -10, height: 3.2 }, // west tower stump
+        { minX: 6.5, maxX: 9, minZ: 10, maxZ: 14, height: 3.2 },     // east tower stump (mirror)
+      ],
+      // The old aqueduct burst: a flooded ravine runs down each side of the centre. Ground units
+      // take one of three crossings per side (or go the long way around the ends); flyers overfly.
+      water: [
+        { minX: -11, maxX: -8.5, minZ: -9, maxZ: 9 },   // west ravine
+        { minX: 8.5, maxX: 11, minZ: -9, maxZ: 9 },     // east ravine
+      ],
+      bridges: [
+        { minX: -11, maxX: -8.5, minZ: -1.8, maxZ: 1.8 },   // west centre span
+        { minX: -11, maxX: -8.5, minZ: 5.5, maxZ: 8 },      // west north span
+        { minX: -11, maxX: -8.5, minZ: -8, maxZ: -5.5 },    // west south span
+        { minX: 8.5, maxX: 11, minZ: -1.8, maxZ: 1.8 },     // east centre span
+        { minX: 8.5, maxX: 11, minZ: 5.5, maxZ: 8 },        // east north span
+        { minX: 8.5, maxX: 11, minZ: -8, maxZ: -5.5 },      // east south span
       ],
     },
     playerBase: { x: -22, z: 0 },
@@ -491,16 +526,37 @@ const RAW_MAPS: readonly MapDef[] = [
     blurb: "A symmetric bowl built for honest, balanced duels.",
     feel: "Balanced competitive arena — mirrored cover nests and a sunken central basin.",
     seed: 0x43524f53,
-    theme: { ground: 0x5a6348, groundAccent: 0x8a9152, grid: 0x97a277, fog: 0x94a3b4, fogDensity: 0.010, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x8fa3ba, ambient: { kind: "pollen", color: 0xc6d8a8, density: 0.7 } },
+    theme: { ground: 0x414833, groundAccent: 0x98a15c, grid: 0x97a277, fog: 0x94a3b4, fogDensity: 0.010, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x8fa3ba, ambient: { kind: "pollen", color: 0xc6d8a8, density: 0.7 } },
     terrain: {
       bounds: { minX: -26, maxX: 26, minZ: -17, maxZ: 17 },
-      maxHeight: 1.6,
+      maxHeight: 3.0,
       blocks: [
-        { minX: -3, maxX: 3, minZ: -3, maxZ: 3, height: 0.9 },          // central platform
+        // Central knoll, three steps: holding the top now means holding real high ground rather
+        // than standing on a kerb.
+        { minX: -5, maxX: 5, minZ: -5, maxZ: 5, height: 0.9 },          // knoll base
+        { minX: -3.4, maxX: 3.4, minZ: -3.4, maxZ: 3.4, height: 1.7 },  // knoll mid
+        { minX: -2, maxX: 2, minZ: -2, maxZ: 2, height: 2.5 },          // knoll crown
+        // Each nest gets a second step, so it commands the ground around it and casts a shadow.
         { minX: -16, maxX: -11, minZ: -11, maxZ: -6, height: 0.7 },     // SW nest
+        { minX: -15, maxX: -12, minZ: -10, maxZ: -7, height: 1.5 },     // SW nest crown
         { minX: 11, maxX: 16, minZ: 6, maxZ: 11, height: 0.7 },         // NE nest (mirror)
+        { minX: 12, maxX: 15, minZ: 7, maxZ: 10, height: 1.5 },         // NE nest crown
         { minX: 11, maxX: 16, minZ: -11, maxZ: -6, height: 0.7 },       // SE nest
+        { minX: 12, maxX: 15, minZ: -10, maxZ: -7, height: 1.5 },       // SE nest crown
         { minX: -16, maxX: -11, minZ: 6, maxZ: 11, height: 0.7 },       // NW nest
+        { minX: -15, maxX: -12, minZ: 7, maxZ: 10, height: 1.5 },       // NW nest crown
+      ],
+      // A stream cuts the north and south approaches; the centre stays open past the knoll, so
+      // the fast lane is always the exposed one.
+      water: [
+        { minX: -20, maxX: 20, minZ: 12, maxZ: 16 },    // north stream
+        { minX: -20, maxX: 20, minZ: -16, maxZ: -12 },  // south stream
+      ],
+      bridges: [
+        { minX: -13.5, maxX: -10.5, minZ: 12, maxZ: 16 },   // NW ford
+        { minX: 10.5, maxX: 13.5, minZ: 12, maxZ: 16 },     // NE ford
+        { minX: -13.5, maxX: -10.5, minZ: -16, maxZ: -12 }, // SW ford
+        { minX: 10.5, maxX: 13.5, minZ: -16, maxZ: -12 },   // SE ford
       ],
     },
     playerBase: { x: -22, z: 0 },

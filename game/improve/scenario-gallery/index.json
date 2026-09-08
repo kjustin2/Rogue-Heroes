@@ -2,12 +2,8 @@
   "count": 9,
   "consoleErrors": [],
   "imageFlags": [
-    "roster: MONOCHROME (72% of colour in one hue)",
-    "firefight: FLAT (contrast 0.0919)",
-    "high-ground: FLAT (contrast 0.0657)",
-    "high-ground: NARROW RANGE (0.1866)",
-    "high-ground: MONOCHROME (85% of colour in one hue)",
-    "stress: FLAT (contrast 0.0956)"
+    "high-ground: FLAT (contrast 0.0839)",
+    "stress: FLAT (contrast 0.0973)"
   ],
   "results": [
     {
@@ -23,17 +19,15 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.1634,
-        "contrast": 0.1065,
-        "range": 0.3021,
-        "meanSat": 0.2475,
-        "hueConcentration": 0.7212,
+        "meanLuma": 0.1145,
+        "contrast": 0.1173,
+        "range": 0.3463,
+        "meanSat": 0.4254,
+        "hueConcentration": 0.611,
         "blownPct": 0,
-        "crushedPct": 0.0042
+        "crushedPct": 0.0441
       },
-      "flags": [
-        "roster: MONOCHROME (72% of colour in one hue)"
-      ],
+      "flags": [],
       "file": "roster.png"
     },
     {
@@ -49,13 +43,13 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.2279,
-        "contrast": 0.1058,
-        "range": 0.355,
-        "meanSat": 0.5441,
-        "hueConcentration": 0.6413,
+        "meanLuma": 0.1699,
+        "contrast": 0.1247,
+        "range": 0.4028,
+        "meanSat": 0.5615,
+        "hueConcentration": 0.3773,
         "blownPct": 0,
-        "crushedPct": 0
+        "crushedPct": 0.035
       },
       "flags": [],
       "file": "siege.png"
@@ -73,17 +67,15 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.2206,
-        "contrast": 0.0919,
-        "range": 0.276,
-        "meanSat": 0.3857,
-        "hueConcentration": 0.2926,
-        "blownPct": 0.0002,
-        "crushedPct": 0
+        "meanLuma": 0.1692,
+        "contrast": 0.1076,
+        "range": 0.3316,
+        "meanSat": 0.4248,
+        "hueConcentration": 0.1537,
+        "blownPct": 0.0003,
+        "crushedPct": 0.0129
       },
-      "flags": [
-        "firefight: FLAT (contrast 0.0919)"
-      ],
+      "flags": [],
       "file": "firefight.png"
     },
     {
@@ -99,13 +91,13 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.1534,
-        "contrast": 0.1236,
-        "range": 0.3723,
-        "meanSat": 0.2363,
-        "hueConcentration": 0.3703,
+        "meanLuma": 0.1131,
+        "contrast": 0.1376,
+        "range": 0.4349,
+        "meanSat": 0.4559,
+        "hueConcentration": 0.5031,
         "blownPct": 0,
-        "crushedPct": 0.011
+        "crushedPct": 0.0414
       },
       "flags": [],
       "file": "grenade-arc.png"
@@ -123,18 +115,16 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.452,
-        "contrast": 0.0657,
-        "range": 0.1866,
-        "meanSat": 0.2739,
-        "hueConcentration": 0.8544,
+        "meanLuma": 0.298,
+        "contrast": 0.0839,
+        "range": 0.2352,
+        "meanSat": 0.2078,
+        "hueConcentration": 0.4289,
         "blownPct": 0,
         "crushedPct": 0
       },
       "flags": [
-        "high-ground: FLAT (contrast 0.0657)",
-        "high-ground: NARROW RANGE (0.1866)",
-        "high-ground: MONOCHROME (85% of colour in one hue)"
+        "high-ground: FLAT (contrast 0.0839)"
       ],
       "file": "high-ground.png"
     },
@@ -151,12 +141,12 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.2976,
-        "contrast": 0.1058,
-        "range": 0.2363,
-        "meanSat": 0.5248,
-        "hueConcentration": 0.6691,
-        "blownPct": 0.0003,
+        "meanLuma": 0.2197,
+        "contrast": 0.1119,
+        "range": 0.2387,
+        "meanSat": 0.5321,
+        "hueConcentration": 0.4718,
+        "blownPct": 0.0007,
         "crushedPct": 0
       },
       "flags": [],
@@ -175,16 +165,16 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.2918,
-        "contrast": 0.0956,
-        "range": 0.2341,
-        "meanSat": 0.5295,
-        "hueConcentration": 0.6857,
+        "meanLuma": 0.2123,
+        "contrast": 0.0973,
+        "range": 0.2353,
+        "meanSat": 0.5348,
+        "hueConcentration": 0.481,
         "blownPct": 0.0001,
         "crushedPct": 0
       },
       "flags": [
-        "stress: FLAT (contrast 0.0956)"
+        "stress: FLAT (contrast 0.0973)"
       ],
       "file": "stress.png"
     },
@@ -201,13 +191,13 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.136,
-        "contrast": 0.1135,
-        "range": 0.2925,
-        "meanSat": 0.1999,
-        "hueConcentration": 0.4951,
+        "meanLuma": 0.0905,
+        "contrast": 0.1263,
+        "range": 0.339,
+        "meanSat": 0.4318,
+        "hueConcentration": 0.2945,
         "blownPct": 0,
-        "crushedPct": 0.0352
+        "crushedPct": 0.0613
       },
       "flags": [],
       "file": "victory.png"
@@ -225,13 +215,13 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.143,
-        "contrast": 0.1127,
-        "range": 0.3376,
-        "meanSat": 0.1703,
-        "hueConcentration": 0.6264,
+        "meanLuma": 0.0941,
+        "contrast": 0.1248,
+        "range": 0.4146,
+        "meanSat": 0.392,
+        "hueConcentration": 0.4943,
         "blownPct": 0,
-        "crushedPct": 0.014
+        "crushedPct": 0.0325
       },
       "flags": [],
       "file": "defeat.png"

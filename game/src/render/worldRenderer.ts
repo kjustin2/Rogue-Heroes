@@ -3417,15 +3417,22 @@ function makeGroundTexture(theme: MapTheme): THREE.CanvasTexture {
   }
 
   // Darker weathered streaks: these are what actually open up the low end of the histogram.
-  for (let i = 0; i < 40; i += 1) {
+  for (let i = 0; i < 22; i += 1) {
     const x = rand() * size;
     const y = rand() * size;
-    const w = 30 + rand() * 150;
-    const h = 2 + rand() * 9;
+    const w = 60 + rand() * 190;
+    const h = 14 + rand() * 40;
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(rand() * Math.PI);
-    ctx.fillStyle = css(ground.clone().multiplyScalar(0.6), 0.22 + rand() * 0.2);
+    // Soft-edged and faint. Sharp thin rectangles read as sticks lying on the ground; broad,
+    // blurred, low-alpha smears read as the ground itself being unevenly weathered.
+    const grad = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
+    const shade = ground.clone().multiplyScalar(0.66);
+    grad.addColorStop(0, css(shade, 0));
+    grad.addColorStop(0.5, css(shade, 0.16 + rand() * 0.1));
+    grad.addColorStop(1, css(shade, 0));
+    ctx.fillStyle = grad;
     ctx.fillRect(-w / 2, -h / 2, w, h);
     ctx.restore();
   }
@@ -3455,7 +3462,7 @@ function makeSurroundings(theme: MapTheme, width: number, depth: number): THREE.
 
   // Outer plain: sits a hair below the arena slab so the slab's own edge still reads as a lip
   // rather than z-fighting with it. Tinted toward fog so it recedes instead of competing.
-  const plainColor = ground.clone().lerp(fog, 0.35).multiplyScalar(0.78);
+  const plainColor = ground.clone().lerp(fog, 0.16).multiplyScalar(0.86);
   const plain = new THREE.Mesh(
     new THREE.PlaneGeometry(width * 9, depth * 9),
     new THREE.MeshStandardMaterial({ color: plainColor, roughness: 1, metalness: 0 }),
@@ -3548,36 +3555,97 @@ function makeWaterAndBridges(theme: MapTheme): THREE.Group {
   const group = new THREE.Group();
   const water = terrainWater();
   if (!water.length) return group;
+
+  // The SIM keeps water at ground height on purpose -- it blocks movement but must not block a
+  // flat line of fire. Visually that made a channel read as blue paper laid on the ground. So the
+  // rendering sinks it: a dark channel bed below grade, sloped banks around the lip, and the water
+  // surface just under the ground plane. Purely cosmetic -- nothing here changes a single
+  // collision or line-of-sight test, which still see a flat rect at height zero.
+  const BED = -0.55;
+  const SURFACE = -0.06;
+  const bedColor = new THREE.Color(theme.ground).multiplyScalar(0.34);
+  const bedMat = new THREE.MeshStandardMaterial({ color: bedColor, roughness: 1, metalness: 0 });
+  const bankMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(theme.ground).multiplyScalar(0.62), roughness: 0.98, metalness: 0 });
   const waterColor = new THREE.Color(0x2f6d94).lerp(new THREE.Color(theme.fog), 0.22);
-  // Low metalness + higher roughness so it reads as water without a mirror-bright specular hotspot.
-  const waterMat = new THREE.MeshStandardMaterial({ color: waterColor, transparent: true, opacity: 0.78, roughness: 0.5, metalness: 0.15, depthWrite: false });
+  // Smoother and glossier than the ground so it catches the key light and reads as a liquid
+  // surface rather than a flat panel; still short of a mirror, which would strobe as the camera moves.
+  const waterMat = new THREE.MeshStandardMaterial({ color: waterColor, transparent: true, opacity: 0.82, roughness: 0.22, metalness: 0.35, depthWrite: false });
+
   for (const r of water) {
     const w = r.maxX - r.minX;
     const d = r.maxZ - r.minZ;
+    const cx = (r.minX + r.maxX) / 2;
+    const cz = (r.minZ + r.maxZ) / 2;
+
+    // Channel bed, sunk below grade so the banks have something to fall away to.
+    const bed = new THREE.Mesh(new THREE.BoxGeometry(w, 0.5, d), bedMat);
+    bed.position.set(cx, BED, cz);
+    bed.receiveShadow = true;
+    group.add(bed);
+
+    // Bank lips: four thin walls around the rim. These are what actually sell the depth from the
+    // tactical camera, because they catch the key light on one side and fall into shadow on the other.
+    const lip = 0.34;
+    for (const [ox, oz, sx, sz] of [
+      [0, -(d / 2), w + lip * 2, lip],
+      [0, d / 2, w + lip * 2, lip],
+      [-(w / 2), 0, lip, d],
+      [w / 2, 0, lip, d],
+    ] as const) {
+      const bank = new THREE.Mesh(new THREE.BoxGeometry(sx, 0.42, sz), bankMat);
+      bank.position.set(cx + ox, -0.14, cz + oz);
+      bank.castShadow = true;
+      bank.receiveShadow = true;
+      group.add(bank);
+    }
+
     const plane = new THREE.Mesh(new THREE.BoxGeometry(w, 0.09, d), waterMat);
-    plane.position.set((r.minX + r.maxX) / 2, 0.03, (r.minZ + r.maxZ) / 2);
+    plane.position.set(cx, SURFACE, cz);
     plane.receiveShadow = true;
     group.add(plane);
   }
+
   const deckMat = new THREE.MeshStandardMaterial({ color: 0x6b5136, roughness: 0.82, metalness: 0.04 });
   const railMat = new THREE.MeshStandardMaterial({ color: 0x4a3722, roughness: 0.85, metalness: 0.04 });
+  const pileMat = new THREE.MeshStandardMaterial({ color: 0x3d2c1b, roughness: 0.9, metalness: 0.03 });
   for (const r of terrainBridges()) {
     const w = r.maxX - r.minX;
     const d = r.maxZ - r.minZ;
     const cx = (r.minX + r.maxX) / 2;
     const cz = (r.minZ + r.maxZ) / 2;
+    const along = w >= d;
+    const span = along ? w : d;
+
     const deck = new THREE.Mesh(new THREE.BoxGeometry(w, 0.16, d), deckMat);
     deck.position.set(cx, 0.09, cz);
     deck.castShadow = true;
     deck.receiveShadow = true;
     group.add(deck);
+
+    // Piles down into the channel bed. A deck floating over open water was the other half of why
+    // a crossing read as a painted rectangle rather than a structure.
+    const piles = Math.max(2, Math.round(span / 3));
+    for (let i = 0; i < piles; i += 1) {
+      const t = piles === 1 ? 0.5 : i / (piles - 1);
+      const at = -span / 2 + span * t;
+      for (const side of [-1, 1]) {
+        const off = (along ? d : w) / 2 - 0.18;
+        const pile = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.72, 0.16), pileMat);
+        pile.position.set(
+          cx + (along ? at : side * off),
+          -0.27,
+          cz + (along ? side * off : at),
+        );
+        pile.castShadow = true;
+        group.add(pile);
+      }
+    }
+
     // Low side rails along the bridge's long axis so it reads as a crossing, not just a plank.
-    const along = w >= d;
-    const railLen = along ? w : d;
     const railThick = 0.14;
     for (const side of [-1, 1]) {
       const rail = new THREE.Mesh(
-        new THREE.BoxGeometry(along ? railLen : railThick, 0.34, along ? railThick : railLen),
+        new THREE.BoxGeometry(along ? span : railThick, 0.34, along ? railThick : span),
         railMat,
       );
       const off = (along ? d : w) / 2 - railThick / 2;

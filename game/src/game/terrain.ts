@@ -116,6 +116,25 @@ export function clampToArena(v: Vec2): Vec2 {
   };
 }
 
+// Nudge a point out of impassable water onto the nearest dry ground, spiralling outward.
+//
+// Ground units must never be PLACED standing in water. Movement already refuses to enter it, but
+// placement (deploying at a base, an airlift unload, a debug spawn, a test building entities
+// directly) bypasses movement entirely, so without this a unit can be dropped into a channel and
+// is then stuck in a state the movement rules say is impossible. Returns the point unchanged when
+// it is already dry, and gives up gracefully rather than looping if a map is somehow all water.
+export function nearestDryPoint(point: Vec2, maxRadius = 8): Vec2 {
+  if (!pointInWater(point)) return point;
+  for (let radius = 0.5; radius <= maxRadius; radius += 0.5) {
+    for (let i = 0; i < 16; i += 1) {
+      const angle = (i / 16) * Math.PI * 2;
+      const candidate = clampToArena({ x: point.x + Math.cos(angle) * radius, z: point.z + Math.sin(angle) * radius });
+      if (!pointInWater(candidate)) return candidate;
+    }
+  }
+  return point;
+}
+
 // Ground height at a point: the top of the tallest block whose footprint covers it, else 0.
 export function terrainHeightAt(point: Vec2): number {
   let height = 0;

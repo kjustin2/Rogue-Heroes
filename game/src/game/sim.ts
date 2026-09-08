@@ -59,7 +59,7 @@ import {
   type Team,
 } from "./damageModel";
 import { createScenario } from "./scenario";
-import { DEFAULT_TERRAIN, TERRAIN_STEP, ARENA_BOUNDS, clampToArena, setActiveTerrain, terrainHeightAt, pointInWater } from "./terrain";
+import { DEFAULT_TERRAIN, TERRAIN_STEP, ARENA_BOUNDS, clampToArena, nearestDryPoint, setActiveTerrain, terrainHeightAt, pointInWater } from "./terrain";
 import { TROOP_CATALOG, troopSpec, defenseSpec, supportPowerSpec, unitStats, type TroopKind, type DefenseKind, type SupportPowerKind, type ProjectileKind } from "./units";
 import { TECH_TREE, techNode, aggregateTechEffect, type TechNode, type TechEffect } from "./tech";
 import { modeDef, type ModeId } from "./modes";
@@ -1120,7 +1120,9 @@ export class TacticalSim {
     const prefix = base.team === "player" ? "p" : "e";
     const id = `${prefix}-spawn-${++this.troopSeq}`;
     const name = `${spec.label} ${this.troopSeq}`;
-    const unit = makeTroop(kind, id, name, base.team, this.freeSpawnNear(base));
+    const spawnAt = makeTroop(kind, id, name, base.team, this.freeSpawnNear(base));
+    if (!spawnAt.flying) spawnAt.position = nearestDryPoint(spawnAt.position);
+    const unit = spawnAt;
     // Difficulty scaling: enemy units field with more health on higher difficulties.
     if (base.team === "enemy") scaleEntityHp(unit, DIFFICULTY_MODS[this.difficulty].enemyHp);
     // Specialization scaling: Bulwark Training / Reactive Plating deploy tougher units.
@@ -1526,6 +1528,9 @@ export class TacticalSim {
   debugSpawn(kind: TroopKind, team: Team, position: Vec2, options: { elite?: boolean; bossName?: string } = {}): CombatEntity {
     const id = `${team === "player" ? "p" : "e"}-dbg-${++this.troopSeq}`;
     const unit = makeTroop(kind, id, options.bossName ?? `${troopSpec(kind).label} ${this.troopSeq}`, team, clampToArena(position));
+    // Placement bypasses the movement rules, so a ground unit could otherwise be dropped into a
+    // water channel that movement would never have let it enter.
+    if (!unit.flying) unit.position = nearestDryPoint(unit.position);
     if (team === "enemy") scaleEntityHp(unit, DIFFICULTY_MODS[this.difficulty].enemyHp);
     // Elites/bosses: substantially tougher, gold-trimmed, tracked by the top HP bar.
     if (options.elite || options.bossName) {
@@ -3263,6 +3268,11 @@ export class TacticalSim {
         }
       }
       actor.position = clampToArena(actor.position);
+      // Separation is a POSITION EDIT that bypasses the movement rules, so it can shove a ground
+      // unit off a bridge into the channel it was crossing -- the chaos bot caught exactly that,
+      // a unit ending a turn 4mm outside a bridge edge and standing in water. Movement refuses to
+      // enter water; every other way a unit's position changes has to refuse too.
+      if (!actor.flying) actor.position = nearestDryPoint(actor.position);
       if (!moved) break; // fully separated — stop early
     }
   }

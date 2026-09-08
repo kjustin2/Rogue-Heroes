@@ -195,8 +195,10 @@ export class Stage {
     if (this.quality !== "balanced") {
       // Low saturation push + firmer contrast: the desert themes collapse into one ochre
       // band if saturation is boosted, and anchored blacks are what keep units readable.
-      effects.push(new HueSaturationEffect({ saturation: 0.04 }));
-      effects.push(new BrightnessContrastEffect({ contrast: 0.09 }));
+      effects.push(new HueSaturationEffect({ saturation: 0.06 }));
+      // Firmer than the old 0.09. With the fill lights cut back there is real shade in the frame
+      // now, and the contrast curve is what stops the mid-tones collapsing back together.
+      effects.push(new BrightnessContrastEffect({ contrast: 0.17 }));
       const noise = new NoiseEffect({ premultiply: true });
       // A light filmic grain. 0.32 read as visible static/dither over the low-frequency sky and on
       // small distant infantry (competing with unit readability); ~0.16 keeps the texture subtle.
