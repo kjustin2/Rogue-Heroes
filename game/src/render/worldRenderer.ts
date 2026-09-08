@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec2 } from "../core/math";
 import { isDefenseKind, isInfantryKind, isVehicleKind, type CombatEntity, type DamagePart, type EntityKind, type PartRole } from "../game/damageModel";
 import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
@@ -514,6 +515,26 @@ export class WorldRenderer {
 
   // Dispose then detach every child of a per-frame / per-swap root, freeing GPU geometry
   // before the (cheap) JS objects are GC'd. Without this, every rebuild leaks buffers.
+  /**
+   * Current pose of an actor's animated limbs, for the animation-liveness probe.
+   *
+   * Exists because a stopped walk cycle is invisible in a screenshot: the unit still renders, still
+   * moves across the board, and only the LEGS stop swinging. That regression shipped once already
+   * (a render-parent change orphaned the animation state) and no gate noticed, so the pose is now
+   * readable and assertable from outside.
+   */
+  limbPose(entityId: string): { limb: string; rotX: number; posY: number; posZ: number }[] {
+    const group = this.groups.get(entityId);
+    if (!group) return [];
+    const out: { limb: string; rotX: number; posY: number; posZ: number }[] = [];
+    group.traverse((node) => {
+      const limb = node.userData?.limb as string | undefined;
+      if (!limb) return;
+      out.push({ limb, rotX: node.rotation.x, posY: node.position.y, posZ: node.position.z });
+    });
+    return out;
+  }
+
   private disposeAndClear(group: THREE.Group): void {
     disposeSubtree(group);
     group.clear();
@@ -714,13 +735,22 @@ export class WorldRenderer {
   }
 
   private rebuildArena(theme: MapTheme): void {
-    // Arena materials (floor/rails/panels/patches/grid/terrain blocks) are freshly built on
-    // every map swap and never shared with the pooled caches, so dispose them too — the generic
-    // disposeAndClear frees geometry only, which would leak a full set of materials per battle.
+    // Arena materials (floor/rails/terrain blocks/water) are freshly built on every map swap and
+    // never shared with the pooled caches, so dispose them too — the generic disposeAndClear frees
+    // geometry only, which would leak a full set of materials per battle.
+    //
+    // TEXTURES need disposing explicitly: material.dispose() never frees them, and the procedurally
+    // baked ground texture is a fresh 512x512 canvas per map swap. The leak probe caught this
+    // growing at ~1 texture per swap, which is exactly what it exists to catch.
     this.sceneryRoot.traverse((node) => {
       const mat = (node as Partial<THREE.Mesh>).material;
       const list = mat ? (Array.isArray(mat) ? mat : [mat]) : [];
-      for (const m of list) if (m && !m.userData?.shared) m.dispose();
+      for (const m of list) {
+        if (!m || m.userData?.shared) continue;
+        const textured = m as THREE.MeshStandardMaterial;
+        if (textured.map && !textured.map.userData?.shared) textured.map.dispose();
+        m.dispose();
+      }
     });
     this.disposeAndClear(this.sceneryRoot);
     const width = arenaWidth();
@@ -973,7 +1003,7 @@ export class WorldRenderer {
         if (entity.status.alive) this.pickables.push(mesh);
         return;
       }
-      this.paintPart(mesh, entity, part, entity.id === selectedId, entity.id === targetId, part.id === targetPartId, renderGhosted);
+      this.paintPart(group, mesh, entity, part, entity.id === selectedId, entity.id === targetId, part.id === targetPartId, renderGhosted);
       if (entity.status.alive) this.pickables.push(mesh);
     });
     if (group.userData.glb) this.paintModel(group, entity, entity.id === selectedId, entity.id === targetId, renderGhosted);
@@ -1727,13 +1757,22 @@ export class WorldRenderer {
     size: [number, number, number],
     pos: [number, number, number],
     color: number,
-    materialOptions: { metalness?: number; emissive?: number; emissiveIntensity?: number; accent?: boolean; rotation?: [number, number, number] } = {}
+    materialOptions: {
+      metalness?: number;
+      roughness?: number;
+      emissive?: number;
+      emissiveIntensity?: number;
+      accent?: boolean;
+      rotation?: [number, number, number];
+      /** Chamfer size as a fraction of the smallest dimension. Lower for thin plates. */
+      bevel?: number;
+    } = {}
   ): PartMesh {
     const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(size[0], size[1], size[2]),
+      beveledBox(size[0], size[1], size[2], materialOptions.bevel),
       new THREE.MeshStandardMaterial({
         color,
-        roughness: 0.62,
+        roughness: materialOptions.roughness ?? 0.62,
         metalness: materialOptions.metalness ?? 0.08,
         emissive: materialOptions.emissive ?? 0x000000,
         emissiveIntensity: materialOptions.emissiveIntensity ?? 0,
@@ -1972,7 +2011,7 @@ export class WorldRenderer {
     }
   }
 
-  private paintPart(mesh: PartMesh, entity: CombatEntity, part: DamagePart, selected: boolean, targeted: boolean, targetedPart: boolean, ghosted: boolean): void {
+  private paintPart(actor: THREE.Group, mesh: PartMesh, entity: CombatEntity, part: DamagePart, selected: boolean, targeted: boolean, targetedPart: boolean, ghosted: boolean): void {
     const material = mesh.material;
     const basePosition = mesh.userData.basePosition as THREE.Vector3 | undefined;
     const baseRotation = mesh.userData.baseRotation as THREE.Euler | undefined;
@@ -2005,10 +2044,12 @@ export class WorldRenderer {
     // eased walkWeight so it blends in/out. Legs additionally LIFT on their forward (swing) half so
     // the planted leg reads as ground contact rather than a sweeping pendulum (the anti-skate cue).
     const limb = mesh.userData.limb as string | undefined;
-    const parent = mesh.parent;
-    const walkW = (parent?.userData.walkWeight as number | undefined) ?? 0;
+    // The ACTOR group, not mesh.parent: infantry parts sit inside a proportion rig, so the
+    // immediate parent is not where syncEntity writes the animation state.
+    const parent = actor;
+    const walkW = (parent.userData.walkWeight as number | undefined) ?? 0;
     if (limb && part.hp > 0 && entity.status.alive && entity.stance !== "crouched" && walkW > 0.02 && basePosition) {
-      const motionTime = (parent?.userData.motionTime as number | undefined) ?? 0;
+      const motionTime = (parent.userData.motionTime as number | undefined) ?? 0;
       const isLeg = limb.startsWith("leg");
       const forwardPair = limb === "leg-l" || limb === "arm-r";
       // motionTime is distance-scaled, so a ~1.6 multiplier yields one stride per ~1.6m walked.
@@ -2026,7 +2067,7 @@ export class WorldRenderer {
 
     // Firing recoil: the weapon kicks back toward the body and tips its muzzle up, and the
     // torso rocks back a touch — a quick punch that decays over the round's first frames.
-    const recoil = (parent?.userData.recoil as number | undefined) ?? 0;
+    const recoil = (parent.userData.recoil as number | undefined) ?? 0;
     if (recoil > 0 && part.hp > 0 && entity.status.alive) {
       if (part.id === "rifle" || part.id === "cannon" || part.id === "gun") {
         const kick = recoil * (entity.kind === "tank" || entity.kind === "artillery" ? 0.3 : entity.kind === "apc" || entity.kind === "turret" || entity.kind === "exturret" ? 0.22 : 0.16);
@@ -3400,6 +3441,44 @@ const INFANTRY_BUILDS: Partial<Record<EntityKind, Partial<InfantryBuild>>> = {
 };
 
 const DEFAULT_BUILD: InfantryBuild = { girth: 1, stature: 1, lean: 0 };
+
+// THE HARD-EDGE PROBLEM.
+//
+// Every unit, structure and prop in the game was assembled from raw THREE.BoxGeometry. A raw box
+// has three things working against it: its edges are perfectly sharp, so they catch no highlight
+// and read as a flat silhouette; its faces are uniformly lit, so form is only legible where two
+// faces meet at a visible angle; and the eye has learned to read that exact shape as "placeholder".
+// That is most of why the army looked like blocks rather than hardware.
+//
+// A chamfer fixes all three at once. A bevelled edge is a narrow band whose normal sweeps between
+// the two faces, so it picks up a bright rim from the key light and a dark one on the shadow side.
+// That band is what makes a shape read as machined metal, and it costs one geometry swap.
+//
+// Geometries are CACHED BY DIMENSION and marked `userData.shared`, because the same plate size
+// recurs constantly across a roster and disposal already skips shared geometry. Without the cache
+// this would allocate a fresh bevelled mesh per part per unit, which is both slower to build and
+// a real memory cost at ~120 parts per trooper.
+const bevelCache = new Map<string, THREE.BufferGeometry>();
+
+/**
+ * A box with chamfered edges. `bevel` is a fraction of the smallest dimension (0..0.5); the
+ * default reads as milled hardware, and a lower value suits thin plates where a big chamfer would
+ * eat the whole part.
+ */
+function beveledBox(w: number, h: number, d: number, bevel = 0.17): THREE.BufferGeometry {
+  const min = Math.min(w, h, d);
+  // A radius at or above half the smallest dimension degenerates (RoundedBoxGeometry needs room
+  // on both sides), and very thin parts look better with a proportionally smaller chamfer anyway.
+  const radius = Math.max(0.006, Math.min(min * bevel, min * 0.48));
+  const key = `${w.toFixed(3)}|${h.toFixed(3)}|${d.toFixed(3)}|${radius.toFixed(4)}`;
+  const hit = bevelCache.get(key);
+  if (hit) return hit;
+  // One segment: enough for the highlight band to exist, cheap enough to put on every part.
+  const geo = new RoundedBoxGeometry(w, h, d, 1, radius);
+  geo.userData.shared = true;
+  bevelCache.set(key, geo);
+  return geo;
+}
 
 function infantryBuild(kind: EntityKind): InfantryBuild {
   return { ...DEFAULT_BUILD, ...(INFANTRY_BUILDS[kind] ?? {}) };
