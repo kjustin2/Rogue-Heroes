@@ -2212,6 +2212,8 @@ declare global {
       limbPose(entityId: string): { limb: string; rotX: number; posY: number; posZ: number }[];
       partColors(entityId: string): { partId: string; color: string; emissive: string; intensity: number }[];
       sceneGraph(): { total: number; topLevel: number };
+      // The live Three scene root — QA probes census it (draw-work attribution).
+      sceneRoot(): object;
       setDebugOverlay(on: boolean): boolean;
       // Cosmetic toggles (skin pack + colorblind palette) for screenshot harnesses.
       setModelSkin(skin: string): void;
@@ -2291,6 +2293,7 @@ window.__rht = {
   limbPose: (entityId: string) => world.limbPose(entityId),
   partColors: (entityId: string) => world.partColors(entityId),
   sceneGraph: () => ({ total: countSceneObjects(), topLevel: stage.scene.children.length }),
+  sceneRoot: () => stage.scene,
   setDebugOverlay: (on) => { debugOverlay.setEnabled(on); return debugOverlay.isEnabled(); },
   setModelSkin: (skin: string) => setModelSkin(skin),
   setHighContrastTeams: (on: boolean) => world.setHighContrastTeams(on),

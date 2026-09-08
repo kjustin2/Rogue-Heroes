@@ -404,7 +404,7 @@ export class Hud {
       <section class="log compact-log ${this.logExpanded ? "expanded" : ""}" data-tip="${escapeAttr(this.sim.log.join(" / "))}">
         <button class="log-toggle" data-command="toggle-log" aria-label="${this.logExpanded ? "Close battle log" : "Open battle log"}" data-tip="${this.logExpanded ? "Collapse action log. Hotkey: L or Esc." : "Expand recent hits, misses, and system damage. Hotkey: L."}">
           <span class="log-toggle-icon">${this.logExpanded ? "X" : "+"}</span>
-          <strong>${this.logExpanded ? "Close Battle Log" : "Open Log"}</strong>
+          <strong>${this.logExpanded ? "Close Log" : "Log"}</strong>
         </button>
         ${this.logExpanded ? battleLogPanel(this.sim) : `<span class="log-line">${escapeHtml(this.sim.log[0] ?? "No events")}</span>`}
       </section>
@@ -699,17 +699,34 @@ function healthStrip(entity: CombatEntity): string {
   return `<span class="unit-health unit-health--${band}" data-tip="${escapeAttr(tip)}"><i style="width:${pct}%"></i></span>`;
 }
 
+// The roster card carried four stacked rows -- name, a slash-separated meta line long enough to
+// WRAP onto a second line, a health strip, and a "queued order" row that said "Idle" for every unit
+// that had no order, which is most of them for most of the planning phase. Twenty units of that
+// overflowed the panel and clipped the last card. Two rows now: identity over condition, with the
+// order line appearing only when there IS an order. Nothing was cut -- status moved to a chip
+// beside the name, grenades to a chip beside the pips, and the rest was already in the tooltip.
 function unitCard(entity: CombatEntity, selected: boolean, orders: TacticalOrder[], sim: TacticalSim): string {
   const lastOrder = orders.at(-1);
   const spent = entity.status.alive && entity.commandPoints <= 0;
   const crouched = entity.stance === "crouched" && entity.status.alive;
+  const status = !entity.status.alive ? "Disabled" : spent ? "Orders set" : statusText(entity);
+  const statusBand = !entity.status.alive ? "dead" : spent ? "spent" : status === "Ready" ? "ready" : "warn";
+  const order = orders.length ? orders.map((o) => escapeHtml(orderSummary(o, sim).replace("Queued: ", ""))).join(" / ") : "";
   return `
     <div class="unit-card ${selected ? "selected" : ""} ${entity.status.alive ? "" : "dead"} ${spent ? "spent" : ""} ${crouched ? "crouched" : ""}">
       <button class="unit-select" data-select="${entity.id}" data-tip="${escapeAttr(cpTip(entity))}">
-        <span class="unit-name">${escapeHtml(entity.name)}</span>
-        <span class="unit-meta">${kindLabel(entity)} / ${cpPips(entity)}${grenadeSupplyText(entity)} / ${spent ? "Orders set" : statusText(entity)}${crouched ? `<span class="stance-chip">Crouched</span>` : ""}</span>
-        ${healthStrip(entity)}
-        <span class="queued-order">${orders.length ? orders.map((order) => escapeHtml(orderSummary(order, sim).replace("Queued: ", ""))).join(" / ") : "Idle"}</span>
+        <span class="unit-line">
+          <span class="unit-name">${escapeHtml(entity.name)}</span>
+          <span class="unit-status unit-status--${statusBand}">${status}</span>
+        </span>
+        <span class="unit-line unit-line--sub">
+          <span class="unit-kind">${kindLabel(entity)}</span>
+          ${cpPips(entity)}
+          ${entity.maxGrenades > 0 ? `<span class="supply-chip" data-tip="Grenades remaining">G${entity.grenades}</span>` : ""}
+          ${crouched ? `<span class="stance-chip">Crouched</span>` : ""}
+          ${healthStrip(entity)}
+        </span>
+        ${order ? `<span class="queued-order">${order}</span>` : ""}
       </button>
       <div class="unit-actions">
         <button class="mini-action detail" data-detail="${entity.id}" data-tip="Open ${escapeAttr(entity.name)} part health, status, and systems.">Info</button>
@@ -943,7 +960,10 @@ function orderPlanner(
     action === "defend" ? defendState(canDefend, defendTip) : "",
     action === "overwatch" ? overwatchState(actor, sim) : "",
     action === "mine" ? mineState(actor, sim) : "",
-    !actor ? orderSummaryState(actor, target) : "",
+    // With nothing selected the bar used to say the same thing three times over ("No unit
+    // selected" / "Select a unit" / "Pick squad") across a full-height panel. The header already
+    // carries that state, so the body only appears when there is something to say about a target.
+    !actor && target ? orderSummaryState(actor, target) : "",
   ].filter(Boolean).join("");
 
   return `
@@ -951,7 +971,7 @@ function orderPlanner(
       <div class="order-identity">
         <div class="panel-title">Order</div>
         <h2>${actor ? escapeHtml(actor.name) : "No unit selected"}</h2>
-        ${unitVitals(actor)}
+        ${actor ? unitVitals(actor) : `<p class="order-hint">Click a trooper in the world, or a card in the squad list.</p>`}
       </div>
       <div class="cp-badge" data-tip="${actor ? escapeAttr(cpTip(actor)) : "Select a living squad unit."}">
         ${actor ? `${actor.commandPoints}/${actor.maxCommandPoints} CP` : "-- CP"}
@@ -959,7 +979,7 @@ function orderPlanner(
       ${(target || action !== "select") ? `<button class="icon-btn close-btn clear-focus" data-command="clear-order-focus" data-tip="Go back to the compact action list."><span>&lt;</span><strong>Back</strong></button>` : ""}
     </div>
 
-    <div class="command-layout ${showActions && !actionBody ? "actions-only" : showActions ? "" : "single-detail"}">
+    <div class="command-layout ${actionBody || showActions ? (showActions && !actionBody ? "actions-only" : showActions ? "" : "single-detail") : "idle"}">
       ${showActions ? `
         <div class="command-section action-deck">
           <div class="action-grid">
@@ -1968,10 +1988,6 @@ function cpPips(entity: CombatEntity): string {
     `<i class="${index < entity.commandPoints ? "full" : ""}"></i>`
   ).join("");
   return `<span class="cp-pips">${pips}</span><span class="cp-text">CP ${entity.commandPoints}/${entity.maxCommandPoints}</span>`;
-}
-
-function grenadeSupplyText(entity: CombatEntity): string {
-  return entity.maxGrenades > 0 ? ` / G ${entity.grenades}/${entity.maxGrenades}` : "";
 }
 
 function actionCostLabel(action: Intent, actor: CombatEntity | undefined): string {

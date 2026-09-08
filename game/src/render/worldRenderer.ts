@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { ParticleShape, Particles } from "./particles";
 import { hasMotionBank, sampleMotion } from "./infantryMotion";
-import { clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec2 } from "../core/math";
+import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec2 } from "../core/math";
 import { isBuildingKind, isDefenseKind, isInfantryKind, isVehicleKind, type CombatEntity, type DamagePart, type EntityKind, type PartRole } from "../game/damageModel";
 import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
 import { OVERWATCH_ARC_HALF } from "../game/sim";
@@ -702,10 +702,14 @@ export class WorldRenderer {
    * every other army in the game.
    */
   setFactionTints(player: number, enemy: number): void {
-    FACTION_TINT.player = player;
+    // A faction accent is a UI colour: deliberately high-luminance so it reads on dark chrome.
+    // Blending one straight into a HULL bleached the armour — enemies came out pale pink and player
+    // troopers pale mint, with the modelling washed off both. Bodies get a deepened version of the
+    // same hue, so the faction still reads at tactical distance without erasing the material.
+    FACTION_TINT.player = blendHex(player, 0x0e1b21, 0.4);
     // The core (torso) leans a little lighter than the trim so the two do not flatten together.
-    FACTION_TINT.playerCore = blendHex(player, 0xffffff, 0.18);
-    FACTION_TINT.enemy = enemy;
+    FACTION_TINT.playerCore = blendHex(player, 0x0e1b21, 0.24);
+    FACTION_TINT.enemy = blendHex(enemy, 0x2a1210, 0.5);
   }
 
   // Colorblind support: swap the team read palette (blue vs orange) and rebuild every
@@ -817,6 +821,7 @@ export class WorldRenderer {
         if (!m || m.userData?.shared) continue;
         const textured = m as THREE.MeshStandardMaterial;
         if (textured.map && !textured.map.userData?.shared) textured.map.dispose();
+        if (textured.normalMap && !textured.normalMap.userData?.shared) textured.normalMap.dispose();
         m.dispose();
       }
     });
@@ -826,22 +831,34 @@ export class WorldRenderer {
 
     // Slightly darker than the authored ground tone so units (whose palette tops out
     // near-white) keep value separation from the floor under the warm key light.
-    const groundTexture = makeGroundTexture(theme);
-    // One texture tile per ~19 world units. At the previous 9 the repeat was plainly visible as a
-    // regular grid once the camera came in close -- a tiling artefact reads as cheaper than no
-    // texture at all. Bigger tiles put the seam beyond where the eye tracks it.
-    groundTexture.repeat.set(Math.max(1.5, width / 19), Math.max(1.5, depth / 19));
+    const surface = makeGroundTexture(theme);
+    // One tile per ~11 world units. The tile is seamless now, so it can be small enough for the
+    // detail to survive at the tactical camera; the old 19-unit tile existed only to push a visible
+    // seam out of frame, and at that scale the ground had no readable surface left at all.
+    const tileX = Math.max(2, width / 11);
+    const tileZ = Math.max(2, depth / 11);
+    surface.map.repeat.set(tileX, tileZ);
+    surface.normalMap.repeat.set(tileX, tileZ);
     const floor = new THREE.Mesh(
       new THREE.BoxGeometry(width, 0.18, depth),
-      new THREE.MeshStandardMaterial({ map: groundTexture, color: new THREE.Color(theme.ground).multiplyScalar(0.96), roughness: 0.95, metalness: 0.02 })
+      new THREE.MeshStandardMaterial({
+        map: surface.map,
+        normalMap: surface.normalMap,
+        // The whole point of the normal map is that the low key light rakes across the ground and
+        // finds relief in it. Too strong and the floor reads as crumpled foil at this camera pitch.
+        normalScale: new THREE.Vector2(0.5, 0.5),
+        color: new THREE.Color(theme.ground),
+        roughness: 0.95,
+        metalness: 0.02,
+      })
     );
     floor.position.y = -0.11;
     floor.receiveShadow = true;
     this.sceneryRoot.add(floor);
 
-    this.sceneryRoot.add(makeTerrainBlocks(theme.ground, theme.groundAccent, groundTexture));
+    this.sceneryRoot.add(makeTerrainBlocks(theme.ground, theme.groundAccent, surface));
     this.sceneryRoot.add(makeWaterAndBridges(theme));
-    this.sceneryRoot.add(makeSurroundings(theme, width, depth));
+    this.sceneryRoot.add(makeSurroundings(theme, width, depth, surface));
 
     // No ground grid: movement is continuous, so a grid describes no rule the player can use and
     // reads as an unfinished prototype. Range rings and move previews carry that information.
@@ -1669,27 +1686,65 @@ export class WorldRenderer {
     this.box(rig, entity, "legs", [0.2, 0.11, 0.3], [0.18, 0.055, 0.07], 0x101516, { metalness: 0.14 }).userData.limb = "leg-r";
   }
 
+  // The HQ was a salmon-red block: at the tactical camera it read as a lump of pink plastic, and
+  // it was the largest single object on the field. It is now a weathered concrete command post —
+  // plinth, battered main block with corner buttresses, a raised command deck with a lit window
+  // band, mast and generator — with the team read carried by ACCENT trim and glow rather than by
+  // painting the whole structure a team colour. Same part ids (core/comms/power/gate), so the sim,
+  // the pick proxies and the damage model are untouched.
   private buildBase(group: THREE.Group, entity: CombatEntity): void {
     const factionGlow = entity.team === "enemy" ? TEAMS.enemyAccent : 0x5fe6ff;
-    this.box(group, entity, "core", [2.45, 1.35, 2.05], [0, 0.68, 0], 0xd06458);
-    this.box(group, entity, "core", [2.72, 0.22, 2.32], [0, 1.48, 0], 0x51231f, { metalness: 0.18 });
-    for (const x of [-1.42, 1.42]) this.box(group, entity, "core", [0.26, 1.52, 0.28], [x, 0.82, -0.52], 0x7c3f39, { metalness: 0.14 });
-    // Command rooftop (no weapon) — this HQ earns money and builds, it does not attack.
-    this.box(group, entity, "core", [1.1, 0.34, 1.1], [0.2, 1.78, 0.15], 0xc9a36a, { metalness: 0.18 });
-    this.cylinder(group, entity, "core", 0.34, 0.3, [0.2, 2.06, 0.15], 0xe7c98c, [0, 0, 0], { emissive: factionGlow, emissiveIntensity: 0.32 });
-    // Team banner flying over the command core — a quick readability + flavor cue.
-    this.cylinder(group, entity, "core", 0.05, 1.2, [1.02, 2.4, 0.62], 0xdadfd2, [0, 0, 0], { metalness: 0.3 });
-    this.box(group, entity, "core", [0.06, 0.5, 0.72], [1.02, 2.74, 0.99], factionGlow, { emissive: factionGlow, emissiveIntensity: 0.5 });
-    this.box(group, entity, "core", [0.06, 0.5, 0.18], [1.02, 2.74, 1.44], factionGlow, { emissive: factionGlow, emissiveIntensity: 0.32 });
-    this.box(group, entity, "comms", [0.18, 1.7, 0.18], [-0.9, 2.05, -0.15], 0xd9ded2);
-    this.box(group, entity, "comms", [0.72, 0.12, 0.12], [-0.9, 2.88, -0.15], 0xffffff, { emissive: 0xffa08a, emissiveIntensity: 0.55 });
-    this.box(group, entity, "comms", [0.12, 0.12, 0.86], [-0.9, 2.46, -0.15], 0xffffff, { emissive: factionGlow, emissiveIntensity: 0.42 });
-    this.box(group, entity, "power", [0.72, 0.9, 0.72], [0.92, 0.62, -0.62], 0xffc857, { emissive: 0xff9e2b, emissiveIntensity: 0.4 });
-    this.box(group, entity, "power", [0.94, 0.1, 0.94], [0.92, 1.12, -0.62], 0xfff0bf, { emissive: 0xff9e2b, emissiveIntensity: 0.58 });
-    this.box(group, entity, "gate", [2.75, 0.68, 0.34], [0, 0.38, 1.24], 0x8b4d47);
-    this.box(group, entity, "gate", [0.18, 0.76, 0.42], [-1.08, 0.46, 1.42], 0x3a1c19, { metalness: 0.18 });
-    this.box(group, entity, "gate", [0.18, 0.76, 0.42], [1.08, 0.46, 1.42], 0x3a1c19, { metalness: 0.18 });
-    for (const x of [-0.75, 0, 0.75]) this.box(group, entity, "core", [0.28, 0.12, 0.08], [x, 1.2, 1.06], 0xfff0bf, { emissive: 0xff9d6c, emissiveIntensity: 0.45 });
+    const CONCRETE = 0x585a52;
+    const CONCRETE_DARK = 0x43453f;
+    const STEEL = 0x33362f;
+
+    // Plinth + battered main block.
+    this.box(group, entity, "core", [3.0, 0.26, 2.6], [0, 0.13, 0], STEEL, { roughness: 0.94, bevel: 0.08 });
+    this.box(group, entity, "core", [2.62, 0.34, 2.24], [0, 0.4, 0], CONCRETE_DARK, { roughness: 0.92, bevel: 0.1 });
+    this.box(group, entity, "core", [2.4, 1.06, 2.02], [0, 1.06, 0], CONCRETE, { roughness: 0.9, bevel: 0.09, outline: true });
+    // Corner buttresses: the vertical rhythm that keeps a big flat block from reading as a crate.
+    for (const x of [-1.16, 1.16]) {
+      for (const z of [-0.9, 0.9]) {
+        this.box(group, entity, "core", [0.3, 1.16, 0.34], [x, 1.02, z], CONCRETE_DARK, { roughness: 0.93, bevel: 0.14 });
+      }
+    }
+    // Roof slab with an overhanging lip — the shadow line under it is what gives the mass weight.
+    this.box(group, entity, "core", [2.66, 0.2, 2.28], [0, 1.68, 0], CONCRETE_DARK, { metalness: 0.1, roughness: 0.88, bevel: 0.2 });
+
+    // Raised command deck: smaller footprint, lit window band, capped by a dark roof.
+    this.box(group, entity, "core", [1.42, 0.62, 1.24], [0.1, 2.09, 0.05], CONCRETE, { roughness: 0.88, bevel: 0.12 });
+    // Window band: front face and one side, so the deck reads as occupied from either approach.
+    const glass = { emissive: factionGlow, emissiveIntensity: 0.32, metalness: 0.3, bevel: 0.3 } as const;
+    this.box(group, entity, "core", [1.28, 0.2, 0.06], [0.1, 2.16, 0.65], 0x1d2a2e, glass);
+    this.box(group, entity, "core", [0.06, 0.2, 1.1], [-0.58, 2.16, 0.05], 0x1d2a2e, glass);
+    this.box(group, entity, "core", [1.56, 0.14, 1.38], [0.1, 2.46, 0.05], STEEL, { metalness: 0.16, roughness: 0.85, bevel: 0.24 });
+
+    // Team banner on a mast — the one place a saturated team colour belongs on a structure.
+    this.cylinder(group, entity, "core", 0.045, 1.15, [1.06, 2.5, 0.66], 0x9aa096, [0, 0, 0], { metalness: 0.34 });
+    this.box(group, entity, "core", [0.05, 0.46, 0.66], [1.06, 2.82, 0.99], factionGlow, { emissive: factionGlow, emissiveIntensity: 0.45 });
+    this.box(group, entity, "core", [0.05, 0.46, 0.16], [1.06, 2.82, 1.4], factionGlow, { emissive: factionGlow, emissiveIntensity: 0.28 });
+    // Roof-edge marker lamps: small, warm, and the only bright pixels on the silhouette.
+    for (const x of [-0.9, 0.9]) {
+      this.box(group, entity, "core", [0.12, 0.08, 0.12], [x, 1.82, -0.94], 0xffd9a0, { emissive: 0xffa04a, emissiveIntensity: 0.5 });
+    }
+
+    // Comms mast + crossbeam + dish.
+    this.cylinder(group, entity, "comms", 0.07, 1.9, [-0.92, 2.6, -0.2], 0x8f958b, [0, 0, 0], { radiusBottom: 0.11, metalness: 0.36 });
+    this.box(group, entity, "comms", [0.66, 0.08, 0.08], [-0.92, 3.34, -0.2], 0x8f958b, { metalness: 0.36, bevel: 0.4 });
+    this.box(group, entity, "comms", [0.1, 0.1, 0.1], [-0.92, 3.5, -0.2], 0xffb08a, { emissive: 0xff6a4a, emissiveIntensity: 0.6, bevel: 0.4 });
+    this.cylinder(group, entity, "comms", 0.3, 0.1, [-0.92, 3.02, 0.06], 0xb7bcb2, [Math.PI / 2.6, 0, 0], { metalness: 0.3 });
+
+    // Generator block: ribbed housing, warm vent glow, exhaust stack.
+    this.box(group, entity, "power", [0.78, 0.72, 0.7], [1.0, 0.9, -0.72], 0x4b4a3f, { metalness: 0.22, roughness: 0.86, bevel: 0.12 });
+    for (const z of [-0.92, -0.72, -0.52]) this.box(group, entity, "power", [0.82, 0.06, 0.08], [1.0, 1.0, z], 0x2c2b24, { metalness: 0.3 });
+    this.box(group, entity, "power", [0.5, 0.16, 0.06], [1.0, 0.68, -0.38], 0xffb347, { emissive: 0xff8c1a, emissiveIntensity: 0.55, bevel: 0.35 });
+    this.cylinder(group, entity, "power", 0.09, 0.5, [1.32, 1.5, -0.72], 0x2c2b24, [0, 0, 0], { metalness: 0.3 });
+
+    // Gate: recessed armoured door between two bollards, with a lit sill so the entrance reads.
+    this.box(group, entity, "gate", [2.7, 0.66, 0.3], [0, 0.55, 1.16], 0x3b3d37, { metalness: 0.2, roughness: 0.85, bevel: 0.1 });
+    this.box(group, entity, "gate", [1.5, 0.86, 0.16], [0, 0.63, 1.28], 0x272924, { metalness: 0.3, bevel: 0.1 });
+    for (const x of [-1.16, 1.16]) this.box(group, entity, "gate", [0.22, 0.8, 0.36], [x, 0.5, 1.38], 0x2f312b, { metalness: 0.24, bevel: 0.16 });
+    for (const x of [-0.5, 0, 0.5]) this.box(group, entity, "gate", [0.26, 0.06, 0.06], [x, 1.02, 1.34], 0xffd9a0, { emissive: 0xffa04a, emissiveIntensity: 0.4, bevel: 0.4 });
   }
 
   private buildDefense(group: THREE.Group, entity: CombatEntity): void {
@@ -1858,13 +1913,45 @@ export class WorldRenderer {
       this.cylinder(group, entity, part.id, 0.22, 0.14, [0.7, 0.24, 0.55], 0x0f0d0b, [Math.PI / 2, 0, 0.4]);
       this.box(group, entity, part.id, [0.5, 0.14, 0.3], [-0.3, 0.55, -0.2], 0xff7d26, { emissive: 0xff5a1a, emissiveIntensity: 0.55 });
     } else if (entity.coverKind === "rock") {
-      this.box(group, entity, part.id, [1.25, 0.95, 1.05], [0, 0.5, 0], 0x8a857c);
-      this.box(group, entity, part.id, [0.82, 0.62, 0.7], [0.22, 1.05, -0.12], 0x9c968b);
-      this.box(group, entity, part.id, [0.6, 0.44, 0.52], [-0.32, 0.92, 0.22], 0x736d64);
+      // Three axis-aligned boxes read as a stack of crates, not a rock. Five CANTED slabs of
+      // different sizes, each tipped on two axes and half-buried, give it a broken silhouette and
+      // catch the key light on different planes. Seeded per entity so no two are the same boulder.
+      const v = hash(entity.id);
+      const tip = (n: number): number => (((v >> (n * 3)) % 9) - 4) * 0.085;
+      this.box(group, entity, part.id, [1.4, 0.8, 1.15], [0, 0.34, 0], 0x6f6a62, { roughness: 0.98, bevel: 0.3, rotation: [tip(0), tip(1) * 4, tip(2)] });
+      this.box(group, entity, part.id, [1.05, 0.95, 0.9], [0.18, 0.82, -0.14], 0x8d877d, { roughness: 0.96, bevel: 0.34, rotation: [tip(3), tip(4) * 4, tip(5)] });
+      this.box(group, entity, part.id, [0.72, 0.66, 0.78], [-0.38, 0.72, 0.26], 0x5e5951, { roughness: 0.98, bevel: 0.36, rotation: [tip(6), tip(7) * 4, tip(2)] });
+      this.box(group, entity, part.id, [0.55, 0.5, 0.5], [0.34, 1.28, 0.1], 0x9a9388, { roughness: 0.94, bevel: 0.4, rotation: [tip(1), tip(5) * 4, tip(4)] });
+      this.box(group, entity, part.id, [0.9, 0.26, 0.85], [-0.1, 0.12, -0.05], 0x4c473f, { roughness: 1, bevel: 0.42, rotation: [0, tip(3) * 4, 0] });
     } else if (entity.coverKind === "tree") {
-      this.cylinder(group, entity, part.id, 0.17, 1.4, [0, 0.7, 0], 0x5a3b22, [0, 0, 0]);
-      this.box(group, entity, part.id, [1.15, 1.0, 1.15], [0, 1.7, 0], 0x3f7a3a, { emissive: 0x123d12, emissiveIntensity: 0.12 });
-      this.box(group, entity, part.id, [0.82, 0.72, 0.82], [0, 2.35, 0], 0x4f9a4a, { emissive: 0x123d12, emissiveIntensity: 0.1 });
+      // The old tree was a cube on a stick. This one has a tapered, leaning trunk, two boughs, and
+      // a crown of six canted masses in three greens with a darker underside — an irregular
+      // silhouette that reads as foliage from the tactical camera and never as a box.
+      const v = hash(entity.id);
+      const lean = (((v >> 2) % 7) - 3) * 0.03;
+      const spin = (v % 13) * 0.24;
+      this.cylinder(group, entity, part.id, 0.11, 1.7, [0, 0.85, 0], 0x4a3220, [lean, spin, lean * 0.7], { radiusBottom: 0.27, roughness: 0.95 });
+      this.cylinder(group, entity, part.id, 0.06, 0.62, [0.3, 1.34, 0.06], 0x4a3220, [0.1, spin, -0.78], { radiusBottom: 0.1, roughness: 0.95 });
+      this.cylinder(group, entity, part.id, 0.06, 0.5, [-0.26, 1.5, -0.1], 0x4a3220, [-0.12, spin, 0.72], { radiusBottom: 0.09, roughness: 0.95 });
+      const crown: [number, number, number, number, number, number, number][] = [
+        // sx, sy, sz, x, y, z, colour index
+        [1.22, 0.86, 1.16, 0.02, 1.94, -0.02, 0],
+        [0.96, 0.72, 1.02, -0.42, 2.16, 0.3, 1],
+        [0.88, 0.8, 0.86, 0.46, 2.24, -0.24, 1],
+        [0.78, 0.62, 0.74, -0.2, 2.62, -0.3, 2],
+        [0.66, 0.56, 0.7, 0.26, 2.7, 0.24, 2],
+        [1.0, 0.44, 0.94, 0.06, 1.66, 0.04, 3],
+      ];
+      const greens = [0x35722f, 0x437f36, 0x59963f, 0x27551f];
+      for (const [sx, sy, sz, x, y, z, tone] of crown) {
+        this.box(group, entity, part.id, [sx, sy, sz], [x, y, z], greens[tone], {
+          roughness: 0.94,
+          bevel: 0.46,
+          rotation: [lean + ((v >> tone) % 5) * 0.04, spin + tone * 0.6, lean * 2 - ((v >> tone) % 5) * 0.03],
+          emissive: 0x0f2c0e,
+          emissiveIntensity: tone === 3 ? 0.04 : 0.1,
+        });
+      }
     } else if (entity.coverKind === "crate") {
       this.box(group, entity, part.id, [0.92, 0.7, 0.92], [0, 0.35, 0], 0x9a6a3a);
       this.box(group, entity, part.id, [0.72, 0.55, 0.72], [0.1, 0.96, -0.06], 0xb07c45);
@@ -1917,8 +2004,10 @@ export class WorldRenderer {
       const mesh = obj as PartMesh;
       if (!(mesh.isMesh) || !(mesh.material instanceof THREE.MeshStandardMaterial)) return;
       if ((mesh.userData.baseEmissiveIntensity as number ?? 0) > 0.12) return; // keep glowing signals
+      // Only the BASE colour moves. The live material is pooled and shared across every mesh that
+      // currently looks the same, so writing to it here would repaint half the scene; paintPart
+      // re-resolves this mesh to the right pooled material on the next frame anyway.
       const tinted = new THREE.Color(mesh.userData.baseColor as number ?? mesh.material.color.getHex()).lerp(this.propTint, amount);
-      mesh.material.color.copy(tinted);
       mesh.userData.baseColor = tinted.getHex();
     });
   }
@@ -1965,20 +2054,17 @@ export class WorldRenderer {
       outline?: boolean;
     } = {}
   ): PartMesh {
+    const roughness = materialOptions.roughness ?? 0.62;
+    const metalness = materialOptions.metalness ?? 0.08;
     const mesh = new THREE.Mesh(
       beveledBox(size[0], size[1], size[2], materialOptions.bevel),
-      new THREE.MeshStandardMaterial({
-        color,
-        roughness: materialOptions.roughness ?? 0.62,
-        metalness: materialOptions.metalness ?? 0.08,
-        emissive: materialOptions.emissive ?? 0x000000,
-        emissiveIntensity: materialOptions.emissiveIntensity ?? 0,
-      })
+      pooledPartMaterial(color, materialOptions.emissive ?? 0x000000, materialOptions.emissiveIntensity ?? 0, roughness, metalness)
     );
     mesh.position.set(pos[0], pos[1], pos[2]);
     if (materialOptions.rotation) mesh.rotation.set(materialOptions.rotation[0], materialOptions.rotation[1], materialOptions.rotation[2]);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.userData.roughness = roughness;
+    mesh.userData.metalness = metalness;
+    setShadowBudget(mesh, Math.max(size[0], size[1], size[2]));
     mesh.userData.entityId = entity.id;
     mesh.userData.partId = partId;
     mesh.userData.baseColor = color;
@@ -2005,22 +2091,19 @@ export class WorldRenderer {
     pos: [number, number, number],
     color: number,
     rotation: [number, number, number] = [0, 0, Math.PI / 2],
-    materialOptions: { metalness?: number; emissive?: number; emissiveIntensity?: number; accent?: boolean; radiusBottom?: number; outline?: boolean } = {}
+    materialOptions: { metalness?: number; roughness?: number; emissive?: number; emissiveIntensity?: number; accent?: boolean; radiusBottom?: number; outline?: boolean } = {}
   ): PartMesh {
+    const roughness = materialOptions.roughness ?? 0.7;
+    const metalness = materialOptions.metalness ?? 0.16;
     const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(radius, materialOptions.radiusBottom ?? radius, depth, 14),
-      new THREE.MeshStandardMaterial({
-        color,
-        roughness: 0.7,
-        metalness: materialOptions.metalness ?? 0.16,
-        emissive: materialOptions.emissive ?? 0x000000,
-        emissiveIntensity: materialOptions.emissiveIntensity ?? 0,
-      })
+      cylinderGeometry(radius, materialOptions.radiusBottom ?? radius, depth),
+      pooledPartMaterial(color, materialOptions.emissive ?? 0x000000, materialOptions.emissiveIntensity ?? 0, roughness, metalness)
     );
     mesh.position.set(pos[0], pos[1], pos[2]);
     mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.userData.roughness = roughness;
+    mesh.userData.metalness = metalness;
+    setShadowBudget(mesh, Math.max(depth, radius * 2));
     mesh.userData.entityId = entity.id;
     mesh.userData.partId = partId;
     mesh.userData.baseColor = color;
@@ -2045,20 +2128,16 @@ export class WorldRenderer {
     color: number,
     materialOptions: { metalness?: number; emissive?: number; emissiveIntensity?: number; accent?: boolean; scaleY?: number; outline?: boolean } = {}
   ): PartMesh {
+    const metalness = materialOptions.metalness ?? 0.12;
     const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(radius, 14, 10),
-      new THREE.MeshStandardMaterial({
-        color,
-        roughness: 0.55,
-        metalness: materialOptions.metalness ?? 0.12,
-        emissive: materialOptions.emissive ?? 0x000000,
-        emissiveIntensity: materialOptions.emissiveIntensity ?? 0,
-      })
+      sphereGeometry(radius),
+      pooledPartMaterial(color, materialOptions.emissive ?? 0x000000, materialOptions.emissiveIntensity ?? 0, 0.55, metalness)
     );
     mesh.position.set(pos[0], pos[1], pos[2]);
     if (materialOptions.scaleY) mesh.scale.y = materialOptions.scaleY;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.userData.roughness = 0.55;
+    mesh.userData.metalness = metalness;
+    setShadowBudget(mesh, radius * 2);
     mesh.userData.entityId = entity.id;
     mesh.userData.partId = partId;
     mesh.userData.baseColor = color;
@@ -2073,11 +2152,11 @@ export class WorldRenderer {
   }
 
   private outline(mesh: PartMesh): void {
-    const edges = new THREE.LineSegments(
-      new THREE.EdgesGeometry(mesh.geometry, 35),
-      new THREE.LineBasicMaterial({ color: 0x050708, transparent: true, opacity: 0.38 })
-    );
+    // Edge geometry and the two opacity states are pooled: the part geometry itself is already
+    // shared, so every trooper of a kind traces the identical edge set.
+    const edges = new THREE.LineSegments(edgeGeometry(mesh.geometry), OUTLINE_MATERIALS.solid);
     edges.userData.decor = true;
+    edges.userData.outline = true;
     mesh.add(edges);
   }
 
@@ -2209,7 +2288,15 @@ export class WorldRenderer {
   }
 
   private paintPart(actor: THREE.Group, mesh: PartMesh, entity: CombatEntity, part: DamagePart, selected: boolean, targeted: boolean, targetedPart: boolean, ghosted: boolean): void {
-    const material = mesh.material;
+    // Part appearance is computed into a scratch spec and resolved to a POOLED material at the
+    // end of this function. Every part mesh used to own a unique MeshStandardMaterial (~1970 of
+    // them in the stress scenario), which made three re-upload lights/common uniforms per draw —
+    // it was the single largest cost in the frame profile. Sharing collapses that to a few dozen.
+    const spec = _partSpec;
+    spec.emissiveIntensity = 0;
+    spec.transparent = false;
+    spec.opacity = 1;
+    spec.depthWrite = true;
     const basePosition = mesh.userData.basePosition as THREE.Vector3 | undefined;
     const baseRotation = mesh.userData.baseRotation as THREE.Euler | undefined;
     const baseScale = mesh.userData.baseScale as THREE.Vector3 | undefined;
@@ -2325,22 +2412,22 @@ export class WorldRenderer {
     const injury = 1 - ratio;
     // Reuse module-scope scratch Colors: paintPart runs for every part mesh of every entity
     // every frame, so `new THREE.Color()` here was allocating hundreds of objects per frame.
-    const color = _paintColor.set(base).lerp(_paintTmp.set(0x33120f), injury * 0.55);
-    if (ratio < 0.42 && part.hp > 0) color.lerp(_paintTmp.set(0xff5f35), 0.16 + injury * 0.18);
-    if (!entity.status.alive) color.lerp(_paintTmp.set(0x08090a), 0.55);
-    if (selected && part.hp > 0) color.lerp(_paintTmp.set(0xffffff), 0.24);
-    if (targeted && part.hp > 0) color.lerp(_paintTmp.set(0xffd166), targetedPart ? 0.58 : 0.3);
+    const color = _paintColor.set(base).lerp(hexColor(0x33120f), injury * 0.55);
+    if (ratio < 0.42 && part.hp > 0) color.lerp(hexColor(0xff5f35), 0.16 + injury * 0.18);
+    if (!entity.status.alive) color.lerp(hexColor(0x08090a), 0.55);
+    if (selected && part.hp > 0) color.lerp(hexColor(0xffffff), 0.24);
+    if (targeted && part.hp > 0) color.lerp(hexColor(0xffd166), targetedPart ? 0.58 : 0.3);
     // Hit flash: a freshly-damaged part snaps white for a beat, so the eye catches what got hit.
     const flash = part.hp > 0 ? this.partFlash(entity.id, part.id) : 0;
-    if (flash > 0) color.lerp(_paintTmp.set(0xffffff), flash * 0.7);
-    material.color.copy(color);
+    if (flash > 0) color.lerp(hexColor(0xffffff), flash * 0.7);
+    spec.color.copy(color);
     const baseEmissive = mesh.userData.baseEmissive as number;
     const unitGlow = entity.kind !== "cover" && entity.team !== "neutral";
     const coverGlow = entity.kind === "cover" && part.hp > 0;
     const coverGlowColor = entity.coverKind === "cliff" ? 0x4a2284 : part.role === "volatile" ? 0x7a4200 : entity.coverKind === "ridge" ? 0x5a3a13 : 0x5c4620;
     const unitGlowColor = entity.team === "enemy" ? TEAMS.enemyGlowDim : TEAMS.playerGlowDim;
-    material.emissive.setHex(part.hp > 0 && targetedPart ? 0x4f3000 : part.hp > 0 && selected ? 0x0b3844 : accent ? baseEmissive : unitGlow ? unitGlowColor : coverGlow ? coverGlowColor : baseEmissive);
-    material.emissiveIntensity = part.hp > 0
+    spec.emissive.copy(hexColor(part.hp > 0 && targetedPart ? 0x4f3000 : part.hp > 0 && selected ? 0x0b3844 : accent ? baseEmissive : unitGlow ? unitGlowColor : coverGlow ? coverGlowColor : baseEmissive));
+    spec.emissiveIntensity = part.hp > 0
       ? (mesh.userData.baseEmissiveIntensity as number) + (unitGlow ? 0.07 : 0) + (coverGlow ? 0.18 : 0) + (selected ? 0.58 : 0) + (targetedPart ? 0.72 : targeted ? 0.34 : 0)
       : 0;
     // Living idle: standing infantry breathe, their arms + held weapon carry a slow sway, and the
@@ -2367,17 +2454,17 @@ export class WorldRenderer {
     // a glowing pale slab in almost every frame, and no amount of modelling detail survived it.
     // A third of the strength still reads as a pulse without erasing the metal underneath.
     if (this.commandPhase && entity.team === "player" && entity.status.alive && entity.commandPoints > 0 && part.role === "weapon" && part.hp > 0 && !selected && !targeted) {
-      material.emissive.setHex(entity.accent ?? this.playerAccent);
-      material.emissiveIntensity = Math.max(material.emissiveIntensity, 0.05 + (Math.sin(performance.now() * 0.004 + (hash(entity.id) % 63)) + 1) * 0.03);
+      spec.emissive.copy(hexColor(entity.accent ?? this.playerAccent));
+      spec.emissiveIntensity = Math.max(spec.emissiveIntensity, 0.05 + (Math.sin(performance.now() * 0.004 + (hash(entity.id) % 63)) + 1) * 0.03);
     }
     // Elites/bosses wear a burning gold trim so they read as the priority target.
     if (entity.elite && entity.status.alive && part.hp > 0 && !selected && !targeted && flash <= 0) {
-      material.emissive.setHex(0xffb020);
-      material.emissiveIntensity = Math.max(material.emissiveIntensity, 0.3 + (Math.sin(performance.now() * 0.005) + 1) * 0.12);
+      spec.emissive.copy(hexColor(0xffb020));
+      spec.emissiveIntensity = Math.max(spec.emissiveIntensity, 0.3 + (Math.sin(performance.now() * 0.005) + 1) * 0.12);
     }
-    material.transparent = ghosted && part.hp > 0;
-    material.opacity = ghosted && part.hp > 0 ? (targeted ? 0.48 : 0.34) : 1;
-    material.depthWrite = !(ghosted && part.hp > 0);
+    spec.transparent = ghosted && part.hp > 0;
+    spec.opacity = ghosted && part.hp > 0 ? (targeted ? 0.48 : 0.34) : 1;
+    spec.depthWrite = !(ghosted && part.hp > 0);
     mesh.visible = part.hp > 0 || entity.kind !== "cover";
     this.paintOutline(mesh, ghosted && part.hp > 0);
     if (part.hp <= 0) {
@@ -2389,8 +2476,8 @@ export class WorldRenderer {
     } else if (ratio < 0.45) {
       mesh.scale.y *= 0.86 + ratio * 0.2;
       mesh.rotation.z += part.role === "mobility" ? 0.06 : 0.03;
-      material.emissive.setHex(0xff5f35);
-      material.emissiveIntensity = 0.18 + (1 - ratio) * 0.28;
+      spec.emissive.copy(hexColor(0xff5f35));
+      spec.emissiveIntensity = 0.18 + (1 - ratio) * 0.28;
     }
     // Gunship rotor: spin fast whenever it's alive so it reads as an idling/flying aircraft.
     if (entity.flying && part.id === "rotor" && entity.status.alive) {
@@ -2400,21 +2487,19 @@ export class WorldRenderer {
       mesh.rotation.y += ((mesh.parent.userData.motionTime as number | undefined) ?? 0) * 2.2;
     }
     if (flash > 0) {
-      material.emissive.setHex(0xffffff);
-      material.emissiveIntensity = Math.max(material.emissiveIntensity, 0.5 + flash * 0.6);
+      spec.emissive.copy(hexColor(0xffffff));
+      spec.emissiveIntensity = Math.max(spec.emissiveIntensity, 0.5 + flash * 0.6);
     }
+  
+    spec.roughness = mesh.userData.roughness as number;
+    spec.metalness = mesh.userData.metalness as number;
+    mesh.material = partMaterial(spec);
   }
 
   private paintOutline(mesh: PartMesh, ghosted: boolean): void {
     for (const child of mesh.children) {
-      if (!child.userData.decor || !("material" in child)) continue;
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-      for (const material of materials) {
-        if (!(material instanceof THREE.Material)) continue;
-        material.transparent = true;
-        material.opacity = ghosted ? 0.16 : 0.38;
-        material.depthWrite = !ghosted;
-      }
+      if (!child.userData.outline) continue;
+      (child as THREE.LineSegments).material = ghosted ? OUTLINE_MATERIALS.ghost : OUTLINE_MATERIALS.solid;
     }
   }
 
@@ -3640,7 +3725,11 @@ function makeProjectileShadow(projectile: Projectile, color: number): THREE.Mesh
 // the same treatment for the same reason -- a helmet is authored per role and was being bleached.
 // Per-side faction hues, set by the composition root at battle start. Defaults reproduce the
 // original fixed team colours, so nothing changes until a faction actually declares one.
-export const FACTION_TINT = { player: 0x5bc6e5, playerCore: 0x6fc4dd, enemy: 0xffffff };
+// The enemy faction tint defaulted to WHITE, and the enemy role blend ends with a 22% lerp toward
+// it — so with no faction picked every enemy hull was bleached to pale pink. The default is now a
+// rust red: the same slot, the same blend, but it deepens the salmon team read instead of washing
+// it out. (Picking a faction overwrites all three at runtime.)
+export const FACTION_TINT = { player: 0x5bc6e5, playerCore: 0x6fc4dd, enemy: 0x8f3524 };
 
 function roleColor(entity: CombatEntity, role: PartRole, fallback: number): number {
   if (entity.team === "enemy" && entity.kind !== "cover") {
@@ -3649,8 +3738,12 @@ function roleColor(entity: CombatEntity, role: PartRole, fallback: number): numb
     if (role === "head") return blendHex(fallback, 0xffc5a8, 0.3);
     if (role === "utility") return blendHex(fallback, 0xff9c75, 0.45);
     if (role === "volatile") return blendHex(fallback, 0xff7d38, 0.5);
-    // The enemy blend stays dominant for readability; the faction hue only shades it.
-    return blendHex(blendHex(fallback, TEAMS.enemyBlend, 0.68), FACTION_TINT.enemy, 0.22);
+    // This used to repaint 68% of EVERY enemy surface with a light salmon, which is why enemy
+    // armour, walls and HQs all came out pale pink with the modelling washed off. The team read is
+    // already carried by the marker ring, the accent trim and the emissive glow; the hull only has
+    // to sit in the warm-red family. A deeper blend at under half strength does that and leaves the
+    // material visible underneath.
+    return blendHex(blendHex(fallback, TEAMS.enemyBlend, 0.42), FACTION_TINT.enemy, 0.22);
   }
   if (entity.team === "player") {
     if (role === "weapon") return blendHex(fallback, 0x9fdcf0, 0.2);
@@ -3976,17 +4069,40 @@ function infantryPalette(kind: string): { body: number; trim: number; pack: numb
 // value break-up into the floor material -- large soft patches, finer grain, and a few darker
 // weathered streaks. Procedural and deterministic, so no asset is required and the game still
 // runs with an empty asset dir.
-function makeGroundTexture(theme: MapTheme): THREE.CanvasTexture {
-  const size = 512;
+interface GroundSurface {
+  map: THREE.CanvasTexture;
+  normalMap: THREE.CanvasTexture;
+}
+
+function makeGroundTexture(theme: MapTheme): GroundSurface {
+  const size = 1024;
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext("2d")!;
+  // The texture is a MULTIPLIER, not an albedo: it is drawn around white and the material's own
+  // `color` supplies the hue. Baking theme.ground into the texture AND setting the material colour
+  // to theme.ground multiplied the ground tone by itself, which is why every map read as a muddy,
+  // low-contrast field no matter how the lights were tuned. Neutral detail here also lets the arena
+  // floor, the mesa caps and the outer plain share one texture at three different tints.
   const ground = new THREE.Color(theme.ground);
   const accent = new THREE.Color(theme.groundAccent);
-  const css = (c: THREE.Color, a = 1): string => `rgba(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)},${a})`;
+  // Hue mottling without hue: accent-over-ground as a per-channel ratio, normalised to the same
+  // brightness, so patches shift the ground's colour without changing its value.
+  const ratio = new THREE.Color(
+    clamp(accent.r / Math.max(0.04, ground.r), 0.45, 1.8),
+    clamp(accent.g / Math.max(0.04, ground.g), 0.45, 1.8),
+    clamp(accent.b / Math.max(0.04, ground.b), 0.45, 1.8),
+  );
+  const ratioLuma = Math.max(0.2, ratio.r * 0.299 + ratio.g * 0.587 + ratio.b * 0.114);
+  ratio.multiplyScalar(1 / ratioLuma);
+  const WHITE = new THREE.Color(1, 1, 1);
+  const shade = (level: number, toward = 0): THREE.Color =>
+    WHITE.clone().lerp(ratio, toward).multiplyScalar(level);
+  const css = (c: THREE.Color, a = 1): string =>
+    `rgba(${Math.round(clamp(c.r, 0, 1) * 255)},${Math.round(clamp(c.g, 0, 1) * 255)},${Math.round(clamp(c.b, 0, 1) * 255)},${a})`;
 
-  ctx.fillStyle = css(ground);
+  ctx.fillStyle = css(shade(0.94));
   ctx.fillRect(0, 0, size, size);
 
   let seed = 0x1234567;
@@ -3995,59 +4111,161 @@ function makeGroundTexture(theme: MapTheme): THREE.CanvasTexture {
     return seed / 0xffffffff;
   };
 
+  // Everything is stamped through `wrapped`, which repeats any mark that crosses an edge on the
+  // opposite side. That makes the tile SEAMLESS, which is what lets it be tiled small enough
+  // (~11 world units) to still carry detail under the camera. The previous 19-unit tile was the
+  // only way to hide a hard seam, and at that scale the texture had dissolved into soft mush --
+  // exactly the "flat empty plane" read.
+  const wrapped = (x: number, y: number, reach: number, draw: (px: number, py: number) => void): void => {
+    for (const dx of x < reach ? [0, size] : x > size - reach ? [0, -size] : [0]) {
+      for (const dy of y < reach ? [0, size] : y > size - reach ? [0, -size] : [0]) draw(x + dx, y + dy);
+    }
+  };
+
   // Broad tonal patches: the low-frequency variation the eye reads as "ground", not "surface".
-  for (let i = 0; i < 90; i += 1) {
+  for (let i = 0; i < 110; i += 1) {
     const x = rand() * size;
     const y = rand() * size;
-    const r = 26 + rand() * 96;
-    const toward = rand();
-    const tone = ground.clone().lerp(accent, toward * 0.95).multiplyScalar(0.62 + rand() * 0.86);
-    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, css(tone, 0.72));
-    grad.addColorStop(1, css(tone, 0));
-    ctx.fillStyle = grad;
-    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    const r = 40 + rand() * 190;
+    const tone = shade(0.66 + rand() * 0.5, rand() * 0.9);
+    wrapped(x, y, r, (px, py) => {
+      const grad = ctx.createRadialGradient(px, py, 0, px, py, r);
+      grad.addColorStop(0, css(tone, 0.62));
+      grad.addColorStop(1, css(tone, 0));
+      ctx.fillStyle = grad;
+      ctx.fillRect(px - r, py - r, r * 2, r * 2);
+    });
   }
 
   // Darker weathered streaks: these are what actually open up the low end of the histogram.
-  for (let i = 0; i < 22; i += 1) {
+  for (let i = 0; i < 12; i += 1) {
     const x = rand() * size;
     const y = rand() * size;
-    const w = 60 + rand() * 190;
-    const h = 14 + rand() * 40;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(rand() * Math.PI);
-    // Soft-edged and faint. Sharp thin rectangles read as sticks lying on the ground; broad,
-    // blurred, low-alpha smears read as the ground itself being unevenly weathered.
-    const grad = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
-    const shade = ground.clone().multiplyScalar(0.5);
-    grad.addColorStop(0, css(shade, 0));
-    grad.addColorStop(0.5, css(shade, 0.26 + rand() * 0.14));
-    grad.addColorStop(1, css(shade, 0));
-    ctx.fillStyle = grad;
-    ctx.fillRect(-w / 2, -h / 2, w, h);
-    ctx.restore();
+    const w = 90 + rand() * 240;
+    const h = 40 + rand() * 110;
+    const angle = rand() * Math.PI;
+    const alpha = 0.08 + rand() * 0.08;
+    const streak = shade(0.62);
+    wrapped(x, y, w, (px, py) => {
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(angle);
+      const grad = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
+      grad.addColorStop(0, css(streak, 0));
+      grad.addColorStop(0.5, css(streak, alpha));
+      grad.addColorStop(1, css(streak, 0));
+      ctx.fillStyle = grad;
+      ctx.fillRect(-w / 2, -h / 2, w, h);
+      ctx.restore();
+    });
+  }
+
+  // Cracks. Thin dark branching lines are the single cheapest thing that makes a procedural
+  // ground read as a SURFACE with a history rather than as a gradient — and they give the normal
+  // map something with a hard edge to catch the low key light on.
+  ctx.lineCap = "round";
+  for (let i = 0; i < 20; i += 1) {
+    const x0 = rand() * size;
+    const y0 = rand() * size;
+    const steps = 5 + Math.floor(rand() * 7);
+    const step = 14 + rand() * 26;
+    let heading = rand() * Math.PI * 2;
+    const pts: [number, number][] = [[0, 0]];
+    for (let k = 0; k < steps; k += 1) {
+      heading += (rand() - 0.5) * 1.1;
+      const [lx, ly] = pts[pts.length - 1];
+      pts.push([lx + Math.cos(heading) * step, ly + Math.sin(heading) * step]);
+    }
+    const reach = steps * step;
+    const width = 0.8 + rand() * 1.3;
+    const dark = shade(0.5);
+    wrapped(x0, y0, reach, (px, py) => {
+      ctx.strokeStyle = css(dark, 0.3);
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      for (const [dx, dy] of pts.slice(1)) ctx.lineTo(px + dx, py + dy);
+      ctx.stroke();
+    });
+  }
+
+  // Pebbles and pits: lit crown over a dark seat, so each one reads as a rounded stone half-buried
+  // in the ground once the normal map picks it up.
+  for (let i = 0; i < 1500; i += 1) {
+    const x = rand() * size;
+    const y = rand() * size;
+    const r = 1.1 + rand() * 3.6;
+    const lift = rand() < 0.62;
+    const tone = shade(lift ? 1.16 : 0.68, 0.3 + rand() * 0.5);
+    wrapped(x, y, r + 2, (px, py) => {
+      ctx.fillStyle = css(tone, 0.16 + rand() * 0.24);
+      ctx.beginPath();
+      ctx.ellipse(px, py, r, r * (0.6 + rand() * 0.5), rand() * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+    });
   }
 
   // Fine grain so the surface does not read as smooth plastic when the camera is close.
-  const grain = ctx.getImageData(0, 0, size, size);
-  for (let i = 0; i < grain.data.length; i += 4) {
-    const n = (rand() - 0.5) * 34;
-    grain.data[i] = Math.max(0, Math.min(255, grain.data[i] + n));
-    grain.data[i + 1] = Math.max(0, Math.min(255, grain.data[i + 1] + n));
-    grain.data[i + 2] = Math.max(0, Math.min(255, grain.data[i + 2] + n));
+  const image = ctx.getImageData(0, 0, size, size);
+  const data = image.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const n = (rand() - 0.5) * 30;
+    data[i] = Math.max(0, Math.min(255, data[i] + n));
+    data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + n));
+    data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + n));
   }
-  ctx.putImageData(grain, 0, 0);
+  ctx.putImageData(image, 0, 0);
 
+  const map = new THREE.CanvasTexture(canvas);
+  map.wrapS = THREE.RepeatWrapping;
+  map.wrapT = THREE.RepeatWrapping;
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.anisotropy = 8;
+  return { map, normalMap: makeNormalMap(data, size) };
+}
+
+/**
+ * Sobel a normal map out of an albedo's luminance. The ground's detail — pebbles, cracks, grain —
+ * is already drawn as light-over-dark, so its brightness IS a usable height field, and lighting
+ * that relief is what turns a painted plane into a surface under a low sun. Far cheaper than
+ * authoring a second texture, and it stays in lockstep with the albedo by construction.
+ */
+function makeNormalMap(albedo: Uint8ClampedArray, size: number): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  const out = ctx.createImageData(size, size);
+  const lum = new Float32Array(size * size);
+  for (let i = 0; i < lum.length; i += 1) {
+    const o = i * 4;
+    lum[i] = (albedo[o] * 0.299 + albedo[o + 1] * 0.587 + albedo[o + 2] * 0.114) / 255;
+  }
+  const at = (x: number, y: number): number => lum[((y + size) % size) * size + ((x + size) % size)];
+  const strength = 1.5;
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const dx = at(x + 1, y - 1) + 2 * at(x + 1, y) + at(x + 1, y + 1) - at(x - 1, y - 1) - 2 * at(x - 1, y) - at(x - 1, y + 1);
+      const dy = at(x - 1, y + 1) + 2 * at(x, y + 1) + at(x + 1, y + 1) - at(x - 1, y - 1) - 2 * at(x, y - 1) - at(x + 1, y - 1);
+      const nx = -dx * strength;
+      const ny = -dy * strength;
+      const len = Math.hypot(nx, ny, 1);
+      const o = (y * size + x) * 4;
+      out.data[o] = ((nx / len) * 0.5 + 0.5) * 255;
+      out.data[o + 1] = ((ny / len) * 0.5 + 0.5) * 255;
+      out.data[o + 2] = (1 / len) * 0.5 * 255 + 127.5;
+      out.data[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(out, 0, 0);
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
-  texture.anisotropy = 4;
+  texture.anisotropy = 8;
   return texture;
 }
 
-function makeSurroundings(theme: MapTheme, width: number, depth: number): THREE.Group {
+function makeSurroundings(theme: MapTheme, width: number, depth: number, surface: GroundSurface): THREE.Group {
   const group = new THREE.Group();
   group.name = "surroundings";
   const ground = new THREE.Color(theme.ground);
@@ -4056,9 +4274,15 @@ function makeSurroundings(theme: MapTheme, width: number, depth: number): THREE.
   // Outer plain: sits a hair below the arena slab so the slab's own edge still reads as a lip
   // rather than z-fighting with it. Tinted toward fog so it recedes instead of competing.
   const plainColor = ground.clone().lerp(fog, 0.16).multiplyScalar(0.86);
+  // Carries the SAME ground texture as the arena floor (tiled to match world scale), so the
+  // battlefield reads as a marked-out part of a landscape rather than a lit diorama sitting on a
+  // separate, differently-coloured table.
+  const plainMap = surface.map.clone();
+  plainMap.needsUpdate = true;
+  plainMap.repeat.set((width * 9) / 11, (depth * 9) / 11);
   const plain = new THREE.Mesh(
     new THREE.PlaneGeometry(width * 9, depth * 9),
-    new THREE.MeshStandardMaterial({ color: plainColor, roughness: 1, metalness: 0 }),
+    new THREE.MeshStandardMaterial({ map: plainMap, color: plainColor, roughness: 1, metalness: 0 }),
   );
   plain.rotation.x = -Math.PI / 2;
   plain.position.y = -0.22;
@@ -4102,7 +4326,7 @@ function makeSurroundings(theme: MapTheme, width: number, depth: number): THREE.
   return group;
 }
 
-function makeTerrainBlocks(groundColor: number, accentColor: number, surface?: THREE.Texture): THREE.Group {
+function makeTerrainBlocks(groundColor: number, accentColor: number, surface: GroundSurface): THREE.Group {
   const group = new THREE.Group();
   const sideColor = new THREE.Color(groundColor).multiplyScalar(0.66);
   // The cap used to be a near-white tint of the accent, which made every mesa read as a pale slab
@@ -4112,7 +4336,7 @@ function makeTerrainBlocks(groundColor: number, accentColor: number, surface?: T
   const capColor = new THREE.Color(accentColor).lerp(new THREE.Color(groundColor), 0.45);
   const sideMaterial = new THREE.MeshStandardMaterial({ color: sideColor, roughness: 0.95, metalness: 0.03 });
   // polygonOffset keeps the cap's top from z-fighting the body when surfaces nearly coincide.
-  const capMaterial = new THREE.MeshStandardMaterial({ map: surface ?? null, color: capColor, roughness: 0.9, metalness: 0.03, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  const capMaterial = new THREE.MeshStandardMaterial({ map: surface.map, normalMap: surface.normalMap, normalScale: new THREE.Vector2(0.45, 0.45), color: capColor, roughness: 0.9, metalness: 0.03, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   const CAP = 0.1;
   for (const block of terrainBlocks()) {
     const w = block.maxX - block.minX;
@@ -4380,7 +4604,7 @@ const TEAMS = {
   enemyAccent: 0xff6d57,
   enemyMarker: 0xff8f7f,
   enemyGlowDim: 0x4f160f,
-  enemyBlend: 0xe66e5c,
+  enemyBlend: 0x9e3c2a,
   playerGlowDim: 0x063a44,
   playerAccentGlow: 0x5ff1ff,
 };
@@ -4389,7 +4613,7 @@ const TEAMS_HIGH_CONTRAST = {
   enemyAccent: 0xffa11e,
   enemyMarker: 0xffb020,
   enemyGlowDim: 0x4f3300,
-  enemyBlend: 0xf0a030,
+  enemyBlend: 0xa8690f,
   playerGlowDim: 0x0a2a5c,
   playerAccentGlow: 0x66aaff,
 };
@@ -4500,6 +4724,153 @@ export function disposeSubtree(obj: THREE.Object3D): void {
       }
     }
   });
+}
+
+// ---------------------------------------------------------------------------
+// POOLED PART MATERIALS
+//
+// Every procedural part mesh used to own its own MeshStandardMaterial: ~1970 of them in the
+// stress scenario. three refreshes the common + lights uniform blocks once per material per
+// frame, so that count — not the triangle count — was the top of the CPU profile. Parts now
+// resolve their painted appearance to a SHARED material every frame, which also lets the
+// painter sort draw identical-looking parts back to back with no program or uniform change.
+//
+// The key quantizes: 6 bits per albedo channel, 5 per emissive channel, 0.05 emissive
+// intensity, 16 roughness/metalness steps, 8 opacity steps. All below the eye's threshold at
+// tactical distance, and — the point — BOUNDED, so a sine-driven glow pulse can't re-create the
+// per-mesh explosion one frame at a time.
+export interface PartMatSpec {
+  color: THREE.Color;
+  emissive: THREE.Color;
+  emissiveIntensity: number;
+  roughness: number;
+  metalness: number;
+  transparent: boolean;
+  opacity: number;
+  depthWrite: boolean;
+}
+
+const _partSpec: PartMatSpec = {
+  color: new THREE.Color(),
+  emissive: new THREE.Color(),
+  emissiveIntensity: 0,
+  roughness: 0.62,
+  metalness: 0.08,
+  transparent: false,
+  opacity: 1,
+  depthWrite: true,
+};
+const _poolColor = new THREE.Color();
+const _poolEmissive = new THREE.Color();
+const partMaterialPool = new Map<number, THREE.MeshStandardMaterial>();
+
+const q = (value: number, steps: number): number => Math.min(steps, Math.max(0, Math.round(value * steps)));
+
+function partMaterial(spec: PartMatSpec): THREE.MeshStandardMaterial {
+  const c = (q(spec.color.r, 63) * 64 + q(spec.color.g, 63)) * 64 + q(spec.color.b, 63);
+  const e = (q(spec.emissive.r, 31) * 32 + q(spec.emissive.g, 31)) * 32 + q(spec.emissive.b, 31);
+  const i = Math.min(127, Math.round(spec.emissiveIntensity / 0.05));
+  const key = ((((c * 32768 + e) * 128 + i) * 16 + q(spec.roughness, 15)) * 16 + q(spec.metalness, 15)) * 16
+    + q(spec.opacity, 7) * 2 + (spec.depthWrite ? 1 : 0);
+  let material = partMaterialPool.get(key);
+  if (!material) {
+    material = new THREE.MeshStandardMaterial({
+      color: spec.color,
+      emissive: spec.emissive,
+      emissiveIntensity: i * 0.05,
+      roughness: q(spec.roughness, 15) / 15,
+      metalness: q(spec.metalness, 15) / 15,
+      transparent: spec.transparent,
+      opacity: q(spec.opacity, 7) / 7,
+      depthWrite: spec.depthWrite,
+    });
+    material.userData.shared = true; // pooled — disposeSubtree must never free it
+    partMaterialPool.set(key, material);
+  }
+  return material;
+}
+
+/** Build-time entry point: the same pool, addressed by the hex colors the builders carry. */
+function pooledPartMaterial(color: number, emissive: number, emissiveIntensity: number, roughness: number, metalness: number): THREE.MeshStandardMaterial {
+  _partSpec.color.copy(_poolColor.setHex(color));
+  _partSpec.emissive.copy(_poolEmissive.setHex(emissive));
+  _partSpec.emissiveIntensity = emissiveIntensity;
+  _partSpec.roughness = roughness;
+  _partSpec.metalness = metalness;
+  _partSpec.transparent = false;
+  _partSpec.opacity = 1;
+  _partSpec.depthWrite = true;
+  return partMaterial(_partSpec);
+}
+
+// Shadow budget. At tactical camera distance the sun shadow reads as the unit's SILHOUETTE, so
+// only parts big enough to change that silhouette need to be in the shadow map or to sample it.
+// Every bolt, buckle and sight used to do both: 1793 casters in the stress scenario, each one a
+// second draw of the same geometry every frame.
+const SHADOW_MIN_SIZE = 0.3;
+
+function setShadowBudget(mesh: THREE.Mesh, size: number): void {
+  const big = size >= SHADOW_MIN_SIZE;
+  mesh.castShadow = big;
+  mesh.receiveShadow = big;
+}
+
+const OUTLINE_MATERIALS = {
+  solid: new THREE.LineBasicMaterial({ color: 0x050708, transparent: true, opacity: 0.38, depthWrite: true }),
+  ghost: new THREE.LineBasicMaterial({ color: 0x050708, transparent: true, opacity: 0.16, depthWrite: false }),
+};
+OUTLINE_MATERIALS.solid.userData.shared = true;
+OUTLINE_MATERIALS.ghost.userData.shared = true;
+
+const edgeGeometries = new Map<string, THREE.BufferGeometry>();
+
+function edgeGeometry(source: THREE.BufferGeometry): THREE.BufferGeometry {
+  let geometry = edgeGeometries.get(source.uuid);
+  if (!geometry) {
+    geometry = new THREE.EdgesGeometry(source, 35);
+    geometry.userData.shared = true;
+    edgeGeometries.set(source.uuid, geometry);
+  }
+  return geometry;
+}
+
+const cylinderGeometries = new Map<string, THREE.CylinderGeometry>();
+const sphereGeometries = new Map<string, THREE.SphereGeometry>();
+
+function cylinderGeometry(radiusTop: number, radiusBottom: number, depth: number): THREE.CylinderGeometry {
+  const key = `${radiusTop.toFixed(3)}|${radiusBottom.toFixed(3)}|${depth.toFixed(3)}`;
+  let geometry = cylinderGeometries.get(key);
+  if (!geometry) {
+    geometry = new THREE.CylinderGeometry(radiusTop, radiusBottom, depth, 14);
+    geometry.userData.shared = true;
+    cylinderGeometries.set(key, geometry);
+  }
+  return geometry;
+}
+
+function sphereGeometry(radius: number): THREE.SphereGeometry {
+  const key = radius.toFixed(3);
+  let geometry = sphereGeometries.get(key);
+  if (!geometry) {
+    geometry = new THREE.SphereGeometry(radius, 14, 10);
+    geometry.userData.shared = true;
+    sphereGeometries.set(key, geometry);
+  }
+  return geometry;
+}
+
+// Hex -> Color memo. THREE.Color.setHex re-runs the sRGB->linear conversion on every call, and
+// paintPart asks for a handful of fixed tint/glow constants for every part mesh every frame — that
+// conversion alone was 5% of the frame profile.
+const hexColors = new Map<number, THREE.Color>();
+
+function hexColor(hex: number): THREE.Color {
+  let color = hexColors.get(hex);
+  if (!color) {
+    color = new THREE.Color(hex);
+    hexColors.set(hex, color);
+  }
+  return color;
 }
 
 // Scratch colors reused by paintPart's per-frame, per-mesh hot path (avoids allocating).

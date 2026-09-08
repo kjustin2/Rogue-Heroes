@@ -5048,3 +5048,133 @@ body.killcam::after { bottom: 0; }
 @media (max-width: 760px) {
   .action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ---------------------------------------------------------------------------
+   ROSTER CARD — two rows, fixed height
+   The card used to stack four rows and its meta line wrapped, so twenty units
+   overflowed the panel and the last card was cut in half. Identity on top,
+   condition beneath, order line only when there is an order.
+   --------------------------------------------------------------------------- */
+.unit-card { min-height: 0; }
+
+.unit-select {
+  min-height: 0;
+  gap: 3px;
+  padding: 7px 9px;
+}
+
+.unit-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.unit-line .unit-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+  line-height: 1.1;
+}
+
+/* Status is the thing you scan a roster FOR, so it gets a chip of its own on the
+   name line instead of being the third slash-separated fragment of a wrapping
+   sentence. Colour carries the read; the word is there for anyone who can't use it. */
+.unit-status {
+  flex: 0 0 auto;
+  font-family: var(--font-ui);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--text-muted);
+  background: rgba(8, 12, 14, 0.6);
+}
+.unit-status--ready { color: var(--mint); border-color: rgba(142, 242, 209, 0.4); }
+.unit-status--spent { color: var(--amber); border-color: rgba(255, 202, 107, 0.45); }
+.unit-status--warn  { color: var(--orange); border-color: rgba(255, 135, 95, 0.45); }
+.unit-status--dead  { color: var(--red); border-color: rgba(255, 113, 105, 0.4); }
+
+.unit-line--sub {
+  gap: 7px;
+  font-size: 0.68rem;
+  line-height: 1.1;
+  color: var(--text-muted);
+}
+
+.unit-kind {
+  flex: 0 0 auto;
+  font-family: var(--font-ui);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.supply-chip {
+  flex: 0 0 auto;
+  font-family: var(--font-ui);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--amber);
+  cursor: help;
+}
+
+/* The condition bar takes whatever width the row has left, so it doubles as the
+   card's alignment spine instead of adding a row of its own. */
+.unit-line--sub .unit-health {
+  flex: 1 1 auto;
+  min-width: 34px;
+  margin: 0;
+}
+
+.unit-line--sub .cp-pips { flex: 0 0 auto; }
+.unit-line--sub .stance-chip { margin: 0; flex: 0 0 auto; }
+
+.unit-card .queued-order {
+  width: 100%;
+  color: var(--cyan);
+  font-size: 0.66rem;
+}
+
+/* Order bar, empty state. Nothing selected is a common, long-lived state during
+   planning: it gets one line of guidance and gives its height back to the map. */
+.order-hint {
+  margin: 2px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  color: var(--text-muted);
+}
+.command-layout.idle { display: none; }
+
+/* ---------------------------------------------------------------------------
+   TOP-RIGHT COMMAND STACK — one column, one width
+   The stack sized every child to its own content, so End Turn, Menu and the four
+   status chips all ended at different right edges and the group read as a pile of
+   unrelated boxes. A fixed column width makes it one control panel.
+   --------------------------------------------------------------------------- */
+.topbar.compact-top {
+  width: 182px;
+}
+.compact-top > * { width: 100%; }
+.compact-top .end-turn { min-width: 0; }
+
+/* The bottom-left log strip. Widening it would have run under the command bar, so
+   the line wraps to two instead: "Turn 1 command pha..." reads as a broken build,
+   and the strip has the vertical room for a second line already. */
+.log-line {
+  min-width: 0;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.2;
+}

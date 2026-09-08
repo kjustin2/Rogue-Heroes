@@ -1,72 +1,72 @@
 {
-  "at": "2026-09-08T16:57:00.540Z",
+  "at": "2026-09-08T21:49:00.274Z",
   "command": {
     "label": "command-stress",
-    "fps": 79.24,
+    "fps": 64.43,
     "windowMs": 3501.3,
     "frame": {
-      "count": 279,
-      "mean": 12.62,
+      "count": 227,
+      "mean": 15.52,
       "p50": 13.9,
-      "p95": 14,
-      "p99": 17.5,
-      "max": 20.8,
+      "p95": 20.9,
+      "p99": 21.1,
+      "max": 24.4,
       "jank": 0,
       "jankRatio": 0
     },
     "render": {
-      "calls": 850,
-      "triangles": 213282,
-      "geometries": 889,
-      "textures": 28,
-      "programs": 24
+      "calls": 912,
+      "triangles": 229654,
+      "geometries": 337,
+      "textures": 30,
+      "programs": 31
     },
-    "sceneObjects": 2650
+    "sceneObjects": 2891
   },
   "resolve": {
     "label": "resolve-stress",
-    "fps": 50.48,
-    "windowMs": 6106.1,
+    "fps": 54.02,
+    "windowMs": 6008.8,
     "frame": {
-      "count": 309,
-      "mean": 19.81,
-      "p50": 20.8,
-      "p95": 27.9,
+      "count": 325,
+      "mean": 18.51,
+      "p50": 14,
+      "p95": 31.5,
       "p99": 41.7,
-      "max": 124.9,
-      "jank": 15,
+      "max": 173.6,
+      "jank": 16,
       "jankRatio": 0.049
     },
     "render": {
-      "calls": 1568,
-      "triangles": 310900,
-      "geometries": 1364,
-      "textures": 51,
-      "programs": 25
+      "calls": 1647,
+      "triangles": 340904,
+      "geometries": 614,
+      "textures": 56,
+      "programs": 33
     },
-    "sceneObjects": 2659
+    "sceneObjects": 2904
   },
   "light": {
     "label": "command-light",
-    "fps": 129.37,
-    "windowMs": 3000.8,
+    "fps": 125.16,
+    "windowMs": 3014.8,
     "frame": {
-      "count": 389,
-      "mean": 7.73,
+      "count": 378,
+      "mean": 7.99,
       "p50": 6.9,
       "p95": 7.1,
-      "p99": 10.5,
-      "max": 298.6,
+      "p99": 7.1,
+      "max": 395.9,
       "jank": 1,
       "jankRatio": 0.003
     },
     "render": {
-      "calls": 449,
-      "triangles": 217610,
-      "geometries": 275,
-      "textures": 28,
-      "programs": 23
+      "calls": 475,
+      "triangles": 217970,
+      "geometries": 279,
+      "textures": 22,
+      "programs": 35
     },
-    "sceneObjects": 847
+    "sceneObjects": 930
   }
 }
