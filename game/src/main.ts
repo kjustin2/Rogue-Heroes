@@ -2170,6 +2170,7 @@ declare global {
       diagnostics(): DiagnosticsReport;
       describeScene(): SceneDescription;
       limbPose(entityId: string): { limb: string; rotX: number; posY: number; posZ: number }[];
+      partColors(entityId: string): { partId: string; color: string; emissive: string; intensity: number }[];
       sceneGraph(): { total: number; topLevel: number };
       setDebugOverlay(on: boolean): boolean;
       // Cosmetic toggles (skin pack + colorblind palette) for screenshot harnesses.
@@ -2248,6 +2249,7 @@ window.__rht = {
   diagnostics: () => runSceneDiagnostics(),
   describeScene: () => buildSceneDescription(),
   limbPose: (entityId: string) => world.limbPose(entityId),
+  partColors: (entityId: string) => world.partColors(entityId),
   sceneGraph: () => ({ total: countSceneObjects(), topLevel: stage.scene.children.length }),
   setDebugOverlay: (on) => { debugOverlay.setEnabled(on); return debugOverlay.isEnabled(); },
   setModelSkin: (skin: string) => setModelSkin(skin),

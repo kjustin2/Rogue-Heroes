@@ -535,6 +535,31 @@ export class WorldRenderer {
     return out;
   }
 
+  /**
+   * The colour every part mesh of an actor is ACTUALLY rendering, after role tinting, damage
+   * shading, selection and hit flash. Added because reading the authored colour out of the source
+   * repeatedly failed to explain what the portraits showed -- several rounds were spent reasoning
+   * about a paint pipeline that is easier to just measure.
+   */
+  partColors(entityId: string): { partId: string; color: string; emissive: string; intensity: number }[] {
+    const group = this.groups.get(entityId);
+    if (!group) return [];
+    const out: { partId: string; color: string; emissive: string; intensity: number }[] = [];
+    group.traverse((node) => {
+      const mesh = node as PartMesh;
+      if (!mesh.isMesh || !(mesh.material instanceof THREE.MeshStandardMaterial)) return;
+      const partId = mesh.userData?.partId as string | undefined;
+      if (!partId) return;
+      out.push({
+        partId,
+        color: `#${mesh.material.color.getHexString()}`,
+        emissive: `#${mesh.material.emissive.getHexString()}`,
+        intensity: Number(mesh.material.emissiveIntensity.toFixed(2)),
+      });
+    });
+    return out;
+  }
+
   private disposeAndClear(group: THREE.Group): void {
     disposeSubtree(group);
     group.clear();
@@ -759,9 +784,10 @@ export class WorldRenderer {
     // Slightly darker than the authored ground tone so units (whose palette tops out
     // near-white) keep value separation from the floor under the warm key light.
     const groundTexture = makeGroundTexture(theme);
-    // One texture tile per ~9 world units: large enough that the pattern does not read as tiling
-    // from the tactical camera, small enough to break up the biggest maps.
-    groundTexture.repeat.set(Math.max(2, width / 9), Math.max(2, depth / 9));
+    // One texture tile per ~19 world units. At the previous 9 the repeat was plainly visible as a
+    // regular grid once the camera came in close -- a tiling artefact reads as cheaper than no
+    // texture at all. Bigger tiles put the seam beyond where the eye tracks it.
+    groundTexture.repeat.set(Math.max(1.5, width / 19), Math.max(1.5, depth / 19));
     const floor = new THREE.Mesh(
       new THREE.BoxGeometry(width, 0.18, depth),
       new THREE.MeshStandardMaterial({ map: groundTexture, color: new THREE.Color(theme.ground).multiplyScalar(0.96), roughness: 0.95, metalness: 0.02 })
@@ -1370,20 +1396,44 @@ export class WorldRenderer {
     // black-silhouette test failed even though the detail work was there. So the CHASSIS now
     // varies: a heavy gunner is short and broad, a scout is tall and narrow, a striker leans into
     // the fight. Proportion survives at any zoom, where greebles do not.
-    // Hip girdle + utility belt.
+    // Hip girdle: a belt block with hanging thigh plates, so the waist reads as armour rather
+    // than a step change in the torso cylinder.
     this.box(rig, entity, "legs", [0.4, 0.16, 0.28], [0, 0.5, 0], trimColor, { metalness: 0.16 });
+    for (const side of [-1, 1]) {
+      this.box(rig, entity, "legs", [0.13, 0.19, 0.2], [side * 0.2, 0.44, 0.02], trimColor, { metalness: 0.22, rotation: [0, 0, side * -0.14] });
+    }
+    // Utility belt with pouches. Three small blocks around the front is the cheapest thing that
+    // reads as "kit carried by a person" instead of a smooth mannequin.
     this.box(rig, entity, "body", [0.46, 0.09, 0.32], [0, 0.6, 0], 0x1c2326, { metalness: 0.2 });
-    // Armored torso barrel with an angled chest plate and a glowing core seam.
-    this.cylinder(rig, entity, "body", 0.24, 0.62, [0, 0.84, 0], bodyColor, [0, 0, 0], { emissive: teamGlow, emissiveIntensity: 0.08, radiusBottom: 0.27 });
-    this.box(rig, entity, "body", [0.4, 0.34, 0.1], [0, 0.99, 0.18], trimColor, { metalness: 0.3, rotation: [-0.16, 0, 0] });
+    for (const [x, z] of [[-0.17, 0.16], [0.17, 0.16], [0, 0.185]] as const) {
+      this.box(rig, entity, "body", [0.11, 0.11, 0.08], [x, 0.6, z], 0x2b343a, { metalness: 0.12, bevel: 0.3 });
+    }
+    // Torso: a tapered barrel with a SEPARATE upper chest mass that overhangs it. The overhang is
+    // what gives the trooper a shoulder line and a shadow under the chest -- a single cylinder
+    // reads as a bottle no matter how it is lit.
+    this.cylinder(rig, entity, "body", 0.24, 0.5, [0, 0.8, 0], bodyColor, [0, 0, 0], { emissive: teamGlow, emissiveIntensity: 0.08, radiusBottom: 0.27 });
+    this.box(rig, entity, "body", [0.5, 0.3, 0.34], [0, 1.03, 0], bodyColor, { metalness: 0.14, bevel: 0.26 });
+    // Angled breastplate over it, with a glowing core seam.
+    this.box(rig, entity, "body", [0.42, 0.34, 0.11], [0, 0.99, 0.18], trimColor, { metalness: 0.3, rotation: [-0.16, 0, 0], bevel: 0.24 });
     this.box(rig, entity, "body", [0.12, 0.2, 0.05], [0, 0.98, 0.245], 0x10171a, { emissive: teamGlow, emissiveIntensity: 0.5, rotation: [-0.16, 0, 0] });
-    // Collar ring + shoulder pauldrons hugging the torso line.
+    // Back plate, so the unit has a silhouette from behind too -- half the time the camera is
+    // looking at a trooper's back and there was nothing there.
+    this.box(rig, entity, "body", [0.4, 0.32, 0.08], [0, 1.0, -0.17], trimColor, { metalness: 0.26, rotation: [0.1, 0, 0], bevel: 0.24 });
+    // Gorget + neck column.
     this.cylinder(rig, entity, "body", 0.13, 0.1, [0, 1.2, 0.01], trimColor, [0, 0, 0], { metalness: 0.24 });
-    this.sphere(rig, entity, "body", 0.105, [-0.33, 1.03, 0.02], 0x39434a, { metalness: 0.3, scaleY: 0.78 });
-    this.sphere(rig, entity, "body", 0.105, [0.33, 1.03, 0.02], 0x39434a, { metalness: 0.3, scaleY: 0.78 });
-    // Rounded head with a glowing visor band; each kind's kit supplies its own helmet on top.
-    this.sphere(rig, entity, "head", 0.175, [0, 1.37, 0.02], 0xd8d2bd, { scaleY: 0.95 });
-    this.box(rig, entity, "head", [0.28, 0.085, 0.07], [0, 1.38, 0.17], 0x0c1418, { emissive: teamGlow, emissiveIntensity: 0.55 });
+    this.cylinder(rig, entity, "body", 0.085, 0.12, [0, 1.25, 0.01], 0x1a2226, [0, 0, 0], { metalness: 0.3 });
+    // Pauldrons: angled, bevelled plates with a rim, canted outward off the shoulder. Squashed
+    // spheres read as balls at any distance; a plate with a lit top edge reads as armour.
+    for (const side of [-1, 1]) {
+      this.box(rig, entity, "body", [0.2, 0.17, 0.3], [side * 0.33, 1.05, 0.01], 0x39434a, { metalness: 0.32, rotation: [0, 0, side * -0.3], bevel: 0.3 });
+      this.box(rig, entity, "body", [0.21, 0.05, 0.31], [side * 0.35, 1.14, 0.01], trimColor, { metalness: 0.4, rotation: [0, 0, side * -0.3], bevel: 0.4 });
+    }
+    // Head: skull, a brow ridge over the visor, and a rear comms block. The brow is the single
+    // detail that stops a head reading as a featureless ball.
+    this.sphere(rig, entity, "head", 0.165, [0, 1.37, 0.02], 0xd8d2bd, { scaleY: 0.95 });
+    this.box(rig, entity, "head", [0.3, 0.07, 0.1], [0, 1.44, 0.145], 0x2b343a, { metalness: 0.26, rotation: [-0.24, 0, 0], bevel: 0.35 });
+    this.box(rig, entity, "head", [0.28, 0.085, 0.07], [0, 1.37, 0.17], 0x0c1418, { emissive: teamGlow, emissiveIntensity: 0.55 });
+    this.box(rig, entity, "head", [0.14, 0.11, 0.1], [0, 1.36, -0.15], 0x2b343a, { metalness: 0.24, bevel: 0.3 });
     if (entity.kind === "sniper") {
       // Marksman: extra-long bipod-steadied rifle, a fat glowing scope, and a camo ghillie
       // hood/cloak that ragged-edges the silhouette — clearly the patient long-range shooter.
@@ -1428,8 +1478,9 @@ export class WorldRenderer {
       this.cylinder(rig, entity, "rifle", 0.26, 0.24, [0.54, 0.74, 0.5], 0x14181a, [0, 0, 0], { metalness: 0.3 });
       this.box(rig, entity, "rifle", [0.34, 0.3, 0.22], [0.54, 0.92, 1.12], 0xffca6b, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.5 });
       for (let i = 0; i < 4; i++) this.box(rig, entity, "rifle", [0.12, 0.09, 0.1], [0.34 - i * 0.07, 0.8 - i * 0.015, 0.18 - i * 0.13], 0xffca6b, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.3 });
-      this.box(rig, entity, "pack", [0.58, 0.56, 0.42], [0, 0.9, -0.38], 0xffb02e, { accent: true, emissive: 0xff6b1a, emissiveIntensity: 0.5 });
-      this.box(rig, entity, "pack", [0.64, 0.12, 0.48], [0, 1.2, -0.38], 0xfff0bf, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.6 });
+      this.cylinder(rig, entity, "pack", 0.17, 0.3, [-0.03, 0.95, -0.34], 0xc8761f, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.32 });
+      this.box(rig, entity, "pack", [0.12, 0.1, 0.26], [0.2, 0.95, -0.26], 0x8a5a22, { accent: true, metalness: 0.3, bevel: 0.3 });
+      this.box(rig, entity, "pack", [0.3, 0.08, 0.1], [0, 1.14, -0.3], 0xffb02e, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.28, bevel: 0.35 });
       this.box(rig, entity, "head", [0.5, 0.46, 0.48], [0, 1.36, 0.0], 0x7a4a2a, { accent: true, metalness: 0.18 });
       this.box(rig, entity, "head", [0.54, 0.14, 0.16], [0, 1.36, 0.22], 0x141819, { accent: true, emissive: 0xffb02e, emissiveIntensity: 0.6 });
     } else if (entity.kind === "mortar") {
@@ -1514,8 +1565,16 @@ export class WorldRenderer {
     } else {
       // Line infantry (soldier): standard bayoneted rifle, a brimmed helmet with a comms
       // bead, chest webbing/pouches and a slung frag — the plain baseline trooper.
-      this.box(rig, entity, "rifle", [0.18, 0.18, 0.9], [0.45, 0.92, 0.28], trimColor);
-      this.box(rig, entity, "rifle", [0.05, 0.05, 0.3], [0.45, 0.96, 0.78], 0xeaffff, { accent: true, metalness: 0.5 });
+      // A rifle, not a plank: receiver, a slimmer barrel with a muzzle device, a magazine
+      // hanging below, a stock behind the grip and a low optic on top. This is the shape the
+      // player sees on the most common unit in the game, so it earns the extra meshes.
+      this.box(rig, entity, "rifle", [0.115, 0.15, 0.52], [0.45, 0.93, 0.2], trimColor, { metalness: 0.34, bevel: 0.22 });
+      this.cylinder(rig, entity, "rifle", 0.032, 0.46, [0.45, 0.95, 0.63], 0x1d2529, [Math.PI / 2, 0, 0], { metalness: 0.44 });
+      this.box(rig, entity, "rifle", [0.07, 0.07, 0.11], [0.45, 0.95, 0.88], 0x11181b, { metalness: 0.5, bevel: 0.3 });
+      this.box(rig, entity, "rifle", [0.075, 0.19, 0.11], [0.45, 0.81, 0.16], 0x232c31, { metalness: 0.3, bevel: 0.26 });
+      this.box(rig, entity, "rifle", [0.09, 0.12, 0.26], [0.45, 0.9, -0.13], 0x2b343a, { metalness: 0.26, bevel: 0.28 });
+      this.box(rig, entity, "rifle", [0.05, 0.06, 0.16], [0.45, 1.03, 0.16], 0x11181b, { metalness: 0.42, bevel: 0.3 });
+      this.box(rig, entity, "rifle", [0.05, 0.05, 0.16], [0.45, 0.96, 0.98], 0xeaffff, { accent: true, metalness: 0.5 });
       this.box(rig, entity, "body", [0.5, 0.12, 0.06], [0, 0.94, 0.2], 0x2c3a30, { accent: true });
       for (const x of [-0.16, 0.16]) this.box(rig, entity, "body", [0.14, 0.18, 0.1], [x, 0.74, 0.2], 0x35463a, { accent: true });
       this.box(rig, entity, "body", [0.12, 0.16, 0.12], [-0.3, 0.66, 0.12], 0x3f5036, { accent: true });
@@ -1529,10 +1588,22 @@ export class WorldRenderer {
     this.box(rig, entity, "pack", [0.1, 0.14, 0.06], [-0.22, 1.04, -0.38], 0xdaf7ff, { emissive: teamGlow, emissiveIntensity: 0.42 });
     // Arms and legs are tagged as limbs so they can swing into a walk cycle while moving.
     // Tapered cylinders with glove/boot caps — same base positions and pivots as before.
-    this.cylinder(rig, entity, "body", 0.075, 0.5, [-0.42, 0.72, 0.02], bodyColor, [0, 0, 0], { radiusBottom: 0.09 }).userData.limb = "arm-l";
-    this.cylinder(rig, entity, "body", 0.075, 0.5, [0.42, 0.72, 0.02], bodyColor, [0, 0, 0], { radiusBottom: 0.09 }).userData.limb = "arm-r";
-    this.sphere(rig, entity, "body", 0.088, [-0.42, 0.46, 0.05], 0x1f282c, { metalness: 0.2 }).userData.limb = "arm-l";
-    this.sphere(rig, entity, "body", 0.088, [0.42, 0.46, 0.05], 0x1f282c, { metalness: 0.2 }).userData.limb = "arm-r";
+    // Arms: upper arm, a bracer at the forearm, and a blocky glove. Every mesh carries the same
+    // limb tag, so they all swing about the shared shoulder pivot as one piece -- the segments are
+    // there for silhouette, not for a second joint.
+    for (const side of [-1, 1]) {
+      const tag = side < 0 ? "arm-l" : "arm-r";
+      this.cylinder(rig, entity, "body", 0.075, 0.34, [side * 0.42, 0.82, 0.02], bodyColor, [0, 0, 0], { radiusBottom: 0.085 }).userData.limb = tag;
+      this.box(rig, entity, "body", [0.14, 0.2, 0.15], [side * 0.42, 0.6, 0.03], 0x2b343a, { metalness: 0.26, bevel: 0.28 }).userData.limb = tag;
+      this.box(rig, entity, "body", [0.12, 0.12, 0.14], [side * 0.42, 0.46, 0.05], 0x1f282c, { metalness: 0.2, bevel: 0.32 }).userData.limb = tag;
+    }
+    // Legs: thigh, a knee plate, and a boot with a raised toe. The knee plate is what breaks the
+    // "two smooth pipes" read, and the toe is what makes a planted foot look planted.
+    for (const side of [-1, 1]) {
+      const tag = side < 0 ? "leg-l" : "leg-r";
+      this.box(rig, entity, "legs", [0.15, 0.14, 0.16], [side * 0.18, 0.3, 0.03], trimColor, { metalness: 0.28, bevel: 0.3 }).userData.limb = tag;
+      this.box(rig, entity, "legs", [0.11, 0.08, 0.12], [side * 0.18, 0.13, 0.06], 0x212b2f, { metalness: 0.2, bevel: 0.3 }).userData.limb = tag;
+    }
     this.cylinder(rig, entity, "legs", 0.095, 0.52, [-0.18, 0.26, 0], 0x162225, [0, 0, 0], { radiusBottom: 0.075 }).userData.limb = "leg-l";
     this.cylinder(rig, entity, "legs", 0.095, 0.52, [0.18, 0.26, 0], 0x162225, [0, 0, 0], { radiusBottom: 0.075 }).userData.limb = "leg-r";
     this.box(rig, entity, "legs", [0.2, 0.11, 0.3], [-0.18, 0.055, 0.07], 0x101516, { metalness: 0.14 }).userData.limb = "leg-l";
@@ -2103,7 +2174,7 @@ export class WorldRenderer {
     const unitGlowColor = entity.team === "enemy" ? TEAMS.enemyGlowDim : TEAMS.playerGlowDim;
     material.emissive.setHex(part.hp > 0 && targetedPart ? 0x4f3000 : part.hp > 0 && selected ? 0x0b3844 : accent ? baseEmissive : unitGlow ? unitGlowColor : coverGlow ? coverGlowColor : baseEmissive);
     material.emissiveIntensity = part.hp > 0
-      ? (mesh.userData.baseEmissiveIntensity as number) + (unitGlow ? 0.14 : 0) + (coverGlow ? 0.18 : 0) + (selected ? 0.58 : 0) + (targetedPart ? 0.72 : targeted ? 0.34 : 0)
+      ? (mesh.userData.baseEmissiveIntensity as number) + (unitGlow ? 0.07 : 0) + (coverGlow ? 0.18 : 0) + (selected ? 0.58 : 0) + (targetedPart ? 0.72 : targeted ? 0.34 : 0)
       : 0;
     // Living idle: standing infantry breathe, their arms + held weapon carry a slow sway, and the
     // torso does a subtle weight-shift — phase-offset per unit so a squad doesn't move in lockstep,
@@ -2122,9 +2193,15 @@ export class WorldRenderer {
         mesh.rotation.z += Math.sin(t * 0.8) * 0.02 * idleW;
       }
     }
+    // "Still has orders left" cue: a player unit with command points remaining carries a slow pulse
+    // on its weapon. This is a real affordance and it stays -- but it used to run at 0.14 plus up
+    // to 0.18 of the team accent, which lit the whole weapon like a lantern. Since the command
+    // phase is where the player spends nearly all their time, that meant EVERY gun in the game was
+    // a glowing pale slab in almost every frame, and no amount of modelling detail survived it.
+    // A third of the strength still reads as a pulse without erasing the metal underneath.
     if (this.commandPhase && entity.team === "player" && entity.status.alive && entity.commandPoints > 0 && part.role === "weapon" && part.hp > 0 && !selected && !targeted) {
       material.emissive.setHex(entity.accent ?? this.playerAccent);
-      material.emissiveIntensity = Math.max(material.emissiveIntensity, 0.14 + (Math.sin(performance.now() * 0.004 + (hash(entity.id) % 63)) + 1) * 0.09);
+      material.emissiveIntensity = Math.max(material.emissiveIntensity, 0.05 + (Math.sin(performance.now() * 0.004 + (hash(entity.id) % 63)) + 1) * 0.03);
     }
     // Elites/bosses wear a burning gold trim so they read as the priority target.
     if (entity.elite && entity.status.alive && part.hp > 0 && !selected && !targeted && flash <= 0) {
@@ -3261,22 +3338,31 @@ function makeProjectileShadow(projectile: Projectile, color: number): THREE.Mesh
   return shadow;
 }
 
+// Team identity is applied by BLENDING toward a team hue, never by replacing a part's authored
+// colour outright.
+//
+// Weapons used to return a flat near-white (0xeaffff player, 0xffd2bd enemy), which threw away
+// every gun's authored gunmetal and turned each one into a pale slab -- a rifle, an auto-cannon and
+// a flame projector all rendered as the same white plank, which is most of why the army looked
+// unfinished no matter how much detail went into the models. Team readability does not depend on
+// it: a unit already carries a team ring, a team emissive rim, and a team-blended torso. Heads got
+// the same treatment for the same reason -- a helmet is authored per role and was being bleached.
 function roleColor(entity: CombatEntity, role: PartRole, fallback: number): number {
   if (entity.team === "enemy" && entity.kind !== "cover") {
-    if (role === "weapon") return 0xffd2bd;
+    if (role === "weapon") return blendHex(fallback, 0xff9c7a, 0.2);
     if (role === "mobility") return 0x211a1b;
-    if (role === "head") return 0xffc5a8;
+    if (role === "head") return blendHex(fallback, 0xffc5a8, 0.3);
     if (role === "utility") return 0xff9c75;
     if (role === "volatile") return 0xff7d38;
     return blendHex(fallback, TEAMS.enemyBlend, 0.68);
   }
   if (entity.team === "player") {
-    if (role === "weapon") return 0xeaffff;
+    if (role === "weapon") return blendHex(fallback, 0x9fdcf0, 0.2);
     if (role === "mobility") return 0x172328;
-    if (role === "head") return 0xf2dfbf;
+    if (role === "head") return blendHex(fallback, 0xf2dfbf, 0.3);
     if (role === "utility") return 0x8ff2d1;
     if (role === "volatile") return 0xffd06a;
-    if (role === "core") return blendHex(fallback, 0x7fe8ff, 0.42);
+    if (role === "core") return blendHex(fallback, 0x6fc4dd, 0.26);
     return blendHex(fallback, 0x5bc6e5, 0.22);
   }
   return fallback;
@@ -3484,20 +3570,32 @@ function infantryBuild(kind: EntityKind): InfantryBuild {
   return { ...DEFAULT_BUILD, ...(INFANTRY_BUILDS[kind] ?? {}) };
 }
 
+// UNIT PALETTE.
+//
+// `trim` is the armour: breastplate, hip plates, pauldron rims, and most weapons. Every entry used
+// to be a near-white (0xffffff, 0xf0fdff, 0xfff0ba...), which is why the roster read as bright
+// plastic toys rather than equipment -- a soldier was a saturated pastel body wearing white kit and
+// carrying a white gun. Trim is now dark tempered metal, tinted a little toward each role's hue so
+// the units still differ head to toe, and the saturated colour is spent only where it identifies
+// the unit: the bodysuit and the signature kit.
+//
+// Bodies are pulled down in value and saturation for the same reason. They still separate cleanly
+// from one another -- the hues are spread right around the wheel -- but they now sit in a range
+// where the key light can put a highlight ON them, which a near-white surface cannot receive.
 function infantryPalette(kind: string): { body: number; trim: number; pack: number } {
   switch (kind) {
-    case "scout": return { body: 0x7fe0a0, trim: 0xeafff0, pack: 0x2f6e4a };
-    case "sniper": return { body: 0x5cc9ff, trim: 0xf0fdff, pack: 0x16486a };
-    case "striker": return { body: 0xd28cff, trim: 0xffffff, pack: 0x4a2b78 };
-    case "heavy": return { body: 0xc06a3a, trim: 0xffd9b0, pack: 0x5a2f18 };
-    case "grenadier": return { body: 0xffb23f, trim: 0xfff0ba, pack: 0x784214 };
-    case "mortar": return { body: 0xe0a64f, trim: 0xfff0c8, pack: 0x6a4a1a };
-    case "medic": return { body: 0xff7f8f, trim: 0xffffff, pack: 0x7a1f2a };
-    case "engineer": return { body: 0xe0c24a, trim: 0xfff6c0, pack: 0x6a5a18 };
-    case "flamer": return { body: 0xff8a4a, trim: 0xffe2c4, pack: 0x8a2f10 };
-    case "droneop": return { body: 0x9fb8d8, trim: 0xf0f6ff, pack: 0x2c4a6a };
-    case "sapper": return { body: 0xd8c06a, trim: 0xfff2c8, pack: 0x5a4a1a };
-    default: return { body: 0x26f0c8, trim: 0xeaffff, pack: 0x1d5f66 };
+    case "scout": return { body: 0x4f8f63, trim: 0x36443c, pack: 0x24503a };
+    case "sniper": return { body: 0x44718c, trim: 0x33414a, pack: 0x1b3a4e };
+    case "striker": return { body: 0x7d51ad, trim: 0x3b3350, pack: 0x39235c };
+    case "heavy": return { body: 0xa05c30, trim: 0x453930, pack: 0x4a2716 };
+    case "grenadier": return { body: 0xba7c2c, trim: 0x4a4030, pack: 0x5c3510 };
+    case "mortar": return { body: 0xa17d3c, trim: 0x46402f, pack: 0x54401a };
+    case "medic": return { body: 0xb85763, trim: 0x4a3a3d, pack: 0x5e2129 };
+    case "engineer": return { body: 0xa89232, trim: 0x474328, pack: 0x54481a };
+    case "flamer": return { body: 0xb86133, trim: 0x4a3a30, pack: 0x6a2812 };
+    case "droneop": return { body: 0x6d8299, trim: 0x3d4550, pack: 0x2c3f52 };
+    case "sapper": return { body: 0x9c8c4c, trim: 0x46422f, pack: 0x4a3f1e };
+    default: return { body: 0x2f8f80, trim: 0x35424a, pack: 0x1d5f66 };
   }
 }
 

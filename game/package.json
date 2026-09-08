@@ -26,6 +26,7 @@
     "test:play": "npm run build && npm run smoke:electron",
     "smoke:faction": "node scripts/shot-faction.mjs",
     "smoke:animation": "node scripts/shot-animation.mjs",
+    "shots:portraits": "node scripts/shot-portraits.mjs",
     "smoke:core": "npm run smoke:buttons && npm run smoke:flow && npm run smoke:economy && npm run smoke:deep && npm run smoke:faction && npm run smoke:animation",
     "test:full": "npm run verify && npm run smoke:core",
     "desktop": "electron .",
