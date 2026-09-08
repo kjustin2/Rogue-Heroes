@@ -89,6 +89,15 @@ Repo gotchas:
   (draw calls, triangles, objects, leak growth) vs `improve/perf-baseline.json`.
   Rebase with `npm run perf -- --update-baseline` after an intentional cost change.
 - The debug overlay mounts on `<body>`, **not** `#ui` (HUD rewrites `#ui` each frame).
+- **Attribute before you optimise.** `npm run perf:profile` records a V8 CPU profile of the
+  stress scenario and prints the heaviest self-time functions; `npm run perf:census` counts
+  what is actually in the scene (visible meshes, shadow casters, unique materials/geometries).
+  The 2026-09 perf round was won by the profile, not by guessing: the frame was dominated by
+  three's per-material uniform machinery, not by triangles or fill.
+- **`npm run audit:unit <kind>`** sorts a trooper's resolved part colours by luminance. Run it
+  after any palette work: the recurring failure here is a *large* surface creeping above ~180
+  luminance (it was the bare HEAD at 214, brighter than the unit's own glowing ammo), which is
+  what makes the roster read as pale plastic. Small emissive lamps at high luminance are fine.
 
 ## Architecture (repo-specific facts)
 
@@ -138,6 +147,28 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
 - **`serialize()`/`restore()`** JSON round-trip the battle; always resumes in `command`.
 - Data catalogs are the tuning surface: `units.ts` (troops/defenses/support powers),
   `tech.ts`, `modes.ts`, `maps.ts`, `scenario.ts` (bases + cover only — no starting units).
+- **Part materials and part geometry are POOLED.** `partMaterial()` in `worldRenderer.ts` hands
+  every part mesh a SHARED `MeshStandardMaterial` keyed on a quantized version of its painted
+  appearance, and `paintPart` re-resolves each mesh to the right one every frame. So:
+  **never write to a part mesh's `material`** — you would repaint every other mesh that currently
+  looks the same. Change `mesh.userData.baseColor` (or the spec paintPart builds) instead; that is
+  what `tintPropToMap` does. Pooled materials and geometry carry `userData.shared`, which is how
+  `disposeSubtree` knows to leave them alone. GLB clone materials are per-instance and are still
+  mutated directly by `paintModel` — that path is unaffected.
+- **The ground texture is a neutral MULTIPLIER, not an albedo.** `makeGroundTexture` draws around
+  white and the material's own `color` supplies the hue, so the arena floor, the mesa caps and the
+  outer plain share one texture at three tints. Baking `theme.ground` into the texture *and* setting
+  the material colour to `theme.ground` squares the map's own colour — that was why every map read
+  muddy and flat. It is also seamless (all marks stamped through `wrapped`), which is what lets it
+  tile at ~11 world units; it ships a sobel-derived normal map alongside.
+- **A faction accent is a UI colour and must be deepened before it touches a hull.** Blending one
+  straight in bleached units — the enemy tint defaulted to white and the enemy role blend repainted
+  68% of every surface with a light salmon, so enemy armour, walls and HQs all came out pale pink.
+  The team read is carried by the marker ring, the accent trim and the emissive glow; a hull only
+  has to sit in the right hue family. See `setFactionTints`/`roleColor`.
+- **The right-hand rail stacks two panels.** `.topbar.compact-top` and `.target-panel` share
+  `right: 16px`; the target panel starts at `top: 268px` to clear the tallest the command stack can
+  get (End Turn + Menu + four chips). If you add a chip to that stack, re-check the number.
 - `src/render/stage.ts` owns the composer; call `warmUp()` after staging new material
   kinds or the menu↔battle flip stalls on a shader relink. Tear down per-frame/per-swap
   groups via `disposeAndClear()`; `userData.shared` geometry is skipped.
