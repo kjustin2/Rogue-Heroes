@@ -2,14 +2,13 @@
   "count": 9,
   "consoleErrors": [],
   "imageFlags": [
-    "high-ground: MONOCHROME (80% of colour in one hue)",
-    "base-defense: FLAT (contrast 0.0468)",
-    "base-defense: NARROW RANGE (0.0957)",
-    "base-defense: MONOCHROME (96% of colour in one hue)",
-    "stress: FLAT (contrast 0.0403)",
-    "stress: NARROW RANGE (0.0909)",
-    "stress: MONOCHROME (98% of colour in one hue)",
-    "victory: FLAT (contrast 0.0779)"
+    "roster: MONOCHROME (77% of colour in one hue)",
+    "base-defense: FLAT (contrast 0.0791)",
+    "base-defense: MONOCHROME (94% of colour in one hue)",
+    "stress: FLAT (contrast 0.0758)",
+    "stress: MONOCHROME (96% of colour in one hue)",
+    "victory: FLAT (contrast 0.0753)",
+    "victory: NARROW RANGE (0.2141)"
   ],
   "results": [
     {
@@ -25,15 +24,17 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.2343,
-        "contrast": 0.0945,
-        "range": 0.2698,
-        "meanSat": 0.1707,
-        "hueConcentration": 0.5908,
-        "blownPct": 0.0006,
+        "meanLuma": 0.2457,
+        "contrast": 0.1051,
+        "range": 0.2883,
+        "meanSat": 0.2464,
+        "hueConcentration": 0.7743,
+        "blownPct": 0.0005,
         "crushedPct": 0
       },
-      "flags": [],
+      "flags": [
+        "roster: MONOCHROME (77% of colour in one hue)"
+      ],
       "file": "roster.png"
     },
     {
@@ -49,11 +50,11 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.3482,
-        "contrast": 0.0867,
-        "range": 0.289,
-        "meanSat": 0.4548,
-        "hueConcentration": 0.6794,
+        "meanLuma": 0.3677,
+        "contrast": 0.0982,
+        "range": 0.2993,
+        "meanSat": 0.462,
+        "hueConcentration": 0.6262,
         "blownPct": 0.0007,
         "crushedPct": 0
       },
@@ -73,11 +74,11 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.3787,
-        "contrast": 0.1096,
-        "range": 0.3047,
-        "meanSat": 0.382,
-        "hueConcentration": 0.2854,
+        "meanLuma": 0.4067,
+        "contrast": 0.1136,
+        "range": 0.3125,
+        "meanSat": 0.3932,
+        "hueConcentration": 0.2784,
         "blownPct": 0.0006,
         "crushedPct": 0
       },
@@ -97,12 +98,12 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.2621,
-        "contrast": 0.1104,
-        "range": 0.2889,
-        "meanSat": 0.1343,
-        "hueConcentration": 0.5056,
-        "blownPct": 0.0008,
+        "meanLuma": 0.3281,
+        "contrast": 0.1176,
+        "range": 0.2919,
+        "meanSat": 0.1622,
+        "hueConcentration": 0.5933,
+        "blownPct": 0.0009,
         "crushedPct": 0
       },
       "flags": [],
@@ -121,17 +122,15 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.5112,
-        "contrast": 0.0885,
-        "range": 0.3299,
-        "meanSat": 0.1315,
-        "hueConcentration": 0.801,
-        "blownPct": 0.0003,
+        "meanLuma": 0.5847,
+        "contrast": 0.1445,
+        "range": 0.4299,
+        "meanSat": 0.0944,
+        "hueConcentration": 0.4744,
+        "blownPct": 0.0005,
         "crushedPct": 0
       },
-      "flags": [
-        "high-ground: MONOCHROME (80% of colour in one hue)"
-      ],
+      "flags": [],
       "file": "high-ground.png"
     },
     {
@@ -147,18 +146,17 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.3959,
-        "contrast": 0.0468,
-        "range": 0.0957,
-        "meanSat": 0.4708,
-        "hueConcentration": 0.9633,
+        "meanLuma": 0.3944,
+        "contrast": 0.0791,
+        "range": 0.2836,
+        "meanSat": 0.4173,
+        "hueConcentration": 0.9432,
         "blownPct": 0.0003,
         "crushedPct": 0
       },
       "flags": [
-        "base-defense: FLAT (contrast 0.0468)",
-        "base-defense: NARROW RANGE (0.0957)",
-        "base-defense: MONOCHROME (96% of colour in one hue)"
+        "base-defense: FLAT (contrast 0.0791)",
+        "base-defense: MONOCHROME (94% of colour in one hue)"
       ],
       "file": "base-defense.png"
     },
@@ -175,18 +173,17 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.3946,
-        "contrast": 0.0403,
-        "range": 0.0909,
-        "meanSat": 0.4744,
-        "hueConcentration": 0.9811,
+        "meanLuma": 0.3934,
+        "contrast": 0.0758,
+        "range": 0.2775,
+        "meanSat": 0.4211,
+        "hueConcentration": 0.9626,
         "blownPct": 0.0002,
         "crushedPct": 0
       },
       "flags": [
-        "stress: FLAT (contrast 0.0403)",
-        "stress: NARROW RANGE (0.0909)",
-        "stress: MONOCHROME (98% of colour in one hue)"
+        "stress: FLAT (contrast 0.0758)",
+        "stress: MONOCHROME (96% of colour in one hue)"
       ],
       "file": "stress.png"
     },
@@ -203,16 +200,17 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.2146,
-        "contrast": 0.0779,
-        "range": 0.2241,
-        "meanSat": 0.1028,
-        "hueConcentration": 0.4768,
+        "meanLuma": 0.2593,
+        "contrast": 0.0753,
+        "range": 0.2141,
+        "meanSat": 0.124,
+        "hueConcentration": 0.4475,
         "blownPct": 0.0009,
         "crushedPct": 0
       },
       "flags": [
-        "victory: FLAT (contrast 0.0779)"
+        "victory: FLAT (contrast 0.0753)",
+        "victory: NARROW RANGE (0.2141)"
       ],
       "file": "victory.png"
     },
@@ -229,12 +227,12 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.2174,
-        "contrast": 0.0857,
-        "range": 0.2415,
-        "meanSat": 0.0925,
-        "hueConcentration": 0.4493,
-        "blownPct": 0.0009,
+        "meanLuma": 0.2151,
+        "contrast": 0.0898,
+        "range": 0.2659,
+        "meanSat": 0.1391,
+        "hueConcentration": 0.477,
+        "blownPct": 0.001,
         "crushedPct": 0
       },
       "flags": [],

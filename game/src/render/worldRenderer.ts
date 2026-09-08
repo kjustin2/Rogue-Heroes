@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { ParticleShape, Particles } from "./particles";
 import { hasMotionBank, sampleMotion } from "./infantryMotion";
 import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec2 } from "../core/math";
@@ -849,8 +850,8 @@ export class WorldRenderer {
     // One tile per ~11 world units. The tile is seamless now, so it can be small enough for the
     // detail to survive at the tactical camera; the old 19-unit tile existed only to push a visible
     // seam out of frame, and at that scale the ground had no readable surface left at all.
-    const tileX = Math.max(2, width / 11);
-    const tileZ = Math.max(2, depth / 11);
+    const tileX = Math.max(2, width / GROUND_TILE);
+    const tileZ = Math.max(2, depth / GROUND_TILE);
     surface.map.repeat.set(tileX, tileZ);
     surface.normalMap.repeat.set(tileX, tileZ);
     // MACRO VARIATION. The texture tiles every ~11 units, so its variation averages out across a
@@ -878,6 +879,7 @@ export class WorldRenderer {
     floor.receiveShadow = true;
     this.sceneryRoot.add(floor);
 
+    this.sceneryRoot.add(makeGroundPlates(theme, width, depth, surface));
     this.sceneryRoot.add(makeTerrainBlocks(theme.ground, theme.groundAccent, surface));
     const water = makeWaterAndBridges(theme, surface);
     this.waterRipple = (water.userData.ripple as THREE.Texture | undefined) ?? undefined;
@@ -886,6 +888,25 @@ export class WorldRenderer {
 
     // No ground grid: movement is continuous, so a grid describes no rule the player can use and
     // reads as an unfinished prototype. Range rings and move previews carry that information.
+
+    // BOARD EDGE. A chamfered dark lip running the arena's perimeter, sitting proud of the floor and
+    // dropping below it. It is what turns "a plane that happens to stop" into a board with a rim,
+    // and the shadow it casts inward is the line that separates the lit stage from the dark ground
+    // around it. Still the arena-bounds affordance it always was, just legible now.
+    const rimColor = new THREE.Color(theme.ground).multiplyScalar(0.3).lerp(new THREE.Color(theme.fog), 0.12);
+    const rimMat = new THREE.MeshStandardMaterial({ color: rimColor, roughness: 0.94, metalness: 0.06 });
+    for (const [x, z, sx, sz] of [
+      [0, ARENA_BOUNDS.minZ - 0.42, width + 1.7, 0.86],
+      [0, ARENA_BOUNDS.maxZ + 0.42, width + 1.7, 0.86],
+      [ARENA_BOUNDS.minX - 0.42, 0, 0.86, depth + 1.7],
+      [ARENA_BOUNDS.maxX + 0.42, 0, 0.86, depth + 1.7],
+    ] as const) {
+      const lip = new THREE.Mesh(new RoundedBoxGeometry(sx, 0.62, sz, 1, 0.16), rimMat);
+      lip.position.set(x, -0.18, z);
+      lip.receiveShadow = true;
+      lip.castShadow = true;
+      this.sceneryRoot.add(lip);
+    }
 
     const railColor = new THREE.Color(theme.ground).multiplyScalar(0.55);
     const railMat = new THREE.MeshStandardMaterial({ color: railColor, roughness: 0.9, metalness: 0.05 });
@@ -4378,13 +4399,18 @@ function makeSurroundings(theme: MapTheme, width: number, depth: number, surface
 
   // Outer plain: sits a hair below the arena slab so the slab's own edge still reads as a lip
   // rather than z-fighting with it. Tinted toward fog so it recedes instead of competing.
-  const plainColor = ground.clone().lerp(fog, 0.16).multiplyScalar(0.86);
+  // The outer plain used to sit at 86% of the arena's own value, so the play space had no edge:
+  // the battlefield and everything around it were the same field of colour and the eye had nowhere
+  // to land. Into the Breach's strongest compositional move is a BRIGHT BOARD ON A DARK SURROUND,
+  // and it costs one multiply. The plain drops to a third of the arena's value and cools toward
+  // fog, so the arena reads as a lit stage without a single extra draw call.
+  const plainColor = ground.clone().lerp(fog, 0.3).multiplyScalar(0.34);
   // Carries the SAME ground texture as the arena floor (tiled to match world scale), so the
   // battlefield reads as a marked-out part of a landscape rather than a lit diorama sitting on a
   // separate, differently-coloured table.
   const plainMap = surface.map.clone();
   plainMap.needsUpdate = true;
-  plainMap.repeat.set((width * 9) / 11, (depth * 9) / 11);
+  plainMap.repeat.set((width * 9) / GROUND_TILE, (depth * 9) / GROUND_TILE);
   const plain = new THREE.Mesh(
     new THREE.PlaneGeometry(width * 9, depth * 9),
     new THREE.MeshStandardMaterial({ map: plainMap, color: plainColor, roughness: 1, metalness: 0 }),
@@ -4427,6 +4453,120 @@ function makeSurroundings(theme: MapTheme, width: number, depth: number, surface
       bluff.rotation.y = rand() * Math.PI;
       group.add(bluff);
     }
+  }
+  return group;
+}
+
+
+/**
+ * SURFACE PLATES — the board read.
+ *
+ * A tactics battlefield has to be *composed of readable things*, the way an Into the Breach board
+ * is: patches of ground that differ in value and hue so the eye has something to hold on to. A
+ * single continuous plane, however well textured, reads as empty no matter what is painted on it.
+ *
+ * These are cosmetic only and deliberately DO NOT create affordances: each plate is a flat patch
+ * whose top sits fractionally BELOW standing height, so no plate edge can be mistaken for a step
+ * the way a real terrain block (>TERRAIN_STEP) is. Movement stays continuous; nothing here is
+ * collided with, targeted or walked around.
+ *
+ * All plates of a variant merge into ONE geometry, so the whole layer is three draw calls.
+ */
+/** One ground-texture tile per this many world units. Floor, mesa caps and plates all use it. */
+const GROUND_TILE = 11;
+const PLATE_THICKNESS = 0.01;
+
+/**
+ * Replace a (roughly flat, ground-lying) geometry's UVs with world-space ones at `tile` units per
+ * texture repeat, so it tiles in lockstep with everything else on the ground.
+ */
+function rewriteWorldUvs(geometry: THREE.BufferGeometry, tile: number): void {
+  const position = geometry.getAttribute("position");
+  const uv = geometry.getAttribute("uv");
+  if (!position || !uv) return;
+  for (let i = 0; i < position.count; i += 1) {
+    uv.setXY(i, position.getX(i) / tile, position.getZ(i) / tile);
+  }
+  uv.needsUpdate = true;
+}
+
+function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface: GroundSurface): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "plates";
+  let seed = 0x51ed5eed ^ (theme.ground >>> 0);
+  const rand = (): number => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 0xffffffff;
+  };
+  const ground = new THREE.Color(theme.ground);
+  const accent = new THREE.Color(theme.groundAccent);
+  // Three surface variants spread around the map's own two authored tones: a darker damp/shadowed
+  // patch, a paler dried/dusty one, and a mid gravel bed. Value spread is the point — a hue-only
+  // difference vanishes in a greyscale pass, which is how the eye reads a board at a glance.
+  const variants = [
+    { color: ground.clone().lerp(new THREE.Color(0x0a0d10), 0.17), roughness: 0.98 },
+    { color: ground.clone().lerp(accent, 0.55).multiplyScalar(1.13), roughness: 0.93 },
+    { color: ground.clone().lerp(accent, 0.22).multiplyScalar(0.82), roughness: 0.96 },
+  ];
+  // The plate layer addresses the ground textures at repeat 1 and gets its tiling from the
+  // world-space UVs above, so one clone pair serves all three variants.
+  const plateMap = surface.map.clone();
+  plateMap.needsUpdate = true;
+  plateMap.repeat.set(1, 1);
+  const plateNormal = surface.normalMap.clone();
+  plateNormal.needsUpdate = true;
+  plateNormal.repeat.set(1, 1);
+  const area = width * depth;
+  const perVariant = Math.max(5, Math.round(area / 620));
+  for (const variant of variants) {
+    const parts: THREE.BufferGeometry[] = [];
+    for (let i = 0; i < perVariant; i += 1) {
+      // Two overlapping rounded slabs per patch, so the outline is irregular rather than a rectangle.
+      const cx = (rand() - 0.5) * width * 0.92;
+      const cz = (rand() - 0.5) * depth * 0.92;
+      const spin = rand() * Math.PI;
+      // Four overlapping rounded slabs per patch at scattered angles. Two gave a rectangle with
+      // soft corners, which reads as something PAINTED on the ground; four at spread angles give a
+      // lumpy union outline that reads as the ground itself changing.
+      for (let k = 0; k < 4; k += 1) {
+        const w = 5 + rand() * 11;
+        const d = 4 + rand() * 9;
+        // 2cm thick and topping out exactly at ground level. A patch of ground must never grow a
+        // visible SIDE: at this camera a few centimetres of lit edge reads as a terrace, and a
+        // terrace the player can walk straight over is a lie about the terrain.
+        const geo = new RoundedBoxGeometry(w, PLATE_THICKNESS, d, 1, Math.min(1.4, Math.min(w, d) * 0.3));
+        const m = new THREE.Matrix4()
+          .makeRotationY(spin + (rand() - 0.5) * 1.6)
+          .setPosition(cx + (rand() - 0.5) * 7, 0, cz + (rand() - 0.5) * 7);
+        geo.applyMatrix4(m);
+        parts.push(geo);
+      }
+    }
+    const merged = mergeGeometries(parts, false);
+    for (const geo of parts) geo.dispose();
+    if (!merged) continue;
+    // WORLD-SPACE UVs. Each slab's own UVs run 0..1 across a ~7-unit patch, so with the floor's
+    // repeat (one tile per 11 world units) applied on top, the plates tiled roughly eleven times
+    // finer than the ground they sit on -- which aliased into diagonal moiré hatching at tactical
+    // distance. Rewriting the UVs from world position makes plate and floor tile identically, so
+    // the texture reads as one continuous surface with the colour changing on top of it.
+    rewriteWorldUvs(merged, GROUND_TILE);
+    const mesh = new THREE.Mesh(
+      merged,
+      new THREE.MeshStandardMaterial({
+        map: plateMap,
+        normalMap: plateNormal,
+        normalScale: new THREE.Vector2(0.45, 0.45),
+        color: variant.color,
+        roughness: variant.roughness,
+        metalness: 0.02,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+      })
+    );
+    mesh.receiveShadow = true;
+    group.add(mesh);
   }
   return group;
 }
