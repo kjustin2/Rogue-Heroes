@@ -95,6 +95,8 @@ export class WorldRenderer {
   // A midtone derived from the active map palette; structural props are tinted toward it so
   // they read as part of the map instead of generic brown crates on every battlefield.
   private propTint = new THREE.Color(0x8a7a5c);
+  /** The active map's scrolling water-ripple normal, if it has water. Rebuilt per map. */
+  private waterRipple: THREE.Texture | undefined;
   private skyTexture: THREE.CanvasTexture | null = null;
   private lastModelsVersion = modelsVersion();
   private lastTeamsVersion = 0;
@@ -298,6 +300,7 @@ export class WorldRenderer {
     this.syncDamageNumbers(sim);
     this.syncEnvironment(sim);
     this.syncAmbient();
+    this.syncWater();
     this.syncObjectives(sim);
   }
 
@@ -785,6 +788,15 @@ export class WorldRenderer {
     this.scene.add(this.ambientPoints);
   }
 
+  // Scroll the water's ripple normal. Two axes at different rates so the pattern never reads as a
+  // texture sliding in one direction, and slow enough that a still frame looks still.
+  private syncWater(): void {
+    const ripple = this.waterRipple;
+    if (!ripple) return;
+    const t = performance.now() * 0.00004;
+    ripple.offset.set(t, t * 0.62);
+  }
+
   // Drift the ambient particles each frame, wrapping them within the arena bounds.
   private syncAmbient(): void {
     if (!this.ambientPoints || !this.ambientVel) return;
@@ -857,7 +869,9 @@ export class WorldRenderer {
     this.sceneryRoot.add(floor);
 
     this.sceneryRoot.add(makeTerrainBlocks(theme.ground, theme.groundAccent, surface));
-    this.sceneryRoot.add(makeWaterAndBridges(theme));
+    const water = makeWaterAndBridges(theme, surface);
+    this.waterRipple = (water.userData.ripple as THREE.Texture | undefined) ?? undefined;
+    this.sceneryRoot.add(water);
     this.sceneryRoot.add(makeSurroundings(theme, width, depth, surface));
 
     // No ground grid: movement is continuous, so a grid describes no rule the player can use and
@@ -4368,7 +4382,7 @@ function makeTerrainBlocks(groundColor: number, accentColor: number, surface: Gr
 
 // Impassable water footprints render as a translucent, faintly reflective surface just above the
 // floor; walkable bridge strips are raised timber decks that read clearly as the way across.
-function makeWaterAndBridges(theme: MapTheme): THREE.Group {
+function makeWaterAndBridges(theme: MapTheme, surface: GroundSurface): THREE.Group {
   const group = new THREE.Group();
   const water = terrainWater();
   if (!water.length) return group;
@@ -4386,7 +4400,24 @@ function makeWaterAndBridges(theme: MapTheme): THREE.Group {
   const waterColor = new THREE.Color(0x2f6d94).lerp(new THREE.Color(theme.fog), 0.22);
   // Smoother and glossier than the ground so it catches the key light and reads as a liquid
   // surface rather than a flat panel; still short of a mirror, which would strobe as the camera moves.
-  const waterMat = new THREE.MeshStandardMaterial({ color: waterColor, transparent: true, opacity: 0.82, roughness: 0.22, metalness: 0.35, depthWrite: false });
+  // A flat translucent panel reads as blue tape laid on the ground however dark you make it: with
+  // no surface normal there is nothing for the key light to break up. Borrowing the ground's normal
+  // map (tiled tight, scrolled slowly by syncWater) gives it a moving ripple for the cost of one
+  // texture clone -- the single change that makes a channel read as water rather than as paint.
+  const ripple = surface.normalMap.clone();
+  ripple.needsUpdate = true;
+  ripple.repeat.set(2.4, 2.4);
+  const waterMat = new THREE.MeshStandardMaterial({
+    color: waterColor,
+    transparent: true,
+    opacity: 0.82,
+    roughness: 0.18,
+    metalness: 0.42,
+    depthWrite: false,
+    normalMap: ripple,
+    normalScale: new THREE.Vector2(0.55, 0.55),
+  });
+  group.userData.ripple = ripple;
 
   for (const r of water) {
     const w = r.maxX - r.minX;

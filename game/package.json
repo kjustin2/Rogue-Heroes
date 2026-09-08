@@ -21,6 +21,8 @@
     "improve:cycle": "node improve/run-cycle.mjs",
     "improve:gallery": "node improve/scenario-gallery.mjs",
     "perf": "node improve/perf-bench.mjs",
+    "perf:profile": "node scripts/perf-profile.mjs",
+    "perf:census": "node scripts/perf-census.mjs",
     "vision": "node improve/vision.mjs",
     "smoke:electron": "electron scripts/smoke-electron.cjs",
     "test:play": "npm run build && npm run smoke:electron",

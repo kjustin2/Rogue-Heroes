@@ -5178,3 +5178,16 @@ body.killcam::after { bottom: 0; }
   overflow: hidden;
   line-height: 1.2;
 }
+
+/* ---------------------------------------------------------------------------
+   TARGET PANEL — must clear the command stack above it
+   Both live at right:16, and the panel opened at top:70, so while you were
+   picking a target it sat on top of Menu and the turn/mode/event chips: covered
+   and unclickable. 268px clears the tallest the stack can get (End Turn + Menu +
+   four chips + gaps = ~260 from the viewport top), and the panel scrolls inside
+   whatever height is left rather than running past the bottom of the screen.
+   --------------------------------------------------------------------------- */
+.target-panel {
+  top: 268px;
+  overflow-y: auto;
+}
