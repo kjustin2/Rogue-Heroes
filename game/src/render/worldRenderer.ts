@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { ParticleShape, Particles } from "./particles";
+import { hasMotionBank, sampleMotion } from "./infantryMotion";
 import { clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec2 } from "../core/math";
 import { isDefenseKind, isInfantryKind, isVehicleKind, type CombatEntity, type DamagePart, type EntityKind, type PartRole } from "../game/damageModel";
 import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
@@ -2226,14 +2227,40 @@ export class WorldRenderer {
     // punch lands on top of the pose as an accent rather than replacing it.
     const attackPhase = parent.userData.attackPhase as number | undefined;
     if (attackPhase !== undefined && part.hp > 0 && entity.status.alive) {
-      const pose = attackPose((parent.userData.weaponFamily as WeaponFamily) ?? "rifle", attackPhase);
-      if (part.id === "rifle" || part.id === "cannon" || part.id === "gun") {
-        mesh.position.z -= pose.draw;
-        mesh.rotation.x -= pose.lift;
-      } else if (part.role === "core") {
-        mesh.rotation.x += pose.brace * 0.5;
-      } else if (limb === "arm-l" || limb === "arm-r") {
-        mesh.rotation.x -= pose.lift * 0.4;
+      const family = (parent.userData.weaponFamily as WeaponFamily) ?? "rifle";
+      // Infantry pose from the Blender-authored control bank; everything else keeps the procedural
+      // curve. A control bank describes a body, and a tank does not have one. If the generated data
+      // is ever absent the bank check fails and the procedural path takes over, so the game still
+      // runs with art/ deleted -- the same fallback rule the GLB models follow.
+      if (isInfantryKind(entity.kind) && hasMotionBank(family)) {
+        const m = sampleMotion(family, attackPhase);
+        if (part.id === "rifle" || part.id === "cannon" || part.id === "gun") {
+          mesh.position.z -= m.weaponDraw;
+          mesh.position.y += m.bodyLift;
+          mesh.rotation.x -= m.weaponPitch;
+        } else if (part.role === "core") {
+          mesh.rotation.x += m.torsoPitch;
+          mesh.rotation.y += m.torsoTwist;
+          mesh.position.y += m.bodyLift;
+        } else if (limb === "arm-r") {
+          mesh.rotation.x -= m.shoulderPitch;
+          mesh.rotation.y += m.shoulderYaw;
+        } else if (limb === "arm-l") {
+          mesh.rotation.x -= m.offhandPitch;
+        } else if (limb === "leg-l" || limb === "leg-r") {
+          mesh.rotation.x += m.kneeBend * 0.4;
+          mesh.position.y += m.bodyLift * 0.5;
+        }
+      } else {
+        const pose = attackPose(family, attackPhase);
+        if (part.id === "rifle" || part.id === "cannon" || part.id === "gun") {
+          mesh.position.z -= pose.draw;
+          mesh.rotation.x -= pose.lift;
+        } else if (part.role === "core") {
+          mesh.rotation.x += pose.brace * 0.5;
+        } else if (limb === "arm-l" || limb === "arm-r") {
+          mesh.rotation.x -= pose.lift * 0.4;
+        }
       }
     }
 

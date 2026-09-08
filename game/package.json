@@ -28,6 +28,8 @@
     "smoke:animation": "node scripts/shot-animation.mjs",
     "smoke:director": "node scripts/shot-director.mjs",
     "shots:portraits": "node scripts/shot-portraits.mjs",
+    "art:motion": "blender --background --python art/infantry/author_motion.py",
+    "art:motion:export": "blender --background --python art/infantry/author_motion.py -- --export-existing",
     "smoke:core": "npm run smoke:buttons && npm run smoke:flow && npm run smoke:economy && npm run smoke:deep && npm run smoke:faction && npm run smoke:animation && npm run smoke:director",
     "test:full": "npm run verify && npm run smoke:core",
     "desktop": "electron .",

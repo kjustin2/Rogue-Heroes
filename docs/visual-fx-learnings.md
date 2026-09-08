@@ -125,3 +125,24 @@ with the reasoning written down, rather than fighting the gate with post-process
 - [Quarks VFX — three.js integration](https://quarks.art/runtime/tutorials/threejs)
 - [blender-to-threejs-export-guide](https://github.com/funwithtriangles/blender-to-threejs-export-guide/blob/master/readme.md)
 - [Making 3D web apps with Blender and Three.js (Verge3D wiki)](https://www.soft8soft.com/wiki/index.php/Making_3D_web_apps_with_Blender_and_Three.js)
+
+---
+
+## 6. This repo's Blender pipeline (built, working)
+
+`game/art/infantry/` holds the control bank; `npm run art:motion` rebuilds it from Python-authored
+poses, `npm run art:motion:export` exports hand-tuned Graph Editor curves. Output is the generated
+`src/game/infantryMotionData.ts`, sampled at runtime by `src/render/infantryMotion.ts`.
+
+Two things worth knowing before touching it:
+
+**Blender 4.4 broke `action.fcurves`.** Slotted actions moved curves under
+layers → strips → channelbags. `author_motion.py` reads them through a compatibility helper that
+handles both shapes, so the repo is not pinned to one Blender version. Verified on 5.2.1 LTS.
+
+**Generated data needs its own tests, and they are not about the numbers.** A silent export failure
+produces a bank of zeroes that typechecks, loads, and renders as a unit that simply never animates.
+`infantryMotion.test.ts` therefore asserts the shape of the export (uniform length and width, all
+finite), that every clip returns to rest at both ends, that it is *not* flat, that it interpolates
+rather than snaps, that out-of-range phases clamp, and that it stays continuous — plus that the
+families genuinely differ, so five banks are not one animation wearing five names.
