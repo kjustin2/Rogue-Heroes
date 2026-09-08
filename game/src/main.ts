@@ -51,6 +51,7 @@ import { settings, ACTION_PACES, PACE_LABEL, RENDER_SCALES, RENDER_SCALE_LABEL, 
 import { applyScenario, scenarioInfo } from "./game/scenarios";
 import { ARENA_BOUNDS } from "./game/terrain";
 import { PerfMonitor, type PerfSnapshot, type RenderInfo } from "./render/perfMonitor";
+import { auditUI, type UiFinding } from "./debug/uiAudit";
 import { DebugOverlay } from "./debug/debugOverlay";
 import {
   runDiagnostics,
@@ -696,6 +697,21 @@ function closeAllMenus(): void {
   // when swapping menus, so the radar only stops when we leave menus for gameplay.
   document.body.classList.remove("menus-open");
   stage.setLowCost(false);
+  syncHudInert();
+}
+
+/**
+ * The battle HUD is unreachable (pointer + keyboard) exactly while a menu screen covers it.
+ * Derived from the DOM rather than tracked with a flag, because menus close down several paths --
+ * closeAllMenus, dismissTopOverlay, a screen removing itself -- and a stale flag here would leave
+ * the whole HUD inert with nothing on top of it.
+ */
+function syncHudInert(): void {
+  const hud = document.getElementById("ui");
+  if (!hud) return;
+  const covered = Boolean(document.querySelector(".menu-screen:not(.is-leaving)"));
+  if (covered) hud.setAttribute("inert", "");
+  else hud.removeAttribute("inert");
 }
 
 function dismissTopOverlay(): void {
@@ -707,6 +723,7 @@ function dismissTopOverlay(): void {
   const closer = top.querySelector<HTMLElement>("[data-overlay-close]");
   if (closer) closer.click();
   else top.remove();
+  syncHudInert();
 }
 
 function mountScreen(html: string, className: string): HTMLDivElement {
@@ -720,6 +737,10 @@ function mountScreen(html: string, className: string): HTMLDivElement {
   }
   screen.innerHTML = html;
   document.body.appendChild(screen);
+  // AFTER the append: syncHudInert reads the DOM, so calling it while the screen is still detached
+  // would find no menu and clear the flag it is here to set. The battle HUD stays mounted
+  // underneath a menu, and marking it inert stops Tab from walking into buttons nobody can see.
+  syncHudInert();
   return screen;
 }
 
@@ -763,7 +784,7 @@ function showMainMenu(): void {
       <div class="title-kicker">Tactical Command</div>
       <h1 class="title-logo">ROGUE HEROES<span>TACTICS</span></h1>
       <div class="commander-id" data-tip="Your commander loadout — change it in the Armory."><span class="commander-emblem">${escapeHtml(progression.emblemGlyph())}</span> ${escapeHtml(progression.titleText())}</div>
-      <div class="main-menu__buttons">
+      <div class="main-menu__buttons" data-allow-overlap>
         <button class="title-start" data-menu="campaign" type="button">Campaign</button>
         ${hasSave ? `<button class="menu-action" data-menu="continue" type="button">Continue Battle</button>` : ""}
         <button class="menu-action" data-menu="run" type="button">Skirmish Run${run.active ? ` · Sector ${run.sectorNumber}/${RUN_LENGTH}` : ""}</button>
@@ -2218,6 +2239,9 @@ declare global {
       // Black-silhouette mode: every unit renders as a flat black shape on white. The
       // "name each unit from its outline alone" test -- a recolour variant fails it instantly.
       silhouette(on: boolean): void;
+      // Deterministic HUD geometry checks (overlap / truncation / clipping / occlusion).
+      // Empty array is the assertion; smoke:ui-audit drives it across viewports and screens.
+      auditUI(): UiFinding[];
       // Cosmetic toggles (skin pack + colorblind palette) for screenshot harnesses.
       setModelSkin(skin: string): void;
       setHighContrastTeams(on: boolean): void;
@@ -2299,6 +2323,7 @@ window.__rht = {
   sceneRoot: () => stage.scene,
   setDebugOverlay: (on) => { debugOverlay.setEnabled(on); return debugOverlay.isEnabled(); },
   silhouette: (on) => { world.setSilhouette(on); stage.setSilhouette(on); },
+  auditUI: () => auditUI(),
   setModelSkin: (skin: string) => setModelSkin(skin),
   setHighContrastTeams: (on: boolean) => world.setHighContrastTeams(on),
   environment: () => sim.environment(),

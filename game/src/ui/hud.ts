@@ -717,10 +717,9 @@ function unitCard(entity: CombatEntity, selected: boolean, orders: TacticalOrder
       <button class="unit-select" data-select="${entity.id}" data-tip="${escapeAttr(cpTip(entity))}">
         <span class="unit-line">
           <span class="unit-name">${escapeHtml(entity.name)}</span>
-          <span class="unit-status unit-status--${statusBand}">${status}</span>
         </span>
         <span class="unit-line unit-line--sub">
-          <span class="unit-kind">${kindLabel(entity)}</span>
+          <span class="unit-status unit-status--${statusBand}">${status}</span>
           ${cpPips(entity)}
           ${entity.maxGrenades > 0 ? `<span class="supply-chip" data-tip="Grenades remaining">G${entity.grenades}</span>` : ""}
           ${crouched ? `<span class="stance-chip">Crouched</span>` : ""}

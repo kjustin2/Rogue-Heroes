@@ -94,6 +94,17 @@ Repo gotchas:
   what is actually in the scene (visible meshes, shadow casters, unique materials/geometries).
   The 2026-09 perf round was won by the profile, not by guessing: the frame was dominated by
   three's per-material uniform machinery, not by triangles or fill.
+- **`npm run smoke:ui-audit`** (wired into `smoke:core`, so `test:full` runs it) asserts
+  `window.__rht.auditUI()` finds nothing across four viewports x four screens. Every rule is a
+  geometric fact — rect intersection, `scrollWidth` vs `clientWidth`, `elementFromPoint` — so a
+  failure is never a matter of taste. It exists because three real UI bugs shipped in one session
+  and every one was caught by a human squinting at a screenshot. Two rules carry hard-won caveats:
+  boxes are CLIPPED to their scroll ancestors before any comparison (a roster card scrolled out of
+  its panel otherwise "overlaps" the treasury bar two hundred pixels below), and `clipped` needs an
+  absolute tolerance as well as a ratio (a 9px inline `<em>` loses 15% of its area to integer rect
+  rounding alone). Deliberate stacks opt out with `data-allow-overlap`; the battle HUD under a menu
+  is `inert`, which is both the correct focus behaviour and what lets the audit tell "under a menu"
+  apart from "under a sibling panel".
 - **`npm run probe:shadow`** turns shadow casting off one scene group at a time and screenshots
   each step. It exists because a striped-hatching artefact across the ground survived three rounds
   of texture tuning, two bias changes and a shadow-frustum rewrite before anyone measured it: the

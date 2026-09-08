@@ -1682,8 +1682,12 @@ button {
 .roster {
   width: 226px;
   /* End above the treasury + log bars (bottom-left stack) so a long squad list scrolls
-     inside the panel instead of clipping behind them. */
+     inside the panel instead of clipping behind them. The max-height alone only decided
+     WHERE the list got cut off; without an explicit scroll the twentieth unit was simply
+     unreachable, which the UI audit flags as content outside the viewport. */
   max-height: calc(100vh - 158px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .target-panel {
@@ -5071,6 +5075,10 @@ body.killcam::after { bottom: 0; }
   min-width: 0;
 }
 
+/* The name gets the whole first line. Sharing it with the status chip squeezed
+   "Heavy Gunner 27" into an 88px box and ellipsised it — and a truncated authored
+   label is a layout bug, not a truncation feature. Status moved down to the sub
+   row, which had the room, and the name reads stronger alone. */
 .unit-line .unit-name {
   flex: 1 1 auto;
   min-width: 0;
@@ -5107,13 +5115,6 @@ body.killcam::after { bottom: 0; }
   font-size: 0.68rem;
   line-height: 1.1;
   color: var(--text-muted);
-}
-
-.unit-kind {
-  flex: 0 0 auto;
-  font-family: var(--font-ui);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .supply-chip {
@@ -5209,4 +5210,47 @@ body.killcam::after { bottom: 0; }
 .log-line {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
+}
+
+/* ---------------------------------------------------------------------------
+   ROSTER CANNOT REACH THE BOTTOM-LEFT STACK
+   A max-height in vh only decided where the list got cut; the panel still ended
+   wherever the arithmetic landed and, at 20 units, its last cards sat on top of
+   the treasury bar and the battle log. Anchoring it between top and the stack
+   makes the overlap impossible by construction rather than by arithmetic, which
+   is what the UI audit is asserting.
+   --------------------------------------------------------------------------- */
+.panel.roster {
+  top: 16px;
+  bottom: 106px;
+  max-height: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ---------------------------------------------------------------------------
+   MAIN MENU FITS A SHORT VIEWPORT
+   At 1280x720 the last button (Exit Game) fell off the bottom of the screen: the
+   wordmark, subtitle and seven 48px buttons need more than 720px of height. The
+   column tightens instead of overflowing — the menu must never require a scroll
+   to reach Exit.
+   --------------------------------------------------------------------------- */
+@media (max-height: 800px) {
+  .main-menu__buttons {
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .main-menu__buttons .menu-action {
+    min-height: 40px;
+    padding-block: 8px;
+    font-size: 0.86rem;
+  }
+  .main-menu__content .title-screen__title,
+  .main-menu__content h1 {
+    margin-bottom: 4px;
+  }
+}
+@media (max-height: 680px) {
+  .main-menu__buttons { gap: 6px; }
+  .main-menu__buttons .menu-action { min-height: 34px; font-size: 0.8rem; }
 }
