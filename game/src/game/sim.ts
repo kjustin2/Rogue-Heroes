@@ -139,6 +139,16 @@ const PICKUP_REACH = 0.95;
 const TRANSPORT_CAPACITY = 2; // how many ground units an air transport can carry at once
 // Flamer burning ground.
 const BURN_RADIUS = 1.6;
+// A ruptured fuel cell leaves a bigger, longer fire than a flamer's splash: burning fuel is the
+// whole point of shooting one, and it has to outlast the turn it happened on to deny ground.
+const FUEL_FIRE_RADIUS = 2.4;
+const FUEL_FIRE_TURNS = 3;
+// An ammo cache scatters instead of detonating once.
+const AMMO_COOKOFF_COUNT = 5;
+const AMMO_COOKOFF_SPREAD = 2.2;
+// A cut conduit browns out nearby emplacements: they hold position but cannot fire.
+const CONDUIT_RADIUS = 7;
+const CONDUIT_OUTAGE_TURNS = 2;
 const BURN_TURNS = 2;
 const BURN_DAMAGE = 14;
 // Sapper proximity mines.
@@ -890,6 +900,7 @@ export class TacticalSim {
     if (!actor) return false;
     if (!canGroundShellAttack(actor)) return this.reject(`${actor.name} cannot fire at the ground`);
     if (!actor.status.canShoot) return this.reject(`${actor.name} cannot shoot`);
+    if (this.isPowerCut(actor)) return this.reject(`${actor.name} has no power — the conduit is cut`);
     const point = clampToArena(destination);
     const projected = this.projectedActorForPreview(actor);
     if (dist(muzzlePoint(projected, "weapon"), point) > projectileRange(actor, "weapon")) return this.reject("Ground target is out of range");
@@ -1745,6 +1756,7 @@ export class TacticalSim {
 
   private queueShootFor(actor: CombatEntity, target: CombatEntity, aim: AimMode, partId?: string): boolean {
     if (!actor.status.canShoot) return this.reject(`${actor.name} cannot shoot`);
+    if (this.isPowerCut(actor)) return this.reject(`${actor.name} has no power — the conduit is cut`);
     // Plane guns are air-to-air: a gunship's autocannon only engages other flyers (it drops bombs
     // on the ground instead). Ground units CAN shoot up at flyers — that is the anti-air.
     if (isAirKind(actor.kind) && !target.flying) return this.reject(`${actor.name}'s autocannon only engages aircraft — drop bombs on ground targets`);
@@ -1773,6 +1785,7 @@ export class TacticalSim {
   overwatchFailureReason(actor: CombatEntity | undefined): string | undefined {
     if (!actor) return "Select a unit first";
     if (!actor.status.canShoot) return `${actor.name} cannot shoot`;
+    if (this.isPowerCut(actor)) return `${actor.name} has no power — the conduit is cut`;
     if (this.overwatching.has(actor.id)) return `${actor.name} is already on overwatch`;
     if (actor.commandPoints <= 0) return `${actor.name} has no command points`;
     if (isBuildingKind(actor.kind)) return "The base cannot overwatch";
@@ -1817,7 +1830,7 @@ export class TacticalSim {
         continue;
       }
       const watcher = this.entity(watcherId);
-      if (!watcher || !watcher.status.alive || !watcher.status.canShoot) {
+      if (!watcher || !watcher.status.alive || !watcher.status.canShoot || this.isPowerCut(watcher)) {
         this.overwatching.delete(watcherId);
         continue;
       }
@@ -3317,9 +3330,68 @@ export class TacticalSim {
     }
   }
 
+  /**
+   * A volatile prop going up. The three volatile kinds used to detonate identically -- same blast,
+   * same radius, same damage -- so a fuel cell, an ammo cache and a power conduit were three names
+   * for one event, and there was no reason to prefer shooting one over another. Each now has its
+   * own consequence, which is what makes the scenery worth aiming at:
+   *
+   *   FUEL    a modest blast that LEAVES A FIRE. The denial lasts turns; the bang does not.
+   *   AMMO    no single big blast -- a staggered cook-off that keeps going off around the wreck.
+   *   CONDUIT barely damages anything, and knocks out nearby emplacements for a couple of turns.
+   */
+  /**
+   * Is this emplacement blacked out by a cut power conduit? A browned-out turret keeps its armour
+   * and its footprint -- it is still cover, still a target, still in the way -- it just cannot
+   * shoot. That is what makes cutting the conduit a tactic rather than a slower way to kill things.
+   */
+  isPowerCut(entity: CombatEntity): boolean {
+    return (entity.poweredUntilTurn ?? 0) > this.turn;
+  }
+
   private resolveExplosion(actor: CombatEntity, source: CombatEntity): void {
     if (this.detonated.has(source.id)) return;
     this.detonated.add(source.id);
+    const kind = source.coverKind;
+
+    if (kind === "conduit") {
+      this.effect("blast", source.position, source.position, 0x7fd7ff, 0.6, 2.2);
+      const disabledUntil = this.turn + CONDUIT_OUTAGE_TURNS;
+      let cut = 0;
+      for (const entity of this.entities) {
+        if (entity.id === source.id || !entity.status.alive) continue;
+        if (dist(entity.position, source.position) > CONDUIT_RADIUS) continue;
+        // Powered things only: emplacements and the base. Infantry are not on the grid.
+        if (!isDefenseKind(entity.kind) && entity.kind !== "base") continue;
+        entity.poweredUntilTurn = Math.max(entity.poweredUntilTurn ?? 0, disabledUntil);
+        cut += 1;
+      }
+      this.pushLog(cut > 0
+        ? `${source.name} ruptures — ${cut} emplacement${cut === 1 ? "" : "s"} lose power for ${CONDUIT_OUTAGE_TURNS} rounds`
+        : `${source.name} ruptures, but nothing nearby was drawing power`);
+      return;
+    }
+
+    if (kind === "ammo") {
+      // Cook-off: a scatter of small detonations around the wreck over the next couple of seconds.
+      // Individually survivable, collectively an area you do not want to be standing in.
+      this.effect("blast", source.position, source.position, 0xffb845, 0.5, 1.8);
+      for (let i = 0; i < AMMO_COOKOFF_COUNT; i += 1) {
+        const angle = this.rng.next() * Math.PI * 2;
+        const spread = 0.6 + this.rng.next() * AMMO_COOKOFF_SPREAD;
+        this.pendingStrikes.push({
+          at: 0.25 + i * 0.28,
+          point: { x: source.position.x + Math.cos(angle) * spread, z: source.position.z + Math.sin(angle) * spread },
+          radius: 1.5,
+          damage: 20,
+          kind: "barrage",
+        });
+      }
+      this.pushLog(`${source.name} cooks off`);
+      return;
+    }
+
+    // Fuel (and any future volatile without its own behaviour): a real bang, then a fire.
     this.effect("blast", source.position, source.position, 0xff7a35, 0.75, 3.4);
     for (const entity of this.entities) {
       if (entity.id === source.id || !entity.status.alive) continue;
@@ -3328,6 +3400,16 @@ export class TacticalSim {
       const part = preferredPart(entity, "weakest");
       const result = applyDamage(entity, part.id, Math.round(42 * (1 - d / 4)));
       this.afterDamage(actor, entity, result, `${source.name} explosion`);
+    }
+    if (kind === "fuel") {
+      this.burnZones.push({
+        id: `burn-${++this.effectSeq}`,
+        x: source.position.x,
+        z: source.position.z,
+        radius: FUEL_FIRE_RADIUS,
+        turnsLeft: FUEL_FIRE_TURNS,
+      });
+      this.pushLog(`${source.name} ignites — the ground burns`);
     }
   }
 

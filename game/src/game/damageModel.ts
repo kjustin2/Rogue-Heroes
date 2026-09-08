@@ -63,6 +63,12 @@ export interface CombatEntity {
   name: string;
   kind: EntityKind;
   coverKind?: CoverKind;
+  /**
+   * Turn number until which this emplacement is browned out by a cut power conduit: it holds
+   * position and keeps its armour but cannot shoot. Lives on the entity so it round-trips through
+   * serialize() with everything else rather than needing a save field of its own.
+   */
+  poweredUntilTurn?: number;
   team: Team;
   position: Vec2;
   yaw: number;
