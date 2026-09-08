@@ -473,6 +473,15 @@ export class TacticalSim {
     return this.factions[team];
   }
 
+  /**
+   * Set a side's faction without rebuilding the battlefield. configure() also takes factions, but
+   * it resets every entity, so it is only usable at battle start; this is for choosing a faction
+   * on an already-staged sim (the faction-select screen) and for tests that build entities directly.
+   */
+  setFaction(team: Team, faction: FactionId): void {
+    this.factions[team] = faction;
+  }
+
   // `factions` is optional and defaults to PRESERVING the current pick, because configure() also
   // runs on reset() -- passing nothing must not silently drop the player back to the default.
   configure(map: MapDef, mode: ModeId, difficulty: Difficulty = this.difficulty, factions?: Partial<Record<Team, FactionId>>): void {

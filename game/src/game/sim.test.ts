@@ -1652,6 +1652,10 @@ describe("tactical enemy AI", () => {
         createSoldier("p2", "B", "player", { x: 1.4, z: 0 }),
         createSoldier("p3", "C", "player", { x: 2.8, z: 0 }),
       ]);
+      // Bastion fields BOTH candidate answers (grenadier and tank). The default faction has no
+      // indirect fire by design, so its roster would refuse the grenadier and this test would be
+      // measuring the faction gate instead of the economy decision it is written to measure.
+      sim.setFaction("enemy", "bastion");
       sim.difficulty = difficulty;
       sim.economy.set("enemy", 400); // affords a tank (400), grenadier (250), etc.
       sim.endTurn();
@@ -1690,14 +1694,30 @@ describe("tactical enemy AI", () => {
   });
 
   it("locks cluster and laser support behind their doctrines", () => {
-    const base = createBase("p-base-1", "HQ", "player", { x: -14, z: 0 });
-    const sim = new TacticalSim([base, createBase("e-base-1", "Enemy HQ", "enemy", { x: 14, z: 0 })]);
-    sim.economy.set("player", 5000);
-    base.commandPoints = 1;
-    expect(sim.supportFailureReason(base, "cluster")).toMatch(/Ordnance/i);
-    expect(sim.supportFailureReason(base, "laser")).toMatch(/Siege/i);
+    // Cluster Strike is a Syndicate asset and the Orbital Lance a Bastion one -- no faction fields
+    // both, so each half is checked under the faction that can actually call it. Under any other
+    // faction the roster gate fires first and reports "not a <faction> asset", which is a
+    // different (and correct) refusal.
+    const staged = (faction: "syndicate" | "bastion") => {
+      const base = createBase("p-base-1", "HQ", "player", { x: -14, z: 0 });
+      const sim = new TacticalSim([base, createBase("e-base-1", "Enemy HQ", "enemy", { x: 14, z: 0 })]);
+      sim.setFaction("player", faction);
+      sim.economy.set("player", 5000);
+      base.commandPoints = 1;
+      return { sim, base };
+    };
+
+    const cluster = staged("syndicate");
+    expect(cluster.sim.supportFailureReason(cluster.base, "cluster")).toMatch(/Ordnance/i);
+    cluster.base.unlockedTech = ["assault", "ordnance"];
+    expect(cluster.sim.supportFailureReason(cluster.base, "cluster")).toBeUndefined();
+
+    const laser = staged("bastion");
+    expect(laser.sim.supportFailureReason(laser.base, "laser")).toMatch(/Siege/i);
+
+    const base = laser.base;
+    const sim = laser.sim;
     base.unlockedTech = ["assault", "ordnance", "armor", "siege"];
-    expect(sim.supportFailureReason(base, "cluster")).toBeUndefined();
     expect(sim.supportFailureReason(base, "laser")).toBeUndefined();
   });
 

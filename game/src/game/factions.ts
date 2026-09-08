@@ -11,7 +11,10 @@ export type FactionId = "vanguard" | "syndicate" | "bastion";
 export interface FactionDef {
   id: FactionId;
   name: string;
+  /** One short line, sized to fit on a setup-screen card without wrapping past a few lines. */
   blurb: string;
+  /** The full trade-off, for the hover tooltip. */
+  detail: string;
   /** Which troops this faction may deploy. Filters TROOP_CATALOG. */
   roster: readonly TroopKind[];
   /** Which tech node ids it may research. Filters TECH_TREE. */
@@ -28,34 +31,42 @@ export interface FactionDef {
   aiTargetBias?: Partial<Record<EntityKind, number>>;
 }
 
-const ALL_TROOPS: readonly TroopKind[] = [
+export const ALL_TROOPS: readonly TroopKind[] = [
   "soldier", "scout", "sniper", "striker", "heavy", "grenadier", "mortar", "medic", "engineer",
   "flamer", "droneop", "sapper", "tank", "apc", "artillery", "flak", "gunship", "interceptor",
   "bomber", "transport",
 ];
 
-const ALL_TECH: readonly string[] = [
+export const ALL_TECH: readonly string[] = [
   "recon", "assault", "support", "ordnance", "armor", "siege", "airwing",
   "breach", "bulwark", "plating", "hunter", "triage", "welding", "optics", "ghillie",
   "thermobarics", "cluster",
 ];
 
-const ALL_DEFENSES: readonly DefenseKind[] = ["wall", "turret", "exturret"];
-const ALL_SUPPORTS: readonly SupportPowerKind[] = ["airstrike", "cluster", "laser"];
+export const ALL_DEFENSES: readonly DefenseKind[] = ["wall", "turret", "exturret"];
+export const ALL_SUPPORTS: readonly SupportPowerKind[] = ["airstrike", "cluster", "laser"];
 
-// NOTE ON ROSTERS: all three currently carry the full catalog. Faction IDENTITY (the narrowing that
-// makes them play differently) lands in the balance pass, together with the test updates it forces.
-// Shipping the wiring first, unnarrowed, keeps every existing battle and every existing test
-// behaving exactly as before while the plumbing is proven.
+// ROSTER DESIGN.
+//
+// A faction is defined as much by what it CANNOT build as by what it can. Each one is missing a
+// whole answer to something, so the matchup asks a real question:
+//   Vanguard  has no indirect fire at all -- it cannot shell a dug-in position, it has to go take it.
+//   Syndicate has no tank and no artillery -- it cannot win a slugging match, only a faster one.
+//   Bastion   has no scout, no striker and no interceptor -- it cannot chase anything down.
+// Every faction keeps the tech-free Recruit, an engineer or medic, and at least one answer to air,
+// so none of them has an unanswerable hole. `tech` lists what a faction may RESEARCH, which is
+// wider than its roster wherever a node is only a prerequisite: Syndicate researches Armor Bay to
+// reach the Air Wing behind it, and still only fields the APC from it.
 export const FACTIONS: readonly FactionDef[] = [
   {
     id: "vanguard",
     name: "Vanguard",
-    blurb: "Combined-arms regulars. Armour and air depth, no glaring weakness — the honest baseline.",
-    roster: ALL_TROOPS,
-    tech: ALL_TECH,
-    defenses: ALL_DEFENSES,
-    supports: ALL_SUPPORTS,
+    blurb: "Combined arms — real armour and a full air wing, but no indirect fire.",
+    detail: "Combined-arms regulars: the honest baseline. Tanks, APCs, flak and the whole air wing, with no glaring weakness — except that it fields no mortar, grenadier or artillery at all. A dug-in enemy has to be taken, not shelled.",
+    roster: ["soldier", "scout", "sniper", "striker", "heavy", "medic", "engineer", "tank", "apc", "flak", "gunship", "interceptor", "transport"],
+    tech: ["recon", "assault", "support", "armor", "airwing", "breach", "bulwark", "plating", "hunter", "triage", "welding", "optics", "ghillie"],
+    defenses: ["wall", "turret"],
+    supports: ["airstrike"],
     accent: 0x8cefff,
     skin: "standard",
     aiPreference: ["soldier", "heavy", "tank", "apc", "sniper"],
@@ -63,11 +74,12 @@ export const FACTIONS: readonly FactionDef[] = [
   {
     id: "syndicate",
     name: "Syndicate",
-    blurb: "Fast, cheap and attritional. Recon and ordnance depth, mines and burn, the thinnest armour.",
-    roster: ALL_TROOPS,
-    tech: ALL_TECH,
-    defenses: ALL_DEFENSES,
-    supports: ALL_SUPPORTS,
+    blurb: "Cheap and fast — burn, mines and area denial, but no tank.",
+    detail: "Fast, cheap and attritional. Flamers, sappers, mortars and cluster munitions deny ground, and scouts and strikers take it early. No tank and no siege gun, so it cannot win a slugging match — only a quicker one.",
+    roster: ["soldier", "scout", "sniper", "striker", "grenadier", "mortar", "medic", "flamer", "droneop", "sapper", "apc", "gunship"],
+    tech: ["recon", "assault", "support", "ordnance", "armor", "airwing", "breach", "bulwark", "thermobarics", "cluster", "triage", "welding", "optics", "ghillie"],
+    defenses: ["wall", "turret"],
+    supports: ["airstrike", "cluster"],
     accent: 0xffca6b,
     skin: "standard",
     aiPreference: ["scout", "striker", "sapper", "flamer", "grenadier"],
@@ -75,11 +87,12 @@ export const FACTIONS: readonly FactionDef[] = [
   {
     id: "bastion",
     name: "Bastion",
-    blurb: "Siege and fortification. The best emplacements and the longest guns, and the slowest legs.",
-    roster: ALL_TROOPS,
-    tech: ALL_TECH,
-    defenses: ALL_DEFENSES,
-    supports: ALL_SUPPORTS,
+    blurb: "Siege and fortification — longest guns, but nothing fast.",
+    detail: "Siege and fortification. Artillery, mortars, the heavy bomber and the only Mortar Turret, plus an Orbital Lance. No scout, no striker, no interceptor: nothing it fails to kill will be caught.",
+    roster: ["soldier", "sniper", "heavy", "grenadier", "mortar", "medic", "engineer", "sapper", "tank", "artillery", "flak", "bomber", "transport"],
+    tech: ["recon", "assault", "support", "ordnance", "armor", "siege", "airwing", "bulwark", "plating", "thermobarics", "cluster", "triage", "welding", "optics", "ghillie"],
+    defenses: ["wall", "turret", "exturret"],
+    supports: ["airstrike", "laser"],
     accent: 0x9ef0b8,
     skin: "standard",
     aiPreference: ["heavy", "mortar", "artillery", "flak", "engineer"],

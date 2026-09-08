@@ -2963,6 +2963,39 @@ h2,
 .mode-grid {
   grid-template-columns: repeat(3, 1fr);
 }
+/* Faction picker. Stacked full-width in the battlefield column rather than three narrow columns:
+   at three-across each card was ~110px wide, which wrapped every blurb to six lines and pushed the
+   last card under the neighbouring column. Full width fits the trade-off on one or two lines. */
+.faction-grid {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.faction-card {
+  padding: 9px 13px;
+}
+.faction-card strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+/* Colour chip carrying the faction's own accent, so the card, the team tint in battle and the
+   HUD chrome all read as the same identity. */
+.faction-pip {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  box-shadow: 0 0 6px currentColor;
+}
+.faction-roster {
+  font-style: normal;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
 .menu-card {
   pointer-events: auto;
   cursor: pointer;

@@ -1,6 +1,7 @@
 // Persisted player settings: audio mute/volume, default bot difficulty, reduced motion.
 
 import type { Difficulty } from "./game/sim";
+import { DEFAULT_FACTION, FACTIONS, type FactionId } from "./game/factions";
 
 const KEY = "rht.settings.v1";
 
@@ -60,6 +61,9 @@ export class GameSettings {
   volume = 0.6;
   musicVolume = 0.5;
   difficulty: Difficulty = "normal";
+  // Last faction the player deployed with, remembered like difficulty so the setup screen opens
+  // on their preference instead of resetting to the default every time.
+  faction: FactionId = DEFAULT_FACTION;
   reducedMotion = false;
   actionPace: ActionPace = "normal";
   renderScale: RenderScale = "quality";
@@ -91,6 +95,9 @@ export class GameSettings {
       if (typeof s.volume === "number") this.volume = Math.max(0, Math.min(1, s.volume));
       if (typeof s.musicVolume === "number") this.musicVolume = Math.max(0, Math.min(1, s.musicVolume));
       if (s.difficulty === "easy" || s.difficulty === "normal" || s.difficulty === "hard") this.difficulty = s.difficulty;
+      // Validated against the live faction list rather than trusted: a save written before a
+      // faction was renamed or removed must not leave the game holding an id nothing resolves to.
+      if (typeof s.faction === "string" && FACTIONS.some((f) => f.id === s.faction)) this.faction = s.faction as FactionId;
       if (typeof s.reducedMotion === "boolean") this.reducedMotion = s.reducedMotion;
       if (s.actionPace === "slow" || s.actionPace === "normal" || s.actionPace === "fast") this.actionPace = s.actionPace;
       if (s.renderScale && RENDER_SCALES.includes(s.renderScale)) this.renderScale = s.renderScale;
@@ -106,7 +113,7 @@ export class GameSettings {
 
   save(): void {
     try {
-      localStorage.setItem(KEY, JSON.stringify({ muted: this.muted, volume: this.volume, musicVolume: this.musicVolume, difficulty: this.difficulty, reducedMotion: this.reducedMotion, actionPace: this.actionPace, renderScale: this.renderScale, highContrastTeams: this.highContrastTeams, unitSkin: this.unitSkin, keybinds: this.keybinds, debugInfiniteMoney: this.debugInfiniteMoney, debugFreeCooldown: this.debugFreeCooldown }));
+      localStorage.setItem(KEY, JSON.stringify({ muted: this.muted, volume: this.volume, musicVolume: this.musicVolume, difficulty: this.difficulty, faction: this.faction, reducedMotion: this.reducedMotion, actionPace: this.actionPace, renderScale: this.renderScale, highContrastTeams: this.highContrastTeams, unitSkin: this.unitSkin, keybinds: this.keybinds, debugInfiniteMoney: this.debugInfiniteMoney, debugFreeCooldown: this.debugFreeCooldown }));
     } catch {
       // ignore
     }

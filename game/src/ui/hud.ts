@@ -1377,7 +1377,8 @@ function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
 }
 
 function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
-  return TROOP_CATALOG.map((spec) => {
+  const roster = sim.factionOf(base.team).roster;
+  return TROOP_CATALOG.filter((spec) => roster.includes(spec.kind)).map((spec) => {
     const locked = Boolean(spec.tech) && !isTechUnlocked(base, spec.tech as string);
     const techName = TECH_TREE.find((n) => n.id === spec.tech)?.name ?? "a doctrine";
     // Discovery pacing: a locked troop is a CLASSIFIED asset — no name, role, or price. The
@@ -1406,7 +1407,8 @@ function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
 function defenseDeckHtml(base: CombatEntity, sim: TacticalSim): string {
   const money = sim.money(base.team);
   const hasCp = base.commandPoints > 0;
-  const buttons = DEFENSE_CATALOG.map((spec) => {
+  const buildable = sim.factionOf(base.team).defenses;
+  const buttons = DEFENSE_CATALOG.filter((spec) => buildable.includes(spec.kind)).map((spec) => {
     const affordable = hasCp && money >= spec.cost;
     const active = sim.pendingBuild === spec.kind;
     const tip = `${spec.label} (${spec.role}): ${spec.tip} Costs 1 CP and $${spec.cost}. Then click a spot inside the green ring near your base.`;
@@ -1425,7 +1427,8 @@ function defenseDeckHtml(base: CombatEntity, sim: TacticalSim): string {
 function supportDeckHtml(base: CombatEntity, sim: TacticalSim): string {
   // Off-map support powers: tech-locked ones stay classified (same discovery language as the
   // troop deck); unlocked ones show cost / cooldown, and the armed one shows Targeting.
-  const buttons = SUPPORT_POWERS.map((spec) => {
+  const available = sim.factionOf(base.team).supports;
+  const buttons = SUPPORT_POWERS.filter((spec) => available.includes(spec.kind)).map((spec) => {
     const techLocked = Boolean(spec.tech) && !isTechUnlocked(base, spec.tech as string);
     if (techLocked) {
       const techName = TECH_TREE.find((n) => n.id === spec.tech)?.name ?? "a doctrine";
@@ -1484,7 +1487,10 @@ function upgradeDeckHtml(base: CombatEntity, sim: TacticalSim): string {
 // prerequisite, so the graph is a clean forest). Nesting + connector lines make "what unlocks
 // what" legible at a glance.
 function techTreePanel(base: CombatEntity, sim: TacticalSim): string {
-  const roots = TECH_TREE.filter((node) => node.requires.length === 0);
+  // Only this faction's doctrine. Drawing the whole tree would show branches researchFailureReason
+  // refuses outright -- Bastion has no Air Wing to buy, so the node should not be on its board.
+  const doctrine = sim.factionOf(base.team).tech;
+  const roots = TECH_TREE.filter((node) => node.requires.length === 0 && doctrine.includes(node.id));
   return `
     <div class="tech-tree">
       ${roots.map((root) => techBranch(root, base, sim)).join("")}
@@ -1499,7 +1505,8 @@ function techTreePanel(base: CombatEntity, sim: TacticalSim): string {
 }
 
 function techBranch(node: TechNode, base: CombatEntity, sim: TacticalSim): string {
-  const children = TECH_TREE.filter((n) => n.requires.includes(node.id));
+  const doctrine = sim.factionOf(base.team).tech;
+  const children = TECH_TREE.filter((n) => n.requires.includes(node.id) && doctrine.includes(n.id));
   return `
     <div class="tech-branch">
       ${techNodeCard(node, base, sim)}

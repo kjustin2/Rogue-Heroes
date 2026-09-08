@@ -32,6 +32,8 @@ import {
   type Difficulty,
   type MapDef,
   type SupportPowerKind,
+  FACTIONS,
+  type FactionId,
 } from "./game/sim";
 import type { AimMode, Team } from "./game/damageModel";
 import { isInfantryKind } from "./game/damageModel";
@@ -464,12 +466,24 @@ function focusOnPlayerBase(): void {
 }
 
 // Configure and theme the battle for a chosen map + mode + difficulty, then frame the base.
-function startBattle(mapId: string, modeId: ModeId, difficulty: Difficulty = settings.difficulty): void {
+// Pick the AI's faction from the map id and the player's choice. Deterministic by construction --
+// a cheap string hash, no RNG -- and it never mirrors the player, so a matchup is always a matchup.
+function opposingFaction(mapId: string, player: FactionId): FactionId {
+  const others = FACTIONS.filter((f) => f.id !== player);
+  let hash = 0;
+  for (let i = 0; i < mapId.length; i += 1) hash = (hash * 31 + mapId.charCodeAt(i)) >>> 0;
+  return others[hash % others.length].id;
+}
+
+function startBattle(mapId: string, modeId: ModeId, difficulty: Difficulty = settings.difficulty, faction: FactionId = settings.faction): void {
   tutorialActive = false;
   activeCampaignMission = undefined;
   campaign.setActive(undefined); // a skirmish is not a campaign mission
   closeAllMenus();
-  sim.configure(mapDef(mapId), modeId, difficulty);
+  // The enemy's faction is DERIVED, never rolled: same map plus same player faction always gives
+  // the same opponent, so a seeded run, a save reload and a replay all agree. Rolling it inside
+  // the sim would put hidden nondeterminism in a system the chaos and determinism tests rely on.
+  sim.configure(mapDef(mapId), modeId, difficulty, { player: faction, enemy: opposingFaction(mapId, faction) });
   world.applyMap(sim.mapDef.theme);
   world.setPlayerAccent(progression.accentColor());
   focusOnPlayerBase();
@@ -485,7 +499,7 @@ function startCampaignMission(mission: CampaignMission): void {
   activeCampaignMission = mission;
   campaign.setActive(mission.id);
   closeAllMenus();
-  sim.configure(mapDef(mission.map), mission.mode, mission.difficulty);
+  sim.configure(mapDef(mission.map), mission.mode, mission.difficulty, { player: settings.faction, enemy: opposingFaction(mission.map, settings.faction) });
 
   // Requisition perk banked on the last victory screen.
   const perk = campaign.consumeRequisition();
@@ -555,7 +569,7 @@ function startRunBattle(): void {
   campaign.setActive(undefined);
   closeAllMenus();
   const battle = run.current();
-  sim.configure(mapDef(battle.map), battle.mode, battle.difficulty);
+  sim.configure(mapDef(battle.map), battle.mode, battle.difficulty, { player: settings.faction, enemy: opposingFaction(battle.map, settings.faction) });
 
   const cash = run.consumeCash();
   if (cash > 0) {
@@ -622,7 +636,7 @@ function watchCampaignBeats(): void {
 // (geometry + materials) synchronously, so without this the click just freezes for a beat.
 // We paint the veil first (two rAFs let it reach the screen), then run the heavy build under
 // it, then fade it once the battle has had a frame to render. Min visible time avoids a flash.
-function deployWithLoadingScreen(mapId: string, modeId: ModeId, difficulty: Difficulty, mission?: CampaignMission): void {
+function deployWithLoadingScreen(mapId: string, modeId: ModeId, difficulty: Difficulty, faction: FactionId, mission?: CampaignMission): void {
   const veil = document.createElement("div");
   veil.className = "battle-loading";
   veil.innerHTML = `<div class="battle-loading__inner">
@@ -637,7 +651,7 @@ function deployWithLoadingScreen(mapId: string, modeId: ModeId, difficulty: Diff
     if (mission) {
       startCampaignMission(mission);
     } else {
-      startBattle(mapId, modeId, difficulty);
+      startBattle(mapId, modeId, difficulty, faction);
       // First time the player tries a mode, spell out how it's won (the tutorial only covers Annihilation).
       const mode = modeDef(modeId);
       hintOnce(`mode-${modeId}`, `${mode.name}: ${mode.blurb}`);
@@ -774,6 +788,7 @@ function showStartScreen(): void {
   let selectedMap = MAPS[0].id;
   let selectedMode: ModeId = "destroy";
   let selectedDifficulty: Difficulty = settings.difficulty;
+  let selectedFaction: FactionId = settings.faction;
 
   const mapList = MAPS.map(
     (m) => `<button class="menu-card map-card ${m.id === selectedMap ? "selected" : ""}" data-map="${m.id}" type="button">
@@ -785,6 +800,15 @@ function showStartScreen(): void {
     (mode) => `<button class="menu-card mode-card ${mode.id === selectedMode ? "selected" : ""}" data-mode="${mode.id}" type="button">
       <strong>${mode.name}</strong>
       <span>${mode.blurb}</span>
+    </button>`,
+  ).join("");
+  // Each card states the faction's IDENTITY and, explicitly, what it gives up. A roster is defined
+  // as much by its hole as by its depth, and a player choosing blind cannot see the hole.
+  const factionCards = FACTIONS.map(
+    (f) => `<button class="menu-card faction-card ${f.id === selectedFaction ? "selected" : ""}" data-faction="${f.id}" data-tip="${escapeAttr(f.detail)}" type="button">
+      <strong><span class="faction-pip" style="background:#${f.accent.toString(16).padStart(6, "0")}"></span>${escapeAttr(f.name)}</strong>
+      <span>${escapeAttr(f.blurb)}</span>
+      <em class="faction-roster">${f.roster.length} units &middot; ${f.defenses.length} emplacements &middot; ${f.supports.length} support</em>
     </button>`,
   ).join("");
   const diffCards = DIFFICULTIES.map(
@@ -806,6 +830,10 @@ function showStartScreen(): void {
           <div class="menu-section">
             <div class="menu-label">Choose a battlefield</div>
             <div class="map-list">${mapList}</div>
+          </div>
+          <div class="menu-section start-factions">
+            <div class="menu-label">Faction</div>
+            <div class="menu-grid faction-grid">${factionCards}</div>
           </div>
         </div>
         <div class="start-right">
@@ -839,6 +867,16 @@ function showStartScreen(): void {
       showMainMenu();
       return;
     }
+    const factionBtn = target.closest<HTMLElement>("[data-faction]");
+    if (factionBtn) {
+      selectedFaction = (factionBtn.dataset.faction as FactionId) ?? selectedFaction;
+      settings.faction = selectedFaction; // remembered for next time, like difficulty
+      settings.save();
+      for (const card of screen.querySelectorAll<HTMLElement>("[data-faction]")) {
+        card.classList.toggle("selected", card.dataset.faction === selectedFaction);
+      }
+      return;
+    }
     const mapBtn = target.closest<HTMLElement>("[data-map]");
     if (mapBtn) {
       selectedMap = mapBtn.dataset.map ?? selectedMap;
@@ -863,7 +901,7 @@ function showStartScreen(): void {
       settings.difficulty = selectedDifficulty;
       settings.save();
       screen.classList.add("is-leaving"); // startBattle's closeAllMenus removes it
-      deployWithLoadingScreen(selectedMap, selectedMode, selectedDifficulty);
+      deployWithLoadingScreen(selectedMap, selectedMode, selectedDifficulty, selectedFaction);
     }
   });
 }
@@ -1229,7 +1267,7 @@ function showBriefing(mission: CampaignMission): void {
     }
     if (target.closest("[data-deploy]")) {
       screen.classList.add("is-leaving");
-      deployWithLoadingScreen(mission.map, mission.mode, mission.difficulty, mission);
+      deployWithLoadingScreen(mission.map, mission.mode, mission.difficulty, settings.faction, mission);
     }
   });
 }
@@ -1311,7 +1349,7 @@ function showCampaignDefeat(mission: CampaignMission): void {
     const target = event.target as HTMLElement;
     if (target.closest("[data-retry]")) {
       screen.remove();
-      deployWithLoadingScreen(mission.map, mission.mode, mission.difficulty, mission);
+      deployWithLoadingScreen(mission.map, mission.mode, mission.difficulty, settings.faction, mission);
     } else if (target.closest("[data-menu-btn]")) {
       screen.remove();
       showCampaign();
