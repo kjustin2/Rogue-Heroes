@@ -1685,6 +1685,14 @@ export class TacticalSim {
     this.economy.set(team, Math.max(0, money));
   }
 
+  /** Clear the field entirely — the silhouette shape test stages its own row and wants nothing else. */
+  debugClearField(): void {
+    this.entities.length = 0;
+    this.orders.length = 0;
+    this.projectiles.length = 0;
+    this.selectedId = "";
+  }
+
   debugSelect(id: string): void {
     if (this.entity(id)) this.selectedId = id;
   }

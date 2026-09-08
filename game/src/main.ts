@@ -2215,6 +2215,9 @@ declare global {
       // The live Three scene root — QA probes census it (draw-work attribution).
       sceneRoot(): object;
       setDebugOverlay(on: boolean): boolean;
+      // Black-silhouette mode: every unit renders as a flat black shape on white. The
+      // "name each unit from its outline alone" test -- a recolour variant fails it instantly.
+      silhouette(on: boolean): void;
       // Cosmetic toggles (skin pack + colorblind palette) for screenshot harnesses.
       setModelSkin(skin: string): void;
       setHighContrastTeams(on: boolean): void;
@@ -2295,6 +2298,7 @@ window.__rht = {
   sceneGraph: () => ({ total: countSceneObjects(), topLevel: stage.scene.children.length }),
   sceneRoot: () => stage.scene,
   setDebugOverlay: (on) => { debugOverlay.setEnabled(on); return debugOverlay.isEnabled(); },
+  silhouette: (on) => { world.setSilhouette(on); stage.setSilhouette(on); },
   setModelSkin: (skin: string) => setModelSkin(skin),
   setHighContrastTeams: (on: boolean) => world.setHighContrastTeams(on),
   environment: () => sim.environment(),

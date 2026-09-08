@@ -5191,3 +5191,22 @@ body.killcam::after { bottom: 0; }
   top: 268px;
   overflow-y: auto;
 }
+
+/* ---------------------------------------------------------------------------
+   NUMBERS DON'T JITTER
+   Every counter in the HUD is proportional-figure text, so a treasury ticking
+   4999 -> 5000 or a CP pip count changing re-lays out its whole row. Tabular
+   figures are a one-line fix and they are what makes a readout look built
+   rather than typed. (Inter and Rajdhani both ship tnum.)
+   --------------------------------------------------------------------------- */
+.money-bar__value,
+.cp-badge,
+.money-chip,
+.turn-chip,
+.unit-status,
+.supply-chip,
+.tech-sub,
+.log-line {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}

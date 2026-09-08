@@ -94,6 +94,19 @@ Repo gotchas:
   what is actually in the scene (visible meshes, shadow casters, unique materials/geometries).
   The 2026-09 perf round was won by the profile, not by guessing: the frame was dominated by
   three's per-material uniform machinery, not by triangles or fill.
+- **`npm run probe:shadow`** turns shadow casting off one scene group at a time and screenshots
+  each step. It exists because a striped-hatching artefact across the ground survived three rounds
+  of texture tuning, two bias changes and a shadow-frustum rewrite before anyone measured it: the
+  cause was **terrain-block CAPS**, which overhang their block by 1cm so the top edge reads, which
+  makes neighbouring caps in a stepped mesa overlap, which makes two coplanar surfaces fight in the
+  shadow depth pass. `cap.castShadow` is now false and must stay false — the body beneath casts the
+  same footprint. Bisect first; a ground artefact is not necessarily in the ground.
+- **`npm run shots:silhouette`** renders every unit as a flat black shape on white
+  (`window.__rht.silhouette(true)`, which also hides everything that is not a unit). The test is
+  "can you NAME each unit from its outline alone" — it is how medic/engineer/sapper were caught
+  sharing one silhouette. Shoot the rank **in profile**: head-on foreshortens the long rifles, tool
+  rigs and blades that distinguish kits, and the first version of the sheet failed four kits that
+  were fine.
 - **`npm run audit:unit <kind>`** sorts a trooper's resolved part colours by luminance. Run it
   after any palette work: the recurring failure here is a *large* surface creeping above ~180
   luminance (it was the bare HEAD at 214, brighter than the unit's own glowing ammo), which is
@@ -166,6 +179,15 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   68% of every surface with a light salmon, so enemy armour, walls and HQs all came out pale pink.
   The team read is carried by the marker ring, the accent trim and the emissive glow; a hull only
   has to sit in the right hue family. See `setFactionTints`/`roleColor`.
+- **The shadow frustum FOLLOWS THE CAMERA FOCUS** (`syncShadowFrustum` in `stage.ts`), snapped to
+  whole shadow texels so edges don't crawl when the camera pans. `SHADOW_RADIUS` must cover
+  everything on screen: three clamps the shadow map at its edges, so anything outside the window
+  gets border texels smeared across it as long parallel streaks.
+- **Infantry value hierarchy lives in `paintPart`, not in the twelve kit branches.** `bodyValueAt`
+  ramps value with height (dark boots -> mid torso -> lit chest/weapon band) and `accentValueAt`
+  confines the saturated identity colour to ONE zone at chest height. Authoring it per kit is how
+  twelve independently-tuned kits ended up flat. Same rule: a cue that paints a whole weapon (the
+  "has orders left" pulse did) breaks the one-accent zone — cues go on accent meshes only.
 - **The right-hand rail stacks two panels.** `.topbar.compact-top` and `.target-panel` share
   `right: 16px`; the target panel starts at `top: 268px` to clear the tallest the command stack can
   get (End Turn + Menu + four chips). If you add a chip to that stack, re-check the number.

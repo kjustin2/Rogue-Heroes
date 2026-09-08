@@ -46,6 +46,17 @@ interface CameraGuide extends CameraGuideTarget {
  */
 export type QualityTier = "performance" | "balanced" | "quality" | "ultra";
 
+/**
+ * Half-width of the shadow window that follows the camera focus, in world units. It has to cover
+ * everything ON SCREEN: three clamps the shadow map at its edges, so anything outside the window
+ * gets the border texels smeared across it as long parallel streaks. 26 was tight enough to do
+ * that to half the field. 42 still gives ~2cm texels -- more than twice the density of the old
+ * whole-arena frustum -- while comfortably covering the widest tactical zoom.
+ */
+const SHADOW_RADIUS = 42;
+/** Direction from the focus point to the key light. Fixed, so the sun angle never changes. */
+const KEY_LIGHT_OFFSET = new THREE.Vector3(-13, 14, 9);
+
 export class Stage {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -70,6 +81,9 @@ export class Stage {
   private readonly shakeOffset = new THREE.Vector3();
   private readonly lookShake = new THREE.Vector3();
 
+  private silhouetteBackground: THREE.Scene["background"] | undefined;
+  private silhouetteFog: THREE.Scene["fog"] | undefined;
+  private silhouetteQuality: QualityTier | undefined;
   private quality: QualityTier = "quality";
   private pixelRatioCap = 1.15;
   private lowCost = false;
@@ -127,22 +141,33 @@ export class Stage {
     const key = new THREE.DirectionalLight(0xffe6c0, 3.2);
     // Lower sun angle than before: a steep noon key casts almost no visible shadow at this camera
     // pitch, and the cast shadow is most of what gives the units and terrain their form.
-    key.position.set(-13, 14, 9);
+    key.position.copy(KEY_LIGHT_OFFSET);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     // Sized to cover the largest enlarged battlefield (LARGE maps now span ~x = ±52, z = ±31 after
     // scaleMapDef). Kept at 2048² — wider frustum means slightly softer shadows on the biggest maps,
     // traded for no shadow-map perf hit.
-    key.shadow.camera.left = -56;
-    key.shadow.camera.right = 56;
-    key.shadow.camera.top = 34;
-    key.shadow.camera.bottom = -34;
-    key.shadow.camera.near = 2;
-    key.shadow.camera.far = 82;
-    key.shadow.bias = -0.0006;
-    // Higher normal bias than the box-only era: the GLB hulls' curved/angled plates
-    // self-shadow-acne (reads as flickering stripes) at the old 0.02.
-    key.shadow.normalBias = 0.05;
+    // FIT THE SHADOW FRUSTUM TO THE VIEW, not to the biggest map. It used to span the whole
+    // enlarged arena (112 x 68 units) at 2048^2 -- about 5.5cm per shadow texel -- so every prop's
+    // shadow broke into blocky dashes at tactical distance, which read across the ground as a
+    // texture artefact and survived three rounds of texture tuning because it never was one.
+    // A window that follows the camera focus is ~2.2cm per texel for the same map size, and it only
+    // has to cover what is on screen. See syncShadowFrustum for the texel snapping that keeps it
+    // from shimmering as the camera pans.
+    key.shadow.camera.left = -SHADOW_RADIUS;
+    key.shadow.camera.right = SHADOW_RADIUS;
+    key.shadow.camera.top = SHADOW_RADIUS;
+    key.shadow.camera.bottom = -SHADOW_RADIUS;
+    key.shadow.camera.near = 1;
+    key.shadow.camera.far = 120;
+    key.shadow.bias = -0.0008;
+    // NORMAL BIAS IS SIZED TO THE TEXEL, NOT PICKED BY EYE. The shadow frustum spans 112x68 world
+    // units at 2048^2, so one shadow texel is ~5.5cm on the ground. At 0.05 the bias was a tenth of
+    // a texel, and the near-flat arena floor under a low sun self-shadowed into regular diagonal
+    // banding — the dashes visible across the ground in every screenshot, which read as a texture
+    // artefact and are not one. Roughly four texels of normal bias clears it without detaching
+    // contact shadows from the units that cast them.
+    key.shadow.normalBias = 0.14;
     this.keyLight = key;
     this.scene.add(key);
 
@@ -372,7 +397,49 @@ export class Stage {
     return undefined;
   }
 
+  /**
+   * Black-silhouette mode for the shape test: everything renders flat black on white, so a unit
+   * can only be identified by its OUTLINE. Recolour variants and same-chassis kits fail it on
+   * sight, which is exactly what it exists to catch.
+   */
+  setSilhouette(on: boolean): void {
+    if (on) {
+      this.silhouetteBackground = this.scene.background;
+      this.silhouetteFog = this.scene.fog;
+      this.silhouetteQuality = this.quality;
+      // The graded post chain would tone-map and vignette the white ground away, and fog would
+      // grey the shapes out — both defeat the test. Silhouette mode renders direct.
+      this.setQuality("performance");
+      this.scene.background = new THREE.Color(0xffffff);
+      this.scene.fog = null;
+      this.scene.overrideMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+      return;
+    }
+    if (this.scene.overrideMaterial) {
+      (this.scene.overrideMaterial as THREE.Material).dispose();
+      this.scene.overrideMaterial = null;
+    }
+    if (this.silhouetteBackground !== undefined) this.scene.background = this.silhouetteBackground;
+    if (this.silhouetteFog !== undefined) this.scene.fog = this.silhouetteFog;
+    if (this.silhouetteQuality) this.setQuality(this.silhouetteQuality);
+  }
+
+  /**
+   * Slide the shadow window onto whatever the camera is looking at, snapped to whole shadow texels.
+   * Without the snap, sub-texel movement makes every shadow edge crawl as the camera pans -- the
+   * classic cascaded-shadow shimmer, and far more objectionable than the low resolution it fixes.
+   */
+  private syncShadowFrustum(): void {
+    const texel = (SHADOW_RADIUS * 2) / this.keyLight.shadow.mapSize.x;
+    const x = Math.round(this.focus.x / texel) * texel;
+    const z = Math.round(this.focus.z / texel) * texel;
+    this.keyLight.position.set(x + KEY_LIGHT_OFFSET.x, KEY_LIGHT_OFFSET.y, z + KEY_LIGHT_OFFSET.z);
+    this.keyLight.target.position.set(x, 0, z);
+    this.keyLight.target.updateMatrixWorld();
+  }
+
   render(dt = 0.016): void {
+    this.syncShadowFrustum();
     const chain = this.lowCost ? this.menuComposer : this.composer;
     if (chain) chain.render(dt);
     else this.renderer.render(this.scene, this.camera);

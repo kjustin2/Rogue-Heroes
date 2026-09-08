@@ -96,6 +96,8 @@ export class WorldRenderer {
   // A midtone derived from the active map palette; structural props are tinted toward it so
   // they read as part of the map instead of generic brown crates on every battlefield.
   private propTint = new THREE.Color(0x8a7a5c);
+  /** True while the silhouette shape test is rendering (see setSilhouette). */
+  private silhouetteMode = false;
   /** The active map's scrolling water-ripple normal, if it has water. Rebuilt per map. */
   private waterRipple: THREE.Texture | undefined;
   private skyTexture: THREE.CanvasTexture | null = null;
@@ -302,6 +304,7 @@ export class WorldRenderer {
     this.syncEnvironment(sim);
     this.syncAmbient();
     this.syncWater();
+    if (this.silhouetteMode) this.setSilhouette(true);
     this.syncObjectives(sim);
   }
 
@@ -312,6 +315,9 @@ export class WorldRenderer {
     const env = sim.environment();
     this.sandstormBlend += (env.sandstorm - this.sandstormBlend) * 0.06;
     const fog = this.scene.fog as THREE.FogExp2 | null;
+    // The silhouette shape test owns the sky and the fog while it runs; the weather sync would
+    // repaint its white field with the map's sky colour on the very next frame.
+    if (this.silhouetteMode) return;
     if (fog && "density" in fog) {
       // A readable dusty haze, not a brown-out: keep units visible while the field clearly hazes.
       fog.color.copy(this.envScratch.setHex(this.baseFogColor)).lerp(this.envSand, this.sandstormBlend * 0.7);
@@ -718,6 +724,21 @@ export class WorldRenderer {
 
   // Colorblind support: swap the team read palette (blue vs orange) and rebuild every
   // entity group so build-time team glows repaint too.
+  /**
+   * Black-silhouette mode: hide everything that is not a UNIT, so the entity shapes stand alone
+   * against a white field. The shape test is only meaningful with the terrain out of the way --
+   * with the ground left in, the override material paints the whole frame black.
+   */
+  setSilhouette(on: boolean): void {
+    for (const root of [this.sceneryRoot, this.markerRoot, this.orderRoot, this.previewRoot,
+      this.objectiveRoot, this.groundAimRoot, this.auraRoot, this.environmentRoot, this.craterRoot,
+      this.debrisRoot, this.damageNumberRoot]) {
+      root.visible = !on;
+    }
+    if (this.ambientPoints) this.ambientPoints.visible = !on;
+    this.silhouetteMode = on;
+  }
+
   setHighContrastTeams(on: boolean): void {
     Object.assign(TEAMS, on ? TEAMS_HIGH_CONTRAST : TEAMS_DEFAULT);
     TEAMS.version += 1;
@@ -869,7 +890,7 @@ export class WorldRenderer {
         normalMap: surface.normalMap,
         // The whole point of the normal map is that the low key light rakes across the ground and
         // finds relief in it. Too strong and the floor reads as crumpled foil at this camera pitch.
-        normalScale: new THREE.Vector2(0.5, 0.5),
+        normalScale: new THREE.Vector2(0.36, 0.36),
         color: new THREE.Color(theme.ground),
         roughness: 0.95,
         metalness: 0.02,
@@ -1622,7 +1643,14 @@ export class WorldRenderer {
       this.box(rig, entity, "body", [0.5, 0.66, 0.06], [0, 0.86, 0.19], 0xaba695, { accent: true });
       this.box(rig, entity, "body", [0.18, 0.42, 0.05], [0, 0.9, 0.23], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.21 });
       this.box(rig, entity, "body", [0.42, 0.16, 0.05], [0, 0.94, 0.23], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.21 });
-      this.box(rig, entity, "pack", [0.3, 0.3, 0.2], [0.36, 0.66, -0.04], 0xa39e8e, { accent: true });
+      // SILHOUETTE. In the black-shape test the medic, engineer and sapper were the same outline:
+      // a human with small chest kit that vanishes the moment colour does. Each now carries one
+      // LARGE shape that changes the outline itself. Medic: a rolled stretcher standing proud of
+      // the shoulder, and a satchel that hangs clear of the hip.
+      this.cylinder(rig, entity, "pack", 0.11, 1.02, [-0.24, 1.28, -0.3], 0xaba695, [0.22, 0, 0.28], { accent: true });
+      this.cylinder(rig, entity, "pack", 0.12, 0.06, [-0.35, 1.72, -0.36], 0xff3b4e, [0.22, 0, 0.28], { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.2 });
+      this.box(rig, entity, "pack", [0.34, 0.38, 0.26], [0.44, 0.6, -0.02], 0xa39e8e, { accent: true });
+      this.box(rig, entity, "pack", [0.36, 0.06, 0.28], [0.44, 0.8, -0.02], 0x7d7a6c, { accent: true });
       this.box(rig, entity, "pack", [0.14, 0.05, 0.05], [0.36, 0.7, 0.07], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.19 });
       this.box(rig, entity, "pack", [0.05, 0.14, 0.05], [0.36, 0.7, 0.07], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.19 });
       this.box(rig, entity, "body", [0.1, 0.16, 0.1], [-0.3, 0.7, 0.16], 0x9dffd0, { accent: true, emissive: 0x4ce0a0, emissiveIntensity: 0.29 });
@@ -1645,8 +1673,11 @@ export class WorldRenderer {
       // a hi-vis hard hat with a head-lamp, and a tool belt of hanging gear.
       this.box(rig, entity, "rifle", [0.12, 0.12, 0.46], [0.46, 0.92, 0.2], 0x3a3320, { metalness: 0.3 });
       this.box(rig, entity, "rifle", [0.11, 0.11, 0.16], [0.46, 0.92, 0.5], 0xe4d8ae, { accent: true, emissive: 0xffce4a, emissiveIntensity: 0.38 });
-      this.box(rig, entity, "pack", [0.1, 0.64, 0.1], [-0.34, 0.92, -0.32], 0xa8b0b8, { accent: true, metalness: 0.42 });
-      this.box(rig, entity, "pack", [0.24, 0.16, 0.12], [-0.34, 1.28, -0.32], 0xa8b0b8, { accent: true, metalness: 0.42 });
+      // Engineer: a heavy power-wrench slung across the back, head rising past the shoulder and
+      // canted out — a hard diagonal nothing else in the roster has.
+      this.box(rig, entity, "pack", [0.13, 1.0, 0.13], [-0.3, 1.12, -0.3], 0x8f979e, { accent: true, metalness: 0.42, rotation: [0.16, 0, 0.34] });
+      this.box(rig, entity, "pack", [0.42, 0.2, 0.2], [-0.52, 1.62, -0.22], 0x8f979e, { accent: true, metalness: 0.42, rotation: [0.16, 0, 0.34] });
+      this.box(rig, entity, "pack", [0.16, 0.2, 0.22], [-0.68, 1.66, -0.22], 0x5c6268, { accent: true, metalness: 0.4, rotation: [0.16, 0, 0.34] });
       this.box(rig, entity, "body", [0.6, 0.12, 0.4], [0, 0.62, 0.02], 0xffce4a, { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.17 });
       for (const x of [-0.18, 0.12]) this.box(rig, entity, "body", [0.08, 0.18, 0.06], [x, 0.5, 0.18], 0xbfc6cc, { accent: true, metalness: 0.4 });
       this.box(rig, entity, "head", [0.346, 0.18, 0.331], [0, 1.46, 0.0], 0xd9a52f, { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.14 });
@@ -1679,6 +1710,11 @@ export class WorldRenderer {
       this.box(rig, entity, "rifle", [0.22, 0.22, 0.6], [0.47, 0.92, 0.26], 0x4a4232, { metalness: 0.3 });
       this.cylinder(rig, entity, "rifle", 0.14, 0.2, [0.47, 0.8, 0.2], 0x2a2620, [0, 0, Math.PI / 2], { accent: true, metalness: 0.3 });
       this.box(rig, entity, "rifle", [0.14, 0.14, 0.16], [0.47, 0.92, 0.62], 0xffca6b, { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.17 });
+      // Sapper: a mine-detector paddle swept out and down on a long pole. The one unit in the
+      // roster with a wide flat disc low in its outline.
+      this.cylinder(rig, entity, "pack", 0.045, 1.15, [-0.5, 0.72, 0.16], 0x6a6250, [0.5, 0, 0.62], { accent: true, metalness: 0.34 });
+      this.cylinder(rig, entity, "pack", 0.3, 0.05, [-0.92, 0.2, 0.44], 0x8a7a3a, [Math.PI / 2.1, 0, 0.1], { accent: true, metalness: 0.3 });
+      this.cylinder(rig, entity, "pack", 0.1, 0.06, [-0.92, 0.26, 0.44], 0xffca6b, [Math.PI / 2.1, 0, 0.1], { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.26 });
       for (const x of [-0.18, 0.02, 0.22]) this.cylinder(rig, entity, "body", 0.07, 0.04, [x, 0.58, 0.22], 0x8a7a3a, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.3 });
       this.box(rig, entity, "body", [0.44, 0.5, 0.07], [0, 0.72, 0.2], 0x5a4a1a, { accent: true });
       this.box(rig, entity, "head", [0.346, 0.26, 0.072], [0, 1.34, 0.2], 0x3a342a, { accent: true, metalness: 0.24 });
@@ -2487,6 +2523,16 @@ export class WorldRenderer {
     // Hit flash: a freshly-damaged part snaps white for a beat, so the eye catches what got hit.
     const flash = part.hp > 0 ? this.partFlash(entity.id, part.id) : 0;
     if (flash > 0) color.lerp(hexColor(0xffffff), flash * 0.7);
+    // VALUE HIERARCHY (the TF2 rule). A trooper reads as a solid, grounded figure when its value
+    // climbs with height: darkest at the boots, mid on the body, brightest at the weapon/chest
+    // band -- and it reads as a flat toy when every part sits at the same value, which is what
+    // twelve independently-authored kits produced. Applied here rather than in twelve branches, so
+    // it can't drift, and keyed on the part's authored height in the rig.
+    if (isInfantryKind(entity.kind) && basePosition && !accent) color.multiplyScalar(bodyValueAt(basePosition.y));
+    // ...and exactly ONE accent zone per unit: the saturated identity colour belongs at the band
+    // the eye goes to. Accent kit above or below the chest/weapon band is knocked back so it stops
+    // competing -- a trooper covered in bright chips has no focal point at all.
+    if (isInfantryKind(entity.kind) && basePosition && accent) color.multiplyScalar(accentValueAt(basePosition.y));
     spec.color.copy(color);
     const baseEmissive = mesh.userData.baseEmissive as number;
     const unitGlow = entity.kind !== "cover" && entity.team !== "neutral";
@@ -2520,7 +2566,11 @@ export class WorldRenderer {
     // phase is where the player spends nearly all their time, that meant EVERY gun in the game was
     // a glowing pale slab in almost every frame, and no amount of modelling detail survived it.
     // A third of the strength still reads as a pulse without erasing the metal underneath.
-    if (this.commandPhase && entity.team === "player" && entity.status.alive && entity.commandPoints > 0 && part.role === "weapon" && part.hp > 0 && !selected && !targeted) {
+    // ...and it is only allowed on the small ACCENT meshes of a weapon (muzzle, sight, power cell),
+    // never on the weapon body. A heavy's auto-cannon is a 1.2m slab -- the largest single surface
+    // on the unit -- and washing it with the team's cyan turned it into a pale bar with no metal
+    // left in it, which is the "one accent zone" rule broken by the very cue that needs the zone.
+    if (this.commandPhase && accent && entity.team === "player" && entity.status.alive && entity.commandPoints > 0 && part.role === "weapon" && part.hp > 0 && !selected && !targeted) {
       spec.emissive.copy(hexColor(entity.accent ?? this.playerAccent));
       spec.emissiveIntensity = Math.max(spec.emissiveIntensity, 0.05 + (Math.sin(performance.now() * 0.004 + (hash(entity.id) % 63)) + 1) * 0.03);
     }
@@ -3813,7 +3863,7 @@ function roleColor(entity: CombatEntity, role: PartRole, fallback: number): numb
     return blendHex(blendHex(fallback, TEAMS.enemyBlend, 0.42), FACTION_TINT.enemy, 0.22);
   }
   if (entity.team === "player") {
-    if (role === "weapon") return blendHex(fallback, 0x9fdcf0, 0.2);
+    if (role === "weapon") return blendHex(fallback, 0x9fdcf0, 0.11);
     if (role === "mobility") return blendHex(fallback, 0x172328, 0.6);
     if (role === "head") return blendHex(fallback, 0xbfae90, 0.18);
     if (role === "utility") return blendHex(fallback, 0x8ff2d1, 0.45);
@@ -4241,7 +4291,7 @@ function makeGroundTexture(theme: MapTheme): GroundSurface {
     const w = 90 + rand() * 240;
     const h = 40 + rand() * 110;
     const angle = rand() * Math.PI;
-    const alpha = 0.08 + rand() * 0.08;
+    const alpha = 0.045 + rand() * 0.055;
     const streak = shade(0.62);
     wrapped(x, y, w, (px, py) => {
       ctx.save();
@@ -4288,14 +4338,14 @@ function makeGroundTexture(theme: MapTheme): GroundSurface {
 
   // Pebbles and pits: lit crown over a dark seat, so each one reads as a rounded stone half-buried
   // in the ground once the normal map picks it up.
-  for (let i = 0; i < 1500; i += 1) {
+  for (let i = 0; i < 900; i += 1) {
     const x = rand() * size;
     const y = rand() * size;
-    const r = 1.1 + rand() * 3.6;
+    const r = 2.2 + rand() * 5.2;
     const lift = rand() < 0.62;
     const tone = shade(lift ? 1.16 : 0.68, 0.3 + rand() * 0.5);
     wrapped(x, y, r + 2, (px, py) => {
-      ctx.fillStyle = css(tone, 0.16 + rand() * 0.24);
+      ctx.fillStyle = css(tone, 0.1 + rand() * 0.14);
       ctx.beginPath();
       ctx.ellipse(px, py, r, r * (0.6 + rand() * 0.5), rand() * Math.PI, 0, Math.PI * 2);
       ctx.fill();
@@ -4306,7 +4356,7 @@ function makeGroundTexture(theme: MapTheme): GroundSurface {
   const image = ctx.getImageData(0, 0, size, size);
   const data = image.data;
   for (let i = 0; i < data.length; i += 4) {
-    const n = (rand() - 0.5) * 30;
+    const n = (rand() - 0.5) * 15;
     data[i] = Math.max(0, Math.min(255, data[i] + n));
     data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + n));
     data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + n));
@@ -4317,7 +4367,7 @@ function makeGroundTexture(theme: MapTheme): GroundSurface {
   map.wrapS = THREE.RepeatWrapping;
   map.wrapT = THREE.RepeatWrapping;
   map.colorSpace = THREE.SRGBColorSpace;
-  map.anisotropy = 8;
+  map.anisotropy = 16;
   return { map, normalMap: makeNormalMap(data, size) };
 }
 
@@ -4368,7 +4418,7 @@ function makeNormalMap(albedo: Uint8ClampedArray, size: number): THREE.CanvasTex
     lum[i] = (albedo[o] * 0.299 + albedo[o + 1] * 0.587 + albedo[o + 2] * 0.114) / 255;
   }
   const at = (x: number, y: number): number => lum[((y + size) % size) * size + ((x + size) % size)];
-  const strength = 1.5;
+  const strength = 1.05;
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
       const dx = at(x + 1, y - 1) + 2 * at(x + 1, y) + at(x + 1, y + 1) - at(x - 1, y - 1) - 2 * at(x - 1, y) - at(x - 1, y + 1);
@@ -4387,7 +4437,7 @@ function makeNormalMap(albedo: Uint8ClampedArray, size: number): THREE.CanvasTex
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
-  texture.anisotropy = 8;
+  texture.anisotropy = 16;
   return texture;
 }
 
@@ -4556,7 +4606,7 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
       new THREE.MeshStandardMaterial({
         map: plateMap,
         normalMap: plateNormal,
-        normalScale: new THREE.Vector2(0.45, 0.45),
+        normalScale: new THREE.Vector2(0.32, 0.32),
         color: variant.color,
         roughness: variant.roughness,
         metalness: 0.02,
@@ -4599,7 +4649,11 @@ function makeTerrainBlocks(groundColor: number, accentColor: number, surface: Gr
     const cap = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, CAP, d + 0.02), capMaterial);
     cap.position.set(cx, block.height - CAP / 2, cz);
     cap.receiveShadow = true;
-    cap.castShadow = true;
+    // The cap does NOT cast. It overhangs its block by 1cm on each side so the top edge reads, which
+    // means neighbouring caps in a stepped mesa OVERLAP — and two coplanar surfaces fighting in the
+    // shadow depth pass is what painted long striped bands of alternating shadow across the ground
+    // on every map. The body beneath casts the same footprint, so nothing is lost.
+    cap.castShadow = false;
     group.add(cap);
     const edges = new THREE.LineSegments(
       new THREE.EdgesGeometry(body.geometry),
@@ -5127,6 +5181,26 @@ function sphereGeometry(radius: number): THREE.SphereGeometry {
     sphereGeometries.set(key, geometry);
   }
   return geometry;
+}
+
+/**
+ * Value ramp up the body: boots ~0.6, torso ~0.9, head/weapon band 1.0. Darkest at the feet is
+ * what makes a figure sit ON the ground instead of floating over it.
+ */
+function bodyValueAt(y: number): number {
+  if (y <= 0.4) return 0.6;
+  if (y >= 1.05) return 1.0;
+  return 0.6 + ((y - 0.4) / 0.65) * 0.4;
+}
+
+/**
+ * The single accent zone: full strength across the chest/weapon band (~0.75-1.3), knocked back
+ * outside it. One saturated region per unit, at the height the eye already goes to.
+ */
+function accentValueAt(y: number): number {
+  if (y >= 0.75 && y <= 1.32) return 1;
+  const distance = y < 0.75 ? 0.75 - y : y - 1.32;
+  return clamp(1 - distance * 1.1, 0.5, 1);
 }
 
 /** Idle weapon carry: muzzle lifted and canted in across the chest, pivoting about the grip. */
