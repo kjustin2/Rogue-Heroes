@@ -1449,8 +1449,8 @@ export class WorldRenderer {
     // Torso: a tapered barrel with a SEPARATE upper chest mass that overhangs it. The overhang is
     // what gives the trooper a shoulder line and a shadow under the chest -- a single cylinder
     // reads as a bottle no matter how it is lit.
-    this.cylinder(rig, entity, "body", 0.24, 0.5, [0, 0.8, 0], bodyColor, [0, 0, 0], { emissive: teamGlow, emissiveIntensity: 0.08, radiusBottom: 0.27 });
-    this.box(rig, entity, "body", [0.5, 0.3, 0.34], [0, 1.03, 0], bodyColor, { metalness: 0.14, bevel: 0.26 });
+    this.cylinder(rig, entity, "body", 0.24, 0.5, [0, 0.8, 0], bodyColor, [0, 0, 0], { emissive: teamGlow, emissiveIntensity: 0.08, radiusBottom: 0.27, outline: true });
+    this.box(rig, entity, "body", [0.5, 0.3, 0.34], [0, 1.03, 0], bodyColor, { metalness: 0.14, bevel: 0.26, outline: true });
     // Angled breastplate over it, with a glowing core seam.
     this.box(rig, entity, "body", [0.42, 0.34, 0.11], [0, 0.99, 0.18], trimColor, { metalness: 0.3, rotation: [-0.16, 0, 0], bevel: 0.24 });
     this.box(rig, entity, "body", [0.12, 0.2, 0.05], [0, 0.98, 0.245], 0x10171a, { emissive: teamGlow, emissiveIntensity: 0.21, rotation: [-0.16, 0, 0] });
@@ -1468,7 +1468,7 @@ export class WorldRenderer {
     }
     // Head: skull, a brow ridge over the visor, and a rear comms block. The brow is the single
     // detail that stops a head reading as a featureless ball.
-    this.sphere(rig, entity, "head", 0.165, [0, 1.37, 0.02], 0xd8d2bd, { scaleY: 0.95 });
+    this.sphere(rig, entity, "head", 0.165, [0, 1.37, 0.02], 0xd8d2bd, { scaleY: 0.95, outline: true });
     this.box(rig, entity, "head", [0.3, 0.07, 0.1], [0, 1.44, 0.145], 0x2b343a, { metalness: 0.26, rotation: [-0.24, 0, 0], bevel: 0.35 });
     this.box(rig, entity, "head", [0.28, 0.085, 0.07], [0, 1.37, 0.17], 0x0c1418, { emissive: teamGlow, emissiveIntensity: 0.23 });
     this.box(rig, entity, "head", [0.14, 0.11, 0.1], [0, 1.36, -0.15], 0x2b343a, { metalness: 0.24, bevel: 0.3 });
@@ -1642,8 +1642,8 @@ export class WorldRenderer {
       this.box(rig, entity, "legs", [0.15, 0.14, 0.16], [side * 0.18, 0.3, 0.03], trimColor, { metalness: 0.28, bevel: 0.3 }).userData.limb = tag;
       this.box(rig, entity, "legs", [0.11, 0.08, 0.12], [side * 0.18, 0.13, 0.06], 0x212b2f, { metalness: 0.2, bevel: 0.3 }).userData.limb = tag;
     }
-    this.cylinder(rig, entity, "legs", 0.095, 0.52, [-0.18, 0.26, 0], 0x162225, [0, 0, 0], { radiusBottom: 0.075 }).userData.limb = "leg-l";
-    this.cylinder(rig, entity, "legs", 0.095, 0.52, [0.18, 0.26, 0], 0x162225, [0, 0, 0], { radiusBottom: 0.075 }).userData.limb = "leg-r";
+    this.cylinder(rig, entity, "legs", 0.095, 0.52, [-0.18, 0.26, 0], 0x162225, [0, 0, 0], { radiusBottom: 0.075, outline: true }).userData.limb = "leg-l";
+    this.cylinder(rig, entity, "legs", 0.095, 0.52, [0.18, 0.26, 0], 0x162225, [0, 0, 0], { radiusBottom: 0.075, outline: true }).userData.limb = "leg-r";
     this.box(rig, entity, "legs", [0.2, 0.11, 0.3], [-0.18, 0.055, 0.07], 0x101516, { metalness: 0.14 }).userData.limb = "leg-l";
     this.box(rig, entity, "legs", [0.2, 0.11, 0.3], [0.18, 0.055, 0.07], 0x101516, { metalness: 0.14 }).userData.limb = "leg-r";
   }
@@ -1714,22 +1714,48 @@ export class WorldRenderer {
     const part = entity.parts[0];
     const volatile = part.role === "volatile";
     if (entity.coverKind === "ammo") {
-      this.box(group, entity, part.id, [0.92, 0.58, 0.72], [0, 0.32, 0], 0x8c6541, { emissive: 0xff9e2b, emissiveIntensity: 0.18 });
-      this.box(group, entity, part.id, [0.72, 0.18, 0.52], [0, 0.72, 0], 0xffca6b, { emissive: 0xff7d26, emissiveIntensity: 0.42 });
-      for (const x of [-0.24, 0.24]) this.cylinder(group, entity, part.id, 0.14, 0.62, [x, 0.52, 0], 0x34312a);
-      for (const z of [-0.32, 0.32]) this.box(group, entity, part.id, [1.02, 0.08, 0.08], [0, 0.66, z], 0xfff0bf, { emissive: 0xffb02e, emissiveIntensity: 0.35 });
+      // A pallet of banded shell crates with one round standing proud of the stack, so it reads as
+      // "munitions" from above rather than as a generic box.
+      this.box(group, entity, part.id, [1.0, 0.12, 0.8], [0, 0.06, 0], 0x4a3f31, { bevel: 0.2 });
+      this.box(group, entity, part.id, [0.9, 0.34, 0.68], [0, 0.29, 0], 0x5c4a33, { bevel: 0.14 });
+      this.box(group, entity, part.id, [0.78, 0.3, 0.6], [0, 0.61, -0.03], 0x67543a, { bevel: 0.14 });
+      // Steel banding across each crate: the small bright accents, not the whole prop.
+      for (const [y, w] of [[0.29, 0.92], [0.61, 0.8]] as const) {
+        this.box(group, entity, part.id, [w, 0.05, 0.06], [0, y, 0.26], 0xb8923f, { metalness: 0.4, bevel: 0.35 });
+      }
+      // A single shell, nose up, standing in the open crate.
+      this.cylinder(group, entity, part.id, 0.09, 0.34, [0.24, 0.9, -0.03], 0x6b6f5a, [0, 0, 0], { metalness: 0.35 });
+      this.cylinder(group, entity, part.id, 0.09, 0.14, [0.24, 1.11, -0.03], 0xb8923f, [0, 0, 0], { metalness: 0.45, radiusBottom: 0.02 });
+      // Hazard chevron on the front face.
+      this.box(group, entity, part.id, [0.34, 0.09, 0.04], [-0.18, 0.62, 0.31], 0xd8a53a, { bevel: 0.3 });
     } else if (entity.coverKind === "conduit") {
-      this.box(group, entity, part.id, [0.48, 1.15, 0.48], [0, 0.58, 0], 0x315764, { emissive: 0x48e9ff, emissiveIntensity: 0.34 });
-      this.box(group, entity, part.id, [1.08, 0.16, 0.24], [0, 1.22, 0], 0x9dfcff, { emissive: 0x48e9ff, emissiveIntensity: 0.68 });
-      this.box(group, entity, part.id, [0.16, 0.82, 0.92], [0, 0.58, 0], 0x152126);
-      this.box(group, entity, part.id, [0.86, 0.08, 0.12], [0, 0.2, 0.52], 0x8df4ff, { emissive: 0x48e9ff, emissiveIntensity: 0.7 });
-      this.box(group, entity, part.id, [0.86, 0.08, 0.12], [0, 0.96, -0.52], 0x8df4ff, { emissive: 0x48e9ff, emissiveIntensity: 0.58 });
+      // A junction box on a post, with an insulator stack and cable runs going off both ways.
+      this.box(group, entity, part.id, [0.28, 0.3, 0.28], [0, 0.14, 0], 0x2b3238, { bevel: 0.22 });
+      this.cylinder(group, entity, part.id, 0.09, 0.68, [0, 0.6, 0], 0x39424a, [0, 0, 0], { metalness: 0.4 });
+      this.box(group, entity, part.id, [0.46, 0.56, 0.34], [0, 1.06, 0], 0x35424c, { metalness: 0.28, bevel: 0.16 });
+      // Ceramic insulators -- the one place a bright material belongs on this prop.
+      for (const x of [-0.13, 0.13]) {
+        this.cylinder(group, entity, part.id, 0.06, 0.18, [x, 1.42, 0], 0xb9b0a0, [0, 0, 0], { metalness: 0.1 });
+      }
+      // Live terminal: small, and the only emissive thing here.
+      this.box(group, entity, part.id, [0.1, 0.06, 0.06], [0, 1.2, 0.19], 0x9dfcff, { emissive: 0x48e9ff, emissiveIntensity: 0.55, bevel: 0.3 });
+      // Cable runs sagging away on each side.
+      for (const side of [-1, 1]) {
+        this.box(group, entity, part.id, [0.5, 0.05, 0.05], [side * 0.36, 1.3, 0], 0x181d21, { bevel: 0.4, rotation: [0, 0, side * 0.22] });
+      }
     } else if (volatile) {
-      this.box(group, entity, part.id, [0.82, 0.98, 0.82], [0, 0.5, 0], 0xffb02e, { emissive: 0xff6b1a, emissiveIntensity: 0.35 });
-      this.box(group, entity, part.id, [0.56, 0.28, 0.56], [0, 1.14, 0], 0xffd06a, { emissive: 0xffb02e, emissiveIntensity: 0.45 });
-      this.box(group, entity, part.id, [0.16, 0.82, 0.9], [0, 0.56, 0], 0x5a3516);
-      this.box(group, entity, part.id, [0.98, 0.1, 0.1], [0, 0.96, 0], 0xfff0bf, { emissive: 0xff7d26, emissiveIntensity: 0.42 });
-      this.box(group, entity, part.id, [0.1, 0.1, 0.98], [0, 0.96, 0], 0xfff0bf, { emissive: 0xff7d26, emissiveIntensity: 0.42 });
+      // Fuel: a ribbed drum in a low cradle with a valve head and a hazard band. Dark body, warm
+      // band -- the previous version was a saturated orange blob that read as a pickup, not a hazard.
+      this.box(group, entity, part.id, [0.86, 0.1, 0.78], [0, 0.05, 0], 0x3b3a33, { bevel: 0.2 });
+      this.cylinder(group, entity, part.id, 0.36, 0.88, [0, 0.54, 0], 0x6d5a33, [0, 0, 0], { metalness: 0.32 });
+      // Rolling hoops: the ribs are what make a cylinder read as a fuel drum at any distance.
+      for (const y of [0.3, 0.56, 0.82]) {
+        this.cylinder(group, entity, part.id, 0.385, 0.06, [0, y, 0], 0x4a4030, [0, 0, 0], { metalness: 0.4 });
+      }
+      // Hazard band + valve assembly on top.
+      this.cylinder(group, entity, part.id, 0.372, 0.15, [0, 0.68, 0], 0xd8952f, [0, 0, 0], { metalness: 0.2 });
+      this.cylinder(group, entity, part.id, 0.16, 0.12, [0, 1.02, 0], 0x4a4436, [0, 0, 0], { metalness: 0.42 });
+      this.box(group, entity, part.id, [0.26, 0.05, 0.05], [0, 1.1, 0], 0x8f8672, { metalness: 0.45, bevel: 0.35 });
     } else if (entity.coverKind === "barricade") {
       this.box(group, entity, part.id, [1.72, 0.62, 0.46], [0, 0.32, 0], 0x9b7045);
       this.box(group, entity, part.id, [1.54, 0.18, 0.56], [0, 0.72, 0], 0xc18a50);
@@ -1875,6 +1901,8 @@ export class WorldRenderer {
       rotation?: [number, number, number];
       /** Chamfer size as a fraction of the smallest dimension. Lower for thin plates. */
       bevel?: number;
+      /** Trace this mesh with a dark edge outline. Costs a draw call; silhouette shapes only. */
+      outline?: boolean;
     } = {}
   ): PartMesh {
     const mesh = new THREE.Mesh(
@@ -1900,10 +1928,10 @@ export class WorldRenderer {
     mesh.userData.basePosition = mesh.position.clone();
     mesh.userData.baseRotation = mesh.rotation.clone();
     mesh.userData.baseScale = mesh.scale.clone();
-    // Outlines only on infantry, and only on the silhouette-critical parts (torso, head,
-    // legs): those are the shapes that must read at tactics distance, and each outline is
-    // a whole extra draw call — trinkets/weapons don't earn one at 0.38 opacity.
-    if (isInfantryKind(entity.kind) && OUTLINED_PARTS.has(partId)) this.outline(mesh);
+    // Outlines are opt-in per mesh (see `outline` in the material options). Each one is a child
+    // LineSegments and therefore a whole extra draw call, so only the few shapes that carry a
+    // trooper's silhouette at tactical distance are worth tracing.
+    if (materialOptions.outline && isInfantryKind(entity.kind) && OUTLINED_PARTS.has(partId)) this.outline(mesh);
     group.add(mesh);
     return mesh;
   }
@@ -1917,7 +1945,7 @@ export class WorldRenderer {
     pos: [number, number, number],
     color: number,
     rotation: [number, number, number] = [0, 0, Math.PI / 2],
-    materialOptions: { metalness?: number; emissive?: number; emissiveIntensity?: number; accent?: boolean; radiusBottom?: number } = {}
+    materialOptions: { metalness?: number; emissive?: number; emissiveIntensity?: number; accent?: boolean; radiusBottom?: number; outline?: boolean } = {}
   ): PartMesh {
     const mesh = new THREE.Mesh(
       new THREE.CylinderGeometry(radius, materialOptions.radiusBottom ?? radius, depth, 14),
@@ -1942,7 +1970,7 @@ export class WorldRenderer {
     mesh.userData.basePosition = mesh.position.clone();
     mesh.userData.baseRotation = mesh.rotation.clone();
     mesh.userData.baseScale = mesh.scale.clone();
-    if (isInfantryKind(entity.kind) && OUTLINED_PARTS.has(partId)) this.outline(mesh);
+    if (materialOptions.outline && isInfantryKind(entity.kind) && OUTLINED_PARTS.has(partId)) this.outline(mesh);
     group.add(mesh);
     return mesh;
   }
@@ -1955,7 +1983,7 @@ export class WorldRenderer {
     radius: number,
     pos: [number, number, number],
     color: number,
-    materialOptions: { metalness?: number; emissive?: number; emissiveIntensity?: number; accent?: boolean; scaleY?: number } = {}
+    materialOptions: { metalness?: number; emissive?: number; emissiveIntensity?: number; accent?: boolean; scaleY?: number; outline?: boolean } = {}
   ): PartMesh {
     const mesh = new THREE.Mesh(
       new THREE.SphereGeometry(radius, 14, 10),
@@ -3760,9 +3788,9 @@ function makeGroundTexture(theme: MapTheme): THREE.CanvasTexture {
     const y = rand() * size;
     const r = 26 + rand() * 96;
     const toward = rand();
-    const tone = ground.clone().lerp(accent, toward * 0.85).multiplyScalar(0.82 + rand() * 0.42);
+    const tone = ground.clone().lerp(accent, toward * 0.95).multiplyScalar(0.62 + rand() * 0.86);
     const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, css(tone, 0.5));
+    grad.addColorStop(0, css(tone, 0.72));
     grad.addColorStop(1, css(tone, 0));
     ctx.fillStyle = grad;
     ctx.fillRect(x - r, y - r, r * 2, r * 2);
@@ -3780,9 +3808,9 @@ function makeGroundTexture(theme: MapTheme): THREE.CanvasTexture {
     // Soft-edged and faint. Sharp thin rectangles read as sticks lying on the ground; broad,
     // blurred, low-alpha smears read as the ground itself being unevenly weathered.
     const grad = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
-    const shade = ground.clone().multiplyScalar(0.66);
+    const shade = ground.clone().multiplyScalar(0.5);
     grad.addColorStop(0, css(shade, 0));
-    grad.addColorStop(0.5, css(shade, 0.16 + rand() * 0.1));
+    grad.addColorStop(0.5, css(shade, 0.26 + rand() * 0.14));
     grad.addColorStop(1, css(shade, 0));
     ctx.fillStyle = grad;
     ctx.fillRect(-w / 2, -h / 2, w, h);
@@ -3792,7 +3820,7 @@ function makeGroundTexture(theme: MapTheme): THREE.CanvasTexture {
   // Fine grain so the surface does not read as smooth plastic when the camera is close.
   const grain = ctx.getImageData(0, 0, size, size);
   for (let i = 0; i < grain.data.length; i += 4) {
-    const n = (rand() - 0.5) * 26;
+    const n = (rand() - 0.5) * 34;
     grain.data[i] = Math.max(0, Math.min(255, grain.data[i] + n));
     grain.data[i + 1] = Math.max(0, Math.min(255, grain.data[i + 1] + n));
     grain.data[i + 2] = Math.max(0, Math.min(255, grain.data[i + 2] + n));

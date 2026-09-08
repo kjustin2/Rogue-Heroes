@@ -28,6 +28,11 @@ const TROOPS = [
 ];
 const VEHICLES = ["tank", "apc", "artillery", "flak"];
 const AIR = ["gunship", "interceptor", "bomber", "transport"];
+// Structures and scenery. The owner asks about characters, BASES and OBJECTS, and until now the
+// sheet only covered things that walk -- so the half of the screen made of emplacements and props
+// was never actually looked at.
+const STRUCTURES = ["base", "turret", "exturret", "wall"];
+const COVER = ["fuel", "ammo", "conduit", "crate", "sandbag", "rock", "tree", "pillar", "container", "bunker", "depot", "barricade"];
 
 const { page, errors, close } = await launchGame({
   port: PORT,
@@ -80,12 +85,41 @@ try {
 
   // debugSetView allows down to 0.18 (the interactive floor is 0.62), which is the whole reason
   // it exists -- close enough to actually inspect a model. Lower is nearer.
+  const shootStructure = async (kind, zoom) => {
+    await page.evaluate((k) => {
+      const sim = window.__rht.sim;
+      sim.entities.splice(0, sim.entities.length);
+      const unit = k === "base"
+        ? sim.debugStructure("base", "player", { x: 0, z: 0 })
+        : sim.debugStructure(k, "player", { x: 0, z: 0 });
+      if (unit) unit.yaw = -0.72;
+    }, kind);
+    await page.evaluate((z) => window.__rht.setView({ x: 0, z: -0.6, zoom: z, yaw: 0.7, pitch: 0.2 }), zoom);
+    await page.waitForTimeout(420);
+    await assertLit(page, `portrait ${kind}`);
+    await page.screenshot({ path: join(OUT, `${kind}.png`) });
+  };
+
+  const shootCover = async (coverKind, zoom) => {
+    await page.evaluate((k) => {
+      const sim = window.__rht.sim;
+      sim.entities.splice(0, sim.entities.length);
+      sim.debugCover(k, { x: 0, z: 0 });
+    }, coverKind);
+    await page.evaluate((z) => window.__rht.setView({ x: 0, z: -0.6, zoom: z, yaw: 0.7, pitch: 0.2 }), zoom);
+    await page.waitForTimeout(420);
+    await assertLit(page, `portrait ${coverKind}`);
+    await page.screenshot({ path: join(OUT, `cover-${coverKind}.png`) });
+  };
+
   for (const kind of TROOPS) await shoot(kind, 0.34);
   for (const kind of VEHICLES) await shoot(kind, 0.46);
   for (const kind of AIR) await shoot(kind, 0.52);
+  for (const kind of STRUCTURES) await shootStructure(kind, kind === "base" ? 0.62 : 0.4);
+  for (const kind of COVER) await shootCover(kind, 0.36);
 
   if (errors.length) fail(`console errors:\n${errors.slice(0, 6).join("\n")}`);
-  console.log(`Portraits: ${TROOPS.length + VEHICLES.length + AIR.length} units -> ${OUT}`);
+  console.log(`Portraits: ${TROOPS.length + VEHICLES.length + AIR.length} units, ${STRUCTURES.length} structures, ${COVER.length} props -> ${OUT}`);
 } finally {
   await close();
 }

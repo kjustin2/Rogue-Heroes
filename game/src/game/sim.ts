@@ -24,6 +24,7 @@ import {
   createScout,
   createSniper,
   createCover,
+  createBase,
   createDroneOp,
   createFlamer,
   createFlak,
@@ -36,6 +37,7 @@ import {
   createStriker,
   createTank,
   createTurret,
+  COVER_PROFILES,
   createExTurret,
   createWall,
   factionLiving,
@@ -51,6 +53,7 @@ import {
   spendCommandPoint,
   vulnerabilityMultiplier,
   type AimMode,
+  type CoverKind,
   type CombatEntity,
   type DamagePart,
   type DamageResult,
@@ -1545,6 +1548,35 @@ export class TacticalSim {
   // These bypass the economy/CP rules on purpose — they are dev tooling, not gameplay.
 
   // Drop a combat unit straight onto the field, ready to act (no cost, no cooldown).
+  /**
+   * Place an emplacement or the base directly, bypassing cost, placement radius and command points.
+   * Debug/capture surface only -- debugSpawn covers troops, and the portrait sheet needs the other
+   * half of what is actually on screen.
+   */
+  debugStructure(kind: DefenseKind | "base", team: Team, position: Vec2): CombatEntity {
+    const id = `${team === "player" ? "p" : "e"}-dbg-${++this.troopSeq}`;
+    const at = clampToArena(position);
+    const entity = kind === "base" ? createBase(id, "Home Base", team, at)
+      : kind === "turret" ? createTurret(id, "Gun Turret", team, at)
+      : kind === "exturret" ? createExTurret(id, "Mortar Turret", team, at)
+      : createWall(id, "Blast Wall", team, at);
+    this.entities.push(entity);
+    this.syncEntityElevation(entity);
+    return entity;
+  }
+
+  /** Place a scenery/cover prop directly. Same purpose as debugStructure. */
+  debugCover(coverKind: CoverKind, position: Vec2, options: { volatile?: boolean } = {}): CombatEntity {
+    const profile = COVER_PROFILES[coverKind];
+    const entity = createCover(`cover-dbg-${++this.troopSeq}`, profile.label, clampToArena(position), {
+      coverKind,
+      volatile: options.volatile ?? profile.volatile,
+    });
+    this.entities.push(entity);
+    this.syncEntityElevation(entity);
+    return entity;
+  }
+
   debugSpawn(kind: TroopKind, team: Team, position: Vec2, options: { elite?: boolean; bossName?: string } = {}): CombatEntity {
     const id = `${team === "player" ? "p" : "e"}-dbg-${++this.troopSeq}`;
     const unit = makeTroop(kind, id, options.bossName ?? `${troopSpec(kind).label} ${this.troopSeq}`, team, clampToArena(position));

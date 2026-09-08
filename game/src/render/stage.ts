@@ -102,6 +102,9 @@ export class Stage {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+// NOTE: renderer.toneMappingExposure is NOT a live lever here. Driving it from 1.06 to 2.6
+    // changed the measured frame luminance by 0.0001 -- the composer chain is what determines the
+    // final image, so brightness is adjusted in the post stack instead (see buildPost).
     this.renderer.toneMappingExposure = 1.06;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -196,9 +199,14 @@ export class Stage {
       // Low saturation push + firmer contrast: the desert themes collapse into one ochre
       // band if saturation is boosted, and anchored blacks are what keep units readable.
       effects.push(new HueSaturationEffect({ saturation: 0.06 }));
+      // Brightness lift. Two rounds of deliberate darkening -- ground palettes pulled down to widen
+      // their value range, props pushed back behind the units, and volatile scenery that no longer
+      // glows like a pickup -- were each right on their own, and cumulatively left the darkest maps
+      // near black with eight frames failing the flatness gate. This recovers the mid-tones without
+      // undoing any of those decisions.
       // Firmer than the old 0.09. With the fill lights cut back there is real shade in the frame
       // now, and the contrast curve is what stops the mid-tones collapsing back together.
-      effects.push(new BrightnessContrastEffect({ contrast: 0.17 }));
+      effects.push(new BrightnessContrastEffect({ brightness: 0.1, contrast: 0.24 }));
       const noise = new NoiseEffect({ premultiply: true });
       // A light filmic grain. 0.32 read as visible static/dither over the low-frequency sky and on
       // small distant infantry (competing with unit readability); ~0.16 keeps the texture subtle.
