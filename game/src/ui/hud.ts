@@ -683,6 +683,20 @@ export class Hud {
   }
 }
 
+// A one-line condition bar for the squad list. The roster showed a unit's kind, command points and
+// queued order but never how hurt it was, so the only way to find a nearly-dead trooper was to
+// click every card in turn. Same colour bands as the full vitals readout, so the two never disagree.
+function healthStrip(entity: CombatEntity): string {
+  if (!entity.status.alive) return `<span class="unit-health unit-health--dead">Destroyed</span>`;
+  const total = entity.parts.reduce((sum, part) => sum + part.maxHp, 0);
+  const left = entity.parts.reduce((sum, part) => sum + Math.max(0, part.hp), 0);
+  const pct = total > 0 ? Math.round((left / total) * 100) : 0;
+  const band = pct <= 34 ? "critical" : pct <= 68 ? "hurt" : "ok";
+  const broken = entity.parts.filter((part) => part.hp <= 0).map((part) => part.label);
+  const tip = broken.length ? `${pct}% condition — lost: ${broken.join(", ")}` : `${pct}% condition`;
+  return `<span class="unit-health unit-health--${band}" data-tip="${escapeAttr(tip)}"><i style="width:${pct}%"></i></span>`;
+}
+
 function unitCard(entity: CombatEntity, selected: boolean, orders: TacticalOrder[], sim: TacticalSim): string {
   const lastOrder = orders.at(-1);
   const spent = entity.status.alive && entity.commandPoints <= 0;
@@ -692,6 +706,7 @@ function unitCard(entity: CombatEntity, selected: boolean, orders: TacticalOrder
       <button class="unit-select" data-select="${entity.id}" data-tip="${escapeAttr(cpTip(entity))}">
         <span class="unit-name">${escapeHtml(entity.name)}</span>
         <span class="unit-meta">${kindLabel(entity)} / ${cpPips(entity)}${grenadeSupplyText(entity)} / ${spent ? "Orders set" : statusText(entity)}${crouched ? `<span class="stance-chip">Crouched</span>` : ""}</span>
+        ${healthStrip(entity)}
         <span class="queued-order">${orders.length ? orders.map((order) => escapeHtml(orderSummary(order, sim).replace("Queued: ", ""))).join(" / ") : "Idle"}</span>
       </button>
       <div class="unit-actions">
@@ -931,9 +946,10 @@ function orderPlanner(
 
   return `
     <div class="order-head">
-      <div>
+      <div class="order-identity">
         <div class="panel-title">Order</div>
         <h2>${actor ? escapeHtml(actor.name) : "No unit selected"}</h2>
+        ${unitVitals(actor)}
       </div>
       <div class="cp-badge" data-tip="${actor ? escapeAttr(cpTip(actor)) : "Select a living squad unit."}">
         ${actor ? `${actor.commandPoints}/${actor.maxCommandPoints} CP` : "-- CP"}
@@ -962,6 +978,59 @@ function orderPlanner(
           ${actionBody}
         </div>
       </div>` : ""}
+    </div>
+  `;
+}
+
+// UNIT VITALS.
+//
+// Per-part damage is the most interesting system in this game -- a unit is a bag of parts, and
+// losing a specific one costs a specific capability -- and none of it was on screen. A selected
+// trooper showed its name, its command points and four buttons. You could not see that it was
+// nearly dead, and more importantly you could not see WHY a greyed-out Shoot button was greyed
+// out, because the destroyed weapon that caused it was invisible.
+//
+// So: one bar for overall condition, then a chip per part coloured by how hurt it is, and an
+// explicit line naming any capability that has actually been lost. Cause and effect, visible.
+function partCondition(part: DamagePart): "ok" | "hurt" | "critical" | "gone" {
+  if (part.hp <= 0) return "gone";
+  const ratio = part.hp / Math.max(1, part.maxHp);
+  if (ratio <= 0.34) return "critical";
+  if (ratio <= 0.68) return "hurt";
+  return "ok";
+}
+
+function unitVitals(actor: CombatEntity | undefined): string {
+  if (!actor) return "";
+  const total = actor.parts.reduce((sum, part) => sum + part.maxHp, 0);
+  const left = actor.parts.reduce((sum, part) => sum + Math.max(0, part.hp), 0);
+  const pct = total > 0 ? Math.round((left / total) * 100) : 0;
+  // Colour the bar by the same thresholds as the chips, so "the bar is red" and "a part is
+  // critical" never disagree.
+  const band = pct <= 34 ? "critical" : pct <= 68 ? "hurt" : "ok";
+
+  const chips = actor.parts.map((part) => {
+    const condition = partCondition(part);
+    const tip = `${part.label}: ${Math.max(0, Math.round(part.hp))}/${Math.round(part.maxHp)}`;
+    return `<span class="vpart vpart--${condition}" data-tip="${escapeAttr(tip)}">${escapeHtml(part.label)}</span>`;
+  }).join("");
+
+  // Only ever states what is actually LOST. A list of things that still work is noise.
+  const lost: string[] = [];
+  if (!actor.status.canMove) lost.push("cannot move");
+  if (!actor.status.canShoot) lost.push("cannot shoot");
+  const impaired = lost.length
+    ? `<div class="vitals-impaired" data-tip="A destroyed part costs the capability it carried.">${escapeHtml(lost.join(" &middot; "))}</div>`
+    : "";
+
+  return `
+    <div class="unit-vitals">
+      <div class="vitals-bar vitals-bar--${band}" data-tip="${escapeAttr(`${left} of ${total} hit points across ${actor.parts.length} parts`)}">
+        <span style="width:${pct}%"></span>
+        <em>${pct}%</em>
+      </div>
+      <div class="vitals-parts">${chips}</div>
+      ${impaired}
     </div>
   `;
 }

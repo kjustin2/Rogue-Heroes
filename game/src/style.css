@@ -4896,3 +4896,103 @@ body.killcam::after { bottom: 0; }
   color: var(--text-muted);
   border-style: dashed;
 }
+
+/* ---- Unit vitals -------------------------------------------------------------------------
+   Overall condition, then one chip per part, then an explicit note for any capability lost.
+   The chips are the point: they show WHICH part is gone, which is what explains a disabled
+   action button. Sized to sit inside the order head without pushing the action row down. */
+.unit-vitals {
+  display: grid;
+  gap: 5px;
+  margin-top: 7px;
+  max-width: 340px;
+}
+.vitals-bar {
+  position: relative;
+  height: 9px;
+  border-radius: 5px;
+  background: rgba(6, 12, 16, 0.72);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.vitals-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  transition: width 160ms ease-out;
+  background: linear-gradient(90deg, var(--mint), var(--cyan));
+}
+.vitals-bar--hurt > span { background: linear-gradient(90deg, var(--amber), var(--brass-lite)); }
+.vitals-bar--critical > span { background: linear-gradient(90deg, #ff5f4a, #ff8f5e); }
+.vitals-bar > em {
+  position: absolute;
+  right: 6px;
+  top: -1px;
+  font-size: 9px;
+  font-style: normal;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.vitals-parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.vpart {
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: rgba(10, 18, 24, 0.6);
+  color: var(--text-muted);
+  cursor: help;
+}
+.vpart--ok { color: var(--mint); border-color: rgba(120, 220, 180, 0.35); }
+.vpart--hurt { color: var(--amber); border-color: rgba(255, 190, 90, 0.4); }
+.vpart--critical { color: #ff8f6e; border-color: rgba(255, 120, 80, 0.5); }
+/* A destroyed part is struck through and drained of colour -- it should read as gone at a glance,
+   not as another status to decode. */
+.vpart--gone {
+  color: #6b7076;
+  border-color: rgba(120, 130, 140, 0.28);
+  text-decoration: line-through;
+  opacity: 0.75;
+}
+.vitals-impaired {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #ff8f6e;
+}
+
+/* Squad-list condition strip. Thin on purpose: the roster is a scanning surface, so this needs to
+   be readable in peripheral vision without competing with the unit's name. */
+.unit-health {
+  display: block;
+  height: 4px;
+  margin: 4px 0 2px;
+  border-radius: 3px;
+  background: rgba(6, 12, 16, 0.7);
+  border: 1px solid var(--line);
+  overflow: hidden;
+  cursor: help;
+}
+.unit-health > i {
+  display: block;
+  height: 100%;
+  background: var(--mint);
+  transition: width 160ms ease-out;
+}
+.unit-health--hurt > i { background: var(--amber); }
+.unit-health--critical > i { background: #ff6a4a; }
+.unit-health--dead {
+  height: auto;
+  border: 0;
+  background: none;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7a4a44;
+}
