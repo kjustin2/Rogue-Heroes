@@ -23,6 +23,7 @@
     "perf": "node improve/perf-bench.mjs",
     "perf:profile": "node scripts/perf-profile.mjs",
     "perf:census": "node scripts/perf-census.mjs",
+    "audit:unit": "node scripts/probe-unit.mjs",
     "vision": "node improve/vision.mjs",
     "smoke:electron": "electron scripts/smoke-electron.cjs",
     "test:play": "npm run build && npm run smoke:electron",
