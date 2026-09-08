@@ -16,12 +16,12 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.2008,
-        "contrast": 0.0966,
-        "range": 0.2596,
-        "meanSat": 0.2331,
-        "hueConcentration": 0.6283,
-        "blownPct": 0.0005,
+        "meanLuma": 0.2004,
+        "contrast": 0.0955,
+        "range": 0.2586,
+        "meanSat": 0.2322,
+        "hueConcentration": 0.6314,
+        "blownPct": 0.0006,
         "crushedPct": 0
       },
       "flags": [],
@@ -40,11 +40,11 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.266,
-        "contrast": 0.1159,
-        "range": 0.3572,
-        "meanSat": 0.3975,
-        "hueConcentration": 0.3555,
+        "meanLuma": 0.2655,
+        "contrast": 0.114,
+        "range": 0.3555,
+        "meanSat": 0.3978,
+        "hueConcentration": 0.3558,
         "blownPct": 0.0006,
         "crushedPct": 0
       },
@@ -64,11 +64,11 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.2661,
-        "contrast": 0.0908,
-        "range": 0.2823,
-        "meanSat": 0.2847,
-        "hueConcentration": 0.1486,
+        "meanLuma": 0.2654,
+        "contrast": 0.0884,
+        "range": 0.2813,
+        "meanSat": 0.2846,
+        "hueConcentration": 0.1484,
         "blownPct": 0.0006,
         "crushedPct": 0
       },
@@ -88,12 +88,12 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.195,
-        "contrast": 0.1122,
-        "range": 0.3361,
-        "meanSat": 0.2233,
-        "hueConcentration": 0.5481,
-        "blownPct": 0.0008,
+        "meanLuma": 0.1944,
+        "contrast": 0.11,
+        "range": 0.3373,
+        "meanSat": 0.2235,
+        "hueConcentration": 0.5495,
+        "blownPct": 0.0009,
         "crushedPct": 0
       },
       "flags": [],
@@ -112,12 +112,12 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.4192,
-        "contrast": 0.0872,
-        "range": 0.2661,
-        "meanSat": 0.1602,
-        "hueConcentration": 0.554,
-        "blownPct": 0.0002,
+        "meanLuma": 0.4203,
+        "contrast": 0.0887,
+        "range": 0.2813,
+        "meanSat": 0.1607,
+        "hueConcentration": 0.5549,
+        "blownPct": 0.0003,
         "crushedPct": 0
       },
       "flags": [],
@@ -136,12 +136,12 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.3267,
-        "contrast": 0.1048,
-        "range": 0.2535,
-        "meanSat": 0.4232,
-        "hueConcentration": 0.5081,
-        "blownPct": 0.0006,
+        "meanLuma": 0.326,
+        "contrast": 0.1027,
+        "range": 0.2532,
+        "meanSat": 0.4236,
+        "hueConcentration": 0.5071,
+        "blownPct": 0.0004,
         "crushedPct": 0
       },
       "flags": [],
@@ -160,11 +160,11 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.3218,
+        "meanLuma": 0.3217,
         "contrast": 0.0974,
         "range": 0.2499,
-        "meanSat": 0.426,
-        "hueConcentration": 0.5215,
+        "meanSat": 0.4261,
+        "hueConcentration": 0.5219,
         "blownPct": 0.0002,
         "crushedPct": 0
       },
@@ -185,12 +185,12 @@
       "stats": {
         "ok": true,
         "meanLuma": 0.1697,
-        "contrast": 0.095,
+        "contrast": 0.0946,
         "range": 0.2642,
-        "meanSat": 0.1834,
-        "hueConcentration": 0.5739,
+        "meanSat": 0.1833,
+        "hueConcentration": 0.5831,
         "blownPct": 0.001,
-        "crushedPct": 0.0093
+        "crushedPct": 0.009
       },
       "flags": [],
       "file": "victory.png"
@@ -209,12 +209,12 @@
       "stats": {
         "ok": true,
         "meanLuma": 0.1773,
-        "contrast": 0.0976,
-        "range": 0.2308,
+        "contrast": 0.0972,
+        "range": 0.2321,
         "meanSat": 0.1639,
-        "hueConcentration": 0.6301,
+        "hueConcentration": 0.6297,
         "blownPct": 0.001,
-        "crushedPct": 0.0004
+        "crushedPct": 0.0002
       },
       "flags": [],
       "file": "defeat.png"
