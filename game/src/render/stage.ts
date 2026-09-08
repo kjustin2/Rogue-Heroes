@@ -167,7 +167,7 @@ export class Stage {
     // banding — the dashes visible across the ground in every screenshot, which read as a texture
     // artefact and are not one. Roughly four texels of normal bias clears it without detaching
     // contact shadows from the units that cast them.
-    key.shadow.normalBias = 0.14;
+    key.shadow.normalBias = 0.55;
     this.keyLight = key;
     this.scene.add(key);
 

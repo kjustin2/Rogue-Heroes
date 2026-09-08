@@ -165,9 +165,20 @@ export class WorldRenderer {
     this.targetRing.position.y = 0.055;
     this.scene.add(this.targetRing);
 
+    // The action range used to be a 4%-thick hairline ring: at tactical distance that reads as a
+    // wireframe overlaid on the game, not as part of the board. It is a FIELD now — a soft tinted
+    // area that brightens into a defined rim — which is how a tactics board shows reach. Same one
+    // mesh, one draw call; the shape lives in a 256px gradient texture instead of in geometry.
     this.actionRangeRing = new THREE.Mesh(
-      new THREE.RingGeometry(0.98, 1.02, 96),
-      new THREE.MeshBasicMaterial({ color: 0xffbf4d, transparent: true, opacity: 0.42, side: THREE.DoubleSide, depthWrite: false })
+      new THREE.PlaneGeometry(2, 2),
+      new THREE.MeshBasicMaterial({
+        color: 0xffbf4d,
+        map: rangeFieldTexture(),
+        transparent: true,
+        opacity: 0.42,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      })
     );
     this.actionRangeRing.rotation.x = -Math.PI / 2;
     this.actionRangeRing.position.y = 0.06;
@@ -2683,7 +2694,8 @@ export class WorldRenderer {
     this.actionRangeRing.scale.setScalar(range.radius * (1 + pulse * 0.01));
     const mat = this.actionRangeRing.material as THREE.MeshBasicMaterial;
     mat.color.setHex(range.kind === "melee" ? 0xd28cff : range.kind === "grenade" ? 0xff7f67 : range.kind === "move" ? 0x9dfcff : 0xffbf4d);
-    mat.opacity = 0.34 + pulse * 0.16;
+    // A field carries far more ink than a hairline did, so it sits lower in opacity.
+    mat.opacity = 0.46 + pulse * 0.12;
   }
 
   // Faint rings showing the reach of support/spotter auras (medic, engineer, scout, sniper),
@@ -4586,8 +4598,12 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
         // terrace the player can walk straight over is a lie about the terrain.
         const geo = new RoundedBoxGeometry(w, PLATE_THICKNESS, d, 1, Math.min(1.4, Math.min(w, d) * 0.3));
         const m = new THREE.Matrix4()
+          // Stagger each slab of a patch a couple of millimetres in depth. Four overlapping slabs
+          // all topping out at exactly y=0 are COPLANAR where they overlap, and coplanar surfaces
+          // z-fight into a fine parallel hatch — the second of the two striping artefacts on the
+          // ground, and the one the shadow work could never have fixed.
           .makeRotationY(spin + (rand() - 0.5) * 1.6)
-          .setPosition(cx + (rand() - 0.5) * 7, 0, cz + (rand() - 0.5) * 7);
+          .setPosition(cx + (rand() - 0.5) * 7, -k * 0.0018, cz + (rand() - 0.5) * 7);
         geo.applyMatrix4(m);
         parts.push(geo);
       }
@@ -5208,6 +5224,37 @@ const CARRY_PITCH = 0.34;
 const CARRY_YAW = -0.26;
 const CARRY_PIVOT_Y = 0.93;
 const CARRY_PIVOT_Z = 0.12;
+
+/**
+ * The range-field gradient: transparent at the centre, a low tint across the body, brightening into
+ * a defined rim just inside the edge and falling off outside it. Tinted per use by the material's
+ * own colour, so one texture serves move / shoot / grenade / melee.
+ */
+let _rangeFieldTexture: THREE.CanvasTexture | undefined;
+
+function rangeFieldTexture(): THREE.CanvasTexture {
+  if (_rangeFieldTexture) return _rangeFieldTexture;
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    g.addColorStop(0, "rgba(255,255,255,0.10)");
+    g.addColorStop(0.55, "rgba(255,255,255,0.26)");
+    g.addColorStop(0.88, "rgba(255,255,255,0.55)");
+    g.addColorStop(0.965, "rgba(255,255,255,1)");
+    g.addColorStop(0.995, "rgba(255,255,255,0.55)");
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.userData.shared = true;
+  _rangeFieldTexture = texture;
+  return texture;
+}
 
 // Hex -> Color memo. THREE.Color.setHex re-runs the sRGB->linear conversion on every call, and
 // paintPart asks for a handful of fixed tint/glow constants for every part mesh every frame — that

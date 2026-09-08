@@ -190,6 +190,15 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   68% of every surface with a light salmon, so enemy armour, walls and HQs all came out pale pink.
   The team read is carried by the marker ring, the accent trim and the emissive glow; a hull only
   has to sit in the right hue family. See `setFactionTints`/`roleColor`.
+- **TWO different striping artefacts have looked identical on the ground.** Both are fixed; both
+  will come back if their cause is reintroduced. (1) SHADOW ACNE on the near-flat arena under a low
+  sun — `shadow.normalBias` has to be several shadow texels, not a tenth of one; 0.55 is the
+  measured floor and anything under ~0.5 brings the bands back. (2) COPLANAR Z-FIGHT between the
+  ground plates: four overlapping slabs per patch, all topping out at exactly y=0, hatch against
+  each other, so each slab is staggered ~2mm in depth. Neither is a texture problem — three rounds
+  of texture tuning were spent on them before anyone measured. `npm run probe:shadow <scenario>`
+  bisects the first; the second survives that probe (it is a main-pass depth issue, not a shadow
+  one), which is how they can be told apart.
 - **The shadow frustum FOLLOWS THE CAMERA FOCUS** (`syncShadowFrustum` in `stage.ts`), snapped to
   whole shadow texels so edges don't crawl when the camera pans. `SHADOW_RADIUS` must cover
   everything on screen: three clamps the shadow map at its edges, so anything outside the window

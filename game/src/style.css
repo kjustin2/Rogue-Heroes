@@ -5222,8 +5222,11 @@ body.killcam::after { bottom: 0; }
    --------------------------------------------------------------------------- */
 .panel.roster {
   top: 16px;
-  bottom: 106px;
-  max-height: none;
+  /* Hug the content, but never reach the bottom-left stack. Anchoring top AND bottom stretched a
+     four-unit squad into a full-height empty box; a max-height sized off the same gap keeps the
+     no-overlap guarantee without the void. */
+  bottom: auto;
+  max-height: calc(100vh - 122px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
