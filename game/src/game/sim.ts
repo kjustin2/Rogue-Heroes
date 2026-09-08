@@ -462,7 +462,7 @@ export class TacticalSim {
     } else {
       this.mapDef = init?.map ?? MAPS[0];
       this.mode = init?.mode ?? "destroy";
-      setActiveTerrain(this.mapDef.terrain);
+      this.applyTerrain();
       this.entities = createScenario(this.mapDef, this.mode);
     }
     this.modeState = this.buildModeState();
@@ -495,6 +495,53 @@ export class TacticalSim {
     this.factions[team] = faction;
   }
 
+  /**
+   * Bridge spans that have been destroyed this battle, as indices into the map's authored bridge
+   * list. Terrain is a module singleton rebuilt from the MapDef, so a dropped span would come back
+   * on reload unless the loss is recorded here and re-applied -- this is the state that makes
+   * bridge destruction a real, persistent consequence rather than a one-session visual.
+   */
+  private droppedBridges: number[] = [];
+
+  /** Re-derive the active terrain from the map minus whatever spans have been dropped. */
+  private applyTerrain(): void {
+    const authored = this.mapDef.terrain;
+    if (this.droppedBridges.length === 0 || !authored.bridges?.length) {
+      setActiveTerrain(authored);
+      return;
+    }
+    const gone = new Set(this.droppedBridges);
+    setActiveTerrain({ ...authored, bridges: authored.bridges.filter((_, i) => !gone.has(i)) });
+  }
+
+  /**
+   * Drop the bridge span covering a point. Ground units lose that crossing for the rest of the
+   * battle; flyers never cared. Returns the index dropped, or -1 when the point is not on a span.
+   */
+  dropBridgeAt(point: Vec2): number {
+    const bridges = this.mapDef.terrain.bridges ?? [];
+    const index = bridges.findIndex((r, i) =>
+      !this.droppedBridges.includes(i)
+      && point.x >= r.minX && point.x <= r.maxX && point.z >= r.minZ && point.z <= r.maxZ);
+    if (index < 0) return -1;
+    this.droppedBridges.push(index);
+    this.applyTerrain();
+    // Anything standing on the span goes into the water with it.
+    for (const entity of this.entities) {
+      if (!entity.status.alive || entity.flying || entity.kind === "cover") continue;
+      if (!pointInWater(entity.position)) continue;
+      entity.position = nearestDryPoint(entity.position);
+    }
+    this.effect("blast", point, point, 0x8a7f66, 0.9, 2.6);
+    this.pushLog("A bridge span collapses into the channel");
+    return index;
+  }
+
+  /** Which authored bridge spans are gone. */
+  bridgesDropped(): readonly number[] {
+    return this.droppedBridges;
+  }
+
   // `factions` is optional and defaults to PRESERVING the current pick, because configure() also
   // runs on reset() -- passing nothing must not silently drop the player back to the default.
   configure(map: MapDef, mode: ModeId, difficulty: Difficulty = this.difficulty, factions?: Partial<Record<Team, FactionId>>): void {
@@ -503,7 +550,10 @@ export class TacticalSim {
     this.mapDef = map;
     this.mode = mode;
     this.difficulty = difficulty;
-    setActiveTerrain(map.terrain);
+    // A new battle starts with every span intact.
+    this.droppedBridges = [];
+    this.mapDef = map;
+    this.applyTerrain();
     const fresh = createScenario(map, mode);
     this.entities.splice(0, this.entities.length, ...fresh);
     this.modeState = this.buildModeState();
@@ -1653,6 +1703,7 @@ export class TacticalSim {
       mode: this.mode,
       difficulty: this.difficulty,
       factions: this.factions,
+      droppedBridges: this.droppedBridges,
       turn: this.turn,
       economy: [...this.economy],
       entities: this.entities,
@@ -1676,6 +1727,7 @@ export class TacticalSim {
     try {
       const data = JSON.parse(raw) as {
         map: string; mode: ModeId; difficulty?: Difficulty; turn?: number; factions?: Partial<Record<Team, FactionId>>;
+        droppedBridges?: number[];
         economy: [Team, number][]; entities: CombatEntity[]; orders?: TacticalOrder[]; modeState: ModeState; troopSeq?: number;
         detonated?: string[]; toppled?: string[]; overwatch?: [string, number][]; overwatchFacing?: [string, number][];
         wrecked?: string[]; salvage?: [string, number][];
@@ -1684,8 +1736,11 @@ export class TacticalSim {
         pickups?: { id: string; x: number; z: number; amount: number }[];
       };
       const map = mapDef(data.map);
-      setActiveTerrain(map.terrain);
       this.mapDef = map;
+      // Restore dropped spans BEFORE the terrain is applied, or a reload silently rebuilds the
+      // bridge a player spent a turn destroying.
+      this.droppedBridges = (data.droppedBridges ?? []).filter((i) => Number.isInteger(i) && i >= 0);
+      this.applyTerrain();
       this.mode = data.mode;
       this.difficulty = data.difficulty ?? "normal";
       // Rebuilt as a fresh literal rather than assigned: guarantees key order (so serialize output
@@ -2989,6 +3044,13 @@ export class TacticalSim {
     ) {
       this.toppled.add(target.id);
       this.resolveTopple(actor, target);
+    }
+    // A destroyed span takes its crossing with it. This is the most consequential destructible on
+    // the board: ground units on the far side have to find another way across or be airlifted,
+    // and the loss persists through saves.
+    if (target.kind === "cover" && !target.status.alive && target.coverKind === "span" && !this.toppled.has(target.id)) {
+      this.toppled.add(target.id); // reuse the once-only ledger; it already serializes
+      this.dropBridgeAt(target.position);
     }
     // Battlefield scars: a killed vehicle burns out into a wreck — hard neutral cover
     // that also holds salvage money for whichever team parks a unit beside it.

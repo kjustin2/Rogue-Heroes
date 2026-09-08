@@ -55,6 +55,24 @@ export async function launchGame({ port, viewport = { width: 1600, height: 900 }
   const { server, url } = await startServer(port, cwd);
   const browser = await chromium.launch({ executablePath: findChromium(), headless: true, args: ["--mute-audio"] });
   const context = await browser.newContext({ viewport });
+  // START FROM A CLEAN SLATE. Every smoke shares one browser profile per run only by accident of
+  // ordering, but they share the game's ORIGIN, so a saved battle or a remembered setting written by
+  // an earlier script leaks into the next one. That surfaced as smoke:animation failing to queue a
+  // move in the fleet while passing standalone: it had resumed a battle another smoke had left
+  // behind, on a different map, and its hard-coded destination was no longer valid ground.
+  //
+  // Every persisted key in this game is namespaced `rht.`, so clearing that prefix resets the app
+  // without touching anything else. Runs BEFORE any caller-supplied init, so a smoke that wants to
+  // seed specific state still can.
+  await context.addInitScript(() => {
+    try {
+      for (const key of Object.keys(localStorage)) {
+        if (key.startsWith("rht.")) localStorage.removeItem(key);
+      }
+    } catch {
+      // Private mode or blocked storage: nothing to clear, and the app tolerates it either way.
+    }
+  });
   if (init) await context.addInitScript(init); // seed localStorage etc. before the app boots
   const page = await context.newPage();
   const errors = [];

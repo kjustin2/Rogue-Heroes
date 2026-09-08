@@ -185,7 +185,13 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
     for (const o of placed) {
       if (dist(p, o) < o.r + r) return true;
     }
-    return steepHere(p) || pointInWater(p); // never drop cover into a water channel
+    // Never into a water channel, and never ONTO A CROSSING. Bridges are not water -- they are the
+    // walkable strip over it -- so scatter happily dropped crates on them, which both collided with
+    // the destructible span entity now sitting there and blocked the chokepoint the bridge exists to
+    // create. A crossing should be an open lane, contested by units rather than furniture.
+    if (steepHere(p) || pointInWater(p)) return true;
+    return (map.terrain.bridges ?? []).some((b) =>
+      p.x >= b.minX - r && p.x <= b.maxX + r && p.z >= b.minZ - r && p.z <= b.maxZ + r);
   };
 
   const add = (kind: CoverKind, p: Vec2): void => {
@@ -512,7 +518,10 @@ const RAW_MAPS: readonly MapDef[] = [
     signature: [
       { kind: "pillar", x: -5.5, z: 4.5, mirror: true },
       { kind: "pillar", x: -5.5, z: -4.5, mirror: true },
-      { kind: "cliff", x: -9, z: 0, mirror: true },
+      // Moved off z=0: the flooded ravine added to this map runs through x=-11..-8.5, and its
+      // centre crossing now sits here. A cliff face 0.9 units from a bridge span both overlapped it
+      // and walled off the very chokepoint the crossing exists to create.
+      { kind: "cliff", x: -9.5, z: 4.2, mirror: true },
       { kind: "rubble", x: -8, z: 7, mirror: true },
       { kind: "pillar", x: -10.5, z: -8.5, mirror: true },
       { kind: "rock", x: -16, z: 2.5, mirror: true },

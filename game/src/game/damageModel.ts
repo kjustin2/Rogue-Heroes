@@ -24,7 +24,8 @@ export type CoverKind =
   | "container"
   | "bunker"
   | "wreck"
-  | "depot";
+  | "depot"
+  | "span";
 export type PartRole = "core" | "head" | "weapon" | "mobility" | "armor" | "utility" | "volatile";
 export type AimMode = "center" | "head" | "weapon" | "mobility" | "utility" | "core" | "weakest";
 export type InfantryStance = "standing" | "crouched" | "prone";
@@ -795,6 +796,10 @@ export const COVER_PROFILES: Record<CoverKind, CoverProfile> = {
   wreck: { hp: 70, radius: 1.05, height: 0.95, volatile: false, label: "Burnt Wreck" },
   // Capturable supply depot: pays income each turn to whichever team holds it.
   depot: { hp: 110, radius: 1.1, height: 1.4, volatile: false, label: "Supply Depot" },
+  // A bridge span. Tough enough that dropping one is a deliberate investment rather than
+  // incidental splash damage, and low enough that it never blocks a shot across the crossing it
+  // carries. Destroying it removes the crossing for the rest of the battle.
+  span: { hp: 150, radius: 1.0, height: 0.5, volatile: false, label: "Bridge Span" },
 };
 
 export function createCover(id: string, name: string, position: Vec2, options: boolean | CoverOptions = false): CombatEntity {

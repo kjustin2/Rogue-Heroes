@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { MAPS } from "./maps";
+import { MAPS, mapDef } from "./maps";
+import { TacticalSim } from "./sim";
 import { DEFAULT_TERRAIN, TERRAIN_STEP, pointInWater, setActiveTerrain, terrainHeightAt } from "./terrain";
 
 // REACHABILITY.
@@ -97,3 +98,36 @@ describe("every map is winnable on foot", () => {
     });
   }
 });
+
+// DESTRUCTIBLE TERRAIN must not be able to make a map unwinnable. A player (or the AI) can drop any
+// bridge span, and every authored crossing is therefore a way to change the map's connectivity
+// mid-battle. This floods again after removing each span in turn -- the same assertion as above, but
+// for every state the map can actually reach rather than only the state it ships in.
+describe("dropping a bridge never strands a base", () => {
+  afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
+
+  for (const map of MAPS.filter((m) => (m.terrain.bridges?.length ?? 0) > 0)) {
+    const spans = map.terrain.bridges ?? [];
+    for (let index = 0; index < spans.length; index += 1) {
+      it(`${map.id}: span ${index} can be destroyed`, () => {
+        const sim = new TacticalSim();
+        sim.configure(mapDef(map.id), "destroy", "normal");
+        const rect = spans[index];
+        const dropped = sim.dropBridgeAt({ x: (rect.minX + rect.maxX) / 2, z: (rect.minZ + rect.maxZ) / 2 });
+        expect(dropped, "the span could not be dropped").toBeGreaterThanOrEqual(0);
+
+        const { seen, key } = flood(map);
+        const reachable = (p: { x: number; z: number }): boolean => {
+          for (let dx = -2; dx <= 2; dx += 1) {
+            for (let dz = -2; dz <= 2; dz += 1) {
+              if (seen.has(key({ x: p.x + dx * STEP * 4, z: p.z + dz * STEP * 4 }))) return true;
+            }
+          }
+          return false;
+        };
+        expect(reachable(map.enemyBase), `${map.id}: dropping span ${index} strands the enemy base`).toBe(true);
+      });
+    }
+  }
+});
+
