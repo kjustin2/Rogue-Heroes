@@ -724,7 +724,6 @@ export class WorldRenderer {
 
   // Re-theme the whole scene for a map: fog, sky, ground, terrain, grid, and lights.
   applyMap(theme: MapTheme): void {
-    this.baseFogColor = theme.fog;
     // New battlefield: the last battle's scars don't carry over.
     this.disposeAndClear(this.craterRoot);
     this.scorchedIds.clear();
@@ -739,10 +738,13 @@ export class WorldRenderer {
     this.baseFogDensity = theme.fogDensity * 0.72;
     this.baseSkyColor = theme.sky;
     this.sandstormBlend = 0;
-    this.scene.fog = new THREE.FogExp2(theme.fog, this.baseFogDensity);
     if (this.skyTexture) this.skyTexture.dispose();
-    this.skyTexture = makeThemeSky(theme);
+    const sky = makeThemeSky(theme);
+    this.skyTexture = sky.texture;
     this.scene.background = this.skyTexture;
+    // Fog IS the sky's horizon band. See makeThemeSky.
+    this.baseFogColor = sky.horizon.getHex();
+    this.scene.fog = new THREE.FogExp2(this.baseFogColor, this.baseFogDensity);
     // A desaturated blend of the map's ground tones — what structural props get nudged toward.
     // Deliberately darker and less saturated than the ground it sits on. Props must recede so
     // the units advance; before this a crate competed with a soldier for the eye, and at tactical
@@ -4044,6 +4046,36 @@ export function attackPose(family: WeaponFamily, phase: number): AttackPose {
 // recurs constantly across a roster and disposal already skips shared geometry. Without the cache
 // this would allocate a fresh bevelled mesh per part per unit, which is both slower to build and
 // a real memory cost at ~120 parts per trooper.
+/**
+ * VERTEX-COLOUR AO. Bakes contact shading into a pooled part geometry: downward-facing surfaces go
+ * dark, upward-facing ones lift, and everything gains a slight vertical gradient from the part's
+ * own base to its top. This is what a set of flat-shaded boxes is missing compared to a baked
+ * asset — not detail, but the darkening under and inside forms that tells the eye where a shape
+ * sits. Costs nothing at runtime (the geometry is shared and baked once) and needs no asset.
+ */
+function bakeVertexAO(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
+  const position = geometry.getAttribute("position");
+  const normal = geometry.getAttribute("normal");
+  if (!position || !normal) return geometry;
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox!;
+  const height = Math.max(1e-4, box.max.y - box.min.y);
+  const colors = new Float32Array(position.count * 3);
+  for (let i = 0; i < position.count; i += 1) {
+    const up = clamp(normal.getY(i), -1, 1);
+    // Facing term: under-surfaces to 0.58, sides ~0.88, tops just over 1.
+    const facing = up >= 0 ? 0.88 + up * 0.16 : 0.88 + up * 0.3;
+    // Height term: the bottom of a part sits in its own contact shadow.
+    const t = (position.getY(i) - box.min.y) / height;
+    const shade = clamp(facing * (0.86 + t * 0.16), 0.5, 1.1);
+    colors[i * 3] = shade;
+    colors[i * 3 + 1] = shade;
+    colors[i * 3 + 2] = shade;
+  }
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  return geometry;
+}
+
 const bevelCache = new Map<string, THREE.BufferGeometry>();
 
 /**
@@ -4060,7 +4092,7 @@ function beveledBox(w: number, h: number, d: number, bevel = 0.17): THREE.Buffer
   const hit = bevelCache.get(key);
   if (hit) return hit;
   // One segment: enough for the highlight band to exist, cheap enough to put on every part.
-  const geo = new RoundedBoxGeometry(w, h, d, 1, radius);
+  const geo = bakeVertexAO(new RoundedBoxGeometry(w, h, d, 1, radius));
   geo.userData.shared = true;
   bevelCache.set(key, geo);
   return geo;
@@ -4587,15 +4619,22 @@ function hash(value: string): number {
 // A vertical gradient sky derived from the map theme: deep zenith fading through the
 // theme's sky color into a warm fogged horizon band, so every map gets atmosphere depth
 // instead of a flat color backdrop.
-function makeThemeSky(theme: MapTheme): THREE.CanvasTexture {
+/**
+ * The sky gradient AND the horizon colour it ends on. These were two separately-eyeballed values:
+ * the sky faded to `sky.lerp(fog, 0.65) * 1.08` while the fog used `theme.fog` raw. When the fog
+ * colour does not equal the sky's horizon colour, distant objects read as TURNING GREY instead of
+ * receding into haze — the single loudest "this is a demo" tell in an outdoor scene. One constant
+ * now feeds both.
+ */
+function makeThemeSky(theme: MapTheme): { texture: THREE.CanvasTexture; horizon: THREE.Color } {
   const canvas = document.createElement("canvas");
   canvas.width = 8;
   canvas.height = 256;
+  const sky = new THREE.Color(theme.sky);
+  const horizon = sky.clone().lerp(new THREE.Color(theme.fog), 0.65).multiplyScalar(1.08);
   const ctx = canvas.getContext("2d");
   if (ctx) {
-    const sky = new THREE.Color(theme.sky);
     const zenith = sky.clone().multiplyScalar(0.42).lerp(new THREE.Color(0x101b30), 0.35);
-    const horizon = sky.clone().lerp(new THREE.Color(theme.fog), 0.65).multiplyScalar(1.08);
     const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
     gradient.addColorStop(0, `#${zenith.getHexString()}`);
     gradient.addColorStop(0.45, `#${sky.getHexString()}`);
@@ -4606,7 +4645,7 @@ function makeThemeSky(theme: MapTheme): THREE.CanvasTexture {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.needsUpdate = true;
-  return texture;
+  return { texture, horizon };
 }
 
 function modelKeyFor(entity: CombatEntity): ModelKey | null {
@@ -4865,6 +4904,7 @@ function partMaterial(spec: PartMatSpec): THREE.MeshStandardMaterial {
   let material = partMaterialPool.get(key);
   if (!material) {
     material = new THREE.MeshStandardMaterial({
+      vertexColors: true, // baked AO — see bakeVertexAO
       color: spec.color,
       emissive: spec.emissive,
       emissiveIntensity: i * 0.05,
@@ -4931,7 +4971,7 @@ function cylinderGeometry(radiusTop: number, radiusBottom: number, depth: number
   const key = `${radiusTop.toFixed(3)}|${radiusBottom.toFixed(3)}|${depth.toFixed(3)}`;
   let geometry = cylinderGeometries.get(key);
   if (!geometry) {
-    geometry = new THREE.CylinderGeometry(radiusTop, radiusBottom, depth, 14);
+    geometry = bakeVertexAO(new THREE.CylinderGeometry(radiusTop, radiusBottom, depth, 14)) as THREE.CylinderGeometry;
     geometry.userData.shared = true;
     cylinderGeometries.set(key, geometry);
   }
@@ -4942,7 +4982,7 @@ function sphereGeometry(radius: number): THREE.SphereGeometry {
   const key = radius.toFixed(3);
   let geometry = sphereGeometries.get(key);
   if (!geometry) {
-    geometry = new THREE.SphereGeometry(radius, 14, 10);
+    geometry = bakeVertexAO(new THREE.SphereGeometry(radius, 14, 10)) as THREE.SphereGeometry;
     geometry.userData.shared = true;
     sphereGeometries.set(key, geometry);
   }
