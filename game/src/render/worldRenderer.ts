@@ -1415,7 +1415,7 @@ export class WorldRenderer {
     this.box(rig, entity, "body", [0.5, 0.3, 0.34], [0, 1.03, 0], bodyColor, { metalness: 0.14, bevel: 0.26 });
     // Angled breastplate over it, with a glowing core seam.
     this.box(rig, entity, "body", [0.42, 0.34, 0.11], [0, 0.99, 0.18], trimColor, { metalness: 0.3, rotation: [-0.16, 0, 0], bevel: 0.24 });
-    this.box(rig, entity, "body", [0.12, 0.2, 0.05], [0, 0.98, 0.245], 0x10171a, { emissive: teamGlow, emissiveIntensity: 0.5, rotation: [-0.16, 0, 0] });
+    this.box(rig, entity, "body", [0.12, 0.2, 0.05], [0, 0.98, 0.245], 0x10171a, { emissive: teamGlow, emissiveIntensity: 0.21, rotation: [-0.16, 0, 0] });
     // Back plate, so the unit has a silhouette from behind too -- half the time the camera is
     // looking at a trooper's back and there was nothing there.
     this.box(rig, entity, "body", [0.4, 0.32, 0.08], [0, 1.0, -0.17], trimColor, { metalness: 0.26, rotation: [0.1, 0, 0], bevel: 0.24 });
@@ -1432,42 +1432,42 @@ export class WorldRenderer {
     // detail that stops a head reading as a featureless ball.
     this.sphere(rig, entity, "head", 0.165, [0, 1.37, 0.02], 0xd8d2bd, { scaleY: 0.95 });
     this.box(rig, entity, "head", [0.3, 0.07, 0.1], [0, 1.44, 0.145], 0x2b343a, { metalness: 0.26, rotation: [-0.24, 0, 0], bevel: 0.35 });
-    this.box(rig, entity, "head", [0.28, 0.085, 0.07], [0, 1.37, 0.17], 0x0c1418, { emissive: teamGlow, emissiveIntensity: 0.55 });
+    this.box(rig, entity, "head", [0.28, 0.085, 0.07], [0, 1.37, 0.17], 0x0c1418, { emissive: teamGlow, emissiveIntensity: 0.23 });
     this.box(rig, entity, "head", [0.14, 0.11, 0.1], [0, 1.36, -0.15], 0x2b343a, { metalness: 0.24, bevel: 0.3 });
     if (entity.kind === "sniper") {
       // Marksman: extra-long bipod-steadied rifle, a fat glowing scope, and a camo ghillie
       // hood/cloak that ragged-edges the silhouette — clearly the patient long-range shooter.
       this.box(rig, entity, "rifle", [0.13, 0.15, 1.54], [0.46, 0.95, 0.52], trimColor, { metalness: 0.34 });
-      this.box(rig, entity, "rifle", [0.22, 0.2, 0.28], [0.46, 1.08, 0.12], 0x12161a, { accent: true, emissive: 0x8de4ff, emissiveIntensity: 0.5 });
-      this.box(rig, entity, "rifle", [0.1, 0.1, 0.12], [0.46, 1.13, -0.06], 0x8de4ff, { accent: true, emissive: 0x8de4ff, emissiveIntensity: 0.95 });
+      this.box(rig, entity, "rifle", [0.22, 0.2, 0.28], [0.46, 1.08, 0.12], 0x12161a, { accent: true, emissive: 0x8de4ff, emissiveIntensity: 0.21 });
+      this.box(rig, entity, "rifle", [0.1, 0.1, 0.12], [0.46, 1.13, -0.06], 0x8de4ff, { accent: true, emissive: 0x8de4ff, emissiveIntensity: 0.38 });
       this.cylinder(rig, entity, "rifle", 0.03, 0.44, [0.38, 0.74, 1.04], 0x14181a, [0.5, 0, 0.32], { metalness: 0.3 });
       this.cylinder(rig, entity, "rifle", 0.03, 0.44, [0.54, 0.74, 1.04], 0x14181a, [0.5, 0, -0.32], { metalness: 0.3 });
       this.box(rig, entity, "body", [0.66, 0.26, 0.52], [0, 1.05, -0.06], 0x55603c, { accent: true });
       this.box(rig, entity, "body", [0.5, 0.5, 0.16], [0, 0.74, -0.34], 0x4c5436, { accent: true });
       for (const x of [-0.22, 0.04, 0.26]) this.box(rig, entity, "body", [0.1, 0.2, 0.08], [x, 0.5, -0.36], 0x5d663f, { accent: true });
       this.box(rig, entity, "head", [0.48, 0.22, 0.52], [0, 1.5, -0.05], 0x55603c, { accent: true });
-      this.box(rig, entity, "head", [0.5, 0.1, 0.14], [0, 1.44, 0.2], 0x0a1418, { accent: true, emissive: 0x8de4ff, emissiveIntensity: 0.55 });
+      this.box(rig, entity, "head", [0.5, 0.1, 0.14], [0, 1.44, 0.2], 0x0a1418, { accent: true, emissive: 0x8de4ff, emissiveIntensity: 0.23 });
     } else if (entity.kind === "grenadier") {
       // Splash specialist: stubby fat-muzzled launcher, a bandolier of amber rounds across
       // the chest, more on the pack, and a round pot helmet.
       this.box(rig, entity, "rifle", [0.28, 0.26, 0.78], [0.48, 0.93, 0.3], trimColor, { metalness: 0.2 });
-      this.cylinder(rig, entity, "rifle", 0.21, 0.2, [0.48, 0.93, 0.74], 0x2b2418, [0.5, 0, 0], { accent: true, emissive: 0xffb02e, emissiveIntensity: 0.42 });
+      this.cylinder(rig, entity, "rifle", 0.21, 0.2, [0.48, 0.93, 0.74], 0x2b2418, [0.5, 0, 0], { accent: true, emissive: 0xffb02e, emissiveIntensity: 0.18 });
       this.cylinder(rig, entity, "body", 0.06, 0.94, [0, 0.86, 0.2], 0x2e2110, [0, 0, 0.72], { accent: true });
-      for (const [x, y] of [[-0.2, 0.66], [0, 0.86], [0.2, 1.06]] as const) this.box(rig, entity, "body", [0.12, 0.15, 0.12], [x, y, 0.25], 0xffb84a, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.4 });
+      for (const [x, y] of [[-0.2, 0.66], [0, 0.86], [0.2, 1.06]] as const) this.box(rig, entity, "body", [0.12, 0.15, 0.12], [x, y, 0.25], 0xffb84a, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.17 });
       for (const x of [-0.16, 0, 0.16]) this.box(rig, entity, "pack", [0.11, 0.16, 0.11], [x, 1.08, -0.42], 0xffca6b, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.35 });
       this.box(rig, entity, "head", [0.46, 0.2, 0.46], [0, 1.5, 0.0], 0x5a4a22, { accent: true });
       this.box(rig, entity, "head", [0.5, 0.09, 0.18], [0, 1.46, 0.22], 0x6a5626, { accent: true });
     } else if (entity.kind === "striker") {
       // Close-assault: a long glowing arc-blade, a buckler on the off arm, a shoulder
       // pauldron, and a sleek crested visor helm — aggressive and unmistakably melee.
-      this.box(rig, entity, "rifle", [0.1, 0.16, 1.28], [0.52, 0.86, 0.42], 0xe6dcff, { accent: true, emissive: 0xb48cff, emissiveIntensity: 0.72 });
-      this.box(rig, entity, "rifle", [0.16, 0.2, 0.22], [0.52, 0.92, -0.12], 0x2a2142, { accent: true, emissive: 0xb48cff, emissiveIntensity: 0.45 });
+      this.box(rig, entity, "rifle", [0.1, 0.16, 1.28], [0.52, 0.86, 0.42], 0xc6bce0, { accent: true, emissive: 0xb48cff, emissiveIntensity: 0.3 });
+      this.box(rig, entity, "rifle", [0.16, 0.2, 0.22], [0.52, 0.92, -0.12], 0x2a2142, { accent: true, emissive: 0xb48cff, emissiveIntensity: 0.19 });
       this.box(rig, entity, "body", [0.12, 0.6, 0.5], [-0.52, 0.86, 0.06], 0x3a2c5c, { accent: true });
-      this.box(rig, entity, "body", [0.08, 0.4, 0.1], [-0.58, 0.86, 0.06], 0xc6a8ff, { accent: true, emissive: 0xb48cff, emissiveIntensity: 0.6 });
+      this.box(rig, entity, "body", [0.08, 0.4, 0.1], [-0.58, 0.86, 0.06], 0xc6a8ff, { accent: true, emissive: 0xb48cff, emissiveIntensity: 0.25 });
       this.box(rig, entity, "body", [0.3, 0.2, 0.36], [0.46, 1.14, 0.02], 0x4a3a72, { accent: true });
       this.box(rig, entity, "head", [0.44, 0.34, 0.46], [0, 1.46, 0.0], 0x2a2142, { accent: true, metalness: 0.2 });
-      this.box(rig, entity, "head", [0.48, 0.08, 0.16], [0, 1.44, 0.22], 0xc6a8ff, { accent: true, emissive: 0xb48cff, emissiveIntensity: 0.8 });
-      this.box(rig, entity, "head", [0.1, 0.26, 0.12], [0, 1.7, -0.04], 0x6a4fae, { accent: true, emissive: 0xb48cff, emissiveIntensity: 0.5 });
+      this.box(rig, entity, "head", [0.48, 0.08, 0.16], [0, 1.44, 0.22], 0xc6a8ff, { accent: true, emissive: 0xb48cff, emissiveIntensity: 0.34 });
+      this.box(rig, entity, "head", [0.1, 0.26, 0.12], [0, 1.7, -0.04], 0x6a4fae, { accent: true, emissive: 0xb48cff, emissiveIntensity: 0.21 });
     } else if (entity.kind === "heavy") {
       // Anchor: the widest, bulkiest frame, armor pauldrons, a drum-fed auto-cannon with an
       // ammo belt looping to a big glowing back drum, and a slab face-visor helmet.
@@ -1476,19 +1476,19 @@ export class WorldRenderer {
       for (const x of [-0.4, 0.4]) this.box(rig, entity, "body", [0.26, 0.22, 0.38], [x, 1.12, 0.02], 0x6a3a1c, { accent: true, metalness: 0.2 });
       this.box(rig, entity, "rifle", [0.27, 0.27, 1.22], [0.54, 0.92, 0.46], 0x2b2f31, { metalness: 0.32 });
       this.cylinder(rig, entity, "rifle", 0.26, 0.24, [0.54, 0.74, 0.5], 0x14181a, [0, 0, 0], { metalness: 0.3 });
-      this.box(rig, entity, "rifle", [0.34, 0.3, 0.22], [0.54, 0.92, 1.12], 0xffca6b, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.5 });
+      this.box(rig, entity, "rifle", [0.34, 0.3, 0.22], [0.54, 0.92, 1.12], 0xffca6b, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.21 });
       for (let i = 0; i < 4; i++) this.box(rig, entity, "rifle", [0.12, 0.09, 0.1], [0.34 - i * 0.07, 0.8 - i * 0.015, 0.18 - i * 0.13], 0xffca6b, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.3 });
       this.cylinder(rig, entity, "pack", 0.17, 0.3, [-0.03, 0.95, -0.34], 0xc8761f, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.32 });
       this.box(rig, entity, "pack", [0.12, 0.1, 0.26], [0.2, 0.95, -0.26], 0x8a5a22, { accent: true, metalness: 0.3, bevel: 0.3 });
       this.box(rig, entity, "pack", [0.3, 0.08, 0.1], [0, 1.14, -0.3], 0xffb02e, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.28, bevel: 0.35 });
       this.box(rig, entity, "head", [0.5, 0.46, 0.48], [0, 1.36, 0.0], 0x7a4a2a, { accent: true, metalness: 0.18 });
-      this.box(rig, entity, "head", [0.54, 0.14, 0.16], [0, 1.36, 0.22], 0x141819, { accent: true, emissive: 0xffb02e, emissiveIntensity: 0.6 });
+      this.box(rig, entity, "head", [0.54, 0.14, 0.16], [0, 1.36, 0.22], 0x141819, { accent: true, emissive: 0xffb02e, emissiveIntensity: 0.25 });
     } else if (entity.kind === "mortar") {
       // Indirect-fire team: long mortar tube slung high over the shoulder, a round olive
       // baseplate + folded bipod legs on the back, and a heavy olive-drab steel helmet.
       this.box(rig, entity, "rifle", [0.16, 0.16, 0.44], [0.44, 0.94, 0.2], trimColor, { metalness: 0.2 });
       this.cylinder(rig, entity, "rifle", 0.13, 1.1, [0.14, 1.2, -0.12], 0x2a2f31, [Math.PI * 0.32, 0, 0], { metalness: 0.34 });
-      this.cylinder(rig, entity, "rifle", 0.16, 0.12, [-0.06, 1.6, -0.42], 0xffd27a, [Math.PI * 0.32, 0, 0], { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.45 });
+      this.cylinder(rig, entity, "rifle", 0.16, 0.12, [-0.06, 1.6, -0.42], 0xffd27a, [Math.PI * 0.32, 0, 0], { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.19 });
       this.cylinder(rig, entity, "pack", 0.33, 0.08, [0, 1.0, -0.47], 0x4a4f33, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.3 });
       this.cylinder(rig, entity, "pack", 0.12, 0.1, [0, 1.0, -0.52], 0x2c2f22, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.3 });
       for (const x of [-0.16, 0.16]) this.box(rig, entity, "pack", [0.04, 0.62, 0.04], [x, 0.86, -0.5], 0x3a3f2c, { accent: true });
@@ -1497,45 +1497,45 @@ export class WorldRenderer {
     } else if (entity.kind === "medic") {
       // Support: a clean white vest + helmet emblazoned with a bold red cross, a hip med
       // satchel, a glowing green heal vial, and only a small sidearm — reads as "help."
-      this.box(rig, entity, "rifle", [0.16, 0.16, 0.46], [0.45, 0.9, 0.24], 0xd8d2cf, { metalness: 0.2 });
-      this.box(rig, entity, "body", [0.5, 0.66, 0.06], [0, 0.86, 0.19], 0xf4f4f4, { accent: true });
-      this.box(rig, entity, "body", [0.18, 0.42, 0.05], [0, 0.9, 0.23], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.5 });
-      this.box(rig, entity, "body", [0.42, 0.16, 0.05], [0, 0.94, 0.23], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.5 });
-      this.box(rig, entity, "pack", [0.3, 0.3, 0.2], [0.36, 0.66, -0.04], 0xf0f0f0, { accent: true });
-      this.box(rig, entity, "pack", [0.14, 0.05, 0.05], [0.36, 0.7, 0.07], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.45 });
-      this.box(rig, entity, "pack", [0.05, 0.14, 0.05], [0.36, 0.7, 0.07], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.45 });
-      this.box(rig, entity, "body", [0.1, 0.16, 0.1], [-0.3, 0.7, 0.16], 0x9dffd0, { accent: true, emissive: 0x4ce0a0, emissiveIntensity: 0.7 });
-      this.box(rig, entity, "head", [0.46, 0.2, 0.46], [0, 1.5, 0.0], 0xf4f4f4, { accent: true });
-      this.box(rig, entity, "head", [0.1, 0.05, 0.16], [0, 1.52, 0.22], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.5 });
-      this.box(rig, entity, "head", [0.05, 0.14, 0.16], [0, 1.52, 0.22], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.5 });
+      this.box(rig, entity, "rifle", [0.16, 0.16, 0.46], [0.45, 0.9, 0.24], 0xb8b2ae, { metalness: 0.2 });
+      this.box(rig, entity, "body", [0.5, 0.66, 0.06], [0, 0.86, 0.19], 0xdcd8cc, { accent: true });
+      this.box(rig, entity, "body", [0.18, 0.42, 0.05], [0, 0.9, 0.23], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.21 });
+      this.box(rig, entity, "body", [0.42, 0.16, 0.05], [0, 0.94, 0.23], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.21 });
+      this.box(rig, entity, "pack", [0.3, 0.3, 0.2], [0.36, 0.66, -0.04], 0xd4d0c4, { accent: true });
+      this.box(rig, entity, "pack", [0.14, 0.05, 0.05], [0.36, 0.7, 0.07], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.19 });
+      this.box(rig, entity, "pack", [0.05, 0.14, 0.05], [0.36, 0.7, 0.07], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.19 });
+      this.box(rig, entity, "body", [0.1, 0.16, 0.1], [-0.3, 0.7, 0.16], 0x9dffd0, { accent: true, emissive: 0x4ce0a0, emissiveIntensity: 0.29 });
+      this.box(rig, entity, "head", [0.46, 0.2, 0.46], [0, 1.5, 0.0], 0xdcd8cc, { accent: true });
+      this.box(rig, entity, "head", [0.1, 0.05, 0.16], [0, 1.52, 0.22], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.21 });
+      this.box(rig, entity, "head", [0.05, 0.14, 0.16], [0, 1.52, 0.22], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.21 });
     } else if (entity.kind === "scout") {
       // Light recon: stubby carbine, chest binoculars with glowing green lenses, a tall whip
       // antenna with a blinking tip, and a soft beret with goggles — the leanest silhouette.
       this.box(rig, entity, "rifle", [0.13, 0.14, 0.6], [0.46, 0.95, 0.22], trimColor, { metalness: 0.22 });
       this.box(rig, entity, "body", [0.28, 0.14, 0.12], [0, 1.0, 0.22], 0x1c2a24, { accent: true });
-      for (const x of [-0.09, 0.09]) this.cylinder(rig, entity, "body", 0.05, 0.07, [x, 1.0, 0.3], 0x9dffcf, [Math.PI / 2, 0, 0], { accent: true, emissive: 0x6ff0b0, emissiveIntensity: 0.85 });
-      this.cylinder(rig, entity, "pack", 0.028, 0.95, [-0.2, 1.42, -0.34], 0xdaf7e6, [0, 0, 0], { accent: true, emissive: 0x6ff0b0, emissiveIntensity: 0.5 });
-      this.box(rig, entity, "pack", [0.08, 0.08, 0.08], [-0.2, 1.92, -0.34], 0x9dffcf, { accent: true, emissive: 0x6ff0b0, emissiveIntensity: 0.95 });
+      for (const x of [-0.09, 0.09]) this.cylinder(rig, entity, "body", 0.05, 0.07, [x, 1.0, 0.3], 0x9dffcf, [Math.PI / 2, 0, 0], { accent: true, emissive: 0x6ff0b0, emissiveIntensity: 0.36 });
+      this.cylinder(rig, entity, "pack", 0.028, 0.95, [-0.2, 1.42, -0.34], 0xbcd8c6, [0, 0, 0], { accent: true, emissive: 0x6ff0b0, emissiveIntensity: 0.21 });
+      this.box(rig, entity, "pack", [0.08, 0.08, 0.08], [-0.2, 1.92, -0.34], 0x9dffcf, { accent: true, emissive: 0x6ff0b0, emissiveIntensity: 0.38 });
       this.box(rig, entity, "head", [0.44, 0.14, 0.42], [0, 1.5, 0.0], 0x2f6e4a, { accent: true });
       this.box(rig, entity, "head", [0.12, 0.1, 0.08], [0.16, 1.56, -0.04], 0x244d39, { accent: true });
-      this.box(rig, entity, "head", [0.42, 0.1, 0.14], [0, 1.42, 0.2], 0x0e2a24, { accent: true, emissive: 0x6ff0b0, emissiveIntensity: 0.6 });
+      this.box(rig, entity, "head", [0.42, 0.1, 0.14], [0, 1.42, 0.2], 0x0e2a24, { accent: true, emissive: 0x6ff0b0, emissiveIntensity: 0.25 });
     } else if (entity.kind === "engineer") {
       // Builder crew: a welding torch with a blazing tip, a big steel wrench on the back,
       // a hi-vis hard hat with a head-lamp, and a tool belt of hanging gear.
       this.box(rig, entity, "rifle", [0.12, 0.12, 0.46], [0.46, 0.92, 0.2], 0x3a3320, { metalness: 0.3 });
-      this.box(rig, entity, "rifle", [0.11, 0.11, 0.16], [0.46, 0.92, 0.5], 0xfff0c0, { accent: true, emissive: 0xffce4a, emissiveIntensity: 1.0 });
-      this.box(rig, entity, "pack", [0.1, 0.64, 0.1], [-0.34, 0.92, -0.32], 0xcfd6dc, { accent: true, metalness: 0.42 });
-      this.box(rig, entity, "pack", [0.24, 0.16, 0.12], [-0.34, 1.28, -0.32], 0xcfd6dc, { accent: true, metalness: 0.42 });
-      this.box(rig, entity, "body", [0.6, 0.12, 0.4], [0, 0.62, 0.02], 0xffce4a, { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.4 });
+      this.box(rig, entity, "rifle", [0.11, 0.11, 0.16], [0.46, 0.92, 0.5], 0xe4d8ae, { accent: true, emissive: 0xffce4a, emissiveIntensity: 0.38 });
+      this.box(rig, entity, "pack", [0.1, 0.64, 0.1], [-0.34, 0.92, -0.32], 0xa8b0b8, { accent: true, metalness: 0.42 });
+      this.box(rig, entity, "pack", [0.24, 0.16, 0.12], [-0.34, 1.28, -0.32], 0xa8b0b8, { accent: true, metalness: 0.42 });
+      this.box(rig, entity, "body", [0.6, 0.12, 0.4], [0, 0.62, 0.02], 0xffce4a, { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.17 });
       for (const x of [-0.18, 0.12]) this.box(rig, entity, "body", [0.08, 0.18, 0.06], [x, 0.5, 0.18], 0xbfc6cc, { accent: true, metalness: 0.4 });
       this.box(rig, entity, "head", [0.48, 0.18, 0.46], [0, 1.5, 0.0], 0xffce4a, { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.35 });
-      this.box(rig, entity, "head", [0.16, 0.1, 0.08], [0, 1.5, 0.24], 0xbfe8ff, { accent: true, emissive: 0xbfe8ff, emissiveIntensity: 0.9 });
+      this.box(rig, entity, "head", [0.16, 0.1, 0.08], [0, 1.5, 0.24], 0xbfe8ff, { accent: true, emissive: 0xbfe8ff, emissiveIntensity: 0.38 });
     } else if (entity.kind === "flamer") {
       // Incendiary specialist: fat twin-nozzle projector with a pilot flame, hazard-striped
       // shoulder guard, and big glowing fuel tanks on the back — unmistakably "fire".
       this.box(rig, entity, "rifle", [0.2, 0.2, 0.82], [0.47, 0.92, 0.3], 0x3a3230, { metalness: 0.3 });
       this.cylinder(rig, entity, "rifle", 0.09, 0.3, [0.47, 0.92, 0.78], 0x1d1a18, [Math.PI / 2, 0, 0], { metalness: 0.36 });
-      this.sphere(rig, entity, "rifle", 0.06, [0.47, 0.92, 0.96], 0xffb02e, { accent: true, emissive: 0xff6b1a, emissiveIntensity: 0.95 });
+      this.sphere(rig, entity, "rifle", 0.06, [0.47, 0.92, 0.96], 0xffb02e, { accent: true, emissive: 0xff6b1a, emissiveIntensity: 0.38 });
       this.box(rig, entity, "rifle", [0.1, 0.1, 0.34], [0.47, 1.04, 0.4], 0x5a2f10, { accent: true });
       this.box(rig, entity, "body", [0.34, 0.16, 0.4], [-0.36, 1.08, 0.02], 0xffb02e, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.2 });
       this.cylinder(rig, entity, "pack", 0.13, 0.62, [-0.14, 0.86, -0.44], 0xc23a10, [0, 0, 0], { accent: true, emissive: 0xff5a1a, emissiveIntensity: 0.3, metalness: 0.3 });
@@ -1545,19 +1545,19 @@ export class WorldRenderer {
       // Drone operator: a signal wand, a control slate on the chest, and the recon drone
       // itself hovering overhead with a spinning-ring rotor and a scanning eye.
       this.box(rig, entity, "rifle", [0.12, 0.12, 0.5], [0.46, 0.92, 0.22], 0x3a4450, { metalness: 0.3 });
-      this.box(rig, entity, "body", [0.3, 0.22, 0.06], [0, 0.96, 0.23], 0x0e1a26, { accent: true, emissive: 0x6fd7ff, emissiveIntensity: 0.55 });
+      this.box(rig, entity, "body", [0.3, 0.22, 0.06], [0, 0.96, 0.23], 0x0e1a26, { accent: true, emissive: 0x6fd7ff, emissiveIntensity: 0.23 });
       this.box(rig, entity, "head", [0.46, 0.18, 0.46], [0, 1.49, 0], 0x2c4a6a, { accent: true });
-      this.box(rig, entity, "head", [0.2, 0.08, 0.24], [0.16, 1.52, 0.14], 0x9fdcff, { accent: true, emissive: 0x6fd7ff, emissiveIntensity: 0.7 });
+      this.box(rig, entity, "head", [0.2, 0.08, 0.24], [0.16, 1.52, 0.14], 0x9fdcff, { accent: true, emissive: 0x6fd7ff, emissiveIntensity: 0.29 });
       // The drone (pack part, so shooting the pack downs the optics — cause and effect).
       this.box(rig, entity, "pack", [0.34, 0.09, 0.34], [0, 2.25, -0.1], 0x35485c, { accent: true, metalness: 0.3 });
-      this.cylinder(rig, entity, "pack", 0.26, 0.05, [0, 2.33, -0.1], 0x9fdcff, [0, 0, 0], { accent: true, emissive: 0x6fd7ff, emissiveIntensity: 0.5 });
-      this.sphere(rig, entity, "pack", 0.07, [0, 2.18, 0.08], 0xff5a4d, { accent: true, emissive: 0xff3b30, emissiveIntensity: 0.85 });
+      this.cylinder(rig, entity, "pack", 0.26, 0.05, [0, 2.33, -0.1], 0x9fdcff, [0, 0, 0], { accent: true, emissive: 0x6fd7ff, emissiveIntensity: 0.21 });
+      this.sphere(rig, entity, "pack", 0.07, [0, 2.18, 0.08], 0xff5a4d, { accent: true, emissive: 0xff3b30, emissiveIntensity: 0.36 });
     } else if (entity.kind === "sapper") {
       // Combat sapper: stubby demolition launcher with a fat drum, mine discs clipped to
       // the belt, blast apron, and a heavy face shield — the wall-breaker.
       this.box(rig, entity, "rifle", [0.22, 0.22, 0.6], [0.47, 0.92, 0.26], 0x4a4232, { metalness: 0.3 });
       this.cylinder(rig, entity, "rifle", 0.14, 0.2, [0.47, 0.8, 0.2], 0x2a2620, [0, 0, Math.PI / 2], { accent: true, metalness: 0.3 });
-      this.box(rig, entity, "rifle", [0.14, 0.14, 0.16], [0.47, 0.92, 0.62], 0xffca6b, { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.4 });
+      this.box(rig, entity, "rifle", [0.14, 0.14, 0.16], [0.47, 0.92, 0.62], 0xffca6b, { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.17 });
       for (const x of [-0.18, 0.02, 0.22]) this.cylinder(rig, entity, "body", 0.07, 0.04, [x, 0.58, 0.22], 0x8a7a3a, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.3 });
       this.box(rig, entity, "body", [0.44, 0.5, 0.07], [0, 0.72, 0.2], 0x5a4a1a, { accent: true });
       this.box(rig, entity, "head", [0.48, 0.26, 0.1], [0, 1.38, 0.2], 0x3a342a, { accent: true, metalness: 0.24 });
@@ -1574,18 +1574,18 @@ export class WorldRenderer {
       this.box(rig, entity, "rifle", [0.075, 0.19, 0.11], [0.45, 0.81, 0.16], 0x232c31, { metalness: 0.3, bevel: 0.26 });
       this.box(rig, entity, "rifle", [0.09, 0.12, 0.26], [0.45, 0.9, -0.13], 0x2b343a, { metalness: 0.26, bevel: 0.28 });
       this.box(rig, entity, "rifle", [0.05, 0.06, 0.16], [0.45, 1.03, 0.16], 0x11181b, { metalness: 0.42, bevel: 0.3 });
-      this.box(rig, entity, "rifle", [0.05, 0.05, 0.16], [0.45, 0.96, 0.98], 0xeaffff, { accent: true, metalness: 0.5 });
+      this.box(rig, entity, "rifle", [0.05, 0.05, 0.16], [0.45, 0.96, 0.98], 0xcfe2e4, { accent: true, metalness: 0.5 });
       this.box(rig, entity, "body", [0.5, 0.12, 0.06], [0, 0.94, 0.2], 0x2c3a30, { accent: true });
       for (const x of [-0.16, 0.16]) this.box(rig, entity, "body", [0.14, 0.18, 0.1], [x, 0.74, 0.2], 0x35463a, { accent: true });
       this.box(rig, entity, "body", [0.12, 0.16, 0.12], [-0.3, 0.66, 0.12], 0x3f5036, { accent: true });
       this.box(rig, entity, "head", [0.44, 0.2, 0.44], [0, 1.5, 0.0], 0x2c3a3d, { accent: true, metalness: 0.14 });
       this.box(rig, entity, "head", [0.48, 0.07, 0.16], [0, 1.43, 0.22], 0x141819, { accent: true });
-      this.box(rig, entity, "head", [0.09, 0.08, 0.07], [0.2, 1.5, 0.1], 0x8df0ff, { accent: true, emissive: 0x5ff1ff, emissiveIntensity: 0.7 });
+      this.box(rig, entity, "head", [0.09, 0.08, 0.07], [0.2, 1.5, 0.1], 0x8df0ff, { accent: true, emissive: 0x5ff1ff, emissiveIntensity: 0.29 });
     }
     this.box(rig, entity, "pack", [0.36, 0.42, 0.17], [0, 0.84, -0.29], packColor, entity.kind === "grenadier" ? { emissive: 0xff7d26, emissiveIntensity: 0.26 } : {});
     // Team-lit status lamp on the pack. (No twin tanks / comm nub — invisible at tactics
     // zoom and each small mesh is a draw call across a 40-unit battle.)
-    this.box(rig, entity, "pack", [0.1, 0.14, 0.06], [-0.22, 1.04, -0.38], 0xdaf7ff, { emissive: teamGlow, emissiveIntensity: 0.42 });
+    this.box(rig, entity, "pack", [0.1, 0.14, 0.06], [-0.22, 1.04, -0.38], 0xbcd4dc, { emissive: teamGlow, emissiveIntensity: 0.18 });
     // Arms and legs are tagged as limbs so they can swing into a walk cycle while moving.
     // Tapered cylinders with glove/boot caps — same base positions and pivots as before.
     // Arms: upper arm, a bracer at the forearm, and a blocky glove. Every mesh carries the same
