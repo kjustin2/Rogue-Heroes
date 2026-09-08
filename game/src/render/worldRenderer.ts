@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { ParticleShape, Particles } from "./particles";
 import { clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec2 } from "../core/math";
 import { isDefenseKind, isInfantryKind, isVehicleKind, type CombatEntity, type DamagePart, type EntityKind, type PartRole } from "../game/damageModel";
 import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
@@ -64,6 +65,16 @@ export class WorldRenderer {
   // unit's weapon kicks back (and its body rocks) the instant it shoots.
   private readonly recoilByActor = new Map<string, number>();
   private readonly attackPhaseByActor = new Map<string, number>();
+  /**
+   * Pooled particulate for combat. The blast/impact effects were pure geometry -- expanding rings,
+   * a dome, a hot core -- with nothing PARTICULATE in them, so an explosion read as a diagram of an
+   * explosion. This is a single THREE.Points over pre-allocated buffers with a ring cursor: no
+   * allocation per hit, one draw call for every particle on screen.
+   */
+  private particles: Particles | null = null;
+  /** Effects that have already fired their one-shot burst, so it happens on the first frame only. */
+  private readonly burstIds = new Set<string>();
+  private particleClock = performance.now();
   private readonly ring: THREE.Mesh;
   private readonly selectionDisc: THREE.Mesh;
   private readonly selectionBeacon: THREE.Mesh;
@@ -121,16 +132,16 @@ export class WorldRenderer {
     this.scene.add(this.ring);
 
     this.selectionDisc = new THREE.Mesh(
-      new THREE.CircleGeometry(1.72, 64),
-      new THREE.MeshBasicMaterial({ color: 0x9dfcff, transparent: true, opacity: 0.26, side: THREE.DoubleSide, depthWrite: false })
+      new THREE.CircleGeometry(1.34, 64),
+      new THREE.MeshBasicMaterial({ color: 0x9dfcff, transparent: true, opacity: 0.09, side: THREE.DoubleSide, depthWrite: false })
     );
     this.selectionDisc.rotation.x = -Math.PI / 2;
     this.selectionDisc.position.y = 0.026;
     this.scene.add(this.selectionDisc);
 
     this.selectionBeacon = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.1, 0.48, 2.75, 24, 1, true),
-      new THREE.MeshBasicMaterial({ color: 0x9dfcff, transparent: true, opacity: 0.36, depthWrite: false })
+      new THREE.CylinderGeometry(0.06, 0.34, 1.5, 24, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0x9dfcff, transparent: true, opacity: 0.13, depthWrite: false })
     );
     this.selectionBeacon.position.y = 1.18;
     this.scene.add(this.selectionBeacon);
@@ -239,6 +250,15 @@ export class WorldRenderer {
     // places that (re)build the battlefield, and a faction tint applied at only some of them is a
     // bug that shows up as "the army is the wrong colour after loading a save".
     this.setFactionTints(sim.factionOf("player").accent, sim.factionOf("enemy").accent);
+    if (!this.particles) this.particles = new Particles(this.scene);
+    // Particles run on real time, independent of the sim's paced clock: smoke should not billow
+    // faster because the player set the action pace to fast.
+    const nowMs = performance.now();
+    let particleDt = (nowMs - this.particleClock) / 1000;
+    this.particleClock = nowMs;
+    if (!(particleDt > 0) || particleDt > 0.1) particleDt = 0.016; // first frame / tab-switch guard
+    this.particles.update(particleDt);
+    this.emitCombatParticles(sim);
     this.computeRecoil(sim.projectiles);
     this.computeAttackPhases(sim);
     for (const entity of sim.entities) {
@@ -2748,6 +2768,130 @@ export class WorldRenderer {
       const remaining = record.until - now;
       record.light.intensity = remaining > 0 ? record.strength * (remaining / record.duration) : 0;
     }
+  }
+
+  /**
+   * One-shot particulate for the things that happen during a resolve. Each is emitted on the FIRST
+   * frame the event is seen, never per frame, so a long-lived blast does not keep spraying.
+   *
+   * Every burst fades its alpha and colour over life rather than vanishing -- particles that pop out
+   * of existence are the single most common thing that makes an effect read as cheap.
+   */
+  private emitCombatParticles(sim: TacticalSim): void {
+    const fx = this.particles;
+    if (!fx) return;
+
+    // MUZZLE FLASH. Emitted along the shot's own direction so it reads as gases leaving a barrel
+    // rather than a puff hanging in the air, and kept very short-lived.
+    for (const projectile of sim.projectiles) {
+      if (this.burstIds.has(projectile.id)) continue;
+      this.burstIds.add(projectile.id);
+      if (projectile.kind === "grenade") continue; // thrown, not fired
+      const heavy = projectile.kind === "shell";
+      fx.directionalBurst({
+        x: projectile.origin.x,
+        y: projectile.originHeight,
+        z: projectile.origin.z,
+        dirX: projectile.direction.x,
+        dirY: projectile.verticalSlope,
+        dirZ: projectile.direction.z,
+        count: heavy ? 14 : 7,
+        color: [0xfff0c0, 0xffc46a, 0xff8a3a],
+        speed: heavy ? [4.5, 9] : [3, 6],
+        spread: heavy ? 0.5 : 0.34,
+        size: heavy ? [0.09, 0.2] : [0.05, 0.12],
+        life: [0.06, 0.16],
+        gravity: 0,
+        drag: 5,
+        shape: ParticleShape.streak,
+      });
+      // A little smoke behind the flash on the big guns.
+      if (heavy) {
+        fx.burst({
+          x: projectile.origin.x, y: projectile.originHeight, z: projectile.origin.z,
+          count: 6, color: [0x6a6058, 0x8a8078], speed: [0.5, 1.4], up: 0.5, size: [0.22, 0.4],
+          life: [0.5, 1.0], gravity: -0.25, drag: 1.6, jitter: 0.2,
+        });
+      }
+    }
+
+    for (const effect of sim.effects) {
+      if (this.burstIds.has(effect.id)) continue;
+      this.burstIds.add(effect.id);
+      const ground = terrainHeightAt(effect.to);
+
+      if (effect.type === "impact") {
+        // Sparks fly BACK toward the shooter, the way a real ricochet throws material at the
+        // incoming angle, plus a few dark shards of whatever was hit.
+        const dx = effect.to.x - effect.from.x;
+        const dz = effect.to.z - effect.from.z;
+        const len = Math.hypot(dx, dz) || 1;
+        fx.directionalBurst({
+          x: effect.to.x, y: ground + 0.9, z: effect.to.z,
+          dirX: -dx / len, dirY: 0.35, dirZ: -dz / len,
+          count: 10, color: [0xffe9b0, 0xffb257], speed: [2.5, 6], spread: 0.9,
+          size: [0.04, 0.1], life: [0.14, 0.34], gravity: 5.5, drag: 1.2,
+          shape: ParticleShape.streak,
+        });
+        fx.burst({
+          x: effect.to.x, y: ground + 0.8, z: effect.to.z,
+          count: 5, color: [0x4a4038, 0x6b5f52], speed: [1.2, 3], up: 0.6,
+          size: [0.05, 0.11], life: [0.3, 0.7], gravity: 7, drag: 0.5, jitter: 0.16,
+          shape: ParticleShape.shard,
+        });
+      } else if (effect.type === "blast") {
+        const radius = effect.radius ?? 2;
+        // Fireball: fast, hot, short. Embers: slower, gravity-bound, longer -- the two together are
+        // what make an explosion read as an event rather than a flash.
+        fx.burst({
+          x: effect.to.x, y: ground + 0.5, z: effect.to.z,
+          count: Math.round(20 + radius * 10), color: [0xfff2cc, 0xffb04a, 0xff6a24],
+          speed: [3, 9 + radius], up: 0.35, size: [0.18, 0.5], life: [0.18, 0.5],
+          gravity: -1.2, drag: 2.4, jitter: radius * 0.2,
+        });
+        fx.burst({
+          x: effect.to.x, y: ground + 0.4, z: effect.to.z,
+          count: Math.round(10 + radius * 5), color: [0xffc46a, 0xff7a2e],
+          speed: [2, 7], up: 0.55, size: [0.05, 0.13], life: [0.5, 1.3],
+          gravity: 6.5, drag: 0.6, jitter: radius * 0.3, shape: ParticleShape.streak,
+        });
+        // Debris thrown out along the ground, then a smoke column that lingers after the light.
+        fx.burst({
+          x: effect.to.x, y: ground + 0.3, z: effect.to.z,
+          count: Math.round(8 + radius * 4), color: [0x3f382f, 0x5a5044],
+          speed: [2.5, 6.5], up: 0.3, vertical: 0.45, size: [0.07, 0.17],
+          life: [0.6, 1.4], gravity: 8, drag: 0.4, shape: ParticleShape.shard,
+        });
+        fx.burst({
+          x: effect.to.x, y: ground + 0.7, z: effect.to.z,
+          count: Math.round(8 + radius * 3), color: [0x5e564e, 0x8c837a],
+          speed: [0.6, 2.2], up: 0.9, size: [0.4, 0.95], life: [1.1, 2.4],
+          gravity: -0.5, drag: 1.1, jitter: radius * 0.35,
+        });
+      } else if (effect.type === "topple") {
+        // A falling column throws dust along its whole length, not just where it lands.
+        fx.burst({
+          x: effect.to.x, y: ground + 0.3, z: effect.to.z,
+          count: 22, color: [0x7a6f62, 0x9c9186], speed: [1, 3.4], up: 0.4, vertical: 0.5,
+          size: [0.3, 0.7], life: [0.8, 1.9], gravity: -0.2, drag: 1.3, jitter: 0.9,
+        });
+        fx.burst({
+          x: effect.to.x, y: ground + 0.2, z: effect.to.z,
+          count: 10, color: [0x4a423a, 0x6a6055], speed: [2, 5], up: 0.25,
+          size: [0.08, 0.18], life: [0.5, 1.1], gravity: 8, drag: 0.5, shape: ParticleShape.shard,
+        });
+      } else if (effect.type === "beam") {
+        fx.burst({
+          x: effect.to.x, y: ground + 0.6, z: effect.to.z,
+          count: 26, color: [0xd8f4ff, 0x8fd8ff, 0xffffff], speed: [1.5, 6], up: 0.8,
+          size: [0.07, 0.2], life: [0.3, 0.9], gravity: -1.5, drag: 1.8, jitter: 0.3,
+          shape: ParticleShape.streak,
+        });
+      }
+    }
+
+    // The id sets only ever grow otherwise; a long battle would leak a string per shot.
+    if (this.burstIds.size > 900) this.burstIds.clear();
   }
 
   private syncEffects(effects: readonly VisualEvent[]): void {
