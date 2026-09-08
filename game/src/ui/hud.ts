@@ -200,8 +200,10 @@ export class Hud {
   activateActionSlot(slot: number): void {
     const actor = this.sim.selected;
     if (!actor || actor.team !== "player" || actor.kind === "base") return;
-    const visible = ORDER_ACTIONS.filter((option) => actionVisible(option.id, actor, this.sim));
-    const choice = visible[slot - 1];
+    // Same list the card grid renders, so the printed number and the key always agree -- and keep
+    // agreeing after the unit loses a leg.
+    const applicable = ORDER_ACTIONS.filter((option) => actionApplicable(option.id, actor));
+    const choice = applicable[slot - 1];
     if (choice) this.setAction(choice.id);
   }
 
@@ -960,15 +962,18 @@ function orderPlanner(
     <div class="command-layout ${showActions && !actionBody ? "actions-only" : showActions ? "" : "single-detail"}">
       ${showActions ? `
         <div class="command-section action-deck">
-          <div class="action-row">
-            ${ORDER_ACTIONS.filter((option) => actionVisible(option.id, actor, sim)).map((option, index) => {
+          <div class="action-grid">
+            ${ORDER_ACTIONS.filter((option) => actionApplicable(option.id, actor)).map((option, index) => {
               const disabled = actionDisabled(option.id, actor, sim);
+              const why = disabled ? actionDisabledReason(option.id, actor, sim) : undefined;
               // An aircraft's "grenade" verb is a bomb drop; relabel it so the air unit reads right.
               const label = option.id === "grenade" ? bombVerb(actor) : option.label;
               const tip = option.id === "grenade" && actor?.flying
                 ? "Drop a bomb straight down beneath the aircraft — blast radius shown. Fly over the target; cannot hit aircraft."
                 : option.id === "ram" ? ramTip : option.id === "defend" ? defendTip : option.tip;
-              return `<button class="tool action action-${option.id} ${action === option.id ? "active" : ""} ${disabled ? "disabled" : ""}" data-order-action="${option.id}" data-disabled="${disabled}" data-tip="${escapeAttr(tip)}"><strong>${index + 1}. ${label}</strong><span>${actionCostLabel(option.id, actor)}</span></button>`;
+              // A disabled card states the REASON. Silently dead buttons are how a player concludes
+              // a game is broken rather than that their unit is hurt.
+              return `<button class="tool action action-${option.id} ${action === option.id ? "active" : ""} ${disabled ? "disabled" : ""}" data-order-action="${option.id}" data-disabled="${disabled}" data-tip="${escapeAttr(why ?? tip)}"><kbd>${index + 1}</kbd><strong>${label}</strong><span>${why ? escapeHtml(why) : actionCostLabel(option.id, actor)}</span></button>`;
             }).join("")}
           </div>
         </div>
@@ -1887,6 +1892,46 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
 // so the Strike affordance stays hidden for a disarmed unit instead of offering a failing order.
 function hasStrikeWeapon(actor: CombatEntity): boolean {
   return actor.parts.some((part) => part.role === "weapon" && part.hp > 0);
+}
+
+/**
+ * Which actions a unit KIND can EVER perform. Deliberately independent of the unit's live status.
+ *
+ * The command card used to be built from actionVisible, which reads canMove / canShoot / whether a
+ * weapon is intact -- so a trooper whose legs were destroyed lost its Move button entirely and
+ * every action below it shifted up a slot. The number keys then meant something different than
+ * they had the turn before, on the same unit, which is the opposite of muscle memory. It also hid
+ * the cause: the action did not grey out and explain itself, it silently disappeared.
+ *
+ * So applicability is fixed per kind and availability is a separate, explained, disabled state.
+ */
+function actionApplicable(action: Intent, actor: CombatEntity | undefined): boolean {
+  if (!actor) return false;
+  if (action === "ram") return actor.kind === "tank";
+  if (action === "melee" || action === "defend") return isInfantryKind(actor.kind);
+  if (action === "overwatch") return !isBuildingKind(actor.kind) && !isDefenseKind(actor.kind);
+  if (action === "mine") return actor.kind === "sapper";
+  if (action === "load" || action === "unload") return actor.kind === "transport";
+  if (action === "grenade") return (actor.kind === "soldier" || actor.flying === true) && actor.maxGrenades > 0;
+  if (action === "shoot" || action === "move") return true;
+  return false;
+}
+
+/** Why an applicable action cannot be taken right now, for the card's tooltip. */
+function actionDisabledReason(action: Intent, actor: CombatEntity | undefined, sim: TacticalSim): string | undefined {
+  if (!actor || sim.phase !== "command") return "Not during the resolve phase.";
+  if (actor.commandPoints <= 0) return `${actor.name} has no command points left this turn.`;
+  if ((action === "move" || action === "ram" || action === "melee" || action === "defend" || action === "load") && !actor.status.canMove) {
+    return `${actor.name} cannot move — its legs or treads are destroyed.`;
+  }
+  if (action === "shoot" && !actor.status.canShoot) return `${actor.name} cannot shoot — its weapon is destroyed.`;
+  if (action === "melee" && !hasStrikeWeapon(actor)) return `${actor.name} has no intact weapon to strike with.`;
+  if (action === "grenade" && actor.grenades <= 0) return `${actor.name} is out of grenades.`;
+  if (action === "overwatch") return sim.overwatchFailureReason(actor) ?? undefined;
+  if (action === "mine") return sim.mineFailureReason(actor) ?? undefined;
+  if (action === "load" && (actor.passengerIds?.length ?? 0) >= 2) return "The transport is full.";
+  if (action === "unload" && !(actor.passengerIds?.length)) return "The transport is empty.";
+  return undefined;
 }
 
 function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: TacticalSim): boolean {

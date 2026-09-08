@@ -4996,3 +4996,55 @@ body.killcam::after { bottom: 0; }
   text-transform: uppercase;
   color: #7a4a44;
 }
+
+/* ---- Command card grid ---------------------------------------------------------------------
+   A fixed grid rather than a flowing row. Each action holds the SAME slot for a given unit kind
+   whatever its condition, so the printed number and the key that triggers it stay meaningful --
+   the previous row dropped unavailable actions entirely and shifted everything below them. */
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  pointer-events: auto;
+}
+.action-grid .action {
+  position: relative;
+  display: grid;
+  gap: 1px;
+  align-content: start;
+  text-align: left;
+  padding: 7px 9px 7px 26px;
+  min-height: 44px;
+}
+/* The slot number sits in its own gutter so it reads as an address, not part of the label. */
+.action-grid .action > kbd {
+  position: absolute;
+  left: 7px;
+  top: 7px;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+}
+.action-grid .action > strong { font-size: 12px; line-height: 1.15; }
+.action-grid .action > span {
+  font-size: 9.5px;
+  line-height: 1.25;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+/* A disabled card explains itself instead of going quiet, so its reason line is the readable part. */
+.action-grid .action.disabled { opacity: 0.55; }
+.action-grid .action.disabled > span { color: #d98a72; }
+.action-grid .action.active > kbd { color: var(--bg); background: var(--amber); border-color: var(--amber); }
+
+@media (max-width: 1180px) {
+  .action-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
