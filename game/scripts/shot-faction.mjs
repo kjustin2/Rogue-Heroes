@@ -99,6 +99,18 @@ try {
       const f = sim.factionOf("player");
       return { id: f.id, name: f.name, roster: [...f.roster], tech: [...f.tech] };
     });
+    // What the faction's own troops actually RENDER as. Distinct rosters are half the feature; if
+    // all three armies come out the same colour on the battlefield the choice is invisible where it
+    // matters most. Measured off the live material rather than trusted from the palette source.
+    const bodyColor = await page.evaluate(() => {
+      const sim = window.__rht.sim;
+      const unit = sim.debugSpawn("soldier", "player", { x: 0, z: 0 });
+      return unit.id;
+    }).then(async (id) => {
+      await page.waitForTimeout(500);
+      return page.evaluate((i) => (window.__rht.partColors(i).find((c) => c.partId === "body") ?? {}).color, id);
+    });
+    info.bodyColor = bodyColor;
     info.cards = deckCards;
     info.techNodes = techNodes;
     if (techNodes.length === 0) fail(`${faction}: doctrine tab rendered no tech nodes`);
@@ -125,8 +137,13 @@ try {
   const unique = new Set(summaries.map(signature));
   if (unique.size !== summaries.length) fail(`factions share a roster: ${[...unique].join(" | ")}`);
 
+  const colors = new Set(summaries.map((s) => s.bodyColor));
+  if (colors.size !== summaries.length) {
+    fail(`factions render identical troops: ${summaries.map((s) => `${s.name}=${s.bodyColor}`).join(", ")}`);
+  }
+
   for (const s of summaries) {
-    console.log(`  ${s.name.padEnd(10)} roster ${String(s.roster.length).padStart(2)}  deck cards ${String(s.cards.length).padStart(2)}  doctrine nodes ${s.techNodes.length}`);
+    console.log(`  ${s.name.padEnd(10)} roster ${String(s.roster.length).padStart(2)}  deck cards ${String(s.cards.length).padStart(2)}  doctrine nodes ${String(s.techNodes.length).padStart(2)}  troops ${s.bodyColor}`);
   }
 
   if (errors.length) fail(`console errors:\n${errors.slice(0, 6).join("\n")}`);

@@ -235,6 +235,10 @@ export class WorldRenderer {
         this.groups.delete(id);
       }
     }
+    // Derived from sim state every frame rather than pushed in at battle start. There were eight
+    // places that (re)build the battlefield, and a faction tint applied at only some of them is a
+    // bug that shows up as "the army is the wrong colour after loading a save".
+    this.setFactionTints(sim.factionOf("player").accent, sim.factionOf("enemy").accent);
     this.computeRecoil(sim.projectiles);
     this.computeAttackPhases(sim);
     for (const entity of sim.entities) {
@@ -669,6 +673,18 @@ export class WorldRenderer {
   // The default cosmetic accent for the player's units (overridable per unit via entity.accent).
   setPlayerAccent(color: number): void {
     this.playerAccent = color;
+  }
+
+  /**
+   * Give each side its faction's colour. Player and enemy stay unmistakably different -- the team
+   * read is never negotiable -- but a Bastion army now looks like a Bastion army rather than like
+   * every other army in the game.
+   */
+  setFactionTints(player: number, enemy: number): void {
+    FACTION_TINT.player = player;
+    // The core (torso) leans a little lighter than the trim so the two do not flatten together.
+    FACTION_TINT.playerCore = blendHex(player, 0xffffff, 0.18);
+    FACTION_TINT.enemy = enemy;
   }
 
   // Colorblind support: swap the team read palette (blue vs orange) and rebuild every
@@ -3384,6 +3400,10 @@ function makeProjectileShadow(projectile: Projectile, color: number): THREE.Mesh
 // unfinished no matter how much detail went into the models. Team readability does not depend on
 // it: a unit already carries a team ring, a team emissive rim, and a team-blended torso. Heads got
 // the same treatment for the same reason -- a helmet is authored per role and was being bleached.
+// Per-side faction hues, set by the composition root at battle start. Defaults reproduce the
+// original fixed team colours, so nothing changes until a faction actually declares one.
+export const FACTION_TINT = { player: 0x5bc6e5, playerCore: 0x6fc4dd, enemy: 0xffffff };
+
 function roleColor(entity: CombatEntity, role: PartRole, fallback: number): number {
   if (entity.team === "enemy" && entity.kind !== "cover") {
     if (role === "weapon") return blendHex(fallback, 0xff9c7a, 0.2);
@@ -3391,7 +3411,8 @@ function roleColor(entity: CombatEntity, role: PartRole, fallback: number): numb
     if (role === "head") return blendHex(fallback, 0xffc5a8, 0.3);
     if (role === "utility") return 0xff9c75;
     if (role === "volatile") return 0xff7d38;
-    return blendHex(fallback, TEAMS.enemyBlend, 0.68);
+    // The enemy blend stays dominant for readability; the faction hue only shades it.
+    return blendHex(blendHex(fallback, TEAMS.enemyBlend, 0.68), FACTION_TINT.enemy, 0.22);
   }
   if (entity.team === "player") {
     if (role === "weapon") return blendHex(fallback, 0x9fdcf0, 0.2);
@@ -3399,8 +3420,8 @@ function roleColor(entity: CombatEntity, role: PartRole, fallback: number): numb
     if (role === "head") return blendHex(fallback, 0xf2dfbf, 0.3);
     if (role === "utility") return 0x8ff2d1;
     if (role === "volatile") return 0xffd06a;
-    if (role === "core") return blendHex(fallback, 0x6fc4dd, 0.26);
-    return blendHex(fallback, 0x5bc6e5, 0.22);
+    if (role === "core") return blendHex(fallback, FACTION_TINT.playerCore, 0.26);
+    return blendHex(fallback, FACTION_TINT.player, 0.22);
   }
   return fallback;
 }
