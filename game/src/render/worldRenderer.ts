@@ -851,9 +851,17 @@ export class WorldRenderer {
     const tileZ = Math.max(2, depth / 11);
     surface.map.repeat.set(tileX, tileZ);
     surface.normalMap.repeat.set(tileX, tileZ);
+    // MACRO VARIATION. The texture tiles every ~11 units, so its variation averages out across a
+    // 100-unit map and a wide desert still measures as one flat value -- the FLAT / NARROW RANGE /
+    // MONOCHROME flags the image gate keeps raising on Dust Bowl. Vertex colours on a subdivided
+    // floor add a slow, NON-repeating drift in both value and hue on top of it, for no extra draw
+    // call and no second texture.
+    const floorGeometry = new THREE.BoxGeometry(width, 0.18, depth, 40, 1, 40);
+    paintMacroVariation(floorGeometry, new THREE.Color(theme.groundAccent).lerp(new THREE.Color(theme.ground), 0.4));
     const floor = new THREE.Mesh(
-      new THREE.BoxGeometry(width, 0.18, depth),
+      floorGeometry,
       new THREE.MeshStandardMaterial({
+        vertexColors: true,
         map: surface.map,
         normalMap: surface.normalMap,
         // The whole point of the normal map is that the low key light rakes across the ground and
@@ -4258,6 +4266,35 @@ function makeGroundTexture(theme: MapTheme): GroundSurface {
   map.colorSpace = THREE.SRGBColorSpace;
   map.anisotropy = 8;
   return { map, normalMap: makeNormalMap(data, size) };
+}
+
+/**
+ * Paint slow, non-repeating value + hue drift into a geometry's vertex colours. Two octaves of a
+ * cheap deterministic wave field over world x/z: the long octave is what breaks up a big empty
+ * map, the short one keeps the mid-distance from reading as a gradient. Vertex colours MULTIPLY
+ * with map x material colour, so this rides on top of the tiled detail rather than replacing it.
+ */
+function paintMacroVariation(geometry: THREE.BufferGeometry, warm: THREE.Color): void {
+  const position = geometry.getAttribute("position");
+  const colors = new Float32Array(position.count * 3);
+  const tint = new THREE.Color();
+  const WHITE = new THREE.Color(1, 1, 1);
+  for (let i = 0; i < position.count; i += 1) {
+    const x = position.getX(i);
+    const z = position.getZ(i);
+    const long = Math.sin(x * 0.031 + 1.7) * Math.cos(z * 0.026 - 0.4)
+      + 0.6 * Math.sin((x + z) * 0.017 + 2.3);
+    const short = Math.sin(x * 0.11 - 0.8) * Math.cos(z * 0.093 + 1.1);
+    const drift = long * 0.5 + short * 0.18; // ~[-0.8, 0.8]
+    const value = clamp(1 + drift * 0.28, 0.66, 1.26);
+    // The lighter patches also lean toward the map's accent hue, which is what puts colour VARIANCE
+    // into an otherwise single-hue field rather than just lightening it.
+    tint.copy(WHITE).lerp(warm, Math.max(0, drift) * 0.4).multiplyScalar(value);
+    colors[i * 3] = tint.r;
+    colors[i * 3 + 1] = tint.g;
+    colors[i * 3 + 2] = tint.b;
+  }
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 }
 
 /**
