@@ -15,6 +15,7 @@ import { Stage } from "./render/stage";
 import { WorldRenderer, type WorldRenderDebug } from "./render/worldRenderer";
 import { preloadAll as preloadModels, loadedTemplates, modelsVersion, setModelSkin } from "./render/models";
 import { FeelDirector } from "./render/feel";
+import { POI_WEIGHT, ResolveDirector } from "./render/resolveDirector";
 import { Hud } from "./ui/hud";
 import {
   TacticalSim,
@@ -88,6 +89,13 @@ preloadModels(); // kick GLB loads immediately; renderer swaps them in as they a
 setModelSkin(settings.unitSkin);
 const sim = new TacticalSim();
 const world = new WorldRenderer(stage.scene);
+// Points the camera at the best moment of each resolve. Presentation only -- it reads outcomes and
+// chooses where to look; it never touches the sim's state or its rng.
+const resolveCam = new ResolveDirector();
+// Which units were alive at the top of the frame, so a death can be spotted as a transition.
+const aliveLastFrame = new Set<string>();
+// Where the director wants to look this frame, handed to syncCameraAssist.
+let resolveFocus: Vec2 | undefined;
 world.setPlayerAccent(progression.accentColor());
 const feel = new FeelDirector(stage);
 feel.setReducedMotion(settings.reducedMotion);
@@ -176,7 +184,7 @@ const hud = new Hud(uiRoot, sim, {
   setIntent: (intent: Intent) => sim.setIntent(intent),
   endTurn: () => {
     if (sim.phase === "command") sfx.turn();
-    sim.endTurn();
+    resolveCam.begin(stage.viewState()); sim.endTurn();
   },
   reset: () => {
     sim.reset();
@@ -368,6 +376,7 @@ function clickArmedConfirm(): boolean {
 window.addEventListener("wheel", (event) => {
   if (shouldLetUiScroll(event)) return;
   event.preventDefault();
+  resolveCam.playerTookControl(); // manual camera input wins over direction
   stage.zoomBy(event.deltaY > 0 ? 0.08 : -0.08);
 }, { passive: false });
 
@@ -429,7 +438,7 @@ window.addEventListener("keydown", (event) => {
     case "endTurn":
       event.preventDefault();
       if (sim.phase === "command") sfx.turn();
-      sim.endTurn();
+      resolveCam.begin(stage.viewState()); sim.endTurn();
       break;
     case "cycle":
       event.preventDefault();
@@ -1910,8 +1919,15 @@ function frame(now: number): void {
     left: heldKeys.has("KeyA"),
     right: heldKeys.has("KeyD"),
   });
+  // Camera direction runs on REAL time, not the paced sim clock, so the action-pace setting
+  // changes how fast the battle plays out without changing how the camera moves.
+  resolveCam.enabled = !settings.reducedMotion;
+  const shot = resolveCam.update(dt);
+  // Hitstop freezes the sim by SKIPPING the step, never by scaling dt: scaling would change the
+  // step sequence the sim sees, while skipping delays everything uniformly and preserves ordering.
   // The action-pace setting only scales time while orders resolve; planning stays real-time.
-  sim.update(sim.phase === "resolve" ? dt * settings.resolveSpeed : dt);
+  if (shot.hitstop <= 0) sim.update(sim.phase === "resolve" ? dt * settings.resolveSpeed : dt);
+  resolveFocus = shot.focus; // consumed by syncCameraAssist, the single camera authority
   if (DEBUG_UNLOCKED && inBattle && sim.phase === "command") applyDebugCheats();
   processBattleEvents();
   watchEnemyIntel();
@@ -1970,10 +1986,29 @@ function groundAimHover(): Vec2 | undefined {
 // feedback for each: audio, camera trauma/kick, and pooled flash lights. This is the single
 // seam where sim events become player-facing juice (one-way data flow preserved).
 function processBattleEvents(): void {
+  // A killing blow is the moment of a turn worth watching, and the only one that earns a freeze.
+  // Without the hold, a unit that dies in the same frame as everything else simply vanishes: the
+  // eye never registers what happened to it.
+  if (sim.phase === "resolve") {
+    for (const entity of sim.entities) {
+      if (entity.kind === "cover") continue;
+      const wasAlive = aliveLastFrame.has(entity.id);
+      if (entity.status.alive) {
+        aliveLastFrame.add(entity.id);
+      } else if (wasAlive) {
+        aliveLastFrame.delete(entity.id);
+        resolveCam.note(entity.position.x, entity.position.z, POI_WEIGHT.kill, 1.6);
+        // Base kills are the end of the battle; hold longer for those.
+        resolveCam.freeze(settings.reducedMotion ? 0 : entity.kind === "base" ? 0.2 : 0.09);
+        feel.addTrauma(entity.kind === "base" ? 0.4 : 0.16);
+      }
+    }
+  }
   for (const projectile of sim.projectiles) {
     if (seenProjectileIds.has(projectile.id)) continue;
     seenProjectileIds.add(projectile.id);
     sfx.shot(projectile.kind);
+    resolveCam.note(projectile.origin.x, projectile.origin.z, POI_WEIGHT.shot, 0.7);
     const onScreen = stage.isInView(projectile.origin) ? 1 : 0.3;
     const heavy = projectile.kind === "shell" || projectile.kind === "grenade";
     if (heavy) {
@@ -1988,6 +2023,7 @@ function processBattleEvents(): void {
     seenEffectIds.add(effect.id);
     if (effect.type === "blast") {
       sfx.explosion();
+      resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.blast, 1.5);
       const onScreen = stage.isInView(effect.to) ? 1 : 0.3;
       const size = Math.min(1, (effect.radius ?? 1) / 3);
       feel.addTrauma((0.18 + size * 0.2) * onScreen);
@@ -1997,15 +2033,19 @@ function processBattleEvents(): void {
       world.flashLight(effect.to, 0xffa24d, (4.5 + size * 4) * onScreen, 260, 1.8);
     } else if (effect.type === "impact") {
       sfx.impact();
+      resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.impact, 0.9);
       if (stage.isInView(effect.to)) feel.addTrauma(0.05);
     } else if (effect.type === "topple") {
       sfx.crash();
+      resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.topple, 1.8);
       if (stage.isInView(effect.to)) feel.addTrauma(0.14);
     } else if (effect.type === "jet") {
       sfx.jet();
+      resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.strike, 2);
       feel.addTrauma(0.08);
     } else if (effect.type === "beam") {
       sfx.beam();
+      resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.strike, 2);
       feel.addTrauma(0.22);
       stage.punch(0.3);
     }
@@ -2191,7 +2231,7 @@ window.__rht = {
   sim,
   setIntent: (intent) => sim.setIntent(intent),
   setAim: (aim) => sim.setAim(aim),
-  endTurn: () => sim.endTurn(),
+  endTurn: () => { resolveCam.begin(stage.viewState()); sim.endTurn(); },
   reset: () => {
     hud.resetGame();
     lastCommandCameraKey = "";
@@ -2277,7 +2317,7 @@ function escapeAttr(value: string): string {
 
 function syncCameraAssist(): void {
   if (sim.phase === "resolve") {
-    const focus = resolveFocusPoint();
+    const focus = resolveFocus ?? resolveFocusPoint();
     if (!focus) return;
     const view = stage.viewState();
     stage.guideTo({
@@ -2313,6 +2353,11 @@ function syncCameraAssist(): void {
   }, { mode: "aim", strength: 2.7, durationMs: 1300 });
 }
 
+// Fallback framing for when the director has nothing to say (it is disabled by reduce-motion, or
+// it is still yielding to a player who just panned). Averaging every live projectile is a decent
+// default and a poor priority system: with two firefights it points the camera at the empty ground
+// between them, and once a shell lands it forgets the kill immediately. That is what the director
+// is for; this remains as the floor.
 function resolveFocusPoint(): Vec2 | undefined {
   if (sim.projectiles.length) {
     let x = 0;
