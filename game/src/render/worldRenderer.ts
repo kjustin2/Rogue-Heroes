@@ -1564,7 +1564,7 @@ export class WorldRenderer {
     // Torso: a tapered barrel with a SEPARATE upper chest mass that overhangs it. The overhang is
     // what gives the trooper a shoulder line and a shadow under the chest -- a single cylinder
     // reads as a bottle no matter how it is lit.
-    this.cylinder(rig, entity, "body", 0.24, 0.5, [0, 0.8, 0], bodyColor, [0, 0, 0], { emissive: teamGlow, emissiveIntensity: 0.08, radiusBottom: 0.27, outline: true });
+    this.cylinder(rig, entity, "body", 0.24, 0.5, [0, 0.8, 0], bodyColor, [0, 0, 0], { emissive: teamGlow, emissiveIntensity: 0.03, radiusBottom: 0.27, outline: true });
     this.box(rig, entity, "body", [0.5, 0.3, 0.34], [0, 1.03, 0], bodyColor, { metalness: 0.14, bevel: 0.26, outline: true });
     // Angled breastplate over it, with a glowing core seam.
     this.box(rig, entity, "body", [0.42, 0.34, 0.11], [0, 0.99, 0.18], trimColor, { metalness: 0.3, rotation: [-0.16, 0, 0], bevel: 0.24 });
@@ -2552,7 +2552,11 @@ export class WorldRenderer {
     const unitGlowColor = entity.team === "enemy" ? TEAMS.enemyGlowDim : TEAMS.playerGlowDim;
     spec.emissive.copy(hexColor(part.hp > 0 && targetedPart ? 0x4f3000 : part.hp > 0 && selected ? 0x0b3844 : accent ? baseEmissive : unitGlow ? unitGlowColor : coverGlow ? coverGlowColor : baseEmissive));
     spec.emissiveIntensity = part.hp > 0
-      ? (mesh.userData.baseEmissiveIntensity as number) + (unitGlow ? 0.07 : 0) + (coverGlow ? 0.18 : 0) + (selected ? 0.58 : 0) + (targetedPart ? 0.72 : targeted ? 0.34 : 0)
+      // The team glow is a WHISPER, not a wash. At 0.07 of a teal emissive on every part of every
+      // player unit, it tinted the whole roster toward one hue and buried the per-role palette
+      // underneath it — which is most of why six different troopers read as six teal blobs. The
+      // marker ring above each unit is what actually carries the team read.
+      ? (mesh.userData.baseEmissiveIntensity as number) + (unitGlow ? 0.022 : 0) + (coverGlow ? 0.18 : 0) + (selected ? 0.58 : 0) + (targetedPart ? 0.72 : targeted ? 0.34 : 0)
       : 0;
     // Living idle: standing infantry breathe, their arms + held weapon carry a slow sway, and the
     // torso does a subtle weight-shift — phase-offset per unit so a squad doesn't move in lockstep,
@@ -3872,7 +3876,7 @@ function roleColor(entity: CombatEntity, role: PartRole, fallback: number): numb
     // already carried by the marker ring, the accent trim and the emissive glow; the hull only has
     // to sit in the warm-red family. A deeper blend at under half strength does that and leaves the
     // material visible underneath.
-    return blendHex(blendHex(fallback, TEAMS.enemyBlend, 0.42), FACTION_TINT.enemy, 0.22);
+    return blendHex(blendHex(fallback, TEAMS.enemyBlend, 0.3), FACTION_TINT.enemy, 0.2);
   }
   if (entity.team === "player") {
     if (role === "weapon") return blendHex(fallback, 0x9fdcf0, 0.11);
@@ -3883,8 +3887,14 @@ function roleColor(entity: CombatEntity, role: PartRole, fallback: number): numb
     // Structures wear the team hue on their CORE, which is most of an emplacement's surface, so a
     // 0.26 blend toward a light cyan turned dark steel and brown sandbags alike into pale teal.
     // Buildings get a lighter touch than a trooper's bodysuit does.
-    if (role === "core") return blendHex(fallback, FACTION_TINT.playerCore, isBuildingKind(entity.kind) || isDefenseKind(entity.kind) ? 0.14 : 0.26);
-    return blendHex(fallback, FACTION_TINT.player, 0.22);
+    // A LIGHT TOUCH ON THE BODY. At the distance this game is played a trooper is about forty
+    // pixels tall, and at that size the only things that read are its overall hue, its mass, and one
+    // bright accent. Blending every unit a quarter of the way to the same faction cyan turned a
+    // roster of authored hues -- scout green, sniper blue, striker violet, heavy rust, medic red,
+    // engineer amber -- into six identical teal blobs. The team read is carried by the marker ring
+    // above each unit and by the accent trim; the hull only needs a hint of it.
+    if (role === "core") return blendHex(fallback, FACTION_TINT.playerCore, isBuildingKind(entity.kind) || isDefenseKind(entity.kind) ? 0.14 : 0.12);
+    return blendHex(fallback, FACTION_TINT.player, 0.1);
   }
   return fallback;
 }
@@ -4034,17 +4044,17 @@ interface InfantryBuild {
 // black-silhouette test failed even though the detail work was there. Proportion survives at any
 // zoom, where greebles do not.
 const INFANTRY_BUILDS: Partial<Record<EntityKind, Partial<InfantryBuild>>> = {
-  heavy: { girth: 1.32, stature: 0.93, lean: 0.05 },
-  flamer: { girth: 1.22, stature: 0.97 },
-  striker: { girth: 1.08, stature: 1.02, lean: 0.2 },
-  scout: { girth: 0.83, stature: 1.09, lean: 0.12 },
-  sniper: { girth: 0.87, stature: 1.05, lean: 0.15 },
-  sapper: { girth: 0.97, stature: 0.92, lean: 0.16 },
-  mortar: { girth: 1.15, stature: 0.96 },
-  grenadier: { girth: 1.12, stature: 0.98 },
-  medic: { girth: 0.9, stature: 1.03 },
-  engineer: { girth: 1.03, stature: 0.98 },
-  droneop: { girth: 0.9, stature: 1.04 },
+  heavy: { girth: 1.52, stature: 0.88, lean: 0.05 },
+  flamer: { girth: 1.34, stature: 0.94 },
+  striker: { girth: 1.06, stature: 1.04, lean: 0.24 },
+  scout: { girth: 0.72, stature: 1.14, lean: 0.14 },
+  sniper: { girth: 0.78, stature: 1.09, lean: 0.18 },
+  sapper: { girth: 1.0, stature: 0.88, lean: 0.18 },
+  mortar: { girth: 1.2, stature: 0.94 },
+  grenadier: { girth: 1.22, stature: 0.96 },
+  medic: { girth: 0.86, stature: 1.06 },
+  engineer: { girth: 1.08, stature: 0.96 },
+  droneop: { girth: 0.84, stature: 1.08 },
 };
 
 const DEFAULT_BUILD: InfantryBuild = { girth: 1, stature: 1, lean: 0 };
@@ -4199,18 +4209,24 @@ function infantryBuild(kind: EntityKind): InfantryBuild {
 // where the key light can put a highlight ON them, which a near-white surface cannot receive.
 function infantryPalette(kind: string): { body: number; trim: number; pack: number } {
   switch (kind) {
-    case "scout": return { body: 0x4f8f63, trim: 0x36443c, pack: 0x24503a };
-    case "sniper": return { body: 0x44718c, trim: 0x33414a, pack: 0x1b3a4e };
+    // HUE **AND** VALUE SPREAD. At forty pixels a unit is one colour, so neighbours in the roster
+    // have to differ in more than shade: scout and sniper were adjacent greens/blues at the same
+    // value, and the baseline recruit was a saturated teal competing with both. The baseline is
+    // now the most desaturated thing on the field -- specialists are the ones that should pop --
+    // and each pair that used to collide (scout/sniper, heavy/flamer, sniper/droneop,
+    // grenadier/mortar) is pushed apart on value as well as hue.
+    case "scout": return { body: 0x63b45c, trim: 0x36443c, pack: 0x24503a };
+    case "sniper": return { body: 0x2f5570, trim: 0x2b3742, pack: 0x1b3a4e };
     case "striker": return { body: 0x7d51ad, trim: 0x3b3350, pack: 0x39235c };
-    case "heavy": return { body: 0xa05c30, trim: 0x453930, pack: 0x4a2716 };
-    case "grenadier": return { body: 0xba7c2c, trim: 0x4a4030, pack: 0x5c3510 };
-    case "mortar": return { body: 0xa17d3c, trim: 0x46402f, pack: 0x54401a };
-    case "medic": return { body: 0xb85763, trim: 0x4a3a3d, pack: 0x5e2129 };
-    case "engineer": return { body: 0xa89232, trim: 0x474328, pack: 0x54481a };
-    case "flamer": return { body: 0xb86133, trim: 0x4a3a30, pack: 0x6a2812 };
-    case "droneop": return { body: 0x6d8299, trim: 0x3d4550, pack: 0x2c3f52 };
+    case "heavy": return { body: 0xa85a24, trim: 0x453930, pack: 0x4a2716 };
+    case "grenadier": return { body: 0xd0a03a, trim: 0x4a4030, pack: 0x5c3510 };
+    case "mortar": return { body: 0x7a6a34, trim: 0x46402f, pack: 0x54401a };
+    case "medic": return { body: 0xc44a58, trim: 0x4a3a3d, pack: 0x5e2129 };
+    case "engineer": return { body: 0xcaa227, trim: 0x474328, pack: 0x54481a };
+    case "flamer": return { body: 0xb33418, trim: 0x4a3a30, pack: 0x6a2812 };
+    case "droneop": return { body: 0x7f9fc4, trim: 0x3d4550, pack: 0x2c3f52 };
     case "sapper": return { body: 0x9c8c4c, trim: 0x46422f, pack: 0x4a3f1e };
-    default: return { body: 0x2f8f80, trim: 0x35424a, pack: 0x1d5f66 };
+    default: return { body: 0x6c7052, trim: 0x35424a, pack: 0x3a4438 };
   }
 }
 

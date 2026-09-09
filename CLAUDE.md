@@ -64,6 +64,31 @@ drive headless Chromium via `window.__rht`.
   blare. `window.__rht.audioMuted()` asserts it; `smoke:flow` guards it.
 - Needs the Playwright Chromium cache or `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`.
 
+## THE GROUND-HATCHING LEDGER — read this before touching the ground, shadows, or terrain
+
+A fine dashed/striped hatching across the ground has been reported **four separate times** in this
+repo. Each report was a DIFFERENT cause that looked identical on screen, and each was chased with
+guesses before anyone measured. Every fix below is load-bearing; if hatching is reported again,
+work this list first and **do not start by tuning the ground texture** — three rounds were lost
+that way and the cause was never once in it.
+
+| # | Cause | Fix (do not undo) | Detector |
+|---|---|---|---|
+| 1 | **Outer plain tiled a detail texture across 9× the arena** — minified into aliasing hash. This was the big one and the last one found. | The distance gets a FLAT TONE. No tiled map on any ground surface materially larger than the arena. | `npm run smoke:ground` (in `smoke:core`) — asserts it directly, and is **fault-injection proven**: re-add the map and it fails all five maps. |
+| 2 | **Terrain-block CAPS overhang their block by 1cm**, so neighbouring caps in a stepped mesa overlap and two coplanar surfaces fight in the shadow depth pass. | `cap.castShadow = false`. The body beneath casts the same footprint. | `npm run probe:shadow <scenario>` — bisects casting off one group at a time. |
+| 3 | **Coplanar z-fight between ground plates** — overlapping slabs of one patch all topped out at exactly y=0. | Each slab staggered ~2mm in depth. | Survives `probe:shadow` (it is a main-pass depth issue, not a shadow one) — that is how #3 is told apart from #2. |
+| 4 | **Shadow acne** on the near-flat arena under a low sun. | `shadow.normalBias` sized to the shadow TEXEL (~4cm at the current frustum), not a tenth of one. | `npm run probe:ground` — strips albedo, then normal map, then particles, one at a time. |
+
+Two rules that fall out of this and apply beyond hatching:
+
+- **A screenshot gate you have not fault-injected is a decoration.** The first version of
+  `smoke:ground` passed the exact bug it was written for: it measured a mesh's LOCAL bounding box,
+  and a ground plane is a PlaneGeometry rotated flat, so its depth sits on Y and its Z extent is
+  zero — every plane in the scene was skipped. It only became a gate after the bug was deliberately
+  re-added and the gate was made to fail.
+- **Bisect before you tune.** Every one of these four was found by turning things off one at a time
+  (`probe:shadow`, `probe:ground`), and none was found by adjusting a number and looking.
+
 ## Meshy scope (deliberate per-repo exception)
 
 This repo's sanctioned Meshy scope is **hard-surface vehicle/structure/prop hulls**
@@ -190,6 +215,91 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   68% of every surface with a light salmon, so enemy armour, walls and HQs all came out pale pink.
   The team read is carried by the marker ring, the accent trim and the emissive glow; a hull only
   has to sit in the right hue family. See `setFactionTints`/`roleColor`.
+- **`npm run probe:shadow`** turns shadow casting off one scene group at a time and screenshots
+  each step. It exists because a striped-hatching artefact across the ground survived three rounds
+  of texture tuning, two bias changes and a shadow-frustum rewrite before anyone measured it: the
+  cause was **terrain-block CAPS**, which overhang their block by 1cm so the top edge reads, which
+  makes neighbouring caps in a stepped mesa overlap, which makes two coplanar surfaces fight in the
+  shadow depth pass. `cap.castShadow` is now false and must stay false — the body beneath casts the
+  same footprint. Bisect first; a ground artefact is not necessarily in the ground.
+- **`npm run shots:silhouette`** renders every unit as a flat black shape on white
+  (`window.__rht.silhouette(true)`, which also hides everything that is not a unit). The test is
+  "can you NAME each unit from its outline alone" — it is how medic/engineer/sapper were caught
+  sharing one silhouette. Shoot the rank **in profile**: head-on foreshortens the long rifles, tool
+  rigs and blades that distinguish kits, and the first version of the sheet failed four kits that
+  were fine.
+- **`npm run audit:unit <kind>`** sorts a trooper's resolved part colours by luminance. Run it
+  after any palette work: the recurring failure here is a *large* surface creeping above ~180
+  luminance (it was the bare HEAD at 214, brighter than the unit's own glowing ammo), which is
+  what makes the roster read as pale plastic. Small emissive lamps at high luminance are fine.
+
+## Architecture (repo-specific facts)
+
+Standard three-layer split (pure sim → read-only renderer → DOM HUD, composition root
+`src/main.ts`). What's specific here:
+
+- **`src/game/sim.ts` (~3200 lines) is authoritative** — the most important file.
+  Phases `command` → `resolve` → `victory`/`defeat`. Seeded `Rng`; no `Math.random()`
+  in sim code.
+- **Per-part damage** (`damageModel.ts`): entities are bags of parts; `applyDamage`
+  hits a part, `recomputeStatus` derives `canMove`/`canShoot`/`alive`.
+- **Terrain is a mutable singleton** (`src/game/terrain.ts`): `setActiveTerrain` swaps
+  global blocks + `ARENA_BOUNDS` (+ `water`/`bridges`); `configure()`-ing a map mutates shared
+  state. Tests building `TacticalSim` from raw entities rely on `DEFAULT_TERRAIN`'s fixed mesa —
+  a test that needs water/bigger bounds must `setActiveTerrain(...)` AFTER constructing the sim
+  (the constructor resets terrain) and restore `DEFAULT_TERRAIN` at the end.
+- **Impassable terrain** is emergent, not tile-flagged: a stacked terrain step >`TERRAIN_STEP`
+  (0.95) reads as a cliff/wall, and `water` rects block ground movement (via `pointInWater` in
+  `blockedBySteepTerrain`) unless a `bridge` rect crosses (flyers overfly both). Water sits at
+  ground height so it does NOT block flat line-of-fire. "Large hills"/"walls" reuse stacked
+  `TerrainBlock`s or the `wall`/`cliff` cover kinds — no new primitive.
+- **Every map is enlarged at load** by `scaleMapDef` in `maps.ts` (large ~2×, medium ~1.5×,
+  small ~1.3× area; authored `RAW_MAPS` literals stay at base scale). Only positions/extents
+  scale — object sizes and terrain heights are fixed; scatter counts grow with area. `MapDef.size`
+  is stamped from the authored area so `mapSize()` stays correct. Arena-dependent render constants
+  (shadow frustum, max zoom, fill-light range, particle count) are sized for the largest map.
+- **Unit move distances carry a global `MOVE_RANGE_SCALE`** (`sim.ts`, on both `moveRange` and
+  `moveSpeed`) so the bigger maps don't slog. Changing it shifts move-distance test expectations.
+- **Air layer** (`flying`/`agl` on the entity; `isAirKind` lists the flyers): gunship (helicopter,
+  air-to-air gun + straight-down bombs), interceptor (jet, air-to-air gun only), bomber (jet, bombs
+  only, no gun), transport (helicopter, unarmed airlift). Aircraft GUNS are air-to-air ONLY
+  (`isAirKind(actor) && !target.flying` rejects); BOMBS drop straight down beneath the plane
+  (`isAirBomber` → `queueBombDrop`/`launchGrenadeAtPoint` re-targets to the actor's XZ). Ground units
+  CAN hit flyers (that's the anti-air). The enemy `enemyTroopPreference` scrambles air when the
+  player flies, which is what gives a player gunship air-to-air targets. New flyer = the full
+  add-air-unit checklist (create*, `isAirKind`/`isVehicleKind`, catalog, per-kind fns, `build*`
+  model + dispatch, bomb gating, `carriable`).
+- **Air transport carry** (`passengerIds`/`carriedById` on entities → rides `serialize()`): `load`/
+  `unload` order kinds; carried units are hidden + inert + untargetable (excluded in render/targeting/
+  separation), snapped to the transport each frame, dropped on unload or when the transport dies.
+- **Debug/Sandbox mode**: launch with `?debug` (dev URL) or `--debug`/`RHT_DEBUG=1` (Electron appends
+  `?debug`); `DEBUG_UNLOCKED` reveals a Debug section in Settings (infinite money, free cooldowns),
+  applied each command frame via `applyDebugCheats`. See `game/README.md`.
+- **The AI checks line of sight before firing** (`aiShotBlocker` reuses the rng-free player shot
+  preview): it breaches a destructible blocker (cover/wall) rather than wasting the shot, or holds
+  fire on terrain/friendly blocks. Keep the aim rng draw ahead of the block decision (determinism).
+- **`serialize()`/`restore()`** JSON round-trip the battle; always resumes in `command`.
+- Data catalogs are the tuning surface: `units.ts` (troops/defenses/support powers),
+  `tech.ts`, `modes.ts`, `maps.ts`, `scenario.ts` (bases + cover only — no starting units).
+- **Part materials and part geometry are POOLED.** `partMaterial()` in `worldRenderer.ts` hands
+  every part mesh a SHARED `MeshStandardMaterial` keyed on a quantized version of its painted
+  appearance, and `paintPart` re-resolves each mesh to the right one every frame. So:
+  **never write to a part mesh's `material`** — you would repaint every other mesh that currently
+  looks the same. Change `mesh.userData.baseColor` (or the spec paintPart builds) instead; that is
+  what `tintPropToMap` does. Pooled materials and geometry carry `userData.shared`, which is how
+  `disposeSubtree` knows to leave them alone. GLB clone materials are per-instance and are still
+  mutated directly by `paintModel` — that path is unaffected.
+- **The ground texture is a neutral MULTIPLIER, not an albedo.** `makeGroundTexture` draws around
+  white and the material's own `color` supplies the hue, so the arena floor, the mesa caps and the
+  outer plain share one texture at three tints. Baking `theme.ground` into the texture *and* setting
+  the material colour to `theme.ground` squares the map's own colour — that was why every map read
+  muddy and flat. It is also seamless (all marks stamped through `wrapped`), which is what lets it
+  tile at ~11 world units; it ships a sobel-derived normal map alongside.
+- **A faction accent is a UI colour and must be deepened before it touches a hull.** Blending one
+  straight in bleached units — the enemy tint defaulted to white and the enemy role blend repainted
+  68% of every surface with a light salmon, so enemy armour, walls and HQs all came out pale pink.
+  The team read is carried by the marker ring, the accent trim and the emissive glow; a hull only
+  has to sit in the right hue family. See `setFactionTints`/`roleColor`.
 - **THE OUTER PLAIN CARRIES NO TILED TEXTURE.** It is nine times the arena's extent; tiling the
   ground detail across it minifies the texture into aliasing hash, which reads as fine dashed
   hatching over half the board. That artefact was in every screenshot of this game and survived
@@ -198,15 +308,6 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   the albedo, then the normal map, then the particle bed, one at a time — the arena went clean and
   the surround did not, which named the culprit in one run. A surface meant to recede into fog
   wants a flat tone anyway.
-- **TWO more striping artefacts have looked identical on the ground.** Both are fixed; both
-  will come back if their cause is reintroduced. (1) SHADOW ACNE on the near-flat arena under a low
-  sun — `shadow.normalBias` has to be several shadow texels, not a tenth of one; 0.55 is the
-  measured floor and anything under ~0.5 brings the bands back. (2) COPLANAR Z-FIGHT between the
-  ground plates: four overlapping slabs per patch, all topping out at exactly y=0, hatch against
-  each other, so each slab is staggered ~2mm in depth. Neither is a texture problem — three rounds
-  of texture tuning were spent on them before anyone measured. `npm run probe:shadow <scenario>`
-  bisects the first; the second survives that probe (it is a main-pass depth issue, not a shadow
-  one), which is how they can be told apart.
 - **The shadow frustum FOLLOWS THE CAMERA FOCUS** (`syncShadowFrustum` in `stage.ts`), snapped to
   whole shadow texels so edges don't crawl when the camera pans. `SHADOW_RADIUS` must cover
   everything on screen: three clamps the shadow map at its edges, so anything outside the window
