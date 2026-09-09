@@ -376,6 +376,20 @@ function pairAngle(a: string, b: string): number {
   return ((h >>> 0) % 3600) / 3600 * Math.PI * 2;
 }
 
+/**
+ * How hard a blast throws a thing. Infantry are 1 and fly; armour is heavy and barely registers it;
+ * anything bolted to the ground is Infinity and does not move at all. Tuned so a grenade shoves a
+ * trooper about two metres and a tank a few centimetres.
+ */
+const KNOCKBACK_SCALE = 2.4;
+const KNOCKBACK_MAX = 4.5;
+
+function blastMass(entity: CombatEntity): number {
+  if (entity.kind === "cover" || isBuildingKind(entity.kind) || isDefenseKind(entity.kind)) return Infinity;
+  if (isVehicleKind(entity.kind)) return 5.5;
+  return 1;
+}
+
 export class TacticalSim {
   readonly bus = new EventBus();
   readonly rng = new Rng(0x726f6775);
@@ -3009,7 +3023,63 @@ export class TacticalSim {
         this.effect("impact", entity.position, entity.position, 0xffbf69, 0.42, entity.radius);
         this.afterDamage(actor, entity, result);
       }
+      this.applyKnockback(actor, entity, point, baseDamage, falloff);
     }
+  }
+
+  /**
+   * BLAST KNOCKBACK. A explosion throws what it does not kill. Infantry go furthest, armour barely
+   * registers it, and structures do not move at all — so the same grenade reads as a shove against
+   * a trooper and as a scratch against a tank, which is the whole point of having both on the field.
+   *
+   * The throw is marched in small steps and stops at the first thing that would stop a walk: the
+   * arena edge or a terrain step it cannot clear. It does NOT stop at a shoreline — a body thrown
+   * into a channel goes in, and drowns. That is the one place in the game where terrain kills
+   * outright, so it is logged loudly and it cannot happen to a flyer.
+   */
+  private applyKnockback(actor: CombatEntity, entity: CombatEntity, point: Vec2, baseDamage: number, falloff: number): void {
+    if (!entity.status.alive || entity.flying) return;
+    const mass = blastMass(entity);
+    if (!Number.isFinite(mass)) return; // bolted down: bases, defenses, cover
+    const dx = entity.position.x - point.x;
+    const dz = entity.position.z - point.z;
+    const len = Math.hypot(dx, dz);
+    // Dead centre of the blast has no direction to throw along; take one from the sim's own rng so
+    // the result stays reproducible for a seed.
+    const angle = len > 0.001 ? Math.atan2(dz, dx) : this.rng.range(0, Math.PI * 2);
+    const dirX = len > 0.001 ? dx / len : Math.cos(angle);
+    const dirZ = len > 0.001 ? dz / len : Math.sin(angle);
+    const throwDistance = Math.min(KNOCKBACK_MAX, (baseDamage / 30) * falloff * KNOCKBACK_SCALE / mass);
+    if (throwDistance < 0.12) return;
+
+    const steps = Math.max(4, Math.ceil(throwDistance * 6));
+    let footing = terrainHeightAt(entity.position);
+    let landed = { ...entity.position };
+    let drowned = false;
+    for (let i = 1; i <= steps; i += 1) {
+      const t = (throwDistance * i) / steps;
+      const next = clampToArena({ x: entity.position.x + dirX * t, z: entity.position.z + dirZ * t });
+      if (pointInWater(next)) { landed = next; drowned = true; break; }
+      const height = terrainHeightAt(next);
+      if (height - footing > TERRAIN_STEP) break; // slammed into a cliff face; it stops here
+      footing = height;
+      landed = next;
+    }
+
+    if (landed.x === entity.position.x && landed.z === entity.position.z && !drowned) return;
+    entity.position = landed;
+    entity.elevation = terrainHeightAt(landed);
+    this.effect("impact", landed, landed, 0xffd9a0, 0.3, entity.radius * 0.9);
+    if (!drowned) {
+      this.pushLog(`${entity.name} is thrown by the blast`);
+      return;
+    }
+    // Into the channel. Everything is destroyed at once — there is no swimming in this game.
+    for (const part of entity.parts) part.hp = 0;
+    recomputeStatus(entity);
+    this.effect("blast", landed, landed, 0x4f9fd0, 0.7, entity.radius + 1.2);
+    this.pushLog(`${entity.name} is blasted into the water and drowns`);
+    this.afterDamage(actor, entity, [`${entity.name} drowned`], "Drowning");
   }
 
   private resolveRam(actor: CombatEntity, target: CombatEntity): void {
