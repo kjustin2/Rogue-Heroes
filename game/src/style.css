@@ -5257,3 +5257,151 @@ body.killcam::after { bottom: 0; }
   .main-menu__buttons { gap: 6px; }
   .main-menu__buttons .menu-action { min-height: 34px; font-size: 0.8rem; }
 }
+
+/* ===========================================================================
+   VISUAL SYSTEM
+   ---------------------------------------------------------------------------
+   The HUD was legible but flat: one weight of type everywhere, every panel the
+   same dark rectangle with a thin gold hairline, and the single most important
+   button on the screen styled exactly like the one next to it. That reads as
+   unfinished however clean it is. This layer adds the three things that were
+   missing — a TYPE SCALE, a PRIMARY ACTION, and a RANK between what you read and
+   what you act on — without touching the layout the UI audit already gates.
+   =========================================================================== */
+
+:root {
+  /* One scale, rem-only, so the UI-scale slider stays a single line of JS. */
+  --fs-micro: 0.62rem;
+  --fs-small: 0.72rem;
+  --fs-body: 0.84rem;
+  --fs-name: 0.95rem;
+  --fs-title: 1.05rem;
+  --radius: 7px;
+  --edge: 1px solid var(--line);
+}
+
+/* --- Panel headers get the display face and an accent rule under them, so every
+       panel announces itself the same way instead of starting mid-sentence. --- */
+.panel-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.16em;
+  color: #d8c79a;
+  padding-bottom: 5px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid rgba(198, 174, 122, 0.22);
+}
+
+/* --- THE PRIMARY ACTION. End Turn is the one button the whole screen exists to
+       reach; it was wearing the same chrome as Menu. Filled, larger, and the only
+       amber-filled control in the HUD. --- */
+.compact-top .end-turn {
+  min-height: 46px;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+  color: #17120a;
+  border-color: rgba(255, 214, 130, 0.9);
+  background:
+    linear-gradient(180deg, #ffd98a, #e8a93c 62%, #c8862a);
+  box-shadow:
+    0 2px 0 rgba(120, 74, 14, 0.9),
+    0 10px 22px rgba(255, 176, 60, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  text-shadow: none;
+}
+.compact-top .end-turn span {
+  color: #4a3208;
+  background: rgba(255, 255, 255, 0.42);
+  border-radius: 4px;
+  padding: 2px 5px;
+  font-size: var(--fs-micro);
+}
+.compact-top .end-turn:hover { filter: brightness(1.06); }
+.compact-top .end-turn:active { transform: translateY(1px); box-shadow: 0 0 0 rgba(0, 0, 0, 0), inset 0 2px 4px rgba(120, 74, 14, 0.4); }
+.compact-top .end-turn[disabled] { filter: saturate(0.25) brightness(0.62); box-shadow: none; }
+
+/* Secondary controls sit back so the primary can come forward. */
+.compact-top .menu-btn { min-height: 34px; font-size: var(--fs-small); opacity: 0.92; }
+
+/* --- TARGET LIST RANK. Hostiles are decisions; cover is context. They were
+       identical rows, which is why a column of seven walls read as filler. --- */
+.target-chip {
+  border-radius: var(--radius);
+  border-left: 3px solid transparent;
+}
+.target-chip .target-chip__name { font-size: var(--fs-body); font-weight: 650; }
+.target-chip .target-chip__detail {
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.target-chip.hostile {
+  border-left-color: rgba(255, 109, 87, 0.85);
+  background:
+    linear-gradient(90deg, rgba(255, 109, 87, 0.13), rgba(255, 109, 87, 0) 42%),
+    rgba(14, 12, 10, 0.72);
+}
+.target-chip.hostile .target-chip__name { color: #ffd9cf; }
+/* Cover is quieter in every channel: no accent edge, smaller, dimmer. */
+.target-chip.neutral {
+  opacity: 0.78;
+  min-height: 28px;
+  background: rgba(12, 14, 16, 0.5);
+}
+.target-chip.neutral .target-chip__name { font-size: var(--fs-small); font-weight: 550; }
+.target-chip.hostile:hover, .target-chip.neutral:hover { opacity: 1; filter: brightness(1.12); }
+.target-chip.selected { border-left-color: var(--amber); box-shadow: inset 0 0 0 1px rgba(255, 202, 107, 0.5); }
+
+/* --- PART BUTTONS are the actual choice being made in the order bar, and they
+       were styled as tags. Give them the weight of a control. --- */
+.commandbar .part-btn,
+.commandbar [data-part] {
+  min-height: 30px;
+  padding: 5px 11px;
+  border-radius: var(--radius);
+  font-size: var(--fs-small);
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  transition: transform 100ms ease-out, filter 100ms ease-out;
+}
+.commandbar [data-part]:hover { transform: translateY(-1px); filter: brightness(1.14); }
+.commandbar [data-part]:active { transform: translateY(1px); }
+
+/* --- Names read one step above their metadata everywhere. --- */
+.unit-line .unit-name { font-size: var(--fs-name); font-weight: 650; }
+.order-head h2 { font-family: var(--font-display); font-size: var(--fs-title); letter-spacing: 0.02em; }
+
+/* --- The part choice IS the decision in the order bar. It was a tag; it is a
+       control now, and the active one is unmistakably filled rather than merely
+       outlined — outline-only selection is the thing that reads as a prototype. --- */
+.commandbar .part-choice {
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  font-size: var(--fs-small);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  transition: transform 100ms ease-out, filter 100ms ease-out;
+}
+.commandbar .part-choice:hover:not([disabled]) { transform: translateY(-1px); filter: brightness(1.16); }
+.commandbar .part-choice:active:not([disabled]) { transform: translateY(1px); }
+.commandbar .part-choice.active {
+  color: #17120a;
+  border-color: rgba(255, 214, 130, 0.95);
+  background: linear-gradient(180deg, #ffd98a, #e0a63c);
+  box-shadow: 0 2px 0 rgba(120, 74, 14, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  text-shadow: none;
+}
+.commandbar .part-choice.blocked { border-color: rgba(255, 135, 95, 0.6); }
+
+/* --- The condition strip was a full-width hairline, which reads as a divider
+       between rows rather than as a meter. Bounded width and a visible track. --- */
+.unit-line--sub .unit-health {
+  flex: 0 1 74px;
+  max-width: 74px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(4, 8, 10, 0.85);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+}

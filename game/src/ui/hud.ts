@@ -1,4 +1,4 @@
-import type { Vec2 } from "../core/math";
+import { dist, type Vec2 } from "../core/math";
 import { isBuildingKind, isDefenseKind, isInfantryKind, type CombatEntity, type DamagePart, type InfantryStance } from "../game/damageModel";
 import {
   POP_CAP,
@@ -339,8 +339,14 @@ export class Hud {
     const target = this.targetId ? this.sim.entity(this.targetId) : undefined;
     const friendlyDetails = this.friendlyDetailsId ? this.sim.entity(this.friendlyDetailsId) : undefined;
     const playerUnits = this.sim.entities.filter((entity) => entity.team === "player");
-    const enemies = this.sim.entities.filter((entity) => entity.team === "enemy");
-    const cover = this.sim.entities.filter((entity) => entity.team === "neutral");
+    // Nearest first. With a distance on every row, an ordered list turns "seven identical walls"
+    // into "the wall in front of me, then the next one".
+    const byRange = (a: CombatEntity, b: CombatEntity): number => {
+      if (!actor) return 0;
+      return dist(actor.position, a.position) - dist(actor.position, b.position);
+    };
+    const enemies = this.sim.entities.filter((entity) => entity.team === "enemy").sort(byRange);
+    const cover = this.sim.entities.filter((entity) => entity.team === "neutral").sort(byRange);
     // Only open the target drawer when the selected actor can actually perform the armed
     // attack — never for the Home Base (which has its own command deck and cannot attack).
     const targetPanelOpen = !target && Boolean(actor) && actionVisible(this.action, actor, this.sim);
@@ -746,10 +752,23 @@ function targetChip(entity: CombatEntity, selected: boolean, actor: CombatEntity
     : preview?.blockedByGround
       ? `${entity.name} is behind high ground; low shots may hit the map first.`
     : `${entity.name}: ${kindLabel(entity)}, ${statusText(entity)}.`;
+  // DISTANCE IS WHAT MAKES THE LIST READABLE. Seven rows all saying "Wall Block · Ready" carry no
+  // information at all — you cannot tell which one you mean, so the panel reads as filler. The
+  // range to the selected actor distinguishes every row, and it is the number you were going to
+  // want anyway. Hostiles keep their block/status line; cover, which never has one, shows range.
+  const range = actor ? dist(actor.position, entity.position) : undefined;
+  const detail = blocked
+    ? `Blocked by ${escapeHtml(blocked.name)}`
+    : preview?.blockedByGround
+      ? "Blocked by High Ground"
+      : entity.team === "neutral"
+        ? (range === undefined ? kindLabel(entity) : `${range.toFixed(0)}m`)
+        : statusText(entity);
+  const hostile = entity.team !== "neutral";
   return `
-    <button class="target-chip ${selected ? "selected" : ""} ${entity.status.alive ? "" : "dead"}" data-select="${entity.id}" data-tip="${escapeAttr(tip)}">
-      <span>${escapeHtml(entity.name)}</span>
-      <span>${blocked ? `Blocked by ${escapeHtml(blocked.name)}` : preview?.blockedByGround ? "Blocked by High Ground" : statusText(entity)}</span>
+    <button class="target-chip ${hostile ? "hostile" : "neutral"} ${selected ? "selected" : ""} ${entity.status.alive ? "" : "dead"}" data-select="${entity.id}" data-tip="${escapeAttr(tip)}">
+      <span class="target-chip__name">${escapeHtml(entity.name)}</span>
+      <span class="target-chip__detail">${detail}</span>
     </button>
   `;
 }
