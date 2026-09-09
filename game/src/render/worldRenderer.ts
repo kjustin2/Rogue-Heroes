@@ -4754,46 +4754,111 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
 // cut by the frame edge. Tried at 0.92, 0.62 and 0.58 of the map's long axis and at three
 // brightnesses. If it is revisited, it needs a camera that shows the horizon, not a nearer prop.)
 
+/**
+ * TERRAIN AS ROCK, NOT AS BOXES.
+ *
+ * Every rise on the board was a grey box with a lighter lid. On a tactics camera that is most of
+ * what you look at, and a box reads as a placeholder however well it is lit — it is the single
+ * biggest reason the battlefields looked unfinished. Each block is now a rock MASS: the body, a
+ * ring of canted talus wedges skirting its base, and a scatter of outcrops broken over its rim.
+ * Every piece is derived deterministically from the block's own footprint, so a map always looks
+ * like itself and nothing here is random per frame.
+ *
+ * Gameplay is untouched. The sim reads terrain from the authored rectangles and heights; the talus
+ * and outcrops sit strictly INSIDE the block's own silhouette in plan, or below its top, so no
+ * added shape can be mistaken for standable ground or change a single collision.
+ *
+ * Everything merges into two meshes (sides, caps). That keeps the whole terrain layer at two draw
+ * calls no matter how many blocks a map authors, and it structurally prevents the cap-overlap
+ * shadow bug: there is only ever one cap mesh, so no two caps can fight in the depth pass.
+ */
 function makeTerrainBlocks(groundColor: number, accentColor: number, surface: GroundSurface): THREE.Group {
   const group = new THREE.Group();
   const sideColor = new THREE.Color(groundColor).multiplyScalar(0.66);
-  // The cap used to be a near-white tint of the accent, which made every mesa read as a pale slab
-  // sitting ON the battlefield rather than a rise OF it. Keeping it near the ground tone and
-  // sharing the ground texture ties them together; the lit/shadowed side faces carry the height
-  // read instead, which is what the stronger key light is for.
+  // The cap stays near the ground tone so a mesa reads as a rise OF the battlefield rather than a
+  // pale slab sitting on it; the lit and shadowed rock faces carry the height read instead.
   const capColor = new THREE.Color(accentColor).lerp(new THREE.Color(groundColor), 0.45);
-  const sideMaterial = new THREE.MeshStandardMaterial({ color: sideColor, roughness: 0.95, metalness: 0.03 });
-  // polygonOffset keeps the cap's top from z-fighting the body when surfaces nearly coincide.
-  const capMaterial = new THREE.MeshStandardMaterial({ map: surface.map, normalMap: surface.normalMap, normalScale: new THREE.Vector2(0.45, 0.45), color: capColor, roughness: 0.9, metalness: 0.03, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   const CAP = 0.1;
+
+  const sides: THREE.BufferGeometry[] = [];
+  const caps: THREE.BufferGeometry[] = [];
+  const push = (
+    into: THREE.BufferGeometry[],
+    sx: number, sy: number, sz: number,
+    x: number, y: number, z: number,
+    yaw = 0, tilt = 0, bevel = 0.12,
+  ): void => {
+    const geo = new RoundedBoxGeometry(sx, sy, sz, 1, Math.min(Math.min(sx, sy, sz) * 0.45, bevel));
+    geo.applyMatrix4(new THREE.Matrix4().makeRotationZ(tilt));
+    geo.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw).setPosition(x, y, z));
+    into.push(geo);
+  };
+
   for (const block of terrainBlocks()) {
     const w = block.maxX - block.minX;
     const d = block.maxZ - block.minZ;
     const cx = (block.minX + block.maxX) / 2;
     const cz = (block.minZ + block.maxZ) / 2;
-    // The body stops one cap-thickness short of the top; the cap sits flush on top of it so no
-    // two same-facing surfaces share the block-top plane (the source of the zoom z-fighting).
     const bodyHeight = Math.max(0.05, block.height - CAP);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(w, bodyHeight, d), sideMaterial);
-    body.position.set(cx, bodyHeight / 2, cz);
-    body.castShadow = true;
-    body.receiveShadow = true;
-    group.add(body);
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, CAP, d + 0.02), capMaterial);
-    cap.position.set(cx, block.height - CAP / 2, cz);
-    cap.receiveShadow = true;
-    // The cap does NOT cast. It overhangs its block by 1cm on each side so the top edge reads, which
-    // means neighbouring caps in a stepped mesa OVERLAP — and two coplanar surfaces fighting in the
-    // shadow depth pass is what painted long striped bands of alternating shadow across the ground
-    // on every map. The body beneath casts the same footprint, so nothing is lost.
-    cap.castShadow = false;
-    group.add(cap);
-    const edges = new THREE.LineSegments(
-      new THREE.EdgesGeometry(body.geometry),
-      new THREE.LineBasicMaterial({ color: 0x04070a, transparent: true, opacity: 0.42 })
-    );
-    edges.position.copy(body.position);
-    group.add(edges);
+    // BATTERED PROFILE. A rise is three stacked tiers that widen toward the ground, so the face
+    // slopes back like weathered rock instead of standing as a vertical grey wall. The TOP tier
+    // keeps the authored footprint exactly — that is the standable surface and it must not lie —
+    // and only the lower tiers spread, at knee height where they read as talus.
+    //
+    // (An earlier attempt added canted wedges and rim outcrops instead. At tactical distance the
+    // wedges read as flat plates jutting out of the cliff and the outcrops buried themselves in the
+    // cap as dark rectangles. Slope the mass; do not bolt shapes onto it.)
+    const flare = Math.min(0.55, Math.max(0.12, bodyHeight * 0.34));
+    const tiers: [number, number, number][] = [
+      [flare, 0, bodyHeight * 0.3],                 // base — widest
+      [flare * 0.45, bodyHeight * 0.28, bodyHeight * 0.62], // mid
+      [0, bodyHeight * 0.6, bodyHeight],            // top — the authored footprint
+    ];
+    for (const [spread, y0, y1] of tiers) {
+      const h = Math.max(0.05, y1 - y0);
+      push(sides, w + spread * 2, h, d + spread * 2, cx, y0 + h / 2, cz, 0, 0, Math.min(0.22, h * 0.4));
+    }
+
+    push(caps, w + 0.02, CAP, d + 0.02, cx, block.height - CAP / 2, cz, 0, 0, 0.03);
+  }
+
+  const sideGeo = sides.length ? mergeGeometries(sides, false) : null;
+  const capGeo = caps.length ? mergeGeometries(caps, false) : null;
+  for (const g of sides) g.dispose();
+  for (const g of caps) g.dispose();
+
+  if (sideGeo) {
+    const mesh = new THREE.Mesh(sideGeo, new THREE.MeshStandardMaterial({ color: sideColor, roughness: 0.97, metalness: 0.03 }));
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  if (capGeo) {
+    // The caps share the ground's own surface, tiled in world space so a mesa top continues the
+    // terrain rather than wearing a stretched copy of it.
+    rewriteWorldUvs(capGeo, GROUND_TILE);
+    const capMap = surface.map.clone();
+    capMap.needsUpdate = true;
+    capMap.repeat.set(1, 1);
+    const capNormal = surface.normalMap.clone();
+    capNormal.needsUpdate = true;
+    capNormal.repeat.set(1, 1);
+    const mesh = new THREE.Mesh(capGeo, new THREE.MeshStandardMaterial({
+      map: capMap,
+      normalMap: capNormal,
+      normalScale: new THREE.Vector2(0.32, 0.32),
+      color: capColor,
+      roughness: 0.9,
+      metalness: 0.03,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    }));
+    mesh.receiveShadow = true;
+    // Caps still do not cast: see the ledger in CLAUDE.md. One merged mesh makes the old
+    // cap-vs-cap depth fight structurally impossible, but the body casts the same footprint anyway.
+    mesh.castShadow = false;
+    group.add(mesh);
   }
   return group;
 }
