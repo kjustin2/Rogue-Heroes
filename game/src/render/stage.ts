@@ -160,14 +160,14 @@ export class Stage {
     key.shadow.camera.bottom = -SHADOW_RADIUS;
     key.shadow.camera.near = 1;
     key.shadow.camera.far = 120;
-    key.shadow.bias = -0.0008;
+    key.shadow.bias = -0.004;
     // NORMAL BIAS IS SIZED TO THE TEXEL, NOT PICKED BY EYE. The shadow frustum spans 112x68 world
     // units at 2048^2, so one shadow texel is ~5.5cm on the ground. At 0.05 the bias was a tenth of
     // a texel, and the near-flat arena floor under a low sun self-shadowed into regular diagonal
     // banding — the dashes visible across the ground in every screenshot, which read as a texture
     // artefact and are not one. Roughly four texels of normal bias clears it without detaching
     // contact shadows from the units that cast them.
-    key.shadow.normalBias = 0.55;
+    key.shadow.normalBias = 0.9;
     this.keyLight = key;
     this.scene.add(key);
 

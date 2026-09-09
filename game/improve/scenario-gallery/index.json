@@ -2,13 +2,9 @@
   "count": 9,
   "consoleErrors": [],
   "imageFlags": [
-    "roster: MONOCHROME (77% of colour in one hue)",
-    "base-defense: FLAT (contrast 0.0779)",
-    "base-defense: MONOCHROME (94% of colour in one hue)",
-    "stress: FLAT (contrast 0.0746)",
-    "stress: MONOCHROME (96% of colour in one hue)",
-    "victory: FLAT (contrast 0.0742)",
-    "victory: NARROW RANGE (0.1939)"
+    "roster: MONOCHROME (80% of colour in one hue)",
+    "victory: FLAT (contrast 0.0676)",
+    "victory: NARROW RANGE (0.1883)"
   ],
   "results": [
     {
@@ -24,16 +20,16 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.2539,
-        "contrast": 0.1104,
-        "range": 0.2912,
-        "meanSat": 0.24,
-        "hueConcentration": 0.7691,
+        "meanLuma": 0.2866,
+        "contrast": 0.1198,
+        "range": 0.2914,
+        "meanSat": 0.2044,
+        "hueConcentration": 0.7959,
         "blownPct": 0.0005,
         "crushedPct": 0
       },
       "flags": [
-        "roster: MONOCHROME (77% of colour in one hue)"
+        "roster: MONOCHROME (80% of colour in one hue)"
       ],
       "file": "roster.png"
     },
@@ -50,12 +46,12 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.3681,
-        "contrast": 0.0941,
-        "range": 0.273,
-        "meanSat": 0.4635,
-        "hueConcentration": 0.6431,
-        "blownPct": 0.0006,
+        "meanLuma": 0.4009,
+        "contrast": 0.0988,
+        "range": 0.2817,
+        "meanSat": 0.498,
+        "hueConcentration": 0.5965,
+        "blownPct": 0.0007,
         "crushedPct": 0
       },
       "flags": [],
@@ -74,11 +70,11 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.3993,
-        "contrast": 0.1196,
-        "range": 0.3147,
-        "meanSat": 0.3793,
-        "hueConcentration": 0.324,
+        "meanLuma": 0.4239,
+        "contrast": 0.1104,
+        "range": 0.3071,
+        "meanSat": 0.4054,
+        "hueConcentration": 0.318,
         "blownPct": 0.0006,
         "crushedPct": 0
       },
@@ -98,11 +94,11 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.3255,
-        "contrast": 0.1126,
-        "range": 0.2861,
-        "meanSat": 0.1604,
-        "hueConcentration": 0.6178,
+        "meanLuma": 0.3199,
+        "contrast": 0.1099,
+        "range": 0.2785,
+        "meanSat": 0.1628,
+        "hueConcentration": 0.6467,
         "blownPct": 0.0009,
         "crushedPct": 0
       },
@@ -122,12 +118,12 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.5868,
-        "contrast": 0.1477,
-        "range": 0.4322,
-        "meanSat": 0.0946,
-        "hueConcentration": 0.4608,
-        "blownPct": 0.0003,
+        "meanLuma": 0.6475,
+        "contrast": 0.1548,
+        "range": 0.4453,
+        "meanSat": 0.0767,
+        "hueConcentration": 0.3697,
+        "blownPct": 0.0004,
         "crushedPct": 0
       },
       "flags": [],
@@ -146,18 +142,15 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.3928,
-        "contrast": 0.0779,
-        "range": 0.2791,
-        "meanSat": 0.416,
-        "hueConcentration": 0.9446,
+        "meanLuma": 0.4567,
+        "contrast": 0.1142,
+        "range": 0.3299,
+        "meanSat": 0.4522,
+        "hueConcentration": 0.68,
         "blownPct": 0.0003,
         "crushedPct": 0
       },
-      "flags": [
-        "base-defense: FLAT (contrast 0.0779)",
-        "base-defense: MONOCHROME (94% of colour in one hue)"
-      ],
+      "flags": [],
       "file": "base-defense.png"
     },
     {
@@ -173,18 +166,15 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.3928,
-        "contrast": 0.0746,
-        "range": 0.2738,
-        "meanSat": 0.4206,
-        "hueConcentration": 0.9633,
+        "meanLuma": 0.4594,
+        "contrast": 0.1135,
+        "range": 0.3292,
+        "meanSat": 0.4573,
+        "hueConcentration": 0.6849,
         "blownPct": 0.0002,
         "crushedPct": 0
       },
-      "flags": [
-        "stress: FLAT (contrast 0.0746)",
-        "stress: MONOCHROME (96% of colour in one hue)"
-      ],
+      "flags": [],
       "file": "stress.png"
     },
     {
@@ -200,17 +190,17 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.2656,
-        "contrast": 0.0742,
-        "range": 0.1939,
-        "meanSat": 0.1186,
-        "hueConcentration": 0.4596,
-        "blownPct": 0.0009,
+        "meanLuma": 0.2756,
+        "contrast": 0.0676,
+        "range": 0.1883,
+        "meanSat": 0.1094,
+        "hueConcentration": 0.4738,
+        "blownPct": 0.0007,
         "crushedPct": 0
       },
       "flags": [
-        "victory: FLAT (contrast 0.0742)",
-        "victory: NARROW RANGE (0.1939)"
+        "victory: FLAT (contrast 0.0676)",
+        "victory: NARROW RANGE (0.1883)"
       ],
       "file": "victory.png"
     },
@@ -227,12 +217,12 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.222,
-        "contrast": 0.0943,
-        "range": 0.2858,
-        "meanSat": 0.136,
-        "hueConcentration": 0.4755,
-        "blownPct": 0.001,
+        "meanLuma": 0.2756,
+        "contrast": 0.1204,
+        "range": 0.2874,
+        "meanSat": 0.1054,
+        "hueConcentration": 0.4286,
+        "blownPct": 0.0009,
         "crushedPct": 0
       },
       "flags": [],

@@ -4536,7 +4536,43 @@ function makeSurroundings(theme: MapTheme, width: number, depth: number, surface
  */
 /** One ground-texture tile per this many world units. Floor, mesa caps and plates all use it. */
 const GROUND_TILE = 11;
-const PLATE_THICKNESS = 0.01;
+/**
+ * A flat, irregular ground blob: a triangle fan whose rim radius wanders per vertex, so the outline
+ * has no straight edge and no corner anywhere on it. Lies in the XZ plane at `y`.
+ */
+function blobGeometry(radius: number, x: number, y: number, z: number, rand: () => number): THREE.BufferGeometry {
+  const segments = 22;
+  const positions = new Float32Array((segments + 2) * 3);
+  const uvs = new Float32Array((segments + 2) * 2);
+  positions[0] = x;
+  positions[1] = y;
+  positions[2] = z;
+  // Two low-frequency waves with random phase keep neighbouring rim vertices correlated, so the
+  // outline undulates instead of turning into a saw.
+  const p1 = rand() * Math.PI * 2;
+  const p2 = rand() * Math.PI * 2;
+  const a1 = 0.16 + rand() * 0.16;
+  const a2 = 0.08 + rand() * 0.12;
+  for (let i = 0; i <= segments; i += 1) {
+    const t = (i % segments) / segments;
+    const angle = t * Math.PI * 2;
+    const r = radius * (1 + Math.sin(angle * 2 + p1) * a1 + Math.sin(angle * 3 + p2) * a2);
+    const o = (i + 1) * 3;
+    positions[o] = x + Math.cos(angle) * r;
+    positions[o + 1] = y;
+    positions[o + 2] = z + Math.sin(angle) * r;
+  }
+  const indices: number[] = [];
+  for (let i = 1; i <= segments; i += 1) indices.push(0, i + 1, i);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  geometry.setAttribute("normal", new THREE.BufferAttribute(new Float32Array((segments + 2) * 3).fill(0), 3));
+  const normal = geometry.getAttribute("normal");
+  for (let i = 0; i < normal.count; i += 1) normal.setXYZ(i, 0, 1, 0);
+  geometry.setIndex(indices);
+  return geometry;
+}
 
 /**
  * Replace a (roughly flat, ground-lying) geometry's UVs with world-space ones at `tile` units per
@@ -4583,29 +4619,20 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
   for (const variant of variants) {
     const parts: THREE.BufferGeometry[] = [];
     for (let i = 0; i < perVariant; i += 1) {
-      // Two overlapping rounded slabs per patch, so the outline is irregular rather than a rectangle.
       const cx = (rand() - 0.5) * width * 0.92;
       const cz = (rand() - 0.5) * depth * 0.92;
-      const spin = rand() * Math.PI;
-      // Four overlapping rounded slabs per patch at scattered angles. Two gave a rectangle with
-      // soft corners, which reads as something PAINTED on the ground; four at spread angles give a
-      // lumpy union outline that reads as the ground itself changing.
-      for (let k = 0; k < 4; k += 1) {
-        const w = 5 + rand() * 11;
-        const d = 4 + rand() * 9;
-        // 2cm thick and topping out exactly at ground level. A patch of ground must never grow a
-        // visible SIDE: at this camera a few centimetres of lit edge reads as a terrace, and a
-        // terrace the player can walk straight over is a lie about the terrain.
-        const geo = new RoundedBoxGeometry(w, PLATE_THICKNESS, d, 1, Math.min(1.4, Math.min(w, d) * 0.3));
-        const m = new THREE.Matrix4()
-          // Stagger each slab of a patch a couple of millimetres in depth. Four overlapping slabs
-          // all topping out at exactly y=0 are COPLANAR where they overlap, and coplanar surfaces
-          // z-fight into a fine parallel hatch — the second of the two striping artefacts on the
-          // ground, and the one the shadow work could never have fixed.
-          .makeRotationY(spin + (rand() - 0.5) * 1.6)
-          .setPosition(cx + (rand() - 0.5) * 7, -k * 0.0018, cz + (rand() - 0.5) * 7);
-        geo.applyMatrix4(m);
-        parts.push(geo);
+      // Three overlapping JITTERED BLOBS per patch. The first version used rotated rounded boxes,
+      // and the union of rectangles has straight edges and sharp corners — at tactical distance
+      // those read as arrowheads and cut corners lying on the ground, i.e. as a rendering glitch
+      // rather than as terrain. A polygon whose every rim vertex is jittered has neither.
+      for (let k = 0; k < 3; k += 1) {
+        parts.push(blobGeometry(
+          6 + rand() * 9,
+          cx + (rand() - 0.5) * 9,
+          -k * 0.0018,
+          cz + (rand() - 0.5) * 9,
+          rand,
+        ));
       }
     }
     const merged = mergeGeometries(parts, false);
@@ -4636,6 +4663,14 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
   }
   return group;
 }
+
+
+// (Removed: a per-map vertical LANDMARK on the horizon. The idea is sound and it is standard
+// composition advice, but it does not survive this camera: pitched down at the board, the frame
+// shows sky in a thin band, so a landmark far enough away to read as scenery is off-frame in
+// almost every shot, and one close enough to be seen intrudes over the rail as an ambiguous mass
+// cut by the frame edge. Tried at 0.92, 0.62 and 0.58 of the map's long axis and at three
+// brightnesses. If it is revisited, it needs a camera that shows the horizon, not a nearer prop.)
 
 function makeTerrainBlocks(groundColor: number, accentColor: number, surface: GroundSurface): THREE.Group {
   const group = new THREE.Group();
