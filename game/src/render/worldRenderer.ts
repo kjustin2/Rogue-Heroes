@@ -916,7 +916,7 @@ export class WorldRenderer {
     const water = makeWaterAndBridges(theme, surface);
     this.waterRipple = (water.userData.ripple as THREE.Texture | undefined) ?? undefined;
     this.sceneryRoot.add(water);
-    this.sceneryRoot.add(makeSurroundings(theme, width, depth, surface));
+    this.sceneryRoot.add(makeSurroundings(theme, width, depth));
 
     // No ground grid: movement is continuous, so a grid describes no rule the player can use and
     // reads as an unfinished prototype. Range rings and move previews carry that information.
@@ -4319,49 +4319,116 @@ function makeGroundTexture(theme: MapTheme): GroundSurface {
     });
   }
 
-  // Cracks. Thin dark branching lines are the single cheapest thing that makes a procedural
-  // ground read as a SURFACE with a history rather than as a gradient — and they give the normal
-  // map something with a hard edge to catch the low key light on.
+  // ---- THE MAP'S OWN SURFACE ----------------------------------------------------------------
+  // Everything above is generic ground: broad tone and weathering. What makes Dust Bowl read as a
+  // dry pan and Ironworks as a slag yard is WHAT IS DRAWN HERE, not the tint applied over it. Five
+  // maps sharing one generator with a different colour is most of why they felt like one map.
+  const kind = theme.surface ?? "cracked";
   ctx.lineCap = "round";
-  for (let i = 0; i < 20; i += 1) {
-    const x0 = rand() * size;
-    const y0 = rand() * size;
-    const steps = 5 + Math.floor(rand() * 7);
-    const step = 14 + rand() * 26;
-    let heading = rand() * Math.PI * 2;
-    const pts: [number, number][] = [[0, 0]];
-    for (let k = 0; k < steps; k += 1) {
-      heading += (rand() - 0.5) * 1.1;
-      const [lx, ly] = pts[pts.length - 1];
-      pts.push([lx + Math.cos(heading) * step, ly + Math.sin(heading) * step]);
-    }
-    const reach = steps * step;
-    const width = 0.8 + rand() * 1.3;
-    const dark = shade(0.5);
-    wrapped(x0, y0, reach, (px, py) => {
-      ctx.strokeStyle = css(dark, 0.3);
-      ctx.lineWidth = width;
-      ctx.beginPath();
-      ctx.moveTo(px, py);
-      for (const [dx, dy] of pts.slice(1)) ctx.lineTo(px + dx, py + dy);
-      ctx.stroke();
-    });
-  }
 
-  // Pebbles and pits: lit crown over a dark seat, so each one reads as a rounded stone half-buried
-  // in the ground once the normal map picks it up.
-  for (let i = 0; i < 900; i += 1) {
-    const x = rand() * size;
-    const y = rand() * size;
-    const r = 2.2 + rand() * 5.2;
-    const lift = rand() < 0.62;
-    const tone = shade(lift ? 1.16 : 0.68, 0.3 + rand() * 0.5);
-    wrapped(x, y, r + 2, (px, py) => {
-      ctx.fillStyle = css(tone, 0.1 + rand() * 0.14);
-      ctx.beginPath();
-      ctx.ellipse(px, py, r, r * (0.6 + rand() * 0.5), rand() * Math.PI, 0, Math.PI * 2);
-      ctx.fill();
-    });
+  if (kind === "cracked" || kind === "ice") {
+    // A branching fracture network. Dry-pan cracks are short, dark and many; ice fractures are
+    // long, pale and few, and they run straighter.
+    const count = kind === "ice" ? 12 : 22;
+    const tone = kind === "ice" ? shade(1.5) : shade(0.5);
+    const alpha = kind === "ice" ? 0.34 : 0.3;
+    for (let i = 0; i < count; i += 1) {
+      const x0 = rand() * size;
+      const y0 = rand() * size;
+      const steps = kind === "ice" ? 8 + Math.floor(rand() * 9) : 5 + Math.floor(rand() * 7);
+      const step = kind === "ice" ? 30 + rand() * 44 : 14 + rand() * 26;
+      let heading = rand() * Math.PI * 2;
+      const pts: [number, number][] = [[0, 0]];
+      for (let k = 0; k < steps; k += 1) {
+        heading += (rand() - 0.5) * (kind === "ice" ? 0.4 : 1.1);
+        const [lx, ly] = pts[pts.length - 1];
+        pts.push([lx + Math.cos(heading) * step, ly + Math.sin(heading) * step]);
+      }
+      const width = kind === "ice" ? 1.4 + rand() * 1.6 : 0.8 + rand() * 1.3;
+      wrapped(x0, y0, steps * step, (px, py) => {
+        ctx.strokeStyle = css(tone, alpha);
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        for (const [dx, dy] of pts.slice(1)) ctx.lineTo(px + dx, py + dy);
+        ctx.stroke();
+      });
+    }
+  } else if (kind === "grass") {
+    // Tufts: short strokes at a shared-ish lean, two tones, dense. No cracks — a meadow has none,
+    // and drawing them anyway is what made the green map read as painted dirt.
+    for (let i = 0; i < 2100; i += 1) {
+      const x = rand() * size;
+      const y = rand() * size;
+      const len = 3 + rand() * 7;
+      // Full-circle lean. A biased range gave every tuft a shared diagonal, and a shared
+      // direction is exactly what makes an 11-unit tile repeat visible as banding.
+      const lean = rand() * Math.PI * 2;
+      const tone = shade(rand() < 0.5 ? 1.2 : 0.72, 0.4 + rand() * 0.5);
+      wrapped(x, y, len + 2, (px, py) => {
+        ctx.strokeStyle = css(tone, 0.18 + rand() * 0.2);
+        ctx.lineWidth = 1 + rand();
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(px + Math.sin(lean) * len, py - Math.cos(lean) * len);
+        ctx.stroke();
+      });
+    }
+  } else if (kind === "slag") {
+    // Clinker: angular chips of burnt aggregate, high contrast, no organic curve anywhere.
+    for (let i = 0; i < 1300; i += 1) {
+      const x = rand() * size;
+      const y = rand() * size;
+      const r = 2 + rand() * 6;
+      const dark = rand() < 0.55;
+      const tone = shade(dark ? 0.5 : 1.3, rand() * 0.4);
+      const spin = rand() * Math.PI;
+      wrapped(x, y, r + 2, (px, py) => {
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(spin);
+        ctx.fillStyle = css(tone, 0.2 + rand() * 0.3);
+        ctx.beginPath();
+        ctx.moveTo(-r, -r * 0.5);
+        ctx.lineTo(r * 0.7, -r);
+        ctx.lineTo(r, r * 0.6);
+        ctx.lineTo(-r * 0.5, r);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+  } else {
+    // Flagstones: an irregular grid of broken slabs with dark joints and a lit top edge each.
+    const cell = 74;
+    const joint = shade(0.42);
+    const lip = shade(1.28);
+    for (let gx = 0; gx < size / cell; gx += 1) {
+      for (let gy = 0; gy < size / cell; gy += 1) {
+        const jx = (rand() - 0.5) * cell * 0.3;
+        const jy = (rand() - 0.5) * cell * 0.3;
+        const w = cell * (0.62 + rand() * 0.3);
+        const h = cell * (0.62 + rand() * 0.3);
+        const px = gx * cell + cell / 2 + jx;
+        const py = gy * cell + cell / 2 + jy;
+        const spin = (rand() - 0.5) * 0.14;
+        wrapped(px, py, cell, (dx, dy) => {
+          ctx.save();
+          ctx.translate(dx, dy);
+          ctx.rotate(spin);
+          ctx.strokeStyle = css(joint, 0.34);
+          ctx.lineWidth = 2.4 + rand() * 1.6;
+          ctx.strokeRect(-w / 2, -h / 2, w, h);
+          ctx.strokeStyle = css(lip, 0.22);
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.moveTo(-w / 2, -h / 2);
+          ctx.lineTo(w / 2, -h / 2);
+          ctx.stroke();
+          ctx.restore();
+        });
+      }
+    }
   }
 
   // Fine grain so the surface does not read as smooth plastic when the camera is close.
@@ -4453,7 +4520,7 @@ function makeNormalMap(albedo: Uint8ClampedArray, size: number): THREE.CanvasTex
   return texture;
 }
 
-function makeSurroundings(theme: MapTheme, width: number, depth: number, surface: GroundSurface): THREE.Group {
+function makeSurroundings(theme: MapTheme, width: number, depth: number): THREE.Group {
   const group = new THREE.Group();
   group.name = "surroundings";
   const ground = new THREE.Color(theme.ground);
@@ -4467,15 +4534,14 @@ function makeSurroundings(theme: MapTheme, width: number, depth: number, surface
   // and it costs one multiply. The plain drops to a third of the arena's value and cools toward
   // fog, so the arena reads as a lit stage without a single extra draw call.
   const plainColor = ground.clone().lerp(fog, 0.3).multiplyScalar(0.34);
-  // Carries the SAME ground texture as the arena floor (tiled to match world scale), so the
-  // battlefield reads as a marked-out part of a landscape rather than a lit diorama sitting on a
-  // separate, differently-coloured table.
-  const plainMap = surface.map.clone();
-  plainMap.needsUpdate = true;
-  plainMap.repeat.set((width * 9) / GROUND_TILE, (depth * 9) / GROUND_TILE);
+  // NO TEXTURE OUT HERE. The plain is nine times the arena's extent, so tiling the ground detail
+  // across it minified the texture into aliasing hash — the fine dashed hatching that has been in
+  // every screenshot of this game and that survived three rounds of texture tuning, two shadow-bias
+  // changes and a shadow-frustum rewrite, because none of those were where it lived. A surface
+  // meant to recede into fog wants a flat tone anyway.
   const plain = new THREE.Mesh(
     new THREE.PlaneGeometry(width * 9, depth * 9),
-    new THREE.MeshStandardMaterial({ map: plainMap, color: plainColor, roughness: 1, metalness: 0 }),
+    new THREE.MeshStandardMaterial({ color: plainColor, roughness: 1, metalness: 0 }),
   );
   plain.rotation.x = -Math.PI / 2;
   plain.position.y = -0.22;

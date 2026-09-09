@@ -26,6 +26,7 @@
     "perf:census": "node scripts/perf-census.mjs",
     "audit:unit": "node scripts/probe-unit.mjs",
     "probe:shadow": "node scripts/probe-shadow.mjs",
+    "probe:ground": "node scripts/probe-ground.mjs",
     "vision": "node improve/vision.mjs",
     "smoke:electron": "electron scripts/smoke-electron.cjs",
     "test:play": "npm run build && npm run smoke:electron",

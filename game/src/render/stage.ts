@@ -160,14 +160,19 @@ export class Stage {
     key.shadow.camera.bottom = -SHADOW_RADIUS;
     key.shadow.camera.near = 1;
     key.shadow.camera.far = 120;
-    key.shadow.bias = -0.004;
-    // NORMAL BIAS IS SIZED TO THE TEXEL, NOT PICKED BY EYE. The shadow frustum spans 112x68 world
+    key.shadow.bias = -0.001;
+    // Normal bias is sized to the shadow TEXEL, not picked by eye: the frustum spans 84 world units
+    // at 2048^2, so a texel is ~4cm and a tenth-of-a-texel bias self-shadows the near-flat arena.
+    // These were briefly pushed far higher (0.9 / -0.004) while chasing a hatching artefact that
+    // turned out to live in the outer plain's minified texture, not in the shadow pass at all —
+    // pulled back here so small props keep a cast shadow that touches them.
+    // Original note: The shadow frustum spans 112x68 world
     // units at 2048^2, so one shadow texel is ~5.5cm on the ground. At 0.05 the bias was a tenth of
     // a texel, and the near-flat arena floor under a low sun self-shadowed into regular diagonal
     // banding — the dashes visible across the ground in every screenshot, which read as a texture
     // artefact and are not one. Roughly four texels of normal bias clears it without detaching
     // contact shadows from the units that cast them.
-    key.shadow.normalBias = 0.9;
+    key.shadow.normalBias = 0.3;
     this.keyLight = key;
     this.scene.add(key);
 

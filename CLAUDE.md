@@ -190,7 +190,15 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   68% of every surface with a light salmon, so enemy armour, walls and HQs all came out pale pink.
   The team read is carried by the marker ring, the accent trim and the emissive glow; a hull only
   has to sit in the right hue family. See `setFactionTints`/`roleColor`.
-- **TWO different striping artefacts have looked identical on the ground.** Both are fixed; both
+- **THE OUTER PLAIN CARRIES NO TILED TEXTURE.** It is nine times the arena's extent; tiling the
+  ground detail across it minifies the texture into aliasing hash, which reads as fine dashed
+  hatching over half the board. That artefact was in every screenshot of this game and survived
+  three rounds of texture tuning, two shadow-bias changes and a shadow-frustum rewrite, because
+  none of those were where it lived. `npm run probe:ground <scenario>` is what found it: it strips
+  the albedo, then the normal map, then the particle bed, one at a time — the arena went clean and
+  the surround did not, which named the culprit in one run. A surface meant to recede into fog
+  wants a flat tone anyway.
+- **TWO more striping artefacts have looked identical on the ground.** Both are fixed; both
   will come back if their cause is reintroduced. (1) SHADOW ACNE on the near-flat arena under a low
   sun — `shadow.normalBias` has to be several shadow texels, not a tenth of one; 0.55 is the
   measured floor and anything under ~0.5 brings the bands back. (2) COPLANAR Z-FIGHT between the

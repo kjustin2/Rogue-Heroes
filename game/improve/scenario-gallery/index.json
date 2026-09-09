@@ -3,8 +3,8 @@
   "consoleErrors": [],
   "imageFlags": [
     "roster: MONOCHROME (80% of colour in one hue)",
-    "victory: FLAT (contrast 0.0676)",
-    "victory: NARROW RANGE (0.1883)"
+    "victory: FLAT (contrast 0.0706)",
+    "victory: NARROW RANGE (0.1892)"
   ],
   "results": [
     {
@@ -20,12 +20,12 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.2866,
-        "contrast": 0.1198,
-        "range": 0.2914,
-        "meanSat": 0.2044,
-        "hueConcentration": 0.7959,
-        "blownPct": 0.0005,
+        "meanLuma": 0.2604,
+        "contrast": 0.108,
+        "range": 0.277,
+        "meanSat": 0.2179,
+        "hueConcentration": 0.8006,
+        "blownPct": 0.0006,
         "crushedPct": 0
       },
       "flags": [
@@ -46,11 +46,11 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.4009,
-        "contrast": 0.0988,
-        "range": 0.2817,
-        "meanSat": 0.498,
-        "hueConcentration": 0.5965,
+        "meanLuma": 0.3909,
+        "contrast": 0.1,
+        "range": 0.2842,
+        "meanSat": 0.4885,
+        "hueConcentration": 0.5973,
         "blownPct": 0.0007,
         "crushedPct": 0
       },
@@ -70,11 +70,11 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.4239,
-        "contrast": 0.1104,
-        "range": 0.3071,
-        "meanSat": 0.4054,
-        "hueConcentration": 0.318,
+        "meanLuma": 0.4218,
+        "contrast": 0.1113,
+        "range": 0.3091,
+        "meanSat": 0.4049,
+        "hueConcentration": 0.3157,
         "blownPct": 0.0006,
         "crushedPct": 0
       },
@@ -94,11 +94,11 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.3199,
-        "contrast": 0.1099,
-        "range": 0.2785,
-        "meanSat": 0.1628,
-        "hueConcentration": 0.6467,
+        "meanLuma": 0.3174,
+        "contrast": 0.111,
+        "range": 0.2836,
+        "meanSat": 0.1649,
+        "hueConcentration": 0.6315,
         "blownPct": 0.0009,
         "crushedPct": 0
       },
@@ -118,11 +118,11 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.6475,
-        "contrast": 0.1548,
-        "range": 0.4453,
-        "meanSat": 0.0767,
-        "hueConcentration": 0.3697,
+        "meanLuma": 0.6478,
+        "contrast": 0.1556,
+        "range": 0.4455,
+        "meanSat": 0.0777,
+        "hueConcentration": 0.3666,
         "blownPct": 0.0004,
         "crushedPct": 0
       },
@@ -142,11 +142,11 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.4567,
-        "contrast": 0.1142,
-        "range": 0.3299,
-        "meanSat": 0.4522,
-        "hueConcentration": 0.68,
+        "meanLuma": 0.463,
+        "contrast": 0.106,
+        "range": 0.2927,
+        "meanSat": 0.4555,
+        "hueConcentration": 0.6875,
         "blownPct": 0.0003,
         "crushedPct": 0
       },
@@ -166,11 +166,11 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.4594,
-        "contrast": 0.1135,
-        "range": 0.3292,
-        "meanSat": 0.4573,
-        "hueConcentration": 0.6849,
+        "meanLuma": 0.4661,
+        "contrast": 0.1048,
+        "range": 0.2927,
+        "meanSat": 0.4612,
+        "hueConcentration": 0.693,
         "blownPct": 0.0002,
         "crushedPct": 0
       },
@@ -190,17 +190,17 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.2756,
-        "contrast": 0.0676,
-        "range": 0.1883,
-        "meanSat": 0.1094,
-        "hueConcentration": 0.4738,
-        "blownPct": 0.0007,
+        "meanLuma": 0.2745,
+        "contrast": 0.0706,
+        "range": 0.1892,
+        "meanSat": 0.1127,
+        "hueConcentration": 0.5435,
+        "blownPct": 0.0009,
         "crushedPct": 0
       },
       "flags": [
-        "victory: FLAT (contrast 0.0676)",
-        "victory: NARROW RANGE (0.1883)"
+        "victory: FLAT (contrast 0.0706)",
+        "victory: NARROW RANGE (0.1892)"
       ],
       "file": "victory.png"
     },
@@ -217,12 +217,12 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.2756,
-        "contrast": 0.1204,
-        "range": 0.2874,
-        "meanSat": 0.1054,
-        "hueConcentration": 0.4286,
-        "blownPct": 0.0009,
+        "meanLuma": 0.2576,
+        "contrast": 0.1109,
+        "range": 0.2852,
+        "meanSat": 0.1099,
+        "hueConcentration": 0.4193,
+        "blownPct": 0.001,
         "crushedPct": 0
       },
       "flags": [],

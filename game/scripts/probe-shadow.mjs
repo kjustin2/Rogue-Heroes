@@ -30,13 +30,16 @@ try {
   });
   console.log("caster groups:", JSON.stringify(groups));
 
+  let step = 0;
   for (const g of groups) {
     await page.evaluate((uuid) => {
       const root = window.__rht.sceneRoot();
       root.traverse((o) => { if (o.uuid === uuid) o.traverse((m) => { if (m.isMesh) m.castShadow = false; }); });
     }, g.uuid);
     await delay(500);
-    await page.screenshot({ path: `shots/probe-s-off-${g.name}-${g.casters}.png` });
+    const safe = g.name.replace(/[^a-z0-9]+/gi, "_");
+    await page.screenshot({ path: `shots/probe-s-${String(step).padStart(2, "0")}-${safe}-${g.casters}.png` });
+    step += 1;
     console.log("  off:", g.name, g.casters);
   }
 } finally { await close(); }
