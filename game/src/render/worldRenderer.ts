@@ -9,7 +9,7 @@ import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/
 import { OVERWATCH_ARC_HALF } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec } from "../game/maps";
 import { ARENA_BOUNDS, arenaDepth, arenaWidth, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
-import { instantiate, modelsVersion, type ModelKey } from "./models";
+import { instantiate, kitGeometry, modelsVersion, type KitPart, type ModelKey } from "./models";
 
 type PartMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
 
@@ -1565,7 +1565,7 @@ export class WorldRenderer {
     // what gives the trooper a shoulder line and a shadow under the chest -- a single cylinder
     // reads as a bottle no matter how it is lit.
     this.cylinder(rig, entity, "body", 0.24, 0.5, [0, 0.8, 0], bodyColor, [0, 0, 0], { emissive: teamGlow, emissiveIntensity: 0.03, radiusBottom: 0.27, outline: true });
-    this.box(rig, entity, "body", [0.5, 0.3, 0.34], [0, 1.03, 0], bodyColor, { metalness: 0.14, bevel: 0.26, outline: true });
+    this.box(rig, entity, "body", [0.5, 0.34, 0.36], [0, 1.03, 0], bodyColor, { metalness: 0.14, bevel: 0.26, outline: true, kit: "torso" });
     // Angled breastplate over it, with a glowing core seam.
     this.box(rig, entity, "body", [0.42, 0.34, 0.11], [0, 0.99, 0.18], trimColor, { metalness: 0.3, rotation: [-0.16, 0, 0], bevel: 0.24 });
     this.box(rig, entity, "body", [0.12, 0.2, 0.05], [0, 0.98, 0.245], 0x10171a, { emissive: teamGlow, emissiveIntensity: 0.21, rotation: [-0.16, 0, 0] });
@@ -1736,7 +1736,7 @@ export class WorldRenderer {
       // A rifle, not a plank: receiver, a slimmer barrel with a muzzle device, a magazine
       // hanging below, a stock behind the grip and a low optic on top. This is the shape the
       // player sees on the most common unit in the game, so it earns the extra meshes.
-      this.box(rig, entity, "rifle", [0.115, 0.15, 0.52], [0.45, 0.93, 0.2], trimColor, { metalness: 0.34, bevel: 0.22 });
+      this.box(rig, entity, "rifle", [0.14, 0.2, 0.86], [0.45, 0.93, 0.26], trimColor, { metalness: 0.34, bevel: 0.22, kit: "rifle" });
       this.cylinder(rig, entity, "rifle", 0.032, 0.46, [0.45, 0.95, 0.63], 0x1d2529, [Math.PI / 2, 0, 0], { metalness: 0.44 });
       this.box(rig, entity, "rifle", [0.07, 0.07, 0.11], [0.45, 0.95, 0.88], 0x11181b, { metalness: 0.5, bevel: 0.3 });
       this.box(rig, entity, "rifle", [0.075, 0.19, 0.11], [0.45, 0.81, 0.16], 0x232c31, { metalness: 0.3, bevel: 0.26 });
@@ -1750,7 +1750,7 @@ export class WorldRenderer {
       this.box(rig, entity, "head", [0.346, 0.07, 0.115], [0, 1.39, 0.22], 0x141819, { accent: true });
       this.box(rig, entity, "head", [0.065, 0.08, 0.05], [0.2, 1.46, 0.1], 0x8df0ff, { accent: true, emissive: 0x5ff1ff, emissiveIntensity: 0.29 });
     }
-    this.box(rig, entity, "pack", [0.36, 0.42, 0.17], [0, 0.84, -0.29], packColor, entity.kind === "grenadier" ? { emissive: 0xff7d26, emissiveIntensity: 0.26 } : {});
+    this.box(rig, entity, "pack", [0.38, 0.44, 0.2], [0, 0.84, -0.3], packColor, entity.kind === "grenadier" ? { emissive: 0xff7d26, emissiveIntensity: 0.26, kit: "pack" } : { kit: "pack" });
     // Team-lit status lamp on the pack. (No twin tanks / comm nub — invisible at tactics
     // zoom and each small mesh is a draw call across a 40-unit battle.)
     this.box(rig, entity, "pack", [0.1, 0.14, 0.06], [-0.22, 1.04, -0.38], 0xbcd4dc, { emissive: teamGlow, emissiveIntensity: 0.18 });
@@ -1774,8 +1774,8 @@ export class WorldRenderer {
     }
     this.cylinder(rig, entity, "legs", 0.095, 0.52, [-0.18, 0.26, 0], 0x162225, [0, 0, 0], { radiusBottom: 0.075, outline: true }).userData.limb = "leg-l";
     this.cylinder(rig, entity, "legs", 0.095, 0.52, [0.18, 0.26, 0], 0x162225, [0, 0, 0], { radiusBottom: 0.075, outline: true }).userData.limb = "leg-r";
-    this.box(rig, entity, "legs", [0.2, 0.11, 0.3], [-0.18, 0.055, 0.07], 0x101516, { metalness: 0.14 }).userData.limb = "leg-l";
-    this.box(rig, entity, "legs", [0.2, 0.11, 0.3], [0.18, 0.055, 0.07], 0x101516, { metalness: 0.14 }).userData.limb = "leg-r";
+    this.box(rig, entity, "legs", [0.22, 0.14, 0.32], [-0.18, 0.07, 0.06], 0x101516, { metalness: 0.14, kit: "boot" }).userData.limb = "leg-l";
+    this.box(rig, entity, "legs", [0.22, 0.14, 0.32], [0.18, 0.07, 0.06], 0x101516, { metalness: 0.14, kit: "boot" }).userData.limb = "leg-r";
   }
 
   // The HQ was a salmon-red block: at the tactical camera it read as a lump of pink plastic, and
@@ -2144,15 +2144,25 @@ export class WorldRenderer {
       bevel?: number;
       /** Trace this mesh with a dark edge outline. Costs a draw call; silhouette shapes only. */
       outline?: boolean;
+      /**
+       * Use a Blender-authored shape from the infantry kit instead of a rounded box. The kit mesh
+       * is normalised to a unit cube, so `size` still means exactly what it means for a box — and
+       * if the GLB is missing or still loading, this silently stays a box. Shape comes from art;
+       * proportion stays here.
+       */
+      kit?: KitPart;
     } = {}
   ): PartMesh {
     const roughness = materialOptions.roughness ?? 0.62;
     const metalness = materialOptions.metalness ?? 0.08;
+    const authored = materialOptions.kit ? kitGeometry(materialOptions.kit) : undefined;
     const mesh = new THREE.Mesh(
-      beveledBox(size[0], size[1], size[2], materialOptions.bevel),
+      authored ?? beveledBox(size[0], size[1], size[2], materialOptions.bevel),
       pooledPartMaterial(color, materialOptions.emissive ?? 0x000000, materialOptions.emissiveIntensity ?? 0, roughness, metalness)
     );
     mesh.position.set(pos[0], pos[1], pos[2]);
+    // An authored unit-cube mesh is scaled to the requested size; a box is already that size.
+    if (authored) mesh.scale.set(size[0], size[1], size[2]);
     if (materialOptions.rotation) mesh.rotation.set(materialOptions.rotation[0], materialOptions.rotation[1], materialOptions.rotation[2]);
     mesh.userData.roughness = roughness;
     mesh.userData.metalness = metalness;

@@ -144,3 +144,49 @@ function normalize(root: THREE.Object3D, targetSize: number): THREE.Group {
   });
   return template;
 }
+
+// ---------------------------------------------------------------------------
+// INFANTRY KIT — Blender-authored PART geometry for the procedural trooper rig.
+//
+// The soldier stays a rig of separate meshes on purpose: per-part damage targets
+// each one, the walk cycle and attack choreography swing them from tagged pivots,
+// and the pooled-material system repaints them every frame. A single skinned
+// character would take all three away. So Blender authors the SHAPES and the game
+// keeps the rig — each kit mesh is normalised to a 1x1x1 box centred on the origin
+// so the builder can scale it to whatever size a kit wants, and any part with no
+// authored mesh keeps its procedural rounded box. The game runs with the GLB gone.
+// ---------------------------------------------------------------------------
+export type KitPart = "helmet" | "torso" | "boot" | "rifle" | "pack";
+
+const kit = new Map<string, THREE.BufferGeometry>();
+let kitState: "idle" | "loading" | "ready" | "failed" = "idle";
+
+/** Authored geometry for a part, or undefined — callers fall back to a box. */
+export function kitGeometry(part: KitPart): THREE.BufferGeometry | undefined {
+  if (kitState === "idle") loadInfantryKit();
+  return kit.get(part);
+}
+
+function loadInfantryKit(): void {
+  kitState = "loading";
+  loader.load(
+    "models/infantry-kit.glb",
+    (gltf) => {
+      gltf.scene.traverse((node) => {
+        const mesh = node as THREE.Mesh;
+        if (!mesh.isMesh || !mesh.geometry) return;
+        const geometry = mesh.geometry as THREE.BufferGeometry;
+        // Bake the node's own transform in, drop everything but position+normal, and tag it
+        // shared: one geometry serves every trooper wearing that part.
+        geometry.applyMatrix4(mesh.matrixWorld);
+        geometry.deleteAttribute("uv");
+        geometry.userData.shared = true;
+        kit.set(node.name, geometry);
+      });
+      kitState = "ready";
+      version += 1; // rebuild entity groups so troopers pick the authored shapes up
+    },
+    undefined,
+    () => { kitState = "failed"; },
+  );
+}

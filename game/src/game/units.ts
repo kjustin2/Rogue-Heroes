@@ -144,10 +144,15 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   heavy: foot({ moveRange: 4.8, moveSpeed: 4.8, shotDamage: 8, burst: 10, spread: 4.4, accurateFraction: 0.3, spreadPerMeter: 0.18, accuracyLabel: "machine gun", hpMultiplier: 1.18, aiValue: 5 }),
   grenadier: foot({ moveRange: 6.3, moveSpeed: 5.8, shotDamage: 38, weaponRange: 22, projectile: "grenade", projectileSpeed: 2.05, spread: 7.4, accurateFraction: 0.41, accuracyLabel: "launcher", groundShell: true, aiValue: 7 }),
   mortar: foot({ moveRange: 5.0, moveSpeed: 5.2, shotDamage: 44, weaponRange: 30, projectile: "grenade", projectileSpeed: 2.05, spread: 7.0, accurateFraction: 0.67, accuracyLabel: "mortar", groundShell: true, hpMultiplier: 1.12, aiValue: 8 }),
-  medic: foot({ moveRange: 6.4, moveSpeed: 6.4, shotDamage: 18, weaponRange: 18, accurateFraction: 0.5, aiValue: 8 }),
-  engineer: foot({ moveRange: 5.8, moveSpeed: 5.8, shotDamage: 18, weaponRange: 18, accurateFraction: 0.5, aiValue: 7 }),
+  // THE THREE SUPPORTS USED TO BE ONE UNIT. Medic, engineer and drone operator all sat at 16-18
+  // damage and 16-18 range and differed only by which passive aura they carried, which is invisible
+  // in play — you could swap them and notice nothing until the numbers moved. They now differ in
+  // SHAPE: the medic is a tough short-range body that has to hug the line it heals, the engineer is
+  // the mid-range utility hand, and the drone operator is a long-eyed spotter that cannot fight.
+  medic: foot({ moveRange: 7.0, moveSpeed: 7.0, shotDamage: 11, weaponRange: 11, accurateFraction: 0.55, hpMultiplier: 1.3, aiValue: 8 }),
+  engineer: foot({ moveRange: 5.8, moveSpeed: 5.8, shotDamage: 18, weaponRange: 18, accurateFraction: 0.5, hpMultiplier: 1.1, aiValue: 7 }),
   flamer: foot({ shotDamage: 34, weaponRange: 7.5, accurateFraction: 0.9, aiValue: 4 }),
-  droneop: foot({ shotDamage: 16, weaponRange: 16, accurateFraction: 0.56, aiValue: 4 }),
+  droneop: foot({ moveRange: 6.8, moveSpeed: 6.8, shotDamage: 8, weaponRange: 26, accurateFraction: 0.62, spread: 1.4, spreadPerMeter: 0.08, hpMultiplier: 0.82, accuracyLabel: "marker carbine", aiValue: 4 }),
   // SCATTERGUN. Seven pellets, each rolling its own spread, on a short leash. Projectiles hit
   // whatever they cross rather than only their target, so a wide burst genuinely sweeps a clump —
   // this is a shotgun as a data change, not a new attack path. At 3m nearly every pellet connects
@@ -200,9 +205,9 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "heavy", label: "Heavy Gunner", role: "Suppression", cost: 250, cooldown: 2, tech: "assault", tip: "Ten-round machine-gun bursts. Tough enough to anchor a push, and the cone is wide enough that stray rounds rake anyone standing near the target." },
   { kind: "grenadier", label: "Grenadier", role: "Splash", cost: 250, cooldown: 3, tech: "ordnance", tip: "Arcing launcher with splash that clears cover and clusters." },
   { kind: "mortar", label: "Mortar Team", role: "Indirect", cost: 300, cooldown: 3, tech: "ordnance", tip: "High-arc indirect fire that reaches over walls and ridges; hits hard and takes a beating." },
-  { kind: "medic", label: "Medic", role: "Support", cost: 180, cooldown: 2, tech: "support", tip: "Field aura that heals wounded infantry near it each round." },
+  { kind: "medic", label: "Medic", role: "Frontline Support", cost: 180, cooldown: 2, tech: "support", tip: "Heals wounded infantry near it each round — and the aura is short, so it has to stand in the line it is keeping alive. Tough for a support unit; barely armed." },
   { kind: "engineer", label: "Engineer", role: "Support", cost: 200, cooldown: 2, tech: "support", tip: "Repairs nearby vehicles and the Home Base, and its fire-control rig boosts nearby allies' damage." },
-  { kind: "droneop", label: "Drone Operator", role: "Recon", cost: 210, cooldown: 2, tech: "support", tip: "Fields a hovering recon drone whose optics sharpen nearby allies' fire. Lightly armed." },
+  { kind: "droneop", label: "Drone Operator", role: "Spotter", cost: 210, cooldown: 2, tech: "support", tip: "The longest eyes on the field: a 26m marker carbine and a drone whose optics sharpen nearby allies' fire. Almost no punch and the thinnest armour in the roster — keep it behind everything." },
   { kind: "flamer", label: "Flamer", role: "Burn", cost: 260, cooldown: 2, tech: "ordnance", tip: "Short-range flame projector. Every hit leaves burning ground for 2 turns — crouching won't help, RUN. Shoot its fuel tanks at your peril." },
   { kind: "sapper", label: "Scattergun", role: "Breacher", cost: 240, cooldown: 2, tech: "ordnance", tip: "Seven-pellet scattergun: brutal inside 5m and useless past 10 — the spread sweeps a whole clump at once. Also plants proximity mines ($15 each) and hits cover and walls 3x harder." },
   { kind: "tank", label: "Tank", role: "Armor", cost: 400, cooldown: 3, tech: "armor", tip: "Heavily armored bruiser: massive HP, big gun, and can ram and crush cover." },

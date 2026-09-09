@@ -89,6 +89,30 @@ Two rules that fall out of this and apply beyond hatching:
 - **Bisect before you tune.** Every one of these four was found by turning things off one at a time
   (`probe:shadow`, `probe:ground`), and none was found by adjusting a number and looking.
 
+## Blender-authored infantry parts (`npm run art:kit`)
+
+`art/infantry/author_kit.py` builds the trooper's SHAPES in Blender and exports
+`public/models/infantry-kit.glb`; `kitGeometry()` in `models.ts` loads it async and
+`this.box(..., { kit: "torso" })` uses the authored mesh in place of a rounded box.
+
+**Why parts and not a character.** The soldier has to stay a rig of separate meshes: per-part
+damage targets each one, the walk cycle and attack choreography swing them from tagged pivots, and
+the pooled-material system repaints them every frame. A single skinned character model takes all
+three away — that is why infantry were procedural, and it is still true. So Blender authors the
+shapes and the game keeps the rig.
+
+Rules:
+
+- Every kit mesh is exported **normalised to a 1x1x1 box centred on the origin**, so `size` in
+  `this.box()` still means exactly what it means for a box. **Shape comes from art; proportion stays
+  in `worldRenderer.ts`.**
+- Any part without an authored mesh keeps its procedural box, and a missing/failed GLB is silently
+  ignored — the game runs with `public/models/` empty, as the asset policy requires.
+- Materials are NOT exported (`export_materials="NONE"`): parts are repainted every frame by
+  `paintPart`, so an authored material would be overwritten and would only cost load time.
+- `modelsVersion()` bumps when the kit lands, which rebuilds entity groups so troopers pick the
+  authored shapes up mid-session.
+
 ## Meshy scope (deliberate per-repo exception)
 
 This repo's sanctioned Meshy scope is **hard-surface vehicle/structure/prop hulls**

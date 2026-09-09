@@ -3,8 +3,8 @@
   "consoleErrors": [],
   "imageFlags": [
     "roster: MONOCHROME (80% of colour in one hue)",
-    "victory: FLAT (contrast 0.071)",
-    "victory: NARROW RANGE (0.1866)"
+    "victory: FLAT (contrast 0.0727)",
+    "victory: NARROW RANGE (0.19)"
   ],
   "results": [
     {
@@ -20,11 +20,11 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.26,
-        "contrast": 0.108,
-        "range": 0.2766,
-        "meanSat": 0.2187,
-        "hueConcentration": 0.8022,
+        "meanLuma": 0.2597,
+        "contrast": 0.1076,
+        "range": 0.276,
+        "meanSat": 0.2188,
+        "hueConcentration": 0.8026,
         "blownPct": 0.0005,
         "crushedPct": 0
       },
@@ -46,11 +46,11 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.3909,
-        "contrast": 0.1,
-        "range": 0.2826,
-        "meanSat": 0.4871,
-        "hueConcentration": 0.6019,
+        "meanLuma": 0.3905,
+        "contrast": 0.1001,
+        "range": 0.2834,
+        "meanSat": 0.4869,
+        "hueConcentration": 0.6033,
         "blownPct": 0.0007,
         "crushedPct": 0
       },
@@ -70,11 +70,11 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.4191,
-        "contrast": 0.1108,
+        "meanLuma": 0.419,
+        "contrast": 0.1111,
         "range": 0.3077,
-        "meanSat": 0.4025,
-        "hueConcentration": 0.3068,
+        "meanSat": 0.4026,
+        "hueConcentration": 0.3065,
         "blownPct": 0.0006,
         "crushedPct": 0
       },
@@ -95,10 +95,10 @@
       "stats": {
         "ok": true,
         "meanLuma": 0.3154,
-        "contrast": 0.1107,
-        "range": 0.2796,
-        "meanSat": 0.1649,
-        "hueConcentration": 0.6436,
+        "contrast": 0.1111,
+        "range": 0.2797,
+        "meanSat": 0.165,
+        "hueConcentration": 0.6442,
         "blownPct": 0.0009,
         "crushedPct": 0
       },
@@ -118,12 +118,12 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.6467,
-        "contrast": 0.156,
-        "range": 0.4431,
-        "meanSat": 0.0777,
-        "hueConcentration": 0.3614,
-        "blownPct": 0.0004,
+        "meanLuma": 0.6463,
+        "contrast": 0.1564,
+        "range": 0.4438,
+        "meanSat": 0.0776,
+        "hueConcentration": 0.3597,
+        "blownPct": 0.0005,
         "crushedPct": 0
       },
       "flags": [],
@@ -142,11 +142,11 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.4624,
-        "contrast": 0.106,
-        "range": 0.2925,
-        "meanSat": 0.455,
-        "hueConcentration": 0.6892,
+        "meanLuma": 0.462,
+        "contrast": 0.1064,
+        "range": 0.2928,
+        "meanSat": 0.4547,
+        "hueConcentration": 0.6897,
         "blownPct": 0.0003,
         "crushedPct": 0
       },
@@ -167,10 +167,10 @@
       "stats": {
         "ok": true,
         "meanLuma": 0.4659,
-        "contrast": 0.1049,
+        "contrast": 0.1048,
         "range": 0.2925,
         "meanSat": 0.461,
-        "hueConcentration": 0.694,
+        "hueConcentration": 0.6937,
         "blownPct": 0.0002,
         "crushedPct": 0
       },
@@ -190,17 +190,17 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.2742,
-        "contrast": 0.071,
-        "range": 0.1866,
-        "meanSat": 0.1129,
-        "hueConcentration": 0.5491,
-        "blownPct": 0.0008,
+        "meanLuma": 0.276,
+        "contrast": 0.0727,
+        "range": 0.19,
+        "meanSat": 0.1127,
+        "hueConcentration": 0.5382,
+        "blownPct": 0.001,
         "crushedPct": 0
       },
       "flags": [
-        "victory: FLAT (contrast 0.071)",
-        "victory: NARROW RANGE (0.1866)"
+        "victory: FLAT (contrast 0.0727)",
+        "victory: NARROW RANGE (0.19)"
       ],
       "file": "victory.png"
     },
@@ -217,11 +217,11 @@
       "canvasLit": true,
       "stats": {
         "ok": true,
-        "meanLuma": 0.2591,
-        "contrast": 0.1128,
-        "range": 0.2847,
-        "meanSat": 0.111,
-        "hueConcentration": 0.4157,
+        "meanLuma": 0.2678,
+        "contrast": 0.1168,
+        "range": 0.2877,
+        "meanSat": 0.1092,
+        "hueConcentration": 0.4099,
         "blownPct": 0.0009,
         "crushedPct": 0
       },
