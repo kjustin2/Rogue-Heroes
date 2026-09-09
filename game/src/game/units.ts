@@ -138,14 +138,25 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   scout: foot({ moveRange: 11.5, moveSpeed: 11.8, shotDamage: 22, weaponRange: 22, spread: 3.0, accurateFraction: 0.41, spreadPerMeter: 0.12, accuracyLabel: "carbine", aiValue: 6 }),
   sniper: foot({ moveRange: 6.0, moveSpeed: 6.2, shotDamage: 40, weaponRange: 34, projectileSpeed: 3.8, spread: 0.22, accurateFraction: 0.35, spreadPerMeter: 0.09, accuracyLabel: "marksman", aiValue: 8 }),
   striker: foot({ moveRange: 10.8, moveSpeed: 11.5, shotDamage: 24, accuracyLabel: "sidearm", meleeRange: 0.72, meleeMultiplier: 1, aiValue: 5 }),
-  heavy: foot({ moveRange: 4.8, moveSpeed: 4.8, shotDamage: 18, burst: 4, spread: 3.6, accurateFraction: 0.35, spreadPerMeter: 0.16, accuracyLabel: "auto-cannon", hpMultiplier: 1.18, aiValue: 5 }),
+  // A four-round burst reads as a rifle with a stutter. Ten rounds at lower per-shot damage reads
+  // as a machine gun: same weight of fire, but you SEE the volume, and the wide cone means stray
+  // rounds rake whatever is standing near the target.
+  heavy: foot({ moveRange: 4.8, moveSpeed: 4.8, shotDamage: 8, burst: 10, spread: 4.4, accurateFraction: 0.3, spreadPerMeter: 0.18, accuracyLabel: "machine gun", hpMultiplier: 1.18, aiValue: 5 }),
   grenadier: foot({ moveRange: 6.3, moveSpeed: 5.8, shotDamage: 38, weaponRange: 22, projectile: "grenade", projectileSpeed: 2.05, spread: 7.4, accurateFraction: 0.41, accuracyLabel: "launcher", groundShell: true, aiValue: 7 }),
   mortar: foot({ moveRange: 5.0, moveSpeed: 5.2, shotDamage: 44, weaponRange: 30, projectile: "grenade", projectileSpeed: 2.05, spread: 7.0, accurateFraction: 0.67, accuracyLabel: "mortar", groundShell: true, hpMultiplier: 1.12, aiValue: 8 }),
   medic: foot({ moveRange: 6.4, moveSpeed: 6.4, shotDamage: 18, weaponRange: 18, accurateFraction: 0.5, aiValue: 8 }),
   engineer: foot({ moveRange: 5.8, moveSpeed: 5.8, shotDamage: 18, weaponRange: 18, accurateFraction: 0.5, aiValue: 7 }),
   flamer: foot({ shotDamage: 34, weaponRange: 7.5, accurateFraction: 0.9, aiValue: 4 }),
   droneop: foot({ shotDamage: 16, weaponRange: 16, accurateFraction: 0.56, aiValue: 4 }),
-  sapper: foot({ shotDamage: 26, weaponRange: 14, accurateFraction: 0.64, aiValue: 4 }),
+  // SCATTERGUN. Seven pellets, each rolling its own spread, on a short leash. Projectiles hit
+  // whatever they cross rather than only their target, so a wide burst genuinely sweeps a clump —
+  // this is a shotgun as a data change, not a new attack path. At 3m nearly every pellet connects
+  // (~119); by 12m the cone is wider than a squad and most of it sails past. It is the only weapon
+  // in the roster whose damage is a function of how close you dared to get.
+  // The cone is the widest in the roster but still has to obey the scale rules in scale.test.ts:
+  // spread at MAX range must stay under 12 degrees, or the top of the range is a lie. 8 + 9*0.65*0.22
+  // lands at ~9.3, so every metre of its short reach is a metre it can actually shoot.
+  sapper: foot({ shotDamage: 17, weaponRange: 9, burst: 7, spread: 8, accurateFraction: 0.35, spreadPerMeter: 0.22, accuracyLabel: "scattergun", aiValue: 5 }),
 
   // --- Ground vehicles ---
   tank: u({ moveRange: 5.4, moveSpeed: 5.5, shotDamage: 66, weaponRange: 28, projectile: "shell", projectileSpeed: 2.45, spread: 2.65, accurateFraction: 0.5, accuracyLabel: "stabilized cannon", ramRange: 2.85, groundShell: true, hpMultiplier: 1.3, aiValue: 3 }),
@@ -186,14 +197,14 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "scout", label: "Scout", role: "Recon", cost: 110, cooldown: 1, tech: "recon", tip: "Fast, cheap eyes; its optic relay sharpens nearby allies' fire." },
   { kind: "sniper", label: "Marksman", role: "Sniper", cost: 220, cooldown: 2, tech: "recon", tip: "Long-range precision; deadly to heads and exposed crews." },
   { kind: "striker", label: "Striker", role: "Melee", cost: 180, cooldown: 2, tech: "assault", tip: "Rushes in and strikes hard at close range." },
-  { kind: "heavy", label: "Heavy Gunner", role: "Gunner", cost: 250, cooldown: 2, tech: "assault", tip: "Tough, hard-hitting infantry that anchors a push." },
+  { kind: "heavy", label: "Heavy Gunner", role: "Suppression", cost: 250, cooldown: 2, tech: "assault", tip: "Ten-round machine-gun bursts. Tough enough to anchor a push, and the cone is wide enough that stray rounds rake anyone standing near the target." },
   { kind: "grenadier", label: "Grenadier", role: "Splash", cost: 250, cooldown: 3, tech: "ordnance", tip: "Arcing launcher with splash that clears cover and clusters." },
   { kind: "mortar", label: "Mortar Team", role: "Indirect", cost: 300, cooldown: 3, tech: "ordnance", tip: "High-arc indirect fire that reaches over walls and ridges; hits hard and takes a beating." },
   { kind: "medic", label: "Medic", role: "Support", cost: 180, cooldown: 2, tech: "support", tip: "Field aura that heals wounded infantry near it each round." },
   { kind: "engineer", label: "Engineer", role: "Support", cost: 200, cooldown: 2, tech: "support", tip: "Repairs nearby vehicles and the Home Base, and its fire-control rig boosts nearby allies' damage." },
   { kind: "droneop", label: "Drone Operator", role: "Recon", cost: 210, cooldown: 2, tech: "support", tip: "Fields a hovering recon drone whose optics sharpen nearby allies' fire. Lightly armed." },
   { kind: "flamer", label: "Flamer", role: "Burn", cost: 260, cooldown: 2, tech: "ordnance", tip: "Short-range flame projector. Every hit leaves burning ground for 2 turns — crouching won't help, RUN. Shoot its fuel tanks at your peril." },
-  { kind: "sapper", label: "Sapper", role: "Demo", cost: 240, cooldown: 2, tech: "ordnance", tip: "Plants proximity mines ($15 each) and fires demolition rounds that hit cover and walls 3x harder — fell pillars onto the enemy." },
+  { kind: "sapper", label: "Scattergun", role: "Breacher", cost: 240, cooldown: 2, tech: "ordnance", tip: "Seven-pellet scattergun: brutal inside 5m and useless past 10 — the spread sweeps a whole clump at once. Also plants proximity mines ($15 each) and hits cover and walls 3x harder." },
   { kind: "tank", label: "Tank", role: "Armor", cost: 400, cooldown: 3, tech: "armor", tip: "Heavily armored bruiser: massive HP, big gun, and can ram and crush cover." },
   { kind: "apc", label: "APC", role: "Vehicle", cost: 250, cooldown: 2, tech: "armor", tip: "Fast armored flanker; durable and quick, shrugs off small arms." },
   { kind: "artillery", label: "Artillery", role: "Siege", cost: 440, cooldown: 4, tech: "siege", tip: "Long-range siege gun; devastating at distance and tough, but helpless up close." },

@@ -11,13 +11,17 @@ const kinds = TROOP_CATALOG.map((s) => s.kind);
 // pin the ROLE-BASED rewrite to the hardcoded kind lists it replaced.
 const answersArmor = (kind: EntityKind): boolean => {
   const s = unitStats(kind);
-  return s.groundShell || s.burst >= 4 || s.shotDamage >= 60;
+  // The reach gate is load-bearing: adding a 7-pellet scattergun to the roster made a bare
+  // `burst >= 4` declare a knife-range shotgun an answer to armour, which would have made the AI
+  // believe it was already covered and stop building real ones. Sustained fire counts only with
+  // the range to use it.
+  return s.groundShell || (s.burst >= 4 && s.weaponRange >= 14) || s.shotDamage >= 60;
 };
 const answersAir = (kind: EntityKind): boolean => {
   const s = unitStats(kind);
   if (kind === "gunship" || kind === "interceptor" || kind === "bomber" || kind === "transport") return false;
   if (kind === "flak") return true; // carries the vsAir multiplier
-  return !s.groundShell && (s.shotDamage >= 40 || s.burst >= 4);
+  return !s.groundShell && (s.shotDamage >= 40 || (s.burst >= 4 && s.weaponRange >= 14));
 };
 
 describe("faction-aware AI build logic", () => {

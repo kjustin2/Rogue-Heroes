@@ -3037,6 +3037,16 @@ export class TacticalSim {
    * into a channel goes in, and drowns. That is the one place in the game where terrain kills
    * outright, so it is logged loudly and it cannot happen to a flyer.
    */
+  /** Would a thrown body land inside another one? Mirrors the separation rule movement keeps. */
+  private blockedByBody(mover: CombatEntity, at: Vec2): boolean {
+    for (const other of this.entities) {
+      if (other.id === mover.id || !other.status.alive || other.flying) continue;
+      if (other.kind === "cover") continue; // cover is walked around by the normal path, not by this
+      if (dist(at, other.position) < (mover.radius + other.radius) * 0.95) return true;
+    }
+    return false;
+  }
+
   private applyKnockback(actor: CombatEntity, entity: CombatEntity, point: Vec2, baseDamage: number, falloff: number): void {
     if (!entity.status.alive || entity.flying) return;
     const mass = blastMass(entity);
@@ -3062,6 +3072,9 @@ export class TacticalSim {
       if (pointInWater(next)) { landed = next; drowned = true; break; }
       const height = terrainHeightAt(next);
       if (height - footing > TERRAIN_STEP) break; // slammed into a cliff face; it stops here
+      // ...and stops against another body. Without this the throw shoves units inside each other
+      // and breaks the separation invariant the chaos bot asserts — it caught exactly that.
+      if (this.blockedByBody(entity, next)) break;
       footing = height;
       landed = next;
     }
@@ -3970,7 +3983,11 @@ export class TacticalSim {
   // exactly (tank, artillery, heavy, grenadier, mortar) and is asserted to in factionAi.test.ts.
   private answersArmor(entity: CombatEntity): boolean {
     const stats = unitStats(entity.kind);
-    return stats.groundShell || stats.burst >= 4 || stats.shotDamage >= 60;
+    // `burst >= 4` stood in for "sustained HEAVY fire". A scattergun is sustained LIGHT fire at
+    // knife range, and adding one to the roster made this predicate quietly declare it an answer to
+    // armour — which would have made the AI think it was already covered and stop building real
+    // ones. Sustained fire only counts as an armour answer if it also has the reach to use it.
+    return stats.groundShell || (stats.burst >= 4 && stats.weaponRange >= 14) || stats.shotDamage >= 60;
   }
 
   // Does this GROUND unit answer aircraft? A dedicated anti-air multiplier, or a flat-trajectory
@@ -3981,7 +3998,9 @@ export class TacticalSim {
     if (isAirKind(entity.kind)) return false;
     if (entity.parts.some((part) => part.role === "weapon" && (part.vsAir ?? 1) > 1 && part.hp > 0)) return true;
     const stats = unitStats(entity.kind);
-    return !stats.groundShell && (stats.shotDamage >= 40 || stats.burst >= 4);
+    // Same reach gate as answersArmor: a weapon that cannot reach 14m cannot engage aircraft,
+    // however many rounds it puts out.
+    return !stats.groundShell && (stats.shotDamage >= 40 || (stats.burst >= 4 && stats.weaponRange >= 14));
   }
 
   // Ordered troop wishlist for the enemy commander, reacting to the player's current army.
