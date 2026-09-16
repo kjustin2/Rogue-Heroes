@@ -110,6 +110,10 @@ dashed-hatching glitch (ledger #5 — it was ground plates z-fighting, never a s
 H (weapon-range hairline, cliff-vs-ledge faces, sticky deploy button), guarded frame loop, and the
 sim items **1 jump trooper, 5 wide beam (marksman pierces), 13 gas, 17 slams, 22 damaged parts**.
 
+**2026-09-16:** 12 chain-react, 14 lightning, title diorama + sky, pause→settings, resolve push-in,
+per-kind Blender helmets/weapons/packs for all 13 infantry (`shots:lineup`). Abilities/personality
+per unit are an ideas doc — **`docs/unit-identity-ideas.md`**, pick by number.
+
 Still open from the list: 2 demolitionist, 6 ghost, 7 siege battery, 9 flak shells, 10 faction
 rules, 11 tree-fall sweep (falls exist; sweep damage exists?), 12 chain-react volatiles (gas
 chains; fuel/ammo do not), 14 lightning, 15 moving storm, 16 deployable bridge, 18–21 maps,
