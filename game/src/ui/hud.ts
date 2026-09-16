@@ -1490,17 +1490,22 @@ function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
 
 function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
   const roster = sim.factionOf(base.team).roster;
-  return TROOP_CATALOG.filter((spec) => roster.includes(spec.kind)).map((spec) => {
-    const locked = Boolean(spec.tech) && !isTechUnlocked(base, spec.tech as string);
-    const techName = TECH_TREE.find((n) => n.id === spec.tech)?.name ?? "a doctrine";
-    // Discovery pacing: a locked troop is a CLASSIFIED asset — no name, role, or price. The
-    // only intel is which doctrine declassifies it, so buying a doctrine is a reveal moment.
-    if (locked) {
-      return `<button class="btn confirm disabled classified" data-spawn="${spec.kind}" data-disabled="true" data-tip="${escapeAttr(`Classified asset. Research ${techName} to reveal it.`)}">
-        <span class="classified-name">▮▮▮▮▮▮</span>
-        <span>${escapeHtml(techName)}</span>
-      </button>`;
-    }
+  const specs = TROOP_CATALOG.filter((spec) => roster.includes(spec.kind));
+  const isLocked = (spec: (typeof specs)[number]): boolean => Boolean(spec.tech) && !isTechUnlocked(base, spec.tech as string);
+  // Discovery pacing: a locked troop is a CLASSIFIED asset — no name, role, or price. The only
+  // intel is which doctrine declassifies it, so buying a doctrine is a reveal moment. ONE card per
+  // doctrine, not one per troop: at the start of a battle twelve of thirteen cards were locked,
+  // and a wall of hatched placeholders is the opposite of a tab that says "deploy".
+  const lockedByTech = new Map<string, number>();
+  for (const spec of specs) if (isLocked(spec)) lockedByTech.set(spec.tech as string, (lockedByTech.get(spec.tech as string) ?? 0) + 1);
+  const classified = [...lockedByTech.entries()].map(([tech, count]) => {
+    const techName = TECH_TREE.find((n) => n.id === tech)?.name ?? "a doctrine";
+    return `<button class="btn confirm disabled classified" data-base-tab="tech" data-tip="${escapeAttr(`${count} classified asset${count > 1 ? "s" : ""}. Research ${techName} to reveal ${count > 1 ? "them" : "it"}.`)}">
+      <span class="classified-name">▮▮▮ ×${count}</span>
+      <span>${escapeHtml(techName)}</span>
+    </button>`;
+  }).join("");
+  return specs.filter((spec) => !isLocked(spec)).map((spec) => {
     const reason = sim.spawnFailureReason(base, spec.kind);
     const cooldown = sim.troopCooldown(base, spec.kind);
     const ready = !reason;
@@ -1513,7 +1518,7 @@ function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
       ${escapeHtml(spec.label)}${isNew ? `<em class="new-badge">NEW</em>` : ""}
       <span>${sub}</span>
     </button>`;
-  }).join("");
+  }).join("") + classified;
 }
 
 function defenseDeckHtml(base: CombatEntity, sim: TacticalSim): string {
