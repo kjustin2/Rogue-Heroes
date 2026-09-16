@@ -141,6 +141,9 @@ export const DEPOT_INCOME = 25;
 // must get to grab it, and the min/spread of cash per cache.
 const PICKUP_REACH = 0.95;
 const TRANSPORT_CAPACITY = 2; // how many ground units an air transport can carry at once
+// Metres a piercing round carries on past a body it went through.
+const PIERCE_CARRY = 7;
+
 // Gas clouds (see runGasTick / igniteGasAt).
 const GAS_START_RADIUS = 2.2;
 const GAS_SPREAD_PER_TURN = 1.3;
@@ -2853,6 +2856,10 @@ export class TacticalSim {
       projectile.pierced = through + 1;
       projectile.ignoredEntityIds.push(target.id);
       if (through === 0 && intendedTarget) this.pushLog(`${actor.name}'s round goes clean through ${target.name}`);
+      // Carries on for a few more metres past the body, not to the end of its range: the order is
+      // complete at the first hit, and a round that flew 30m past a kill held the resolve open.
+      projectile.maxTravel = Math.min(projectile.maxTravel, projectile.travel + PIERCE_CARRY);
+      if (order) order.done = true;
       return;
     }
     this.removeProjectile(projectile.id);
