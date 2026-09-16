@@ -141,6 +141,13 @@ export const DEPOT_INCOME = 25;
 // must get to grab it, and the min/spread of cash per cache.
 const PICKUP_REACH = 0.95;
 const TRANSPORT_CAPACITY = 2; // how many ground units an air transport can carry at once
+// Gas clouds (see runGasTick / igniteGasAt).
+const GAS_START_RADIUS = 2.2;
+const GAS_SPREAD_PER_TURN = 1.3;
+const GAS_MAX_RADIUS = 6.5;
+const GAS_CHOKE_DAMAGE = 7;
+const GAS_BLAST_DAMAGE = 72;
+
 // Flamer burning ground.
 const BURN_RADIUS = 1.6;
 // A ruptured fuel cell leaves a bigger, longer fire than a flamer's splash: burning fuel is the
@@ -418,6 +425,10 @@ export class TacticalSim {
   readonly overwatchFacing = new Map<string, number>();
   // Burning ground left by flamer hits (damages at turn start) and sapper proximity mines.
   readonly burnZones: { id: string; x: number; z: number; radius: number; turnsLeft: number }[] = [];
+  // GAS CLOUDS. A shot-out canister leaks a cloud that grows each turn until it hits its cap or
+  // something lights it: any blast inside it (grenade, shell, mine, a flamer round, burning ground)
+  // detonates the WHOLE cloud at once. Chokes whoever stands in it meanwhile. Rides serialize().
+  readonly gasClouds: { id: string; x: number; z: number; radius: number; maxRadius: number }[] = [];
   readonly mines: { id: string; x: number; z: number; team: Team }[] = [];
   // Loose cash caches scattered on the field at battle start: a unit that runs over one banks its
   // cash for that team, then it's gone. A "grab the loot" incentive to spread out and take ground.
@@ -584,6 +595,7 @@ export class TacticalSim {
     this.wrecked.clear();
     this.salvage.clear();
     this.burnZones.splice(0);
+    this.gasClouds.splice(0);
     this.mines.splice(0);
     this.placePickups();
     this.killsBy.clear();
@@ -1746,6 +1758,7 @@ export class TacticalSim {
       wrecked: [...this.wrecked],
       salvage: [...this.salvage],
       burnZones: this.burnZones,
+      gasClouds: this.gasClouds,
       mines: this.mines,
       pickups: this.pickups,
     });
@@ -1761,6 +1774,7 @@ export class TacticalSim {
         detonated?: string[]; toppled?: string[]; overwatch?: [string, number][]; overwatchFacing?: [string, number][];
         wrecked?: string[]; salvage?: [string, number][];
         burnZones?: { id: string; x: number; z: number; radius: number; turnsLeft: number }[];
+        gasClouds?: { id: string; x: number; z: number; radius: number; maxRadius: number }[];
         mines?: { id: string; x: number; z: number; team: Team }[];
         pickups?: { id: string; x: number; z: number; amount: number }[];
       };
@@ -1808,6 +1822,7 @@ export class TacticalSim {
       this.salvage.clear();
       for (const [id, amount] of data.salvage ?? []) this.salvage.set(id, amount);
       this.burnZones.splice(0, this.burnZones.length, ...(data.burnZones ?? []));
+      this.gasClouds.splice(0, this.gasClouds.length, ...(data.gasClouds ?? []));
       this.mines.splice(0, this.mines.length, ...(data.mines ?? []));
       this.pickups.splice(0, this.pickups.length, ...(data.pickups ?? []));
       this.log.splice(0);
@@ -2864,6 +2879,40 @@ export class TacticalSim {
     this.burnZones.splice(0, this.burnZones.length, ...this.burnZones.filter((zone) => zone.turnsLeft > 0));
   }
 
+  private runGasTick(): void {
+    if (!this.gasClouds.length) return;
+    for (const cloud of this.gasClouds) {
+      cloud.radius = Math.min(cloud.maxRadius, cloud.radius + GAS_SPREAD_PER_TURN);
+      for (const e of this.entities) {
+        if (!e.status.alive || e.kind === "cover" || e.kind === "base" || isDefenseKind(e.kind) || e.flying || isVehicleKind(e.kind)) continue;
+        if (dist(e.position, cloud) > cloud.radius + e.radius * 0.5) continue;
+        const result = applyDamage(e, preferredPart(e, "head").id, GAS_CHOKE_DAMAGE);
+        this.effect("impact", { ...e.position }, { ...e.position }, 0xa6e05a, 0.5, e.radius + 0.3);
+        this.pushLog(`${e.name} is choking in the gas (${result.amount})`);
+        if (!e.status.alive) this.checkEndState();
+      }
+    }
+    // Burning ground inside a cloud lights it.
+    for (const zone of this.burnZones) this.igniteGasAt(zone, zone.radius);
+  }
+
+  private igniteGasAt(point: Vec2, sparkRadius: number): void {
+    const lit = this.gasClouds.filter((c) => dist(c, point) <= c.radius + sparkRadius * 0.5);
+    if (!lit.length) return;
+    for (const cloud of lit) {
+      const i = this.gasClouds.indexOf(cloud);
+      if (i < 0) continue; // already gone (a neighbour's detonation took it)
+      this.gasClouds.splice(i, 1);
+      this.pushLog("The gas ignites!");
+      const actor = this.entities.find((e) => e.kind === "base" && e.team === "neutral") ?? this.entities[0];
+      // The whole cloud goes at once: a blast the size of the cloud, and it throws what it does
+      // not kill. Effect first so a neighbouring cloud chains off it.
+      this.effect("blast", cloud, cloud, 0xd9ff5a, 0.9, cloud.radius + 0.6);
+      this.applyExplosiveRadius(actor, cloud, cloud.radius + 0.4, GAS_BLAST_DAMAGE, "caught in the gas explosion");
+      this.checkEndState();
+    }
+  }
+
   // ---- Sapper mines ----
 
   mineFailureReason(actor: CombatEntity | undefined): string | undefined {
@@ -3663,6 +3712,15 @@ export class TacticalSim {
       return;
     }
 
+    if (kind === "gas") {
+      // No bang yet. The canister leaks, and the cloud is the threat -- it grows every turn and
+      // waits for a spark. Big enough from the start to matter, capped so a map never fills.
+      this.gasClouds.push({ id: `gas-${++this.effectSeq}`, x: source.position.x, z: source.position.z, radius: GAS_START_RADIUS, maxRadius: GAS_MAX_RADIUS });
+      this.effect("ping", source.position, source.position, 0xa6e05a, 0.8, GAS_START_RADIUS);
+      this.pushLog(`${source.name} ruptures — gas is spreading. Keep fire away from it, or don't`);
+      return;
+    }
+
     if (kind === "ammo") {
       // Cook-off: a scatter of small detonations around the wreck over the next couple of seconds.
       // Individually survivable, collectively an area you do not want to be standing in.
@@ -4186,6 +4244,7 @@ export class TacticalSim {
     this.runSalvageTick();
     this.runCaptureTick();
     this.runBurnTick();
+    this.runGasTick();
     this.resolveSupportAuras();
     // Forced events are single-turn debug overrides; clear them, then announce the new turn's events.
     this.forcedZones = [];
@@ -4699,6 +4758,10 @@ export class TacticalSim {
   }
 
   private effect(type: VisualEvent["type"], from: Vec2, to: Vec2, color: number, duration: number, radius?: number): void {
+    // A blast is a spark. Every explosion in the game goes through here, so this is the one place
+    // that has to know about gas; the cloud's own detonation is a blast too, which is how one
+    // canister sets off the next.
+    if (type === "blast" && this.gasClouds.length) this.igniteGasAt(to, radius ?? 1);
     this.effects.push({
       id: `effect-${++this.effectSeq}`,
       type,

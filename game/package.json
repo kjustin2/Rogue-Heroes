@@ -31,6 +31,7 @@
     "probe:depth": "node scripts/probe-depth.mjs",
     "shots:look": "node scripts/shot-look.mjs",
     "shots:filmstrip": "node scripts/shot-filmstrip.mjs",
+    "shots:gas": "node scripts/shot-gas.mjs",
     "vision": "node improve/vision.mjs",
     "smoke:electron": "electron scripts/smoke-electron.cjs",
     "test:play": "npm run build && npm run smoke:electron",

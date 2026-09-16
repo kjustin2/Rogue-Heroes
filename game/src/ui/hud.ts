@@ -1253,6 +1253,9 @@ function coverBlurb(entity: CombatEntity): string | undefined {
     return `Derelict structure — ${owner}. Move a unit beside it to capture; a captured turret comes back online next turn and fires for you.`;
   }
   if (kind === "wreck") return "Burnt-out wreck — hard cover. Park a unit beside it to strip its salvage money.";
+  if (kind === "gas") {
+    return `${kindLabel(entity)} — VOLATILE. Shoot it and it LEAKS: a gas cloud that spreads every turn and chokes anyone standing in it. Any explosion or fire inside the cloud detonates all of it at once.`;
+  }
   if (kind === "fuel" || kind === "ammo" || kind === "conduit") {
     return `${kindLabel(entity)} — VOLATILE. Shoot it and it detonates, splashing everything nearby. Lure enemies in close, then set it off — and keep your own units clear of the blast.`;
   }
@@ -1298,7 +1301,7 @@ function coverInteractionState(actor: CombatEntity | undefined, target: CombatEn
       <strong>${escapeHtml(target.name)}</strong>
       <span>${escapeHtml(summary)}</span>
     </div>
-    ${blurb ? `<div class="cover-blurb ${target.capturable ? "capture" : target.coverKind === "fuel" || target.coverKind === "ammo" || target.coverKind === "conduit" ? "volatile" : ""}">${escapeHtml(blurb)}</div>` : ""}
+    ${blurb ? `<div class="cover-blurb ${target.capturable ? "capture" : target.coverKind === "fuel" || target.coverKind === "ammo" || target.coverKind === "conduit" || target.coverKind === "gas" ? "volatile" : ""}">${escapeHtml(blurb)}</div>` : ""}
     <div class="cover-actions">
       ${target.capturable ? captureButton(actor, target, sim) : ""}
       ${actor && isInfantryKind(actor.kind) && !isCliff ? `<button class="btn confirm ${canTakeCover ? "" : "disabled"}" data-cover-action="cover" data-disabled="${!canTakeCover}" data-tip="${escapeAttr(coverReach?.ok ? "Move beside this object and crouch if the unit has enough CP." : coverReach?.reason ?? "Get closer to take cover here.")}">

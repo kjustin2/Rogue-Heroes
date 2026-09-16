@@ -355,7 +355,7 @@ const RAW_MAPS: readonly MapDef[] = [
     hillRadius: 3.4,
     scatter: [
       { palette: ["crate", "container", "rubble", "wall"], count: 9, spacing: 1.4, centerGap: 2.2 },
-      { palette: ["pillar", "pillar", "conduit", "fuel", "ammo"], count: 7, spacing: 1.8, centerGap: 3 },
+      { palette: ["pillar", "pillar", "conduit", "fuel", "ammo", "gas", "gas"], count: 9, spacing: 1.8, centerGap: 3 },
     ],
     signature: [
       { kind: "wall", x: -2.2, z: 4.5, mirror: true },
@@ -367,6 +367,7 @@ const RAW_MAPS: readonly MapDef[] = [
       { kind: "pillar", x: -11, z: -2.2, mirror: true },
       { kind: "container", x: -13.5, z: -2.5, mirror: true },
       { kind: "fuel", x: -8, z: 11, mirror: true },
+      { kind: "gas", x: -6.5, z: -3.8, mirror: true },
     ],
     // Overstressed gantries give way: cover around the central platform crumbles periodically.
     events: [{ kind: "collapse", startTurn: 5, period: 5, zone: { x: 0, z: 0, radius: 7 } }],
@@ -520,7 +521,7 @@ const RAW_MAPS: readonly MapDef[] = [
     hill: { x: 0, z: 0 },
     hillRadius: 3.2,
     scatter: [
-      { palette: ["pillar", "rubble", "rock"], count: 8, spacing: 1.8, centerGap: 4 },
+      { palette: ["pillar", "rubble", "rock", "gas"], count: 9, spacing: 1.8, centerGap: 4 },
       { palette: ["wall", "cliff"], count: 3, spacing: 2.6, centerGap: 6 },
     ],
     signature: [
@@ -583,7 +584,7 @@ const RAW_MAPS: readonly MapDef[] = [
     hillRadius: 3.8,
     scatter: [
       { palette: ["sandbag", "crate", "barricade", "bunker"], count: 7, spacing: 2.0, centerGap: 3 },
-      { palette: ["ammo", "fuel"], count: 2, spacing: 3.0, centerGap: 5 },
+      { palette: ["ammo", "fuel", "gas"], count: 3, spacing: 3.0, centerGap: 5 },
     ],
     signature: [
       { kind: "sandbag", x: -9, z: 3.5, mirror: true },

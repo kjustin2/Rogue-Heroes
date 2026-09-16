@@ -410,6 +410,37 @@ export class WorldRenderer {
         this.environmentRoot.add(flame);
       }
     }
+    // GAS CLOUDS: a drifting, breathing dome of pale green with a low skirt, so its reach reads
+    // on the ground and its volume reads against the units inside it. Sickly, never pretty.
+    for (const cloud of sim.gasClouds) {
+      const y = terrainHeightAt(cloud) + 0.05;
+      const breathe = 1 + Math.sin(performance.now() * 0.0011 + (hash(cloud.id) % 7)) * 0.04;
+      const skirt = new THREE.Mesh(
+        new THREE.CircleGeometry(cloud.radius * breathe, 40),
+        new THREE.MeshBasicMaterial({ color: 0x9bd44a, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }),
+      );
+      skirt.rotation.x = -Math.PI / 2;
+      skirt.position.set(cloud.x, y, cloud.z);
+      this.environmentRoot.add(skirt);
+      const rim = new THREE.Mesh(
+        new THREE.RingGeometry(cloud.radius * breathe - 0.14, cloud.radius * breathe, 48),
+        new THREE.MeshBasicMaterial({ color: 0xc8f06a, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }),
+      );
+      rim.rotation.x = -Math.PI / 2;
+      rim.position.set(cloud.x, y + 0.01, cloud.z);
+      this.environmentRoot.add(rim);
+      for (let b = 0; b < 7; b += 1) {
+        const t = performance.now() * 0.00035 + b * 2.1 + (hash(cloud.id) % 11);
+        const r = cloud.radius * (0.15 + ((b * 37) % 60) / 100);
+        const blob = new THREE.Mesh(
+          new THREE.SphereGeometry(cloud.radius * (0.3 + (b % 3) * 0.08), 10, 7),
+          new THREE.MeshBasicMaterial({ color: b % 2 ? 0xa8dc55 : 0x86b83a, transparent: true, opacity: 0.13, depthWrite: false }),
+        );
+        blob.position.set(cloud.x + Math.cos(t) * r, y + 0.45 + Math.sin(t * 1.7) * 0.2, cloud.z + Math.sin(t * 0.8) * r);
+        blob.scale.y = 0.55;
+        this.environmentRoot.add(blob);
+      }
+    }
     // Friendly mines only — the enemy never sees yours until they step on one.
     const minePulse = Math.sin(performance.now() * 0.009) > 0.2;
     for (const mine of sim.mines) {
@@ -2074,6 +2105,18 @@ export class WorldRenderer {
       this.cylinder(group, entity, part.id, 0.09, 0.14, [0.24, 1.11, -0.03], 0xb8923f, [0, 0, 0], { metalness: 0.45, radiusBottom: 0.02 });
       // Hazard chevron on the front face.
       this.box(group, entity, part.id, [0.34, 0.09, 0.04], [-0.18, 0.62, 0.31], 0xd8a53a, { bevel: 0.3 });
+    } else if (entity.coverKind === "gas") {
+      // Gas canister: a tall pressure bottle in a wire cage with a valve wheel and a pale
+      // sickly-green band, so it reads as "chemical" next to the warm fuel drum.
+      this.box(group, entity, part.id, [0.7, 0.08, 0.7], [0, 0.04, 0], 0x3b3a33, { bevel: 0.2 });
+      this.cylinder(group, entity, part.id, 0.27, 1.0, [0, 0.58, 0], 0x8a9a7a, [0, 0, 0], { metalness: 0.4 });
+      this.sphere(group, entity, part.id, 0.27, [0, 1.08, 0], 0x8a9a7a, { metalness: 0.4 });
+      this.cylinder(group, entity, part.id, 0.285, 0.14, [0, 0.62, 0], 0xb9ea5a, [0, 0, 0], { accent: true, emissive: 0x7fbf2a, emissiveIntensity: 0.22 });
+      this.cylinder(group, entity, part.id, 0.07, 0.18, [0, 1.4, 0], 0x2b3238, [0, 0, 0], { metalness: 0.5 });
+      this.cylinder(group, entity, part.id, 0.13, 0.04, [0, 1.5, 0], 0xb03a2a, [0, 0, 0], { metalness: 0.4 });
+      for (const a of [0, 1, 2, 3]) {
+        this.box(group, entity, part.id, [0.04, 1.1, 0.04], [Math.cos(a * Math.PI / 2) * 0.33, 0.6, Math.sin(a * Math.PI / 2) * 0.33], 0x2b3238, { metalness: 0.45 });
+      }
     } else if (entity.coverKind === "conduit") {
       // A junction box on a post, with an insulator stack and cable runs going off both ways.
       this.box(group, entity, part.id, [0.28, 0.3, 0.28], [0, 0.14, 0], 0x2b3238, { bevel: 0.22 });

@@ -25,7 +25,8 @@ export type CoverKind =
   | "bunker"
   | "wreck"
   | "depot"
-  | "span";
+  | "span"
+  | "gas";
 export type PartRole = "core" | "head" | "weapon" | "mobility" | "armor" | "utility" | "volatile";
 export type AimMode = "center" | "head" | "weapon" | "mobility" | "utility" | "core" | "weakest";
 export type InfantryStance = "standing" | "crouched" | "prone";
@@ -794,6 +795,7 @@ export const COVER_PROFILES: Record<CoverKind, CoverProfile> = {
   wall: { hp: 70, radius: 1.05, height: 1.55, volatile: false, label: "Wall Block" },
   barricade: { hp: 42, radius: 0.82, height: 0.82, volatile: false, label: "Barricade" },
   fuel: { hp: 36, radius: 0.7, height: 1.2, volatile: true, label: "Fuel Cell" },
+  gas: { hp: 28, radius: 0.7, height: 1.3, volatile: true, label: "Gas Canister" },
   ammo: { hp: 34, radius: 0.7, height: 1.2, volatile: true, label: "Ammo Cache" },
   conduit: { hp: 44, radius: 0.7, height: 1.2, volatile: true, label: "Power Conduit" },
   ridge: { hp: 95, radius: 1.2, height: 1.85, volatile: false, label: "High Ground" },
