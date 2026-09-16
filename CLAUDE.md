@@ -26,6 +26,9 @@ symbols fail the build.
 | AI vision inspector | `npm run vision` (`-- <scenario>` or `-- all`) |
 | Scenario screenshot gallery | `npm run improve:gallery` |
 | Review contact sheet → `shots/` | `npm run screens` |
+| Quick gameplay-zoom look per scenario (`-- firefight siege`, `:select`/`:shoot`/`:base` HUD states) | `npm run shots:look` |
+| 9-frame attack filmstrip at quarter speed (`-- melee` or `shoot`) — judge motion here, not in stills | `npm run shots:filmstrip` |
+| Depth-fight repro (hide plates / kill shadows / lift plates / old near plane) | `npm run probe:depth <scenario>` |
 | Build + Electron gameplay smoke | `npm run test:play` |
 | Desktop app (build + Electron) | `npm run standalone` |
 | **One-command shareable .exe** | `npm run dist:exe` (portable, → `release/`) |
@@ -275,6 +278,10 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
 - `src/render/stage.ts` owns the composer; call `warmUp()` after staging new material
   kinds or the menu↔battle flip stalls on a shader relink. Tear down per-frame/per-swap
   groups via `disposeAndClear()`; `userData.shared` geometry is skipped.
+- **The ground detail layer** (`makeGroundDetail`) is one InstancedMesh per element kind (grass fans, pebbles, snow clumps, cinders, weeds), placed only on dry flat ground, bending in `windUniforms` (the same clock the cloud deck and tree sway use). Pebbles are 8-triangle octahedra on purpose — the 36-triangle version was 130k triangles on a large map. Costs are in `perf-baseline.json`; rebase after an intentional change.
+- **Stone hulls take the map's hue**: `tintModelToMap(group, "stone")` swaps the Meshy albedo for `greyscaleOf(map)` and paints `rockTint`. Multiplying a tint into an orange albedo only ever gives darker orange.
+- **Idle liveness is gated** (`smoke:animation`: head scan + body turn over 3s of standing). Whole-body idle lives at group level next to the flinch; per-part breathing in `paintPart`. Both are phased by `hash(entity.id)`.
+- **Melee**: the pose family follows the ORDER (`meleeTargetByActor`), the blade is carried by the shoulder about a grip pivot (it is a separate part with no authored motion), the group lunges, and the sim emits a `strike` effect (slash arc + flash + shards), never a blast. `__rht.setResolveScale(0.25)` slows the resolve clock for filmstrips.
 - **`window.__rht`** is the entire test/debug surface (sim + `endTurn`/`reset`/
   `scenario(id)`/`perf()`/`diagnostics()`/`describeScene()` …). **Keep it in sync with
   the smokes** when adding sim features they need to drive.
