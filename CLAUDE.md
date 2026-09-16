@@ -30,6 +30,8 @@ symbols fail the build.
 | 9-frame attack filmstrip at quarter speed (`-- melee` or `shoot`) — judge motion here, not in stills | `npm run shots:filmstrip` |
 | Depth-fight repro (hide plates / kill shadows / lift plates / old near plane) | `npm run probe:depth <scenario>` |
 | Infantry lineup, near + far, for kit/proportion review | `npm run shots:lineup` |
+| **Real-GPU frame-time probe** (hidden Electron, diffs compiled programs across resolves) | `npm run soak:gpu [scenario]` |
+| **Real-GPU screenshots** (`-- menu firefight lineup …`) | `npm run shots:gpu` |
 | Build + Electron gameplay smoke | `npm run test:play` |
 | Desktop app (build + Electron) | `npm run standalone` |
 | **One-command shareable .exe** | `npm run dist:exe` (portable, → `release/`) |
@@ -301,6 +303,7 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
 - **Piercing** (`UNIT_STATS.pierce`, marksman): the round goes through bodies (cover still stops it), `-pierce` damage per body, carries `PIERCE_CARRY` metres past the first hit and the order completes there.
 - **Lightning** (`MapEventKind "lightning"`): one strike per turn at `lightningZone(turn)` — a pure function of map seed + turn, so command telegraph == resolve strike == restored save; never within 7 of a base.
 - **Title diorama** (`stageMenuDiorama` in `main.ts`): the main menu sits over a live Verdant scene with `stage.menuDrift`; `body.in-battle` mirrors `inBattle` so CSS hides the HUD outside a battle; `stage.resetView()` restores the tactical camera only when leaving the diorama.
+- **`stage.warmUp()` extras must be visible AND unculled** (parked at y=-5000 in a wrapper): `renderer.compile()` walks `traverseVisible`, and only a composer DRAW compiles the post-chain variant (linear output, tone mapping off) — the lean path's key differs. It was a silent no-op for every GLB until `soak:gpu` diffed programs across a resolve. The warm-up also clones a transparent twin of every opaque standard material (death fades flip the `opaque` program bit). Any mid-resolve hitch report: run `soak:gpu` first; it names the compiling program.
 - **Frame loop is guarded** (`frame` → `frameBody` in try/catch, `__rht.frameErrors()`); one bad frame never kills rAF again.
 - **`window.__rht`** is the entire test/debug surface (sim + `endTurn`/`reset`/
   `scenario(id)`/`perf()`/`diagnostics()`/`describeScene()` …). **Keep it in sync with
