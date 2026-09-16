@@ -616,6 +616,50 @@ export class WorldRenderer {
    * (a render-parent change orphaned the animation state) and no gate noticed, so the pose is now
    * readable and assertable from outside.
    */
+  /**
+   * One mesh per RESOLVE-ONLY material family, for stage.warmUp(). The warm-up compiles whatever
+   * is in the scene, and these only exist while something is exploding, toppling or dying, so the
+   * first resolve of a session paid a 70-300ms shader compile in the middle of the action
+   * (measured on the real GPU by soak:gpu, which diffs the program list across a resolve).
+   */
+  warmUpSamplers(): THREE.Object3D[] {
+    const geo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+    geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(geo.getAttribute("position").count * 3).fill(1), 3));
+    const out: THREE.Object3D[] = [];
+    // Every opaque standard material in the scene gets a TRANSPARENT twin compiled now. Units and
+    // props fade out when they die, and that fade is the only thing that flips a material's
+    // `opaque` program bit — measured by soak:gpu as the two programs that compiled mid-resolve
+    // (a GLB hull with map + normal map, and a pooled vertex-coloured part). Cloning the live
+    // materials guarantees the exact key; guessing the parameter list by hand did not.
+    const seen = new Set<string>();
+    this.scene.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const m of mats) {
+        if (!(m instanceof THREE.MeshStandardMaterial) || m.transparent) continue;
+        const key = `${m.uuid.slice(0, 8)}|${mesh.receiveShadow}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const twin = m.clone();
+        twin.transparent = true;
+        twin.opacity = 0.5;
+        const sampler = new THREE.Mesh(geo, twin);
+        sampler.receiveShadow = mesh.receiveShadow;
+        sampler.castShadow = mesh.castShadow;
+        out.push(sampler);
+      }
+    });
+    for (const m of [
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending }),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false }),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false, depthTest: false }),
+      new THREE.MeshStandardMaterial({ color: 0x8a7a5c, roughness: 0.92 }),
+      new THREE.MeshStandardMaterial({ color: 0x8a7a5c, roughness: 0.92, transparent: true, opacity: 0.5 }),
+    ]) out.push(new THREE.Mesh(geo, m));
+    return out;
+  }
+
   limbPose(entityId: string): { limb: string; rotX: number; rotY: number; posY: number; posZ: number }[] {
     const group = this.groups.get(entityId);
     if (!group) return [];

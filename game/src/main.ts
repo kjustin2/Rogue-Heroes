@@ -1974,7 +1974,7 @@ if (settings.reducedMotion) document.body.classList.add("reduced-motion");
 showMainMenu();
 // Pre-compile every shader variant (both shadow states × both post chains) behind the
 // first menu, so battle start / menu flips never stall on a synchronous GLSL link.
-stage.warmUp();
+stage.warmUp(world.warmUpSamplers());
 
 // ---------------------------------------------------------------------------
 // Frame loop
@@ -2056,7 +2056,7 @@ function frameBody(now: number): void {
   // path so the first deploy of that unit doesn't hitch.
   if (modelsVersion() !== warmedModelsVersion) {
     warmedModelsVersion = modelsVersion();
-    stage.warmUp(loadedTemplates());
+    stage.warmUp([...loadedTemplates(), ...world.warmUpSamplers()]);
   }
 
   // Perf instrumentation — sample the inter-frame delta (skip first frame + tab-switch
@@ -2322,6 +2322,10 @@ declare global {
       sceneRoot(): object;
       /** The live perspective camera (probes vary near/far to reproduce depth fights). */
       cameraObject(): object;
+      /** Re-run the shader warm-up with the resolve-only samplers; returns programs before/after. */
+      warmUp(): { before: number; after: number };
+      /** Cache keys of every compiled shader program — diff across a resolve to find compile hitches. */
+      programs(): string[];
       /** Frames that threw since load. A smoke should assert 0. */
       frameErrors(): number;
       /** Multiplies the resolve-phase sim clock (filmstrips run at 0.25 to see a swing). */
@@ -2413,6 +2417,8 @@ window.__rht = {
   sceneGraph: () => ({ total: countSceneObjects(), topLevel: stage.scene.children.length }),
   sceneRoot: () => stage.scene,
   cameraObject: () => stage.camera,
+  warmUp: () => { const before = stage.renderer.info.programs?.length ?? 0; stage.warmUp([...loadedTemplates(), ...world.warmUpSamplers()]); return { before, after: stage.renderer.info.programs?.length ?? 0 }; },
+  programs: () => (stage.renderer.info.programs ?? []).map((p) => String((p as unknown as { cacheKey: string }).cacheKey)),
   frameErrors: () => frameErrors,
   setResolveScale: (scale: number) => { resolveScale = scale; },
   setDebugOverlay: (on) => { debugOverlay.setEnabled(on); return debugOverlay.isEnabled(); },

@@ -36,6 +36,8 @@
     "shots:lineup": "node scripts/shot-lineup.mjs",
     "vision": "node improve/vision.mjs",
     "smoke:electron": "electron scripts/smoke-electron.cjs",
+    "soak:gpu": "electron scripts/soak-gpu.cjs",
+    "shots:gpu": "electron scripts/shots-gpu.cjs",
     "test:play": "npm run build && npm run smoke:electron",
     "smoke:faction": "node scripts/shot-faction.mjs",
     "smoke:animation": "node scripts/shot-animation.mjs",

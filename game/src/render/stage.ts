@@ -345,13 +345,24 @@ export class Stage {
    * flip (setLowCost) would otherwise synchronously relink every material in the scene.
    */
   warmUp(extras: THREE.Object3D[] = []): void {
+    // compile() walks traverseVisible, so an invisible extra compiles NOTHING -- the old
+    // `visible = false` here silently made every extra a no-op (soak:gpu caught it: the "warmed"
+    // programs still compiled mid-resolve). Extras are parked far below the board in a wrapper
+    // group instead, visible, and unwrapped afterwards so templates keep their own transforms.
+    // ...and they must be DRAWN by the composer, not just walked by compile(): the post chain
+    // switches the renderer to linear output with tone mapping off, which is a different program
+    // key from the lean path, and only a draw compiles it. Off-screen but unculled does that.
+    const park = new THREE.Group();
+    park.position.y = -5000;
     const staged: THREE.Object3D[] = [];
+    const unculled: THREE.Object3D[] = [];
     for (const extra of extras) {
       if (extra.parent) continue;
-      extra.visible = false; // compile() warms materials regardless of visibility
-      this.scene.add(extra);
+      park.add(extra);
       staged.push(extra);
+      extra.traverse((o) => { if (o.frustumCulled) { o.frustumCulled = false; unculled.push(o); } });
     }
+    this.scene.add(park);
     const prevCast = this.keyLight.castShadow;
     try {
       this.keyLight.castShadow = true;
@@ -361,14 +372,15 @@ export class Stage {
       this.renderer.compile(this.scene, this.camera);
       this.menuComposer?.render(0.016);
       if (!this.composer) this.renderer.render(this.scene, this.camera);
-    } catch {
-      /* headless / lost context */
+    } catch (error) {
+      // Headless / lost context is expected; anything else here means the warm-up is a no-op and
+      // every "warmed" program will compile mid-battle instead. Say so.
+      console.warn("warmUp did not complete:", error);
     } finally {
       this.keyLight.castShadow = prevCast;
-      for (const extra of staged) {
-        this.scene.remove(extra);
-        extra.visible = true;
-      }
+      for (const o of unculled) o.frustumCulled = true;
+      for (const extra of staged) park.remove(extra);
+      this.scene.remove(park);
     }
   }
 
