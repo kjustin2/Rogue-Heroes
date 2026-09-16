@@ -879,7 +879,7 @@ function showStartScreen(): void {
           </div>
         </div>
       </div>
-      <button class="title-start" data-start type="button">Deploy to Battle</button>
+      <div class="menu-actions"><button class="title-start" data-start type="button">Deploy to Battle</button></div>
     </div>
   `,
     "menu-screen title-screen",
@@ -1284,7 +1284,7 @@ function showBriefing(mission: CampaignMission): void {
         </div>
         <div class="briefing-map">${mapPreviewSvg(map)}</div>
       </div>
-      <button class="title-start" data-deploy type="button">Deploy to Battle</button>
+      <div class="menu-actions"><button class="title-start" data-deploy type="button">Deploy to Battle</button></div>
     </div>
   `,
     "menu-screen",
@@ -1932,7 +1932,24 @@ const seenProjectileIds = new Set<string>();
 let resolveScale = 1;
 const seenEffectIds = new Set<string>();
 
+// ONE BAD FRAME MUST NEVER FREEZE THE GAME. The loop had no guard, so a single thrown error
+// anywhere in a frame killed rAF for good: the last frame stayed on screen, the HUD read
+// "Turn 1 resolving" forever, and the console said nothing to anyone not already watching it.
+// Found by playing: the game soft-locked on turn 1 of a restored battle. The error is logged
+// (and counted for the diagnostics seam) and the next frame is always scheduled.
+let frameErrors = 0;
 function frame(now: number): void {
+  try {
+    frameBody(now);
+  } catch (error) {
+    frameErrors += 1;
+    if (frameErrors <= 5) console.error("frame error", error);
+    last = now;
+  }
+  requestAnimationFrame(frame);
+}
+
+function frameBody(now: number): void {
   const frameMs = now - last;
   const dt = Math.min(0.05, frameMs / 1000);
   last = now;
@@ -1989,8 +2006,6 @@ function frame(now: number): void {
   if (frameMs > 0 && frameMs < 1000) perfMon.sample(frameMs, now);
   perfMon.setRenderInfo(readRenderInfo(), null);
   if (debugOverlay.isEnabled()) debugOverlay.render(buildSceneDescription());
-
-  requestAnimationFrame(frame);
 }
 
 requestAnimationFrame(frame);
@@ -2249,6 +2264,8 @@ declare global {
       sceneRoot(): object;
       /** The live perspective camera (probes vary near/far to reproduce depth fights). */
       cameraObject(): object;
+      /** Frames that threw since load. A smoke should assert 0. */
+      frameErrors(): number;
       /** Multiplies the resolve-phase sim clock (filmstrips run at 0.25 to see a swing). */
       setResolveScale(scale: number): void;
       setDebugOverlay(on: boolean): boolean;
@@ -2338,6 +2355,7 @@ window.__rht = {
   sceneGraph: () => ({ total: countSceneObjects(), topLevel: stage.scene.children.length }),
   sceneRoot: () => stage.scene,
   cameraObject: () => stage.camera,
+  frameErrors: () => frameErrors,
   setResolveScale: (scale: number) => { resolveScale = scale; },
   setDebugOverlay: (on) => { debugOverlay.setEnabled(on); return debugOverlay.isEnabled(); },
   silhouette: (on) => { world.setSilhouette(on); stage.setSilhouette(on); },

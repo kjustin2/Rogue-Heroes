@@ -1084,10 +1084,15 @@ export class TacticalSim {
     return { position: { ...projected.position }, elevation: projected.elevation, stance: projected.stance };
   }
 
-  selectedActionRange(): { kind: "ram" | "melee" | "grenade" | "move" | "overwatch"; radius: number; position: Vec2; elevation: number } | undefined {
+  selectedActionRange(): { kind: "ram" | "melee" | "grenade" | "move" | "overwatch" | "shoot"; radius: number; position: Vec2; elevation: number } | undefined {
     const actor = this.selected;
     if (!actor || actor.team !== "player" || this.phase !== "command") return undefined;
     const projected = this.projectedActorForPreview(actor);
+    // Weapon reach while aiming. Without it the only way to learn a unit's range was to try
+    // targets one by one and read "too far" — the single most asked "why can't I" in play.
+    if (this.intent === "shoot" && actor.status.canShoot && projectileRange(actor, "weapon") > 0) {
+      return { kind: "shoot", radius: projectileRange(actor, "weapon"), position: { ...projected.position }, elevation: projected.elevation };
+    }
     if (this.intent === "overwatch" && !this.overwatchFailureReason(actor)) {
       return { kind: "overwatch", radius: this.overwatchRadius(actor), position: { ...projected.position }, elevation: projected.elevation };
     }

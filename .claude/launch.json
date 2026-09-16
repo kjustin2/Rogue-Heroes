@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "rogue-heroes",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--strictPort"],
+      "cwd": "game",
+      "port": 5175
+    }
+  ]
+}

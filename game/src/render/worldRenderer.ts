@@ -8,7 +8,7 @@ import { isBuildingKind, isDefenseKind, isInfantryKind, isVehicleKind, type Comb
 import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
 import { OVERWATCH_ARC_HALF } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec } from "../game/maps";
-import { ARENA_BOUNDS, arenaDepth, arenaWidth, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
+import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
 import { greyscaleOf, instantiate, kitGeometry, modelsVersion, type KitPart, type ModelKey } from "./models";
 
 type PartMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
@@ -85,6 +85,7 @@ export class WorldRenderer {
   private readonly selectionLight: THREE.PointLight;
   private readonly targetRing: THREE.Mesh;
   private readonly actionRangeRing: THREE.Mesh;
+  private readonly shootRangeRing: THREE.Mesh;
   private readonly placementRing: THREE.Mesh;
   private readonly placementDisc: THREE.Mesh;
   private ghostedEntityIds = new Set<string>();
@@ -186,6 +187,15 @@ export class WorldRenderer {
     this.actionRangeRing.rotation.x = -Math.PI / 2;
     this.actionRangeRing.position.y = 0.06;
     this.scene.add(this.actionRangeRing);
+    // Weapon reach is a HAIRLINE, never a field: the move field is the only filled shape a
+    // selected unit projects, so the two can never be mistaken for each other or stack into a blur.
+    this.shootRangeRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.985, 1.0, 128),
+      new THREE.MeshBasicMaterial({ color: 0xffa24d, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false })
+    );
+    this.shootRangeRing.rotation.x = -Math.PI / 2;
+    this.shootRangeRing.visible = false;
+    this.scene.add(this.shootRangeRing);
 
     this.placementRing = new THREE.Mesh(
       new THREE.RingGeometry(0.985, 1.0, 96),
@@ -2811,9 +2821,17 @@ export class WorldRenderer {
   private syncActionRange(sim: TacticalSim): void {
     const selected = sim.selected;
     const range = sim.selectedActionRange();
-    this.actionRangeRing.visible = Boolean(selected && range);
+    const shoot = range?.kind === "shoot";
+    this.shootRangeRing.visible = Boolean(selected && shoot);
+    this.actionRangeRing.visible = Boolean(selected && range && !shoot);
     if (!selected || !range) return;
     const pulse = (Math.sin(performance.now() * 0.006) + 1) * 0.5;
+    if (shoot) {
+      this.shootRangeRing.position.set(range.position.x, range.elevation + 0.07, range.position.z);
+      this.shootRangeRing.scale.setScalar(range.radius);
+      (this.shootRangeRing.material as THREE.MeshBasicMaterial).opacity = 0.55 + pulse * 0.2;
+      return;
+    }
     this.actionRangeRing.position.set(range.position.x, range.elevation + 0.062, range.position.z);
     this.actionRangeRing.scale.setScalar(range.radius * (1 + pulse * 0.01));
     const mat = this.actionRangeRing.material as THREE.MeshBasicMaterial;
@@ -5082,10 +5100,14 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
   // Three surface variants spread around the map's own two authored tones: a darker damp/shadowed
   // patch, a paler dried/dusty one, and a mid gravel bed. Value spread is the point — a hue-only
   // difference vanishes in a greyscale pass, which is how the eye reads a board at a glance.
+  // ...but a value spread the eye reads as a PATCH, not as a paper cutout. At 0.55 toward the
+  // accent x1.13 the pale variant on the green map was a hard-edged cream polygon that the grass
+  // detail could not sit on; the spread is now roughly half, so patches read through the ground
+  // detail as damp/dry variation rather than as shapes laid on top of it.
   const variants = [
-    { color: ground.clone().lerp(new THREE.Color(0x0a0d10), 0.17), roughness: 0.98 },
-    { color: ground.clone().lerp(accent, 0.55).multiplyScalar(1.13), roughness: 0.93 },
-    { color: ground.clone().lerp(accent, 0.22).multiplyScalar(0.82), roughness: 0.96 },
+    { color: ground.clone().lerp(new THREE.Color(0x0a0d10), 0.1), roughness: 0.98 },
+    { color: ground.clone().lerp(accent, 0.3).multiplyScalar(1.05), roughness: 0.93 },
+    { color: ground.clone().lerp(accent, 0.14).multiplyScalar(0.9), roughness: 0.96 },
   ];
   // The plate layer addresses the ground textures at repeat 1 and gets its tiling from the
   // world-space UVs above, so one clone pair serves all three variants.
@@ -5180,7 +5202,6 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
  */
 function makeTerrainBlocks(groundColor: number, accentColor: number, surface: GroundSurface): THREE.Group {
   const group = new THREE.Group();
-  const sideColor = new THREE.Color(groundColor).multiplyScalar(0.66);
   // The cap stays near the ground tone so a mesa reads as a rise OF the battlefield rather than a
   // pale slab sitting on it; the lit and shadowed rock faces carry the height read instead.
   const capColor = new THREE.Color(accentColor).lerp(new THREE.Color(groundColor), 0.45);
@@ -5188,13 +5209,32 @@ function makeTerrainBlocks(groundColor: number, accentColor: number, surface: Gr
 
   const sides: THREE.BufferGeometry[] = [];
   const caps: THREE.BufferGeometry[] = [];
+  // CLIMBABLE vs CLIFF, readable from the terrain itself. A rise a unit can walk up (drop to the
+  // ground outside <= TERRAIN_STEP) wears a lighter ledge tone on that face; a face it cannot
+  // climb goes dark and reddened. Before this every mesa face was the same rock, and "why can't I
+  // walk there" had no answer on the board. Baked as vertex colour so the layer stays one mesh.
+  const ledgeColor = new THREE.Color(groundColor).lerp(new THREE.Color(accentColor), 0.3).multiplyScalar(0.92);
+  const cliffColor = new THREE.Color(groundColor).multiplyScalar(0.42).lerp(new THREE.Color(0x4a2a22), 0.35);
   const push = (
     into: THREE.BufferGeometry[],
     sx: number, sy: number, sz: number,
     x: number, y: number, z: number,
     yaw = 0, tilt = 0, bevel = 0.12,
+    faces?: { east: boolean; west: boolean; north: boolean; south: boolean },
   ): void => {
     const geo = new RoundedBoxGeometry(sx, sy, sz, 1, Math.min(Math.min(sx, sy, sz) * 0.45, bevel));
+    if (faces) {
+      const normal = geo.getAttribute("normal");
+      const colors = new Float32Array(normal.count * 3);
+      for (let i = 0; i < normal.count; i += 1) {
+        const nx = normal.getX(i);
+        const nz = normal.getZ(i);
+        const climbable = Math.abs(nx) >= Math.abs(nz) ? (nx > 0 ? faces.east : faces.west) : (nz > 0 ? faces.north : faces.south);
+        const c = climbable ? ledgeColor : cliffColor;
+        colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+      }
+      geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    }
     geo.applyMatrix4(new THREE.Matrix4().makeRotationZ(tilt));
     geo.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw).setPosition(x, y, z));
     into.push(geo);
@@ -5220,9 +5260,17 @@ function makeTerrainBlocks(groundColor: number, accentColor: number, surface: Gr
       [flare * 0.45, bodyHeight * 0.28, bodyHeight * 0.62], // mid
       [0, bodyHeight * 0.6, bodyHeight],            // top — the authored footprint
     ];
+    // Which faces a unit can walk up: sample the ground just outside each edge midpoint.
+    const outside = (x: number, z: number): number => terrainHeightAt({ x, z });
+    const faces = {
+      east: block.height - outside(block.maxX + 0.3, cz) <= TERRAIN_STEP + 0.01,
+      west: block.height - outside(block.minX - 0.3, cz) <= TERRAIN_STEP + 0.01,
+      north: block.height - outside(cx, block.maxZ + 0.3) <= TERRAIN_STEP + 0.01,
+      south: block.height - outside(cx, block.minZ - 0.3) <= TERRAIN_STEP + 0.01,
+    };
     for (const [spread, y0, y1] of tiers) {
       const h = Math.max(0.05, y1 - y0);
-      push(sides, w + spread * 2, h, d + spread * 2, cx, y0 + h / 2, cz, 0, 0, Math.min(0.22, h * 0.4));
+      push(sides, w + spread * 2, h, d + spread * 2, cx, y0 + h / 2, cz, 0, 0, Math.min(0.22, h * 0.4), faces);
     }
 
     push(caps, w + 0.02, CAP, d + 0.02, cx, block.height - CAP / 2, cz, 0, 0, 0.03);
@@ -5234,7 +5282,7 @@ function makeTerrainBlocks(groundColor: number, accentColor: number, surface: Gr
   for (const g of caps) g.dispose();
 
   if (sideGeo) {
-    const mesh = new THREE.Mesh(sideGeo, new THREE.MeshStandardMaterial({ color: sideColor, roughness: 0.97, metalness: 0.03 }));
+    const mesh = new THREE.Mesh(sideGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, metalness: 0.03 }));
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
