@@ -144,6 +144,9 @@ const TRANSPORT_CAPACITY = 2; // how many ground units an air transport can carr
 // Metres a piercing round carries on past a body it went through.
 const PIERCE_CARRY = 7;
 
+type StrikeKind = "barrage" | "collapse" | "airstrike" | "cluster" | "laser" | "lightning";
+const LIGHTNING_RADIUS = 2.0;
+
 // Gas clouds (see runGasTick / igniteGasAt).
 const GAS_START_RADIUS = 2.2;
 const GAS_SPREAD_PER_TURN = 1.3;
@@ -481,7 +484,7 @@ export class TacticalSim {
   private forcedSandstorm = false;
   private forcedIonStorm = false;
   private forcedZones: { kind: MapEventKind; x: number; z: number; radius: number }[] = [];
-  private pendingStrikes: { at: number; point: Vec2; radius: number; damage: number; kind: "barrage" | "collapse" | "airstrike" | "cluster" | "laser"; fired?: boolean }[] = [];
+  private pendingStrikes: { at: number; point: Vec2; radius: number; damage: number; kind: StrikeKind; fired?: boolean }[] = [];
   private strikeClock = 0;
 
   constructor(init?: CombatEntity[] | { map?: MapDef; mode?: ModeId }) {
@@ -3766,7 +3769,10 @@ export class TacticalSim {
       const d = dist(entity.position, source.position);
       if (d > 3.5) continue;
       const part = preferredPart(entity, "weakest");
-      const result = applyDamage(entity, part.id, Math.round(42 * (1 - d / 4)));
+      // CHAIN REACTIONS. A volatile prop next to an explosion goes with it: the blast hits its
+      // volatile part at treble strength, so a fuel dump laid out in a row cascades from one shot.
+      const volatileNeighbour = entity.kind === "cover" && entity.parts.some((p) => p.role === "volatile" && p.hp > 0);
+      const result = applyDamage(entity, part.id, Math.round(42 * (1 - d / 4) * (volatileNeighbour ? 3 : 1)));
       this.afterDamage(actor, entity, result, `${source.name} explosion`);
     }
     if (kind === "fuel") {
@@ -4386,9 +4392,26 @@ export class TacticalSim {
   // Barrage/collapse danger zones that fire during the given turn's resolve (for renderer rings).
   eventZonesForTurn(turn: number = this.turn): { kind: MapEventKind; x: number; z: number; radius: number }[] {
     const fromMap = this.mapEvents()
-      .filter((e) => (e.kind === "barrage" || e.kind === "collapse") && eventOccursWindow(e, turn))
-      .map((e) => ({ kind: e.kind, ...this.eventZone(e) }));
+      .filter((e) => (e.kind === "barrage" || e.kind === "collapse" || e.kind === "lightning") && eventOccursWindow(e, turn))
+      .map((e) => ({ kind: e.kind, ...(e.kind === "lightning" ? this.lightningZone(turn) : this.eventZone(e)) }));
     return [...fromMap, ...this.forcedZones];
+  }
+
+  // Where the storm strikes this turn: somewhere new every turn, but a pure function of the map
+  // and the turn number, so the telegraph the player sees during command is exactly where the
+  // bolt lands during resolve and a restored save agrees with itself. Never on a base.
+  private lightningZone(turn: number): { x: number; z: number; radius: number } {
+    const b = this.mapDef.terrain.bounds;
+    let seed = ((this.mapDef.seed ^ (turn * 0x9e3779b1)) >>> 0) || 1;
+    const next = (): number => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 0xffffffff; };
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const x = b.minX + 4 + next() * (b.maxX - b.minX - 8);
+      const z = b.minZ + 3 + next() * (b.maxZ - b.minZ - 6);
+      const nearBase = this.entities.some((e) => e.kind === "base" && dist(e.position, { x, z }) < 7);
+      if (!nearBase) return { x, z, radius: LIGHTNING_RADIUS };
+    }
+    const c = mapCenter(this.mapDef);
+    return { x: c.x, z: c.z, radius: LIGHTNING_RADIUS };
   }
 
   // Read-only environment snapshot for the renderer + HUD.
@@ -4427,6 +4450,10 @@ export class TacticalSim {
       this.pushLog("Structures in the marked zone are about to collapse.");
       notice = notice ?? "⚠ Cover in the marked zone collapses this turn.";
     }
+    if (zones.some((z) => z.kind === "lightning")) {
+      this.pushLog("The storm is building — lightning will strike the marked point this turn.");
+      notice = notice ?? "⚠ Lightning strikes the marked point this turn — stay clear of it.";
+    }
     if (!notice) {
       if (this.sandstormActive(t + 1) && !stormNow) notice = "A sandstorm is approaching next turn.";
       else if (this.eventZonesForTurn(t + 1).some((z) => z.kind === "barrage")) notice = "Artillery is ranging in — a barrage hits next turn.";
@@ -4447,6 +4474,9 @@ export class TacticalSim {
           const point = clampToArena({ x: zone.x + Math.sin(angle) * r, z: zone.z + Math.cos(angle) * r });
           this.pendingStrikes.push({ at: 0.25 + i * 0.26, point, radius: 2.6, damage: 34, kind: "barrage" });
         }
+      } else if (zone.kind === "lightning") {
+        const power = this.mapEvents().find((e) => e.kind === "lightning")?.power ?? 46;
+        this.pendingStrikes.push({ at: 0.6, point: { x: zone.x, z: zone.z }, radius: zone.radius, damage: power, kind: "lightning" });
       } else {
         const covers = this.entities.filter((e) => e.kind === "cover" && e.status.alive && dist(e.position, zone) <= zone.radius);
         covers.forEach((c, i) => this.pendingStrikes.push({ at: 0.25 + i * 0.2, point: { ...c.position }, radius: 1.7, damage: 999, kind: "collapse" }));
@@ -4476,8 +4506,15 @@ export class TacticalSim {
   // A single environmental detonation: a blast effect plus AoE damage to anything in range
   // (both teams — it's the battlefield, not a unit's attack). Bases are spared so the sky can't
   // hand someone the win.
-  private detonateStrike(strike: { point: Vec2; radius: number; damage: number; kind: "barrage" | "collapse" | "airstrike" | "cluster" | "laser" }): void {
-    const color = strike.kind === "barrage" ? 0xffac5a
+  private detonateStrike(strike: { point: Vec2; radius: number; damage: number; kind: StrikeKind }): void {
+    if (strike.kind === "lightning") {
+      // The bolt: a beam effect from the sky to the point, then the blast. Sets gas off like any
+      // other blast, and the ground burns briefly where it lands.
+      this.effect("beam", { x: strike.point.x - 0.6, z: strike.point.z - 0.6 }, strike.point, 0xd8ecff, 0.5, 0.4);
+      this.burnZones.push({ id: `burn-${++this.effectSeq}`, x: strike.point.x, z: strike.point.z, radius: 1.2, turnsLeft: 1 });
+    }
+    const color = strike.kind === "lightning" ? 0xd8ecff
+      : strike.kind === "barrage" ? 0xffac5a
       : strike.kind === "collapse" ? 0xb59a72
       : strike.kind === "laser" ? 0xff5a4d
       : strike.kind === "cluster" ? 0xffb02e
@@ -4508,6 +4545,7 @@ export class TacticalSim {
     // logged once when tasked, so a 8-bomb cluster doesn't spam the feed.
     if (strike.kind === "barrage") this.pushLog("Shells hammer the marked zone.");
     else if (strike.kind === "collapse") this.pushLog("Cover collapses in the marked zone.");
+    else if (strike.kind === "lightning") this.pushLog("Lightning strikes the marked point!");
   }
 
   // Debug/test hook: force an environmental event onto the current turn (for screenshots/tests).

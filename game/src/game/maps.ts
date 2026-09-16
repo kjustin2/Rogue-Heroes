@@ -56,7 +56,8 @@ export interface SignatureObject {
 //  • sandstorm: a window of turns where accuracy drops and the fog thickens.
 //  • barrage: off-map artillery shells a zone during the turn's resolve (hits both sides).
 //  • collapse: cover inside a zone crumbles during the turn's resolve.
-export type MapEventKind = "sandstorm" | "barrage" | "collapse" | "ionstorm";
+// "lightning": a storm that strikes ONE telegraphed point per turn, somewhere new each turn.
+export type MapEventKind = "sandstorm" | "barrage" | "collapse" | "ionstorm" | "lightning";
 
 export interface MapEventConfig {
   kind: MapEventKind;
@@ -406,6 +407,8 @@ const RAW_MAPS: readonly MapDef[] = [
     flagOffset: 3.4,
     hill: { x: 0, z: 0 },
     hillRadius: 5.0,
+    // A storm rolls through the valley: from turn 4, lightning strikes one marked point every turn.
+    events: [{ kind: "lightning", startTurn: 4, period: 1, power: 46 }],
     scatter: [
       { palette: ["tree", "tree", "rock"], count: 10, spacing: 1.6, centerGap: 6 },
       { palette: ["sandbag", "rubble"], count: 3, spacing: 2.4, centerGap: 7 },

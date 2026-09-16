@@ -496,7 +496,7 @@ export class WorldRenderer {
     }
     const pulse = (Math.sin(performance.now() * 0.006) + 1) * 0.5;
     for (const zone of env.zones) {
-      const color = zone.kind === "barrage" ? 0xff5a3c : 0xffb24a;
+      const color = zone.kind === "barrage" ? 0xff5a3c : zone.kind === "lightning" ? 0xbfe4ff : 0xffb24a;
       const y = terrainHeightAt(zone) + 0.07;
       const ring = new THREE.Mesh(
         new THREE.RingGeometry(zone.radius - 0.4, zone.radius, 72),
