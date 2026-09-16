@@ -33,7 +33,7 @@ export interface FactionDef {
 
 export const ALL_TROOPS: readonly TroopKind[] = [
   "soldier", "scout", "sniper", "striker", "heavy", "grenadier", "mortar", "medic", "engineer",
-  "flamer", "droneop", "sapper", "tank", "apc", "artillery", "flak", "gunship", "interceptor",
+  "flamer", "droneop", "sapper", "jumper", "tank", "apc", "artillery", "flak", "gunship", "interceptor",
   "bomber", "transport",
 ];
 
@@ -63,7 +63,7 @@ export const FACTIONS: readonly FactionDef[] = [
     name: "Vanguard",
     blurb: "Combined arms — real armour and a full air wing, but no indirect fire.",
     detail: "Combined-arms regulars: the honest baseline. Tanks, APCs, flak and the whole air wing, with no glaring weakness — except that it fields no mortar, grenadier or artillery at all. A dug-in enemy has to be taken, not shelled.",
-    roster: ["soldier", "scout", "sniper", "striker", "heavy", "medic", "engineer", "tank", "apc", "flak", "gunship", "interceptor", "transport"],
+    roster: ["soldier", "scout", "sniper", "striker", "heavy", "jumper", "medic", "engineer", "tank", "apc", "flak", "gunship", "interceptor", "transport"],
     tech: ["recon", "assault", "support", "armor", "airwing", "breach", "bulwark", "plating", "hunter", "triage", "welding", "optics", "ghillie"],
     defenses: ["wall", "turret"],
     supports: ["airstrike"],
@@ -76,7 +76,7 @@ export const FACTIONS: readonly FactionDef[] = [
     name: "Syndicate",
     blurb: "Cheap and fast — burn, mines and area denial, but no tank.",
     detail: "Fast, cheap and attritional. Flamers, sappers, mortars and cluster munitions deny ground, and scouts and strikers take it early. No tank and no siege gun, so it cannot win a slugging match — only a quicker one.",
-    roster: ["soldier", "scout", "sniper", "striker", "grenadier", "mortar", "medic", "flamer", "droneop", "sapper", "apc", "gunship"],
+    roster: ["soldier", "scout", "sniper", "striker", "jumper", "grenadier", "mortar", "medic", "flamer", "droneop", "sapper", "apc", "gunship"],
     tech: ["recon", "assault", "support", "ordnance", "armor", "airwing", "breach", "bulwark", "thermobarics", "cluster", "triage", "welding", "optics", "ghillie"],
     defenses: ["wall", "turret"],
     supports: ["airstrike", "cluster"],

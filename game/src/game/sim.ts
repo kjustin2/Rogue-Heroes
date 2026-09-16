@@ -26,6 +26,7 @@ import {
   createCover,
   createBase,
   createDroneOp,
+  createJumper,
   createFlamer,
   createFlak,
   createGunship,
@@ -2044,6 +2045,33 @@ export class TacticalSim {
         this.defending.delete(actor.id);
       }
       const crouchMoveSlow = order.startedCrouched ? 0.66 : 1;
+      if (canJump(actor)) {
+        // THE JUMP. Airborne for the whole leap (so it is a flyer to targeting and mines), on a
+        // sine arc whose height scales with the distance, and back on the ground the moment it
+        // lands. The order's own progress drives the arc, so it can never desync from the move.
+        const total = Math.max(0.01, dist(order.start, order.destination));
+        actor.position = moveToward(actor.position, order.destination, moveSpeed(actor) * 1.15 * dt);
+        const progress = clamp(1 - dist(actor.position, order.destination) / total, 0, 1);
+        const landed = dist(actor.position, order.destination) < 0.08;
+        actor.flying = !landed;
+        actor.agl = landed ? undefined : Math.sin(progress * Math.PI) * Math.min(4.2, 1.2 + total * 0.28);
+        this.syncEntityElevation(actor);
+        actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
+        if (landed) {
+          this.separateFromUnits(actor, order.destination);
+          this.syncEntityElevation(actor);
+          this.effect("impact", actor.position, actor.position, 0xbfe9ff, 0.35, actor.radius * 1.3);
+          this.checkMines(actor);
+          this.checkPickups(actor);
+          order.done = true;
+        } else if (order.elapsed >= order.duration + 0.5) {
+          actor.flying = false;
+          actor.agl = undefined;
+          this.syncEntityElevation(actor);
+          order.done = true;
+        }
+        return;
+      }
       actor.position = moveToward(actor.position, order.destination, moveSpeed(actor) * crouchMoveSlow * dt);
       this.separateFromUnits(actor, order.destination);
       this.syncEntityElevation(actor);
@@ -2268,6 +2296,9 @@ export class TacticalSim {
   private blockedMoveDestination(actor: CombatEntity, start: Vec2, destination: Vec2, allowedCoverId?: string, silent = false): Vec2 {
     const pathLength = dist(start, destination);
     if (pathLength < 0.05) return destination;
+    // A JUMP arcs over everything on the way. Only the landing matters: dry ground, not inside a
+    // prop or a structure. Anything else in range is a legal target -- that is the whole unit.
+    if (canJump(actor)) return this.jumpLanding(actor, nearestDryPoint(clampToArena(destination)));
     // Terrain (steep step / water) stop — computed silently; we log only if it's the winning stop.
     const terrainStop = this.blockedBySteepTerrain(actor, start, destination, allowedCoverId, pathLength, true);
     if (actor.flying) return destination; // flyers overfly all ground cover/structures
@@ -2304,8 +2335,29 @@ export class TacticalSim {
     return coverStop!;
   }
 
+  private jumpLanding(actor: CombatEntity, destination: Vec2): Vec2 {
+    const solid = this.entities.filter((e) =>
+      e.status.alive && e.id !== actor.id &&
+      ((e.kind === "cover" && e.coverKind !== "ridge") || e.kind === "base" || isDefenseKind(e.kind)));
+    let landing = { ...destination };
+    // Push out of any solid it would land inside, a few times over so a cluster resolves too.
+    for (let pass = 0; pass < 4; pass += 1) {
+      let moved = false;
+      for (const e of solid) {
+        const gap = e.radius + actor.radius + 0.2;
+        const d = dist(landing, e.position);
+        if (d >= gap) continue;
+        const away = d > 0.001 ? normalize({ x: landing.x - e.position.x, z: landing.z - e.position.z }) : { x: 1, z: 0 };
+        landing = clampToArena({ x: e.position.x + away.x * gap, z: e.position.z + away.z * gap });
+        moved = true;
+      }
+      if (!moved) break;
+    }
+    return nearestDryPoint(landing);
+  }
+
   private blockedBySteepTerrain(actor: CombatEntity, start: Vec2, destination: Vec2, allowedCoverId: string | undefined, pathLength: number, silent = false): Vec2 | undefined {
-    if (actor.flying) return undefined; // flyers ignore ground terrain entirely — they overfly it
+    if (actor.flying || canJump(actor)) return undefined; // flyers and jumpers ignore ground terrain entirely — they overfly it
     const allowedCover = this.entity(allowedCoverId);
     if (allowedCover && isCliffCover(allowedCover) && isInfantryKind(actor.kind)) return undefined;
     const samples = Math.max(12, Math.ceil(pathLength * 4));
@@ -4650,6 +4702,7 @@ function makeTroopBase(kind: TroopKind, id: string, name: string, team: Team, po
     case "engineer": return createEngineer(id, name, team, position);
     case "flamer": return createFlamer(id, name, team, position);
     case "droneop": return createDroneOp(id, name, team, position);
+    case "jumper": return createJumper(id, name, team, position);
     case "sapper": return createSapper(id, name, team, position);
     default: return createSoldier(id, name, team, position);
   }
@@ -4676,6 +4729,11 @@ function defenseRadius(kind: DefenseKind): number {
 
 function ramRange(entity: CombatEntity): number {
   return unitStats(entity.kind).ramRange;
+}
+
+/** Jet-jump mover with an intact pack: its moves are arcs, not walks. */
+function canJump(entity: CombatEntity): boolean {
+  return Boolean(unitStats(entity.kind).jump) && entity.parts.some((p) => p.id === "pack" && p.hp > 0);
 }
 
 function meleeRange(entity: CombatEntity): number {

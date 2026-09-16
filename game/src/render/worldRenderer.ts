@@ -1115,7 +1115,7 @@ export class WorldRenderer {
     group.visible = entity.status.alive;
     const previousPosition = group.userData.previousPosition as Vec2 | undefined;
     const moved = previousPosition ? dist(previousPosition, entity.position) : 0;
-    const moving = entity.kind !== "cover" && moved > 0.001;
+    const moving = entity.kind !== "cover" && moved > 0.001 && !(entity.flying && isInfantryKind(entity.kind));
     const motionTime = (group.userData.motionTime as number | undefined ?? 0) + (moving ? moved * 2.4 : 0);
     group.userData.previousPosition = { ...entity.position };
     group.userData.motionTime = motionTime;
@@ -1221,6 +1221,26 @@ export class WorldRenderer {
       } else if (entity.kind === "turret" || entity.kind === "exturret") {
         // Emplacements: a slow traverse hunt, like a gun looking for work. (Walls stay put.)
         group.rotation.y += Math.sin(t * 0.25) * 0.12;
+      }
+    }
+    // AIRBORNE INFANTRY (a jump trooper mid-leap): lean into the arc and pour thrust out of the
+    // pack. The sim owns the arc; this is only the read of it.
+    if (entity.flying && isInfantryKind(entity.kind) && entity.status.alive) {
+      group.rotation.x += 0.42;
+      const fx = this.particles;
+      if (fx) {
+        const back = { x: -Math.sin(entity.yaw) * 0.45, z: -Math.cos(entity.yaw) * 0.45 };
+        fx.directionalBurst({
+          x: entity.position.x + back.x, y: group.position.y + 0.6, z: entity.position.z + back.z,
+          dirX: back.x * 0.6, dirY: -1, dirZ: back.z * 0.6,
+          count: 3, color: [0xfff1c8, 0xffb14a, 0xff6a1a], speed: [3, 6], spread: 0.3,
+          size: [0.08, 0.18], life: [0.08, 0.2], gravity: 0, drag: 4, shape: ParticleShape.streak,
+        });
+        fx.burst({
+          x: entity.position.x + back.x, y: group.position.y + 0.5, z: entity.position.z + back.z,
+          count: 1, color: [0x8a8078, 0xb0a89e], speed: [0.3, 0.9], up: 0.2, size: [0.2, 0.4],
+          life: [0.5, 0.9], gravity: -0.3, drag: 1.5, jitter: 0.1,
+        });
       }
     }
     // MELEE LUNGE. The striker's whole body commits: it coils back through the wind-up, drives
@@ -1818,6 +1838,22 @@ export class WorldRenderer {
       this.box(rig, entity, "pack", [0.34, 0.09, 0.34], [0, 2.25, -0.1], 0x35485c, { accent: true, metalness: 0.3 });
       this.cylinder(rig, entity, "pack", 0.26, 0.05, [0, 2.33, -0.1], 0x9fdcff, [0, 0, 0], { accent: true, emissive: 0x6fd7ff, emissiveIntensity: 0.21 });
       this.sphere(rig, entity, "pack", 0.07, [0, 2.18, 0.08], 0xff5a4d, { accent: true, emissive: 0xff3b30, emissiveIntensity: 0.36 });
+    } else if (entity.kind === "jumper") {
+      // Jump trooper: the silhouette is the JET PACK -- two fat thruster bells angled out behind
+      // the shoulders with glowing nozzles, a stub carbine, knee guards and a full visor. From
+      // above the twin bells read even when the body does not.
+      this.box(rig, entity, "rifle", [0.13, 0.14, 0.62], [0.46, 0.92, 0.26], 0x2f333a, { metalness: 0.34 });
+      this.cylinder(rig, entity, "rifle", 0.035, 0.28, [0.46, 0.94, 0.7], 0x1c1e22, [Math.PI / 2, 0, 0], { metalness: 0.4 });
+      this.box(rig, entity, "rifle", [0.06, 0.1, 0.16], [0.46, 1.02, 0.3], 0x9fdcff, { accent: true, emissive: 0x6fd7ff, emissiveIntensity: 0.2 });
+      for (const side of [-1, 1]) {
+        this.cylinder(rig, entity, "pack", 0.13, 0.5, [side * 0.2, 0.98, -0.42], 0x3a4048, [0.35, 0, side * -0.28], { metalness: 0.42 });
+        this.cylinder(rig, entity, "pack", 0.16, 0.12, [side * 0.26, 0.7, -0.5], 0x22262b, [0.35, 0, side * -0.28], { metalness: 0.5 });
+        this.cylinder(rig, entity, "pack", 0.1, 0.05, [side * 0.28, 0.63, -0.53], 0xffc266, [0.35, 0, side * -0.28], { accent: true, emissive: 0xff8a2a, emissiveIntensity: 0.5 });
+        this.box(rig, entity, "legs", [0.2, 0.16, 0.12], [side * 0.15, 0.48, 0.12], 0x3a4048, { accent: true, metalness: 0.3 });
+      }
+      this.box(rig, entity, "pack", [0.5, 0.3, 0.14], [0, 1.02, -0.3], 0x2b3036, { metalness: 0.4 });
+      this.box(rig, entity, "head", [0.331, 0.2, 0.331], [0, 1.46, 0], 0x353b44, { accent: true, metalness: 0.3 });
+      this.box(rig, entity, "head", [0.3, 0.09, 0.09], [0, 1.44, 0.16], 0xffb14a, { accent: true, emissive: 0xff7d1e, emissiveIntensity: 0.4 });
     } else if (entity.kind === "sapper") {
       // Combat sapper: stubby demolition launcher with a fat drum, mine discs clipped to
       // the belt, blast apron, and a heavy face shield — the wall-breaker.
@@ -4455,6 +4491,7 @@ function infantryPalette(kind: string): { body: number; trim: number; pack: numb
     case "engineer": return { body: 0xcaa227, trim: 0x474328, pack: 0x54481a };
     case "flamer": return { body: 0xb33418, trim: 0x4a3a30, pack: 0x6a2812 };
     case "droneop": return { body: 0x7f9fc4, trim: 0x3d4550, pack: 0x2c3f52 };
+    case "jumper": return { body: 0x4e6b8c, trim: 0x2b3036, pack: 0x2f3a46 };
     case "sapper": return { body: 0x9c8c4c, trim: 0x46422f, pack: 0x4a3f1e };
     default: return { body: 0x6c7052, trim: 0x35424a, pack: 0x3a4438 };
   }

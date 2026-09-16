@@ -15,7 +15,8 @@ export type InfantryKind =
   | "engineer"
   | "flamer"
   | "droneop"
-  | "sapper";
+  | "sapper"
+  | "jumper";
 
 export type GroundVehicleKind = "tank" | "apc" | "artillery" | "flak";
 
@@ -35,7 +36,7 @@ export type EntityKind = TroopKind | StructureKind;
 // `kind === "a" || kind === "b" || ...` predicates used to.
 const INFANTRY_SET: Record<InfantryKind, true> = {
   soldier: true, scout: true, sniper: true, striker: true, heavy: true, grenadier: true,
-  mortar: true, medic: true, engineer: true, flamer: true, droneop: true, sapper: true,
+  mortar: true, medic: true, engineer: true, flamer: true, droneop: true, sapper: true, jumper: true,
 };
 const GROUND_VEHICLE_SET: Record<GroundVehicleKind, true> = { tank: true, apc: true, artillery: true, flak: true };
 const AIR_SET: Record<AirKind, true> = { gunship: true, interceptor: true, bomber: true, transport: true };
@@ -64,6 +65,8 @@ export const isAir = (kind: EntityKind): boolean => kind in AIR_SET;
 export type ProjectileKind = "rifle" | "shell" | "bolt" | "grenade";
 
 export interface UnitStats {
+  /** Jet-jump mover: a move ARCS over cliffs, water and cover and lands anywhere dry in range. */
+  jump?: boolean;
   /** Board distance per order, before MOVE_RANGE_SCALE. 0 = immobile. */
   moveRange: number;
   /** World units per second while resolving a move, before MOVE_RANGE_SCALE. */
@@ -162,6 +165,10 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   // spread at MAX range must stay under 12 degrees, or the top of the range is a lie. 8 + 9*0.65*0.22
   // lands at ~9.3, so every metre of its short reach is a metre it can actually shoot.
   sapper: foot({ shotDamage: 17, weaponRange: 9, burst: 7, spread: 8, accurateFraction: 0.35, spreadPerMeter: 0.22, accuracyLabel: "scattergun", aiValue: 5 }),
+  // JUMP TROOPER. Vertical movement: its move is a jet-assisted arc that ignores cliffs, water and
+  // cover and lands on any dry ground in range, then it fires a carbine from wherever it landed.
+  // Mid-arc it is a flyer -- anti-air can pick it out of the sky and it can be shot by interceptors.
+  jumper: foot({ jump: true, moveRange: 9.0, moveSpeed: 8.5, shotDamage: 26, weaponRange: 17, spread: 2.6, accurateFraction: 0.44, spreadPerMeter: 0.11, accuracyLabel: "carbine", hpMultiplier: 0.95, aiValue: 6 }),
 
   // --- Ground vehicles ---
   tank: u({ moveRange: 5.4, moveSpeed: 5.5, shotDamage: 66, weaponRange: 28, projectile: "shell", projectileSpeed: 2.45, spread: 2.65, accurateFraction: 0.5, accuracyLabel: "stabilized cannon", ramRange: 2.85, groundShell: true, hpMultiplier: 1.3, aiValue: 3 }),
@@ -208,6 +215,7 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "medic", label: "Medic", role: "Frontline Support", cost: 180, cooldown: 2, tech: "support", tip: "Heals wounded infantry near it each round — and the aura is short, so it has to stand in the line it is keeping alive. Tough for a support unit; barely armed." },
   { kind: "engineer", label: "Engineer", role: "Support", cost: 200, cooldown: 2, tech: "support", tip: "Repairs nearby vehicles and the Home Base, and its fire-control rig boosts nearby allies' damage." },
   { kind: "droneop", label: "Drone Operator", role: "Spotter", cost: 210, cooldown: 2, tech: "support", tip: "The longest eyes on the field: a 26m marker carbine and a drone whose optics sharpen nearby allies' fire. Almost no punch and the thinnest armour in the roster — keep it behind everything." },
+  { kind: "jumper", label: "Jump Trooper", role: "Vertical", cost: 270, cooldown: 2, tech: "assault", tip: "Jet pack. Its move is a jump: over cliffs, over water, over walls, onto the high ground — then it fires from up there. Airborne for the leap, so flak and interceptors can catch it mid-arc." },
   { kind: "flamer", label: "Flamer", role: "Burn", cost: 260, cooldown: 2, tech: "ordnance", tip: "Short-range flame projector. Every hit leaves burning ground for 2 turns — crouching won't help, RUN. Shoot its fuel tanks at your peril." },
   { kind: "sapper", label: "Scattergun", role: "Breacher", cost: 240, cooldown: 2, tech: "ordnance", tip: "Seven-pellet scattergun: brutal inside 5m and useless past 10 — the spread sweeps a whole clump at once. Also plants proximity mines ($15 each) and hits cover and walls 3x harder." },
   { kind: "tank", label: "Tank", role: "Armor", cost: 400, cooldown: 3, tech: "armor", tip: "Heavily armored bruiser: massive HP, big gun, and can ram and crush cover." },

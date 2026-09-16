@@ -581,6 +581,22 @@ export function createDroneOp(id: string, name: string, team: Team, position: Ve
   });
 }
 
+export function createJumper(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  return createInfantry(id, name, "jumper", team, position, {
+    radius: 0.58,
+    height: 1.66,
+    bodyHp: 38,
+    headHp: 14,
+    weaponHp: 18,
+    legsHp: 22,
+    packHp: 20,
+    weaponLabel: "Jump Carbine",
+    packLabel: "Jet Pack",
+    packRole: "utility", // lose the pack and the jumps stop (see canJump)
+    grenades: 1,
+  });
+}
+
 export function createSapper(id: string, name: string, team: Team, position: Vec2): CombatEntity {
   return createInfantry(id, name, "sapper", team, position, {
     radius: 0.64,
