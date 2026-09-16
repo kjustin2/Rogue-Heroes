@@ -5630,8 +5630,11 @@ function hash(value: string): number {
  * now feeds both.
  */
 function makeThemeSky(theme: MapTheme): { texture: THREE.CanvasTexture; horizon: THREE.Color } {
+  // Wide enough to carry a sun and cloud bands: from the tactical pitch the sky is a sliver at
+  // the top of the frame, but the title diorama and any low camera look straight at it, and a
+  // flat gradient there read as a mock-up.
   const canvas = document.createElement("canvas");
-  canvas.width = 8;
+  canvas.width = 512;
   canvas.height = 256;
   const sky = new THREE.Color(theme.sky);
   const horizon = sky.clone().lerp(new THREE.Color(theme.fog), 0.65).multiplyScalar(1.08);
@@ -5644,6 +5647,36 @@ function makeThemeSky(theme: MapTheme): { texture: THREE.CanvasTexture; horizon:
     gradient.addColorStop(1, `#${horizon.getHexString()}`);
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // The sun: a warm glow low on the same side the key light comes from.
+    const sun = ctx.createRadialGradient(370, 150, 0, 370, 150, 150);
+    sun.addColorStop(0, "rgba(255, 236, 200, 0.55)");
+    sun.addColorStop(0.18, "rgba(255, 220, 170, 0.22)");
+    sun.addColorStop(1, "rgba(255, 210, 160, 0)");
+    ctx.fillStyle = sun;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Cloud bands: long soft ellipses, lighter than the sky, flatter and thinner toward the
+    // horizon the way a real deck foreshortens. Deterministic per theme via its sky colour.
+    let seed = (theme.sky * 2654435761) >>> 0 || 7;
+    const rand = (): number => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 0xffffffff; };
+    const cloud = horizon.clone().lerp(new THREE.Color(0xffffff), 0.55);
+    for (let i = 0; i < 11; i += 1) {
+      const y = 70 + rand() * 150;
+      const depth = (y - 70) / 150; // 0 high, 1 at the horizon
+      const w = (60 + rand() * 120) * (0.6 + depth * 0.9);
+      const h = (7 + rand() * 12) * (1 - depth * 0.6);
+      const x = rand() * canvas.width;
+      const alpha = 0.1 + rand() * 0.14;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, w);
+      g.addColorStop(0, `rgba(${Math.round(cloud.r * 255)},${Math.round(cloud.g * 255)},${Math.round(cloud.b * 255)},${alpha})`);
+      g.addColorStop(1, `rgba(${Math.round(cloud.r * 255)},${Math.round(cloud.g * 255)},${Math.round(cloud.b * 255)},0)`);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(1, h / w);
+      ctx.translate(-x, -y);
+      ctx.fillStyle = g;
+      ctx.fillRect(x - w, y - w, w * 2, w * 2);
+      ctx.restore();
+    }
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
