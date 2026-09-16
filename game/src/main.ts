@@ -1852,7 +1852,17 @@ function showRoundTransition(turn: number): void {
   }, life);
 }
 
-sim.bus.on("TURN_START", ({ turn }) => showRoundTransition(turn));
+sim.bus.on("TURN_START", ({ turn }) => {
+  showRoundTransition(turn);
+  // Back out to the zoom the player was planning at before the resolve pushed in.
+  if (resolveEntryZoom !== undefined) {
+    const view = stage.viewState();
+    stage.guideTo({ focus: { x: view.x, z: view.z }, zoom: resolveEntryZoom }, { mode: "resolve", strength: 1.2, durationMs: 700 });
+    resolveEntryZoom = undefined;
+  }
+});
+// The planning zoom the resolve camera pushed in from; restored at the next TURN_START.
+let resolveEntryZoom: number | undefined;
 
 // Enemy-intel ticker: when the AI finishes a doctrine mid-battle, warn the player — a
 // readable escalation beat you can race ("their Armor Bay is online; rush or dig in").
@@ -2429,9 +2439,13 @@ function syncCameraAssist(): void {
     const focus = resolveFocus ?? resolveFocusPoint();
     if (!focus) return;
     const view = stage.viewState();
+    // PUSH IN on the action. At the planning zoom a firefight was two small figures trading
+    // pixels at the edge of the board; the resolve is the payoff and it gets a closer camera.
+    // The planning view is restored on TURN_START (below), so the player never has to zoom back.
+    if (resolveEntryZoom === undefined) resolveEntryZoom = view.zoom;
     stage.guideTo({
       focus,
-      zoom: Math.min(view.zoom, 0.86),
+      zoom: Math.min(view.zoom, 0.72),
       pitch: Math.max(view.pitch, 0.62),
     }, { mode: "resolve", strength: 1.85, durationMs: 280 });
     lastCommandCameraKey = "";
