@@ -5192,7 +5192,7 @@ body.killcam::after { bottom: 0; }
    whatever height is left rather than running past the bottom of the screen.
    --------------------------------------------------------------------------- */
 .target-panel {
-  top: 268px;
+  top: var(--rail-bottom, 268px);
   overflow-y: auto;
 }
 
@@ -5397,6 +5397,12 @@ body.killcam::after { bottom: 0; }
   text-shadow: none;
 }
 .commandbar .part-choice.blocked { border-color: rgba(255, 135, 95, 0.6); }
+/* The filled card's children kept their dim-on-dark colours, which is amber-on-amber on the
+   fill. Everything on the active card is the dark ink. */
+.commandbar .part-choice.active strong,
+.commandbar .part-choice.active span,
+.commandbar .part-choice.active em { color: #17120a; opacity: 1; }
+.commandbar .part-choice.active span { color: #3b2c12; }
 
 /* --- The condition strip was a full-width hairline, which reads as a divider
        between rows rather than as a meter. Bounded width and a visible track. --- */

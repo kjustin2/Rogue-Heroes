@@ -424,6 +424,10 @@ export class Hud {
       this.lastHtml = nextHtml;
       this.restoreScrollState(scrollState);
     }
+    // The target panel starts below the right rail. The rail's height varies (an event notice can
+    // wrap to three lines), so a fixed top collided with it the first time a storm was announced.
+    const rail = this.root.querySelector<HTMLElement>(".topbar.compact-top");
+    if (rail) this.root.style.setProperty("--rail-bottom", `${Math.ceil(rail.getBoundingClientRect().bottom) + 10}px`);
   }
 
   private handleClick(event: Event): void {
