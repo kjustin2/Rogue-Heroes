@@ -67,6 +67,8 @@ export type ProjectileKind = "rifle" | "shell" | "bolt" | "grenade";
 export interface UnitStats {
   /** Jet-jump mover: a move ARCS over cliffs, water and cover and lands anywhere dry in range. */
   jump?: boolean;
+  /** Rounds keep going through BODIES (cover still stops them), losing this fraction of damage per body. */
+  pierce?: number;
   /** Board distance per order, before MOVE_RANGE_SCALE. 0 = immobile. */
   moveRange: number;
   /** World units per second while resolving a move, before MOVE_RANGE_SCALE. */
@@ -139,7 +141,10 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   // --- Infantry ---
   soldier: foot({ shotDamage: 31, grenadeRange: 9.2, aiValue: 4 }),
   scout: foot({ moveRange: 11.5, moveSpeed: 11.8, shotDamage: 22, weaponRange: 22, spread: 3.0, accurateFraction: 0.41, spreadPerMeter: 0.12, accuracyLabel: "carbine", aiValue: 6 }),
-  sniper: foot({ moveRange: 6.0, moveSpeed: 6.2, shotDamage: 40, weaponRange: 34, projectileSpeed: 3.8, spread: 0.22, accurateFraction: 0.35, spreadPerMeter: 0.09, accuracyLabel: "marksman", aiValue: 8 }),
+  // RAIL MARKSMAN. The round does not stop at the first body: it goes through and hits every unit
+  // on the line, losing a quarter of its punch per body. Cover and walls still stop it. Line the
+  // enemy up and one shot is three -- the "wide beam" of the fun pass as one stat on one unit.
+  sniper: foot({ moveRange: 6.0, moveSpeed: 6.2, shotDamage: 40, weaponRange: 34, projectileSpeed: 3.8, spread: 0.22, accurateFraction: 0.35, spreadPerMeter: 0.09, accuracyLabel: "marksman", pierce: 0.25, aiValue: 8 }),
   striker: foot({ moveRange: 10.8, moveSpeed: 11.5, shotDamage: 24, accuracyLabel: "sidearm", meleeRange: 0.72, meleeMultiplier: 1, aiValue: 5 }),
   // A four-round burst reads as a rifle with a stutter. Ten rounds at lower per-shot damage reads
   // as a machine gun: same weight of fire, but you SEE the volume, and the wide cone means stray
@@ -207,7 +212,7 @@ export interface TroopSpec {
 export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "soldier", label: "Recruit", role: "Rifle", cost: 150, cooldown: 1, tip: "Versatile rifle infantry with hand grenades. Always available." },
   { kind: "scout", label: "Scout", role: "Recon", cost: 110, cooldown: 1, tech: "recon", tip: "Fast, cheap eyes; its optic relay sharpens nearby allies' fire." },
-  { kind: "sniper", label: "Marksman", role: "Sniper", cost: 220, cooldown: 2, tech: "recon", tip: "Long-range precision; deadly to heads and exposed crews." },
+  { kind: "sniper", label: "Marksman", role: "Sniper", cost: 220, cooldown: 2, tech: "recon", tip: "Long-range rail rifle. The round goes THROUGH bodies and hits everyone on the line (a quarter weaker per body) — line them up. Cover and walls still stop it. Deadly to heads and exposed crews." },
   { kind: "striker", label: "Striker", role: "Melee", cost: 180, cooldown: 2, tech: "assault", tip: "Rushes in and strikes hard at close range." },
   { kind: "heavy", label: "Heavy Gunner", role: "Suppression", cost: 250, cooldown: 2, tech: "assault", tip: "Ten-round machine-gun bursts. Tough enough to anchor a push, and the cone is wide enough that stray rounds rake anyone standing near the target." },
   { kind: "grenadier", label: "Grenadier", role: "Splash", cost: 250, cooldown: 3, tech: "ordnance", tip: "Arcing launcher with splash that clears cover and clusters." },

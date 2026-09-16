@@ -311,6 +311,8 @@ export interface Projectile {
   rollDuration: number;
   rollSpeed: number;
   ignoredEntityIds: string[];
+  /** Bodies this round has already gone through (piercing rounds only). */
+  pierced?: number;
 }
 
 export interface TurnDamageEntry {
@@ -2831,7 +2833,9 @@ export class TacticalSim {
       return;
     }
 
-    const amount = this.estimateShotDamage(actor, target, targetPart, cover ? "center" : projectile.aim, cover, projectile.attackMode ?? "weapon");
+    const pierce = unitStats(actor.kind).pierce ?? 0;
+    const through = projectile.pierced ?? 0;
+    const amount = Math.round(this.estimateShotDamage(actor, target, targetPart, cover ? "center" : projectile.aim, cover, projectile.attackMode ?? "weapon") * Math.max(0.2, 1 - pierce * through));
     const result = applyDamage(target, targetPart.id, amount);
     if (cover && intendedTarget) this.pushLog(`${target.name} intercepts shot at ${intendedTarget.name}`);
     if (!cover && intendedTarget && target.id !== intendedTarget.id) this.pushLog(`${target.name} is hit by a stray shot at ${intendedTarget.name}`);
@@ -2843,6 +2847,14 @@ export class TacticalSim {
       this.effect("impact", target.position, target.position, result.destroyed ? 0xffd166 : 0xffffff, 0.42, target.radius);
     }
     this.afterDamage(actor, target, result);
+    // A piercing round goes THROUGH a body and keeps flying; only cover stops it. The order stays
+    // open until the round expires, so the line it draws is the whole shot.
+    if (pierce > 0 && !cover) {
+      projectile.pierced = through + 1;
+      projectile.ignoredEntityIds.push(target.id);
+      if (through === 0 && intendedTarget) this.pushLog(`${actor.name}'s round goes clean through ${target.name}`);
+      return;
+    }
     this.removeProjectile(projectile.id);
     if (order) order.done = true;
   }
