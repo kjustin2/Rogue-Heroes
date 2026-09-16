@@ -225,7 +225,8 @@ export interface VisualEvent {
   id: string;
   // "jet" = a strike aircraft flying from->to; "beam" = an orbital lance burning the from->to
   // line; "topple" = a tall cover column falling from `from` toward `to`.
-  type: "shot" | "impact" | "blast" | "ping" | "jet" | "beam" | "topple";
+  // "strike" = a melee blow landing at `to`, swung from `from`.
+  type: "shot" | "impact" | "blast" | "ping" | "jet" | "beam" | "topple" | "strike";
   from: Vec2;
   to: Vec2;
   color: number;
@@ -3108,9 +3109,9 @@ export class TacticalSim {
   private resolveMelee(actor: CombatEntity, target: CombatEntity, partId?: string): void {
     const { amount, part: targetPart } = this.meleeDamageEstimate(actor, target, partId);
     const result = applyDamage(target, targetPart.id, amount);
-    this.effect("blast", target.position, target.position, result.killed ? 0xfff1a6 : 0x9dfcff, 0.52, target.radius + 1.1);
+    this.effect("strike", actor.position, target.position, result.killed ? 0xfff1a6 : 0x9dfcff, 0.52, target.radius + 1.1);
     this.pushLog(`${actor.name} strikes ${target.name}'s ${targetPart.label}`);
-    this.afterDamage(actor, target, result);
+    this.afterDamage(actor, target, result, "Strike");
   }
 
   private afterDamage(actor: CombatEntity, target: CombatEntity, resultOrMessages: DamageResult | string[], source?: string): void {
@@ -3118,7 +3119,9 @@ export class TacticalSim {
     if (!Array.isArray(resultOrMessages)) this.recordDamage(actor, target, resultOrMessages, source);
     for (const message of messages) this.pushLog(message);
     if (messages.some((message) => message.includes("killed by"))) {
-      this.effect("blast", target.position, target.position, 0xffd166, 0.78, target.radius + 2.1);
+      // A blade kill is a second, harder strike, not a fireball.
+      if (source === "Strike") this.effect("strike", actor.position, target.position, 0xfff1a6, 0.6, target.radius + 1.4);
+      else this.effect("blast", target.position, target.position, 0xffd166, 0.78, target.radius + 2.1);
     } else if (messages.some((message) => message.includes("destroyed"))) {
       this.effect("impact", target.position, target.position, 0xffbf69, 0.5, target.radius + 0.75);
     }

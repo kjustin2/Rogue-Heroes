@@ -8,8 +8,8 @@ import { isBuildingKind, isDefenseKind, isInfantryKind, isVehicleKind, type Comb
 import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
 import { OVERWATCH_ARC_HALF } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec } from "../game/maps";
-import { ARENA_BOUNDS, arenaDepth, arenaWidth, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
-import { instantiate, kitGeometry, modelsVersion, type KitPart, type ModelKey } from "./models";
+import { ARENA_BOUNDS, arenaDepth, arenaWidth, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
+import { greyscaleOf, instantiate, kitGeometry, modelsVersion, type KitPart, type ModelKey } from "./models";
 
 type PartMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
 
@@ -67,6 +67,8 @@ export class WorldRenderer {
   // unit's weapon kicks back (and its body rocks) the instant it shoots.
   private readonly recoilByActor = new Map<string, number>();
   private readonly attackPhaseByActor = new Map<string, number>();
+  /** Melee targets by actor, for the lunge; only set while a strike order is live. */
+  private readonly meleeTargetByActor = new Map<string, Vec2>();
   /**
    * Pooled particulate for combat. The blast/impact effects were pure geometry -- expanding rings,
    * a dome, a hot core -- with nothing PARTICULATE in them, so an explosion read as a diagram of an
@@ -96,6 +98,7 @@ export class WorldRenderer {
   // A midtone derived from the active map palette; structural props are tinted toward it so
   // they read as part of the map instead of generic brown crates on every battlefield.
   private propTint = new THREE.Color(0x8a7a5c);
+  private rockTint = new THREE.Color(0x8a7a5c);
   /** True while the silhouette shape test is rendering (see setSilhouette). */
   private silhouetteMode = false;
   /** The active map's scrolling water-ripple normal, if it has water. Rebuilt per map. */
@@ -572,18 +575,20 @@ export class WorldRenderer {
    * (a render-parent change orphaned the animation state) and no gate noticed, so the pose is now
    * readable and assertable from outside.
    */
-  limbPose(entityId: string): { limb: string; rotX: number; posY: number; posZ: number }[] {
+  limbPose(entityId: string): { limb: string; rotX: number; rotY: number; posY: number; posZ: number }[] {
     const group = this.groups.get(entityId);
     if (!group) return [];
-    const out: { limb: string; rotX: number; posY: number; posZ: number }[] = [];
+    const out: { limb: string; rotX: number; rotY: number; posY: number; posZ: number }[] = [];
+    // The actor group itself, so a smoke can see the whole-body idle (weight shift, scan turn).
+    out.push({ limb: "body", rotX: group.rotation.x, rotY: group.rotation.y, posY: group.position.y, posZ: group.position.z });
     group.traverse((node) => {
       const limb = node.userData?.limb as string | undefined;
       // Weapons are not limbs (they do not swing from a joint) but they ARE animated, by the attack
       // choreography, and a stopped attack pose is just as invisible in a still as a stopped walk.
       const partId = node.userData?.partId as string | undefined;
-      const label = limb ?? (partId === "rifle" || partId === "cannon" || partId === "gun" ? "weapon" : undefined);
+      const label = limb ?? (partId === "rifle" || partId === "cannon" || partId === "gun" ? "weapon" : partId === "head" ? "head" : undefined);
       if (!label) return;
-      out.push({ limb: label, rotX: node.rotation.x, posY: node.position.y, posZ: node.position.z });
+      out.push({ limb: label, rotX: node.rotation.x, rotY: node.rotation.y, posY: node.position.y, posZ: node.position.z });
     });
     return out;
   }
@@ -784,6 +789,9 @@ export class WorldRenderer {
     // the units advance; before this a crate competed with a soldier for the eye, and at tactical
     // zoom the scenery won because there is more of it.
     this.propTint = new THREE.Color(theme.ground).lerp(new THREE.Color(theme.groundAccent), 0.35).multiplyScalar(0.62);
+    // Natural stone is OF the map: it takes the ground's own hue at a slightly lower value, so a
+    // rock on the ice is grey-blue and a rock in the dust bowl is ochre, from one greyscaled hull.
+    this.rockTint = new THREE.Color(theme.ground).lerp(new THREE.Color(theme.groundAccent), 0.3).multiplyScalar(1.15);
     this.rebuildArena(theme);
     this.buildAmbient(theme.ambient);
   }
@@ -828,8 +836,10 @@ export class WorldRenderer {
   // texture sliding in one direction, and slow enough that a still frame looks still.
   /** Drift the cloud deck. Very slow — a shadow should take the better part of a minute to cross. */
   private syncClouds(): void {
-    const t = performance.now() * 0.0000075;
+    const now = performance.now();
+    const t = now * 0.0000075;
     cloudUniforms.uCloudOffset.value.set(t, t * 0.55);
+    windUniforms.uTime.value = now * 0.001;
   }
 
   private syncWater(): void {
@@ -920,6 +930,7 @@ export class WorldRenderer {
     this.sceneryRoot.add(floor);
 
     this.sceneryRoot.add(makeGroundPlates(theme, width, depth, surface));
+    this.sceneryRoot.add(makeGroundDetail(theme, width, depth));
     this.sceneryRoot.add(makeTerrainBlocks(theme.ground, theme.groundAccent, surface));
     const water = makeWaterAndBridges(theme, surface);
     this.waterRipple = (water.userData.ripple as THREE.Texture | undefined) ?? undefined;
@@ -1050,6 +1061,7 @@ export class WorldRenderer {
   // never drift out of step with the shot it belongs to.
   private computeAttackPhases(sim: TacticalSim): void {
     this.attackPhaseByActor.clear();
+    this.meleeTargetByActor.clear();
     if (sim.phase !== "resolve") return;
     for (const order of sim.orders) {
       if (order.done) continue;
@@ -1057,6 +1069,10 @@ export class WorldRenderer {
       const duration = order.duration > 0 ? order.duration : 1;
       const phase = Math.max(0, Math.min(1, order.elapsed / duration));
       this.attackPhaseByActor.set(order.actorId, phase);
+      if (order.kind === "melee" && order.targetId) {
+        const target = sim.entity(order.targetId);
+        if (target) this.meleeTargetByActor.set(order.actorId, target.position);
+      }
     }
   }
 
@@ -1100,7 +1116,9 @@ export class WorldRenderer {
     group.userData.walkWeight = walkWeight;
     group.userData.recoil = this.recoilByActor.get(entity.id) ?? 0;
     group.userData.attackPhase = this.attackPhaseByActor.get(entity.id);
-    group.userData.weaponFamily = weaponFamily(entity.kind);
+    const meleeTarget = this.meleeTargetByActor.get(entity.id);
+    group.userData.weaponFamily = meleeTarget ? "melee" : weaponFamily(entity.kind);
+    group.userData.meleeTarget = meleeTarget;
     // Rolling vehicles kick up a dust wake behind their tracks.
     if (moving && isVehicleKind(entity.kind)) {
       const lastDust = (group.userData.lastDustAt as number | undefined) ?? 0;
@@ -1146,10 +1164,15 @@ export class WorldRenderer {
     // early or walked into thin air.
     const scenery = entity.kind === "cover";
     const variety = scenery ? hash(entity.id) : 0;
+    // Trees sway from the root: a slow gust plus a faster flutter, phased by id so a wood never
+    // nods in unison. Same wind the ground blades bend to.
+    const tree = entity.coverKind === "tree" && entity.status.alive;
+    const swayT = performance.now() * 0.001 + (variety % 97) * 0.13;
+    const sway = tree ? (Math.sin(swayT * 0.7) * 0.6 + Math.sin(swayT * 2.1) * 0.4) * 0.028 : 0;
     group.rotation.set(
-      isInfantryKind(entity.kind) ? 0.06 * walkWeight : 0,
+      (isInfantryKind(entity.kind) ? 0.06 * walkWeight : 0) + sway * 0.45,
       entity.yaw + (scenery ? ((variety % 360) / 360) * Math.PI * 2 : 0),
-      entity.kind === "tank" ? Math.sin(motionTime * 4.8) * 0.018 * walkWeight : 0
+      (entity.kind === "tank" ? Math.sin(motionTime * 4.8) * 0.018 * walkWeight : 0) + sway
     );
     if (defending && isInfantryKind(entity.kind) && entity.status.alive) {
       group.scale.set(1.08, 1, 1.08);
@@ -1165,17 +1188,63 @@ export class WorldRenderer {
       group.position.y += Math.sin(t) * 0.18;
       group.rotation.x += Math.sin(t * 0.8) * 0.03;
     }
+    // WHOLE-BODY IDLE, readable at tactical zoom. The per-part breathing in paintPart is real but
+    // a centimetre of chest rise vanishes at this camera. What the eye catches from up here is the
+    // silhouette moving: a standing trooper shifts weight side to side and turns a little as they
+    // scan; a parked vehicle sits on a running engine (a fast, tiny tremor) and settles on its
+    // suspension. Everything is phased by id so a squad never moves in lockstep, and weighted by
+    // (1 - walkWeight) so it hands over cleanly to the walk cycle.
+    if (entity.status.alive && !entity.flying && entity.kind !== "cover" && !isBuildingKind(entity.kind)) {
+      const idle = 1 - walkWeight;
+      const phase = (hash(entity.id) % 89) * 0.37;
+      const t = performance.now() * 0.001 + phase;
+      if (isInfantryKind(entity.kind) && entity.stance !== "prone") {
+        const shift = Math.sin(t * 0.55) * 0.045 * idle;
+        group.position.x += Math.cos(entity.yaw) * shift;
+        group.position.z -= Math.sin(entity.yaw) * shift;
+        group.rotation.z += shift * 0.9;
+        group.rotation.y += (Math.sin(t * 0.31) * 0.11 + Math.sin(t * 0.83) * 0.03) * idle;
+      } else if (isVehicleKind(entity.kind)) {
+        group.position.y += Math.sin(t * 52) * 0.004 * idle;
+        group.rotation.x += Math.sin(t * 0.7) * 0.006 * idle + Math.sin(t * 47) * 0.0025 * idle;
+        group.rotation.z += Math.sin(t * 0.45) * 0.005 * idle;
+      } else if (entity.kind === "turret" || entity.kind === "exturret") {
+        // Emplacements: a slow traverse hunt, like a gun looking for work. (Walls stay put.)
+        group.rotation.y += Math.sin(t * 0.25) * 0.12;
+      }
+    }
+    // MELEE LUNGE. The striker's whole body commits: it coils back through the wind-up, drives
+    // ~0.6 units INTO the target at contact and recovers. The per-part swing alone reads as a
+    // wave from the tactical camera; the body moving is what makes a strike look like it has
+    // weight behind it.
+    const lungeTarget = group.userData.meleeTarget as Vec2 | undefined;
+    const lungePhase = group.userData.attackPhase as number | undefined;
+    if (lungeTarget && lungePhase !== undefined && entity.status.alive) {
+      const dx = lungeTarget.x - entity.position.x;
+      const dz = lungeTarget.z - entity.position.z;
+      const len = Math.hypot(dx, dz) || 1;
+      const contact = 0.5;
+      // -0.22 (coil) at 60% of the wind-up, +1 at contact, then a damped settle back to 0.
+      const drive = lungePhase < contact
+        ? -0.22 * Math.sin((lungePhase / contact) * Math.PI)
+        : Math.cos(((lungePhase - contact) / (1 - contact)) * Math.PI * 1.4) * (1 - (lungePhase - contact) / (1 - contact));
+      const reach = Math.min(0.6, Math.max(0, len - entity.radius - 0.5));
+      group.position.x += (dx / len) * drive * reach;
+      group.position.z += (dz / len) * drive * reach;
+      group.rotation.x += Math.max(0, drive) * 0.22;
+      group.position.y -= Math.max(0, drive) * 0.06;
+    }
     // Hit flinch: the struck unit lurches away from the shooter with a quick pitch + roll
     // shudder and a brief downward absorb, so a landed hit reads as a physical reaction.
     const flinch = entity.status.alive && entity.kind !== "cover" ? this.entityFlinch(entity.id) : undefined;
     if (flinch) {
-      const kindScale = isVehicleKind(entity.kind) ? 0.4 : isInfantryKind(entity.kind) ? 1 : 0.6;
+      const kindScale = isVehicleKind(entity.kind) ? 0.4 : isInfantryKind(entity.kind) ? 1.6 : 0.6;
       const s = flinch.f * kindScale;
-      group.position.x += flinch.dx * s * 0.16;
-      group.position.z += flinch.dz * s * 0.16;
-      group.position.y -= s * 0.04;
-      group.rotation.x += s * 0.12;
-      group.rotation.z += Math.sin(performance.now() * 0.075) * s * 0.05;
+      group.position.x += flinch.dx * s * 0.18;
+      group.position.z += flinch.dz * s * 0.18;
+      group.position.y -= s * 0.05;
+      group.rotation.x += s * 0.14;
+      group.rotation.z += Math.sin(performance.now() * 0.075) * s * 0.07;
     }
     const renderGhosted = ghosted;
     if (group.userData.glb) {
@@ -1256,7 +1325,7 @@ export class WorldRenderer {
     group.userData.entityId = entity.id;
     group.userData.glb = true;
     if (entity.kind === "cover") {
-      this.tintModelToMap(group);
+      this.tintModelToMap(group, entity.coverKind === "rock" || entity.coverKind === "rubble" ? "stone" : "prop");
       this.interactionGlow(group, entity, entity.parts[0]?.role === "volatile");
     } else {
       this.addModelAccents(group, entity);
@@ -1290,11 +1359,13 @@ export class WorldRenderer {
 
   // Nudge a GLB prop's albedo toward the map palette (mirror of tintPropToMap, but on the
   // clone's material records so per-frame damage tinting keeps the tint as its base).
-  private tintModelToMap(group: THREE.Group, amount = 0.74): void {
+  private tintModelToMap(group: THREE.Group, mode: "prop" | "stone" = "prop"): void {
     const mats = group.userData.glbMaterials as { material: THREE.MeshStandardMaterial; base: number }[] | undefined;
     if (!mats) return;
     for (const record of mats) {
-      const tinted = new THREE.Color(record.base).lerp(this.propTint, amount);
+      // Stone drops the albedo's hue entirely and wears the map's ground colour (see greyscaleOf).
+      if (mode === "stone" && record.material.map) record.material.map = greyscaleOf(record.material.map);
+      const tinted = mode === "stone" ? this.rockTint.clone() : new THREE.Color(record.base).lerp(this.propTint, 0.74);
       record.material.color.copy(tinted);
       record.base = tinted.getHex();
     }
@@ -2510,6 +2581,16 @@ export class WorldRenderer {
           mesh.position.z -= m.weaponDraw;
           mesh.position.y += m.bodyLift;
           mesh.rotation.x -= m.weaponPitch;
+          if (family === "melee") {
+            // The blade is a separate part, so it has to be carried by the arm explicitly: swing
+            // it with the shoulder about a grip pivot 0.4 behind its centre. Without this the arm
+            // swept ±0.6 rad while the weapon hung motionless in mid-air.
+            const a = m.shoulderPitch;
+            mesh.rotation.x -= a;
+            mesh.rotation.y += m.shoulderYaw;
+            mesh.position.y += 0.4 * Math.sin(a);
+            mesh.position.z += 0.4 * (Math.cos(a) - 1);
+          }
         } else if (part.role === "core") {
           mesh.rotation.x += m.torsoPitch;
           mesh.rotation.y += m.torsoTwist;
@@ -2598,13 +2679,20 @@ export class WorldRenderer {
     if (idleW > 0.02) {
       const t = performance.now() * 0.0017 + (hash(entity.id) % 100) * 0.11;
       if (part.role === "core") {
-        mesh.scale.y *= 1 + Math.sin(t * 1.2) * 0.012 * idleW;
-        mesh.rotation.z += Math.sin(t * 0.6) * 0.02 * idleW;
+        mesh.scale.y *= 1 + Math.sin(t * 1.2) * 0.022 * idleW;
+        mesh.rotation.z += Math.sin(t * 0.6) * 0.03 * idleW;
+      } else if (part.role === "head") {
+        // Scanning: a slow sweep with a quicker glance layered on, and a pause near the ends so it
+        // reads as looking, not as nodding. This is the single most legible idle from the camera.
+        const sweep = Math.sin(t * 0.36);
+        mesh.rotation.y += (Math.sign(sweep) * Math.pow(Math.abs(sweep), 0.6) * 0.42 + Math.sin(t * 1.7) * 0.06) * idleW;
+        mesh.rotation.x += Math.sin(t * 0.9) * 0.04 * idleW;
       } else if (limb === "arm-l" || limb === "arm-r") {
-        mesh.rotation.x += Math.sin(t + (limb === "arm-r" ? 0.5 : 0)) * 0.05 * idleW;
+        mesh.rotation.x += Math.sin(t + (limb === "arm-r" ? 0.5 : 0)) * 0.11 * idleW;
+        mesh.rotation.z += Math.sin(t * 0.7 + (limb === "arm-r" ? 1.2 : 0)) * 0.04 * idleW;
       } else if (part.id === "rifle") {
-        mesh.rotation.x += Math.sin(t + 0.3) * 0.04 * idleW;
-        mesh.rotation.z += Math.sin(t * 0.8) * 0.02 * idleW;
+        mesh.rotation.x += Math.sin(t + 0.3) * 0.09 * idleW;
+        mesh.rotation.z += Math.sin(t * 0.8) * 0.04 * idleW;
       }
     }
     // "Still has orders left" cue: a player unit with command points remaining carries a slow pulse
@@ -3155,6 +3243,45 @@ export class WorldRenderer {
           size: [0.05, 0.11], life: [0.3, 0.7], gravity: 7, drag: 0.5, jitter: 0.16,
           shape: ParticleShape.shard,
         });
+      } else if (effect.type === "strike") {
+        // A blade or butt landing: a bright arc of streaks sweeping across the target at chest
+        // height, a spray of dark shards flying ON through it, and a puff of dust at the feet.
+        // Pointedly NOT a fireball -- melee used to reuse the blast, and a knife that explodes
+        // reads as a grenade.
+        const dx = effect.to.x - effect.from.x;
+        const dz = effect.to.z - effect.from.z;
+        const len = Math.hypot(dx, dz) || 1;
+        const px = -dz / len;
+        const pz = dx / len;
+        for (let i = 0; i < 9; i += 1) {
+          const a = (i / 8 - 0.5) * 1.9;
+          fx.directionalBurst({
+            x: effect.to.x + px * Math.sin(a) * 0.5, y: ground + 0.95 + Math.cos(a) * 0.45, z: effect.to.z + pz * Math.sin(a) * 0.5,
+            dirX: px * Math.cos(a), dirY: -Math.sin(a) * 0.6, dirZ: pz * Math.cos(a),
+            count: 2, color: [0xffffff, effect.color], speed: [4, 7], spread: 0.15,
+            size: [0.05, 0.12], life: [0.1, 0.22], gravity: 0, drag: 6, shape: ParticleShape.streak,
+          });
+        }
+        fx.directionalBurst({
+          x: effect.to.x, y: ground + 0.9, z: effect.to.z,
+          dirX: dx / len, dirY: 0.5, dirZ: dz / len,
+          count: 12, color: [0x3a322b, 0x6b5f52, 0xffe0b0], speed: [2.5, 6.5], spread: 0.7,
+          size: [0.05, 0.12], life: [0.25, 0.6], gravity: 8, drag: 0.8, shape: ParticleShape.shard,
+        });
+        fx.burst({
+          x: effect.to.x, y: ground + 0.15, z: effect.to.z,
+          count: 8, color: [0x8a8078, 0xa89e92], speed: [0.8, 2.2], up: 0.5,
+          size: [0.25, 0.5], life: [0.4, 0.9], gravity: -0.3, drag: 2, jitter: 0.3,
+        });
+        // The struck body staggers harder than a bullet hit would move it.
+        for (const [id, rec] of this.flinchByEntity) {
+          const g = this.groups.get(id);
+          if (g && Math.hypot(g.position.x - effect.to.x, g.position.z - effect.to.z) < 0.9) {
+            rec.mag = Math.min(1.4, rec.mag * 1.5 + 0.3);
+            rec.dx = dx / len;
+            rec.dz = dz / len;
+          }
+        }
       } else if (effect.type === "blast") {
         const radius = effect.radius ?? 2;
         // Fireball: fast, hot, short. Embers: slower, gravity-bound, longer -- the two together are
@@ -3350,6 +3477,41 @@ export class WorldRenderer {
         embers.position.set(effect.to.x, 0.3, effect.to.z);
         addEmbers(embers, 4, 0xffb02e, (effect.radius ?? 1) * (0.4 + t * 0.9), 0.4 + t * 1.2, effect.age);
         this.effectRoot.add(embers);
+      } else if (effect.type === "strike") {
+        // SLASH ARC: a bright crescent at chest height, swept from the striker's hand THROUGH the
+        // target over the effect's life, plus a small hard flash at the contact point and a tight
+        // ground ring. Deliberately no dome: a blow is a line, not a volume.
+        const dx = effect.to.x - effect.from.x;
+        const dz = effect.to.z - effect.from.z;
+        const len = Math.hypot(dx, dz) || 1;
+        const heading = Math.atan2(dx, dz);
+        const sweep = 1.3; // radians of total swing
+        const arc = new THREE.Mesh(
+          new THREE.TorusGeometry(Math.min(1.3, Math.max(0.6, len * 0.95)), 0.06 + (1 - t) * 0.05, 5, 20, sweep * 0.55),
+          new THREE.MeshBasicMaterial({ color: t < 0.3 ? 0xffffff : effect.color, transparent: true, opacity: opacity * 0.9, depthWrite: false, blending: THREE.AdditiveBlending })
+        );
+        arc.rotation.x = -Math.PI / 2;
+        // Torus arcs run from +X in its local plane; after the flat rotation, local +X is world +X
+        // and the arc grows toward world -Z, so a yaw of (heading - PI/2) points its start at the
+        // target and the sweep term carries it across.
+        arc.rotation.z = heading - Math.PI / 2 - sweep * 0.55 + sweep * Math.min(1, t * 1.6);
+        arc.position.set(effect.from.x, terrainHeightAt(effect.from) + 0.95, effect.from.z);
+        this.effectRoot.add(arc);
+        if (t < 0.35) {
+          const flash = new THREE.Mesh(
+            new THREE.SphereGeometry(0.16 + t * 0.5, 8, 6),
+            new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: (1 - t / 0.35) * 0.9, depthWrite: false, blending: THREE.AdditiveBlending })
+          );
+          flash.position.set(effect.to.x, terrainHeightAt(effect.to) + 0.9, effect.to.z);
+          this.effectRoot.add(flash);
+        }
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(0.3 + t * 0.6, 0.34 + t * 0.6, 24),
+          new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: opacity * 0.5, side: THREE.DoubleSide, depthWrite: false })
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(effect.to.x, terrainHeightAt(effect.to) + 0.1, effect.to.z);
+        this.effectRoot.add(ring);
       } else {
         // Additive with capped growth — the old opaque 2x-growing sphere wrapped the
         // whole unit in a colored balloon on heavy hits.
@@ -4684,6 +4846,174 @@ diffuseColor.rgb *= mix(0.86, 1.0, smoothstep(0.35, 0.72, cloud));`);
   };
   // A distinct cache key so this variant compiles and warms separately from the plain one.
   material.customProgramCacheKey = () => "cloudshadow";
+}
+
+/**
+ * GROUND DETAIL — the layer that makes a surface read as a MATERIAL rather than a tint. A grass
+ * map gets thousands of blades that move in the wind; dust gets pebbles and dead scrub; ice gets
+ * snow clumps and shards; slag gets cinders; paving gets chips with weeds in the joints. Each
+ * element kind is ONE InstancedMesh (one draw call), placed on dry, flat, standable ground so
+ * nothing pokes out of a cliff face or floats over a channel, with per-instance colour so a
+ * field is never one green. Blade-type elements bend in a shared wind (see windUniforms) — the
+ * cheapest "alive" cue there is, and the one the eye reads first on a still board.
+ */
+const windUniforms = { uTime: { value: 0 } };
+
+function applyWind(material: THREE.MeshStandardMaterial, strength: number): void {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = windUniforms.uTime;
+    shader.uniforms.uWind = { value: strength };
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", `#include <common>
+uniform float uTime;
+uniform float uWind;`)
+      .replace("#include <begin_vertex>", `#include <begin_vertex>
+{
+  // Bend from the root: displacement scales with height, so the base stays planted. A slow gust
+  // wave rides under a faster flutter, keyed to world position so a field ripples instead of
+  // nodding in unison.
+  vec4 wRoot = modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+  float gust = 0.55 + 0.45 * sin(uTime * 0.7 + wRoot.x * 0.12 + wRoot.z * 0.09);
+  float flutter = sin(uTime * 2.3 + wRoot.x * 1.7 + wRoot.z * 1.1);
+  float bend = (0.35 * gust + 0.25 * flutter * gust) * uWind * position.y;
+  transformed.x += bend;
+  transformed.z += bend * 0.45;
+}`);
+  };
+  material.customProgramCacheKey = () => "wind";
+}
+
+/** A fan of thin tapered blades rising from one root, leaning outward. Height 1 = unit scale. */
+function bladeFanGeometry(blades: number, rand: () => number): THREE.BufferGeometry {
+  const positions: number[] = [];
+  const normals: number[] = [];
+  for (let b = 0; b < blades; b += 1) {
+    const angle = (b / blades) * Math.PI * 2 + rand() * 0.8;
+    const lean = 0.18 + rand() * 0.28;
+    const height = 0.7 + rand() * 0.5;
+    const width = 0.09 + rand() * 0.07;
+    const dx = Math.cos(angle);
+    const dz = Math.sin(angle);
+    // Triangle: two base corners perpendicular to the lean direction, tip leaned outward.
+    const px = -dz * width;
+    const pz = dx * width;
+    // Both windings, FRONT side only. DoubleSide flips the normal on back faces, which turns an
+    // up-facing blade seen from behind into an unlit black spike; two front-facing copies keep
+    // every blade lit by the sky it points at.
+    positions.push(px, 0, pz, -px, 0, -pz, dx * lean, height, dz * lean);
+    positions.push(-px, 0, -pz, px, 0, pz, dx * lean, height, dz * lean);
+    for (let i = 0; i < 6; i += 1) normals.push(0, 1, 0);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  return geometry;
+}
+
+interface DetailKind {
+  geometry: THREE.BufferGeometry;
+  /** Instances per 1000 square units of arena. */
+  density: number;
+  /** [min, max] uniform scale. */
+  scale: [number, number];
+  /** Vertical squash applied on top of scale (pebbles are flatter than they are wide). */
+  squash: number;
+  colors: number[];
+  wind: number;
+  metalness?: number;
+  emissive?: number;
+}
+
+function makeGroundDetail(theme: MapTheme, width: number, depth: number): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "ground-detail";
+  let seed = (0x51ed ^ (width * 131 + depth * 17)) >>> 0;
+  const rand = (): number => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 0xffffffff;
+  };
+  const ground = new THREE.Color(theme.ground);
+  const accent = new THREE.Color(theme.groundAccent);
+  const mix = (t: number, v = 1): number => ground.clone().lerp(accent, t).multiplyScalar(v).getHex();
+  // Eight triangles a pebble: at thousands per map the dodecahedron version was 130k triangles.
+  const pebble = new THREE.OctahedronGeometry(0.1, 0);
+  const clump = new THREE.IcosahedronGeometry(0.16, 0);
+
+  const kinds: DetailKind[] = [];
+  switch (theme.surface ?? "cracked") {
+    case "grass":
+      kinds.push(
+        { geometry: bladeFanGeometry(4, rand), density: 1700, scale: [0.15, 0.32], squash: 1, wind: 0.9,
+          colors: [mix(0.3, 1.3), mix(0.55, 1.35), mix(0.8, 1.4), mix(0.2, 1.1), 0x9cbd55, 0x7fae48] },
+        { geometry: pebble, density: 60, scale: [0.5, 1.1], squash: 0.55, wind: 0, colors: [0x7d7a6c, 0x69675c, 0x8c8779] },
+      );
+      break;
+    case "cracked":
+      kinds.push(
+        { geometry: pebble, density: 520, scale: [0.4, 1.3], squash: 0.6, wind: 0, colors: [mix(0.2, 0.8), mix(0.5, 0.9), mix(0.8, 1.05), 0x8c7a62] },
+        { geometry: bladeFanGeometry(4, rand), density: 140, scale: [0.14, 0.26], squash: 1, wind: 0.6,
+          colors: [0xb9a06a, 0xa48c5a, 0xcbb47e, mix(0.9, 1.2)] },
+      );
+      break;
+    case "ice":
+      kinds.push(
+        { geometry: clump, density: 260, scale: [0.6, 1.6], squash: 0.45, wind: 0, colors: [0xf2f6fa, 0xe4ecf3, 0xd6e2ec] },
+        { geometry: bladeFanGeometry(3, rand), density: 90, scale: [0.14, 0.26], squash: 1, wind: 0.15,
+          colors: [0xc9dbe8, 0xb4cbdc, 0xe0edf6], metalness: 0.3 },
+      );
+      break;
+    case "slag":
+      kinds.push(
+        { geometry: pebble, density: 640, scale: [0.5, 1.5], squash: 0.7, wind: 0, colors: [0x2a2d33, 0x3a3d43, 0x1f2126, 0x4a4238] },
+        { geometry: pebble, density: 40, scale: [0.35, 0.6], squash: 0.5, wind: 0, colors: [0xff7a2a, 0xff9a3a], emissive: 0xff5a10 },
+      );
+      break;
+    case "paved":
+      kinds.push(
+        { geometry: pebble, density: 300, scale: [0.4, 1.0], squash: 0.5, wind: 0, colors: [mix(0.3, 0.9), mix(0.6, 1.0), 0x8a8478] },
+        { geometry: bladeFanGeometry(4, rand), density: 160, scale: [0.12, 0.24], squash: 1, wind: 0.7,
+          colors: [0x6f8a3c, 0x87a04a, 0x5c7532] },
+      );
+      break;
+  }
+
+  const area = width * depth;
+  const dummy = new THREE.Object3D();
+  const color = new THREE.Color();
+  for (const kind of kinds) {
+    const count = Math.round((area / 1000) * kind.density);
+    if (count <= 0) continue;
+    const material = new THREE.MeshStandardMaterial({
+      roughness: 0.95,
+      metalness: kind.metalness ?? 0,
+      emissive: kind.emissive ?? 0x000000,
+      emissiveIntensity: kind.emissive ? 1.4 : 0,
+    });
+    if (kind.wind > 0) applyWind(material, kind.wind);
+    const mesh = new THREE.InstancedMesh(kind.geometry, material, count);
+    mesh.receiveShadow = true;
+    let placed = 0;
+    // Try a few positions per instance; a map that is mostly water or cliff just gets fewer.
+    for (let i = 0; i < count * 3 && placed < count; i += 1) {
+      const x = (rand() - 0.5) * width * 0.98;
+      const z = (rand() - 0.5) * depth * 0.98;
+      const p = { x, z };
+      if (pointInWater(p) || onTerrainEdge(p, 0.35)) continue;
+      const sc = kind.scale[0] + rand() * (kind.scale[1] - kind.scale[0]);
+      dummy.position.set(x, terrainHeightAt(p), z);
+      dummy.rotation.set(0, rand() * Math.PI * 2, 0);
+      dummy.scale.set(sc, sc * kind.squash, sc);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(placed, dummy.matrix);
+      mesh.setColorAt(placed, color.setHex(kind.colors[Math.floor(rand() * kind.colors.length)]));
+      placed += 1;
+    }
+    mesh.count = placed;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    group.add(mesh);
+  }
+  return group;
 }
 
 const GROUND_TILE = 11;

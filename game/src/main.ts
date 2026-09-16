@@ -1928,6 +1928,8 @@ let lastHudUpdateAt = 0;
 let lastHudPhase = sim.phase;
 let lastHudLogHead = "";
 const seenProjectileIds = new Set<string>();
+// Debug-seam slow motion for the resolve clock (1 = normal). Filmstrips shoot swings at 0.25.
+let resolveScale = 1;
 const seenEffectIds = new Set<string>();
 
 function frame(now: number): void {
@@ -1947,7 +1949,7 @@ function frame(now: number): void {
   // Hitstop freezes the sim by SKIPPING the step, never by scaling dt: scaling would change the
   // step sequence the sim sees, while skipping delays everything uniformly and preserves ordering.
   // The action-pace setting only scales time while orders resolve; planning stays real-time.
-  if (shot.hitstop <= 0) sim.update(sim.phase === "resolve" ? dt * settings.resolveSpeed : dt);
+  if (shot.hitstop <= 0) sim.update(sim.phase === "resolve" ? dt * settings.resolveSpeed * resolveScale : dt);
   resolveFocus = shot.focus; // consumed by syncCameraAssist, the single camera authority
   if (DEBUG_UNLOCKED && inBattle && sim.phase === "command") applyDebugCheats();
   processBattleEvents();
@@ -2056,6 +2058,16 @@ function processBattleEvents(): void {
       sfx.impact();
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.impact, 0.9);
       if (stage.isInView(effect.to)) feel.addTrauma(0.05);
+    } else if (effect.type === "strike") {
+      // A landed blow: the camera kicks away from the impact and the director looks at it. Same
+      // sound as an impact for now -- the visual pass comes first.
+      sfx.impact();
+      resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.impact, 1.2);
+      const onScreen = stage.isInView(effect.to) ? 1 : 0.3;
+      feel.addTrauma(0.12 * onScreen);
+      const view = stage.viewState();
+      feel.kick(effect.to, { x: view.x, z: view.z }, 1.1 * onScreen);
+      stage.punch(0.12 * onScreen);
     } else if (effect.type === "topple") {
       sfx.crash();
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.topple, 1.8);
@@ -2230,13 +2242,15 @@ declare global {
       perfReset(): void;
       diagnostics(): DiagnosticsReport;
       describeScene(): SceneDescription;
-      limbPose(entityId: string): { limb: string; rotX: number; posY: number; posZ: number }[];
+      limbPose(entityId: string): { limb: string; rotX: number; rotY: number; posY: number; posZ: number }[];
       partColors(entityId: string): { partId: string; color: string; emissive: string; intensity: number }[];
       sceneGraph(): { total: number; topLevel: number };
       // The live Three scene root — QA probes census it (draw-work attribution).
       sceneRoot(): object;
       /** The live perspective camera (probes vary near/far to reproduce depth fights). */
       cameraObject(): object;
+      /** Multiplies the resolve-phase sim clock (filmstrips run at 0.25 to see a swing). */
+      setResolveScale(scale: number): void;
       setDebugOverlay(on: boolean): boolean;
       // Black-silhouette mode: every unit renders as a flat black shape on white. The
       // "name each unit from its outline alone" test -- a recolour variant fails it instantly.
@@ -2324,6 +2338,7 @@ window.__rht = {
   sceneGraph: () => ({ total: countSceneObjects(), topLevel: stage.scene.children.length }),
   sceneRoot: () => stage.scene,
   cameraObject: () => stage.camera,
+  setResolveScale: (scale: number) => { resolveScale = scale; },
   setDebugOverlay: (on) => { debugOverlay.setEnabled(on); return debugOverlay.isEnabled(); },
   silhouette: (on) => { world.setSilhouette(on); stage.setSilhouette(on); },
   auditUI: () => auditUI(),

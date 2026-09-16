@@ -156,8 +156,28 @@ try {
   const swing = spread(weapon.map((w) => w.rotX));
   console.log(`  weapon wind-up ${windUp.toFixed(3)} before the shot · total pitch ${swing.toFixed(3)} rad`);
 
+  // IDLE LIVENESS. A trooper standing through the command phase — where the player spends nearly
+  // all their time — must visibly move: the head scans and the body shifts weight and turns. The
+  // per-part breathing is too small to see from the tactical camera, so this measures the two
+  // cues that are: head yaw and whole-body yaw, over three seconds of standing still. Thresholds
+  // sit well under the authored amplitudes (head 0.42 rad, body 0.11) and well over rest (0).
+  const idleId = await page.evaluate(() => window.__rht.sim.debugSpawn("soldier", "player", { x: 0, z: 4 }).id);
+  await page.waitForTimeout(300);
+  const idle = { head: [], body: [] };
+  for (let i = 0; i < 20; i += 1) {
+    const pose = await page.evaluate((id) => window.__rht.limbPose(id), idleId);
+    for (const key of ["head", "body"]) { const p = pose.find((e) => e.limb === key); if (p) idle[key].push(p.rotY); }
+    await page.waitForTimeout(150);
+  }
+  if (idle.head.length < 10) fail("idle probe: head part not found on a standing soldier");
+  const headScan = spread(idle.head);
+  const bodyTurn = spread(idle.body);
+  console.log(`  idle: head scan ${headScan.toFixed(3)} rad · body turn ${bodyTurn.toFixed(3)} rad over 3s`);
+  if (headScan < 0.15) fail(`idle head scan ${headScan.toFixed(3)} rad — standing troopers are frozen`);
+  if (bodyTurn < 0.04) fail(`idle body turn ${bodyTurn.toFixed(3)} rad — no weight shift on a standing trooper`);
+
   if (errors.length) fail(`console errors:\n${errors.slice(0, 6).join("\n")}`);
-  console.log("Animation smoke passed: limbs swing, legs oppose, feet lift, weapons wind up and follow through.");
+  console.log("Animation smoke passed: limbs swing, legs oppose, feet lift, weapons wind up and follow through, idles live.");
 } finally {
   await close();
 }

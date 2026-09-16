@@ -1,86 +1,51 @@
-// Combat-animation filmstrip: sets up a shooter + target, ends the turn, and grabs a rapid
-// burst of frames through the resolve so motion (walk, recoil, HIT FLINCH, death) can be judged
-// as a sequence rather than a still. Out: shots/filmstrip/NN.png
-import { spawn } from "node:child_process";
-import { mkdirSync, existsSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
-import { chromium } from "playwright-core";
-
-const PORT = 5186;
-const URL = `http://127.0.0.1:${PORT}`;
-const OUT = join("shots", "filmstrip");
-mkdirSync(OUT, { recursive: true });
-
-const serverLog = [];
-let server = null;
-let browser = null;
-
-function findChromium() {
-  if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
-  const base = join(process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "ms-playwright");
-  if (!existsSync(base)) throw new Error("no ms-playwright cache");
-  const dir = readdirSync(base).find((d) => d.startsWith("chromium-"));
-  if (!dir) throw new Error("no chromium-* in ms-playwright");
-  return join(base, dir, "chrome-win", "chrome.exe");
-}
-async function isServerReady(url) { try { const r = await fetch(url); return r.ok; } catch { return false; } }
-async function waitForServer(url, ms) {
-  const end = Date.now() + ms;
-  while (Date.now() < end) { if (await isServerReady(url)) return; await delay(150); }
-  throw new Error("server did not start: " + serverLog.join(""));
-}
-
+// ATTACK FILMSTRIP. Stages one attack (melee | shoot) between a player unit and an enemy at close
+// range, resolves it and captures 9 frames through the swing to shots/filmstrip-<kind>.png. Motion
+// is judged on filmstrips, not stills. Run: npm run shots:filmstrip -- melee   (or shoot)
+import { launchGame, delay } from "../improve/lib/harness.mjs";
+import sharp from "sharp";
+const KIND = process.argv[2] ?? "melee";
+const { page, close } = await launchGame({ port: 5200, viewport: { width: 1200, height: 700 } });
 try {
-  if (!(await isServerReady(URL))) {
-    const viteBin = join(process.cwd(), "node_modules", "vite", "bin", "vite.js");
-    server = spawn(process.execPath, [viteBin, "--host", "127.0.0.1", "--strictPort", "--port", String(PORT)], {
-      cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"],
-    });
-    server.stdout.on("data", (c) => serverLog.push(c.toString()));
-    server.stderr.on("data", (c) => serverLog.push(c.toString()));
-  }
-  await waitForServer(URL, 20000);
-  browser = await chromium.launch({ executablePath: findChromium(), headless: true });
-  const page = await (await browser.newContext({ viewport: { width: 1600, height: 900 } })).newPage();
-  const errors = [];
-  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
-  page.on("pageerror", (e) => errors.push(`PAGEERROR: ${e.message}`));
-
-  await page.goto(URL, { waitUntil: "networkidle" });
   await page.waitForSelector(".main-menu");
-  await page.evaluate(() => window.__rht.startBattle("ironworks", "destroy", "normal"));
-  await page.waitForFunction(() => window.__rht.sim.mapDef.id === "ironworks" && window.__rht.sim.phase === "command");
-
-  // Two facing squads trade fire so tracers, muzzle flashes, impacts, blasts and hit-flinches all
-  // render during resolve — verifies the pooled projectile/effect materials survived the disposal
-  // change and the flinch fires. Grab a dense burst through the volley.
-  await page.evaluate(() => {
+  await page.click('[data-menu="play"]');
+  await page.waitForSelector("[data-map]");
+  await page.click("[data-map]");
+  await page.click("[data-start]");
+  await page.waitForFunction(() => window.__rht?.sim?.phase === "command", null, { timeout: 20000 });
+  const ok = await page.evaluate((kind) => {
     const sim = window.__rht.sim;
-    sim.debugGrant("player", 8000);
-    for (let i = 0; i < 3; i += 1) {
-      const p = sim.debugSpawn(["heavy", "soldier", "sniper"][i], "player", { x: -4, z: (i - 1) * 2.4 });
-      const e = sim.debugSpawn(["soldier", "heavy", "soldier"][i], "enemy", { x: 4, z: (i - 1) * 2.4 });
-      p.commandPoints = 2;
-      sim.select(p.id);
-      sim.queueShootPart(e.id, "body");
-    }
+    sim.economy.set("player", 9000);
+    const actor = sim.debugSpawn(kind === "melee" ? "striker" : "soldier", "player", { x: -0.7, z: 0 });
+    const target = sim.debugSpawn(kind === "melee" ? "heavy" : "soldier", "enemy", { x: kind === "melee" ? 0.7 : 5, z: 0 });
+    // The target must not shoot back in the same resolve, or the strip shows the striker's death
+    // instead of the strike. Kill its weapon part; status re-derives from parts each turn.
+    for (const part of target.parts) if (part.role === "weapon") part.hp = 0;
+    target.status.canShoot = false;
+    sim.select(actor.id);
+    sim.setIntent(kind);
+    const queued = kind === "melee" ? sim.queueMelee(target.id) : sim.queueShoot(target.id);
+    const why = queued ? "" : sim.log.slice(0, 2);
+    window.__rht.setView({ x: 0, z: 0, zoom: 0.45, pitch: 0.5, yaw: 0.9 });
     window.__rht.deselect();
-  });
-  await page.evaluate(() => window.__rht.setView({ x: 0, z: 0, zoom: 0.5, pitch: 0.5, yaw: 0.2 }));
-  await delay(300);
-  await page.evaluate(() => window.__rht.endTurn());
-  for (let i = 0; i < 12; i += 1) {
-    await page.screenshot({ path: join(OUT, "combat-" + String(i).padStart(2, "0") + ".png") });
-    await delay(120);
+    return { queued, why, orders: sim.orders.length, cp: actor.commandPoints, canMove: actor.status.canMove };
+  }, KIND);
+  console.log("staged", JSON.stringify(ok));
+  await delay(600);
+  // Quarter-speed resolve: headless screenshots cost ~150ms each, so at full speed nine frames
+  // straddle the whole 0.78s swing and show nothing of it.
+  await page.evaluate(() => { window.__rht.setResolveScale(0.25); window.__rht.endTurn(); });
+  const frames = [];
+  for (let i = 0; i < 9; i += 1) {
+    // Pin the camera every frame: the resolve director otherwise pans off to whatever it rates.
+    await page.evaluate(() => window.__rht.setView({ x: 0, z: 0, zoom: 0.45, pitch: 0.5, yaw: 0.9 }));
+    frames.push(await page.screenshot({ clip: { x: 300, y: 120, width: 600, height: 420 } }));
+
+    await delay(40);
   }
-  console.log("combat filmstrip 12 frames ->", OUT);
-  if (errors.length) { console.error("CONSOLE ERRORS:\n" + errors.slice(0, 8).join("\n")); process.exitCode = 1; }
-} catch (err) {
-  console.error("shot-filmstrip error:", err?.stack ?? err?.message ?? err);
-  process.exitCode = 1;
-} finally {
-  if (browser) await browser.close();
-  if (server) server.kill();
-}
+  const tiles = await Promise.all(frames.map((b) => sharp(b).resize(400, 280).png().toBuffer()));
+  await sharp({ create: { width: 1200, height: 840, channels: 3, background: "#000" } })
+    .composite(tiles.map((input, i) => ({ input, left: (i % 3) * 400, top: Math.floor(i / 3) * 280 })))
+    .png().toFile(`shots/filmstrip-${KIND}.png`);
+  console.log("log:", JSON.stringify(await page.evaluate(() => window.__rht.sim.log.slice(0, 20).reverse())));
+  console.log(`wrote shots/filmstrip-${KIND}.png`);
+} finally { await close(); }

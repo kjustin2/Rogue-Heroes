@@ -85,7 +85,30 @@ unique enough" comes from — it's mechanical, not just visual.
 
 ---
 
-## My recommendation, in order
+## Status (2026-09-15)
+
+Done: 3, 4, 8, 23, 24, terrain-as-rock, perf 54→110 fps, cloud shadows + prop variety, and the
+dashed-hatching glitch (ledger #5 — it was ground plates z-fighting, never a shadow).
+
+**Your 09-15 batch, exploded — this is the working order:**
+
+- **E. Alive pass** (all visual, no audio yet)
+  - E1. Idles you can SEE at tactical zoom: weight shifts, head scans, weapon re-grips, per-unit
+    phase so a squad never moves in lockstep. Vehicles idle too (engine tremor, turret scan).
+  - E2. Scenery moves: tree canopies sway, banners/antennae flex, ambient particles per theme.
+  - E3. Ground reads as a MATERIAL: grass tufts / sand ripples / ice cracks / slag as instanced
+    detail that sways, not a flat tint. Per-map props that belong (no desert rock on ice — the
+    rock is one Meshy hull tinted nowhere).
+- **F. Attacks that land** — every attack family (melee, rifle, MG, scattergun, cannon, mortar,
+  launcher, flamer, bomb, air gun) gets: anticipation → contact → follow-through on the actor,
+  a hit reaction on the TARGET (flinch, knock, part shudder), and impact FX at the point of
+  contact (never full-screen). Melee is the reference bar: lunge, crunch, target staggers.
+- **G. GUI disclosure** — one thing at a time: no-selection shows the board; a selected unit
+  shows its orders; a chosen order shows its targets. Detail panels collapse until asked.
+
+Then back to the sim items: 1 jump trooper, 5 wide beam, 13 gas, 17 slam, 22 damaged parts.
+
+## My recommendation, in order (original)
 
 **Round 1 (biggest fun per hour):** 1, 4, 5, 11, 13, 17 — jump trooper, shotgunner, wide beam,
 falling trees, spreading gas, knockback-into-things. All sim-side, all testable, all immediately

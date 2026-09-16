@@ -190,3 +190,29 @@ function loadInfantryKit(): void {
     () => { kitState = "failed"; },
   );
 }
+
+// A luminance-only copy of a GLB albedo, cached per source texture. Rocks and rubble are generated
+// once in a warm desert palette and then placed on every map; multiplying a map tint into an
+// orange albedo only ever yields darker orange, which is how a frozen causeway got desert rocks.
+// Stripping the hue first lets the material colour carry the whole map tone while the texture
+// keeps its crevices.
+const greyCache = new WeakMap<THREE.Texture, THREE.Texture>();
+export function greyscaleOf(map: THREE.Texture): THREE.Texture {
+  const hit = greyCache.get(map);
+  if (hit) return hit;
+  const image = map.image as HTMLImageElement | ImageBitmap | HTMLCanvasElement;
+  const canvas = document.createElement("canvas");
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const ctx = canvas.getContext("2d")!;
+  ctx.filter = "grayscale(1)";
+  ctx.drawImage(image, 0, 0);
+  const grey = new THREE.CanvasTexture(canvas);
+  grey.colorSpace = map.colorSpace;
+  grey.flipY = map.flipY;
+  grey.wrapS = map.wrapS;
+  grey.wrapT = map.wrapT;
+  grey.channel = map.channel;
+  greyCache.set(map, grey);
+  return grey;
+}
