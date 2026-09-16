@@ -4933,7 +4933,11 @@ function makeSurroundings(theme: MapTheme, width: number, depth: number): THREE.
     seed = (seed * 1664525 + 1013904223) >>> 0;
     return seed / 0xffffffff;
   };
-  const ridgeGeo = new THREE.BoxGeometry(1, 1, 1);
+  // A ridge is a low, irregular PYRAMID, not a box: a box at the horizon reads as a building, and
+  // from the low title-diorama camera the nearest ones loomed like slabs. Five sides with a
+  // flattened top gives a mesa/peak silhouette that still costs one shared geometry.
+  const ridgeGeo = new THREE.CylinderGeometry(0.28, 0.62, 1, 5, 1);
+  ridgeGeo.translate(0, 0.5, 0);
   ridgeGeo.userData.shared = true;
   const radius = Math.max(width, depth) * 0.78;
   const rings = 3;
@@ -4954,8 +4958,8 @@ function makeSurroundings(theme: MapTheme, width: number, depth: number): THREE.
       const spanX = (7 + rand() * 16) * (1 + ring * 0.3);
       const spanZ = (7 + rand() * 16) * (1 + ring * 0.3);
       const bluff = new THREE.Mesh(ridgeGeo, material);
-      bluff.position.set(Math.cos(angle) * distance * jitter, height * 0.5 - 1.2, Math.sin(angle) * distance * jitter);
-      bluff.scale.set(spanX, height, spanZ);
+      bluff.position.set(Math.cos(angle) * distance * jitter, -1.2, Math.sin(angle) * distance * jitter);
+      bluff.scale.set(spanX * 1.4, height * 1.35, spanZ * 1.4);
       bluff.rotation.y = rand() * Math.PI;
       group.add(bluff);
     }
