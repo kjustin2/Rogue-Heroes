@@ -3227,6 +3227,18 @@ export class WorldRenderer {
         drag: 5,
         shape: ParticleShape.streak,
       });
+      // BRASS. Small guns kick a casing out sideways and up; it tumbles, catches the light and
+      // bounces once. Almost free, and it is the cue that says "gun" rather than "laser".
+      if (!heavy && projectile.kind !== "bolt") {
+        fx.directionalBurst({
+          x: projectile.origin.x - projectile.direction.x * 0.35,
+          y: projectile.originHeight - 0.05,
+          z: projectile.origin.z - projectile.direction.z * 0.35,
+          dirX: -projectile.direction.z, dirY: 1.2, dirZ: projectile.direction.x,
+          count: 1, color: [0xe0b05a, 0xc9963f], speed: [1.6, 2.6], spread: 0.35,
+          size: [0.035, 0.05], life: [0.7, 1.0], gravity: 9, drag: 0.3, shape: ParticleShape.shard,
+        });
+      }
       // A little smoke behind the flash on the big guns.
       if (heavy) {
         fx.burst({
@@ -4028,10 +4040,16 @@ function makeMuzzleFlash(projectile: Projectile): THREE.Object3D | undefined {
   const scale = muzzleFlashScale(projectile) * (0.55 + t * 0.9);
   const group = new THREE.Group();
   const core = new THREE.Mesh(projectileGeometry("muzzle-flash"), projectileMaterial("muzzle-core", 0xfff4cf, 0.9 * fade));
-  core.scale.setScalar(scale);
+  core.scale.setScalar(scale * 1.35);
   const glow = new THREE.Mesh(projectileGeometry("muzzle-flash"), projectileMaterial("muzzle-glow", blendHex(projectile.color, 0xffd27a, 0.5), 0.4 * fade));
-  glow.scale.setScalar(scale * 1.9);
-  group.add(core, glow);
+  glow.scale.setScalar(scale * 2.6);
+  // A spike along the barrel: the flash is a cone of gas, not a ball. Stretched down the shot
+  // direction and gone in the first frames, it is what makes a shot read at tactical zoom.
+  const spike = new THREE.Mesh(projectileGeometry("muzzle-flash"), projectileMaterial("muzzle-core", 0xfff4cf, 0.75 * fade));
+  spike.scale.set(scale * 0.5, scale * 0.5, scale * (2.2 + t * 2.5));
+  spike.position.set(projectile.direction.x * scale * 0.9, 0, projectile.direction.z * scale * 0.9);
+  spike.lookAt(projectile.direction.x * 10, 0, projectile.direction.z * 10);
+  group.add(core, glow, spike);
   group.position.set(projectile.origin.x, projectile.originHeight, projectile.origin.z);
   return group;
 }
