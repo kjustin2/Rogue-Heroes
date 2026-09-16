@@ -3096,15 +3096,6 @@ export class TacticalSim {
    * outright, so it is logged loudly and it cannot happen to a flyer.
    */
   /** Would a thrown body land inside another one? Mirrors the separation rule movement keeps. */
-  private blockedByBody(mover: CombatEntity, at: Vec2): boolean {
-    for (const other of this.entities) {
-      if (other.id === mover.id || !other.status.alive || other.flying) continue;
-      if (other.kind === "cover") continue; // cover is walked around by the normal path, not by this
-      if (dist(at, other.position) < (mover.radius + other.radius) * 0.95) return true;
-    }
-    return false;
-  }
-
   private applyKnockback(actor: CombatEntity, entity: CombatEntity, point: Vec2, baseDamage: number, falloff: number): void {
     if (!entity.status.alive || entity.flying) return;
     const mass = blastMass(entity);
@@ -3124,25 +3115,34 @@ export class TacticalSim {
     let footing = terrainHeightAt(entity.position);
     let landed = { ...entity.position };
     let drowned = false;
+    // What cut the throw short, if anything. A body that was thrown INTO something is a slam:
+    // the momentum it did not get to spend lands as damage, on it and on whatever it hit.
+    let slammedInto: CombatEntity | "cliff" | "prop" | undefined;
+    let travelled = 0;
     for (let i = 1; i <= steps; i += 1) {
       const t = (throwDistance * i) / steps;
       const next = clampToArena({ x: entity.position.x + dirX * t, z: entity.position.z + dirZ * t });
       if (pointInWater(next)) { landed = next; drowned = true; break; }
       const height = terrainHeightAt(next);
-      if (height - footing > TERRAIN_STEP) break; // slammed into a cliff face; it stops here
+      if (height - footing > TERRAIN_STEP) { slammedInto = "cliff"; break; } // slammed into a cliff face; it stops here
       // ...and stops against another body. Without this the throw shoves units inside each other
       // and breaks the separation invariant the chaos bot asserts — it caught exactly that.
-      if (this.blockedByBody(entity, next)) break;
+      const body = this.bodyAt(entity, next);
+      if (body) { slammedInto = body; break; }
+      const prop = this.solidPropAt(entity, next);
+      if (prop) { slammedInto = "prop"; break; }
       footing = height;
       landed = next;
+      travelled = t;
     }
 
-    if (landed.x === entity.position.x && landed.z === entity.position.z && !drowned) return;
+    if (landed.x === entity.position.x && landed.z === entity.position.z && !drowned && !slammedInto) return;
     entity.position = landed;
     entity.elevation = terrainHeightAt(landed);
     this.effect("impact", landed, landed, 0xffd9a0, 0.3, entity.radius * 0.9);
     if (!drowned) {
       this.pushLog(`${entity.name} is thrown by the blast`);
+      if (slammedInto) this.resolveSlam(actor, entity, slammedInto, (throwDistance - travelled) / throwDistance, baseDamage, dirX, dirZ);
       return;
     }
     // Into the channel. Everything is destroyed at once — there is no swimming in this game.
@@ -3151,6 +3151,52 @@ export class TacticalSim {
     this.effect("blast", landed, landed, 0x4f9fd0, 0.7, entity.radius + 1.2);
     this.pushLog(`${entity.name} is blasted into the water and drowns`);
     this.afterDamage(actor, entity, [`${entity.name} drowned`], "Drowning");
+  }
+
+  /** The unit standing where a thrown body wants to go, if any (cover is not a body). */
+  private bodyAt(mover: CombatEntity, at: Vec2): CombatEntity | undefined {
+    for (const other of this.entities) {
+      if (other.id === mover.id || !other.status.alive || other.flying || other.kind === "cover") continue;
+      if (dist(at, other.position) < (mover.radius + other.radius) * 0.95) return other;
+    }
+    return undefined;
+  }
+
+  /** Solid scenery a thrown body cannot pass through (walkable ridges are not solid). */
+  private solidPropAt(mover: CombatEntity, at: Vec2): CombatEntity | undefined {
+    for (const other of this.entities) {
+      if (other.kind !== "cover" || !other.status.alive || other.coverKind === "ridge") continue;
+      if (dist(at, other.position) < (mover.radius + other.radius) * 0.8) return other;
+    }
+    return undefined;
+  }
+
+  /**
+   * SLAM. A thrown body that stops early hit something. The unspent share of the throw becomes
+   * damage: into a cliff or a rock is the worst (nothing gives), into another unit is shared —
+   * both take it, and the one that was hit is knocked back a step as well. Blasts already throw
+   * what they do not kill; this is what makes WHERE they throw it matter.
+   */
+  private resolveSlam(actor: CombatEntity, thrown: CombatEntity, into: CombatEntity | "cliff" | "prop", unspent: number, baseDamage: number, dirX: number, dirZ: number): void {
+    const force = Math.round(baseDamage * 0.45 * Math.max(0.15, unspent));
+    if (force < 3) return;
+    const hard = into === "cliff" || into === "prop";
+    const selfResult = applyDamage(thrown, preferredPart(thrown, "center").id, hard ? force : Math.round(force * 0.6));
+    const what = into === "cliff" ? "the cliff" : into === "prop" ? "cover" : into.name;
+    this.pushLog(`${thrown.name} slams into ${what}`);
+    this.effect("strike", { x: thrown.position.x - dirX, z: thrown.position.z - dirZ }, thrown.position, 0xffc07a, 0.45, thrown.radius + 0.6);
+    this.afterDamage(actor, thrown, selfResult, "Slam");
+    if (hard) return;
+    // The body that was hit takes a share and is shoved a step along the throw.
+    const otherResult = applyDamage(into, preferredPart(into, "center").id, Math.round(force * 0.5));
+    if (!isBuildingKind(into.kind) && !isDefenseKind(into.kind) && !into.flying && Number.isFinite(blastMass(into))) {
+      const shove = clampToArena({ x: into.position.x + dirX * 0.45, z: into.position.z + dirZ * 0.45 });
+      if (!pointInWater(shove) && Math.abs(terrainHeightAt(shove) - terrainHeightAt(into.position)) <= TERRAIN_STEP && !this.bodyAt(into, shove)) {
+        into.position = shove;
+        into.elevation = terrainHeightAt(shove);
+      }
+    }
+    this.afterDamage(actor, into, otherResult, "Slam");
   }
 
   private resolveRam(actor: CombatEntity, target: CombatEntity): void {

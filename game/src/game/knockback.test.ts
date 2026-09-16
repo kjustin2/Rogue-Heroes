@@ -120,3 +120,39 @@ describe("blast knockback", () => {
     expect(base!.position.z).toBeCloseTo(before.z, 6);
   });
 });
+
+describe("slams", () => {
+  // Item 17 of the fun pass: WHERE a blast throws a body matters. A trooper thrown into a rock or
+  // into another unit takes the unspent throw as damage, and a unit that is hit shares it.
+  const hp = (e: { parts: { hp: number }[] }): number => e.parts.reduce((sum, p) => sum + p.hp, 0);
+
+  it("hurts a trooper thrown into a solid prop, and logs the slam", () => {
+    const sim = staged();
+    const trooper = sim.debugSpawn("soldier", "player", { x: -1.4, z: 0 });
+    // A boulder a stride behind the trooper, directly along the throw line.
+    const rock = sim.entities.find((e) => e.kind === "cover" && e.coverKind !== "ridge")!;
+    rock.position = { x: -3.2, z: 0 };
+    const before = hp(trooper);
+    armed(sim, { x: 0, z: 7 });
+    expect(sim.queueGrenadeAt({ x: 0, z: 0 })).toBe(true);
+    sim.endTurn();
+    settle(sim);
+    expect(sim.log.some((l) => l.includes("slams into"))).toBe(true);
+    expect(hp(trooper)).toBeLessThan(before - 4); // splash alone is small; the slam adds real damage
+    expect(dist(trooper.position, rock.position)).toBeGreaterThan(trooper.radius); // never inside it
+  });
+
+  it("shares the hit with the unit it is thrown into", () => {
+    const sim = staged();
+    const trooper = sim.debugSpawn("soldier", "player", { x: -1.4, z: 0 });
+    const wall = sim.debugSpawn("heavy", "player", { x: -2.9, z: 0 });
+    const wallBefore = hp(wall);
+    armed(sim, { x: 0, z: 7 });
+    expect(sim.queueGrenadeAt({ x: 0, z: 0 })).toBe(true);
+    sim.endTurn();
+    settle(sim);
+    expect(sim.log.some((l) => l.includes(`slams into ${wall.name}`))).toBe(true);
+    expect(hp(wall)).toBeLessThan(wallBefore);
+    expect(dist(trooper.position, wall.position)).toBeGreaterThan((trooper.radius + wall.radius) * 0.9);
+  });
+});
