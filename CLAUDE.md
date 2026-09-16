@@ -29,6 +29,7 @@ symbols fail the build.
 | Quick gameplay-zoom look per scenario (`-- firefight siege`, `:select`/`:shoot`/`:base` HUD states) | `npm run shots:look` |
 | 9-frame attack filmstrip at quarter speed (`-- melee` or `shoot`) — judge motion here, not in stills | `npm run shots:filmstrip` |
 | Depth-fight repro (hide plates / kill shadows / lift plates / old near plane) | `npm run probe:depth <scenario>` |
+| Infantry lineup, near + far, for kit/proportion review | `npm run shots:lineup` |
 | Build + Electron gameplay smoke | `npm run test:play` |
 | Desktop app (build + Electron) | `npm run standalone` |
 | **One-command shareable .exe** | `npm run dist:exe` (portable, → `release/`) |
@@ -108,8 +109,20 @@ the pooled-material system repaints them every frame. A single skinned character
 three away — that is why infantry were procedural, and it is still true. So Blender authors the
 shapes and the game keeps the rig.
 
+**Per-kind identity parts** live in `art/infantry/author_kinds.py` (imported by `author_kit.py`):
+one helmet and one weapon per kind, plus a pack where the pack IS the unit (medic case, flamer
+tanks, drone, jump thrusters). Each kit branch in `buildSoldier` swaps its main head/weapon/pack box
+for `kit: "helmet-<kind>"` / `"weapon-<name>"` / `"pack-<name>"`; everything else stays procedural.
+`npm run shots:lineup` renders all thirteen in a row (near + far) — review THAT after any kit
+change, and `shots:silhouette` for the outline test. Blender is found by `scripts/blender.mjs`
+(PATH or Program Files), so `art:kit` works from a fresh shell.
+
 Rules:
 
+- **Authored parts get `bakeVertexAO` on first use** (in `box()`): pooled part materials read
+  vertex colours and a GLB part has none, which samples as BLACK — that was the bowling-ball helmet.
+- Helmets are NOT `accent` meshes and take `helmetColor` (the body hue lifted toward bone): they are
+  the largest surface on a trooper now and the old dark per-kit literals read as black domes.
 - Every kit mesh is exported **normalised to a 1x1x1 box centred on the origin**, so `size` in
   `this.box()` still means exactly what it means for a box. **Shape comes from art; proportion stays
   in `worldRenderer.ts`.**

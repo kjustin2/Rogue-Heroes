@@ -191,6 +191,10 @@ def main():
     clear_scene()
     for build in (build_helmet, build_torso, build_boot, build_rifle, build_pack):
         build()
+    # Per-kind identity parts (helmets, weapons, packs) live in author_kinds.py.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import author_kinds
+    author_kinds.build_all()
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.export_scene.gltf(

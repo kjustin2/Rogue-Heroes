@@ -156,7 +156,14 @@ function normalize(root: THREE.Object3D, targetSize: number): THREE.Group {
 // so the builder can scale it to whatever size a kit wants, and any part with no
 // authored mesh keeps its procedural rounded box. The game runs with the GLB gone.
 // ---------------------------------------------------------------------------
-export type KitPart = "helmet" | "torso" | "boot" | "rifle" | "pack";
+// Shared chassis parts plus the per-kind identity parts authored in art/infantry/author_kinds.py.
+export type KitPart =
+  | "helmet" | "torso" | "boot" | "rifle" | "pack"
+  | "helmet-scout" | "helmet-sniper" | "helmet-striker" | "helmet-heavy" | "helmet-grenadier" | "helmet-mortar"
+  | "helmet-medic" | "helmet-engineer" | "helmet-flamer" | "helmet-droneop" | "helmet-sapper" | "helmet-jumper"
+  | "weapon-carbine" | "weapon-longrifle" | "weapon-blade" | "weapon-mg" | "weapon-launcher" | "weapon-mortar"
+  | "weapon-pistol" | "weapon-wrench" | "weapon-flamethrower" | "weapon-wand" | "weapon-shotgun"
+  | "pack-medic" | "pack-engineer" | "pack-flamer" | "pack-drone" | "pack-jumper";
 
 const kit = new Map<string, THREE.BufferGeometry>();
 let kitState: "idle" | "loading" | "ready" | "failed" = "idle";

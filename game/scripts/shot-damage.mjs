@@ -24,4 +24,8 @@ try {
   await delay(1500);
   await page.screenshot({ path: "shots/damage-parts.png", clip: { x: 200, y: 150, width: 1000, height: 450 } });
   console.log("wrote shots/damage-parts.png");
+  // A close three-quarter portrait of one intact trooper, for proportion work.
+  await page.evaluate(() => window.__rht.setView({ x: -3, z: 0.4, zoom: 0.26, pitch: 0.5, yaw: 0.7 }));
+  await delay(600);
+  await page.screenshot({ path: "shots/trooper-portrait.png", clip: { x: 400, y: 80, width: 600, height: 520 } });
 } finally { await close(); }
