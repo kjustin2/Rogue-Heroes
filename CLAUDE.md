@@ -66,7 +66,7 @@ drive headless Chromium via `window.__rht`.
 
 ## THE GROUND-HATCHING LEDGER — read this before touching the ground, shadows, or terrain
 
-A fine dashed/striped hatching across the ground has been reported **four separate times** in this
+A fine dashed/striped hatching across the ground has been reported **five separate times** in this
 repo. Each report was a DIFFERENT cause that looked identical on screen, and each was chased with
 guesses before anyone measured. Every fix below is load-bearing; if hatching is reported again,
 work this list first and **do not start by tuning the ground texture** — three rounds were lost
@@ -78,6 +78,7 @@ that way and the cause was never once in it.
 | 2 | **Terrain-block CAPS overhang their block by 1cm**, so neighbouring caps in a stepped mesa overlap and two coplanar surfaces fight in the shadow depth pass. | `cap.castShadow = false`. The body beneath casts the same footprint. | `npm run probe:shadow <scenario>` — bisects casting off one group at a time. |
 | 3 | **Coplanar z-fight between ground plates** — overlapping slabs of one patch all topped out at exactly y=0. | Each slab staggered ~2mm in depth. | Survives `probe:shadow` (it is a main-pass depth issue, not a shadow one) — that is how #3 is told apart from #2. |
 | 4 | **Shadow acne** on the near-flat arena under a low sun. | `shadow.normalBias` sized to the shadow TEXEL (~4cm at the current frustum), not a tenth of one. | `npm run probe:ground` — strips albedo, then normal map, then particles, one at a time. |
+| 5 | **Ground PLATES coplanar with each other and with water** (2026-09-15). The three plate variants are separate meshes whose blobs sat at identical heights, and all of them sat 3mm above the water surface; with the camera near plane at 0.1 the depth buffer could not separate any of it at tactical distance. Read as dashed "teeth" along patch rims and as hatching over water — and it survived a full shadow-caster bisection because it was never a shadow. | Camera `near` = 1 (it never gets within 4 units of the board); plates on a 5mm ladder per blob AND per variant, lowest 2cm above grade. | `npm run smoke:ground` asserts every plate height is distinct and clear of the floor/water (fault-injection proven: make two variants share heights and all five maps fail). `npm run probe:depth <scenario>` reproduces it on demand (hides plates, kills shadows, lifts plates, restores near=0.1). |
 
 Two rules that fall out of this and apply beyond hatching:
 
@@ -86,7 +87,10 @@ Two rules that fall out of this and apply beyond hatching:
   and a ground plane is a PlaneGeometry rotated flat, so its depth sits on Y and its Z extent is
   zero — every plane in the scene was skipped. It only became a gate after the bug was deliberately
   re-added and the gate was made to fail.
-- **Bisect before you tune.** Every one of these four was found by turning things off one at a time
+- **A dark shape on the ground is not necessarily a shadow.** #5 was bisected as a shadow for an hour
+  because it sat exactly where the mesa's shadow should be. Turn the key light's `castShadow` off FIRST:
+  if the artefact is still there, stop touching the shadow pass.
+- **Bisect before you tune.** Every one of these five was found by turning things off one at a time
   (`probe:shadow`, `probe:ground`), and none was found by adjusting a number and looking.
 
 ## Blender-authored infantry parts (`npm run art:kit`)

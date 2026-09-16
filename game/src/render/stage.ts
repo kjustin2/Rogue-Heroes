@@ -127,7 +127,11 @@ export class Stage {
     this.scene.background = makeSkyTexture();
     this.scene.fog = new THREE.FogExp2(0x6a4a33, 0.019);
 
-    this.camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 160);
+    // NEAR = 1, not 0.1. Depth precision scales with near, and the camera never comes within ~4
+    // units of the board (baseDistance * min zoom). At 0.1 the buffer could not separate the ground
+    // plates' 2mm stagger at tactical distance, and the coplanar fight read as dashed hatching
+    // across the arena — ledger #3 in CLAUDE.md, found by hiding scene groups, not by tuning.
+    this.camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 1, 160);
     this.updateCamera();
 
     // LIGHT BUDGET. The rig previously summed to ~5.0 across four sources, three of which were

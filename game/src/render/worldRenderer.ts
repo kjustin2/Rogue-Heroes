@@ -315,6 +315,7 @@ export class WorldRenderer {
     this.syncEnvironment(sim);
     this.syncAmbient();
     this.syncWater();
+    this.syncClouds();
     if (this.silhouetteMode) this.setSilhouette(true);
     this.syncObjectives(sim);
   }
@@ -825,6 +826,12 @@ export class WorldRenderer {
 
   // Scroll the water's ripple normal. Two axes at different rates so the pattern never reads as a
   // texture sliding in one direction, and slow enough that a still frame looks still.
+  /** Drift the cloud deck. Very slow — a shadow should take the better part of a minute to cross. */
+  private syncClouds(): void {
+    const t = performance.now() * 0.0000075;
+    cloudUniforms.uCloudOffset.value.set(t, t * 0.55);
+  }
+
   private syncWater(): void {
     const ripple = this.waterRipple;
     if (!ripple) return;
@@ -907,6 +914,7 @@ export class WorldRenderer {
         metalness: 0.02,
       })
     );
+    applyCloudShadows(floor.material as THREE.MeshStandardMaterial, surface.normalMap);
     floor.position.y = -0.11;
     floor.receiveShadow = true;
     this.sceneryRoot.add(floor);
@@ -1127,13 +1135,27 @@ export class WorldRenderer {
     const renderElevation = prevElevation === undefined ? entity.elevation : prevElevation + (entity.elevation - prevElevation) * 0.2;
     group.userData.renderElevation = renderElevation;
     group.position.set(entity.position.x, renderElevation + bob, entity.position.z);
+    // PER-INSTANCE VARIETY on scenery. Every rock, tree and crate was the same mesh at the same
+    // size on the same bearing, so a map read as stamped rather than grown — the single most
+    // obvious "placeholder" tell left on the board once the shapes themselves were fixed. Cover
+    // gets a deterministic yaw and a modest scale jitter from its own id.
+    //
+    // Yaw is FREE: collision here is a circle of entity.radius, so turning a prop cannot change
+    // what it blocks. Scale is deliberately kept to +/-11% and applied to the visual group only, so
+    // the mesh never drifts far enough from its collision radius for a unit to look like it stopped
+    // early or walked into thin air.
+    const scenery = entity.kind === "cover";
+    const variety = scenery ? hash(entity.id) : 0;
     group.rotation.set(
       isInfantryKind(entity.kind) ? 0.06 * walkWeight : 0,
-      entity.yaw,
+      entity.yaw + (scenery ? ((variety % 360) / 360) * Math.PI * 2 : 0),
       entity.kind === "tank" ? Math.sin(motionTime * 4.8) * 0.018 * walkWeight : 0
     );
     if (defending && isInfantryKind(entity.kind) && entity.status.alive) {
       group.scale.set(1.08, 1, 1.08);
+    } else if (scenery) {
+      const jitter = 0.89 + ((variety >> 9) % 23) / 100;
+      group.scale.set(jitter, 0.92 + ((variety >> 14) % 19) / 100, jitter);
     } else {
       group.scale.setScalar(entity.status.alive ? 1 : 0.94);
     }
@@ -4627,6 +4649,43 @@ function makeSurroundings(theme: MapTheme, width: number, depth: number): THREE.
  * All plates of a variant merge into ONE geometry, so the whole layer is three draw calls.
  */
 /** One ground-texture tile per this many world units. Floor, mesa caps and plates all use it. */
+/**
+ * CLOUD SHADOWS. A world-space noise multiplier that drifts slowly across every ground surface.
+ * A flat-lit field of one colour is the last thing that reads as unfinished once the shapes are
+ * right — nothing in the frame moves, so nothing in the frame feels alive. This costs one extra
+ * texture fetch on the ground materials and no draw calls, and because it is sampled in WORLD space
+ * it lands identically on the floor, the plates and the mesa caps, so a shadow crossing the board
+ * runs over all three as one shape.
+ *
+ * The noise source is the ground's own normal map at a huge scale — no new asset, and its
+ * low-frequency structure is exactly the soft blotchy shape a cloud deck wants.
+ */
+const cloudUniforms = { uCloudOffset: { value: new THREE.Vector2() } };
+
+function applyCloudShadows(material: THREE.MeshStandardMaterial, noise: THREE.Texture): void {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uCloudMap = { value: noise };
+    shader.uniforms.uCloudOffset = cloudUniforms.uCloudOffset;
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", `#include <common>
+varying vec2 vCloudXZ;`)
+      .replace("#include <begin_vertex>", `#include <begin_vertex>
+vCloudXZ = (modelMatrix * vec4(transformed, 1.0)).xz;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", `#include <common>
+varying vec2 vCloudXZ;
+uniform sampler2D uCloudMap;
+uniform vec2 uCloudOffset;`)
+      .replace("#include <map_fragment>", `#include <map_fragment>
+// ~85 world units per cloud, so a shadow is a feature of the map rather than of a texture.
+float cloud = texture2D(uCloudMap, vCloudXZ / 85.0 + uCloudOffset).g;
+// Shallow: 0.86 to 1.0. Deeper reads as dirt rather than weather.
+diffuseColor.rgb *= mix(0.86, 1.0, smoothstep(0.35, 0.72, cloud));`);
+  };
+  // A distinct cache key so this variant compiles and warms separately from the plain one.
+  material.customProgramCacheKey = () => "cloudshadow";
+}
+
 const GROUND_TILE = 11;
 /**
  * A flat, irregular ground blob: a triangle fan whose rim radius wanders per vertex, so the outline
@@ -4708,7 +4767,7 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
   plateNormal.repeat.set(1, 1);
   const area = width * depth;
   const perVariant = Math.max(5, Math.round(area / 620));
-  for (const variant of variants) {
+  for (const [vi, variant] of variants.entries()) {
     const parts: THREE.BufferGeometry[] = [];
     for (let i = 0; i < perVariant; i += 1) {
       const cx = (rand() - 0.5) * width * 0.92;
@@ -4721,7 +4780,13 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
         parts.push(blobGeometry(
           6 + rand() * 9,
           cx + (rand() - 0.5) * 9,
-          -k * 0.0018,
+          // 6cm above grade, 5mm per blob AND per variant (nine steps, lowest 2cm). The floor top is
+          // at -0.02 and a water surface at -0.015; a 2mm stagger from y=0 put plates within the depth buffer's
+          // resolution of both at the far edge of a large map. Worse, the three variants are separate
+          // meshes whose k-th blobs sat at IDENTICAL heights, so wherever a light patch overlapped a
+          // dark one they were exactly coplanar and fought — the dashed "teeth" along patch rims that
+          // survived every shadow-bias change because they were never a shadow (ledger #3).
+          0.06 - (vi * 3 + k) * 0.005,
           cz + (rand() - 0.5) * 9,
           rand,
         ));
@@ -4750,6 +4815,7 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
         polygonOffsetUnits: -2,
       })
     );
+    applyCloudShadows(mesh.material as THREE.MeshStandardMaterial, plateNormal);
     mesh.receiveShadow = true;
     group.add(mesh);
   }
@@ -4864,6 +4930,9 @@ function makeTerrainBlocks(groundColor: number, accentColor: number, surface: Gr
       polygonOffsetFactor: -1,
       polygonOffsetUnits: -1,
     }));
+    // The caps share the cloud deck too, so a shadow crossing the board runs over the mesa tops
+    // as one continuous shape instead of stopping at their edges.
+    applyCloudShadows(mesh.material as THREE.MeshStandardMaterial, capNormal);
     mesh.receiveShadow = true;
     // Caps still do not cast: see the ledger in CLAUDE.md. One merged mesh makes the old
     // cap-vs-cap depth fight structurally impossible, but the body casts the same footprint anyway.

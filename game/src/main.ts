@@ -2235,6 +2235,8 @@ declare global {
       sceneGraph(): { total: number; topLevel: number };
       // The live Three scene root — QA probes census it (draw-work attribution).
       sceneRoot(): object;
+      /** The live perspective camera (probes vary near/far to reproduce depth fights). */
+      cameraObject(): object;
       setDebugOverlay(on: boolean): boolean;
       // Black-silhouette mode: every unit renders as a flat black shape on white. The
       // "name each unit from its outline alone" test -- a recolour variant fails it instantly.
@@ -2321,6 +2323,7 @@ window.__rht = {
   partColors: (entityId: string) => world.partColors(entityId),
   sceneGraph: () => ({ total: countSceneObjects(), topLevel: stage.scene.children.length }),
   sceneRoot: () => stage.scene,
+  cameraObject: () => stage.camera,
   setDebugOverlay: (on) => { debugOverlay.setEnabled(on); return debugOverlay.isEnabled(); },
   silhouette: (on) => { world.setSilhouette(on); stage.setSilhouette(on); },
   auditUI: () => auditUI(),

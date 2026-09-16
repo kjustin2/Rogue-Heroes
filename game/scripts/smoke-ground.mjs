@@ -77,6 +77,40 @@ try {
       });
       return out;
     });
+    // SECOND INVARIANT — NO COPLANAR GROUND PLATES (ledger #3, found again 2026-09-15). The plate
+    // layer is three variant meshes of overlapping blobs. When two blobs from different meshes sat
+    // at the same height, every overlap z-fought into dashed "teeth" along the patch rims — which
+    // read as a shadow artefact and survived a shadow bisection because it never was one. So: every
+    // distinct plate height must be unique across the whole layer and clear of the floor top (-0.02)
+    // and water surface (-0.015) by more than the depth buffer resolves at the far edge (~2mm at
+    // near=1; we demand 1cm).
+    const plateHeights = await page.evaluate(() => {
+      const ys = [];
+      window.__rht.sceneRoot().traverse((o) => {
+        if (o.name !== "plates") return;
+        o.traverse((m) => {
+          if (!m.isMesh) return;
+          const pos = m.geometry.getAttribute("position");
+          const seen = new Set();
+          for (let i = 0; i < pos.count; i += 1) seen.add(Math.round(pos.getY(i) * 1e4) / 1e4);
+          ys.push([...seen]);
+        });
+      });
+      return ys;
+    });
+    const all = plateHeights.flat();
+    const sorted = [...all].sort((a, b) => a - b);
+    for (let i = 1; i < sorted.length; i += 1) {
+      if (sorted[i] - sorted[i - 1] < 0.004) {
+        failures += 1;
+        console.log(`  FAIL ${mapId}: two ground-plate heights ${sorted[i - 1]} and ${sorted[i]} are within 4mm — coplanar plates z-fight into dashed teeth.`);
+        break;
+      }
+    }
+    if (sorted.length && sorted[0] < -0.015 + 0.01) {
+      failures += 1;
+      console.log(`  FAIL ${mapId}: lowest ground plate at y=${sorted[0]} sits within 1cm of the water/floor surface.`);
+    }
     for (const f of findings) {
       if (f.spanW <= MAX_TEXTURED_SPAN && f.spanD <= MAX_TEXTURED_SPAN) continue;
       failures += 1;
@@ -86,10 +120,10 @@ try {
         `runs to the horizon aliases into hatching; give the distance a flat tone.`
       );
     }
-    if (!failures) console.log(`  ok   ${mapId}: ${findings.length} textured ground surface(s), none oversized`);
+    if (!failures) console.log(`  ok   ${mapId}: ${findings.length} textured ground surface(s), none oversized; ${all.length} plate heights, all distinct`);
   }
   if (errors.length) { console.error("CONSOLE ERRORS:\n" + errors.slice(0, 6).join("\n")); failures += 1; }
-  if (failures) { console.error(`Ground smoke: ${failures} oversized textured ground surface(s) — see the header of this file.`); process.exitCode = 1; }
+  if (failures) { console.error(`Ground smoke: ${failures} failure(s) — see the header of this file.`); process.exitCode = 1; }
   else console.log("Ground smoke passed: no tiled detail texture runs off to the horizon.");
 } finally {
   await close();
