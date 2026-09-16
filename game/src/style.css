@@ -5422,3 +5422,65 @@ body.killcam::after { bottom: 0; }
 /* The title diorama is a live sim, so the HUD would render for it. Outside a battle it is not
    the player's HUD -- hide it under the menus. */
 body.menus-open:not(.in-battle) #ui { visibility: hidden; }
+
+/* MAIN MENU HIERARCHY. Primary (title-start) > mode cards > a text link > utilities. */
+.main-menu__buttons { max-width: 440px; gap: 14px; }
+.menu-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+.menu-mode {
+  pointer-events: auto;
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(140, 239, 255, 0.08), rgba(255, 255, 255, 0.02)), rgba(10, 18, 26, 0.72);
+  color: #eafdff;
+  text-align: left;
+  transition: transform 0.12s cubic-bezier(0.2, 0.7, 0.3, 1), border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.menu-mode strong { font-family: var(--font-display); font-size: 0.86rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.menu-mode span { font-family: var(--font-ui); font-size: 0.74rem; color: #9fc4cc; }
+.menu-mode:hover { border-color: var(--line-strong); transform: translateY(-1px); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 18px rgba(140, 239, 255, 0.2); }
+.menu-link {
+  pointer-events: auto;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 4px;
+  color: #ffe08a;
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.menu-link:hover { color: #fff1c2; }
+.menu-utilities { display: flex; justify-content: center; gap: 8px; margin-top: 4px; }
+.menu-utility {
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(140, 239, 255, 0.18);
+  background: rgba(10, 18, 26, 0.55);
+  color: #bfe9ef;
+  font-family: var(--font-ui);
+  font-size: 0.76rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.menu-utility:hover { border-color: var(--line-strong); color: #eafdff; }
+.menu-utility--exit { color: #ffc9b8; border-color: rgba(255, 128, 78, 0.3); }
+.tech-more {
+  margin: 4px 0 2px 12px;
+  font-family: var(--font-ui);
+  font-size: 0.74rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #7f8a90;
+}

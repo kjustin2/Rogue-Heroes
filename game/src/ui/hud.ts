@@ -1457,7 +1457,7 @@ function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
   if (!base.status.alive) return `<div class="order-note">${escapeHtml(base.name)} is disabled.</div>`;
   const hasCp = base.commandPoints > 0;
   const note = hasCp
-    ? "Spend the base's command point in one of the tabs: deploy a troop, research a doctrine, build a defense, call support, or upgrade the base."
+    ? "One command point a turn — deploy, research, build, support or upgrade."
     : `${base.name} has used its command point this turn.`;
   syncRevealTracking(base);
 
@@ -1627,10 +1627,18 @@ function techTreePanel(base: CombatEntity, sim: TacticalSim): string {
 function techBranch(node: TechNode, base: CombatEntity, sim: TacticalSim): string {
   const doctrine = sim.factionOf(base.team).tech;
   const children = TECH_TREE.filter((n) => n.requires.includes(node.id) && doctrine.includes(n.id));
+  // Encrypted tier-4 files under an unresearched parent collapse to ONE line. Drawing each as a
+  // full hatched card made the tree a wall of placeholders before a single doctrine was bought.
+  const parentMet = node.requires.every((id) => isTechUnlocked(base, id));
+  const hidden = children.filter((c) => c.tier === 4 && !(parentMet && isTechUnlocked(base, node.id)));
+  const shown = children.filter((c) => !hidden.includes(c));
+  const summary = hidden.length
+    ? `<div class="tech-more" data-tip="${escapeAttr(`Research ${node.name} to decrypt ${hidden.length === 1 ? "it" : "them"}.`)}">+${hidden.length} encrypted file${hidden.length === 1 ? "" : "s"}</div>`
+    : "";
   return `
     <div class="tech-branch">
       ${techNodeCard(node, base, sim)}
-      ${children.length ? `<div class="tech-children">${children.map((child) => techBranch(child, base, sim)).join("")}</div>` : ""}
+      ${shown.length || summary ? `<div class="tech-children">${shown.map((child) => techBranch(child, base, sim)).join("")}${summary}</div>` : ""}
     </div>
   `;
 }

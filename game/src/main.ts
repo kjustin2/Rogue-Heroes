@@ -816,18 +816,25 @@ function showMainMenu(): void {
   const screen = mountScreen(
     `
     <div class="title-screen__content menu-content main-menu__content">
-      <div class="title-kicker">Tactical Command</div>
       <h1 class="title-logo">ROGUE HEROES<span>TACTICS</span></h1>
       <div class="commander-id" data-tip="Your commander loadout — change it in the Armory."><span class="commander-emblem">${escapeHtml(progression.emblemGlyph())}</span> ${escapeHtml(progression.titleText())}</div>
+      <!-- ONE primary action, three ways to play, and the utilities demoted to a quiet row. Eight
+           stacked buttons of equal weight told a new player nothing about where to start. -->
       <div class="main-menu__buttons" data-allow-overlap>
-        <button class="title-start" data-menu="campaign" type="button">Campaign</button>
-        ${hasSave ? `<button class="menu-action" data-menu="continue" type="button">Continue Battle</button>` : ""}
-        <button class="menu-action" data-menu="run" type="button">Skirmish Run${run.active ? ` · Sector ${run.sectorNumber}/${RUN_LENGTH}` : ""}</button>
-        <button class="menu-action" data-menu="play" type="button">Skirmish</button>
-        <button class="menu-action" data-menu="tutorial" type="button">Tutorial</button>
-        <button class="menu-action" data-menu="armory" type="button">Armory</button>
-        <button class="menu-action" data-menu="settings" type="button">Settings</button>
-        <button class="menu-action menu-action--exit" data-menu="exit" type="button">Exit Game</button>
+        ${hasSave
+          ? `<button class="title-start" data-menu="continue" type="button">Continue Battle</button>`
+          : `<button class="title-start" data-menu="campaign" type="button">Play Campaign</button>`}
+        <div class="menu-modes">
+          ${hasSave ? `<button class="menu-mode" data-menu="campaign" type="button"><strong>Campaign</strong><span>Story missions</span></button>` : ""}
+          <button class="menu-mode" data-menu="play" type="button"><strong>Skirmish</strong><span>One battle, your rules</span></button>
+          <button class="menu-mode" data-menu="run" type="button"><strong>Skirmish Run</strong><span>${run.active ? `Sector ${run.sectorNumber}/${RUN_LENGTH} in progress` : "Survive a chain of sectors"}</span></button>
+        </div>
+        <button class="menu-link" data-menu="tutorial" type="button">New here? Play the tutorial</button>
+        <div class="menu-utilities">
+          <button class="menu-utility" data-menu="armory" type="button">Armory</button>
+          <button class="menu-utility" data-menu="settings" type="button">Settings</button>
+          <button class="menu-utility menu-utility--exit" data-menu="exit" type="button">Exit</button>
+        </div>
       </div>
     </div>
   `,
