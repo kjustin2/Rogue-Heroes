@@ -702,7 +702,9 @@ function closeAllMenus(): void {
   // when swapping menus, so the radar only stops when we leave menus for gameplay.
   document.body.classList.remove("menus-open");
   stage.setLowCost(false);
-  stage.menuDrift = false;
+  // Only the diorama's drifting low view gets reset -- closing the pause menu mid-battle must
+  // leave the player's camera exactly where they put it.
+  if (stage.menuDrift) stage.resetView();
   syncHudInert();
 }
 
@@ -1071,7 +1073,9 @@ function showSettings(): void {
   screen.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
     if (target.closest("[data-back]")) {
-      showMainMenu();
+      // Opened from the pause menu mid-battle: Back is back to the pause menu, never to the
+      // title (which would quit the battle the player only meant to tweak the volume in).
+      if (inBattle) { screen.remove(); openPauseMenu(); } else showMainMenu();
       return;
     }
     const set = target.closest<HTMLElement>("[data-set]")?.dataset.set;
@@ -1600,6 +1604,7 @@ function openPauseMenu(): void {
       <div class="pause-buttons">
         <button class="title-start" data-pause="resume" data-overlay-close type="button">Resume</button>
         <button class="menu-action" data-pause="save" type="button">Save Battle</button>
+        <button class="menu-action" data-pause="settings" type="button">Settings</button>
         <button class="menu-action" data-pause="controls" type="button">Controls</button>
         <button class="menu-action" data-pause="menu" type="button">Main Menu</button>
       </div>
@@ -1623,6 +1628,9 @@ function openPauseMenu(): void {
     } else if (action === "controls") {
       screen.remove();
       showControls();
+    } else if (action === "settings") {
+      screen.remove();
+      showSettings();
     } else if (action === "menu") {
       screen.remove();
       showMainMenu();

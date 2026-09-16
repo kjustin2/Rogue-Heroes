@@ -89,6 +89,15 @@ export class Stage {
   private lowCost = false;
   /** Slow camera orbit behind the main menu: the diorama turns, the title does not. */
   menuDrift = false;
+
+  /** Back to the tactical default after the diorama's low, drifting view. */
+  resetView(): void {
+    this.menuDrift = false;
+    this.zoom = 1;
+    this.orbitYaw = 0;
+    this.orbitPitch = Math.atan2(this.baseOffset.y, Math.hypot(this.baseOffset.x, this.baseOffset.z));
+    this.updateCamera();
+  }
   /** Full battle chain and the lean menu chain. Both null on the performance tier. */
   private composer: EffectComposer | null = null;
   private menuComposer: EffectComposer | null = null;
