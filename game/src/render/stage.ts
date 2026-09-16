@@ -87,6 +87,8 @@ export class Stage {
   private quality: QualityTier = "quality";
   private pixelRatioCap = 1.15;
   private lowCost = false;
+  /** Slow camera orbit behind the main menu: the diorama turns, the title does not. */
+  menuDrift = false;
   /** Full battle chain and the lean menu chain. Both null on the performance tier. */
   private composer: EffectComposer | null = null;
   private menuComposer: EffectComposer | null = null;
@@ -300,7 +302,9 @@ export class Stage {
   setLowCost(on: boolean): void {
     if (on === this.lowCost) return;
     this.lowCost = on;
-    this.keyLight.castShadow = !on;
+    // Shadows used to go off here too. A real diorama sits behind the menu now and a flat-lit one
+    // reads as a mock-up; the lean post chain is where the saving is.
+    this.keyLight.castShadow = true;
   }
 
   /** Punch the screen — big blasts. amount 0..1; vignette/aberration pulse, fast decay. */
@@ -455,6 +459,10 @@ export class Stage {
   }
 
   update(dt: number, input: { up: boolean; down: boolean; left: boolean; right: boolean }): void {
+    if (this.menuDrift) {
+      this.orbitYaw += dt * 0.045;
+      this.updateCamera();
+    }
     // Screen-stress decay (blast vignette/aberration pulse).
     this.stress = Math.max(0, this.stress - this.stress * 6 * dt);
     if (this.vignette) this.vignette.darkness = this.baseVignette + this.stress * 0.4;

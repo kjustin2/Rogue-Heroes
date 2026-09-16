@@ -3134,14 +3134,14 @@ h2,
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.4s ease;
-  backdrop-filter: blur(4px) saturate(1.05); /* blur the live scene behind the menus */
+  /* A REAL scene sits behind the menus now (the title diorama): a touch of blur so the type
+     stays sharp against it, and a vignette rather than a wall of brown, so the field reads. */
+  backdrop-filter: blur(1.5px) saturate(1.05);
   background:
-    repeating-radial-gradient(circle at 50% 44%, rgba(255, 206, 130, 0.05) 0 1px, transparent 1px 104px),
-    repeating-linear-gradient(90deg, rgba(255, 206, 130, 0.04) 0 1px, transparent 1px 58px),
-    repeating-linear-gradient(0deg, rgba(255, 206, 130, 0.032) 0 1px, transparent 1px 58px),
-    radial-gradient(120% 78% at 50% -8%, rgba(210, 170, 110, 0.14), transparent 52%),
-    radial-gradient(150% 80% at 50% 118%, rgba(255, 128, 78, 0.26), transparent 60%),
-    linear-gradient(180deg, #120f0a, #080604 56%, #16100b);
+    repeating-radial-gradient(circle at 50% 44%, rgba(255, 206, 130, 0.035) 0 1px, transparent 1px 104px),
+    radial-gradient(120% 78% at 50% -8%, rgba(210, 170, 110, 0.1), transparent 52%),
+    radial-gradient(150% 80% at 50% 118%, rgba(255, 128, 78, 0.18), transparent 60%),
+    radial-gradient(90% 70% at 50% 50%, rgba(8, 6, 4, 0.34), rgba(8, 6, 4, 0.74) 100%);
 }
 /* Shown only while a menu is open. The radar/scan/float animations are paused while hidden
    so they cost nothing during gameplay AND resume from their current angle (never restart)
@@ -5418,3 +5418,7 @@ body.killcam::after { bottom: 0; }
   text-align: center;
   background: linear-gradient(to top, rgba(10, 10, 12, 0.96) 0%, rgba(10, 10, 12, 0.9) 70%, rgba(10, 10, 12, 0) 100%);
 }
+
+/* The title diorama is a live sim, so the HUD would render for it. Outside a battle it is not
+   the player's HUD -- hide it under the menus. */
+body.menus-open:not(.in-battle) #ui { visibility: hidden; }

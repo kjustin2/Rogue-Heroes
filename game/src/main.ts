@@ -167,6 +167,11 @@ let tutorialActive = false;
 // whether a victory advances the campaign ladder and shows the story overlay.
 let activeCampaignMission: CampaignMission | undefined;
 let inBattle = false; // true between starting/loading a battle and it ending or being left
+// Mirrored onto <body class="in-battle"> so the HUD can be hidden behind the title diorama in CSS.
+function setInBattle(on: boolean): void {
+  inBattle = on;
+  document.body.classList.toggle("in-battle", on);
+}
 let hoverWorld: Vec2 | undefined;
 let lastEndPhase: "victory" | "defeat" | undefined;
 
@@ -498,7 +503,7 @@ function startBattle(mapId: string, modeId: ModeId, difficulty: Difficulty = set
   world.setPlayerAccent(progression.accentColor());
   focusOnPlayerBase();
   lastEndPhase = undefined;
-  inBattle = true;
+  setInBattle(true);
   hud.update();
 }
 
@@ -537,7 +542,7 @@ function startCampaignMission(mission: CampaignMission): void {
   world.setPlayerAccent(progression.accentColor());
   focusOnPlayerBase();
   lastEndPhase = undefined;
-  inBattle = true;
+  setInBattle(true);
   hud.update();
   runMissionIntro();
 }
@@ -593,7 +598,7 @@ function startRunBattle(): void {
   world.setPlayerAccent(progression.accentColor());
   focusOnPlayerBase();
   lastEndPhase = undefined;
-  inBattle = true;
+  setInBattle(true);
   hud.update();
   showToast(`Sector ${run.sectorNumber} of ${RUN_LENGTH} · ${mapDef(battle.map).name} · ${modeDef(battle.mode).name}`);
 }
@@ -697,6 +702,7 @@ function closeAllMenus(): void {
   // when swapping menus, so the radar only stops when we leave menus for gameplay.
   document.body.classList.remove("menus-open");
   stage.setLowCost(false);
+  stage.menuDrift = false;
   syncHudInert();
 }
 
@@ -724,6 +730,32 @@ function dismissTopOverlay(): void {
   if (closer) closer.click();
   else top.remove();
   syncHudInert();
+}
+
+/**
+ * THE TITLE DIORAMA. The main menu used to sit over an empty default arena, blurred and buried
+ * under a dark gradient -- a brown nothing. It sits over the game now: a real map with a squad and
+ * an enemy patrol standing in it, idling, under a camera that drifts slowly around them. Every
+ * entry point to the main menu comes through showMainMenu, and the in-memory battle it replaces
+ * has already been autosaved (Continue restores from storage), so nothing is lost by it.
+ */
+function stageMenuDiorama(): void {
+  sim.configure(mapDef("verdant"), "destroy", "normal");
+  const squad: [TroopKind, number, number][] = [["soldier", -3.2, 1.4], ["heavy", -4.4, -0.6], ["striker", -5.6, 2.2], ["jumper", -2.4, -1.6], ["tank", -7.2, 0.4]];
+  for (const [kind, x, z] of squad) {
+    const u = sim.debugSpawn(kind, "player", { x, z });
+    u.yaw = Math.PI * 0.5 + (x + z) * 0.05;
+  }
+  const patrol: [TroopKind, number, number][] = [["striker", 7.5, -1.2], ["soldier", 8.8, 1.6], ["apc", 11, 0]];
+  for (const [kind, x, z] of patrol) {
+    const u = sim.debugSpawn(kind, "enemy", { x, z });
+    u.yaw = -Math.PI * 0.5;
+  }
+  sim.select("");
+  world.applyMap(sim.mapDef.theme);
+  world.setPlayerAccent(progression.accentColor());
+  stage.debugSetView({ x: 0.5, z: 0.4, zoom: 0.62, pitch: 0.42, yaw: 0.6 });
+  stage.menuDrift = true;
 }
 
 function mountScreen(html: string, className: string): HTMLDivElement {
@@ -775,8 +807,9 @@ function pointsBadge(): string {
 
 function showMainMenu(): void {
   autosaveIfActive(); // quitting a battle to the menu preserves it for Continue
-  inBattle = false;
+  setInBattle(false);
   closeAllMenus();
+  stageMenuDiorama();
   const hasSave = Boolean(safeStorageGet(SAVE_KEY));
   const screen = mountScreen(
     `
@@ -1714,7 +1747,7 @@ function loadSavedBattle(): void {
     world.setPlayerAccent(progression.accentColor());
     focusOnPlayerBase();
     lastEndPhase = undefined;
-    inBattle = true;
+    setInBattle(true);
     hud.update();
   }
 }
