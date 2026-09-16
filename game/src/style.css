@@ -3053,6 +3053,9 @@ h2,
 .mode-chip.score .score-foe { color: #ff8f7f; font-weight: 700; }
 .mode-chip em { color: var(--text-muted); font-style: normal; font-size: 0.78rem; }
 .mode-chip.event-chip {
+  white-space: normal;
+  line-height: 1.3;
+  text-align: left;
   border-color: rgba(255, 150, 70, 0.6);
   background: rgba(60, 30, 10, 0.66);
   color: #ffd0a3;

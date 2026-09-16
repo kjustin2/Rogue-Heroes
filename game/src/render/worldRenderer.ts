@@ -3521,6 +3521,23 @@ export class WorldRenderer {
           speed: [0.6, 2.2], up: 0.9, size: [0.4, 0.95], life: [1.1, 2.4],
           gravity: -0.5, drag: 1.1, jitter: radius * 0.35,
         });
+      } else if (effect.type === "land") {
+        fx.burst({
+          x: effect.to.x, y: ground + 0.12, z: effect.to.z,
+          count: 14, color: [0xa89e92, 0xcfc4b4], speed: [1.2, 3.2], up: 0.3, size: [0.25, 0.5],
+          life: [0.4, 0.9], gravity: -0.2, drag: 2.2, jitter: 0.3,
+        });
+      } else if (effect.type === "bolt") {
+        fx.burst({
+          x: effect.to.x, y: ground + 0.3, z: effect.to.z,
+          count: 24, color: [0xffffff, 0xd8ecff, 0x9fc8ff], speed: [3, 8], up: 0.7, size: [0.05, 0.14],
+          life: [0.2, 0.6], gravity: 6, drag: 0.8, shape: ParticleShape.streak,
+        });
+        fx.burst({
+          x: effect.to.x, y: ground + 0.4, z: effect.to.z,
+          count: 10, color: [0x5e564e, 0x8c837a], speed: [0.6, 2.2], up: 0.9, size: [0.3, 0.7],
+          life: [0.9, 1.8], gravity: -0.5, drag: 1.1, jitter: 0.3,
+        });
       } else if (effect.type === "topple") {
         // A falling column throws dust along its whole length, not just where it lands.
         fx.burst({
@@ -3687,6 +3704,40 @@ export class WorldRenderer {
         embers.position.set(effect.to.x, 0.3, effect.to.z);
         addEmbers(embers, 4, 0xffb02e, (effect.radius ?? 1) * (0.4 + t * 0.9), 0.4 + t * 1.2, effect.age);
         this.effectRoot.add(embers);
+      } else if (effect.type === "bolt") {
+        // LIGHTNING: a thin jagged column from the sky to the point, white-hot core with a pale
+        // halo, three kinks re-rolled from the effect id so each bolt has its own shape, a flash
+        // at the foot. Two-frame life. (It first reused the orbital lance and read as a wall.)
+        const fade = t < 0.15 ? 1 : Math.max(0, 1 - (t - 0.15) / 0.5);
+        const seed = hash(effect.id);
+        const top = 26;
+        const pts: THREE.Vector3[] = [new THREE.Vector3(effect.to.x + ((seed % 7) - 3) * 0.5, top, effect.to.z + (((seed >> 3) % 7) - 3) * 0.5)];
+        for (let k = 1; k <= 4; k += 1) {
+          const y = top - (top - terrainHeightAt(effect.to)) * (k / 4);
+          pts.push(new THREE.Vector3(effect.to.x + (((seed >> (k * 4)) % 9) - 4) * 0.28 * (1 - k / 4), y, effect.to.z + (((seed >> (k * 4 + 2)) % 9) - 4) * 0.28 * (1 - k / 4)));
+        }
+        pts[pts.length - 1].set(effect.to.x, terrainHeightAt(effect.to) + 0.05, effect.to.z);
+        for (let k = 1; k < pts.length; k += 1) {
+          const a = pts[k - 1];
+          const b = pts[k];
+          this.effectRoot.add(makeTubeLine({ x: a.x, z: a.z }, { x: b.x, z: b.z }, 0xffffff, fade * 0.95, a.y, 0.07, b.y));
+          this.effectRoot.add(makeTubeLine({ x: a.x, z: a.z }, { x: b.x, z: b.z }, effect.color, fade * 0.35, a.y, 0.22, b.y));
+        }
+        const flash = new THREE.Mesh(
+          new THREE.SphereGeometry(0.5 + t * 1.4, 10, 8),
+          new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: fade * 0.7, depthWrite: false, blending: THREE.AdditiveBlending })
+        );
+        flash.position.set(effect.to.x, terrainHeightAt(effect.to) + 0.4, effect.to.z);
+        this.effectRoot.add(flash);
+      } else if (effect.type === "land") {
+        // A jump trooper touching down: a ring of dust pushed outward, nothing on the body.
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(0.2 + t * 1.3, 0.3 + t * 1.3, 32),
+          new THREE.MeshBasicMaterial({ color: 0xd9cfbf, transparent: true, opacity: opacity * 0.5, side: THREE.DoubleSide, depthWrite: false })
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(effect.to.x, terrainHeightAt(effect.to) + 0.06, effect.to.z);
+        this.effectRoot.add(ring);
       } else if (effect.type === "strike") {
         // SLASH ARC: a bright crescent at chest height, swept from the striker's hand THROUGH the
         // target over the effect's life, plus a small hard flash at the contact point and a tight

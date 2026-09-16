@@ -240,7 +240,8 @@ export interface VisualEvent {
   // "jet" = a strike aircraft flying from->to; "beam" = an orbital lance burning the from->to
   // line; "topple" = a tall cover column falling from `from` toward `to`.
   // "strike" = a melee blow landing at `to`, swung from `from`.
-  type: "shot" | "impact" | "blast" | "ping" | "jet" | "beam" | "topple" | "strike";
+  // "bolt" = lightning striking `to` from the sky; "land" = a jump trooper touching down at `to`.
+  type: "shot" | "impact" | "blast" | "ping" | "jet" | "beam" | "topple" | "strike" | "bolt" | "land";
   from: Vec2;
   to: Vec2;
   color: number;
@@ -2083,7 +2084,7 @@ export class TacticalSim {
         if (landed) {
           this.separateFromUnits(actor, order.destination);
           this.syncEntityElevation(actor);
-          this.effect("impact", actor.position, actor.position, 0xbfe9ff, 0.35, actor.radius * 1.3);
+          this.effect("land", actor.position, actor.position, 0xbfe9ff, 0.5, actor.radius * 1.3);
           this.checkMines(actor);
           this.checkPickups(actor);
           order.done = true;
@@ -4510,7 +4511,7 @@ export class TacticalSim {
     if (strike.kind === "lightning") {
       // The bolt: a beam effect from the sky to the point, then the blast. Sets gas off like any
       // other blast, and the ground burns briefly where it lands.
-      this.effect("beam", { x: strike.point.x - 0.6, z: strike.point.z - 0.6 }, strike.point, 0xd8ecff, 0.5, 0.4);
+      this.effect("bolt", strike.point, strike.point, 0xd8ecff, 0.45, 0.4);
       this.burnZones.push({ id: `burn-${++this.effectSeq}`, x: strike.point.x, z: strike.point.z, radius: 1.2, turnsLeft: 1 });
     }
     const color = strike.kind === "lightning" ? 0xd8ecff

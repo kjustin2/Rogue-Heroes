@@ -860,6 +860,8 @@ function bossBar(sim: TacticalSim): string {
 function eventChip(sim: TacticalSim): string {
   const notice = sim.environment().notice;
   if (!notice) return "";
+  // Wraps: the rail is 250px and "Lightning strikes the marked point this turn" is not. A chip
+  // that clips its own warning is worse than no chip.
   return `<span class="mode-chip event-chip" data-tip="Dynamic battlefield event">${escapeHtml(notice)}</span>`;
 }
 
@@ -1005,9 +1007,12 @@ function orderPlanner(
               const disabled = actionDisabled(option.id, actor, sim);
               const why = disabled ? actionDisabledReason(option.id, actor, sim) : undefined;
               // An aircraft's "grenade" verb is a bomb drop; relabel it so the air unit reads right.
-              const label = option.id === "grenade" ? bombVerb(actor) : option.label;
+              // ...and a jump trooper's move is a JUMP: the verb on the button is the unit's identity.
+              const jumps = option.id === "move" && actor?.kind === "jumper";
+              const label = option.id === "grenade" ? bombVerb(actor) : jumps ? "Jump" : option.label;
               const tip = option.id === "grenade" && actor?.flying
                 ? "Drop a bomb straight down beneath the aircraft — blast radius shown. Fly over the target; cannot hit aircraft."
+                : jumps ? "Jet-jump to any dry ground in range — over cliffs, water and walls, onto the high ground. Airborne for the leap, so flak can catch it. Costs 1 CP."
                 : option.id === "ram" ? ramTip : option.id === "defend" ? defendTip : option.tip;
               // A disabled card states the REASON. Silently dead buttons are how a player concludes
               // a game is broken rather than that their unit is hurt.

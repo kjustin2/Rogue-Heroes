@@ -2131,6 +2131,13 @@ function processBattleEvents(): void {
       sfx.impact();
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.impact, 0.9);
       if (stage.isInView(effect.to)) feel.addTrauma(0.05);
+    } else if (effect.type === "bolt") {
+      sfx.explosion();
+      resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.strike, 2);
+      const onScreen = stage.isInView(effect.to) ? 1 : 0.3;
+      feel.addTrauma(0.2 * onScreen);
+      stage.punch(0.2 * onScreen);
+      world.flashLight(effect.to, 0xd8ecff, 9 * onScreen, 140, 3);
     } else if (effect.type === "strike") {
       // A landed blow: the camera kicks away from the impact and the director looks at it. Same
       // sound as an impact for now -- the visual pass comes first.
