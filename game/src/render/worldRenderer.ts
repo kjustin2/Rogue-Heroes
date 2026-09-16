@@ -1254,6 +1254,33 @@ export class WorldRenderer {
         group.rotation.y += Math.sin(t * 0.25) * 0.12;
       }
     }
+    // Damage you can see from the camera: a legless trooper is down on one knee, a vehicle with a
+    // dead track sits listing toward it, and any unit with a destroyed part trails smoke.
+    if (entity.status.alive && entity.kind !== "cover" && !isBuildingKind(entity.kind)) {
+      const deadMobility = entity.parts.filter((p) => p.role === "mobility" && p.hp <= 0);
+      if (deadMobility.length && isInfantryKind(entity.kind)) {
+        group.position.y -= 0.3;
+        group.rotation.x += 0.12;
+      } else if (deadMobility.length && isVehicleKind(entity.kind)) {
+        const left = deadMobility.some((p) => p.id.startsWith("left"));
+        const right = deadMobility.some((p) => p.id.startsWith("right"));
+        group.rotation.z += (left ? 0.07 : 0) - (right ? 0.07 : 0);
+        if (left && right) group.position.y -= 0.12;
+      }
+      const wrecked = entity.parts.filter((p) => p.hp <= 0 && p.role !== "armor").length;
+      if (wrecked > 0 && this.particles) {
+        const now = performance.now();
+        const lastSmoke = (group.userData.lastSmokeAt as number | undefined) ?? 0;
+        if (now - lastSmoke > 420 / Math.min(3, wrecked)) {
+          group.userData.lastSmokeAt = now;
+          this.particles.burst({
+            x: entity.position.x + (Math.random() - 0.5) * entity.radius, y: group.position.y + entity.height * 0.7, z: entity.position.z + (Math.random() - 0.5) * entity.radius,
+            count: 1, color: [0x3a3632, 0x6a6058], speed: [0.2, 0.5], up: 1, size: [0.22, 0.4],
+            life: [1.2, 2.2], gravity: -0.6, drag: 1.2, jitter: 0.1,
+          });
+        }
+      }
+    }
     // AIRBORNE INFANTRY (a jump trooper mid-leap): lean into the arc and pour thrust out of the
     // pack. The sim owns the arc; this is only the read of it.
     if (entity.flying && isInfantryKind(entity.kind) && entity.status.alive) {
@@ -2653,6 +2680,31 @@ export class WorldRenderer {
       mesh.rotation.x = (baseRotation ? baseRotation.x : 0) + swing;
       mesh.position.z = basePosition.z + reach * Math.sin(swing);
       mesh.position.y = pivotY - reach * Math.cos(swing) + lift;
+    }
+
+    // DAMAGED PARTS SHOW IT. damageModel tracks per-part HP and until now the only read of it was
+    // a tint. A dead part now changes the SHAPE: a shot-out weapon hangs from the hand, a
+    // ruptured pack sags off the shoulder and smoulders, and dead legs put the trooper on one knee
+    // (the unit is immobilised in the sim -- this is what that looks like). Applied to the base
+    // pose so the walk cycle (which a legless unit no longer has) cannot fight it.
+    if (entity.status.alive && isInfantryKind(entity.kind) && basePosition && part.hp <= 0) {
+      if (part.id === "rifle" || part.id === "cannon" || part.id === "gun") {
+        mesh.rotation.x = (baseRotation ? baseRotation.x : 0) + 1.15;
+        mesh.position.y = basePosition.y - 0.22;
+        mesh.position.z = basePosition.z - 0.12;
+      } else if (part.id === "pack") {
+        mesh.rotation.z = (baseRotation ? baseRotation.z : 0) - 0.55;
+        mesh.rotation.x = (baseRotation ? baseRotation.x : 0) + 0.3;
+        mesh.position.y = basePosition.y - 0.18;
+      }
+    }
+    const kneeling = entity.status.alive && isInfantryKind(entity.kind) && entity.parts.some((p) => p.role === "mobility" && p.hp <= 0);
+    if (kneeling && basePosition && limb?.startsWith("leg")) {
+      // Left knee down, right leg braced forward.
+      const down = limb === "leg-l";
+      mesh.rotation.x = (baseRotation ? baseRotation.x : 0) + (down ? -1.3 : 0.75);
+      mesh.position.y = basePosition.y - (down ? 0.3 : 0.1);
+      mesh.position.z = basePosition.z + (down ? -0.18 : 0.22);
     }
 
     // Attack choreography: wind up, contact, follow through. Applied BEFORE recoil so the recoil
