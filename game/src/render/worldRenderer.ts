@@ -2633,10 +2633,16 @@ export class WorldRenderer {
       const baseRotation = mesh.userData.baseRotation as THREE.Euler | undefined;
       const born = mesh.userData.born as number | undefined;
       if (!origin || !velocity || !spin || !baseRotation || born === undefined) continue;
-      const age = Math.min(2.2, now - born);
+      // Chunks used to be permanent: after one wiped squad the field was a litter of saturated
+      // red and blue chips for the rest of the battle. They settle, then sink into the ground
+      // over a few seconds and are freed.
+      const lived = now - born;
+      if (lived > DEBRIS_SINK_AT + DEBRIS_SINK_FOR) { this.debrisRoot.remove(mesh); continue; }
+      const sink = Math.max(0, lived - DEBRIS_SINK_AT) / DEBRIS_SINK_FOR;
+      const age = Math.min(2.2, lived);
       mesh.position.set(
         origin.x + velocity.x * age,
-        Math.max(0.07, origin.y + velocity.y * age - 2.65 * age * age),
+        Math.max(0.07, origin.y + velocity.y * age - 2.65 * age * age) - sink * 0.4,
         origin.z + velocity.z * age
       );
       mesh.rotation.set(
@@ -4263,6 +4269,9 @@ function makeProjectileModel(projectile: Projectile): THREE.Group {
 // A quick bright flash at the muzzle on the first frames of a round's life. Drawn at the
 // projectile's stored origin (the muzzle point), so it needs no separate sim event.
 const RECOIL_TIME = 0.16;
+// Debris chunks lie for this long, then sink out of sight over the second span (seconds).
+const DEBRIS_SINK_AT = 14;
+const DEBRIS_SINK_FOR = 4;
 const MUZZLE_FLASH_TIME = 0.12;
 function makeMuzzleFlash(projectile: Projectile): THREE.Object3D | undefined {
   if (projectile.kind === "grenade" || projectile.age > MUZZLE_FLASH_TIME) return undefined;
