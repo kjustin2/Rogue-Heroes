@@ -111,6 +111,8 @@ the pooled-material system repaints them every frame. A single skinned character
 three away — that is why infantry were procedural, and it is still true. So Blender authors the
 shapes and the game keeps the rig.
 
+**Body parts are authored too** (`body_torso/arm/leg/hips/head` in `author_kinds.py`): the chassis is no longer primitives. Parts export **with UVs** (smart-projected in `finish()`), and every pooled part material carries `partDetailNormal()` (weave + grooves + rivets). **Subsurf sculpting was tried and reverted** — kitbashed shells under subsurf read as beads; keep bevel-only. Gear (`rifle`/`pack` parts) is un-scaled by the build's girth after the rig is built, and long weapons carry muzzle-high (`CARRY_PITCH_LONG`).
+
 **Per-kind identity parts** live in `art/infantry/author_kinds.py` (imported by `author_kit.py`):
 one helmet and one weapon per kind, plus a pack where the pack IS the unit (medic case, flamer
 tanks, drone, jump thrusters). Each kit branch in `buildSoldier` swaps its main head/weapon/pack box
