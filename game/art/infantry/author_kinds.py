@@ -115,9 +115,8 @@ def helmet_striker():
 
 
 def helmet_heavy():
-    bucket = add_cyl("bucket", 0.5, 0.86, vertices=16, radius_top=0.92)
-    lid = add_sphere("lid", 0.5, location=(0, 0, 0.4), scale=(1, 1, 0.34))
-    cut_below(lid, 0.38)
+    bucket = add_cyl("bucket", 0.48, 0.8, vertices=16)
+    lid = add_cyl("lid", 0.5, 0.1, location=(0, 0, 0.42), vertices=16)
     plate = add_box("plate", (0.8, 0.16, 0.5), location=(0, 0.48, -0.06))
     slit = add_box("slit", (0.6, 0.06, 0.07), location=(0, 0.58, 0.06))
     obj = join([bucket, lid, plate, slit], "helmet-heavy")
@@ -414,3 +413,98 @@ BUILDERS = [
 def build_all():
     for build in BUILDERS:
         build()
+
+
+# ----------------------------------------------------------------------------- body parts
+# The chassis pieces that used to be bare primitives. One mesh per part, same contract (unit cube,
+# origin-centred, Z up, Y forward); the rig keeps swinging them from their tagged pivots.
+def _plate(name, size, location, rotation=(0, 0, 0)):
+    obj = add_box(name, size, location=location)
+    if any(rotation):
+        rot(obj, *rotation)
+    return obj
+
+
+def body_torso():
+    # Chest shell wider at the shoulders, a stepped abdominal plate, collar ring, twin chest
+    # plates with a seam, shoulder straps, a side pouch each side, and a belt lip at the bottom.
+    body = add_box("torso", (0.9, 0.6, 0.86), location=(0, 0, 0.02))
+    taper(body, 1.16)
+    abdomen = add_box("abdomen", (0.72, 0.5, 0.3), location=(0, 0.02, -0.46))
+    taper(abdomen, 1.1)
+    plates = [add_box(f"plate{s}", (0.36, 0.14, 0.4), location=(s * 0.21, 0.32, 0.12)) for s in (-1, 1)]
+    for p in plates:
+        rot(p, x=-8)
+    seam = add_box("seam", (0.05, 0.16, 0.42), location=(0, 0.33, 0.12))
+    straps = [add_box(f"strap{s}", (0.12, 0.1, 0.5), location=(s * 0.28, 0.3, 0.26)) for s in (-1, 1)]
+    for st in straps:
+        rot(st, x=-14)
+    collar = add_cyl("collar", 0.26, 0.12, location=(0, 0.0, 0.5), vertices=14)
+    pouches = [add_box(f"pouch{s}", (0.14, 0.32, 0.26), location=(s * 0.5, 0.02, -0.2)) for s in (-1, 1)]
+    belt = add_box("belt", (0.8, 0.56, 0.08), location=(0, 0.02, -0.6))
+    back = add_box("backplate", (0.66, 0.1, 0.6), location=(0, -0.3, 0.06))
+    obj = join([body, abdomen, seam, collar, belt, back] + plates + straps + pouches, "torso")
+    finish(obj, bevel=0.014, angle=38)
+    return obj
+
+
+def body_arm():
+    # Shoulder cap at the top, upper arm, an elbow pad that sits proud, forearm bracer, and a
+    # glove with knuckle blocks. Slightly bent at the elbow so it never reads as a pipe.
+    cap = add_sphere("cap", 0.3, location=(0, 0, 0.42), scale=(1, 1, 0.7), segments=14, rings=8)
+    cut_below(cap, 0.3)
+    upper = add_cyl("upper", 0.2, 0.5, location=(0, 0, 0.18), vertices=12)
+    elbow = add_sphere("elbow", 0.19, location=(0, 0.06, -0.08), segments=12, rings=7)
+    pad = add_box("pad", (0.3, 0.16, 0.22), location=(0, -0.16, -0.08))
+    lower = add_cyl("lower", 0.18, 0.42, location=(0, 0.1, -0.3), vertices=12)
+    rot(lower, x=-14)
+    bracer = add_box("bracer", (0.34, 0.3, 0.22), location=(0, 0.13, -0.34))
+    rot(bracer, x=-14)
+    glove = add_box("glove", (0.34, 0.36, 0.28), location=(0, 0.16, -0.54))
+    knuckles = add_box("knuckles", (0.3, 0.14, 0.12), location=(0, 0.3, -0.5))
+    obj = join([cap, upper, elbow, pad, lower, bracer, glove, knuckles], "arm")
+    finish(obj, bevel=0.012, angle=42)
+    return obj
+
+
+def body_leg():
+    # Thigh with a hanging plate, a kneepad that stands proud, a shin guard with a ridge, and
+    # a cuff at the ankle for the boot to sit in.
+    thigh = add_cyl("thigh", 0.24, 0.5, location=(0, 0, 0.24), vertices=12)
+    plate = add_box("thighplate", (0.3, 0.12, 0.36), location=(0, 0.2, 0.22))
+    knee = add_sphere("knee", 0.2, location=(0, 0.06, -0.06), segments=12, rings=7)
+    pad = add_box("kneepad", (0.32, 0.18, 0.24), location=(0, 0.2, -0.04))
+    shin = add_cyl("shin", 0.21, 0.42, location=(0, 0, -0.32), vertices=12)
+    guard = add_box("shinguard", (0.24, 0.12, 0.4), location=(0, 0.19, -0.3))
+    ridge = add_box("ridge", (0.06, 0.06, 0.38), location=(0, 0.26, -0.3))
+    cuff = add_cyl("cuff", 0.22, 0.08, location=(0, 0, -0.52), vertices=12)
+    obj = join([thigh, plate, knee, pad, shin, guard, ridge, cuff], "leg")
+    finish(obj, bevel=0.012, angle=42)
+    return obj
+
+
+def body_hips():
+    belt = add_box("belt", (0.9, 0.6, 0.26), location=(0, 0, 0.26))
+    taper(belt, 1.06)
+    buckle = add_box("buckle", (0.22, 0.08, 0.16), location=(0, 0.32, 0.28))
+    plates = [add_box(f"hip{s}", (0.3, 0.38, 0.5), location=(s * 0.34, 0.02, -0.16)) for s in (-1, 1)]
+    pouches = [add_box(f"hp{s}", (0.18, 0.2, 0.22), location=(s * 0.12, 0.34, 0.02)) for s in (-1, 1)]
+    obj = join([belt, buckle] + plates + pouches, "hips")
+    finish(obj, bevel=0.014, angle=40)
+    return obj
+
+
+def body_head():
+    # Skull with a jaw, a neck column, and a rebreather block under the jaw. The helmet kit sits
+    # over the top of this, so the face and neck are what show beneath the brim.
+    skull = add_sphere("skull", 0.38, location=(0, 0, 0.14), scale=(1, 1.06, 1.0), segments=16, rings=10)
+    jaw = add_box("jaw", (0.5, 0.42, 0.26), location=(0, 0.08, -0.14))
+    taper(jaw, 0.86)
+    neck = add_cyl("neck", 0.2, 0.36, location=(0, -0.02, -0.4), vertices=12)
+    breather = add_box("breather", (0.34, 0.16, 0.16), location=(0, 0.3, -0.2))
+    obj = join([skull, jaw, neck, breather], "head")
+    finish(obj, bevel=0.01, angle=48)
+    return obj
+
+
+BUILDERS += [body_torso, body_arm, body_leg, body_hips, body_head]

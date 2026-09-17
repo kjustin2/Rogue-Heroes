@@ -1799,6 +1799,9 @@ export class WorldRenderer {
     const rig = new THREE.Group();
     const build = infantryBuild(entity.kind);
     rig.scale.set(build.girth, build.stature, build.girth);
+    // Weapons and packs are gear, not body: they must not balloon with a broad build. The heavy's
+    // 1.52 girth turned its MG into a slab wider than the trooper. Compensated per mesh after the
+    // build (see the traverse at the end of this function).
     rig.rotation.x = build.lean;
     group.add(rig);
     // --- Shaped trooper chassis, PROPORTIONED PER ROLE. ---
@@ -1811,10 +1814,12 @@ export class WorldRenderer {
     // the fight. Proportion survives at any zoom, where greebles do not.
     // Hip girdle: a belt block with hanging thigh plates, so the waist reads as armour rather
     // than a step change in the torso cylinder.
-    this.box(rig, entity, "legs", [0.4, 0.16, 0.28], [0, 0.5, 0], trimColor, { metalness: 0.16 });
-    for (const side of [-1, 1]) {
-      this.box(rig, entity, "legs", [0.13, 0.19, 0.2], [side * 0.2, 0.44, 0.02], trimColor, { metalness: 0.22, rotation: [0, 0, side * -0.14] });
-    }
+    // AUTHORED BODY. Every chassis piece below is a Blender part (art/infantry/author_kinds.py):
+    // hips with hanging thigh plates and a buckle, a torso with chest plates, straps, side pouches
+    // and a back plate, a head with a jaw and neck under the helmet, arms with shoulder caps,
+    // elbow pads and gloves, legs with kneepads and shin guards. The primitives they replace were
+    // the reason a trooper stood next to a Meshy tank and read as a different game.
+    this.box(rig, entity, "legs", [0.42, 0.22, 0.3], [0, 0.52, 0], trimColor, { metalness: 0.16, kit: "hips" });
     // Utility belt with pouches. Three small blocks around the front is the cheapest thing that
     // reads as "kit carried by a person" instead of a smooth mannequin.
     this.box(rig, entity, "body", [0.46, 0.09, 0.32], [0, 0.6, 0], 0x1c2326, { metalness: 0.2 });
@@ -1824,14 +1829,9 @@ export class WorldRenderer {
     // Torso: a tapered barrel with a SEPARATE upper chest mass that overhangs it. The overhang is
     // what gives the trooper a shoulder line and a shadow under the chest -- a single cylinder
     // reads as a bottle no matter how it is lit.
-    this.cylinder(rig, entity, "body", 0.24, 0.5, [0, 0.8, 0], bodyColor, [0, 0, 0], { emissive: teamGlow, emissiveIntensity: 0.03, radiusBottom: 0.27, outline: true });
-    this.box(rig, entity, "body", [0.5, 0.34, 0.36], [0, 1.03, 0], bodyColor, { metalness: 0.14, bevel: 0.26, outline: true, kit: "torso" });
-    // Angled breastplate over it, with a glowing core seam.
-    this.box(rig, entity, "body", [0.42, 0.34, 0.11], [0, 0.99, 0.18], trimColor, { metalness: 0.3, rotation: [-0.16, 0, 0], bevel: 0.24 });
-    this.box(rig, entity, "body", [0.12, 0.2, 0.05], [0, 0.98, 0.245], 0x10171a, { emissive: teamGlow, emissiveIntensity: 0.21, rotation: [-0.16, 0, 0] });
-    // Back plate, so the unit has a silhouette from behind too -- half the time the camera is
-    // looking at a trooper's back and there was nothing there.
-    this.box(rig, entity, "body", [0.4, 0.32, 0.08], [0, 1.0, -0.17], trimColor, { metalness: 0.26, rotation: [0.1, 0, 0], bevel: 0.24 });
+    this.box(rig, entity, "body", [0.58, 0.64, 0.42], [0, 0.9, 0], bodyColor, { metalness: 0.14, outline: true, kit: "torso" });
+    // The glowing core seam stays: it is the one lit thing on the chest and carries the team read.
+    this.box(rig, entity, "body", [0.1, 0.16, 0.05], [0, 1.0, 0.22], 0x10171a, { emissive: teamGlow, emissiveIntensity: 0.21, rotation: [-0.16, 0, 0] });
     // Gorget + neck column.
     this.cylinder(rig, entity, "body", 0.13, 0.1, [0, 1.2, 0.01], trimColor, [0, 0, 0], { metalness: 0.24 });
     this.cylinder(rig, entity, "body", 0.085, 0.12, [0, 1.25, 0.01], 0x1a2226, [0, 0, 0], { metalness: 0.3 });
@@ -1843,7 +1843,7 @@ export class WorldRenderer {
     }
     // Head: skull, a brow ridge over the visor, and a rear comms block. The brow is the single
     // detail that stops a head reading as a featureless ball.
-    this.sphere(rig, entity, "head", 0.132, [0, 1.335, 0.02], 0x7b6a58, { scaleY: 0.95, outline: true });
+    this.box(rig, entity, "head", [0.3, 0.36, 0.32], [0, 1.28, 0.02], 0x7b6a58, { outline: true, kit: "head" });
     this.box(rig, entity, "head", [0.216, 0.07, 0.072], [0, 1.4, 0.145], 0x2b343a, { metalness: 0.26, rotation: [-0.24, 0, 0], bevel: 0.35 });
     this.box(rig, entity, "head", [0.202, 0.085, 0.05], [0, 1.33, 0.17], 0x0c1418, { emissive: teamGlow, emissiveIntensity: 0.23 });
     this.box(rig, entity, "head", [0.101, 0.11, 0.072], [0, 1.32, -0.15], 0x2b343a, { metalness: 0.24, bevel: 0.3 });
@@ -1855,7 +1855,8 @@ export class WorldRenderer {
       this.box(rig, entity, "rifle", [0.1, 0.1, 0.12], [0.46, 1.13, -0.06], 0x8de4ff, { accent: true, emissive: 0x8de4ff, emissiveIntensity: 0.38 });
       this.cylinder(rig, entity, "rifle", 0.03, 0.44, [0.38, 0.74, 1.04], 0x14181a, [0.5, 0, 0.32], { metalness: 0.3 });
       this.cylinder(rig, entity, "rifle", 0.03, 0.44, [0.54, 0.74, 1.04], 0x14181a, [0.5, 0, -0.32], { metalness: 0.3 });
-      this.box(rig, entity, "body", [0.66, 0.26, 0.52], [0, 1.05, -0.06], 0x55603c, { accent: true });
+      // (The old shoulder "cloak" slab is gone: a flat pale box across the shoulders read as a
+      // plank once the hood carried the ghillie read on its own.)
       this.box(rig, entity, "body", [0.5, 0.5, 0.16], [0, 0.74, -0.34], 0x4c5436, { accent: true });
       for (const x of [-0.22, 0.04, 0.26]) this.box(rig, entity, "body", [0.1, 0.2, 0.08], [x, 0.5, -0.36], 0x5d663f, { accent: true });
       this.box(rig, entity, "head", [0.5, 0.4, 0.52], [0, 1.4, -0.02], helmetColor, { kit: "helmet-sniper" });
@@ -1884,10 +1885,10 @@ export class WorldRenderer {
     } else if (entity.kind === "heavy") {
       // Anchor: the widest, bulkiest frame, armor pauldrons, a drum-fed auto-cannon with an
       // ammo belt looping to a big glowing back drum, and a slab face-visor helmet.
-      this.box(rig, entity, "body", [0.58, 0.5, 0.42], [0, 0.92, 0.02], bodyColor, { metalness: 0.14, emissive: 0x401a08, emissiveIntensity: 0.12 });
-      this.box(rig, entity, "body", [0.7, 0.18, 0.46], [0, 1.14, 0.0], trimColor, { metalness: 0.18 });
-      for (const x of [-0.4, 0.4]) this.box(rig, entity, "body", [0.26, 0.22, 0.38], [x, 1.12, 0.02], 0x6a3a1c, { accent: true, metalness: 0.2 });
-      this.box(rig, entity, "rifle", [0.34, 0.4, 1.3], [0.54, 0.92, 0.46], 0x2b2f31, { metalness: 0.32, kit: "weapon-mg" });
+      // (The old chest slab and shoulder yoke are gone: with the authored torso underneath they
+      // read as a plank laid across the shoulders. Bulk is the build's girth plus big pauldrons.)
+      for (const x of [-0.36, 0.36]) this.box(rig, entity, "body", [0.24, 0.2, 0.34], [x, 1.12, 0.02], 0x6a3a1c, { accent: true, metalness: 0.2, bevel: 0.3 });
+      this.box(rig, entity, "rifle", [0.3, 0.36, 1.1], [0.5, 0.92, 0.4], 0x2b2f31, { metalness: 0.32, kit: "weapon-mg" });
       this.cylinder(rig, entity, "rifle", 0.26, 0.24, [0.54, 0.74, 0.5], 0x14181a, [0, 0, 0], { metalness: 0.3 });
       this.box(rig, entity, "rifle", [0.34, 0.3, 0.22], [0.54, 0.92, 1.12], 0xb2842f, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.12 });
       for (let i = 0; i < 4; i++) this.box(rig, entity, "rifle", [0.12, 0.09, 0.1], [0.34 - i * 0.07, 0.8 - i * 0.015, 0.18 - i * 0.13], 0xb2842f, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.14 });
@@ -2034,21 +2035,26 @@ export class WorldRenderer {
     // there for silhouette, not for a second joint.
     for (const side of [-1, 1]) {
       const tag = side < 0 ? "arm-l" : "arm-r";
-      this.cylinder(rig, entity, "body", 0.075, 0.34, [side * 0.42, 0.82, 0.02], bodyColor, [0, 0, 0], { radiusBottom: 0.085 }).userData.limb = tag;
-      this.box(rig, entity, "body", [0.14, 0.2, 0.15], [side * 0.42, 0.6, 0.03], 0x2b343a, { metalness: 0.26, bevel: 0.28 }).userData.limb = tag;
-      this.box(rig, entity, "body", [0.12, 0.12, 0.14], [side * 0.42, 0.46, 0.05], 0x1f282c, { metalness: 0.2, bevel: 0.32 }).userData.limb = tag;
+      this.box(rig, entity, "body", [0.2, 0.62, 0.22], [side * 0.43, 0.68, 0.03], bodyColor, { metalness: 0.18, kit: "arm" }).userData.limb = tag;
     }
     // Legs: thigh, a knee plate, and a boot with a raised toe. The knee plate is what breaks the
     // "two smooth pipes" read, and the toe is what makes a planted foot look planted.
     for (const side of [-1, 1]) {
       const tag = side < 0 ? "leg-l" : "leg-r";
-      this.box(rig, entity, "legs", [0.15, 0.14, 0.16], [side * 0.18, 0.3, 0.03], trimColor, { metalness: 0.28, bevel: 0.3 }).userData.limb = tag;
-      this.box(rig, entity, "legs", [0.11, 0.08, 0.12], [side * 0.18, 0.13, 0.06], 0x212b2f, { metalness: 0.2, bevel: 0.3 }).userData.limb = tag;
+      this.box(rig, entity, "legs", [0.22, 0.5, 0.26], [side * 0.18, 0.36, 0.02], 0x162225, { metalness: 0.2, outline: true, kit: "leg" }).userData.limb = tag;
     }
-    this.cylinder(rig, entity, "legs", 0.095, 0.52, [-0.18, 0.26, 0], 0x162225, [0, 0, 0], { radiusBottom: 0.075, outline: true }).userData.limb = "leg-l";
-    this.cylinder(rig, entity, "legs", 0.095, 0.52, [0.18, 0.26, 0], 0x162225, [0, 0, 0], { radiusBottom: 0.075, outline: true }).userData.limb = "leg-r";
     this.box(rig, entity, "legs", [0.22, 0.14, 0.32], [-0.18, 0.07, 0.06], 0x101516, { metalness: 0.14, kit: "boot" }).userData.limb = "leg-l";
     this.box(rig, entity, "legs", [0.22, 0.14, 0.32], [0.18, 0.07, 0.06], 0x101516, { metalness: 0.14, kit: "boot" }).userData.limb = "leg-r";
+    if (build.girth !== 1) {
+      const undo = 1 / build.girth;
+      rig.traverse((o) => {
+        const m = o as PartMesh;
+        if (!m.isMesh || (m.userData.partId !== "rifle" && m.userData.partId !== "pack")) return;
+        m.scale.x *= undo;
+        m.scale.z *= undo;
+        (m.userData.baseScale as THREE.Vector3).copy(m.scale);
+      });
+    }
   }
 
   // The HQ was a salmon-red block: at the tactical camera it read as a lump of pink plastic, and
@@ -2708,8 +2714,12 @@ export class WorldRenderer {
     if (part.role === "weapon" && isInfantryKind(entity.kind) && entity.status.alive && part.hp > 0 && basePosition) {
       const carry = 1 - Math.min(1, ((actor.userData.attackPhase as number | undefined) === undefined ? 0 : 1));
       if (carry > 0) {
-        const pitch = CARRY_PITCH * carry;
-        const yaw = CARRY_YAW * carry;
+        // Long weapons (MG, long rifle, mortar tube, launcher) are carried muzzle-high, so their
+        // length runs up the body instead of across it: a 1.1m gun held level across the chest
+        // read as a slab wider than the trooper.
+        const long = entity.kind === "heavy" || entity.kind === "sniper" || entity.kind === "mortar" || entity.kind === "grenadier";
+        const pitch = (long ? CARRY_PITCH_LONG : CARRY_PITCH) * carry;
+        const yaw = (long ? CARRY_YAW * 0.5 : CARRY_YAW) * carry;
         const dy = basePosition.y - CARRY_PIVOT_Y;
         const dz = basePosition.z - CARRY_PIVOT_Z;
         // Rotate the offset from the grip: X lifts the muzzle, Y swings it toward the centreline.
@@ -4547,7 +4557,7 @@ interface InfantryBuild {
 // black-silhouette test failed even though the detail work was there. Proportion survives at any
 // zoom, where greebles do not.
 const INFANTRY_BUILDS: Partial<Record<EntityKind, Partial<InfantryBuild>>> = {
-  heavy: { girth: 1.52, stature: 0.88, lean: 0.05 },
+  heavy: { girth: 1.22, stature: 0.92, lean: 0.05 }, // bulk comes from the kit; 1.52 stretched every rotated part into a slab
   flamer: { girth: 1.34, stature: 0.94 },
   striker: { girth: 1.06, stature: 1.04, lean: 0.24 },
   scout: { girth: 0.72, stature: 1.14, lean: 0.14 },
@@ -4674,6 +4684,59 @@ function bakeVertexAO(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
   }
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
   return geometry;
+}
+
+const PART_DETAIL_NORMAL_SCALE = new THREE.Vector2(0.45, 0.45);
+let _partDetailNormal: THREE.CanvasTexture | undefined;
+/**
+ * A 256px tiling normal map for infantry parts: a fine woven grain with a few scratched plate
+ * lines and rivet dimples. Generated once from a height field (sobel), shared by every pooled
+ * part material, so it costs one texture for the whole roster.
+ */
+function partDetailNormal(): THREE.CanvasTexture {
+  if (_partDetailNormal) return _partDetailNormal;
+  const size = 256;
+  const h = new Float32Array(size * size);
+  let seed = 0x5eed1234;
+  const rand = (): number => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 0xffffffff; };
+  for (let y = 0; y < size; y += 1) for (let x = 0; x < size; x += 1) {
+    // Weave: two crossed sine grains plus noise.
+    h[y * size + x] = 0.5 + 0.06 * Math.sin(x * 0.9) * Math.sin(y * 0.9) + 0.04 * (rand() - 0.5);
+  }
+  // Plate lines (shallow grooves) and rivets, wrapped.
+  for (let i = 0; i < 6; i += 1) {
+    const y0 = Math.floor(rand() * size);
+    for (let x = 0; x < size; x += 1) { h[((y0) % size) * size + x] -= 0.12; h[((y0 + 1) % size) * size + x] -= 0.08; }
+    const x0 = Math.floor(rand() * size);
+    for (let y = 0; y < size; y += 1) { h[y * size + (x0 % size)] -= 0.12; h[y * size + ((x0 + 1) % size)] -= 0.08; }
+  }
+  for (let i = 0; i < 40; i += 1) {
+    const cx = Math.floor(rand() * size), cy = Math.floor(rand() * size);
+    for (let dy = -2; dy <= 2; dy += 1) for (let dx = -2; dx <= 2; dx += 1) {
+      if (dx * dx + dy * dy > 4) continue;
+      h[((cy + dy + size) % size) * size + ((cx + dx + size) % size)] += 0.1;
+    }
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  const img = ctx.createImageData(size, size);
+  for (let y = 0; y < size; y += 1) for (let x = 0; x < size; x += 1) {
+    const l = h[y * size + ((x - 1 + size) % size)], r = h[y * size + ((x + 1) % size)];
+    const u = h[((y - 1 + size) % size) * size + x], d = h[((y + 1) % size) * size + x];
+    const nx = (l - r) * 2, ny = (u - d) * 2;
+    const len = Math.hypot(nx, ny, 1);
+    const o = (y * size + x) * 4;
+    img.data[o] = Math.round((nx / len * 0.5 + 0.5) * 255);
+    img.data[o + 1] = Math.round((ny / len * 0.5 + 0.5) * 255);
+    img.data[o + 2] = Math.round((1 / len * 0.5 + 0.5) * 255);
+    img.data[o + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  _partDetailNormal = new THREE.CanvasTexture(canvas);
+  _partDetailNormal.wrapS = _partDetailNormal.wrapT = THREE.RepeatWrapping;
+  _partDetailNormal.repeat.set(2, 2);
+  return _partDetailNormal;
 }
 
 const bevelCache = new Map<string, THREE.BufferGeometry>();
@@ -6089,6 +6152,11 @@ function partMaterial(spec: PartMatSpec): THREE.MeshStandardMaterial {
   if (!material) {
     material = new THREE.MeshStandardMaterial({
       vertexColors: true, // baked AO — see bakeVertexAO
+      // One shared detail normal map (weave + plate scratches) on every part: this is what
+      // separates "painted plastic" from "equipment" under the key light. Authored kit parts
+      // export UVs for it; primitives have theirs already.
+      normalMap: partDetailNormal(),
+      normalScale: PART_DETAIL_NORMAL_SCALE,
       color: spec.color,
       emissive: spec.emissive,
       emissiveIntensity: i * 0.05,
@@ -6195,6 +6263,7 @@ function accentValueAt(y: number): number {
 
 /** Idle weapon carry: muzzle lifted and canted in across the chest, pivoting about the grip. */
 const CARRY_PITCH = 0.34;
+const CARRY_PITCH_LONG = 0.95;
 const CARRY_YAW = -0.26;
 const CARRY_PIVOT_Y = 0.93;
 const CARRY_PIVOT_Z = 0.12;

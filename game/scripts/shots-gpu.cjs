@@ -43,6 +43,17 @@ app.whenReady().then(async () => {
         await shot("tutorial-2");
         continue;
       }
+      if (s === "portrait") {
+        // Three troopers close, three-quarter view: the detail test.
+        await js(`window.__rht.startBattle("verdant", "destroy", "normal")`);
+        await sleep(1500);
+        await js(`(() => { const sim = window.__rht.sim; [["soldier", -1.4], ["heavy", 0], ["sniper", 1.4]].forEach(([k, x]) => { const u = sim.debugSpawn(k, "player", { x: x - 20, z: 0 }); u.yaw = Math.PI + 0.4; }); window.__rht.deselect(); })()`);
+        await sleep(2500);
+        await js(`window.__rht.setView({ x: -20, z: -0.9, zoom: 0.24, pitch: 0.42, yaw: 0.5 })`);
+        await sleep(600);
+        await shot("portrait");
+        continue;
+      }
       if (s === "lineup") {
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
         await sleep(1500);

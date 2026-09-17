@@ -163,7 +163,8 @@ export type KitPart =
   | "helmet-medic" | "helmet-engineer" | "helmet-flamer" | "helmet-droneop" | "helmet-sapper" | "helmet-jumper"
   | "weapon-carbine" | "weapon-longrifle" | "weapon-blade" | "weapon-mg" | "weapon-launcher" | "weapon-mortar"
   | "weapon-pistol" | "weapon-wrench" | "weapon-flamethrower" | "weapon-wand" | "weapon-shotgun"
-  | "pack-medic" | "pack-engineer" | "pack-flamer" | "pack-drone" | "pack-jumper";
+  | "pack-medic" | "pack-engineer" | "pack-flamer" | "pack-drone" | "pack-jumper"
+  | "arm" | "leg" | "hips" | "head";
 
 const kit = new Map<string, THREE.BufferGeometry>();
 let kitState: "idle" | "loading" | "ready" | "failed" = "idle";
@@ -186,7 +187,8 @@ function loadInfantryKit(): void {
         // Bake the node's own transform in, drop everything but position+normal, and tag it
         // shared: one geometry serves every trooper wearing that part.
         geometry.applyMatrix4(mesh.matrixWorld);
-        geometry.deleteAttribute("uv");
+        // UVs stay: the pooled part materials carry a shared detail normal map (see
+        // partDetailNormal in worldRenderer) and authored parts are smart-projected for it.
         geometry.userData.shared = true;
         kit.set(node.name, geometry);
       });

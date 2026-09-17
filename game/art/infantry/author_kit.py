@@ -49,9 +49,32 @@ def normalise(obj):
     obj.select_set(False)
 
 
+def sculpt(obj, levels=2):
+    """Subdivision-surface smoothing over a kitbashed part. Every primitive shell rounds into an
+    organic hard-surface form the way sculpted armour does; this is the single biggest step from
+    "block pile" to "figure". Applied BEFORE the bevel so the bevel only touches true creases."""
+    bpy.context.view_layer.objects.active = obj
+    mod = obj.modifiers.new("Subsurf", "SUBSURF")
+    mod.levels = levels
+    mod.render_levels = levels
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+    return obj
+
+
 def finish(obj, bevel=0.012, segments=2, shade_smooth=True, angle=40.0):
     """Bevel the hard edges and smooth-shade with an autosmooth angle — the two things that
-    separate an authored part from a primitive at any distance."""
+    separate an authored part from a primitive at any distance. Also lays out UVs (smart project)
+    so the game's shared detail normal map has somewhere to land."""
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    try:
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="SELECT")
+        bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.02)
+        bpy.ops.object.mode_set(mode="OBJECT")
+    except Exception as e:
+        print("[author_kit] uv project failed for", obj.name, e)
+    obj.select_set(False)
     bpy.context.view_layer.objects.active = obj
     mod = obj.modifiers.new("Bevel", "BEVEL")
     mod.width = bevel
@@ -189,7 +212,7 @@ def build_pack():
 
 def main():
     clear_scene()
-    for build in (build_helmet, build_torso, build_boot, build_rifle, build_pack):
+    for build in (build_helmet, build_boot, build_rifle, build_pack):
         build()
     # Per-kind identity parts (helmets, weapons, packs) live in author_kinds.py.
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -204,7 +227,7 @@ def main():
         export_apply=True,
         export_materials="NONE",   # the game paints these parts every frame
         export_normals=True,
-        export_texcoords=False,
+        export_texcoords=True,
         export_yup=True,
     )
     print(f"[author_kit] wrote {os.path.abspath(OUT)}")
