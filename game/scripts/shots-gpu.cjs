@@ -54,6 +54,22 @@ app.whenReady().then(async () => {
         await shot("portrait");
         continue;
       }
+      if (s === "abilities") {
+        // Smoke cloud, a marked enemy, a downed trooper beside a medic: the three new cues in one frame.
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(1500);
+        await js(`(() => { const sim = window.__rht.sim;
+          sim.smokeClouds.push({ id: "smoke-shot", x: -4, z: 0, radius: 3, turnsLeft: 3 });
+          const e = sim.debugSpawn("soldier", "enemy", { x: 3, z: -1 }); e.yaw = 2.6; e.markedUntilTurn = sim.turn + 1;
+          const m = sim.debugSpawn("medic", "player", { x: 1, z: 2 }); m.yaw = 0.4;
+          const d = sim.debugSpawn("scout", "player", { x: 2.4, z: 2.4 }); d.yaw = 0.2; d.downed = true; d.stance = "prone";
+          window.__rht.deselect(); })()`);
+        await sleep(2500);
+        await js(`window.__rht.setView({ x: 0, z: 0.6, zoom: 0.4, pitch: 0.55, yaw: 0.3 })`);
+        await sleep(600);
+        await shot("abilities");
+        continue;
+      }
       if (s === "lineup") {
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
         await sleep(1500);

@@ -443,6 +443,43 @@ export class WorldRenderer {
         this.environmentRoot.add(blob);
       }
     }
+    // SMOKE: a mortar smoke round. Grey, dense, harmless — it reads as a wall you cannot shoot
+    // through, so the blobs are opaque-ish and stacked high rather than a low sickly skirt.
+    for (const cloud of sim.smokeClouds) {
+      const y = terrainHeightAt(cloud) + 0.05;
+      const fade = Math.min(1, cloud.turnsLeft / 2);
+      const skirt = new THREE.Mesh(
+        new THREE.CircleGeometry(cloud.radius, 40),
+        new THREE.MeshBasicMaterial({ color: 0x6f757a, transparent: true, opacity: 0.22 * fade, side: THREE.DoubleSide, depthWrite: false }),
+      );
+      skirt.rotation.x = -Math.PI / 2;
+      skirt.position.set(cloud.x, y, cloud.z);
+      this.environmentRoot.add(skirt);
+      for (let b = 0; b < 10; b += 1) {
+        const t = performance.now() * 0.00025 + b * 1.9 + (hash(cloud.id) % 13);
+        const r = cloud.radius * (0.1 + ((b * 41) % 65) / 100);
+        const blob = new THREE.Mesh(
+          new THREE.SphereGeometry(cloud.radius * (0.34 + (b % 3) * 0.1), 10, 7),
+          new THREE.MeshBasicMaterial({ color: b % 2 ? 0xa3a9ae : 0x767d83, transparent: true, opacity: 0.36 * fade, depthWrite: false }),
+        );
+        blob.position.set(cloud.x + Math.cos(t) * r, y + 0.6 + (b % 4) * 0.35 + Math.sin(t * 1.5) * 0.15, cloud.z + Math.sin(t * 0.9) * r);
+        blob.scale.y = 0.8;
+        this.environmentRoot.add(blob);
+      }
+    }
+    // DOWNED troopers: a medic-red pulse on the ground under the body — "reach me".
+    const downPulse = (Math.sin(performance.now() * 0.006) + 1) * 0.5;
+    for (const entity of sim.entities) {
+      if (!entity.downed || !entity.status.alive) continue;
+      const y = terrainHeightAt(entity.position) + 0.06;
+      const disc = new THREE.Mesh(
+        new THREE.RingGeometry(0.55 + downPulse * 0.15, 0.7 + downPulse * 0.15, 32),
+        new THREE.MeshBasicMaterial({ color: 0xff5c5c, transparent: true, opacity: 0.45 + downPulse * 0.35, side: THREE.DoubleSide, depthWrite: false }),
+      );
+      disc.rotation.x = -Math.PI / 2;
+      disc.position.set(entity.position.x, y, entity.position.z);
+      this.environmentRoot.add(disc);
+    }
     // Friendly mines only — the enemy never sees yours until they step on one.
     const minePulse = Math.sin(performance.now() * 0.009) > 0.2;
     for (const mine of sim.mines) {
@@ -1132,6 +1169,24 @@ export class WorldRenderer {
         this.markerRoot.add(marker);
       }
       updateUnitMarker(marker, entity, color, pulse);
+      // SNIPER MARK: a spinning red diamond over the marked unit until it wears off.
+      const marked = entity.markedUntilTurn !== undefined && entity.markedUntilTurn >= sim.turn;
+      let bracket = marker.userData.bracket as THREE.Mesh | undefined;
+      if (marked && !bracket) {
+        bracket = new THREE.Mesh(
+          new THREE.RingGeometry(0.62, 0.74, 4),
+          new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, depthTest: false }),
+        );
+        bracket.rotation.x = -Math.PI / 2;
+        bracket.position.y = 0.02;
+        marker.userData.bracket = bracket;
+        marker.add(bracket);
+      }
+      if (bracket) {
+        bracket.visible = marked;
+        bracket.rotation.z = performance.now() * 0.0015;
+        (bracket.material as THREE.MeshBasicMaterial).opacity = 0.6 + pulse * 0.4;
+      }
       this.debug.unitMarkers += 1;
     }
     for (const [id, marker] of this.unitMarkers) {
@@ -1379,6 +1434,11 @@ export class WorldRenderer {
       group.position.z += (dz / len) * drive * reach;
       group.rotation.x += Math.max(0, drive) * 0.22;
       group.position.y -= Math.max(0, drive) * 0.06;
+    }
+    if (entity.downed && entity.status.alive && isInfantryKind(entity.kind)) {
+      // Down but not dead: flat on the ground, a slow breathing heave so it reads as alive.
+      group.rotation.x += 1.35 + Math.sin(performance.now() * 0.0025) * 0.03;
+      group.position.y -= 0.08;
     }
     if (dying) {
       const t = Math.min(1, (performance.now() - (group.userData.diedAt as number)) / DEATH_MS);
