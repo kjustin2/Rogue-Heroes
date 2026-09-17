@@ -88,7 +88,7 @@ export function instantiate(key: ModelKey): THREE.Group | null {
   const mats: { material: THREE.MeshStandardMaterial; base: number }[] = [];
   clone.traverse((node) => {
     const mesh = node as THREE.Mesh;
-    if (!mesh.isMesh) return;
+    if (!mesh.isMesh || mesh.userData.outline) return; // the ink line is never tinted
     const source = mesh.material as THREE.MeshStandardMaterial;
     const material = source.clone();
     mesh.material = material;
@@ -108,7 +108,14 @@ function ensureLoad(key: ModelKey, skin = ""): THREE.Group | null {
   loader.load(
     url,
     (gltf) => {
-      cache.set(cacheKey, normalize(gltf.scene, TARGET_SIZE[key]));
+      try {
+        cache.set(cacheKey, normalize(gltf.scene, TARGET_SIZE[key]));
+      } catch (error) {
+        // A throw here used to vanish: the loader has no error path for onLoad, so a broken
+        // stylization step silently left every hull procedural. Say so and fall back the same way.
+        console.error(`model ${cacheKey} failed to prepare:`, error);
+        cache.set(cacheKey, "failed");
+      }
       version += 1;
     },
     undefined,
@@ -133,16 +140,97 @@ function normalize(root: THREE.Object3D, targetSize: number): THREE.Group {
   const template = new THREE.Group();
   template.add(root);
   template.userData.dims = size.multiplyScalar(scale);
-  template.traverse((node) => {
-    const mesh = node as THREE.Mesh;
-    if (!mesh.isMesh) return;
+  // Collect first, attach outlines after: adding children mid-traverse visits them too, and an
+  // outline of an outline of an outline is a stack overflow that silently left every hull procedural.
+  const meshes: THREE.Mesh[] = [];
+  template.traverse((node) => { if ((node as THREE.Mesh).isMesh) meshes.push(node as THREE.Mesh); });
+  for (const mesh of meshes) {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.geometry.userData.shared = true; // clones share it; disposeSubtree must skip it
-    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    for (const material of materials) material.side = THREE.FrontSide; // Meshy exports DoubleSide
-  });
+    // ONE ART DIRECTION. Meshy hulls arrive photoreal -- PBR albedo, roughness maps, smooth
+    // lighting -- and stood next to the flat-banded, outlined troopers as a different game. They
+    // are STYLIZED here, once, at load: the albedo is posterized into a few value bands, the
+    // material becomes a stepped toon shader, and an inverted-hull outline gives every vehicle the
+    // same ink line the troopers carry. (Into the Breach / Advance Wars readability.)
+    const source = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+    const std = source as THREE.MeshStandardMaterial;
+    const toon = new THREE.MeshToonMaterial({
+      color: std.color ?? new THREE.Color(0xffffff),
+      map: std.map ? posterizedOf(std.map) : null,
+      normalMap: std.normalMap ?? null,
+      normalScale: new THREE.Vector2(0.55, 0.55),
+      gradientMap: toonGradient(),
+      side: THREE.FrontSide,
+    });
+    mesh.material = toon;
+    const outline = new THREE.Mesh(mesh.geometry, outlineMaterial());
+    outline.scale.setScalar(1.028);
+    outline.castShadow = false;
+    outline.receiveShadow = false;
+    outline.userData.outline = true;
+    outline.userData.decor = true;
+    mesh.add(outline);
+  }
   return template;
+}
+
+// Four-step light ramp for the toon hulls: deep shade, shade, lit, highlight.
+let _toonGradient: THREE.DataTexture | undefined;
+function toonGradient(): THREE.DataTexture {
+  if (_toonGradient) return _toonGradient;
+  const data = new Uint8Array([84, 84, 84, 255, 150, 150, 150, 255, 214, 214, 214, 255, 255, 255, 255, 255]);
+  _toonGradient = new THREE.DataTexture(data, 4, 1, THREE.RGBAFormat);
+  _toonGradient.minFilter = _toonGradient.magFilter = THREE.NearestFilter;
+  _toonGradient.colorSpace = THREE.NoColorSpace;
+  _toonGradient.needsUpdate = true;
+  return _toonGradient;
+}
+
+let _outlineMaterial: THREE.MeshBasicMaterial | undefined;
+function outlineMaterial(): THREE.MeshBasicMaterial {
+  if (!_outlineMaterial) _outlineMaterial = new THREE.MeshBasicMaterial({ color: 0x0b0d10, side: THREE.BackSide });
+  return _outlineMaterial;
+}
+
+// Posterize an albedo: luminance snapped to five bands, saturation lifted, hue kept. Cached per
+// source texture so the winter skins and the standard hull each pay once.
+const posterCache = new WeakMap<THREE.Texture, THREE.Texture>();
+function posterizedOf(map: THREE.Texture): THREE.Texture {
+  const hit = posterCache.get(map);
+  if (hit) return hit;
+  const image = map.image as HTMLImageElement | ImageBitmap | HTMLCanvasElement;
+  const canvas = document.createElement("canvas");
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(image, 0, 0);
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = img.data;
+  const bands = 5;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    const ql = (Math.round(l * (bands - 1)) / (bands - 1)) * 0.9 + 0.08;
+    const k = l > 0.001 ? ql / l : 1;
+    // Scale toward the quantized luminance, then push saturation a little.
+    let nr = r * k, ng = g * k, nb = b * k;
+    const m = (nr + ng + nb) / 3;
+    nr = m + (nr - m) * 1.25; ng = m + (ng - m) * 1.25; nb = m + (nb - m) * 1.25;
+    d[i] = Math.max(0, Math.min(255, Math.round(nr * 255)));
+    d[i + 1] = Math.max(0, Math.min(255, Math.round(ng * 255)));
+    d[i + 2] = Math.max(0, Math.min(255, Math.round(nb * 255)));
+  }
+  ctx.putImageData(img, 0, 0);
+  const poster = new THREE.CanvasTexture(canvas);
+  poster.colorSpace = map.colorSpace;
+  poster.flipY = map.flipY;
+  poster.wrapS = map.wrapS;
+  poster.wrapT = map.wrapT;
+  poster.channel = map.channel;
+  posterCache.set(map, poster);
+  return poster;
 }
 
 // ---------------------------------------------------------------------------

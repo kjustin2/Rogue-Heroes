@@ -637,7 +637,7 @@ export class WorldRenderer {
       if (!mesh.isMesh) return;
       const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
       for (const m of mats) {
-        if (!(m instanceof THREE.MeshStandardMaterial) || m.transparent) continue;
+        if (!(m instanceof THREE.MeshStandardMaterial || m instanceof THREE.MeshToonMaterial) || m.transparent) continue;
         const key = `${m.uuid.slice(0, 8)}|${mesh.receiveShadow}`;
         if (seen.has(key)) continue;
         seen.add(key);
