@@ -67,6 +67,11 @@ ground), drone op (spotter aura, 26m eyes), sapper (scattergun + mines), jumper 
 21. **Death variety**: fall forward / backward / crumple by the direction of the killing shot.
     Today every death is the same collapse.
 
+## Landed 2026-09-16
+
+4 suppression, 12 slam landing, 13 hull down, 19 (flamer / scattergun / sidearm clips), 21 death
+variety. Still open: 1–3, 5–11, 14–18, 20.
+
 ## My picks if you say "you choose"
 
 4 (suppression), 7 (stabilise), 6 (smoke), 12 (slam landing), 13 (hull down), 19, 21. Those seven
