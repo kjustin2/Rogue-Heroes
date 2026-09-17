@@ -303,6 +303,19 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
 - **Gas** (`CoverKind "gas"`): rupture pushes a `gasClouds` entry (grows per turn, chokes infantry at turn start); **every `sim.effect("blast")` calls `igniteGasAt`** — that is the one place that knows about gas, and a cloud's detonation is a blast, so canisters chain. Rides `serialize()`.
 - **Slams** (`resolveSlam`): a knockback throw that stops early (cliff / solid prop / another body) lands its unspent share as damage; unit-into-unit is shared and shoves the hit unit a step.
 - **Piercing** (`UNIT_STATS.pierce`, marksman): the round goes through bodies (cover still stops it), `-pierce` damage per body, carries `PIERCE_CARRY` metres past the first hit and the order completes there.
+- **Smoke** (`smokeClouds`, mortar-only `queueSmokeAt`, OrderKind/Intent `"smoke"`): a 3-turn cloud
+  (radius 3) that swallows any FLAT round (`arcHeight <= 0.5`) whose line passes within its radius —
+  in `previewAttack` (`blockedBySmoke`, `queueShootFor` rejects, `aiShotBlocker` holds fire) and
+  in flight (`smokeEntryProgress` in `updateProjectile`). Mortar/artillery/grenade arcs sail over.
+- **Stabilise** (`downed` on the entity): the ONE place a kill becomes a body is `afterDamage` →
+  `stabilise()` — infantry, friendly medic within 6, critical parts pinned to 1 HP,
+  `recomputeStatus` zeroes move/shoot while `downed`. Downed bodies are skipped by every hit /
+  splash / tick loop and by the AI target list; `runDownedTick` (first thing in `finishResolve`)
+  revives at 30% core or kills through the ordinary death path. Direct `applyDamage` calls that
+  bypass `afterDamage` (burn/gas ticks) still kill outright.
+- **Mark** (`markedUntilTurn`/`markedById`): stamped in `spawnShotProjectile` when a sniper fires
+  (hit or miss); `isMarkedFor(actor, target)` gives every OTHER friendly `MARK_SPREAD_SCALE` and
+  `MARK_ACCURATE_BONUS` in `accuracyForShot`; cleared in `finishResolve` the turn after.
 - **Lightning** (`MapEventKind "lightning"`): one strike per turn at `lightningZone(turn)` — a pure function of map seed + turn, so command telegraph == resolve strike == restored save; never within 7 of a base.
 - **Title diorama** (`stageMenuDiorama` in `main.ts`): the main menu sits over a live Verdant scene with `stage.menuDrift`; `body.in-battle` mirrors `inBattle` so CSS hides the HUD outside a battle; `stage.resetView()` restores the tactical camera only when leaving the diorama.
 - **`stage.warmUp()` extras must be visible AND unculled** (parked at y=-5000 in a wrapper): `renderer.compile()` walks `traverseVisible`, and only a composer DRAW compiles the post-chain variant (linear output, tone mapping off) — the lean path's key differs. It was a silent no-op for every GLB until `soak:gpu` diffed programs across a resolve. The warm-up also clones a transparent twin of every opaque standard material (death fades flip the `opaque` program bit). Any mid-resolve hitch report: run `soak:gpu` first; it names the compiling program.
