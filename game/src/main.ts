@@ -39,7 +39,7 @@ import {
 import type { AimMode, Team } from "./game/damageModel";
 import { isInfantryKind } from "./game/damageModel";
 import { TECH_TREE, troopsUnlockedBy } from "./game/tech";
-import { troopSpec } from "./game/units";
+import { troopSpec, unitStats } from "./game/units";
 import { sfx } from "./audio";
 import { music } from "./music";
 import { progression, COSMETICS, COSMETIC_CATEGORIES, type Cosmetic } from "./progression";
@@ -669,7 +669,7 @@ function deployWithLoadingScreen(mapId: string, modeId: ModeId, difficulty: Diff
       startBattle(mapId, modeId, difficulty, faction);
       // First time the player tries a mode, spell out how it's won (the tutorial only covers Annihilation).
       const mode = modeDef(modeId);
-      hintOnce(`mode-${modeId}`, `${mode.name}: ${mode.blurb}`);
+      hintOnce(`mode-${modeId}`, `${mode.name} — ${mode.blurb}`);
     }
     const hold = Math.max(0, minVisible - (performance.now() - startedAt));
     window.setTimeout(() => {
@@ -1895,7 +1895,7 @@ function watchEnemyIntel(): void {
   }
 }
 
-function showToast(text: string): void {
+function showToast(text: string, lifeMs = 2600): void {
   // Toasts stack in a shared column above the order panel — concurrent toasts
   // (e.g. several medals at once) must never overlap in place.
   let host = document.getElementById("toasts");
@@ -1912,7 +1912,7 @@ function showToast(text: string): void {
   window.setTimeout(() => {
     toast.classList.remove("show");
     window.setTimeout(() => toast.remove(), 400);
-  }, 2600);
+  }, lifeMs);
 }
 
 // Drop any lingering toasts immediately — called before a full-screen end overlay so transient
@@ -1950,24 +1950,85 @@ const seenHints = ((): Set<string> => {
     return new Set<string>();
   }
 })();
-function hintOnce(id: string, text: string): void {
-  if (tutorialActive || seenHints.has(id)) return;
+// Hints are spaced out: a second one waits until the first has had time to be read, so a scenario
+// that makes three states true at once still delivers them one at a time.
+let lastHintAt = -Infinity;
+const HINT_GAP_MS = 5000;
+function hintOnce(id: string, text: string): boolean {
+  if (tutorialActive || seenHints.has(id)) return false;
+  if (performance.now() - lastHintAt < HINT_GAP_MS) return false;
+  lastHintAt = performance.now();
   seenHints.add(id);
   safeStorageSet(HINTS_KEY, JSON.stringify([...seenHints]));
-  showToast(text);
+  // Dwell scales with length: reading speed plus a margin, never the 2.6s a two-word medal gets.
+  const words = text.trim().split(/\s+/).length;
+  showToast(text, Math.min(9000, Math.max(2600, 2200 + words * 330)));
+  return true;
 }
 
-// Contextual, state-triggered tooltips checked each command-phase frame (cheap; bails once both
-// have fired). These cover the gap the tutorial leaves: what to do once units are on the field.
+// The key a hint tells the player to press is the one they actually have bound.
+function hintKey(action: BindableAction): string {
+  return keyDisplay(settings.keybinds[action]);
+}
+
+// Contextual, state-triggered hints checked each command-phase frame. Every hint is ONE sentence
+// that names the verb and the key, fires only while the state it describes is true, and fires once
+// ever (persisted). At most one hint fires per frame so two true states never stack two toasts.
+// They cover the gap the tutorial leaves: what to do once the base and the troops are on the field.
+const HINT_IDS = ["base", "controls", "in-range", "cover", "unspent", "unit-jumper", "unit-mortar", "unit-sniper"] as const;
+const UNIT_HINTS: Partial<Record<TroopKind, (name: string) => string>> = {
+  jumper: (name) => `${name} jumps instead of walking — press ${hintKey("move")} and click across cliffs, water or walls, or beside an enemy to slam it.`,
+  mortar: (name) => `${name} fires in a high arc — press ${hintKey("shoot")} and click an enemy or a spot behind walls and ridges.`,
+  sniper: (name) => `${name} shoots through bodies — press ${hintKey("shoot")} and line enemies up so one round hits them all.`,
+};
 function updateOnboardingHints(): void {
   if (!inBattle || tutorialActive || sim.phase !== "command") return;
-  if (seenHints.has("controls") && seenHints.has("cover")) return;
-  if (sim.fieldUnitCount("player") > 0) hintOnce("controls", "Your troops are deployed — select one, then press M to move or F to fire.");
-  const selected = sim.entity(sim.selectedId);
-  if (selected && selected.team === "player" && isInfantryKind(selected.kind) && !sim.defending.has(selected.id)) {
-    const nearCover = sim.entities.some((e) => e.kind === "cover" && e.status.alive && e.height >= 1 && dist(e.position, selected.position) <= 3.6);
-    if (nearCover) hintOnce("cover", "You're beside cover — move onto it or press C to crouch and cut incoming fire.");
+  if (HINT_IDS.every((id) => seenHints.has(id))) return;
+  const squad = sim.living("player").filter((e) => e.kind !== "base" && e.kind !== "cover" && !e.carriedById);
+  const base = sim.entities.find((e) => e.kind === "base" && e.team === "player" && e.status.alive);
+
+  // 1. Nothing on the field yet: the only move is the base.
+  if (squad.length === 0 && base && base.commandPoints > 0) {
+    hintOnce("base", "Click your Home Base, then Deploy a troop — the base gets one order a turn.");
+    return;
   }
+  // 2. Troops exist: how to give one an order.
+  if (squad.length > 0 && hintOnce("controls", `Troops deployed — click one, then press ${hintKey("move")} to move or ${hintKey("shoot")} to shoot.`)) return;
+
+  // 3. A unit that is special the first time it is fielded: one line on what makes it so.
+  for (const unit of squad) {
+    const line = UNIT_HINTS[unit.kind as TroopKind];
+    if (line && hintOnce(`unit-${unit.kind}`, line(unit.name))) return;
+  }
+
+  // 4. The first time one of your units can actually hit something.
+  if (!seenHints.has("in-range")) {
+    const enemies = sim.living("enemy").filter((e) => e.kind !== "cover" && !e.carriedById);
+    for (const actor of squad) {
+      if (!actor.status.canShoot || actor.commandPoints <= 0) continue;
+      const range = unitStats(actor.kind).weaponRange;
+      for (const enemy of enemies) {
+        if (dist(actor.position, enemy.position) > range) continue;
+        const part = sim.targetableParts(enemy)[0];
+        const preview = part ? sim.previewShot(actor.id, enemy.id, part.id) : undefined;
+        if (!preview || preview.blockedById || preview.blockedByGround) continue;
+        hintOnce("in-range", `${actor.name} can hit ${enemy.name} — press ${hintKey("shoot")}, click it, then Confirm.`);
+        return;
+      }
+    }
+  }
+
+  // 5. Standing beside cover with a unit that could crouch behind it.
+  const selected = sim.entity(sim.selectedId);
+  if (selected && selected.team === "player" && isInfantryKind(selected.kind) && !sim.defending.has(selected.id) && selected.commandPoints > 0) {
+    const nearCover = sim.entities.some((e) => e.kind === "cover" && e.status.alive && e.height >= 1 && dist(e.position, selected.position) <= 3.6);
+    if (nearCover && hintOnce("cover", `Cover is beside ${selected.name} — press ${hintKey("crouch")} to crouch behind it and take less fire.`)) return;
+  }
+
+  // 6. Some units are done and others still have points: don't end the turn yet.
+  const spent = squad.some((u) => u.commandPoints <= 0);
+  const idle = squad.find((u) => u.commandPoints > 0 && (u.status.canMove || u.status.canShoot));
+  if (spent && idle) hintOnce("unspent", `${idle.name} still has command points — give every unit an order before pressing ${hintKey("endTurn")}.`);
 }
 
 if (settings.reducedMotion) document.body.classList.add("reduced-motion");

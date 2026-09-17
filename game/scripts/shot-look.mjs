@@ -18,7 +18,13 @@ try {
         if (state === "shoot") window.__rht.setIntent("shoot");
       }, state);
       await delay(400);
+      // __rht.setIntent only arms the SIM; the HUD's own action state (target drawer, order body)
+      // opens from the card, so click it like a player would.
+      if (state === "shoot") { await page.$('[data-order-action="shoot"]').then((card) => card?.click()); await delay(400); }
     }
+    // Park the cursor over open ground so a card the previous state clicked is not still hovered
+    // (its tooltip would sit in the shot).
+    await page.mouse.move(800, 300);
     await page.evaluate(() => window.__rht.setView({ zoom: 0.75, pitch: 0.62, yaw: 0.2 }));
     await delay(900);
     await page.screenshot({ path: `shots/look-${spec.replace(":", "-")}.png` });
