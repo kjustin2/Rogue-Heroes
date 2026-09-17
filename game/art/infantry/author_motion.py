@@ -71,7 +71,7 @@ SAMPLES = 101
 #
 # Contact phases are shared with combat and must not drift: the renderer reads the same numbers.
 # ---------------------------------------------------------------------------------------------
-CONTACT = {"rifle": 0.42, "burst": 0.34, "marksman": 0.62, "launcher": 0.44, "melee": 0.50}
+CONTACT = {"rifle": 0.42, "burst": 0.34, "marksman": 0.62, "launcher": 0.44, "melee": 0.50, "flamer": 0.30, "shotgun": 0.36, "pistol": 0.40}
 
 CLIPS = {
     # Line rifle: settle, a short push into the shot, absorb, return.
@@ -109,6 +109,37 @@ CLIPS = {
         (0.44, {"shoulderPitch": -0.34, "elbowBend": 0.36, "weaponPitch": 0.4, "torsoPitch": -0.09, "bodyLift": 0.03}),
         (0.56, {"shoulderPitch": -0.1, "elbowBend": 0.12, "weaponPitch": 0.1, "torsoPitch": 0.08, "kneeBend": 0.12, "bodyLift": -0.03}),
         (0.78, {"weaponPitch": 0.03, "kneeBend": 0.04}),
+        (1.00, {}),
+    ],
+    # Flamer: braces low and SWEEPS the projector across the arc while the stream runs.
+    "flamer": [
+        (0.00, {}),
+        (0.18, {"torsoPitch": 0.08, "kneeBend": 0.12, "torsoTwist": -0.22, "shoulderYaw": -0.18, "weaponDraw": 0.03, "bodyLift": -0.02}),
+        (0.30, {"torsoPitch": 0.10, "kneeBend": 0.14, "torsoTwist": -0.14, "shoulderYaw": -0.12, "weaponDraw": 0.04, "bodyLift": -0.03}),
+        (0.55, {"torsoPitch": 0.10, "kneeBend": 0.14, "torsoTwist": 0.18, "shoulderYaw": 0.16, "weaponDraw": 0.04, "bodyLift": -0.03}),
+        (0.72, {"torsoPitch": 0.06, "kneeBend": 0.08, "torsoTwist": 0.08, "shoulderYaw": 0.06}),
+        (1.00, {}),
+    ],
+    # Scattergun: a hard kick straight back into the shoulder, then the pump -- the off hand
+    # racks the fore-end (a second draw pulse) before the gun settles.
+    "shotgun": [
+        (0.00, {}),
+        (0.24, {"shoulderPitch": -0.08, "elbowBend": 0.14, "weaponDraw": 0.03, "torsoPitch": 0.05, "kneeBend": 0.06}),
+        (0.36, {"shoulderPitch": -0.12, "elbowBend": 0.18, "weaponDraw": 0.05, "weaponPitch": 0.06, "torsoPitch": 0.07, "kneeBend": 0.08}),
+        (0.42, {"shoulderPitch": 0.14, "elbowBend": 0.02, "weaponDraw": -0.12, "weaponPitch": -0.24, "torsoPitch": -0.10, "bodyLift": -0.03, "kneeBend": 0.12}),
+        (0.56, {"weaponDraw": -0.02, "weaponPitch": -0.04, "offhandPitch": 0.32, "torsoPitch": 0.0}),
+        (0.66, {"weaponDraw": 0.06, "offhandPitch": -0.18, "weaponPitch": 0.03}),
+        (0.78, {"weaponDraw": 0.0, "offhandPitch": 0.0}),
+        (1.00, {}),
+    ],
+    # Sidearm: one-handed. The arm comes up level, a short snap, and it drops back.
+    "pistol": [
+        (0.00, {}),
+        (0.26, {"shoulderPitch": -0.42, "elbowBend": 0.08, "torsoTwist": -0.08, "weaponPitch": 0.04}),
+        (0.40, {"shoulderPitch": -0.48, "elbowBend": 0.06, "torsoTwist": -0.10, "weaponPitch": 0.06}),
+        (0.46, {"shoulderPitch": -0.36, "elbowBend": 0.16, "weaponDraw": -0.05, "weaponPitch": -0.18, "torsoPitch": -0.03}),
+        (0.62, {"shoulderPitch": -0.44, "elbowBend": 0.08, "weaponPitch": 0.02}),
+        (0.84, {"shoulderPitch": -0.12}),
         (1.00, {}),
     ],
     # Striker: winds all the way back and commits through the target.

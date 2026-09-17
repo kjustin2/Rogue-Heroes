@@ -4542,7 +4542,7 @@ const DEFAULT_BUILD: InfantryBuild = { girth: 1, stature: 1, lean: 0 };
 // The phase is driven by the ORDER's own elapsed/duration, never by a clock of its own. Combat owns
 // durations; animation owns pose. That means an attack animation can never desync from the shot it
 // belongs to, and slowing the action pace slows the choreography with it for free.
-export type WeaponFamily = "rifle" | "burst" | "marksman" | "cannon" | "launcher" | "flamer" | "melee";
+export type WeaponFamily = "rifle" | "burst" | "marksman" | "cannon" | "launcher" | "flamer" | "melee" | "shotgun" | "pistol";
 
 export function weaponFamily(kind: EntityKind): WeaponFamily {
   if (kind === "striker") return "melee";
@@ -4550,6 +4550,8 @@ export function weaponFamily(kind: EntityKind): WeaponFamily {
   if (kind === "sniper") return "marksman";
   if (kind === "grenadier" || kind === "mortar") return "launcher";
   if (kind === "flamer") return "flamer";
+  if (kind === "sapper") return "shotgun";
+  if (kind === "medic" || kind === "droneop") return "pistol";
   if (kind === "tank" || kind === "artillery" || kind === "exturret") return "cannon";
   return "rifle";
 }
@@ -4575,6 +4577,8 @@ const FAMILY_SHAPE: Record<WeaponFamily, { contact: number; draw: number; lift: 
   launcher: { contact: 0.44, draw: 0.09, lift: 0.34, brace: 0.09 },
   flamer: { contact: 0.3, draw: 0.04, lift: 0.05, brace: 0.08 },
   melee: { contact: 0.5, draw: 0.34, lift: 0.5, brace: 0.3 },
+  shotgun: { contact: 0.36, draw: 0.12, lift: 0.24, brace: 0.1 },
+  pistol: { contact: 0.4, draw: 0.05, lift: 0.18, brace: 0.03 },
 };
 
 export function attackPose(family: WeaponFamily, phase: number): AttackPose {

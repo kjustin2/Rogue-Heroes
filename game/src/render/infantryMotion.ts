@@ -39,8 +39,10 @@ const CLIP_FOR_FAMILY: Record<WeaponFamily, string> = {
   marksman: "marksman",
   cannon: "burst",
   launcher: "launcher",
-  flamer: "rifle",
+  flamer: "flamer",
   melee: "melee",
+  shotgun: "shotgun",
+  pistol: "pistol",
 };
 
 /** Does a Blender bank exist for this family? Callers fall back to the procedural pose if not. */
