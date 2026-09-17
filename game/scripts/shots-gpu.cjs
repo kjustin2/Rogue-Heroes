@@ -33,6 +33,16 @@ app.whenReady().then(async () => {
     await sleep(3000);
     for (const s of scenarios) {
       if (s === "menu") { await shot("menu"); continue; }
+      if (s === "tutorial") {
+        // The first three beats a new player sees, straight from the title link.
+        await js(`document.querySelector('[data-menu="tutorial"]').click()`);
+        await sleep(3500);
+        await shot("tutorial-1");
+        await js(`(() => { const b = document.querySelector('.tutorial-next, [data-tutorial-next], .tutorial-card button'); if (b) b.click(); })()`);
+        await sleep(1500);
+        await shot("tutorial-2");
+        continue;
+      }
       if (s === "lineup") {
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
         await sleep(1500);

@@ -5048,7 +5048,9 @@ function makeSurroundings(theme: MapTheme, width: number, depth: number): THREE.
   const ridgeGeo = new THREE.CylinderGeometry(0.28, 0.62, 1, 5, 1);
   ridgeGeo.translate(0, 0.5, 0);
   ridgeGeo.userData.shared = true;
-  const radius = Math.max(width, depth) * 0.78;
+  // A floor on the ring distance: on the small maps 0.78x the arena put the nearest ridge right
+  // at the board's edge, where a fog-tinted pyramid reads as a giant brown slab, not a horizon.
+  const radius = Math.max(Math.max(width, depth) * 0.78, 48);
   const rings = 3;
   for (let ring = 0; ring < rings; ring += 1) {
     const distance = radius * (1.15 + ring * 0.42);

@@ -3551,11 +3551,15 @@ body.menus-open .menu-bg span {
 
 /* Tutorial coach panel */
 .tutorial-panel {
+  /* Top centre: the right rail (End Turn / Menu / turn chips) must stay visible during the one
+     part of the game where a player is learning what those are. The onboarding toasts that
+     normally live here yield while the tutorial is active. */
   position: fixed;
-  right: 18px;
-  top: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 22px;
   z-index: 45;
-  width: min(320px, calc(100vw - 36px));
+  width: min(440px, calc(100vw - 36px));
   padding: 14px 16px;
   pointer-events: auto;
   border-radius: 10px;
