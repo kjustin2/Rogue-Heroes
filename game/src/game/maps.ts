@@ -305,7 +305,7 @@ const RAW_MAPS: readonly MapDef[] = [
     hill: { x: 0, z: 0 },
     hillRadius: 4.2,
     scatter: [
-      { palette: ["rock", "rock", "sandbag", "barricade", "bunker"], count: 7, spacing: 2.4, centerGap: 3 },
+      { palette: ["rock", "rock", "sandbag", "barricade", "bunker", "cactus", "cactus", "tent"], count: 10, spacing: 2.4, centerGap: 3 },
       { palette: ["fuel", "ammo"], count: 3, spacing: 3.0, centerGap: 5 },
     ],
     signature: [
@@ -355,7 +355,7 @@ const RAW_MAPS: readonly MapDef[] = [
     hill: { x: 0, z: 0 },
     hillRadius: 3.4,
     scatter: [
-      { palette: ["crate", "container", "rubble", "wall"], count: 9, spacing: 1.4, centerGap: 2.2 },
+      { palette: ["crate", "container", "rubble", "wall", "pipe", "silo"], count: 11, spacing: 1.4, centerGap: 2.2 },
       { palette: ["pillar", "pillar", "conduit", "fuel", "ammo", "gas", "gas"], count: 9, spacing: 1.8, centerGap: 3 },
     ],
     signature: [
@@ -410,7 +410,7 @@ const RAW_MAPS: readonly MapDef[] = [
     // A storm rolls through the valley: from turn 4, lightning strikes one marked point every turn.
     events: [{ kind: "lightning", startTurn: 4, period: 1, power: 46 }],
     scatter: [
-      { palette: ["tree", "tree", "rock"], count: 10, spacing: 1.6, centerGap: 6 },
+      { palette: ["tree", "tree", "rock", "bush", "bush", "stump", "log"], count: 15, spacing: 1.6, centerGap: 6 },
       { palette: ["sandbag", "rubble"], count: 3, spacing: 2.4, centerGap: 7 },
     ],
     signature: [
@@ -524,7 +524,7 @@ const RAW_MAPS: readonly MapDef[] = [
     hill: { x: 0, z: 0 },
     hillRadius: 3.2,
     scatter: [
-      { palette: ["pillar", "rubble", "rock", "gas"], count: 9, spacing: 1.8, centerGap: 4 },
+      { palette: ["pillar", "rubble", "rock", "gas", "statue", "statue"], count: 11, spacing: 1.8, centerGap: 4 },
       { palette: ["wall", "cliff"], count: 3, spacing: 2.6, centerGap: 6 },
     ],
     signature: [
@@ -586,7 +586,7 @@ const RAW_MAPS: readonly MapDef[] = [
     hill: { x: 0, z: 0 },
     hillRadius: 3.8,
     scatter: [
-      { palette: ["sandbag", "crate", "barricade", "bunker"], count: 7, spacing: 2.0, centerGap: 3 },
+      { palette: ["sandbag", "crate", "barricade", "bunker", "bush", "log"], count: 9, spacing: 2.0, centerGap: 3 },
       { palette: ["ammo", "fuel", "gas"], count: 3, spacing: 3.0, centerGap: 5 },
     ],
     signature: [

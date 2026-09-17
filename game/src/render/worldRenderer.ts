@@ -2306,6 +2306,78 @@ export class WorldRenderer {
       this.box(group, entity, part.id, [0.72, 0.66, 0.78], [-0.38, 0.72, 0.26], 0x5e5951, { roughness: 0.98, bevel: 0.36, rotation: [tip(6), tip(7) * 4, tip(2)] });
       this.box(group, entity, part.id, [0.55, 0.5, 0.5], [0.34, 1.28, 0.1], 0x9a9388, { roughness: 0.94, bevel: 0.4, rotation: [tip(1), tip(5) * 4, tip(4)] });
       this.box(group, entity, part.id, [0.9, 0.26, 0.85], [-0.1, 0.12, -0.05], 0x4c473f, { roughness: 1, bevel: 0.42, rotation: [0, tip(3) * 4, 0] });
+    } else if (entity.coverKind === "stump") {
+      // A cut trunk with a pale ring on top, bark ridges and two exposed roots.
+      const v = hash(entity.id);
+      this.cylinder(group, entity, part.id, 0.42, 0.62, [0, 0.31, 0], 0x4a3220, [0, (v % 7) * 0.4, 0], { radiusBottom: 0.5, roughness: 0.96 });
+      this.cylinder(group, entity, part.id, 0.36, 0.05, [0, 0.64, 0], 0xb8a07a, [0, 0, 0], { roughness: 0.9 });
+      this.cylinder(group, entity, part.id, 0.22, 0.04, [0, 0.67, 0], 0x8d7454, [0, 0, 0], { roughness: 0.9 });
+      for (const a of [0.4, 2.1, 3.9]) this.box(group, entity, part.id, [0.18, 0.16, 0.5], [Math.cos(a) * 0.5, 0.08, Math.sin(a) * 0.5], 0x3d2a1a, { rotation: [0, -a, 0], bevel: 0.3, roughness: 0.98 });
+    } else if (entity.coverKind === "log") {
+      // A fallen trunk lying across the ground: long, slightly tapered, one broken bough up.
+      const v = hash(entity.id);
+      const yaw = (v % 13) * 0.24;
+      this.cylinder(group, entity, part.id, 0.3, 2.5, [0, 0.3, 0], 0x4f3622, [0, yaw, Math.PI / 2], { radiusBottom: 0.36, roughness: 0.96 });
+      this.cylinder(group, entity, part.id, 0.28, 0.06, [Math.cos(yaw) * 1.26, 0.3, -Math.sin(yaw) * 1.26], 0xb39a76, [0, yaw, Math.PI / 2], { roughness: 0.9 });
+      this.cylinder(group, entity, part.id, 0.08, 0.5, [Math.cos(yaw) * 0.3, 0.6, -Math.sin(yaw) * 0.3], 0x4f3622, [0.5, yaw, 0.3], { roughness: 0.96 });
+      this.box(group, entity, part.id, [0.5, 0.12, 0.4], [-Math.cos(yaw) * 0.6, 0.06, Math.sin(yaw) * 0.6], 0x3f5a2c, { bevel: 0.4, roughness: 1 }); // moss
+    } else if (entity.coverKind === "bush") {
+      // A low round shrub: four overlapping green masses, a darker one underneath, a few berries.
+      const v = hash(entity.id);
+      const greens = [0x3f7a34, 0x4d8a3a, 0x5e9a44, 0x2f5f27];
+      for (let i = 0; i < 4; i += 1) {
+        const a = ((v >> (i * 3)) % 9) / 9 * Math.PI * 2;
+        this.sphere(group, entity, part.id, 0.36 + ((v >> i) % 3) * 0.05, [Math.cos(a) * 0.32, 0.36 + (i % 2) * 0.12, Math.sin(a) * 0.32], greens[i], { scaleY: 0.8 });
+      }
+      this.sphere(group, entity, part.id, 0.44, [0, 0.28, 0], greens[3], { scaleY: 0.6 });
+      for (let i = 0; i < 3; i += 1) this.sphere(group, entity, part.id, 0.05, [Math.cos(i * 2.2) * 0.4, 0.62, Math.sin(i * 2.2) * 0.4], 0xd94a3a, { accent: true });
+    } else if (entity.coverKind === "cactus") {
+      // A saguaro: ribbed column, two arms, and a pale flower on top.
+      const v = hash(entity.id);
+      this.cylinder(group, entity, part.id, 0.24, 1.9, [0, 0.95, 0], 0x4f7f3a, [0, 0, 0], { radiusBottom: 0.28, roughness: 0.94 });
+      for (const side of [-1, 1]) {
+        if (((v >> (side + 2)) % 3) === 0) continue;
+        this.cylinder(group, entity, part.id, 0.14, 0.5, [side * 0.42, 1.0, 0], 0x4f7f3a, [0, 0, side * Math.PI / 2], { roughness: 0.94 });
+        this.cylinder(group, entity, part.id, 0.14, 0.7, [side * 0.56, 1.42, 0], 0x4f7f3a, [0, 0, 0], { roughness: 0.94 });
+      }
+      this.sphere(group, entity, part.id, 0.1, [0, 1.94, 0], 0xf2dfa0, { accent: true });
+    } else if (entity.coverKind === "tent") {
+      // A ridge tent: two canted canvas panels on a pole, guy pegs, a dark open flap.
+      this.box(group, entity, part.id, [2.0, 0.06, 1.3], [0, 0.72, 0.62], 0xb39a6a, { rotation: [-0.85, 0, 0], roughness: 0.96 });
+      this.box(group, entity, part.id, [2.0, 0.06, 1.3], [0, 0.72, -0.62], 0xa8905f, { rotation: [0.85, 0, 0], roughness: 0.96 });
+      this.cylinder(group, entity, part.id, 0.04, 2.1, [0, 1.2, 0], 0x5a4630, [0, 0, Math.PI / 2], { roughness: 0.9 });
+      this.box(group, entity, part.id, [0.5, 0.7, 0.06], [0.98, 0.36, 0], 0x2b2218, { rotation: [0, 0, 0] });
+      for (const x of [-1.2, 1.2]) for (const z of [-1.0, 1.0]) this.cylinder(group, entity, part.id, 0.03, 0.3, [x, 0.12, z], 0x3a2e20, [0, 0, 0], {});
+    } else if (entity.coverKind === "pipe") {
+      // An industrial pipe run on trestles with a valve wheel and a flanged joint.
+      const v = hash(entity.id);
+      const yaw = (v % 5) * 0.31;
+      this.cylinder(group, entity, part.id, 0.28, 2.8, [0, 0.62, 0], 0x5a5f66, [0, yaw, Math.PI / 2], { metalness: 0.5, roughness: 0.55 });
+      for (const t of [-0.9, 0.9]) {
+        this.cylinder(group, entity, part.id, 0.34, 0.14, [Math.cos(yaw) * t, 0.62, -Math.sin(yaw) * t], 0x3d4248, [0, yaw, Math.PI / 2], { metalness: 0.5, roughness: 0.5 });
+        this.box(group, entity, part.id, [0.16, 0.5, 0.5], [Math.cos(yaw) * t, 0.25, -Math.sin(yaw) * t], 0x2f3439, { rotation: [0, yaw, 0], metalness: 0.4 });
+      }
+      this.cylinder(group, entity, part.id, 0.18, 0.05, [0, 1.0, 0], 0xb03a2a, [0, 0, 0], { metalness: 0.4 });
+      this.cylinder(group, entity, part.id, 0.04, 0.2, [0, 0.9, 0], 0x8a8f96, [0, 0, 0], { metalness: 0.5 });
+    } else if (entity.coverKind === "silo") {
+      // A storage silo: a tall riveted drum on legs with a conical lid and a ladder.
+      this.cylinder(group, entity, part.id, 0.82, 1.9, [0, 1.35, 0], 0x6c7178, [0, 0, 0], { metalness: 0.45, roughness: 0.6 });
+      this.cylinder(group, entity, part.id, 0.86, 0.1, [0, 1.0, 0], 0x3f444a, [0, 0, 0], { metalness: 0.5 });
+      this.cylinder(group, entity, part.id, 0.86, 0.1, [0, 1.95, 0], 0x3f444a, [0, 0, 0], { metalness: 0.5 });
+      this.cylinder(group, entity, part.id, 0.1, 0.5, [0, 2.55, 0], 0x8a8f96, [0, 0, 0], { radiusBottom: 0.88, metalness: 0.45 });
+      for (const a of [0.6, 2.7, 4.8]) this.box(group, entity, part.id, [0.14, 0.5, 0.14], [Math.cos(a) * 0.62, 0.25, Math.sin(a) * 0.62], 0x2f3439, { metalness: 0.4 });
+      this.box(group, entity, part.id, [0.06, 1.8, 0.3], [0.86, 1.3, 0], 0x9aa0a6, { metalness: 0.5 });
+      this.box(group, entity, part.id, [0.3, 0.2, 0.06], [0, 1.5, 0.84], 0xd8b43a, { accent: true, emissive: 0x8a6a10, emissiveIntensity: 0.15 });
+    } else if (entity.coverKind === "statue") {
+      // A broken monument: a plinth, a robed figure snapped off at the shoulder, one arm raised.
+      const v = hash(entity.id);
+      this.box(group, entity, part.id, [1.2, 0.5, 1.2], [0, 0.25, 0], 0x8a8478, { bevel: 0.2, roughness: 0.9 });
+      this.box(group, entity, part.id, [0.9, 0.16, 0.9], [0, 0.58, 0], 0x9c968a, { bevel: 0.3, roughness: 0.9 });
+      this.cylinder(group, entity, part.id, 0.3, 1.2, [0, 1.26, 0], 0x9a948a, [0, (v % 6) * 0.5, 0], { radiusBottom: 0.42, roughness: 0.92 });
+      this.box(group, entity, part.id, [0.66, 0.34, 0.5], [0, 1.95, 0], 0x9a948a, { bevel: 0.3, rotation: [0.1, (v % 6) * 0.5, -0.08], roughness: 0.92 });
+      this.cylinder(group, entity, part.id, 0.1, 0.7, [0.36, 2.2, 0.1], 0x9a948a, [0.3, 0, -0.9], { roughness: 0.92 });
+      this.box(group, entity, part.id, [0.3, 0.26, 0.3], [-0.26, 2.16, 0.02], 0x8f8980, { bevel: 0.36, rotation: [0.3, 0.6, 0.5], roughness: 0.94 }); // the broken shoulder
+      this.box(group, entity, part.id, [0.5, 0.3, 0.44], [0.7, 0.15, 0.55], 0x8a8478, { bevel: 0.3, rotation: [0.2, 0.7, 0.1], roughness: 0.92 }); // a fallen head at the foot
     } else if (entity.coverKind === "tree") {
       // The old tree was a cube on a stick. This one has a tapered, leaning trunk, two boughs, and
       // a crown of six canted masses in three greens with a darker underside — an irregular

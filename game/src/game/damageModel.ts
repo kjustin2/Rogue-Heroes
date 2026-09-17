@@ -26,7 +26,8 @@ export type CoverKind =
   | "wreck"
   | "depot"
   | "span"
-  | "gas";
+  | "gas"
+  | "stump" | "log" | "bush" | "cactus" | "tent" | "pipe" | "silo" | "statue";
 export type PartRole = "core" | "head" | "weapon" | "mobility" | "armor" | "utility" | "volatile";
 export type AimMode = "center" | "head" | "weapon" | "mobility" | "utility" | "core" | "weakest";
 export type InfantryStance = "standing" | "crouched" | "prone";
@@ -801,6 +802,15 @@ export const COVER_PROFILES: Record<CoverKind, CoverProfile> = {
   barricade: { hp: 42, radius: 0.82, height: 0.82, volatile: false, label: "Barricade" },
   fuel: { hp: 36, radius: 0.7, height: 1.2, volatile: true, label: "Fuel Cell" },
   gas: { hp: 28, radius: 0.7, height: 1.3, volatile: true, label: "Gas Canister" },
+  // Theme props (2026-09-16): each map's own furniture, so a forest is not rocks and crates.
+  stump: { hp: 60, radius: 0.7, height: 0.7, volatile: false, label: "Stump" },
+  log: { hp: 44, radius: 1.3, height: 0.55, volatile: false, label: "Fallen Log" },
+  bush: { hp: 18, radius: 0.85, height: 0.9, volatile: false, label: "Bush" },
+  cactus: { hp: 26, radius: 0.5, height: 2.0, volatile: false, label: "Cactus" },
+  tent: { hp: 30, radius: 1.2, height: 1.4, volatile: false, label: "Tent" },
+  pipe: { hp: 80, radius: 1.4, height: 0.9, volatile: false, label: "Pipe Run" },
+  silo: { hp: 130, radius: 1.1, height: 2.6, volatile: false, label: "Storage Silo" },
+  statue: { hp: 110, radius: 0.8, height: 2.4, volatile: false, label: "Broken Statue" },
   ammo: { hp: 34, radius: 0.7, height: 1.2, volatile: true, label: "Ammo Cache" },
   conduit: { hp: 44, radius: 0.7, height: 1.2, volatile: true, label: "Power Conduit" },
   ridge: { hp: 95, radius: 1.2, height: 1.85, volatile: false, label: "High Ground" },
