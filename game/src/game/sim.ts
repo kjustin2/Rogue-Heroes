@@ -141,6 +141,8 @@ export const DEPOT_INCOME = 25;
 // must get to grab it, and the min/spread of cash per cache.
 const PICKUP_REACH = 0.95;
 const TRANSPORT_CAPACITY = 2; // how many ground units an air transport can carry at once
+// STRIKER CHARGE: metres of free closing distance folded into the strike order.
+export const STRIKER_CHARGE = 5;
 // Hull-down tanks take this fraction of incoming shot damage.
 const HULL_DOWN_DAMAGE = 0.7;
 // A jump trooper landing next to an enemy: damage before difficulty scaling.
@@ -2077,6 +2079,8 @@ export class TacticalSim {
         continue;
       }
       if (watcher.team === mover.team) continue;
+      // DASH: a scout is too fast to track — overwatch never triggers on it.
+      if (mover.kind === "scout") continue;
       // An aircraft's autocannon is air-to-air ONLY — its overwatch guards the air lane and never
       // snaps at ground units (closes the loophole where a plane could gun the ground via overwatch).
       if (isAirKind(watcher.kind) && !mover.flying) continue;
@@ -2309,6 +2313,17 @@ export class TacticalSim {
 
     if (order.kind === "melee") {
       actor.yaw = Math.atan2(target.position.x - actor.position.x, target.position.z - actor.position.z);
+      // CHARGE: a striker closes the gap first (a real move — overwatch and mines apply) and the
+      // swing clock only starts once the blade is in reach.
+      const swingReach = unitStats(actor.kind).meleeRange + actor.radius + target.radius;
+      if (!order.fired && dist(actor.position, target.position) > swingReach + 0.05) {
+        actor.position = moveToward(actor.position, target.position, moveSpeed(actor) * 1.6 * dt);
+        this.syncEntityElevation(actor);
+        this.checkOverwatch(actor);
+        this.checkMines(actor);
+        order.elapsed = 0;
+        return;
+      }
       if (!order.fired && order.elapsed >= 0.36) {
         order.fired = true;
         this.resolveMelee(actor, target, order.targetPartId);
@@ -3205,7 +3220,8 @@ export class TacticalSim {
     let base = baseShotDamage(actor.kind, attackMode);
     // Sapper demolition rounds: purpose-built to breach — 3x vs cover and walls
     // (pairs with toppling: fell a pillar onto whoever hides behind it).
-    if (actor.kind === "sapper" && (target.kind === "cover" || target.kind === "wall")) base *= 3;
+    // BREACH: a demolition round takes a wall or cover piece down in ONE shot, whatever its HP.
+    if (actor.kind === "sapper" && (target.kind === "cover" || target.kind === "wall")) base = Math.max(base * 3, 9999);
     const range = dist(actor.position, target.position);
     const falloff = clamp(1.08 - range / 26, 0.65, 1);
     if (target.kind === "tank" && target.hullDown) base *= HULL_DOWN_DAMAGE;
@@ -5140,7 +5156,7 @@ function canJump(entity: CombatEntity): boolean {
 }
 
 function meleeRange(entity: CombatEntity): number {
-  return unitStats(entity.kind).meleeRange;
+  return unitStats(entity.kind).meleeRange + (entity.kind === "striker" ? STRIKER_CHARGE : 0);
 }
 
 // Strikers hit at full melee power; other infantry only rifle-butt for a fraction, so melee
