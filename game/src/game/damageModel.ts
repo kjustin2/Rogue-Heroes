@@ -106,6 +106,11 @@ export interface CombatEntity {
   // carried unit points back via `carriedById`. Both ride serialize() inside the entity list.
   passengerIds?: string[];
   carriedById?: string;
+  // SUPPRESSED: a machine-gun burst that lands leaves the target with one command point next
+  // turn and drops it to a crouch. Set to the turn it wears off; read at turn start.
+  suppressedUntilTurn?: number;
+  // HULL DOWN: a tank that did not move this resolve takes 30% less damage until it moves.
+  hullDown?: boolean;
 }
 
 export interface CoverOptions {

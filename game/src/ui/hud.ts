@@ -720,7 +720,7 @@ function unitCard(entity: CombatEntity, selected: boolean, orders: TacticalOrder
   const spent = entity.status.alive && entity.commandPoints <= 0;
   const crouched = entity.stance === "crouched" && entity.status.alive;
   const status = !entity.status.alive ? "Disabled" : spent ? "Orders set" : statusText(entity);
-  const statusBand = !entity.status.alive ? "dead" : spent ? "spent" : status === "Ready" ? "ready" : "warn";
+  const statusBand = !entity.status.alive ? "dead" : spent ? "spent" : status === "Ready" || status === "Hull down" ? "ready" : "warn";
   const order = orders.length ? orders.map((o) => escapeHtml(orderSummary(o, sim).replace("Queued: ", ""))).join(" / ") : "";
   return `
     <div class="unit-card ${selected ? "selected" : ""} ${entity.status.alive ? "" : "dead"} ${spent ? "spent" : ""} ${crouched ? "crouched" : ""}">
@@ -2080,6 +2080,8 @@ function statusText(entity: CombatEntity): string {
   if (entity.status.immobilized) return "Immobile";
   if (entity.status.disarmed) return "Disarmed";
   if (entity.status.commandLimited) return "Limited";
+  if (entity.suppressedUntilTurn !== undefined) return "Suppressed";
+  if (entity.kind === "tank" && entity.hullDown) return "Hull down";
   return "Ready";
 }
 

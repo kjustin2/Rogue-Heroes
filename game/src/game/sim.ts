@@ -141,6 +141,11 @@ export const DEPOT_INCOME = 25;
 // must get to grab it, and the min/spread of cash per cache.
 const PICKUP_REACH = 0.95;
 const TRANSPORT_CAPACITY = 2; // how many ground units an air transport can carry at once
+// Hull-down tanks take this fraction of incoming shot damage.
+const HULL_DOWN_DAMAGE = 0.7;
+// A jump trooper landing next to an enemy: damage before difficulty scaling.
+const SLAM_LANDING_DAMAGE = 15;
+
 // Metres a piercing round carries on past a body it went through.
 const PIERCE_CARRY = 7;
 
@@ -1619,6 +1624,15 @@ export class TacticalSim {
     // Last Stand: reinforcement waves crest every other round before the enemy acts.
     if (this.mode === "survival" && this.turn % 2 === 1 && this.phase === "command") this.spawnSurvivalWave();
     this.queueEnemyOrders();
+    // HULL DOWN. A tank with no move/ram order this resolve settles in and takes 30% less damage
+    // until it moves. Decided here so the enemy AI's tanks get it on the same terms.
+    for (const e of this.entities) {
+      if (e.kind !== "tank" || !e.status.alive) continue;
+      const moving = this.orders.some((o) => o.actorId === e.id && !o.done && (o.kind === "move" || o.kind === "ram"));
+      const was = Boolean(e.hullDown);
+      e.hullDown = !moving;
+      if (e.hullDown && !was) this.pushLog(`${e.name} goes hull down`);
+    }
     this.scheduleMapStrikes();
     this.scheduleSupportStrikes();
     this.phase = "resolve";
@@ -2085,6 +2099,16 @@ export class TacticalSim {
           this.separateFromUnits(actor, order.destination);
           this.syncEntityElevation(actor);
           this.effect("land", actor.position, actor.position, 0xbfe9ff, 0.5, actor.radius * 1.3);
+          // SLAM LANDING: anyone hostile within a stride of the touchdown is knocked back and hurt.
+          for (const other of this.entities) {
+            if (other.team === actor.team || other.team === "neutral" || !other.status.alive || other.flying || other.kind === "cover" || isBuildingKind(other.kind) || isDefenseKind(other.kind)) continue;
+            if (dist(other.position, actor.position) > actor.radius + other.radius + 0.6) continue;
+            const result = applyDamage(other, preferredPart(other, "center").id, Math.round(SLAM_LANDING_DAMAGE * this.teamDamageScale(actor)));
+            this.pushLog(`${actor.name} slams down on ${other.name}`);
+            this.effect("strike", actor.position, other.position, 0xbfe9ff, 0.45, other.radius + 0.6);
+            this.afterDamage(actor, other, result, "Slam");
+            this.applyKnockback(actor, other, actor.position, 30, 0.9);
+          }
           this.checkMines(actor);
           this.checkPickups(actor);
           order.done = true;
@@ -2854,6 +2878,11 @@ export class TacticalSim {
       this.effect("impact", target.position, target.position, result.destroyed ? 0xffd166 : 0xffffff, 0.42, target.radius);
     }
     this.afterDamage(actor, target, result);
+    // SUPPRESSION. A machine-gun hit pins the target: one command point next turn, crouched.
+    if (!cover && unitStats(actor.kind).suppresses && target.status.alive && isInfantryKind(target.kind) && result.amount > 0) {
+      if ((target.suppressedUntilTurn ?? 0) <= this.turn) this.pushLog(`${target.name} is suppressed`);
+      target.suppressedUntilTurn = this.turn + 1;
+    }
     // A piercing round goes THROUGH a body and keeps flying; only cover stops it. The order stays
     // open until the round expires, so the line it draws is the whole shot.
     if (pierce > 0 && !cover) {
@@ -3060,6 +3089,7 @@ export class TacticalSim {
     if (actor.kind === "sapper" && (target.kind === "cover" || target.kind === "wall")) base *= 3;
     const range = dist(actor.position, target.position);
     const falloff = clamp(1.08 - range / 26, 0.65, 1);
+    if (target.kind === "tank" && target.hullDown) base *= HULL_DOWN_DAMAGE;
     const vulnerability = cover ? 1 : vulnerabilityMultiplier(target, targetPart);
     const explosiveActor = actor.kind === "tank" || actor.kind === "artillery" || actor.kind === "grenadier" || actor.kind === "mortar" || actor.kind === "exturret";
     const shellObjectBoost = ((attackMode === "weapon" && explosiveActor) || attackMode === "grenade") && target.kind === "cover" ? 1.72 : 1;
@@ -4265,7 +4295,17 @@ export class TacticalSim {
     this.turn += 1;
     this.phase = "command";
     this.resolveClock = 0;
-    for (const entity of this.entities) repairForNewTurn(entity);
+    for (const entity of this.entities) {
+      repairForNewTurn(entity);
+      if (entity.suppressedUntilTurn !== undefined) {
+        if (entity.suppressedUntilTurn >= this.turn && entity.status.alive) {
+          entity.commandPoints = Math.min(entity.commandPoints, 1);
+          if (isInfantryKind(entity.kind)) { entity.stance = "crouched"; this.defending.add(entity.id); }
+        } else {
+          entity.suppressedUntilTurn = undefined;
+        }
+      }
+    }
     this.runEconomyTick();
     this.runSalvageTick();
     this.runCaptureTick();

@@ -69,6 +69,8 @@ export interface UnitStats {
   jump?: boolean;
   /** Rounds keep going through BODIES (cover still stops them), losing this fraction of damage per body. */
   pierce?: number;
+  /** A landed hit SUPPRESSES: the target has one command point next turn and drops to a crouch. */
+  suppresses?: boolean;
   /** Board distance per order, before MOVE_RANGE_SCALE. 0 = immobile. */
   moveRange: number;
   /** World units per second while resolving a move, before MOVE_RANGE_SCALE. */
@@ -149,7 +151,7 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   // A four-round burst reads as a rifle with a stutter. Ten rounds at lower per-shot damage reads
   // as a machine gun: same weight of fire, but you SEE the volume, and the wide cone means stray
   // rounds rake whatever is standing near the target.
-  heavy: foot({ moveRange: 4.8, moveSpeed: 4.8, shotDamage: 8, burst: 10, spread: 4.4, accurateFraction: 0.3, spreadPerMeter: 0.18, accuracyLabel: "machine gun", hpMultiplier: 1.18, aiValue: 5 }),
+  heavy: foot({ moveRange: 4.8, moveSpeed: 4.8, shotDamage: 8, burst: 10, spread: 4.4, accurateFraction: 0.3, spreadPerMeter: 0.18, accuracyLabel: "machine gun", hpMultiplier: 1.18, suppresses: true, aiValue: 5 }),
   grenadier: foot({ moveRange: 6.3, moveSpeed: 5.8, shotDamage: 38, weaponRange: 22, projectile: "grenade", projectileSpeed: 2.05, spread: 7.4, accurateFraction: 0.41, accuracyLabel: "launcher", groundShell: true, aiValue: 7 }),
   mortar: foot({ moveRange: 5.0, moveSpeed: 5.2, shotDamage: 44, weaponRange: 30, projectile: "grenade", projectileSpeed: 2.05, spread: 7.0, accurateFraction: 0.67, accuracyLabel: "mortar", groundShell: true, hpMultiplier: 1.12, aiValue: 8 }),
   // THE THREE SUPPORTS USED TO BE ONE UNIT. Medic, engineer and drone operator all sat at 16-18
@@ -214,16 +216,16 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "scout", label: "Scout", role: "Recon", cost: 110, cooldown: 1, tech: "recon", tip: "Fast, cheap eyes; its optic relay sharpens nearby allies' fire." },
   { kind: "sniper", label: "Marksman", role: "Sniper", cost: 220, cooldown: 2, tech: "recon", tip: "Long-range rail rifle. The round goes THROUGH bodies and hits everyone on the line (a quarter weaker per body) — line them up. Cover and walls still stop it. Deadly to heads and exposed crews." },
   { kind: "striker", label: "Striker", role: "Melee", cost: 180, cooldown: 2, tech: "assault", tip: "Rushes in and strikes hard at close range." },
-  { kind: "heavy", label: "Heavy Gunner", role: "Suppression", cost: 250, cooldown: 2, tech: "assault", tip: "Ten-round machine-gun bursts. Tough enough to anchor a push, and the cone is wide enough that stray rounds rake anyone standing near the target." },
+  { kind: "heavy", label: "Heavy Gunner", role: "Suppression", cost: 250, cooldown: 2, tech: "assault", tip: "Ten-round machine-gun bursts that SUPPRESS: anyone the burst hits is pinned — one command point next turn and forced to crouch. The cone is wide enough that strays rake whoever stands near the target." },
   { kind: "grenadier", label: "Grenadier", role: "Splash", cost: 250, cooldown: 3, tech: "ordnance", tip: "Arcing launcher with splash that clears cover and clusters." },
   { kind: "mortar", label: "Mortar Team", role: "Indirect", cost: 300, cooldown: 3, tech: "ordnance", tip: "High-arc indirect fire that reaches over walls and ridges; hits hard and takes a beating." },
   { kind: "medic", label: "Medic", role: "Frontline Support", cost: 180, cooldown: 2, tech: "support", tip: "Heals wounded infantry near it each round — and the aura is short, so it has to stand in the line it is keeping alive. Tough for a support unit; barely armed." },
   { kind: "engineer", label: "Engineer", role: "Support", cost: 200, cooldown: 2, tech: "support", tip: "Repairs nearby vehicles and the Home Base, and its fire-control rig boosts nearby allies' damage." },
   { kind: "droneop", label: "Drone Operator", role: "Spotter", cost: 210, cooldown: 2, tech: "support", tip: "The longest eyes on the field: a 26m marker carbine and a drone whose optics sharpen nearby allies' fire. Almost no punch and the thinnest armour in the roster — keep it behind everything." },
-  { kind: "jumper", label: "Jump Trooper", role: "Vertical", cost: 270, cooldown: 2, tech: "assault", tip: "Jet pack. Its move is a jump: over cliffs, over water, over walls, onto the high ground — then it fires from up there. Airborne for the leap, so flak and interceptors can catch it mid-arc." },
+  { kind: "jumper", label: "Jump Trooper", role: "Vertical", cost: 270, cooldown: 2, tech: "assault", tip: "Jet pack. Its move is a jump: over cliffs, over water, over walls, onto the high ground — then it fires from up there. Land next to an enemy and the SLAM knocks it back and hurts. Airborne for the leap, so flak and interceptors can catch it mid-arc." },
   { kind: "flamer", label: "Flamer", role: "Burn", cost: 260, cooldown: 2, tech: "ordnance", tip: "Short-range flame projector. Every hit leaves burning ground for 2 turns — crouching won't help, RUN. Shoot its fuel tanks at your peril." },
   { kind: "sapper", label: "Scattergun", role: "Breacher", cost: 240, cooldown: 2, tech: "ordnance", tip: "Seven-pellet scattergun: brutal inside 5m and useless past 10 — the spread sweeps a whole clump at once. Also plants proximity mines ($15 each) and hits cover and walls 3x harder." },
-  { kind: "tank", label: "Tank", role: "Armor", cost: 400, cooldown: 3, tech: "armor", tip: "Heavily armored bruiser: massive HP, big gun, and can ram and crush cover." },
+  { kind: "tank", label: "Tank", role: "Armor", cost: 400, cooldown: 3, tech: "armor", tip: "Heavily armored bruiser: massive HP, big gun, and can ram and crush cover. HULL DOWN: a turn spent not moving settles it in — 30% less damage taken until it moves again." },
   { kind: "apc", label: "APC", role: "Vehicle", cost: 250, cooldown: 2, tech: "armor", tip: "Fast armored flanker; durable and quick, shrugs off small arms." },
   { kind: "artillery", label: "Artillery", role: "Siege", cost: 440, cooldown: 4, tech: "siege", tip: "Long-range siege gun; devastating at distance and tough, but helpless up close." },
   { kind: "flak", label: "Flak Track", role: "Anti-Air", cost: 260, cooldown: 2, tech: "armor", tip: "Dedicated anti-air: shreds aircraft at long range and its overwatch cone blankets the air lane. Weak against ground armor — it's a specialist, not a brawler." },

@@ -1290,7 +1290,9 @@ export class WorldRenderer {
         group.rotation.z += shift * 0.9;
         group.rotation.y += (Math.sin(t * 0.31) * 0.11 + Math.sin(t * 0.83) * 0.03) * idle;
       } else if (isVehicleKind(entity.kind)) {
-        group.position.y += Math.sin(t * 52) * 0.004 * idle;
+        // Hull down: the tank sits lower on its suspension and the engine tremor dies away.
+        if (entity.kind === "tank" && entity.hullDown) { group.position.y -= 0.09; group.rotation.x += 0.02; }
+        else group.position.y += Math.sin(t * 52) * 0.004 * idle;
         group.rotation.x += Math.sin(t * 0.7) * 0.006 * idle + Math.sin(t * 47) * 0.0025 * idle;
         group.rotation.z += Math.sin(t * 0.45) * 0.005 * idle;
       } else if (entity.kind === "turret" || entity.kind === "exturret") {
