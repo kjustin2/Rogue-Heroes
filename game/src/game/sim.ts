@@ -2317,7 +2317,9 @@ export class TacticalSim {
       // swing clock only starts once the blade is in reach.
       const swingReach = unitStats(actor.kind).meleeRange + actor.radius + target.radius;
       if (!order.fired && dist(actor.position, target.position) > swingReach + 0.05) {
-        actor.position = moveToward(actor.position, target.position, moveSpeed(actor) * 1.6 * dt);
+        const gap = dist(actor.position, target.position) - swingReach;
+        actor.position = moveToward(actor.position, target.position, Math.min(gap, moveSpeed(actor) * 1.6 * dt));
+        this.separateFromUnits(actor);
         this.syncEntityElevation(actor);
         this.checkOverwatch(actor);
         this.checkMines(actor);

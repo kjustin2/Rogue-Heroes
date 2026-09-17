@@ -913,7 +913,7 @@ describe("tactical simulation loop", () => {
 
   it("requires strikes to start adjacent and applies them to the selected part", () => {
     const target = createSoldier("target", "Target", "enemy", { x: 1.35, z: 0 });
-    const farTarget = createSoldier("far-target", "Far Target", "enemy", { x: 5, z: 0 });
+    const farTarget = createSoldier("far-target", "Far Target", "enemy", { x: 9, z: 0 }); // past the striker's 5m charge
     target.grenades = 0;
     farTarget.grenades = 0;
     const sim = new TacticalSim([
