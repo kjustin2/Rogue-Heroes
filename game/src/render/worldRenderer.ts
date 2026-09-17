@@ -9,9 +9,11 @@ import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/
 import { OVERWATCH_ARC_HALF } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec } from "../game/maps";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
-import { greyscaleOf, instantiate, kitGeometry, modelsVersion, type KitPart, type ModelKey } from "./models";
+import { greyscaleOf, instantiate, kitGeometry, modelsVersion, toonGradient, type KitPart, type ModelKey } from "./models";
 
-type PartMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
+// Part materials are toon (see partMaterial); PartMaterial names the shared shape both use.
+type PartMaterial = THREE.MeshToonMaterial;
+type PartMesh = THREE.Mesh<THREE.BufferGeometry, PartMaterial>;
 
 export interface WorldRenderDebug {
   previewLabels: number;
@@ -2647,10 +2649,9 @@ export class WorldRenderer {
         : new THREE.BoxGeometry(long ? 0.18 : 0.18 + i * 0.025, long ? 0.18 : 0.14 + (i % 3) * 0.045, long ? 0.92 : 0.24 + (i % 2) * 0.08);
       const mesh = new THREE.Mesh(
         geometry,
-        new THREE.MeshStandardMaterial({
+        new THREE.MeshToonMaterial({
           color,
-          roughness: 0.78,
-          metalness: part.role === "weapon" || part.role === "mobility" ? 0.28 : 0.08,
+          gradientMap: toonGradient(),
           emissive: part.role === "volatile" || part.id === "pack" || part.id === "comms" ? 0xff8d3a : 0x000000,
           emissiveIntensity: part.role === "volatile" ? 0.45 : part.id === "pack" || part.id === "comms" ? 0.22 : 0,
         })
@@ -6210,11 +6211,11 @@ const _partSpec: PartMatSpec = {
 };
 const _poolColor = new THREE.Color();
 const _poolEmissive = new THREE.Color();
-const partMaterialPool = new Map<number, THREE.MeshStandardMaterial>();
+const partMaterialPool = new Map<number, PartMaterial>();
 
 const q = (value: number, steps: number): number => Math.min(steps, Math.max(0, Math.round(value * steps)));
 
-function partMaterial(spec: PartMatSpec): THREE.MeshStandardMaterial {
+function partMaterial(spec: PartMatSpec): PartMaterial {
   const c = (q(spec.color.r, 63) * 64 + q(spec.color.g, 63)) * 64 + q(spec.color.b, 63);
   const e = (q(spec.emissive.r, 31) * 32 + q(spec.emissive.g, 31)) * 32 + q(spec.emissive.b, 31);
   const i = Math.min(127, Math.round(spec.emissiveIntensity / 0.05));
@@ -6222,18 +6223,20 @@ function partMaterial(spec: PartMatSpec): THREE.MeshStandardMaterial {
     + q(spec.opacity, 7) * 2 + (spec.depthWrite ? 1 : 0);
   let material = partMaterialPool.get(key);
   if (!material) {
-    material = new THREE.MeshStandardMaterial({
+    // Same stepped toon ramp as the stylized hulls (models.ts), so a trooper and the tank beside
+    // it shade in the same four bands. Roughness/metalness are kept in the pool key for the
+    // material identity but a toon material has neither; the ramp carries the read.
+    material = new THREE.MeshToonMaterial({
       vertexColors: true, // baked AO — see bakeVertexAO
       // One shared detail normal map (weave + plate scratches) on every part: this is what
       // separates "painted plastic" from "equipment" under the key light. Authored kit parts
       // export UVs for it; primitives have theirs already.
       normalMap: partDetailNormal(),
       normalScale: PART_DETAIL_NORMAL_SCALE,
+      gradientMap: toonGradient(),
       color: spec.color,
       emissive: spec.emissive,
       emissiveIntensity: i * 0.05,
-      roughness: q(spec.roughness, 15) / 15,
-      metalness: q(spec.metalness, 15) / 15,
       transparent: spec.transparent,
       opacity: q(spec.opacity, 7) / 7,
       depthWrite: spec.depthWrite,
@@ -6245,7 +6248,7 @@ function partMaterial(spec: PartMatSpec): THREE.MeshStandardMaterial {
 }
 
 /** Build-time entry point: the same pool, addressed by the hex colors the builders carry. */
-function pooledPartMaterial(color: number, emissive: number, emissiveIntensity: number, roughness: number, metalness: number): THREE.MeshStandardMaterial {
+function pooledPartMaterial(color: number, emissive: number, emissiveIntensity: number, roughness: number, metalness: number): PartMaterial {
   _partSpec.color.copy(_poolColor.setHex(color));
   _partSpec.emissive.copy(_poolEmissive.setHex(emissive));
   _partSpec.emissiveIntensity = emissiveIntensity;

@@ -177,9 +177,10 @@ function normalize(root: THREE.Object3D, targetSize: number): THREE.Group {
 
 // Four-step light ramp for the toon hulls: deep shade, shade, lit, highlight.
 let _toonGradient: THREE.DataTexture | undefined;
-function toonGradient(): THREE.DataTexture {
+export function toonGradient(): THREE.DataTexture {
   if (_toonGradient) return _toonGradient;
-  const data = new Uint8Array([84, 84, 84, 255, 150, 150, 150, 255, 214, 214, 214, 255, 255, 255, 255, 255]);
+  // Highlight band stops short of white: at 255 every lit crate and pillar bleached to cream.
+  const data = new Uint8Array([76, 76, 76, 255, 136, 136, 136, 255, 188, 188, 188, 255, 226, 226, 226, 255]);
   _toonGradient = new THREE.DataTexture(data, 4, 1, THREE.RGBAFormat);
   _toonGradient.minFilter = _toonGradient.magFilter = THREE.NearestFilter;
   _toonGradient.colorSpace = THREE.NoColorSpace;
