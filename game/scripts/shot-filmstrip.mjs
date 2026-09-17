@@ -30,6 +30,8 @@ try {
     }
     const actor = sim.debugSpawn(kind === "melee" ? "striker" : "soldier", "player", { x: -0.7, z: 0 });
     const target = sim.debugSpawn(kind === "melee" ? "heavy" : "soldier", "enemy", { x: kind === "melee" ? 0.7 : 3.2, z: 0 });
+    // "kill": the target is one hit from dead, so the strip shows the death fall.
+    if (kind === "kill") for (const p of target.parts) p.hp = Math.min(p.hp, 4);
     // The target must not shoot back in the same resolve, or the strip shows the striker's death
     // instead of the strike. Kill its weapon part; status re-derives from parts each turn.
     for (const part of target.parts) if (part.role === "weapon" || part.role === "mobility") part.hp = 0;
@@ -38,6 +40,7 @@ try {
     sim.select(actor.id);
     sim.setIntent(kind);
     const queued = kind === "melee" ? sim.queueMelee(target.id) : sim.queueShoot(target.id);
+    if (kind === "kill") { const o = sim.orders[sim.orders.length - 1]; if (o) o.aim = "center"; }
     const why = queued ? "" : sim.log.slice(0, 2);
     window.__rht.setView({ x: kind === "melee" ? 0 : 1.2, z: 0, zoom: 0.45, pitch: 0.5, yaw: 0.9 });
     window.__rht.deselect();
@@ -49,12 +52,14 @@ try {
   // straddle the whole 0.78s swing and show nothing of it.
   await page.evaluate((k) => { window.__rht.setResolveScale(k === "melee" ? 0.25 : k === "jump" ? 0.35 : 0.5); window.__rht.endTurn(); }, KIND);
   const frames = [];
+  // A kill strip starts at the impact, not the wind-up: wait for the log line, then film.
+  if (KIND === "kill") await page.waitForFunction(() => window.__rht.sim.log.some((l) => l.includes("killed by")), null, { timeout: 15000 }).catch(() => {});
   for (let i = 0; i < 12; i += 1) {
     // Pin the camera every frame: the resolve director otherwise pans off to whatever it rates.
     if (KIND !== "jump") await page.evaluate((k) => window.__rht.setView({ x: k === "melee" ? 0 : 1.2, z: 0, zoom: 0.45, pitch: 0.5, yaw: 0.9 }), KIND);
     frames.push(await page.screenshot({ clip: { x: 300, y: 120, width: 600, height: 420 } }));
 
-    await delay(40);
+    await delay(KIND === "kill" ? 120 : 40);
   }
   const tiles = await Promise.all(frames.map((b) => sharp(b).resize(400, 280).png().toBuffer()));
   await sharp({ create: { width: 1600, height: 840, channels: 3, background: "#000" } })

@@ -1187,7 +1187,17 @@ export class WorldRenderer {
       this.entityRoot.add(group);
     }
     group.userData.ghosted = ghosted;
-    group.visible = entity.status.alive;
+    // DEATH. A unit used to vanish on the frame it died. Now: the group stays for DEATH_MS,
+    // falling in the direction of the killing shot (the last flinch record) -- infantry topple
+    // forward or back, a vehicle just settles -- and sinks out of sight at the end.
+    if (!entity.status.alive && group.userData.diedAt === undefined && entity.kind !== "cover") {
+      group.userData.diedAt = performance.now();
+      const last = this.flinchByEntity.get(entity.id);
+      group.userData.deathDir = last ? { dx: last.dx, dz: last.dz } : { dx: Math.sin(entity.yaw), dz: Math.cos(entity.yaw) };
+    }
+    if (entity.status.alive) group.userData.diedAt = undefined;
+    const dying = !entity.status.alive && group.userData.diedAt !== undefined && performance.now() - (group.userData.diedAt as number) < DEATH_MS;
+    group.visible = entity.status.alive || dying;
     const previousPosition = group.userData.previousPosition as Vec2 | undefined;
     const moved = previousPosition ? dist(previousPosition, entity.position) : 0;
     const moving = entity.kind !== "cover" && moved > 0.001 && !(entity.flying && isInfantryKind(entity.kind));
@@ -1367,6 +1377,25 @@ export class WorldRenderer {
       group.position.z += (dz / len) * drive * reach;
       group.rotation.x += Math.max(0, drive) * 0.22;
       group.position.y -= Math.max(0, drive) * 0.06;
+    }
+    if (dying) {
+      const t = Math.min(1, (performance.now() - (group.userData.diedAt as number)) / DEATH_MS);
+      const dir = group.userData.deathDir as { dx: number; dz: number };
+      // Fall: fast at first, then settle (ease-out), then sink over the last third.
+      const fall = 1 - Math.pow(1 - Math.min(1, t * 1.6), 2.2);
+      const sink = Math.max(0, (t - 0.66) / 0.34);
+      if (isInfantryKind(entity.kind)) {
+        // Rotate about the feet toward the shove direction, expressed in the group's own yaw frame.
+        const local = Math.atan2(dir.dx, dir.dz) - entity.yaw;
+        group.rotation.x += Math.cos(local) * 1.35 * fall;
+        group.rotation.z -= Math.sin(local) * 1.35 * fall;
+        group.position.y -= 0.08 * fall;
+      } else {
+        group.position.y -= 0.14 * fall;
+        group.rotation.z += dir.dx * 0.06 * fall;
+        group.rotation.x += dir.dz * 0.06 * fall;
+      }
+      group.position.y -= sink * 1.6;
     }
     // Hit flinch: the struck unit lurches away from the shooter with a quick pitch + roll
     // shudder and a brief downward absorb, so a landed hit reads as a physical reaction.
@@ -3910,6 +3939,8 @@ const DAMAGE_NUMBER_MS = 950;
 const DAMAGE_FLASH_MS = 320;
 // How long a whole-body hit flinch lasts (ms). Short + snappy — a strike, not a stumble.
 const FLINCH_MS = 300;
+// A dead unit stays on the board this long: the fall, a beat, then it sinks away.
+const DEATH_MS = 2600;
 const MAX_FLOATING_NUMBERS = 24;
 
 // Ceiling height (world units) the ambient particle bed drifts within.

@@ -3326,7 +3326,9 @@ export class TacticalSim {
     if (messages.some((message) => message.includes("killed by"))) {
       // A blade kill is a second, harder strike, not a fireball.
       if (source === "Strike") this.effect("strike", actor.position, target.position, 0xfff1a6, 0.6, target.radius + 1.4);
-      else this.effect("blast", target.position, target.position, 0xffd166, 0.78, target.radius + 2.1);
+      // A trooper dropped by a rifle round is not an explosion. Infantry get a tight flash; only
+      // vehicles and structures go up with the big dome.
+      else this.effect("blast", target.position, target.position, 0xffd166, isInfantryKind(target.kind) ? 0.5 : 0.78, target.radius + (isInfantryKind(target.kind) ? 0.5 : 2.1));
     } else if (messages.some((message) => message.includes("destroyed"))) {
       this.effect("impact", target.position, target.position, 0xffbf69, 0.5, target.radius + 0.75);
     }
