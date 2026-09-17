@@ -77,6 +77,7 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "defend", label: "Crouch", tip: "Infantry only. Improves accuracy and makes head shots harder, but slows the next move." },
   { id: "overwatch", label: "Overwatch", tip: "Hold fire until a hostile MOVES within watch range this resolve, then take a snap reaction shot (reduced accuracy). Costs 1 CP." },
   { id: "mine", label: "Mine", tip: "Sapper only. Plant a proximity mine at this spot ($15 + 1 CP). Hostiles that step on it eat a splash blast. Invisible to the enemy." },
+  { id: "smoke", label: "Smoke", tip: "Mortar only. Lob a smoke round at a spot (1 CP, mortar range). The cloud lasts 3 turns and swallows every flat shot through it — arcing rounds still sail over." },
   { id: "load", label: "Load", tip: "Transport only. Click a friendly ground unit to airlift it aboard. Costs 1 CP." },
   { id: "unload", label: "Unload", tip: "Transport only. Click ground to fly there and set your passengers down. Costs 1 CP." },
 ];
@@ -95,6 +96,7 @@ export interface HudCallbacks {
   queueShootPart(id: string, partId: string): boolean;
   queueGrenadePart(id: string, partId: string): boolean;
   queueGrenadeAt(destination: Vec2): boolean;
+  queueSmokeAt(destination: Vec2): boolean;
   queueBombDrop(): boolean;
   queueLoad(passengerId: string): boolean;
   queueUnload(destination: Vec2): boolean;
@@ -291,6 +293,14 @@ export class Hud {
         this.action = "select";
         this.targetId = undefined;
         this.targetPartId = undefined;
+        this.callbacks.setIntent("select");
+      }
+      return;
+    }
+    // Smoke: the mortar lobs a smoke round onto the clicked ground point.
+    if (this.action === "smoke" && this.sim.phase === "command") {
+      if (this.callbacks.queueSmokeAt(destination)) {
+        this.action = "select";
         this.callbacks.setIntent("select");
       }
       return;
@@ -1946,6 +1956,7 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
   if (action === "defend") return !isInfantryKind(actor.kind) || !actor.status.canMove;
   if (action === "overwatch") return Boolean(sim.overwatchFailureReason(actor));
   if (action === "mine") return Boolean(sim.mineFailureReason(actor));
+  if (action === "smoke") return Boolean(sim.smokeFailureReason(actor));
   if (action === "load") return actor.kind !== "transport" || !actor.status.canMove || (actor.passengerIds?.length ?? 0) >= 2;
   if (action === "unload") return actor.kind !== "transport" || !(actor.passengerIds?.length);
   return false;
@@ -1974,6 +1985,7 @@ function actionApplicable(action: Intent, actor: CombatEntity | undefined): bool
   if (action === "melee" || action === "defend") return isInfantryKind(actor.kind);
   if (action === "overwatch") return !isBuildingKind(actor.kind) && !isDefenseKind(actor.kind);
   if (action === "mine") return actor.kind === "sapper";
+  if (action === "smoke") return actor.kind === "mortar";
   if (action === "load" || action === "unload") return actor.kind === "transport";
   if (action === "grenade") return (actor.kind === "soldier" || actor.flying === true) && actor.maxGrenades > 0;
   if (action === "shoot" || action === "move") return true;
@@ -1992,6 +2004,7 @@ function actionDisabledReason(action: Intent, actor: CombatEntity | undefined, s
   if (action === "grenade" && actor.grenades <= 0) return `${actor.name} is out of grenades.`;
   if (action === "overwatch") return sim.overwatchFailureReason(actor) ?? undefined;
   if (action === "mine") return sim.mineFailureReason(actor) ?? undefined;
+  if (action === "smoke") return sim.smokeFailureReason(actor) ?? undefined;
   if (action === "load" && (actor.passengerIds?.length ?? 0) >= 2) return "The transport is full.";
   if (action === "unload" && !(actor.passengerIds?.length)) return "The transport is empty.";
   return undefined;
@@ -2004,6 +2017,7 @@ function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: Tac
   if (action === "defend") return isInfantryKind(actor.kind) && actor.status.canMove;
   if (action === "overwatch") return actor.status.canShoot && !isBuildingKind(actor.kind) && !isDefenseKind(actor.kind);
   if (action === "mine") return actor.kind === "sapper";
+  if (action === "smoke") return actor.kind === "mortar" && actor.status.canShoot;
   if (action === "load" || action === "unload") return actor.kind === "transport";
   if (action === "grenade") return (actor.kind === "soldier" || actor.flying === true) && actor.maxGrenades > 0;
   if (action === "shoot") return actor.status.canShoot;

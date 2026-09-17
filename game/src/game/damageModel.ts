@@ -112,6 +112,14 @@ export interface CombatEntity {
   suppressedUntilTurn?: number;
   // HULL DOWN: a tank that did not move this resolve takes 30% less damage until it moves.
   hullDown?: boolean;
+  // DOWNED (medic stabilise): an infantry unit that would have died with a friendly medic in reach
+  // lies as a body instead — alive but inert and untargetable — until the next turn start, when a
+  // medic still in reach revives it or it dies for real.
+  downed?: boolean;
+  // MARKED (sniper): after a sniper fires at this unit, every other friendly shooter is more
+  // accurate against it until the turn stamped here has passed.
+  markedUntilTurn?: number;
+  markedById?: string;
 }
 
 export interface CoverOptions {
@@ -1009,7 +1017,7 @@ export function recomputeStatus(entity: CombatEntity): void {
   entity.status.canMove = alive && (isInfantryKind(entity.kind) || isVehicleKind(entity.kind)) && allMobilityIntact;
   entity.status.canShoot = alive && hasWeapon && intactWeapon && !turretLocked && entity.kind !== "striker";
 
-  if (!alive) {
+  if (!alive || entity.downed) {
     entity.commandPoints = 0;
     entity.status.canMove = false;
     entity.status.canShoot = false;
