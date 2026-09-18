@@ -63,7 +63,7 @@ import {
   type Team,
 } from "./damageModel";
 import { createScenario } from "./scenario";
-import { DEFAULT_TERRAIN, TERRAIN_STEP, ARENA_BOUNDS, clampToArena, nearestDryPoint, setActiveTerrain, terrainHeightAt, pointInWater } from "./terrain";
+import { DEFAULT_TERRAIN, TERRAIN_STEP, ARENA_BOUNDS, clampToArena, nearestDryPoint, onTerrainEdge, setActiveTerrain, terrainHeightAt, pointInWater } from "./terrain";
 import { TROOP_CATALOG, troopSpec, defenseSpec, supportPowerSpec, unitStats, type TroopKind, type DefenseKind, type SupportPowerKind, type ProjectileKind } from "./units";
 import { TECH_TREE, techNode, aggregateTechEffect, type TechNode, type TechEffect } from "./tech";
 import { modeDef, type ModeId } from "./modes";
@@ -1322,7 +1322,10 @@ export class TacticalSim {
     const prefix = base.team === "player" ? "p" : "e";
     const id = `${prefix}-spawn-${++this.troopSeq}`;
     const name = `${spec.label} ${this.troopSeq}`;
-    const spawnAt = makeTroop(kind, id, name, base.team, this.freeSpawnNear(base));
+    const spawnAt = makeTroop(kind, id, name, base.team, base.position);
+    // Clearance is sized to THIS unit: a tank fielded with an infantry-sized gap sat inside the
+    // nearest crate or wall.
+    spawnAt.position = this.freeSpawnNear(base, spawnAt.radius);
     if (!spawnAt.flying) spawnAt.position = nearestDryPoint(spawnAt.position);
     const unit = spawnAt;
     // Difficulty scaling: enemy units field with more health on higher difficulties.
@@ -1590,17 +1593,18 @@ export class TacticalSim {
   }
 
   // A clear deployment spot just outside the base, fanning out on the unit's own side.
-  private freeSpawnNear(base: CombatEntity): Vec2 {
-    const ring = base.radius + 1.6;
+  private freeSpawnNear(base: CombatEntity, unitRadius = 0.5): Vec2 {
+    const ring = base.radius + unitRadius + 1.1;
     const forward = base.team === "player" ? 1 : -1;
-    for (let radius = ring; radius <= ring + 3; radius += 0.8) {
-      for (let i = 0; i < 8; i += 1) {
-        const angle = (Math.PI * 2 * i) / 8 + (forward > 0 ? 0 : Math.PI);
+    for (let radius = ring; radius <= ring + 6; radius += 0.8) {
+      for (let i = 0; i < 12; i += 1) {
+        const angle = (Math.PI * 2 * i) / 12 + (forward > 0 ? 0 : Math.PI);
         const point = clampToArena({
           x: base.position.x + Math.sin(angle) * radius,
           z: base.position.z + Math.cos(angle) * radius,
         });
-        const blocked = this.entities.some((e) => e.id !== base.id && e.status.alive && dist(e.position, point) < e.radius + 0.8);
+        const blocked = this.entities.some((e) => e.id !== base.id && e.status.alive && !e.carriedById && dist(e.position, point) < e.radius + unitRadius + 0.3)
+          || onTerrainEdge(point, unitRadius * 0.8);
         if (!blocked) return point;
       }
     }
@@ -1783,6 +1787,9 @@ export class TacticalSim {
     }
     unit.commandPoints = unit.maxCommandPoints;
     this.entities.push(unit);
+    // Scenario staging drops units at literal offsets; push them out of whatever prop or body is
+    // already there so a staged column never starts inside a crate.
+    this.separateFromUnits(unit);
     this.syncEntityElevation(unit);
     return unit;
   }
@@ -1800,6 +1807,11 @@ export class TacticalSim {
     if (team === "enemy") scaleEntityHp(structure, DIFFICULTY_MODS[this.difficulty].enemyHp);
     this.entities.push(structure);
     this.syncEntityElevation(structure);
+    // A staged wall lands where it is put; whatever was standing there steps aside.
+    for (const other of this.entities) {
+      if (other.id === structure.id || !other.status.alive || other.flying || other.kind === "cover" || isBuildingKind(other.kind) || isDefenseKind(other.kind)) continue;
+      if (dist(other.position, structure.position) < other.radius + structure.radius) this.separateFromUnits(other);
+    }
     return structure;
   }
 

@@ -224,8 +224,12 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
       );
       placed.push({ x, z, r: sig.radius ?? profile.radius });
     };
-    place(sig.x, sig.z);
-    if (sig.mirror && Math.abs(sig.x - center.x) > 0.3) place(2 * center.x - sig.x, 2 * center.z - sig.z);
+    // An authored spot that lands on a block edge after map scaling is nudged to the nearest flat
+    // ground, so the prop never straddles a step (half floating, half buried); the mirror copies
+    // the nudged point so the layout stays symmetric.
+    const at = nudgeOffEdge({ x: sig.x, z: sig.z }, sig.radius ?? profile.radius);
+    place(at.x, at.z);
+    if (sig.mirror && Math.abs(sig.x - center.x) > 0.3) place(2 * center.x - at.x, 2 * center.z - at.z);
   }
 
   // Scatter groups, generated in the west half and mirrored east for fairness.
@@ -252,6 +256,20 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
   }
 
   return objects;
+}
+
+// Slide a point to the nearest spot whose footprint sits on one level (spiral search, 0.5m rings).
+function nudgeOffEdge(p: Vec2, r: number): Vec2 {
+  const margin = Math.min(0.7, r * 0.8);
+  if (!onTerrainEdge(p, margin)) return p;
+  for (let ring = 0.5; ring <= 4; ring += 0.5) {
+    for (let i = 0; i < 12; i += 1) {
+      const a = (Math.PI * 2 * i) / 12;
+      const q = { x: p.x + Math.cos(a) * ring, z: p.z + Math.sin(a) * ring };
+      if (!onTerrainEdge(q, margin) && !pointInWater(q)) return q;
+    }
+  }
+  return p;
 }
 
 // Reject spots straddling a block edge (cliff face) or on tall stacked tops, so props sit

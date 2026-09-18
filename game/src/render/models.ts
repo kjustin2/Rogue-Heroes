@@ -23,9 +23,9 @@ export type ModelKey =
 // Horizontal footprint (max of width/length, world units) each model is scaled to —
 // matched to the procedural builder it replaces so silhouettes read at gameplay scale.
 const TARGET_SIZE: Record<ModelKey, number> = {
-  tank: 3.4,
-  apc: 3.2,
-  artillery: 4.2,
+  tank: 3.2,
+  apc: 2.9,
+  artillery: 3.5,
   hq: 3.6,
   turret: 2.3,
   barricade: 1.9,

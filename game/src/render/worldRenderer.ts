@@ -1302,8 +1302,28 @@ export class WorldRenderer {
     const bob = isInfantryKind(entity.kind) ? (0.5 + 0.5 * Math.cos(motionTime * 1.6 * 2)) * 0.05 * walkWeight : 0;
     // Ease the rendered ground height so stepping on/off cover or terrain ledges glides
     // instead of snapping.
+    // FEET ON THE GROUND. The sim's elevation is the terrain height under the unit's CENTRE, so a
+    // walker approaching a step sank into the block face until its centre crossed the edge, and a
+    // unit on a ground plate stood up to 6cm inside it. The rendered height is the highest walkable
+    // ground under the FOOTPRINT (never a cliff face — that would hoist a unit standing at its foot)
+    // plus the plate it stands on, eased quickly on the way up and gently on the way down.
+    let targetElevation = entity.elevation;
+    if (!entity.flying && entity.kind !== "cover" && !isBuildingKind(entity.kind) && entity.status.alive) {
+      const centreGround = terrainHeightAt(entity.position);
+      const r = entity.radius * 0.7;
+      let footprint = visualGroundAt(entity.position);
+      for (const [dx, dz] of [[r, 0], [-r, 0], [0, r], [0, -r]] as const) {
+        footprint = Math.max(footprint, visualGroundAt({ x: entity.position.x + dx, z: entity.position.z + dz }));
+      }
+      // Never more than one walkable step above the sim's ground: a unit at a cliff's foot stands
+      // on the talus, not halfway up the face.
+      const stepUp = Math.min(TERRAIN_STEP, footprint - centreGround);
+      if (stepUp > 0) targetElevation += stepUp;
+      if (Math.abs(entity.elevation - centreGround) < 0.01) targetElevation += plateLiftAt(entity.position, centreGround);
+    }
     const prevElevation = group.userData.renderElevation as number | undefined;
-    const renderElevation = prevElevation === undefined ? entity.elevation : prevElevation + (entity.elevation - prevElevation) * 0.2;
+    const ease = prevElevation !== undefined && targetElevation > prevElevation ? 0.45 : 0.2;
+    const renderElevation = prevElevation === undefined ? targetElevation : prevElevation + (targetElevation - prevElevation) * ease;
     group.userData.renderElevation = renderElevation;
     group.position.set(entity.position.x, renderElevation + bob, entity.position.z);
     // PER-INSTANCE VARIETY on scenery. Every rock, tree and crate was the same mesh at the same
@@ -5613,7 +5633,21 @@ function rewriteWorldUvs(geometry: THREE.BufferGeometry, tile: number): void {
   uv.needsUpdate = true;
 }
 
+// Where the cosmetic ground plates lie (centre, nominal radius, top height), so units can stand ON
+// them instead of in them. Rebuilt with the plates; read by plateLiftAt every frame per unit.
+const plateDiscs: { x: number; z: number; r: number; y: number }[] = [];
+function plateLiftAt(point: Vec2, groundHeight: number): number {
+  if (groundHeight > 0.001) return 0; // plates only lie on the arena floor
+  let lift = 0;
+  for (const disc of plateDiscs) {
+    const dx = point.x - disc.x, dz = point.z - disc.z;
+    if (dx * dx + dz * dz <= disc.r * disc.r && disc.y > lift) lift = disc.y;
+  }
+  return lift;
+}
+
 function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface: GroundSurface): THREE.Group {
+  plateDiscs.length = 0;
   const group = new THREE.Group();
   group.name = "plates";
   let seed = 0x51ed5eed ^ (theme.ground >>> 0);
@@ -5655,17 +5689,21 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
       // those read as arrowheads and cut corners lying on the ground, i.e. as a rendering glitch
       // rather than as terrain. A polygon whose every rim vertex is jittered has neither.
       for (let k = 0; k < 3; k += 1) {
+        const blobRadius = 6 + rand() * 9;
+        const blobX = cx + (rand() - 0.5) * 9;
+        const blobY = 0.06 - (vi * 3 + k) * 0.005;
+        plateDiscs.push({ x: blobX, z: 0, r: blobRadius * 0.92, y: blobY });
         parts.push(blobGeometry(
-          6 + rand() * 9,
-          cx + (rand() - 0.5) * 9,
+          blobRadius,
+          blobX,
           // 6cm above grade, 5mm per blob AND per variant (nine steps, lowest 2cm). The floor top is
           // at -0.02 and a water surface at -0.015; a 2mm stagger from y=0 put plates within the depth buffer's
           // resolution of both at the far edge of a large map. Worse, the three variants are separate
           // meshes whose k-th blobs sat at IDENTICAL heights, so wherever a light patch overlapped a
           // dark one they were exactly coplanar and fought — the dashed "teeth" along patch rims that
           // survived every shadow-bias change because they were never a shadow (ledger #3).
-          0.06 - (vi * 3 + k) * 0.005,
-          cz + (rand() - 0.5) * 9,
+          blobY,
+          (plateDiscs[plateDiscs.length - 1].z = cz + (rand() - 0.5) * 9),
           rand,
         ));
       }
@@ -5726,12 +5764,35 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
  * calls no matter how many blocks a map authors, and it structurally prevents the cap-overlap
  * shadow bug: there is only ever one cap mesh, so no two caps can fight in the depth pass.
  */
+/**
+ * The ground as DRAWN, not as simulated: makeTerrainBlocks flares each rise into three tiers that
+ * spread past the authored footprint (talus), so a walker's feet meet the drawn surface up to
+ * `flare` outside the block. Units are placed on this so they climb the talus instead of wading
+ * through it. Same tier constants as makeTerrainBlocks — change both together.
+ */
+// Thickness of a rise's cap slab (shared by visualGroundAt and makeTerrainBlocks).
+const CAP = 0.1;
+function visualGroundAt(point: Vec2): number {
+  let height = terrainHeightAt(point);
+  for (const block of terrainBlocks()) {
+    const bodyHeight = Math.max(0.05, block.height - CAP);
+    const flare = Math.min(0.55, Math.max(0.12, bodyHeight * 0.34));
+    const dx = Math.max(block.minX - point.x, point.x - block.maxX, 0);
+    const dz = Math.max(block.minZ - point.z, point.z - block.maxZ, 0);
+    const t = Math.max(dx, dz);
+    if (t <= 0 || t > flare) continue;
+    const tier = t <= flare * 0.45 ? bodyHeight * 0.62 : bodyHeight * 0.3;
+    if (tier > height) height = tier;
+  }
+  return height;
+}
+
 function makeTerrainBlocks(groundColor: number, accentColor: number, surface: GroundSurface): THREE.Group {
   const group = new THREE.Group();
   // The cap stays near the ground tone so a mesa reads as a rise OF the battlefield rather than a
   // pale slab sitting on it; the lit and shadowed rock faces carry the height read instead.
   const capColor = new THREE.Color(accentColor).lerp(new THREE.Color(groundColor), 0.45);
-  const CAP = 0.1;
+
 
   const sides: THREE.BufferGeometry[] = [];
   const caps: THREE.BufferGeometry[] = [];

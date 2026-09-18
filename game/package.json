@@ -51,7 +51,8 @@
     "test:full": "npm run verify && npm run smoke:core",
     "desktop": "electron .",
     "standalone": "npm run build && electron .",
-    "dist:exe": "npm run build && electron-builder --win portable"
+    "dist:exe": "npm run build && electron-builder --win portable",
+    "shots:step": "node scripts/shot-step.mjs"
   },
   "author": "Rogue Heroes",
   "build": {

@@ -229,7 +229,9 @@ function createVehicle(
 
 export function createTank(id: string, name: string, team: Team, position: Vec2): CombatEntity {
   return createVehicle(id, name, "tank", team, position, {
-    radius: 1.45,
+    // Radii cover the HULL's half-length (models.ts TARGET_SIZE / 2): a circle smaller than the
+    // hull let tanks park inside crates and walls.
+    radius: 1.6,
     height: 1.55,
     hullHp: 120,
     turretHp: 55,
@@ -244,7 +246,7 @@ export function createTank(id: string, name: string, team: Team, position: Vec2)
 
 export function createApc(id: string, name: string, team: Team, position: Vec2): CombatEntity {
   return createVehicle(id, name, "apc", team, position, {
-    radius: 1.25,
+    radius: 1.45,
     height: 1.4,
     hullHp: 92,
     turretHp: 40,
@@ -259,7 +261,7 @@ export function createApc(id: string, name: string, team: Team, position: Vec2):
 
 export function createArtillery(id: string, name: string, team: Team, position: Vec2): CombatEntity {
   return createVehicle(id, name, "artillery", team, position, {
-    radius: 1.4,
+    radius: 1.75,
     height: 1.5,
     hullHp: 86,
     turretHp: 44,
