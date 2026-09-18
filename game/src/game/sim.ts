@@ -140,7 +140,10 @@ export const DEPOT_INCOME = 25;
 // Loose cash caches scattered on the field: run a unit over one to bank it. How close a unit
 // must get to grab it, and the min/spread of cash per cache.
 const PICKUP_REACH = 0.95;
-const TRANSPORT_CAPACITY = 2; // how many ground units an air transport can carry at once
+const TRANSPORT_CAPACITY = 2; // how many ground units an air transport (or an APC) can carry at once
+// APC carry: the ground lift needs the passenger beside the hull, and unloads beside it too.
+const APC_LOAD_REACH = 1.2;
+const APC_UNLOAD_REACH = 3;
 // STRIKER CHARGE: metres of free closing distance folded into the strike order.
 export const STRIKER_CHARGE = 5;
 // Hull-down tanks take this fraction of incoming shot damage.
@@ -963,21 +966,25 @@ export class TacticalSim {
     return this.queueGrenadeAt(actor.position);
   }
 
-  // ---- Air transport: load a friendly ground unit, fly it, and unload it ----
+  // ---- Transport / APC carry: load a friendly ground unit, carry it, and unload it ----
+  // The air transport flies to its passenger and to the unload point; the APC is the two-seat
+  // GROUND version — it takes aboard whoever is beside it and sets them down beside it.
 
   private loadFailureReason(actor: CombatEntity | undefined, passenger: CombatEntity | undefined): string | undefined {
-    if (!actor || actor.kind !== "transport") return "Only a transport can airlift units";
-    if (!actor.status.alive || !actor.status.canMove) return `${actor.name} can't fly`;
+    if (!actor || !isCarrierKind(actor.kind)) return "Only a transport or APC can carry units";
+    if (!actor.status.alive || !actor.status.canMove) return `${actor.name} can't move`;
     if (actor.commandPoints <= 0) return `${actor.name} has no command points`;
     if ((actor.passengerIds?.length ?? 0) >= TRANSPORT_CAPACITY) return `${actor.name} is full (${TRANSPORT_CAPACITY} aboard)`;
     if (!passenger || !passenger.status.alive) return "Pick a friendly unit to airlift";
     if (passenger.id === actor.id || passenger.team !== actor.team) return "Can only airlift your own units";
     if (passenger.flying || isBuildingKind(passenger.kind) || isDefenseKind(passenger.kind) || passenger.kind === "cover") return "That unit can't be airlifted";
     if (passenger.carriedById) return `${passenger.name} is already aboard`;
+    if (actor.kind === "apc" && (!isInfantryKind(passenger.kind) || passenger.kind === "jumper")) return "An APC only carries foot troops";
+    if (actor.kind === "apc" && dist(actor.position, passenger.position) > actor.radius + passenger.radius + APC_LOAD_REACH) return `${passenger.name} must be beside the APC to board`;
     return undefined;
   }
 
-  /** Whether the selected transport could pick up the given unit (for HUD affordances). */
+  /** Whether the selected transport / APC could pick up the given unit (for HUD affordances). */
   canAirlift(passengerId: string): boolean {
     return !this.loadFailureReason(this.selected, this.entity(passengerId));
   }
@@ -988,17 +995,19 @@ export class TacticalSim {
     const failure = this.loadFailureReason(actor, passenger);
     if (failure) return this.reject(failure);
     if (!spendCommandPoint(actor!)) return this.reject(`${actor!.name} has no command points`);
-    this.addOrder({ actorId: actor!.id, kind: "load", targetId: passengerId, aim: "center", duration: 2.6 });
+    this.addOrder({ actorId: actor!.id, kind: "load", targetId: passengerId, aim: "center", duration: actor!.kind === "apc" ? 1.2 : 2.6 });
     return true;
   }
 
   queueUnload(destination: Vec2): boolean {
     const actor = this.requirePlayerActor();
     if (!actor) return false;
-    if (actor.kind !== "transport") return this.reject(`${actor.name} isn't a transport`);
+    if (!isCarrierKind(actor.kind)) return this.reject(`${actor.name} can't carry units`);
     if (!(actor.passengerIds?.length)) return this.reject(`${actor.name} isn't carrying anyone`);
+    const point = clampToArena(destination);
+    if (actor.kind === "apc" && dist(actor.position, point) > actor.radius + APC_UNLOAD_REACH) return this.reject("An APC sets its troops down beside itself — pick a spot next to it");
     if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
-    this.addOrder({ actorId: actor.id, kind: "unload", destination: clampToArena(destination), aim: "center", duration: 2.4 });
+    this.addOrder({ actorId: actor.id, kind: "unload", destination: point, aim: "center", duration: actor.kind === "apc" ? 1.2 : 2.4 });
     return true;
   }
 
@@ -2396,7 +2405,7 @@ export class TacticalSim {
         passenger.carriedById = actor.id;
         passenger.position = { ...actor.position };
         this.syncEntityElevation(passenger);
-        this.pushLog(`${actor.name} airlifts ${passenger.name} aboard`);
+        this.pushLog(actor.kind === "apc" ? `${passenger.name} boards ${actor.name}` : `${actor.name} airlifts ${passenger.name} aboard`);
         order.done = true;
         return;
       }
@@ -2413,7 +2422,8 @@ export class TacticalSim {
         return;
       }
       actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
-      if (dist(actor.position, order.destination) <= actor.radius + 0.5 || order.elapsed >= order.duration) {
+      // An APC does not drive to the point: the ramp drops where it stands, beside the hull.
+      if (actor.kind === "apc" || dist(actor.position, order.destination) <= actor.radius + 0.5 || order.elapsed >= order.duration) {
         this.dropPassengers(actor);
         order.done = true;
         return;
@@ -5339,6 +5349,11 @@ function canUseHandGrenade(entity: CombatEntity): boolean {
 
 // Aircraft that bomb (gunship, and later the Bomber): their bomb falls STRAIGHT DOWN from the
 // aircraft instead of being lobbed at a distant point, so it's aimed by flying over the target.
+/** Kinds that can take ground units aboard: the air transport and the APC. */
+function isCarrierKind(kind: EntityKind): boolean {
+  return kind === "transport" || kind === "apc";
+}
+
 function isAirBomber(entity: CombatEntity): boolean {
   return entity.flying === true && grenadeThrowRange(entity) > 0;
 }

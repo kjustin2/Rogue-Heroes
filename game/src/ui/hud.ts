@@ -78,8 +78,8 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "overwatch", label: "Overwatch", tip: "Hold fire until a hostile MOVES within watch range this resolve, then take a snap reaction shot (reduced accuracy). Costs 1 CP." },
   { id: "mine", label: "Mine", tip: "Sapper only. Plant a proximity mine at this spot ($15 + 1 CP). Hostiles that step on it eat a splash blast. Invisible to the enemy." },
   { id: "smoke", label: "Smoke", tip: "Mortar only. Lob a smoke round at a spot (1 CP, mortar range). The cloud lasts 3 turns and swallows every flat shot through it — arcing rounds still sail over." },
-  { id: "load", label: "Load", tip: "Transport only. Click a friendly ground unit to airlift it aboard. Costs 1 CP." },
-  { id: "unload", label: "Unload", tip: "Transport only. Click ground to fly there and set your passengers down. Costs 1 CP." },
+  { id: "load", label: "Load", tip: "Transport / APC. Click a friendly ground unit to take it aboard (a transport flies to it; an APC needs it beside the hull). Costs 1 CP." },
+  { id: "unload", label: "Unload", tip: "Transport / APC. Click ground to set your passengers down (a transport flies there; an APC drops the ramp beside itself). Costs 1 CP." },
   { id: "recon", label: "Recon", tip: "Drone Operator only. Spend the whole turn on a drone pulse: next turn, every enemy unit's planned order is shown on the board." },
 ];
 
@@ -2021,10 +2021,15 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
   if (action === "overwatch") return Boolean(sim.overwatchFailureReason(actor));
   if (action === "mine") return Boolean(sim.mineFailureReason(actor));
   if (action === "smoke") return Boolean(sim.smokeFailureReason(actor));
-  if (action === "load") return actor.kind !== "transport" || !actor.status.canMove || (actor.passengerIds?.length ?? 0) >= 2;
-  if (action === "unload") return actor.kind !== "transport" || !(actor.passengerIds?.length);
+  if (action === "load") return !isCarrier(actor) || !actor.status.canMove || (actor.passengerIds?.length ?? 0) >= 2;
+  if (action === "unload") return !isCarrier(actor) || !(actor.passengerIds?.length);
   if (action === "recon") return Boolean(sim.reconFailureReason(actor));
   return false;
+}
+
+// Transport and APC both carry (the sim's isCarrierKind).
+function isCarrier(actor: CombatEntity): boolean {
+  return actor.kind === "transport" || actor.kind === "apc";
 }
 
 // Mirrors the sim's melee-weapon check: a unit needs an intact weapon part to bayonet/strike,
@@ -2051,7 +2056,7 @@ function actionApplicable(action: Intent, actor: CombatEntity | undefined): bool
   if (action === "overwatch") return !isBuildingKind(actor.kind) && !isDefenseKind(actor.kind);
   if (action === "mine") return actor.kind === "sapper";
   if (action === "smoke") return actor.kind === "mortar";
-  if (action === "load" || action === "unload") return actor.kind === "transport";
+  if (action === "load" || action === "unload") return isCarrier(actor);
   if (action === "recon") return actor.kind === "droneop";
   if (action === "grenade") return (actor.kind === "soldier" || actor.flying === true) && actor.maxGrenades > 0;
   if (action === "shoot" || action === "move") return true;
@@ -2071,8 +2076,8 @@ function actionDisabledReason(action: Intent, actor: CombatEntity | undefined, s
   if (action === "overwatch") return sim.overwatchFailureReason(actor) ?? undefined;
   if (action === "mine") return sim.mineFailureReason(actor) ?? undefined;
   if (action === "smoke") return sim.smokeFailureReason(actor) ?? undefined;
-  if (action === "load" && (actor.passengerIds?.length ?? 0) >= 2) return "The transport is full.";
-  if (action === "unload" && !(actor.passengerIds?.length)) return "The transport is empty.";
+  if (action === "load" && (actor.passengerIds?.length ?? 0) >= 2) return `${actor.kind === "apc" ? "The APC" : "The transport"} is full.`;
+  if (action === "unload" && !(actor.passengerIds?.length)) return `${actor.kind === "apc" ? "The APC" : "The transport"} is empty.`;
   if (action === "recon") return sim.reconFailureReason(actor) ?? undefined;
   return undefined;
 }
@@ -2085,7 +2090,7 @@ function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: Tac
   if (action === "overwatch") return actor.status.canShoot && !isBuildingKind(actor.kind) && !isDefenseKind(actor.kind);
   if (action === "mine") return actor.kind === "sapper";
   if (action === "smoke") return actor.kind === "mortar" && actor.status.canShoot;
-  if (action === "load" || action === "unload") return actor.kind === "transport";
+  if (action === "load" || action === "unload") return isCarrier(actor);
   if (action === "recon") return actor.kind === "droneop";
   if (action === "grenade") return (actor.kind === "soldier" || actor.flying === true) && actor.maxGrenades > 0;
   if (action === "shoot") return actor.status.canShoot;
@@ -2098,7 +2103,7 @@ function orderSummary(order: TacticalOrder, sim: TacticalSim): string {
   const part = target?.parts.find((candidate) => candidate.id === order.targetPartId);
   if (order.kind === "move") return "Queued: move";
   if (order.kind === "ram") return `Queued: ram ${target?.name ?? "target"}`;
-  if (order.kind === "load") return `Queued: airlift ${target?.name ?? "unit"}`;
+  if (order.kind === "load") return `Queued: ${sim.entity(order.actorId)?.kind === "apc" ? "board" : "airlift"} ${target?.name ?? "unit"}`;
   if (order.kind === "unload") return "Queued: unload";
   if (order.kind === "recon") return "Queued: recon pulse";
   if (order.kind === "melee") return `Queued: strike ${target?.name ?? "target"}${part ? ` / ${part.label}` : ""}`;

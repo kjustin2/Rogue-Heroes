@@ -96,3 +96,54 @@ describe("drone op recon pulse", () => {
     expect(sim.enemyIntents()).toEqual([]);
   });
 });
+
+describe("apc carry", () => {
+  it("takes an adjacent trooper aboard (not a distant one), drives it, sets it down beside itself, and drops it on death", () => {
+    const sim = staged();
+    const apc = sim.debugSpawn("apc", "player", { x: -10, z: 0 });
+    const near = sim.debugSpawn("soldier", "player", { x: -10 + apc.radius + 0.9, z: 0 });
+    const far = sim.debugSpawn("soldier", "player", { x: -10, z: 6 });
+    sim.debugSelect(apc.id);
+    expect(sim.queueLoad(far.id)).toBe(false); // must be beside the hull
+    expect(sim.log[0]).toContain("must be beside the APC");
+    expect(sim.queueLoad(near.id)).toBe(true);
+    sim.endTurn();
+    settle(sim);
+    expect(near.carriedById).toBe(apc.id);
+    expect(apc.passengerIds).toEqual([near.id]);
+
+    // The passenger rides along, hidden from targeting and separation.
+    sim.debugSelect(apc.id);
+    expect(sim.queueMove({ x: -2, z: 0 })).toBe(true);
+    sim.endTurn();
+    settle(sim);
+    expect(apc.position.x).toBeGreaterThan(-6);
+    expect(near.position).toEqual(apc.position);
+    expect(near.carriedById).toBe(apc.id);
+
+    // Unload is beside the hull only, and the ramp drops where the APC stands.
+    sim.debugSelect(apc.id);
+    expect(sim.queueUnload({ x: apc.position.x + 12, z: 0 })).toBe(false);
+    expect(sim.queueUnload({ x: apc.position.x + 2, z: 0 })).toBe(true);
+    const parked = { ...apc.position };
+    sim.endTurn();
+    settle(sim);
+    expect(near.carriedById).toBeUndefined();
+    expect(apc.passengerIds).toEqual([]);
+    expect(Math.hypot(near.position.x - parked.x, near.position.z - parked.z)).toBeLessThan(5);
+
+    // Cargo bails out when the APC dies.
+    sim.debugSelect(apc.id);
+    expect(sim.queueLoad(near.id)).toBe(true);
+    sim.endTurn();
+    settle(sim);
+    expect(near.carriedById).toBe(apc.id);
+    for (const p of apc.parts) p.hp = 0;
+    apc.status.alive = false;
+    sim.endTurn();
+    settle(sim);
+    expect(near.carriedById).toBeUndefined();
+    expect(near.status.alive).toBe(true);
+    expect(sim.log.some((l) => l.includes("bails out"))).toBe(true);
+  });
+});
