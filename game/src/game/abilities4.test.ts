@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { STRAFE_RADIUS, TacticalSim, mapDef } from "./sim";
+import { CARPET_BOMBS, STRAFE_RADIUS, TacticalSim, mapDef } from "./sim";
 
 // Unit identity abilities, round four (docs/unit-identity-ideas.md picks 5, 9, 10, 14, 15, 17, 18):
 // grenadier AIRBURST, flamer FEAR, drone op RECON, APC CARRY, artillery DEPLOY, gunship STRAFE,
@@ -234,5 +234,39 @@ describe("gunship strafe", () => {
     sim2.endTurn();
     settle(sim2);
     expect(sim2.log.some((l) => l.includes("strafes"))).toBe(false);
+  });
+});
+
+describe("bomber carpet", () => {
+  it("drops three bombs in a line along its heading (a gunship still drops one)", () => {
+    const run = (kind: "bomber" | "gunship"): { bombs: number; spread: number; log: string[] } => {
+      const sim = staged();
+      const plane = sim.debugSpawn(kind, "player", { x: 0, z: 0 });
+      plane.yaw = Math.PI / 2; // heading +x
+      plane.grenades = plane.maxGrenades = 2;
+      sim.debugSelect(plane.id);
+      expect(sim.queueBombDrop()).toBe(true);
+      expect(plane.grenades).toBe(1); // one load per run, however many bombs it is
+      sim.endTurn();
+      // Bombs fall straight down and land within a tick, so count the blasts they leave.
+      const seen = new Set<string>();
+      const points: { x: number; z: number }[] = [];
+      for (let t = 0; t < 80 && sim.phase === "resolve"; t += 0.05) {
+        sim.update(0.05);
+        for (const e of sim.effects) {
+          if (e.type !== "blast" || seen.has(e.id)) continue;
+          seen.add(e.id);
+          points.push({ ...e.to });
+        }
+      }
+      const xs = points.map((p) => p.x);
+      return { bombs: points.length, spread: Math.max(...xs) - Math.min(...xs), log: sim.log };
+    };
+    const carpet = run("bomber");
+    expect(carpet.bombs).toBe(CARPET_BOMBS);
+    expect(carpet.spread).toBeGreaterThan(4); // strung out along +x, not stacked
+    expect(carpet.log.some((l) => l.includes("carpets the line"))).toBe(true);
+    const single = run("gunship");
+    expect(single.bombs).toBe(1);
   });
 });

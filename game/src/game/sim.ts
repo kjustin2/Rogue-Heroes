@@ -159,6 +159,7 @@ export const STRAFE_RADIUS = 4;
 const STRAFE_DAMAGE_SHARE = 0.75;
 // CARPET (bomber): three bombs in a line along the heading, this far apart.
 export const CARPET_BOMBS = 3;
+const CARPET_SPACING = 2.2;
 // A jump trooper landing next to an enemy: damage before difficulty scaling.
 const SLAM_LANDING_DAMAGE = 15;
 
@@ -2424,12 +2425,25 @@ export class TacticalSim {
           order.done = true;
           return;
         }
-        actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
+        // A straight-down bomb drop keeps the aircraft's heading (the carpet is laid along it).
+        if (dist(order.destination, actor.position) > 0.05) actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
         if (order.elapsed >= 0.58) {
           order.fired = true;
-          order.projectileId = order.kind === "grenade"
-            ? this.launchGrenadeAtPoint(order, actor, order.destination)
-            : this.launchExplosiveAtPoint(order, actor, order.destination, order.kind === "smoke");
+          if (order.kind === "grenade" && actor.kind === "bomber") {
+            // CARPET: a bomber lays its load in a line along its heading — one bomb short of the
+            // aircraft, one beneath it, one past it — instead of a single drop.
+            const heading = { x: Math.sin(actor.yaw), z: Math.cos(actor.yaw) };
+            for (let i = 0; i < CARPET_BOMBS; i += 1) {
+              const along = (i - (CARPET_BOMBS - 1) / 2) * CARPET_SPACING;
+              const point = clampToArena({ x: actor.position.x + heading.x * along, z: actor.position.z + heading.z * along });
+              order.projectileId = this.launchGrenadeAtPoint(order, actor, point, point);
+            }
+            this.pushLog(`${actor.name} carpets the line beneath it with ${CARPET_BOMBS} bombs`);
+          } else {
+            order.projectileId = order.kind === "grenade"
+              ? this.launchGrenadeAtPoint(order, actor, order.destination)
+              : this.launchExplosiveAtPoint(order, actor, order.destination, order.kind === "smoke");
+          }
         }
         return;
       }
@@ -2923,13 +2937,16 @@ export class TacticalSim {
     return projectile.id;
   }
 
-  private launchGrenadeAtPoint(order: TacticalOrder, actor: CombatEntity, point: Vec2): string {
+  private launchGrenadeAtPoint(order: TacticalOrder, actor: CombatEntity, point: Vec2, airDropAt?: Vec2): string {
     this.syncEntityElevation(actor);
     // A bomber's bomb always drops beneath the aircraft's CURRENT position (so a moving plane still
-    // drops straight down), plummets steeply, and doesn't arc up.
+    // drops straight down), plummets steeply, and doesn't arc up. `airDropAt` lets a carpet run
+    // stagger its bombs along the heading.
     const airDrop = isAirBomber(actor);
-    const dropPoint = airDrop ? { x: actor.position.x, z: actor.position.z } : point;
-    const origin = muzzlePoint(actor, "grenade");
+    const dropPoint = airDrop ? (airDropAt ?? { x: actor.position.x, z: actor.position.z }) : point;
+    // A carpet bomb is released where it falls (as the plane passes over), never lobbed forward
+    // from the nose — a lobbed one would fly through anything airborne in between.
+    const origin = airDrop && airDropAt ? { ...airDropAt } : muzzlePoint(actor, "grenade");
     const originHeight = muzzleHeight(actor, "grenade");
     const intendedPoint = { ...dropPoint };
     const intendedHeight = terrainHeightAt(dropPoint) + 0.14;
