@@ -61,10 +61,90 @@ def sculpt(obj, levels=2):
     return obj
 
 
+AO_ATTR = "AO"
+# Set by main() once the render engine has been configured; a part built outside main() (a probe,
+# a unit test of one builder) still gets the analytic shading term, just not the Cycles crevice term.
+_ao_ready = False
+# The pooled part material multiplies COLOR_0 into the albedo, so the bake has to carry the SAME
+# analytic terms the runtime `bakeVertexAO` (worldRenderer.ts) gives every procedural part —
+# under-surfaces dark, tops lit, a base-to-top lift — or an authored helmet reads brighter and
+# flatter than the procedural boot below it. Cycles adds what the heuristic cannot see: the
+# darkening under a brim, between pack pouches, inside a muzzle shroud.
+AO_MIX = 0.72        # how much of the Cycles term survives (1 = pure AO in the crevices)
+AO_FLOOR = 0.42      # nothing goes blacker than this; a crevice is dark, not a hole
+AO_SAMPLES = 24      # per-vertex AO converges fast on these convex kitbash shells
+AO_DISTANCE = 0.55   # parts are built at ~1 unit; only nearby geometry should occlude
+
+
+def setup_ao_bake():
+    """Point the scene at Cycles with a cheap AO bake configuration. Called once from main()."""
+    global _ao_ready
+    scene = bpy.context.scene
+    try:
+        scene.render.engine = "CYCLES"
+    except Exception as e:
+        print("[author_kit] Cycles unavailable, vertex AO will be analytic only:", e)
+        return
+    scene.cycles.device = "CPU"
+    scene.cycles.samples = AO_SAMPLES
+    scene.cycles.use_denoising = False
+    scene.cycles.bake_type = "AO"
+    scene.render.bake.target = "VERTEX_COLORS"
+    scene.render.bake.use_selected_to_active = False
+    if scene.world is None:
+        scene.world = bpy.data.worlds.new("bake-world")
+    scene.world.light_settings.distance = AO_DISTANCE
+    _ao_ready = True
+
+
+def bake_ao(obj):
+    """Cycles ambient occlusion → the active colour attribute (exported as COLOR_0), folded into
+    the runtime's analytic facing/height shading. Runs on the un-normalised mesh so the AO
+    distance means the same thing on every part."""
+    mesh = obj.data
+    attr = mesh.color_attributes.get(AO_ATTR) or mesh.color_attributes.new(name=AO_ATTR, type="FLOAT_COLOR", domain="POINT")
+    mesh.color_attributes.active_color = attr
+    mesh.color_attributes.render_color_index = mesh.color_attributes.find(AO_ATTR)
+    n = len(mesh.vertices)
+    ao = [1.0] * n
+    if _ao_ready:
+        # Every part is built at the origin, so the parts already finished would occlude this one.
+        # Bake each part alone in the world.
+        others = [o for o in bpy.data.objects if o is not obj and o.type == "MESH"]
+        hidden = [(o, o.hide_render) for o in others]
+        for o in others:
+            o.hide_render = True
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        try:
+            bpy.ops.object.bake(type="AO", target="VERTEX_COLORS")
+            for i in range(n):
+                ao[i] = attr.data[i].color[0]
+        except Exception as e:
+            print("[author_kit] AO bake failed for", obj.name, "- analytic shading only:", e)
+            ao = [1.0] * n
+        finally:
+            for o, was in hidden:
+                o.hide_render = was
+    zs = [v.co.z for v in mesh.vertices]
+    lo, hi = min(zs), max(zs)
+    span = max(hi - lo, 1e-4)
+    # Vertex normals in Blender local space (Z up here; the exporter swaps to Y up).
+    for i, v in enumerate(mesh.vertices):
+        up = max(-1.0, min(1.0, v.normal.z))
+        facing = 0.88 + up * 0.16 if up >= 0 else 0.88 + up * 0.3
+        t = (v.co.z - lo) / span
+        analytic = min(1.0, facing * (0.86 + t * 0.16))
+        crevice = 1.0 - (1.0 - min(1.0, max(0.0, ao[i]))) * AO_MIX
+        shade = max(AO_FLOOR, min(1.0, analytic * crevice))
+        attr.data[i].color = (shade, shade, shade, 1.0)
+
+
 def finish(obj, bevel=0.012, segments=2, shade_smooth=True, angle=40.0):
     """Bevel the hard edges and smooth-shade with an autosmooth angle — the two things that
     separate an authored part from a primitive at any distance. Also lays out UVs (smart project)
-    so the game's shared detail normal map has somewhere to land."""
+    so the game's shared detail normal map has somewhere to land, and bakes vertex AO (COLOR_0)."""
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
     try:
@@ -90,6 +170,7 @@ def finish(obj, bevel=0.012, segments=2, shade_smooth=True, angle=40.0):
             bpy.ops.object.shade_smooth_by_angle(angle=math.radians(angle))
         except Exception:
             pass
+    bake_ao(obj)
     normalise(obj)
 
 
@@ -212,6 +293,7 @@ def build_pack():
 
 def main():
     clear_scene()
+    setup_ao_bake()
     for build in (build_helmet, build_boot, build_rifle, build_pack):
         build()
     # Per-kind identity parts (helmets, weapons, packs) live in author_kinds.py.
@@ -226,6 +308,8 @@ def main():
         use_selection=True,
         export_apply=True,
         export_materials="NONE",   # the game paints these parts every frame
+        export_vertex_color="ACTIVE",  # baked AO rides COLOR_0 (see bake_ao)
+        export_active_vertex_color_when_no_material=True,
         export_normals=True,
         export_texcoords=True,
         export_yup=True,

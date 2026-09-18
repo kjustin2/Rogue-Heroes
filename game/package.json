@@ -47,6 +47,8 @@
     "art:motion": "node scripts/blender.mjs art/infantry/author_motion.py",
     "art:kit": "node scripts/blender.mjs art/infantry/author_kit.py",
     "art:motion:export": "node scripts/blender.mjs art/infantry/author_motion.py -- --export-existing",
+    "art:inspect": "node scripts/inspect-glb.mjs",
+    "shots:diff": "node scripts/shot-diff.mjs",
     "smoke:core": "npm run smoke:buttons && npm run smoke:flow && npm run smoke:economy && npm run smoke:deep && npm run smoke:ground && npm run smoke:ui-audit && npm run smoke:faction && npm run smoke:animation && npm run smoke:director",
     "test:full": "npm run verify && npm run smoke:core",
     "desktop": "electron .",
