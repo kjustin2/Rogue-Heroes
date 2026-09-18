@@ -115,9 +115,9 @@ interface DifficultyMods {
   enemyIncome: number;
 }
 const DIFFICULTY_MODS: Record<Difficulty, DifficultyMods> = {
-  easy: { label: "Recruit", enemyHp: 0.8, enemyDamage: 0.82, enemyIncome: 0.85 },
-  normal: { label: "Veteran", enemyHp: 1, enemyDamage: 1, enemyIncome: 1 },
-  hard: { label: "Elite", enemyHp: 1.3, enemyDamage: 1.28, enemyIncome: 1.45 },
+  easy: { label: "Easy", enemyHp: 0.8, enemyDamage: 0.82, enemyIncome: 0.85 },
+  normal: { label: "Normal", enemyHp: 1, enemyDamage: 1, enemyIncome: 1 },
+  hard: { label: "Hard", enemyHp: 1.3, enemyDamage: 1.28, enemyIncome: 1.45 },
 };
 // Reaction fire is snap fire: the spread multiplier applied to an overwatch shot.
 // Resolve-phase budgets, in simulated seconds. SETTLE is the graceful escape once nothing is

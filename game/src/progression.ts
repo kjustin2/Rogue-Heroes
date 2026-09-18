@@ -28,7 +28,7 @@ export const COSMETICS: readonly Cosmetic[] = [
   { id: "magma", kind: "accent", name: "Magma Red", cost: 240, accent: 0xff5230, desc: "Scorched-earth shock troops." },
   { id: "phantom", kind: "accent", name: "Phantom White", cost: 320, accent: 0xf0f6ff, desc: "Ghost company colours." },
   // ---- Commander titles (your callsign) ----
-  { id: "rookie", kind: "title", name: "Recruit Commander", cost: 0, title: "Recruit Commander", desc: "Where everyone starts." },
+  { id: "rookie", kind: "title", name: "Commander", cost: 0, title: "Commander", desc: "Where everyone starts." },
   { id: "vanguard", kind: "title", name: "Vanguard Actual", cost: 80, title: "Vanguard Actual", desc: "The voice the Rogue Heroes answer to." },
   { id: "ironside", kind: "title", name: "Ironside", cost: 140, title: "Ironside", desc: "For those who never give ground." },
   { id: "warden", kind: "title", name: "Storm Warden", cost: 200, title: "Storm Warden", desc: "Master of the broken battlefield." },
@@ -44,7 +44,7 @@ export const COSMETICS: readonly Cosmetic[] = [
 
 export const COSMETIC_CATEGORIES: ReadonlyArray<{ kind: CosmeticKind; label: string }> = [
   { kind: "accent", label: "Unit Accents" },
-  { kind: "title", label: "Commander Titles" },
+  { kind: "title", label: "Callsigns" },
   { kind: "emblem", label: "Emblems" },
 ];
 
@@ -133,7 +133,7 @@ export class Progression {
   }
 
   titleText(): string {
-    return this.cosmetic(this.equip.title).title ?? "Recruit Commander";
+    return this.cosmetic(this.equip.title).title ?? "Commander";
   }
 
   emblemGlyph(): string {

@@ -20,7 +20,19 @@ const VIEWPORTS = [
 
 const SCREENS = [
   // Back to the menu first, or "title" just re-audits whatever the previous screen left up.
-  ["title", async (page) => { await page.evaluate(() => window.__rht.reset()); await delay(500); }],
+  ["title", async (page) => { await page.evaluate(() => window.__rht.toMenu()); await delay(600); }],
+  ["deploy", async (page) => { await page.click('[data-menu="play"]'); await delay(500); }],
+  ["settings", async (page) => { await page.evaluate(() => window.__rht.toMenu()); await delay(400); await page.click('[data-menu="settings"]'); await delay(500); }],
+  ["pause", async (page) => {
+    await page.evaluate(() => window.__rht.scenario("firefight"));
+    await delay(500);
+    await page.click('[data-command="open-menu"]');
+    await delay(400);
+  }],
+  ["victory", async (page) => {
+    await page.evaluate(() => { document.querySelectorAll(".pause-overlay").forEach((e) => e.remove()); window.__rht.scenario("victory"); });
+    await delay(700);
+  }],
   ["battle", async (page) => {
     await page.evaluate(() => window.__rht.scenario("firefight"));
     await delay(700);

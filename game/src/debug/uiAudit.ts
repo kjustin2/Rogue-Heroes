@@ -49,6 +49,7 @@ function textLeaves(root: Element): Element[] {
   for (const el of root.querySelectorAll<HTMLElement>("*")) {
     if (el.closest(IGNORE)) continue;
     if (el.tagName === "CANVAS" || el.tagName === "SVG") continue;
+    if (el.closest("[inert]")) continue; // the HUD under a modal: covered on purpose, unreachable
     if (!visible(el)) continue;
     // A leaf for this purpose is an element whose own text is not further wrapped.
     const hasElementChild = Array.from(el.children).some((c) => visible(c));
