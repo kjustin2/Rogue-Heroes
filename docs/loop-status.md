@@ -21,6 +21,7 @@ until every row is DONE with evidence. Nothing is DONE from code alone: each row
 | 13 | Remaining unit-identity picks (5, 8–10, 14–18, 20) | sim agent | RUNNING | tests per pick |
 | 14 | Balance check after all abilities (bot-vs-bot win rates) | sim agent | RUNNING | balance.test.ts table |
 | 15 | Docs: CLAUDE.md + fun-pass Status updated for everything above | main | TODO | diff |
+| 17 | Map-select page: faction pick is hidden behind the Deploy button; sweep every menu so no option is occluded/buried and every choice is clear | menu+toon agent | RUNNING (sent) | gpu shots of map-select at 1280×720 / 1600×900 / 2560×1080 + ui-audit occlusion rule |
 | 16 | Final: `test:full`, `soak:gpu`, perf rebase, standalone build handed over | main | TODO | logs |
 
 Rules every worker follows: gate with typecheck + vitest + the relevant smoke, commit on the
