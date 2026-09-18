@@ -300,6 +300,13 @@ def main():
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import author_kinds
     author_kinds.build_all()
+    # QA gate: a regenerated kit must not ship a bad part silently (see validate.py).
+    import validate
+    try:
+        validate.validate_scene(validate.kit_part_names("KitPart"), label="infantry kit")
+    except validate.ValidationError as e:
+        print("[author_kit] ABORTED, not exporting:", e)
+        sys.exit(1)
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.export_scene.gltf(
