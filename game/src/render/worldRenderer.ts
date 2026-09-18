@@ -1405,6 +1405,12 @@ export class WorldRenderer {
       } else if (isVehicleKind(entity.kind)) {
         // Hull down: the tank sits lower on its suspension and the engine tremor dies away.
         if (entity.kind === "tank" && entity.hullDown) { group.position.y -= 0.09; group.rotation.x += 0.02; }
+        // Deployed artillery: settled onto its outriggers — lower, still, and nosed up a touch.
+        else if (entity.kind === "artillery" && entity.deployed) { group.position.y -= 0.07; group.rotation.x -= 0.03; }
+        if (entity.kind === "artillery") {
+          const legs = group.children.find((c) => c.userData.outriggers) as THREE.Group | undefined;
+          if (legs) legs.scale.setScalar(entity.deployed ? 1 : 0.001);
+        }
         else group.position.y += Math.sin(t * 52) * 0.004 * idle;
         group.rotation.x += Math.sin(t * 0.7) * 0.006 * idle + Math.sin(t * 47) * 0.0025 * idle;
         group.rotation.z += Math.sin(t * 0.45) * 0.005 * idle;
@@ -1565,6 +1571,7 @@ export class WorldRenderer {
     const model = this.buildFromModel(entity);
     if (model) {
       if (entity.kind !== "cover") model.add(makeContactShadow(entity.radius));
+      if (entity.kind === "artillery") model.add(makeOutriggers());
       return model;
     }
     const group = new THREE.Group();
@@ -3448,6 +3455,19 @@ export class WorldRenderer {
       if (order.kind === "move") this.orderRoot.add(makeEndpoint(to, color, actor.radius + 0.22, toY + 0.035));
       if (order.kind === "move" && order.destination) projectedPositions.set(actor.id, order.destination);
     }
+    // RECON PULSE: the enemy's next orders as ghost arrows — enemy red, thinner and fainter than the
+    // player's own, with a hollow endpoint so they read as intent, not as an order you gave.
+    for (const intent of sim.enemyIntents()) {
+      const actor = sim.entity(intent.actorId);
+      const to = intent.destination ?? (intent.targetId ? sim.entity(intent.targetId)?.position : undefined);
+      if (!actor || !to || !actor.status.alive) continue;
+      const from = actor.position;
+      const color = intent.kind === "move" ? 0xff8c7a : 0xff5c5c;
+      const fromY = terrainHeightAt(from) + 0.22;
+      const toY = terrainHeightAt(to) + 0.22;
+      this.orderRoot.add(makeLine(from, to, color, 0.5, fromY + 0.05, toY + 0.05));
+      this.orderRoot.add(makeEndpoint(to, color, (intent.kind === "move" ? actor.radius : 0.3) + 0.2, toY + 0.035));
+    }
   }
 
   private syncShotPreview(sim: TacticalSim, targetId: string | undefined, targetPartId: string | undefined): void {
@@ -4137,6 +4157,34 @@ function waveStrokeTexture(): THREE.CanvasTexture {
   _waveStrokes.wrapS = _waveStrokes.wrapT = THREE.RepeatWrapping;
   _waveStrokes.colorSpace = THREE.SRGBColorSpace;
   return _waveStrokes;
+}
+
+/**
+ * Artillery outriggers: four dark legs with pads, splayed from the hull's corners, shown only while
+ * the piece is DEPLOYED (`entity.deployed`) — the one visible "this cannot move now" cue.
+ */
+function makeOutriggers(): THREE.Group {
+  const group = new THREE.Group();
+  group.userData.outriggers = true;
+  // Hidden by SCALE, not `visible`: an invisible mesh is skipped by warmUp's traverseVisible and
+  // would compile its program the first time a piece deploys mid-resolve.
+  group.scale.setScalar(0.001);
+  const legMat = new THREE.MeshToonMaterial({ color: 0x2c3136, gradientMap: toonGradient() });
+  const padMat = new THREE.MeshToonMaterial({ color: 0x1c2024, gradientMap: toonGradient() });
+  legMat.userData.shared = true; padMat.userData.shared = true;
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 1.1), legMat);
+    const ang = Math.atan2(sx, sz);
+    leg.position.set(sx * 1.0, 0.32, sz * 1.0);
+    leg.rotation.y = ang;
+    leg.rotation.x = -0.35;
+    leg.castShadow = true;
+    group.add(leg);
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.08, 12), padMat);
+    pad.position.set(sx * 1.45, 0.04, sz * 1.45);
+    group.add(pad);
+  }
+  return group;
 }
 
 let _discMask: THREE.CanvasTexture | undefined;

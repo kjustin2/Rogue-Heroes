@@ -139,6 +139,20 @@ app.whenReady().then(async () => {
         await shot("rings-aura");
         continue;
       }
+      if (s === "recon") {
+        // Recon pulse ghost arrows + a deployed artillery piece on its outriggers.
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(1500);
+        await js(`(() => { const sim = window.__rht.sim; sim.economy.set("player", 9000);
+          const a = sim.debugSpawn("artillery", "player", { x: -6, z: 2 }); a.deployed = true; a.yaw = 0.3;
+          sim.debugSpawn("droneop", "player", { x: -3, z: -2 });
+          sim.debugSpawn("soldier", "enemy", { x: 6, z: 1 }); sim.debugSpawn("heavy", "enemy", { x: 7, z: -3 });
+          sim.revealedOrders = true; window.__rht.deselect();
+          window.__rht.setView({ x: 0, z: 0, zoom: 0.55, pitch: 0.55, yaw: 0.3 }); })()`);
+        await sleep(1500);
+        await shot("recon");
+        continue;
+      }
       if (s === "direction") {
         // One art direction: a tank, an APC and two troopers in one close frame.
         await js(`window.__rht.startBattle("verdant", "destroy", "normal")`);
