@@ -13,7 +13,7 @@ import { greyscaleOf, instantiate, kitGeometry, modelsVersion, toonGradient, typ
 import {
   makeBlast, makeImpact, makeMuzzleFlash, makePing, makeProjectileModel, makeProjectileShadow, makeProjectileTrail,
   orientAlongVelocity, prewarmProjectileFx, projectileFamily, projectileFxWarmUpMaterials, projectileGeometry,
-  projectileMaterial, trailLength,
+  projectileMaterial, pushTrailPoint,
 } from "./projectileFx";
 
 // Part materials are toon (see partMaterial); PartMaterial names the shared shape both use.
@@ -638,6 +638,26 @@ export class WorldRenderer {
 
   // Hit-flinch impulse for an entity struck in the last FLINCH_MS: strength [0..1] (snappy
   // spring, peaks at the strike and settles fast) plus the normalized shove direction.
+  /** Flinch every living non-cover body within `radius` of `point`, away from `from` (or from the
+   *  point itself). Only ever raises an existing flinch, never dampens one. */
+  private shoveNear(sim: TacticalSim, point: Vec2, radius: number, power: number, from?: Vec2): void {
+    const now = performance.now();
+    for (const entity of sim.entities) {
+      if (!entity.status.alive || entity.kind === "cover" || entity.flying || entity.carriedById) continue;
+      const d = dist(entity.position, point);
+      if (d > radius + entity.radius) continue;
+      const origin = from ?? point;
+      let dx = entity.position.x - origin.x;
+      let dz = entity.position.z - origin.z;
+      const len = Math.hypot(dx, dz);
+      if (len < 0.05) { dx = -Math.sin(entity.yaw); dz = -Math.cos(entity.yaw); } else { dx /= len; dz /= len; }
+      const mag = Math.min(1.4, power * (from ? 1 : clamp(1.15 - d / (radius + entity.radius), 0.35, 1)));
+      const prev = this.flinchByEntity.get(entity.id);
+      if (prev && now - prev.at < FLINCH_MS && prev.mag >= mag) continue;
+      this.flinchByEntity.set(entity.id, { at: now, mag, dx, dz });
+    }
+  }
+
   private entityFlinch(entityId: string): { f: number; dx: number; dz: number } | undefined {
     const rec = this.flinchByEntity.get(entityId);
     if (!rec) return undefined;
@@ -3541,9 +3561,7 @@ export class WorldRenderer {
         history = [];
         this.trailHistory.set(projectile.id, history);
       }
-      history.push({ x: projectile.position.x, y: projectile.height, z: projectile.position.z });
-      const maxHistory = trailLength(family);
-      while (history.length > maxHistory) history.shift();
+      pushTrailPoint(history, projectile, family);
 
       // Everything a round draws lives in projectileFx.ts: the body, its trail, its ground shadow
       // and the muzzle event. Nothing here is frustum-culled — a fast/high round near a screen edge
@@ -3645,6 +3663,15 @@ export class WorldRenderer {
       if (this.burstIds.has(effect.id)) continue;
       this.burstIds.add(effect.id);
       const ground = terrainHeightAt(effect.to);
+      // HIT REACTION. Every landing round shoves what it lands on or beside, whether or not the sim
+      // recorded damage for it: a shell bursting at a trooper's feet, a burn tick, a bomb — the body
+      // lurches away from the point of impact (rifle/melee already flinch through the damage report;
+      // this is the same spring, keyed off the visual event so no family can land silently).
+      if (effect.type === "blast" || effect.type === "impact" || effect.type === "bolt") {
+        const radius = (effect.radius ?? 0.5) + (effect.type === "blast" ? 0.6 : 0.2);
+        const power = effect.type === "blast" ? Math.min(1.4, 0.5 + (effect.radius ?? 1) * 0.3) : 0.55;
+        this.shoveNear(sim, effect.to, radius, power, effect.type === "impact" && dist(effect.from, effect.to) > 0.05 ? effect.from : undefined);
+      }
 
       if (effect.type === "impact") {
         // Sparks fly BACK toward the shooter, the way a real ricochet throws material at the

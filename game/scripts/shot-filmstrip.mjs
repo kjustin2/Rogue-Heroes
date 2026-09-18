@@ -15,23 +15,24 @@ import sharp from "sharp";
 const STAGES = {
   melee: { actor: "striker", target: "heavy", dist: 1.4, order: "melee", zoom: 0.45, scale: 0.25, gap: 40 },
   kill: { actor: "striker", target: "heavy", dist: 1.4, order: "melee", zoom: 0.45, scale: 0.25, gap: 120 },
-  shoot: { actor: "soldier", target: "soldier", dist: 3.9, order: "shoot", zoom: 0.45, scale: 0.5, gap: 40 },
-  heavy: { actor: "heavy", target: "soldier", dist: 5.2, order: "shoot", zoom: 0.55, scale: 0.4, gap: 50 },
-  sniper: { actor: "sniper", target: "soldier", dist: 7.5, order: "shoot", zoom: 0.72, scale: 0.35, gap: 40 },
-  sapper: { actor: "sapper", target: "soldier", dist: 3.6, order: "shoot", zoom: 0.45, scale: 0.4, gap: 40 },
-  pistol: { actor: "medic", target: "soldier", dist: 3.9, order: "shoot", zoom: 0.45, scale: 0.5, gap: 40 },
-  flame: { actor: "flamer", target: "soldier", dist: 4.2, order: "shoot", zoom: 0.5, scale: 0.4, gap: 50 },
-  grenade: { actor: "soldier", target: "soldier", dist: 6.5, order: "grenade", zoom: 0.7, scale: 0.4, gap: 70 },
-  launcher: { actor: "grenadier", target: "soldier", dist: 7.5, order: "shoot", zoom: 0.75, scale: 0.4, gap: 70 },
-  mortar: { actor: "mortar", target: "soldier", dist: 10, order: "shoot", zoom: 0.95, scale: 0.4, gap: 90 },
-  tank: { actor: "tank", target: "soldier", dist: 8.5, order: "shoot", zoom: 0.8, scale: 0.4, gap: 60 },
-  artillery: { actor: "artillery", target: "soldier", dist: 11, order: "shoot", zoom: 1.0, scale: 0.4, gap: 90 },
-  apc: { actor: "apc", target: "soldier", dist: 7, order: "shoot", zoom: 0.7, scale: 0.4, gap: 50 },
-  turret: { actor: "turret", target: "soldier", dist: 6.5, order: "shoot", zoom: 0.7, scale: 0.4, gap: 50 },
-  gunship: { actor: "gunship", target: "gunship", dist: 7, order: "shoot", zoom: 0.75, scale: 0.4, gap: 50 },
+  shoot: { actor: "soldier", target: "soldier", dist: 3.9, order: "shoot", zoom: 0.45, scale: 0.5, span: 2.2 },
+  heavy: { actor: "heavy", target: "soldier", dist: 5.2, order: "shoot", zoom: 0.55, scale: 0.5, span: 3.3 },
+  sniper: { actor: "sniper", target: "soldier", dist: 7.5, order: "shoot", zoom: 0.72, scale: 0.5, span: 3.1 },
+  sapper: { actor: "sapper", target: "soldier", dist: 3.6, order: "shoot", zoom: 0.45, scale: 0.5, span: 2.2 },
+  pistol: { actor: "medic", target: "soldier", dist: 3.9, order: "shoot", zoom: 0.45, scale: 0.5, span: 2.2 },
+  flame: { actor: "flamer", target: "soldier", dist: 4.2, order: "shoot", zoom: 0.5, scale: 0.5, span: 2.4 },
+  grenade: { actor: "soldier", target: "soldier", dist: 6.5, order: "grenade", zoom: 0.7, scale: 0.5, span: 4.2 },
+  launcher: { actor: "grenadier", target: "soldier", dist: 7.5, order: "shoot", zoom: 0.75, scale: 0.5, span: 4.8 },
+  mortar: { actor: "mortar", target: "soldier", dist: 10, order: "shoot", zoom: 0.95, scale: 0.5, span: 6.1 },
+  tank: { actor: "tank", target: "soldier", dist: 8.5, order: "shoot", zoom: 0.8, scale: 0.5, span: 4.7 },
+  artillery: { actor: "artillery", target: "soldier", dist: 11, order: "shoot", zoom: 1.0, scale: 0.5, span: 5.7 },
+  apc: { actor: "apc", target: "soldier", dist: 7, order: "shoot", zoom: 0.7, scale: 0.5, span: 3.6 },
+  turret: { actor: "turret", target: "soldier", dist: 6.5, order: "shoot", zoom: 0.7, scale: 0.5, span: 3.4 },
+  gunship: { actor: "gunship", target: "gunship", dist: 7, order: "shoot", zoom: 0.75, scale: 0.5, span: 3.3 },
 };
 const PROJECTILE_STAGES = ["shoot", "heavy", "sniper", "sapper", "pistol", "flame", "grenade", "launcher", "mortar", "tank", "artillery", "apc", "turret", "gunship"];
 
+const FRAME_COST = 180;
 const arg = process.argv[2] ?? "melee";
 const kinds = arg === "all" ? PROJECTILE_STAGES : [arg];
 if (!kinds.every((k) => k === "jump" || STAGES[k])) throw new Error(`unknown filmstrip kind ${arg}; known: jump ${Object.keys(STAGES).join(" ")}`);
@@ -49,6 +50,8 @@ try {
     await page.click(KIND === "jump" ? '[data-map="causeway"]' : "[data-map]");
     await page.click("[data-start]");
     await page.waitForFunction(() => window.__rht?.sim?.phase === "command", null, { timeout: 20000 });
+    // The round banner and the first-run hint would otherwise sit over the impact frames.
+    await page.addStyleTag({ content: ".round-transition, .hint, .toast { display: none !important; }" }).catch(() => {});
     const ok = await page.evaluate(({ kind, stage }) => {
       const sim = window.__rht.sim;
       sim.economy.set("player", 9000);
@@ -101,7 +104,8 @@ try {
       // Pin the camera every frame: the resolve director otherwise pans off to whatever it rates.
       if (KIND !== "jump") await page.evaluate((s) => window.__rht.setView({ x: (s.dist - 1.4) / 2, z: 0, zoom: s.zoom, pitch: 0.5, yaw: 0.9 }), stage);
       frames.push(await page.screenshot({ clip: { x: 300, y: 120, width: 600, height: 420 } }));
-      await delay(KIND === "jump" ? 40 : stage.gap);
+      // A screenshot + camera pin costs ~FRAME_COST ms of wall clock; the gap fills out the span.
+      await delay(KIND === "jump" ? 40 : stage.span ? Math.max(0, (stage.span * 1000) / (12 * stage.scale) - FRAME_COST) : stage.gap);
     }
     const tiles = await Promise.all(frames.map((b) => sharp(b).resize(400, 280).png().toBuffer()));
     await sharp({ create: { width: 1600, height: 840, channels: 3, background: "#000" } })
