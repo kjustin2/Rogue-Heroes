@@ -18,7 +18,7 @@ import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.j
 
 export type ModelKey =
   | "tank" | "apc" | "artillery" | "hq" | "turret"
-  | "barricade" | "sandbags" | "crates" | "rock";
+  | "barricade" | "sandbags" | "crates";
 
 // Horizontal footprint (max of width/length, world units) each model is scaled to —
 // matched to the procedural builder it replaces so silhouettes read at gameplay scale.
@@ -31,7 +31,6 @@ const TARGET_SIZE: Record<ModelKey, number> = {
   barricade: 1.9,
   sandbags: 1.7,
   crates: 1.5,
-  rock: 1.8,
 };
 
 const loader = new GLTFLoader();
@@ -289,28 +288,61 @@ function loadInfantryKit(): void {
   );
 }
 
-// A luminance-only copy of a GLB albedo, cached per source texture. Rocks and rubble are generated
-// once in a warm desert palette and then placed on every map; multiplying a map tint into an
-// orange albedo only ever yields darker orange, which is how a frozen causeway got desert rocks.
-// Stripping the hue first lets the material colour carry the whole map tone while the texture
-// keeps its crevices.
-const greyCache = new WeakMap<THREE.Texture, THREE.Texture>();
-export function greyscaleOf(map: THREE.Texture): THREE.Texture {
-  const hit = greyCache.get(map);
-  if (hit) return hit;
-  const image = map.image as HTMLImageElement | ImageBitmap | HTMLCanvasElement;
-  const canvas = document.createElement("canvas");
-  canvas.width = image.width;
-  canvas.height = image.height;
-  const ctx = canvas.getContext("2d")!;
-  ctx.filter = "grayscale(1)";
-  ctx.drawImage(image, 0, 0);
-  const grey = new THREE.CanvasTexture(canvas);
-  grey.colorSpace = map.colorSpace;
-  grey.flipY = map.flipY;
-  grey.wrapS = map.wrapS;
-  grey.wrapT = map.wrapT;
-  grey.channel = map.channel;
-  greyCache.set(map, grey);
-  return grey;
+// ---------------------------------------------------------------------------
+// PROPS KIT — Blender-authored, seeded low-poly cover props (art/props/author_props.py).
+//
+// N variants per kind in one GLB, each normalised to a unit cube like the infantry parts, so
+// buildCover scales them and the pooled part material paints them (map tint + toon ramp). A
+// variant is picked by hash(entity.id), so no two neighbouring rocks match and a restored save
+// shows the same rock. Every branch keeps its procedural builder as the fallback: the game runs
+// with the GLB missing. The kit REPLACED the photoreal Meshy rock.glb (30 credits, greyscaled and
+// re-tinted to sit next to the toon troopers, and one silhouette on every map).
+// ---------------------------------------------------------------------------
+export type PropsKind = "rock" | "stump" | "log" | "bush" | "canopy" | "trunk" | "cactus" | "statue" | "rubble";
+export const PROPS_VARIANTS: Record<PropsKind, number> = { rock: 4, stump: 3, log: 3, bush: 4, canopy: 3, trunk: 3, cactus: 3, statue: 3, rubble: 3 };
+// The full name set (kept literal so the Blender validator can diff it against what it built).
+export type PropsPart =
+  | "rock-0" | "rock-1" | "rock-2" | "rock-3"
+  | "stump-0" | "stump-1" | "stump-2"
+  | "log-0" | "log-1" | "log-2"
+  | "bush-0" | "bush-1" | "bush-2" | "bush-3"
+  | "canopy-0" | "canopy-1" | "canopy-2"
+  | "trunk-0" | "trunk-1" | "trunk-2"
+  | "cactus-0" | "cactus-1" | "cactus-2"
+  | "statue-0" | "statue-1" | "statue-2"
+  | "rubble-0" | "rubble-1" | "rubble-2";
+
+const props = new Map<string, THREE.BufferGeometry>();
+let propsState: "idle" | "loading" | "ready" | "failed" = "idle";
+
+/** Authored geometry for variant `seed % N` of a prop kind, or undefined — callers fall back. */
+export function propGeometry(kind: PropsKind, seed: number): THREE.BufferGeometry | undefined {
+  if (propsState === "idle") loadPropsKit();
+  return props.get(`${kind}-${Math.abs(seed) % PROPS_VARIANTS[kind]}`);
+}
+
+/** True once the props kit has loaded (or failed) — used to decide when a rebuild is worth it. */
+export function propsKitReady(): boolean {
+  return propsState === "ready";
+}
+
+function loadPropsKit(): void {
+  propsState = "loading";
+  loader.load(
+    "models/props-kit.glb",
+    (gltf) => {
+      gltf.scene.traverse((node) => {
+        const mesh = node as THREE.Mesh;
+        if (!mesh.isMesh || !mesh.geometry) return;
+        const geometry = mesh.geometry as THREE.BufferGeometry;
+        geometry.applyMatrix4(mesh.matrixWorld);
+        geometry.userData.shared = true; // one geometry serves every prop of that variant
+        props.set(node.name, geometry);
+      });
+      propsState = "ready";
+      version += 1; // rebuild cover groups so props pick the authored shapes up
+    },
+    undefined,
+    () => { propsState = "failed"; },
+  );
 }

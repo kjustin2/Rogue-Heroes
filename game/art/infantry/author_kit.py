@@ -156,13 +156,18 @@ def finish(obj, bevel=0.012, segments=2, shade_smooth=True, angle=40.0):
         print("[author_kit] uv project failed for", obj.name, e)
     obj.select_set(False)
     bpy.context.view_layer.objects.active = obj
-    mod = obj.modifiers.new("Bevel", "BEVEL")
-    mod.width = bevel
-    mod.segments = segments
-    mod.limit_method = "ANGLE"
-    mod.angle_limit = math.radians(30)
-    mod.harden_normals = True
-    bpy.ops.object.modifier_apply(modifier=mod.name)
+    if bevel > 0:
+        mod = obj.modifiers.new("Bevel", "BEVEL")
+        mod.width = bevel
+        mod.segments = segments
+        mod.limit_method = "ANGLE"
+        mod.angle_limit = math.radians(30)
+        mod.harden_normals = True
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+    if not shade_smooth:
+        obj.select_set(True)
+        bpy.ops.object.shade_flat()  # faceted props: one toon band per facet is the stylized read
+        obj.select_set(False)
     if shade_smooth:
         bpy.ops.object.shade_smooth()
         # Blender 4.1+ replaced mesh.use_auto_smooth with the Smooth by Angle operator.

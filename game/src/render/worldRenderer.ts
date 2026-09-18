@@ -9,7 +9,7 @@ import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/
 import { OVERWATCH_ARC_HALF } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec } from "../game/maps";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
-import { greyscaleOf, instantiate, kitGeometry, modelsVersion, toonGradient, type KitPart, type ModelKey } from "./models";
+import { instantiate, kitGeometry, modelsVersion, propGeometry, toonGradient, type KitPart, type ModelKey } from "./models";
 
 // Part materials are toon (see partMaterial); PartMaterial names the shared shape both use.
 type PartMaterial = THREE.MeshToonMaterial;
@@ -732,7 +732,7 @@ export class WorldRenderer {
     const out: { partId: string; color: string; emissive: string; intensity: number }[] = [];
     group.traverse((node) => {
       const mesh = node as PartMesh;
-      if (!mesh.isMesh || !(mesh.material instanceof THREE.MeshStandardMaterial)) return;
+      if (!mesh.isMesh || !(mesh.material instanceof THREE.MeshStandardMaterial || mesh.material instanceof THREE.MeshToonMaterial)) return;
       const partId = mesh.userData?.partId as string | undefined;
       if (!partId) return;
       out.push({
@@ -1575,7 +1575,7 @@ export class WorldRenderer {
     group.userData.entityId = entity.id;
     group.userData.glb = true;
     if (entity.kind === "cover") {
-      this.tintModelToMap(group, entity.coverKind === "rock" || entity.coverKind === "rubble" ? "stone" : "prop");
+      this.tintModelToMap(group);
       this.interactionGlow(group, entity, entity.parts[0]?.role === "volatile");
     } else {
       this.addModelAccents(group, entity);
@@ -1609,13 +1609,11 @@ export class WorldRenderer {
 
   // Nudge a GLB prop's albedo toward the map palette (mirror of tintPropToMap, but on the
   // clone's material records so per-frame damage tinting keeps the tint as its base).
-  private tintModelToMap(group: THREE.Group, mode: "prop" | "stone" = "prop"): void {
+  private tintModelToMap(group: THREE.Group): void {
     const mats = group.userData.glbMaterials as { material: THREE.MeshStandardMaterial; base: number }[] | undefined;
     if (!mats) return;
     for (const record of mats) {
-      // Stone drops the albedo's hue entirely and wears the map's ground colour (see greyscaleOf).
-      if (mode === "stone" && record.material.map) record.material.map = greyscaleOf(record.material.map);
-      const tinted = mode === "stone" ? this.rockTint.clone() : new THREE.Color(record.base).lerp(this.propTint, 0.74);
+      const tinted = new THREE.Color(record.base).lerp(this.propTint, 0.74);
       record.material.color.copy(tinted);
       record.base = tinted.getHex();
     }
@@ -2382,6 +2380,14 @@ export class WorldRenderer {
       this.box(group, entity, part.id, [0.9, 0.1, 0.7], [0.45, 0.62, 0.1], 0x171512, { rotation: [0.4, -0.3, 0.5] });
       this.cylinder(group, entity, part.id, 0.22, 0.14, [0.7, 0.24, 0.55], 0x0f0d0b, [Math.PI / 2, 0, 0.4]);
       this.box(group, entity, part.id, [0.5, 0.14, 0.3], [-0.3, 0.55, -0.2], 0xff7d26, { emissive: 0xff5a1a, emissiveIntensity: 0.55 });
+    } else if (entity.coverKind === "rock" && propGeometry("rock", hash(entity.id))) {
+      // Authored boulder from the props kit (one of four seeded facet variants), scaled to the
+      // entity's own radius/height so signature rocks keep their authored size. Sunk a few cm so
+      // it never stands on a rounded belly over a talus flare.
+      const v = hash(entity.id);
+      const s = entity.radius / 1.0;
+      this.box(group, entity, part.id, [2.0 * s, entity.height, 1.7 * s], [0, entity.height / 2 - 0.08, 0], 0x7d776c,
+        { geometry: propGeometry("rock", v), roughness: 0.98, rotation: [0, (v % 16) * 0.39, 0] });
     } else if (entity.coverKind === "rock") {
       // Three axis-aligned boxes read as a stack of crates, not a rock. Five CANTED slabs of
       // different sizes, each tipped on two axes and half-buried, give it a broken silhouette and
@@ -2393,6 +2399,12 @@ export class WorldRenderer {
       this.box(group, entity, part.id, [0.72, 0.66, 0.78], [-0.38, 0.72, 0.26], 0x5e5951, { roughness: 0.98, bevel: 0.36, rotation: [tip(6), tip(7) * 4, tip(2)] });
       this.box(group, entity, part.id, [0.55, 0.5, 0.5], [0.34, 1.28, 0.1], 0x9a9388, { roughness: 0.94, bevel: 0.4, rotation: [tip(1), tip(5) * 4, tip(4)] });
       this.box(group, entity, part.id, [0.9, 0.26, 0.85], [-0.1, 0.12, -0.05], 0x4c473f, { roughness: 1, bevel: 0.42, rotation: [0, tip(3) * 4, 0] });
+    } else if (entity.coverKind === "stump" && propGeometry("stump", hash(entity.id))) {
+      const v = hash(entity.id);
+      this.box(group, entity, part.id, [1.3, 0.7, 1.3], [0, 0.33, 0], 0x5a3f2a, { geometry: propGeometry("stump", v), roughness: 0.96, rotation: [0, (v % 9) * 0.7, 0] });
+      // The pale cut face is the read from above.
+      this.cylinder(group, entity, part.id, 0.34, 0.04, [0, 0.7, 0], 0xb8a07a, [0, 0, 0], { roughness: 0.9 });
+      this.cylinder(group, entity, part.id, 0.2, 0.03, [0, 0.725, 0], 0x8d7454, [0, 0, 0], { roughness: 0.9 });
     } else if (entity.coverKind === "stump") {
       // A cut trunk with a pale ring on top, bark ridges and two exposed roots.
       const v = hash(entity.id);
@@ -2400,6 +2412,11 @@ export class WorldRenderer {
       this.cylinder(group, entity, part.id, 0.36, 0.05, [0, 0.64, 0], 0xb8a07a, [0, 0, 0], { roughness: 0.9 });
       this.cylinder(group, entity, part.id, 0.22, 0.04, [0, 0.67, 0], 0x8d7454, [0, 0, 0], { roughness: 0.9 });
       for (const a of [0.4, 2.1, 3.9]) this.box(group, entity, part.id, [0.18, 0.16, 0.5], [Math.cos(a) * 0.5, 0.08, Math.sin(a) * 0.5], 0x3d2a1a, { rotation: [0, -a, 0], bevel: 0.3, roughness: 0.98 });
+    } else if (entity.coverKind === "log" && propGeometry("log", hash(entity.id))) {
+      const v = hash(entity.id);
+      const yaw = (v % 13) * 0.24;
+      this.box(group, entity, part.id, [2.6, 0.6, 0.9], [0, 0.27, 0], 0x4f3622, { geometry: propGeometry("log", v), roughness: 0.96, rotation: [0, yaw, 0] });
+      this.box(group, entity, part.id, [0.5, 0.1, 0.4], [-Math.cos(yaw) * 0.5, 0.05, Math.sin(yaw) * 0.5], 0x3f5a2c, { bevel: 0.4, roughness: 1 }); // moss
     } else if (entity.coverKind === "log") {
       // A fallen trunk lying across the ground: long, slightly tapered, one broken bough up.
       const v = hash(entity.id);
@@ -2408,6 +2425,11 @@ export class WorldRenderer {
       this.cylinder(group, entity, part.id, 0.28, 0.06, [Math.cos(yaw) * 1.26, 0.3, -Math.sin(yaw) * 1.26], 0xb39a76, [0, yaw, Math.PI / 2], { roughness: 0.9 });
       this.cylinder(group, entity, part.id, 0.08, 0.5, [Math.cos(yaw) * 0.3, 0.6, -Math.sin(yaw) * 0.3], 0x4f3622, [0.5, yaw, 0.3], { roughness: 0.96 });
       this.box(group, entity, part.id, [0.5, 0.12, 0.4], [-Math.cos(yaw) * 0.6, 0.06, Math.sin(yaw) * 0.6], 0x3f5a2c, { bevel: 0.4, roughness: 1 }); // moss
+    } else if (entity.coverKind === "bush" && propGeometry("bush", hash(entity.id))) {
+      const v = hash(entity.id);
+      const greens = [0x3f7a34, 0x4d8a3a, 0x5e9a44, 0x447f38];
+      this.box(group, entity, part.id, [1.6, 0.9, 1.6], [0, 0.44, 0], greens[v % 4], { geometry: propGeometry("bush", v), roughness: 0.95, rotation: [0, (v % 11) * 0.57, 0], emissive: 0x0f2c0e, emissiveIntensity: 0.06 });
+      for (let i = 0; i < 3; i += 1) this.sphere(group, entity, part.id, 0.05, [Math.cos(i * 2.2 + v) * 0.42, 0.66, Math.sin(i * 2.2 + v) * 0.42], 0xd94a3a, { accent: true });
     } else if (entity.coverKind === "bush") {
       // A low round shrub: four overlapping green masses, a darker one underneath, a few berries.
       const v = hash(entity.id);
@@ -2418,6 +2440,10 @@ export class WorldRenderer {
       }
       this.sphere(group, entity, part.id, 0.44, [0, 0.28, 0], greens[3], { scaleY: 0.6 });
       for (let i = 0; i < 3; i += 1) this.sphere(group, entity, part.id, 0.05, [Math.cos(i * 2.2) * 0.4, 0.62, Math.sin(i * 2.2) * 0.4], 0xd94a3a, { accent: true });
+    } else if (entity.coverKind === "cactus" && propGeometry("cactus", hash(entity.id))) {
+      const v = hash(entity.id);
+      this.box(group, entity, part.id, [1.0, 2.0, 1.0], [0, 1.0, 0], 0x4f7f3a, { geometry: propGeometry("cactus", v), roughness: 0.94, rotation: [0, (v % 7) * 0.9, 0] });
+      this.sphere(group, entity, part.id, 0.1, [0, 2.02, 0], 0xf2dfa0, { accent: true });
     } else if (entity.coverKind === "cactus") {
       // A saguaro: ribbed column, two arms, and a pale flower on top.
       const v = hash(entity.id);
@@ -2455,6 +2481,9 @@ export class WorldRenderer {
       for (const a of [0.6, 2.7, 4.8]) this.box(group, entity, part.id, [0.14, 0.5, 0.14], [Math.cos(a) * 0.62, 0.25, Math.sin(a) * 0.62], 0x2f3439, { metalness: 0.4 });
       this.box(group, entity, part.id, [0.06, 1.8, 0.3], [0.86, 1.3, 0], 0x9aa0a6, { metalness: 0.5 });
       this.box(group, entity, part.id, [0.3, 0.2, 0.06], [0, 1.5, 0.84], 0xd8b43a, { accent: true, emissive: 0x8a6a10, emissiveIntensity: 0.15 });
+    } else if (entity.coverKind === "statue" && propGeometry("statue", hash(entity.id))) {
+      const v = hash(entity.id);
+      this.box(group, entity, part.id, [1.9, 2.4, 1.9], [0, 1.2, 0], 0x9a948a, { geometry: propGeometry("statue", v), roughness: 0.92, rotation: [0, (v % 8) * 0.78, 0] });
     } else if (entity.coverKind === "statue") {
       // A broken monument: a plinth, a robed figure snapped off at the shoulder, one arm raised.
       const v = hash(entity.id);
@@ -2465,6 +2494,13 @@ export class WorldRenderer {
       this.cylinder(group, entity, part.id, 0.1, 0.7, [0.36, 2.2, 0.1], 0x9a948a, [0.3, 0, -0.9], { roughness: 0.92 });
       this.box(group, entity, part.id, [0.3, 0.26, 0.3], [-0.26, 2.16, 0.02], 0x8f8980, { bevel: 0.36, rotation: [0.3, 0.6, 0.5], roughness: 0.94 }); // the broken shoulder
       this.box(group, entity, part.id, [0.5, 0.3, 0.44], [0.7, 0.15, 0.55], 0x8a8478, { bevel: 0.3, rotation: [0.2, 0.7, 0.1], roughness: 0.92 }); // a fallen head at the foot
+    } else if (entity.coverKind === "tree" && propGeometry("trunk", hash(entity.id)) && propGeometry("canopy", hash(entity.id))) {
+      // Authored trunk + canopy variants; the group-level sway is unchanged.
+      const v = hash(entity.id);
+      const greens = [0x35722f, 0x437f36, 0x59963f];
+      const spin = (v % 13) * 0.48;
+      this.box(group, entity, part.id, [0.7, 1.75, 0.7], [0, 0.87, 0], 0x4a3220, { geometry: propGeometry("trunk", v), roughness: 0.95, rotation: [0, spin, 0] });
+      this.box(group, entity, part.id, [2.3, 1.7, 2.3], [0, 2.05, 0], greens[v % 3], { geometry: propGeometry("canopy", v >> 3), roughness: 0.94, rotation: [0, spin + 1.1, 0], emissive: 0x0f2c0e, emissiveIntensity: 0.08 });
     } else if (entity.coverKind === "tree") {
       // The old tree was a cube on a stick. This one has a tapered, leaning trunk, two boughs, and
       // a crown of six canted masses in three greens with a darker underside — an irregular
@@ -2503,6 +2539,9 @@ export class WorldRenderer {
       for (const [x, y] of [[-0.46, 0.18], [0.46, 0.18], [0, 0.18], [-0.24, 0.5], [0.24, 0.5]] as const) {
         this.box(group, entity, part.id, [0.5, 0.34, 0.72], [x, y, 0], 0xb8a86a, { metalness: 0.02 });
       }
+    } else if (entity.coverKind === "rubble" && propGeometry("rubble", hash(entity.id))) {
+      const v = hash(entity.id);
+      this.box(group, entity, part.id, [2.1, 0.9, 1.8], [0, 0.42, 0], 0x7c756a, { geometry: propGeometry("rubble", v), roughness: 0.96, rotation: [0, (v % 10) * 0.63, 0] });
     } else if (entity.coverKind === "rubble") {
       this.box(group, entity, part.id, [1.45, 0.5, 1.1], [0, 0.25, 0], 0x7c756a);
       this.box(group, entity, part.id, [0.5, 0.42, 0.5], [0.42, 0.6, 0.22], 0x8c857a);
@@ -2555,7 +2594,12 @@ export class WorldRenderer {
       this.box(group, entity, part.id, [0.14, 1.12, 0.66], [0.58, 0.7, 0], 0x7a5535);
       for (const x of [-0.34, 0.34]) this.box(group, entity, part.id, [0.1, 1.02, 0.08], [x, 0.7, 0.34], 0xf0c37a, { emissive: 0x6c3a13, emissiveIntensity: 0.16 });
     }
-    this.tintPropToMap(group);
+    const stone = entity.coverKind === "rock" || entity.coverKind === "rubble" || entity.coverKind === "statue";
+    // Light touch: this tint was a silent no-op for months (it tested for MeshStandardMaterial after
+    // the parts went toon) and the prop palette was tuned without it; at 0.7 every trunk and log went
+    // the ground colour. Stone leans further into the map (a rock is OF the ground); wood, foliage
+    // and hardware keep most of their own hue and only pick up the map's cast.
+    this.tintPropToMap(group, stone ? 0.5 : 0.3, stone ? this.rockTint : this.propTint);
     this.interactionGlow(group, entity, volatile);
   }
 
@@ -2563,15 +2607,15 @@ export class WorldRenderer {
   // scene. Glowing gameplay-signal props (fuel/ammo/conduit, anything emissive) are left alone
   // so their cues stay legible. Both the live material and the stored baseColor are updated so
   // the per-part damage shading keeps the tint.
-  private tintPropToMap(group: THREE.Group, amount = 0.7): void {
+  private tintPropToMap(group: THREE.Group, amount = 0.7, tint: THREE.Color = this.propTint): void {
     group.traverse((obj) => {
       const mesh = obj as PartMesh;
-      if (!(mesh.isMesh) || !(mesh.material instanceof THREE.MeshStandardMaterial)) return;
+      if (!(mesh.isMesh) || !(mesh.material instanceof THREE.MeshStandardMaterial || mesh.material instanceof THREE.MeshToonMaterial)) return;
       if ((mesh.userData.baseEmissiveIntensity as number ?? 0) > 0.12) return; // keep glowing signals
       // Only the BASE colour moves. The live material is pooled and shared across every mesh that
       // currently looks the same, so writing to it here would repaint half the scene; paintPart
       // re-resolves this mesh to the right pooled material on the next frame anyway.
-      const tinted = new THREE.Color(mesh.userData.baseColor as number ?? mesh.material.color.getHex()).lerp(this.propTint, amount);
+      const tinted = new THREE.Color(mesh.userData.baseColor as number ?? mesh.material.color.getHex()).lerp(tint, amount);
       mesh.userData.baseColor = tinted.getHex();
     });
   }
@@ -2623,11 +2667,13 @@ export class WorldRenderer {
        * proportion stays here.
        */
       kit?: KitPart;
+      /** An already-resolved unit-cube geometry (props kit variant) — same contract as `kit`. */
+      geometry?: THREE.BufferGeometry;
     } = {}
   ): PartMesh {
     const roughness = materialOptions.roughness ?? 0.62;
     const metalness = materialOptions.metalness ?? 0.08;
-    const authored = materialOptions.kit ? kitGeometry(materialOptions.kit) : undefined;
+    const authored = materialOptions.geometry ?? (materialOptions.kit ? kitGeometry(materialOptions.kit) : undefined);
     // Pooled part materials read vertex colours (baked AO). An authored GLB part has none, and a
     // missing colour attribute samples as BLACK — the bowling-ball helmets. Bake once per shared
     // geometry, same as every procedural part.
@@ -6288,8 +6334,7 @@ function modelKeyFor(entity: CombatEntity): ModelKey | null {
         case "barricade": return "barricade";
         case "sandbag": return "sandbags";
         case "crate": return "crates";
-        case "rock": return "rock";
-        case "rubble": return "rock";
+        // rock / rubble: the seeded props kit (art/props), procedural fallback — never a Meshy hull.
         default: return null;
       }
     default: return null;

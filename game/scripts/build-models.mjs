@@ -30,7 +30,6 @@ const MANIFEST = [
   { name: "barricade", polycount: 12000, prompt: "long concrete jersey barrier, elongated highway barrier wall segment three times longer than tall, sloped sides, exposed steel rebar at chipped ends, bullet pockmarks, weathered gray concrete, game asset" },
   { name: "sandbags", polycount: 12000, prompt: "military sandbag wall emplacement, two stacked rows of burlap sandbags in a shallow arc, worn faded khaki fabric, dusty, game asset" },
   { name: "crates", polycount: 12000, prompt: "stack of military supply crates, olive drab steel ammunition boxes and wooden crates with stenciled markings, scuffed edges, cargo straps, game asset" },
-  { name: "rock", polycount: 12000, prompt: "large weathered desert boulder cluster, layered sandstone rock formation, wind-eroded, sun-bleached, dusty base, game asset" },
 ];
 
 const argv = process.argv.slice(2);
