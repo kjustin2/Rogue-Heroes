@@ -6,20 +6,20 @@ until every row is DONE with evidence. Nothing is DONE from code alone: each row
 
 | # | Ask (owner's words) | Owner | Status | Proof |
 |---|---|---|---|---|
-| 1 | Blender + AI research → `docs/blender-ai-pipeline.md` with examples/links | research agent | RUNNING (retry after 429) | doc exists, top-5 implement list |
-| 2 | Implement the research: vast improvements to environments, units, maps | main + art agent | TODO (after 1) | real-GPU shots per map + lineup |
+| 1 | Blender + AI research → `docs/blender-ai-pipeline.md` with examples/links | research agent | DONE | `docs/blender-ai-pipeline.md` (33 learnings, 15-item list) |
+| 2 | Implement the research: vast improvements to environments, units, maps | art agent | RUNNING (items 1,3,4,5,10,14) | real-GPU shots per map + lineup |
 | 3 | Menu wording audit ("Recruit Commander" is odd) — every menu, remove weird/unnecessary | menu+toon agent | RUNNING | shots:gpu menu + settings/pause shots |
 | 4 | Toon look deeper: in-game feel + menus/GUI in the same language | menu+toon agent | RUNNING | shots:gpu menu/firefight |
-| 5 | Units clip into the map when walking | main | RUNNING | filmstrip walk over a step, no foot sink |
-| 6 | Objects clip into each other on maps | main | RUNNING | scatter overlap audit (smoke) + shot |
+| 5 | Units clip into the map when walking | main | DONE | `shots/filmstrip-step.png` (feet on the talus tiers) |
+| 6 | Objects clip into each other on maps | main | DONE | `scatter.test.ts` green on 6 maps; vehicle radii = hull; `shots/gpu-siege.png` |
 | 7 | Projectiles: SUPER polish, every family (look + motion) | projectile agent | RUNNING | filmstrips shoot/mortar/flame/laser/bolt + GPU shots |
 | 8 | Selection circles glitch on base/map/units | main | DONE | `shots/gpu-rings-move.png` (draped field) |
 | 9 | Smoke / stabilise / mark (sim + renderer) | main | DONE | `shots/gpu-abilities.png`, 396 tests |
 | 10 | Dash / charge / breach | main | DONE | abilities3.test.ts, chaos green |
 | 11 | GUI clarity pass (hints, disclosure, chrome) | gui agent | DONE (merged) | ui-audit clean 4×4 |
 | 12 | One art direction (toon infantry + stylized hulls) | main | DONE | `shots/gpu-portrait-crop.png` |
-| 13 | Remaining unit-identity picks (5, 8–10, 14–18, 20) | sim agent | TODO | tests per pick |
-| 14 | Balance check after all abilities (bot-vs-bot win rates) | sim agent | TODO | balance smoke output |
+| 13 | Remaining unit-identity picks (5, 8–10, 14–18, 20) | sim agent | RUNNING | tests per pick |
+| 14 | Balance check after all abilities (bot-vs-bot win rates) | sim agent | RUNNING | balance.test.ts table |
 | 15 | Docs: CLAUDE.md + fun-pass Status updated for everything above | main | TODO | diff |
 | 16 | Final: `test:full`, `soak:gpu`, perf rebase, standalone build handed over | main | TODO | logs |
 
