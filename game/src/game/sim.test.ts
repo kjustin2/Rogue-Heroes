@@ -1657,7 +1657,7 @@ describe("tactical enemy AI", () => {
       // measuring the faction gate instead of the economy decision it is written to measure.
       sim.setFaction("enemy", "bastion");
       sim.difficulty = difficulty;
-      sim.economy.set("enemy", 400); // affords a tank (400), grenadier (250), etc.
+      sim.economy.set("enemy", troopSpec("tank").cost); // affords a tank, grenadier (250), etc.
       sim.endTurn();
       return sim.entities.find((e) => e.team === "enemy" && e.id.startsWith("e-spawn-"))?.kind;
     };

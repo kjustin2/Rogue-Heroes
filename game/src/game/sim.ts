@@ -1919,6 +1919,31 @@ export class TacticalSim {
     return entity;
   }
 
+  /**
+   * HOTSEAT: issue the enemy AI's orders for the PLAYER side during the command phase. Every
+   * team-keyed thing (entity teams, economy, mines) is swapped, the AI runs as if the player's
+   * army were its own (base purchases included), and everything is swapped back. This is how
+   * balance.test.ts plays the one AI against itself. Test/debug surface only.
+   */
+  debugCommandAsAi(): void {
+    if (this.phase !== "command") return;
+    const flip = (team: Team): Team => (team === "player" ? "enemy" : team === "enemy" ? "player" : team);
+    const swap = (): void => {
+      for (const e of this.entities) e.team = flip(e.team);
+      for (const m of this.mines) m.team = flip(m.team);
+      const player = this.economy.get("player") ?? 0;
+      const enemy = this.economy.get("enemy") ?? 0;
+      this.economy.set("player", enemy);
+      this.economy.set("enemy", player);
+    };
+    swap();
+    try {
+      this.queueEnemyOrders();
+    } finally {
+      swap();
+    }
+  }
+
   debugSpawn(kind: TroopKind, team: Team, position: Vec2, options: { elite?: boolean; bossName?: string } = {}): CombatEntity {
     const id = `${team === "player" ? "p" : "e"}-dbg-${++this.troopSeq}`;
     const unit = makeTroop(kind, id, options.bossName ?? `${troopSpec(kind).label} ${this.troopSeq}`, team, clampToArena(position));
@@ -4441,7 +4466,10 @@ export class TacticalSim {
         const isMelee = enemy.kind === "striker";
         // A unit that has lost its weapon or is badly wounded retreats toward base instead of
         // feeding itself into fire — but only if it has somewhere to fall back to.
-        const crippled = profile.retreat && !carrying && Boolean(home) && (!enemy.status.canShoot || coreHpFraction(enemy) < 0.3);
+        // "Lost its weapon" is status.disarmed (had a weapon, it is gone), NOT !canShoot: a striker,
+        // bomber or transport never CAN shoot, and reading that as crippled sent every one of them
+        // home for the whole battle (found by balance.test.ts — 0 damage from 14 strikers).
+        const crippled = profile.retreat && !carrying && Boolean(home) && (enemy.status.disarmed || coreHpFraction(enemy) < 0.3);
         // FEAR (flamer): infantry near burning ground run from it instead of pressing. A flag
         // carrier still runs the flag home; vehicles and flyers do not care.
         const fire = isInfantryKind(enemy.kind) && !carrying ? this.nearestBurnZone(enemy.position, FLAMER_FEAR_RADIUS) : undefined;
