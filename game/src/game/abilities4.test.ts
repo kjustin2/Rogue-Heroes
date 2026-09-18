@@ -147,3 +147,62 @@ describe("apc carry", () => {
     expect(sim.log.some((l) => l.includes("bails out"))).toBe(true);
   });
 });
+
+describe("artillery deploy", () => {
+  it("cannot fire until deployed, deploys by holding still or by order, and packing up to move costs the turn", () => {
+    const sim = staged();
+    const gun = sim.debugSpawn("artillery", "player", { x: -14, z: 0 });
+    const target = sim.debugSpawn("soldier", "enemy", { x: 10, z: 0 });
+    disarm(target);
+    expect(gun.deployed).toBeFalsy();
+    sim.debugSelect(gun.id);
+    expect(sim.queueShoot(target.id)).toBe(false);
+    expect(sim.log[0]).toContain("must deploy");
+    expect(sim.queueShootAt({ x: 10, z: 0 })).toBe(false);
+    // Holding still for a turn deploys it automatically…
+    sim.endTurn();
+    settle(sim);
+    expect(gun.deployed).toBe(true);
+    expect(sim.log.some((l) => l.includes("deploys its outriggers"))).toBe(true);
+    // …and deployed it fires (the round is a real order that resolves).
+    sim.debugSelect(gun.id);
+    expect(sim.queueShootAt({ x: 10, z: 0 })).toBe(true);
+    sim.endTurn();
+    settle(sim);
+    expect(sim.log.some((l) => l.includes("fires at the marked spot"))).toBe(true);
+    expect(gun.deployed).toBe(true); // it did not move: still deployed
+
+    // Packing up: a move needs the whole turn and undeploys; a half-spent turn is refused.
+    sim.debugSelect(gun.id);
+    gun.commandPoints = gun.maxCommandPoints - 1;
+    if (gun.commandPoints > 0) {
+      expect(sim.queueMove({ x: -14, z: -4 })).toBe(false);
+      expect(sim.log[0]).toContain("packing up");
+    }
+    gun.commandPoints = gun.maxCommandPoints;
+    expect(sim.queueMove({ x: -14, z: -4 })).toBe(true);
+    expect(gun.commandPoints).toBe(0);
+    expect(gun.deployed).toBe(false);
+    sim.endTurn();
+    settle(sim);
+    expect(gun.deployed).toBe(false); // moved this resolve, so no auto-deploy
+    expect(gun.position.z).toBeLessThan(-1); // it moved (blocked props on Dust Bowl shorten the step)
+
+    // The explicit order takes the whole turn and lands the same flag; it rides a save.
+    sim.debugSelect(gun.id);
+    expect(sim.queueDeploy()).toBe(true);
+    expect(gun.commandPoints).toBe(0);
+    expect(sim.queueDeploy()).toBe(false);
+    sim.endTurn();
+    settle(sim);
+    expect(gun.deployed).toBe(true);
+    const copy = new TacticalSim();
+    expect(copy.restore(sim.serialize())).toBe(true);
+    expect(copy.entity(gun.id)?.deployed).toBe(true);
+    // A plain tank never needs any of this.
+    const tank = sim.debugSpawn("tank", "player", { x: -14, z: 4 });
+    sim.debugSelect(tank.id);
+    expect(sim.queueDeploy()).toBe(false);
+    expect(sim.queueShootAt({ x: 10, z: 0 })).toBe(true);
+  });
+});

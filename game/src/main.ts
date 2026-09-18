@@ -258,6 +258,11 @@ const hud = new Hud(uiRoot, sim, {
     if (ok) sfx.select();
     return ok;
   },
+  queueDeploy: () => {
+    const ok = sim.queueDeploy();
+    if (ok) sfx.select();
+    return ok;
+  },
   queueMine: () => {
     const ok = sim.queueMine();
     if (ok) sfx.build();
@@ -2372,6 +2377,7 @@ declare global {
       queueCapture(id: string): boolean;
       queueMine(): boolean;
       queueRecon(): boolean;
+      queueDeploy(): boolean;
       upgradeBaseIncome(): boolean;
       upgradeBaseCommand(): boolean;
       researchTech(nodeId: string): boolean;
@@ -2461,6 +2467,7 @@ window.__rht = {
   queueCapture: (id) => sim.queueCapture(id),
   queueMine: () => sim.queueMine(),
   queueRecon: () => sim.queueRecon(),
+  queueDeploy: () => sim.queueDeploy(),
   upgradeBaseIncome: () => sim.upgradeBaseIncome(),
   upgradeBaseCommand: () => sim.upgradeBaseCommand(),
   researchTech: (nodeId) => sim.researchTech(nodeId),

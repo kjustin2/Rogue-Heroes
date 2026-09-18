@@ -80,6 +80,7 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "smoke", label: "Smoke", tip: "Mortar only. Lob a smoke round at a spot (1 CP, mortar range). The cloud lasts 3 turns and swallows every flat shot through it — arcing rounds still sail over." },
   { id: "load", label: "Load", tip: "Transport / APC. Click a friendly ground unit to take it aboard (a transport flies to it; an APC needs it beside the hull). Costs 1 CP." },
   { id: "unload", label: "Unload", tip: "Transport / APC. Click ground to set your passengers down (a transport flies there; an APC drops the ramp beside itself). Costs 1 CP." },
+  { id: "deploy", label: "Deploy", tip: "Artillery only. Plant the outriggers (whole turn). The gun fires only while deployed; it also deploys by itself any turn it does not move, and packing up to move costs a turn." },
   { id: "recon", label: "Recon", tip: "Drone Operator only. Spend the whole turn on a drone pulse: next turn, every enemy unit's planned order is shown on the board." },
 ];
 
@@ -127,6 +128,7 @@ export interface HudCallbacks {
   queueOverwatchToward(point: Vec2): boolean;
   queueMine(): boolean;
   queueRecon(): boolean;
+  queueDeploy(): boolean;
   queueSpawnTroop(kind: TroopKind): boolean;
   upgradeBaseIncome(): boolean;
   upgradeBaseCommand(): boolean;
@@ -562,6 +564,9 @@ export class Hud {
     }
     if (confirm === "recon") {
       if (this.callbacks.queueRecon()) this.afterConfirmedOrder();
+    }
+    if (confirm === "deploy") {
+      if (this.callbacks.queueDeploy()) this.afterConfirmedOrder();
     }
 
     const coverAction = target.closest<HTMLElement>("[data-cover-action]")?.dataset.coverAction;
@@ -1025,6 +1030,7 @@ function orderPlanner(
     action === "overwatch" ? overwatchState(actor, sim) : "",
     action === "mine" ? mineState(actor, sim) : "",
     action === "recon" ? reconState(actor, sim) : "",
+    action === "deploy" ? deployState(actor, sim) : "",
     // With nothing selected the bar used to say the same thing three times over ("No unit
     // selected" / "Select a unit" / "Pick squad") across a full-height panel. The header already
     // carries that state, so the body only appears when there is something to say about a target.
@@ -1451,6 +1457,20 @@ function mineState(actor: CombatEntity | undefined, sim: TacticalSim): string {
     <button class="btn confirm ${reason ? "disabled" : ""}" data-confirm="mine" data-disabled="${Boolean(reason)}" data-tip="${escapeAttr("Plant a proximity mine here ($15 + 1 CP).")}">
       Plant Mine
       <span>$15</span>
+    </button>
+  `;
+}
+
+function deployState(actor: CombatEntity | undefined, sim: TacticalSim): string {
+  const reason = actor ? sim.deployFailureReason(actor) : "Select artillery first";
+  return `
+    <div class="target-summary ${reason ? "blocked" : ""}">
+      <strong>${reason ? "Deploy unavailable" : "Ready to deploy"}</strong>
+      <span>${reason ? escapeHtml(reason) : "Outriggers go down this resolve. From next turn the gun can fire; moving again means packing up for a turn."}</span>
+    </div>
+    <button class="btn confirm ${reason ? "disabled" : ""}" data-confirm="deploy" data-disabled="${Boolean(reason)}" data-tip="${escapeAttr("Deploy the gun (whole turn).")}">
+      Deploy
+      <span>all CP</span>
     </button>
   `;
 }
@@ -2013,7 +2033,7 @@ function partRow(part: DamagePart, active: boolean): string {
 function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: TacticalSim): boolean {
   if (!actor || sim.phase !== "command" || actor.commandPoints <= 0) return true;
   if (action === "move") return !actor.status.canMove;
-  if (action === "shoot") return !actor.status.canShoot;
+  if (action === "shoot") return !actor.status.canShoot || (actor.kind === "artillery" && !actor.deployed);
   if (action === "grenade") return !(actor.kind === "soldier" || actor.flying) || actor.grenades <= 0;
   if (action === "ram") return actor.kind !== "tank" || !actor.status.canMove;
   if (action === "melee") return !isInfantryKind(actor.kind) || !actor.status.canMove || !hasStrikeWeapon(actor);
@@ -2024,6 +2044,7 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
   if (action === "load") return !isCarrier(actor) || !actor.status.canMove || (actor.passengerIds?.length ?? 0) >= 2;
   if (action === "unload") return !isCarrier(actor) || !(actor.passengerIds?.length);
   if (action === "recon") return Boolean(sim.reconFailureReason(actor));
+  if (action === "deploy") return Boolean(sim.deployFailureReason(actor));
   return false;
 }
 
@@ -2058,6 +2079,7 @@ function actionApplicable(action: Intent, actor: CombatEntity | undefined): bool
   if (action === "smoke") return actor.kind === "mortar";
   if (action === "load" || action === "unload") return isCarrier(actor);
   if (action === "recon") return actor.kind === "droneop";
+  if (action === "deploy") return actor.kind === "artillery";
   if (action === "grenade") return (actor.kind === "soldier" || actor.flying === true) && actor.maxGrenades > 0;
   if (action === "shoot" || action === "move") return true;
   return false;
@@ -2071,6 +2093,7 @@ function actionDisabledReason(action: Intent, actor: CombatEntity | undefined, s
     return `${actor.name} cannot move — its legs or treads are destroyed.`;
   }
   if (action === "shoot" && !actor.status.canShoot) return `${actor.name} cannot shoot — its weapon is destroyed.`;
+  if (action === "shoot" && actor.kind === "artillery" && !actor.deployed) return `${actor.name} must deploy before it can fire (Deploy, or hold still for a turn).`;
   if (action === "melee" && !hasStrikeWeapon(actor)) return `${actor.name} has no intact weapon to strike with.`;
   if (action === "grenade" && actor.grenades <= 0) return `${actor.name} is out of grenades.`;
   if (action === "overwatch") return sim.overwatchFailureReason(actor) ?? undefined;
@@ -2079,6 +2102,7 @@ function actionDisabledReason(action: Intent, actor: CombatEntity | undefined, s
   if (action === "load" && (actor.passengerIds?.length ?? 0) >= 2) return `${actor.kind === "apc" ? "The APC" : "The transport"} is full.`;
   if (action === "unload" && !(actor.passengerIds?.length)) return `${actor.kind === "apc" ? "The APC" : "The transport"} is empty.`;
   if (action === "recon") return sim.reconFailureReason(actor) ?? undefined;
+  if (action === "deploy") return sim.deployFailureReason(actor) ?? undefined;
   return undefined;
 }
 
@@ -2092,6 +2116,7 @@ function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: Tac
   if (action === "smoke") return actor.kind === "mortar" && actor.status.canShoot;
   if (action === "load" || action === "unload") return isCarrier(actor);
   if (action === "recon") return actor.kind === "droneop";
+  if (action === "deploy") return actor.kind === "artillery";
   if (action === "grenade") return (actor.kind === "soldier" || actor.flying === true) && actor.maxGrenades > 0;
   if (action === "shoot") return actor.status.canShoot;
   if (action === "move") return actor.status.canMove;
@@ -2106,6 +2131,7 @@ function orderSummary(order: TacticalOrder, sim: TacticalSim): string {
   if (order.kind === "load") return `Queued: ${sim.entity(order.actorId)?.kind === "apc" ? "board" : "airlift"} ${target?.name ?? "unit"}`;
   if (order.kind === "unload") return "Queued: unload";
   if (order.kind === "recon") return "Queued: recon pulse";
+  if (order.kind === "deploy") return "Queued: deploy";
   if (order.kind === "melee") return `Queued: strike ${target?.name ?? "target"}${part ? ` / ${part.label}` : ""}`;
   const verb = bombVerb(sim.entity(order.actorId)).toLowerCase();
   if (order.kind === "grenade" && order.destination && !target) return `Queued: ${verb} ${verb === "bomb" ? "drop" : "ground"}`;

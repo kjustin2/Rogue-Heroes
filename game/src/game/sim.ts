@@ -797,11 +797,20 @@ export class TacticalSim {
     const actor = this.requirePlayerActor();
     if (!actor) return false;
     if (!actor.status.canMove) return this.reject(`${actor.name} cannot move`);
+    // DEPLOYED artillery has its outriggers down: packing up to move takes the whole turn.
+    if (actor.kind === "artillery" && actor.deployed && (actor.commandPoints < actor.maxCommandPoints || this.orders.some((o) => o.actorId === actor.id))) {
+      return this.reject(`${actor.name} is deployed — packing up to move takes its whole turn`);
+    }
     const start = this.projectedActorForPreview(actor).position;
     const desired = clampToArena(destination);
     const limitedByRange = limitMoveDestination(actor, start, desired);
     const limited = this.blockedMoveDestination(actor, start, limitedByRange, allowedCoverId);
     if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
+    if (actor.kind === "artillery" && actor.deployed) {
+      actor.commandPoints = 0;
+      actor.deployed = false;
+      this.pushLog(`${actor.name} packs up its outriggers to move`);
+    }
     if (dist(desired, limited) > 0.05) this.pushLog(`${actor.name} move limited to ${moveRange(actor).toFixed(1)}m`);
     this.addOrder({
       actorId: actor.id,
@@ -1052,6 +1061,7 @@ export class TacticalSim {
     if (!actor) return false;
     if (!canGroundShellAttack(actor)) return this.reject(`${actor.name} cannot fire at the ground`);
     if (!actor.status.canShoot) return this.reject(`${actor.name} cannot shoot`);
+    if (actor.kind === "artillery" && !actor.deployed) return this.reject(`${actor.name} must deploy before it can fire`);
     if (this.isPowerCut(actor)) return this.reject(`${actor.name} has no power — the conduit is cut`);
     const point = clampToArena(destination);
     const projected = this.projectedActorForPreview(actor);
@@ -1087,6 +1097,32 @@ export class TacticalSim {
     if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
     this.addOrder({ actorId: actor.id, kind: "smoke", destination: point, aim: "center", duration: 1.35 });
     this.pushLog(`${actor.name} lays a smoke round on the marked spot`);
+    return true;
+  }
+
+  // ---- Artillery deploy ----
+
+  deployFailureReason(actor: CombatEntity | undefined): string | undefined {
+    if (!actor) return "Select a unit first";
+    if (actor.kind !== "artillery") return "Only artillery deploys";
+    if (!actor.status.alive) return `${actor.name} is disabled`;
+    if (actor.deployed) return `${actor.name} is already deployed`;
+    if (actor.commandPoints <= 0) return `${actor.name} has no command points`;
+    if (this.orders.some((o) => o.actorId === actor.id && (o.kind === "move" || o.kind === "ram"))) return `${actor.name} can't deploy while it has a move queued`;
+    return undefined;
+  }
+
+  /** Player API: plant the artillery's outriggers (whole turn). It fires only while deployed and
+   *  packing up to move costs a turn again. An artillery that simply does not move also deploys
+   *  on its own at end of turn — this order just says so explicitly. */
+  queueDeploy(): boolean {
+    const actor = this.requirePlayerActor();
+    if (!actor) return false;
+    const failure = this.deployFailureReason(actor);
+    if (failure) return this.reject(failure);
+    actor.commandPoints = 0;
+    this.addOrder({ actorId: actor.id, kind: "deploy", aim: "center", duration: 1.4 });
+    this.pushLog(`${actor.name} plants its outriggers`);
     return true;
   }
 
@@ -1813,12 +1849,21 @@ export class TacticalSim {
     this.enemyIntentCache = undefined;
     // HULL DOWN. A tank with no move/ram order this resolve settles in and takes 30% less damage
     // until it moves. Decided here so the enemy AI's tanks get it on the same terms.
+    // DEPLOY. Artillery that does not move this resolve plants its outriggers (it can fire from
+    // next turn); artillery that moves packs them up. Same terms for both sides.
     for (const e of this.entities) {
-      if (e.kind !== "tank" || !e.status.alive) continue;
+      if (!e.status.alive || (e.kind !== "tank" && e.kind !== "artillery")) continue;
       const moving = this.orders.some((o) => o.actorId === e.id && !o.done && (o.kind === "move" || o.kind === "ram"));
-      const was = Boolean(e.hullDown);
-      e.hullDown = !moving;
-      if (e.hullDown && !was) this.pushLog(`${e.name} goes hull down`);
+      if (e.kind === "tank") {
+        const was = Boolean(e.hullDown);
+        e.hullDown = !moving;
+        if (e.hullDown && !was) this.pushLog(`${e.name} goes hull down`);
+      } else if (moving) {
+        e.deployed = false;
+      } else if (!e.deployed && !this.orders.some((o) => o.actorId === e.id && o.kind === "deploy")) {
+        e.deployed = true;
+        this.pushLog(`${e.name} deploys its outriggers`);
+      }
     }
     this.scheduleMapStrikes();
     this.scheduleSupportStrikes();
@@ -2112,6 +2157,7 @@ export class TacticalSim {
 
   private queueShootFor(actor: CombatEntity, target: CombatEntity, aim: AimMode, partId?: string): boolean {
     if (!actor.status.canShoot) return this.reject(`${actor.name} cannot shoot`);
+    if (actor.kind === "artillery" && !actor.deployed) return this.reject(`${actor.name} must deploy before it can fire`);
     if (target.downed) return this.reject(`${target.name} is down — out of the fight unless a medic reaches them`);
     if (this.isPowerCut(actor)) return this.reject(`${actor.name} has no power — the conduit is cut`);
     // Plane guns are air-to-air: a gunship's autocannon only engages other flyers (it drops bombs
@@ -2274,6 +2320,18 @@ export class TacticalSim {
     if (order.kind === "defend") {
       actor.stance = order.stance ?? "crouched";
       this.defending.add(actor.id);
+      if (order.elapsed >= order.duration) order.done = true;
+      return;
+    }
+
+    if (order.kind === "deploy") {
+      if (!order.fired && order.elapsed >= 0.7) {
+        order.fired = true;
+        if (!actor.deployed) {
+          actor.deployed = true;
+          this.pushLog(`${actor.name} is deployed — outriggers down, gun ready`);
+        }
+      }
       if (order.elapsed >= order.duration) order.done = true;
       return;
     }
@@ -4330,6 +4388,9 @@ export class TacticalSim {
           committed.set(fireTarget.id, (committed.get(fireTarget.id) ?? 0) + perShot * burst);
         }
       }
+      // Artillery is a POSITION piece: once it has a target in reach it stays put and deploys
+      // (it cannot fire until it has), and once deployed it does not pack up to chase.
+      if (enemy.kind === "artillery" && (shootTarget || enemy.deployed) && enemy.status.canShoot) continue;
       // Otherwise advance: carriers run the flag home, crippled units fall back to base, others
       // push the objective or the nearest threat, routing around (and hugging) solid objects.
       if (enemy.status.canMove && enemy.commandPoints > 0) {
