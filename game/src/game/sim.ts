@@ -264,6 +264,14 @@ export interface TacticalOrder {
   projectileId?: string;
 }
 
+/** One enemy unit's planned order for the coming resolve, as revealed by a drone op's recon pulse. */
+export interface EnemyIntent {
+  actorId: string;
+  kind: OrderKind;
+  destination?: Vec2;
+  targetId?: string;
+}
+
 export interface VisualEvent {
   id: string;
   // "jet" = a strike aircraft flying from->to; "beam" = an orbital lance burning the from->to
@@ -473,6 +481,13 @@ export class TacticalSim {
   readonly gasClouds: { id: string; x: number; z: number; radius: number; maxRadius: number }[] = [];
   // Mortar smoke: flat shots through a cloud are lost in it; shrinks a turn per turn start. Rides serialize().
   readonly smokeClouds: { id: string; x: number; z: number; radius: number; turnsLeft: number }[] = [];
+  // RECON (drone op): set when a recon order resolves; the enemy's NEXT command is revealed, so
+  // during the following command phase enemyIntents() can show what each enemy unit will do.
+  // Cleared once that command is actually issued. Rides serialize().
+  revealedOrders = false;
+  private enemyIntentCache?: { turn: number; list: EnemyIntent[] };
+  // True while enemyIntents() dry-runs the enemy AI: addOrder stays silent (no log, no bus event).
+  private previewingEnemy = false;
   readonly mines: { id: string; x: number; z: number; team: Team }[] = [];
   // Loose cash caches scattered on the field at battle start: a unit that runs over one banks its
   // cash for that team, then it's gone. A "grab the loot" incentive to spread out and take ground.
@@ -641,6 +656,8 @@ export class TacticalSim {
     this.burnZones.splice(0);
     this.gasClouds.splice(0);
     this.smokeClouds.splice(0);
+    this.revealedOrders = false;
+    this.enemyIntentCache = undefined;
     this.mines.splice(0);
     this.placePickups();
     this.killsBy.clear();
@@ -1062,6 +1079,66 @@ export class TacticalSim {
     this.addOrder({ actorId: actor.id, kind: "smoke", destination: point, aim: "center", duration: 1.35 });
     this.pushLog(`${actor.name} lays a smoke round on the marked spot`);
     return true;
+  }
+
+  // ---- Drone op recon pulse ----
+
+  reconFailureReason(actor: CombatEntity | undefined): string | undefined {
+    if (!actor) return "Select a unit first";
+    if (actor.kind !== "droneop") return "Only a drone operator can send a recon pulse";
+    if (!actor.status.alive) return `${actor.name} is disabled`;
+    if (!actor.parts.some((p) => p.role === "utility" && p.hp > 0)) return `${actor.name}'s drone is destroyed`;
+    if (actor.commandPoints <= 0) return `${actor.name} has no command points`;
+    if (actor.commandPoints < actor.maxCommandPoints || this.orders.some((o) => o.actorId === actor.id)) return `${actor.name} needs its whole turn for a recon pulse`;
+    if (this.revealedOrders) return "The enemy's orders are already revealed";
+    return undefined;
+  }
+
+  /** Player API: the drone op spends its whole turn on a pulse that reveals every enemy unit's
+   *  next order (see enemyIntents()) during the player's next command phase. */
+  queueRecon(): boolean {
+    const actor = this.requirePlayerActor();
+    if (!actor) return false;
+    const failure = this.reconFailureReason(actor);
+    if (failure) return this.reject(failure);
+    actor.commandPoints = 0;
+    this.addOrder({ actorId: actor.id, kind: "recon", aim: "center", duration: 1.4 });
+    this.pushLog(`${actor.name} sends the drone up for a recon pulse`);
+    return true;
+  }
+
+  /**
+   * What each enemy unit will do this coming resolve, once a recon pulse has revealed it: the
+   * enemy AI is DRY-RUN against the current board and everything it touched (command points,
+   * grenades, the order list, the log, the rng stream) is put back, so the real decision at
+   * endTurn is byte-identical to the preview. Cached per turn; empty when nothing is revealed.
+   */
+  enemyIntents(): EnemyIntent[] {
+    if (!this.revealedOrders || this.phase !== "command") return [];
+    if (this.enemyIntentCache?.turn === this.turn) return this.enemyIntentCache.list;
+    const rngState = this.rng.save();
+    const snapshot = this.entities.map((e) => ({ e, cp: e.commandPoints, grenades: e.grenades, yaw: e.yaw }));
+    const orderCount = this.orders.length;
+    const orderSeq = this.orderSeq;
+    const logBefore = this.log.slice();
+    this.previewingEnemy = true;
+    try {
+      this.queueEnemyOrders(true);
+    } finally {
+      this.previewingEnemy = false;
+    }
+    const list: EnemyIntent[] = this.orders.slice(orderCount).map((o) => ({
+      actorId: o.actorId, kind: o.kind,
+      destination: o.destination ? { ...o.destination } : undefined,
+      targetId: o.targetId,
+    }));
+    this.orders.length = orderCount;
+    this.orderSeq = orderSeq;
+    this.log.splice(0, this.log.length, ...logBefore);
+    for (const { e, cp, grenades, yaw } of snapshot) { e.commandPoints = cp; e.grenades = grenades; e.yaw = yaw; }
+    this.rng.load(rngState);
+    this.enemyIntentCache = { turn: this.turn, list };
+    return list;
   }
 
   /** Whether a flat shot along from->to passes through a smoke cloud. */
@@ -1723,6 +1800,8 @@ export class TacticalSim {
     // Last Stand: reinforcement waves crest every other round before the enemy acts.
     if (this.mode === "survival" && this.turn % 2 === 1 && this.phase === "command") this.spawnSurvivalWave();
     this.queueEnemyOrders();
+    this.revealedOrders = false; // the pulse covered exactly this one enemy command
+    this.enemyIntentCache = undefined;
     // HULL DOWN. A tank with no move/ram order this resolve settles in and takes 30% less damage
     // until it moves. Decided here so the enemy AI's tanks get it on the same terms.
     for (const e of this.entities) {
@@ -1890,6 +1969,7 @@ export class TacticalSim {
       burnZones: this.burnZones,
       gasClouds: this.gasClouds,
       smokeClouds: this.smokeClouds,
+      revealedOrders: this.revealedOrders,
       mines: this.mines,
       pickups: this.pickups,
     });
@@ -1907,6 +1987,7 @@ export class TacticalSim {
         burnZones?: { id: string; x: number; z: number; radius: number; turnsLeft: number }[];
         gasClouds?: { id: string; x: number; z: number; radius: number; maxRadius: number }[];
         smokeClouds?: { id: string; x: number; z: number; radius: number; turnsLeft: number }[];
+        revealedOrders?: boolean;
         mines?: { id: string; x: number; z: number; team: Team }[];
         pickups?: { id: string; x: number; z: number; amount: number }[];
       };
@@ -1956,6 +2037,8 @@ export class TacticalSim {
       this.burnZones.splice(0, this.burnZones.length, ...(data.burnZones ?? []));
       this.gasClouds.splice(0, this.gasClouds.length, ...(data.gasClouds ?? []));
       this.smokeClouds.splice(0, this.smokeClouds.length, ...(data.smokeClouds ?? []));
+      this.revealedOrders = data.revealedOrders === true;
+      this.enemyIntentCache = undefined;
       this.mines.splice(0, this.mines.length, ...(data.mines ?? []));
       this.pickups.splice(0, this.pickups.length, ...(data.pickups ?? []));
       this.log.splice(0);
@@ -2165,6 +2248,7 @@ export class TacticalSim {
       done: false,
     };
     this.orders.push(order);
+    if (this.previewingEnemy) return;
     this.pushLog(`${this.entity(order.actorId)?.name ?? "Unit"} queued ${order.kind}`);
     this.bus.emit("ORDER_QUEUED", { actorId: order.actorId, kind: order.kind });
   }
@@ -2181,6 +2265,18 @@ export class TacticalSim {
     if (order.kind === "defend") {
       actor.stance = order.stance ?? "crouched";
       this.defending.add(actor.id);
+      if (order.elapsed >= order.duration) order.done = true;
+      return;
+    }
+
+    if (order.kind === "recon") {
+      if (!order.fired && order.elapsed >= 0.6) {
+        order.fired = true;
+        this.revealedOrders = true;
+        this.enemyIntentCache = undefined;
+        this.pushLog(`${actor.name}'s drone maps the enemy's plans — their next orders are revealed`);
+        this.effect("ping", actor.position, actor.position, 0x8de4ff, 0.9, 6);
+      }
       if (order.elapsed >= order.duration) order.done = true;
       return;
     }
@@ -4125,24 +4221,28 @@ export class TacticalSim {
     return { focusFire: true, useCover: true, retreat: true, smartEconomy: true };
   }
 
-  private queueEnemyOrders(): void {
+  // `dryRun` (recon preview): decide unit orders only — no repairs, no comms clamp, no base
+  // purchases — so enemyIntents() can undo everything it touched.
+  private queueEnemyOrders(dryRun = false): void {
     const profile = this.aiProfile();
-    for (const entity of this.living("enemy")) repairForNewTurn(entity);
-    const enemyCommsOnline = this.entities.some((e) =>
-      e.team === "enemy" &&
-      e.kind === "base" &&
-      e.status.alive &&
-      Boolean(e.parts.find((p) => p.id === "comms" && p.hp > 0))
-    );
-    if (!enemyCommsOnline) {
-      for (const entity of this.living("enemy")) {
-        if (entity.kind !== "base") entity.commandPoints = Math.min(entity.commandPoints, 1);
+    if (!dryRun) {
+      for (const entity of this.living("enemy")) repairForNewTurn(entity);
+      const enemyCommsOnline = this.entities.some((e) =>
+        e.team === "enemy" &&
+        e.kind === "base" &&
+        e.status.alive &&
+        Boolean(e.parts.find((p) => p.id === "comms" && p.hp > 0))
+      );
+      if (!enemyCommsOnline) {
+        for (const entity of this.living("enemy")) {
+          if (entity.kind !== "base") entity.commandPoints = Math.min(entity.commandPoints, 1);
+        }
       }
-    }
-    // The enemy Home Base reinforces or upgrades before its units act. Newly deployed
-    // troops have 0 CP, so they simply hold position until the next turn.
-    for (const base of this.living("enemy")) {
-      if (base.kind === "base") this.enemyBaseAct(base);
+      // The enemy Home Base reinforces or upgrades before its units act. Newly deployed
+      // troops have 0 CP, so they simply hold position until the next turn.
+      for (const base of this.living("enemy")) {
+        if (base.kind === "base") this.enemyBaseAct(base);
+      }
     }
     // Carried passengers are aboard a transport — not targetable and not on the ground.
     const players = this.living("player").filter((entity) => !isBuildingKind(entity.kind) && !entity.carriedById && !entity.downed);

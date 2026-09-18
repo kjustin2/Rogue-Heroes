@@ -80,6 +80,7 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "smoke", label: "Smoke", tip: "Mortar only. Lob a smoke round at a spot (1 CP, mortar range). The cloud lasts 3 turns and swallows every flat shot through it — arcing rounds still sail over." },
   { id: "load", label: "Load", tip: "Transport only. Click a friendly ground unit to airlift it aboard. Costs 1 CP." },
   { id: "unload", label: "Unload", tip: "Transport only. Click ground to fly there and set your passengers down. Costs 1 CP." },
+  { id: "recon", label: "Recon", tip: "Drone Operator only. Spend the whole turn on a drone pulse: next turn, every enemy unit's planned order is shown on the board." },
 ];
 
 // WHAT THE CARD DOES, AS AN INSTRUCTION. The catalog tips above are reference text (what the
@@ -125,6 +126,7 @@ export interface HudCallbacks {
   queueOverwatch(): boolean;
   queueOverwatchToward(point: Vec2): boolean;
   queueMine(): boolean;
+  queueRecon(): boolean;
   queueSpawnTroop(kind: TroopKind): boolean;
   upgradeBaseIncome(): boolean;
   upgradeBaseCommand(): boolean;
@@ -557,6 +559,9 @@ export class Hud {
     }
     if (confirm === "mine") {
       if (this.callbacks.queueMine()) this.afterConfirmedOrder();
+    }
+    if (confirm === "recon") {
+      if (this.callbacks.queueRecon()) this.afterConfirmedOrder();
     }
 
     const coverAction = target.closest<HTMLElement>("[data-cover-action]")?.dataset.coverAction;
@@ -1019,6 +1024,7 @@ function orderPlanner(
     action === "defend" ? defendState(canDefend, defendTip) : "",
     action === "overwatch" ? overwatchState(actor, sim) : "",
     action === "mine" ? mineState(actor, sim) : "",
+    action === "recon" ? reconState(actor, sim) : "",
     // With nothing selected the bar used to say the same thing three times over ("No unit
     // selected" / "Select a unit" / "Pick squad") across a full-height panel. The header already
     // carries that state, so the body only appears when there is something to say about a target.
@@ -1445,6 +1451,20 @@ function mineState(actor: CombatEntity | undefined, sim: TacticalSim): string {
     <button class="btn confirm ${reason ? "disabled" : ""}" data-confirm="mine" data-disabled="${Boolean(reason)}" data-tip="${escapeAttr("Plant a proximity mine here ($15 + 1 CP).")}">
       Plant Mine
       <span>$15</span>
+    </button>
+  `;
+}
+
+function reconState(actor: CombatEntity | undefined, sim: TacticalSim): string {
+  const reason = actor ? sim.reconFailureReason(actor) : "Select a drone operator first";
+  return `
+    <div class="target-summary ${reason ? "blocked" : ""}">
+      <strong>${reason ? "Recon unavailable" : "Recon pulse ready"}</strong>
+      <span>${reason ? escapeHtml(reason) : "The drone goes up for the whole turn. Next turn, every enemy unit's planned move and target is shown on the board before you give orders."}</span>
+    </div>
+    <button class="btn confirm ${reason ? "disabled" : ""}" data-confirm="recon" data-disabled="${Boolean(reason)}" data-tip="${escapeAttr("Send the recon pulse (whole turn).")}">
+      Send Pulse
+      <span>all CP</span>
     </button>
   `;
 }
@@ -2003,6 +2023,7 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
   if (action === "smoke") return Boolean(sim.smokeFailureReason(actor));
   if (action === "load") return actor.kind !== "transport" || !actor.status.canMove || (actor.passengerIds?.length ?? 0) >= 2;
   if (action === "unload") return actor.kind !== "transport" || !(actor.passengerIds?.length);
+  if (action === "recon") return Boolean(sim.reconFailureReason(actor));
   return false;
 }
 
@@ -2031,6 +2052,7 @@ function actionApplicable(action: Intent, actor: CombatEntity | undefined): bool
   if (action === "mine") return actor.kind === "sapper";
   if (action === "smoke") return actor.kind === "mortar";
   if (action === "load" || action === "unload") return actor.kind === "transport";
+  if (action === "recon") return actor.kind === "droneop";
   if (action === "grenade") return (actor.kind === "soldier" || actor.flying === true) && actor.maxGrenades > 0;
   if (action === "shoot" || action === "move") return true;
   return false;
@@ -2051,6 +2073,7 @@ function actionDisabledReason(action: Intent, actor: CombatEntity | undefined, s
   if (action === "smoke") return sim.smokeFailureReason(actor) ?? undefined;
   if (action === "load" && (actor.passengerIds?.length ?? 0) >= 2) return "The transport is full.";
   if (action === "unload" && !(actor.passengerIds?.length)) return "The transport is empty.";
+  if (action === "recon") return sim.reconFailureReason(actor) ?? undefined;
   return undefined;
 }
 
@@ -2063,6 +2086,7 @@ function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: Tac
   if (action === "mine") return actor.kind === "sapper";
   if (action === "smoke") return actor.kind === "mortar" && actor.status.canShoot;
   if (action === "load" || action === "unload") return actor.kind === "transport";
+  if (action === "recon") return actor.kind === "droneop";
   if (action === "grenade") return (actor.kind === "soldier" || actor.flying === true) && actor.maxGrenades > 0;
   if (action === "shoot") return actor.status.canShoot;
   if (action === "move") return actor.status.canMove;
@@ -2076,6 +2100,7 @@ function orderSummary(order: TacticalOrder, sim: TacticalSim): string {
   if (order.kind === "ram") return `Queued: ram ${target?.name ?? "target"}`;
   if (order.kind === "load") return `Queued: airlift ${target?.name ?? "unit"}`;
   if (order.kind === "unload") return "Queued: unload";
+  if (order.kind === "recon") return "Queued: recon pulse";
   if (order.kind === "melee") return `Queued: strike ${target?.name ?? "target"}${part ? ` / ${part.label}` : ""}`;
   const verb = bombVerb(sim.entity(order.actorId)).toLowerCase();
   if (order.kind === "grenade" && order.destination && !target) return `Queued: ${verb} ${verb === "bomb" ? "drop" : "ground"}`;

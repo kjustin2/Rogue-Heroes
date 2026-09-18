@@ -53,3 +53,46 @@ describe("flamer fear", () => {
     expect(run(false)).toBeLessThan(2); // control: pressed the player (-x), straight past the spot
   });
 });
+
+describe("drone op recon pulse", () => {
+  it("costs the whole turn, reveals the enemy's next orders exactly as they are then issued, and leaves the rng untouched", () => {
+    const sim = staged();
+    const op = sim.debugSpawn("droneop", "player", { x: -10, z: 0 });
+    const enemy = sim.debugSpawn("soldier", "enemy", { x: 8, z: 0 });
+    // A plain soldier cannot pulse; the drone op can, and it takes every command point.
+    const soldier = sim.debugSpawn("soldier", "player", { x: -10, z: 3 });
+    sim.debugSelect(soldier.id);
+    expect(sim.queueRecon()).toBe(false);
+    expect(sim.enemyIntents()).toEqual([]); // nothing revealed yet
+    sim.debugSelect(op.id);
+    expect(sim.queueRecon()).toBe(true);
+    expect(op.commandPoints).toBe(0);
+    sim.endTurn();
+    settle(sim);
+    expect(sim.revealedOrders).toBe(true);
+    expect(sim.log.some((l) => l.includes("next orders are revealed"))).toBe(true);
+
+    // Command phase: the enemy's plan is readable, the preview changed nothing, and it is stable.
+    const before = sim.serialize();
+    const intents = sim.enemyIntents();
+    expect(intents.length).toBeGreaterThan(0);
+    expect(intents.some((i) => i.actorId === enemy.id)).toBe(true);
+    expect(sim.serialize()).toBe(before);
+    expect(sim.enemyIntents()).toEqual(intents);
+    // The reveal rides a save/restore round trip.
+    const copy = new TacticalSim();
+    expect(copy.restore(before)).toBe(true);
+    expect(copy.revealedOrders).toBe(true);
+    // (the rng stream itself is not saved, so a restored copy may roll a different aim — the
+    // actors it plans for are the same)
+    expect(copy.enemyIntents().map((i) => i.actorId)).toEqual(intents.map((i) => i.actorId));
+
+    // The real command matches the preview order-for-order, then the reveal is spent.
+    sim.endTurn();
+    const issued = sim.orders.filter((o) => o.actorId !== op.id && o.actorId !== soldier.id).map((o) => ({ actorId: o.actorId, kind: o.kind, destination: o.destination, targetId: o.targetId }));
+    expect(issued).toEqual(intents);
+    expect(sim.revealedOrders).toBe(false);
+    settle(sim);
+    expect(sim.enemyIntents()).toEqual([]);
+  });
+});
