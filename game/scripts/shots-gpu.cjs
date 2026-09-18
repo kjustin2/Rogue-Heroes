@@ -181,6 +181,17 @@ app.whenReady().then(async () => {
         await shot("abilities");
         continue;
       }
+      if (s === "maps") {
+        // One gameplay-zoom frame per battlefield, for the prop-variety / palette review.
+        for (const map of ["dustbowl", "ironworks", "verdant", "causeway", "karak", "crossfire"]) {
+          await js(`window.__rht.startBattle(${JSON.stringify(map)}, "destroy", "normal"); window.__rht.deselect();`);
+          await sleep(3000);
+          await js(`window.__rht.setView({ x: 0, z: 0, zoom: 0.8, pitch: 0.6, yaw: 0.2 })`);
+          await sleep(900);
+          await shot("map-" + map);
+        }
+        continue;
+      }
       if (s === "lineup") {
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
         await sleep(1500);

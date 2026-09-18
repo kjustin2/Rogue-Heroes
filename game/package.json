@@ -50,6 +50,7 @@
     "art:props": "node scripts/blender.mjs art/props/author_props.py",
     "art:validate:selftest": "node scripts/blender.mjs art/infantry/validate_selftest.py",
     "art:inspect": "node scripts/inspect-glb.mjs",
+    "probe:map": "node scripts/probe-map.mjs",
     "shots:diff": "node scripts/shot-diff.mjs",
     "smoke:core": "npm run smoke:buttons && npm run smoke:flow && npm run smoke:economy && npm run smoke:deep && npm run smoke:ground && npm run smoke:ui-audit && npm run smoke:faction && npm run smoke:animation && npm run smoke:director",
     "test:full": "npm run verify && npm run smoke:core",

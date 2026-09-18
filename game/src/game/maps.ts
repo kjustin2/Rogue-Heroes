@@ -210,6 +210,15 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
     placed.push({ x: p.x, z: p.z, r: profile.radius });
   };
 
+  // Capturable neutrals (depots, derelict turrets) are placed by scenario.ts AFTER this runs, so
+  // reserve their footprints first: scatter used to drop an ammo cache into a supply depot whenever
+  // the palette changed and the rng sequence shifted with it.
+  for (const n of map.neutrals ?? []) {
+    const r = n.kind === "depot" ? COVER_PROFILES.depot.radius : 1.3;
+    placed.push({ x: n.x, z: n.z, r });
+    if (n.mirror) placed.push({ x: -n.x, z: -n.z, r });
+  }
+
   // Signature features first (explicit, optionally mirrored).
   for (const sig of map.signature ?? []) {
     const profile = COVER_PROFILES[sig.kind];
@@ -239,7 +248,7 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
     const maxZ = group.maxZ ?? bounds.maxZ - 2.5;
     let made = 0;
     let attempts = 0;
-    const cap = group.count * 60;
+    const cap = group.count * 160; // crowded maps (Ironworks) need the retries now that neutrals are reserved
     while (made < group.count && attempts < cap) {
       attempts += 1;
       const x = rng.range(bounds.minX + 2.5, center.x - gap);
@@ -326,8 +335,8 @@ const RAW_MAPS: readonly MapDef[] = [
     hill: { x: 0, z: 0 },
     hillRadius: 4.2,
     scatter: [
-      { palette: ["rock", "rock", "sandbag", "barricade", "bunker", "cactus", "cactus", "tent"], count: 10, spacing: 2.4, centerGap: 3 },
-      { palette: ["fuel", "ammo"], count: 3, spacing: 3.0, centerGap: 5 },
+      { palette: ["rock", "rock", "sandbag", "barricade", "bunker", "cactus", "cactus", "tent", "wreck", "rubble"], count: 12, spacing: 2.4, centerGap: 3 },
+      { palette: ["fuel", "ammo", "crate"], count: 4, spacing: 3.0, centerGap: 5 },
     ],
     signature: [
       { kind: "rock", x: -6, z: 4, mirror: true, radius: 1.3, height: 1.6 },
@@ -431,8 +440,8 @@ const RAW_MAPS: readonly MapDef[] = [
     // A storm rolls through the valley: from turn 4, lightning strikes one marked point every turn.
     events: [{ kind: "lightning", startTurn: 4, period: 1, power: 46 }],
     scatter: [
-      { palette: ["tree", "tree", "rock", "bush", "bush", "stump", "log"], count: 15, spacing: 1.6, centerGap: 6 },
-      { palette: ["sandbag", "rubble"], count: 3, spacing: 2.4, centerGap: 7 },
+      { palette: ["tree", "tree", "rock", "bush", "bush", "stump", "log", "log"], count: 16, spacing: 1.6, centerGap: 6 },
+      { palette: ["sandbag", "rubble", "tent", "crate"], count: 4, spacing: 2.4, centerGap: 7 },
     ],
     signature: [
       { kind: "rock", x: -4.5, z: 4, mirror: true, radius: 1.1 },
@@ -486,8 +495,10 @@ const RAW_MAPS: readonly MapDef[] = [
     hill: { x: 0, z: 0 },
     hillRadius: 3.6,
     scatter: [
-      { palette: ["rubble", "rock", "wall", "container"], count: 5, spacing: 1.6, minZ: -6, maxZ: 6, centerGap: 2.5 },
-      { palette: ["crate", "sandbag"], count: 2, spacing: 1.8, minZ: -5, maxZ: 5, centerGap: 3 },
+      // A frozen causeway is a wrecked supply route: dead stumps and boulders in the ice, an abandoned
+      // convoy's hulks and containers, a pillbox, a jersey barrier — not the same four props repeated.
+      { palette: ["rubble", "rock", "rock", "wall", "container", "wreck", "stump", "bunker", "barricade"], count: 8, spacing: 1.6, minZ: -6, maxZ: 6, centerGap: 2.5 },
+      { palette: ["crate", "sandbag", "fuel"], count: 3, spacing: 1.8, minZ: -5, maxZ: 5, centerGap: 3 },
     ],
     signature: [
       { kind: "wall", x: -3, z: 0, mirror: true },
@@ -545,8 +556,10 @@ const RAW_MAPS: readonly MapDef[] = [
     hill: { x: 0, z: 0 },
     hillRadius: 3.2,
     scatter: [
-      { palette: ["pillar", "rubble", "rock", "gas", "statue", "statue"], count: 11, spacing: 1.8, centerGap: 4 },
-      { palette: ["wall", "cliff"], count: 3, spacing: 2.6, centerGap: 6 },
+      // Overgrown ruins: the fallen city's pillars, statues and rubble, with scrub and dead stumps
+      // reclaiming it, and the odd burnt-out hull from the last army that tried to hold it.
+      { palette: ["pillar", "rubble", "rock", "gas", "statue", "statue", "bush", "stump", "crate"], count: 13, spacing: 1.8, centerGap: 4 },
+      { palette: ["wall", "cliff", "wreck"], count: 4, spacing: 2.6, centerGap: 6 },
     ],
     signature: [
       { kind: "pillar", x: -5.5, z: 4.5, mirror: true },
@@ -607,7 +620,7 @@ const RAW_MAPS: readonly MapDef[] = [
     hill: { x: 0, z: 0 },
     hillRadius: 3.8,
     scatter: [
-      { palette: ["sandbag", "crate", "barricade", "bunker", "bush", "log"], count: 9, spacing: 2.0, centerGap: 3 },
+      { palette: ["sandbag", "crate", "barricade", "bunker", "bush", "log", "tree", "rock", "stump", "wreck"], count: 11, spacing: 2.0, centerGap: 3 },
       { palette: ["ammo", "fuel", "gas"], count: 3, spacing: 3.0, centerGap: 5 },
     ],
     signature: [

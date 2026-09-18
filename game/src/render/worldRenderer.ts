@@ -5868,6 +5868,9 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
         ));
       }
     }
+    // A variant whose every blob fell over water has nothing to merge — mergeGeometries([]) throws
+    // (it reads geometries[0]), and that killed applyMap on Crossfire Basin.
+    if (!parts.length) continue;
     const merged = mergeGeometries(parts, false);
     for (const geo of parts) geo.dispose();
     if (!merged) continue;
