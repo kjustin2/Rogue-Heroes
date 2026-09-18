@@ -71,6 +71,29 @@ try {
       for (const f of findings.slice(0, 6)) console.log(`         ${f.rule}: ${f.sel} — ${f.detail}`);
     }
   }
+  // FAULT INJECTION — the gate must be able to fail. Lay a strip over the Skirmish page's
+  // Difficulty row (the shape of the real bug: the sticky Deploy bar over the faction cards) and
+  // demand the occluded rule names it; then take the strip away and demand it goes quiet again.
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.evaluate(() => window.__rht.toMenu());
+  await delay(400);
+  await page.click('[data-menu="play"]');
+  await delay(500);
+  const injected = await page.evaluate(() => {
+    const card = document.querySelector(".menu-screen > .menu-content");
+    const strip = document.createElement("div");
+    strip.id = "audit-fault";
+    strip.textContent = "FAULT STRIP";
+    strip.style.cssText = "position:absolute;left:0;right:0;bottom:0;height:45%;z-index:5;background:#f00";
+    card?.appendChild(strip);
+    const found = window.__rht.auditUI().filter((f) => f.rule === "occluded").length;
+    strip.remove();
+    const after = window.__rht.auditUI().filter((f) => f.rule === "occluded").length;
+    return { found, after };
+  });
+  if (injected.found === 0) { console.error("FAULT INJECTION: a strip over the Skirmish choices produced no 'occluded' finding — the gate is decorative"); failures += 1; }
+  else if (injected.after !== 0) { console.error("FAULT INJECTION: findings persisted after the strip was removed"); failures += 1; }
+  else console.log(`  ok   fault injection — ${injected.found} occluded control(s) under the strip, 0 without it`);
   if (errors.length) { console.error("CONSOLE ERRORS:\n" + errors.slice(0, 6).join("\n")); failures += 1; }
   if (failures) { console.error(`UI audit: ${failures} finding(s)`); process.exitCode = 1; }
   else console.log("UI audit passed: no overlap, truncation, clipping or occlusion.");

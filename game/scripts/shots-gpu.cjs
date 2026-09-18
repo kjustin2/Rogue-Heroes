@@ -27,16 +27,30 @@ app.whenReady().then(async () => {
   win.showInactive();
   win.webContents.setAudioMuted(true);
   const js = (src) => win.webContents.executeJavaScript(src);
-  const shot = async (name) => { const img = await win.webContents.capturePage(); fs.writeFileSync(path.join(__dirname, "..", "shots", `gpu-${name}.png`), img.toPNG()); console.log("shot: gpu-" + name + ".png"); };
+  const prefix = process.env.SHOT_PREFIX || "gpu-"; // SHOT_PREFIX=before- for a baseline build
+  const shot = async (name) => { const img = await win.webContents.capturePage(); fs.writeFileSync(path.join(__dirname, "..", "shots", `${prefix}${name}.png`), img.toPNG()); console.log("shot: " + prefix + name + ".png"); };
   try {
     await win.loadURL(`http://127.0.0.1:${port}/`);
     for (let i = 0; i < 100 && !(await js("Boolean(window.__rht)")); i += 1) await sleep(100);
     await sleep(3000);
     for (const s of scenarios) {
       // Menu screens are reached the way the player reaches them: from the title, by button.
-      const toTitle = async () => { await js(`window.__rht.toMenu()`); await sleep(900); };
+      const toTitle = async () => { await js(`(() => { if (window.__rht.toMenu) window.__rht.toMenu(); else { const b = document.querySelector("[data-back]"); if (b) b.click(); } })()`); await sleep(900); };
       const clickMenu = async (sel) => { await js(`(() => { const b = document.querySelector(${JSON.stringify(sel)}); if (b) b.click(); })()`); await sleep(900); };
       if (s === "menu") { await toTitle(); await shot("menu"); continue; }
+      if (s === "mapselect") {
+        // The Skirmish set-up page at the three widths that have bitten this repo: is every choice
+        // (map, faction, mode, difficulty, Deploy) on screen, and is nothing under the CTA bar?
+        for (const [w, h] of [[1280, 720], [1600, 900], [2560, 1080]]) {
+          win.setSize(w, h); await sleep(500);
+          await toTitle(); await clickMenu('[data-menu="play"]');
+          await shot(`mapselect-${w}x${h}`);
+          await js(`(() => { const c = document.querySelectorAll("[data-map]")[2]; if (c) c.click(); })()`); await sleep(500);
+          await shot(`mapselect-${w}x${h}-picked`);
+        }
+        win.setSize(1600, 900); await sleep(500);
+        continue;
+      }
       if (s === "deploy") { await toTitle(); await clickMenu('[data-menu="play"]'); await shot("deploy"); continue; }
       if (s === "settings") { await toTitle(); await clickMenu('[data-menu="settings"]'); await shot("settings"); continue; }
       if (s === "armory") { await toTitle(); await clickMenu('[data-menu="armory"]'); await shot("armory"); continue; }
@@ -57,6 +71,17 @@ app.whenReady().then(async () => {
         await js(`window.__rht.scenario(${JSON.stringify(s)}); window.__rht.deselect();`);
         await sleep(1800);
         await shot(s);
+        continue;
+      }
+      if (s === "hover-deck") {
+        // A deploy card's tooltip: it must hang ABOVE the command deck, never over its stats/tabs.
+        await js(`window.__rht.scenario("firefight"); window.__rht.deselect();`);
+        await sleep(1500);
+        await js(`(() => { const sim = window.__rht.sim; const base = sim.entities.find((e) => e.team === "player" && e.kind === "base"); if (base) sim.select(base.id); })()`);
+        await sleep(700);
+        await js(`(() => { const el = document.querySelectorAll("[data-spawn]")[1] || document.querySelector("[data-spawn]"); if (!el) return; const r = el.getBoundingClientRect(); el.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 })); })()`);
+        await sleep(400);
+        await shot("hover-deck");
         continue;
       }
       if (s === "hover") {

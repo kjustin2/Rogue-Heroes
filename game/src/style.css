@@ -5597,3 +5597,40 @@ body { background: var(--paper-deep); }
   padding-right: 4px;
 }
 .menu-actions { position: static; border-top: var(--ink-w) solid var(--ink); }
+
+/* ---- Skirmish set-up fits ONE screen at 720p. Map list + preview left, the three choices right
+        (faction cards, then mode / difficulty chip rows with the picked one's blurb), Deploy last.
+        The map list is the only thing that scrolls, and it is sized to leave the preview room. ---- */
+.start-layout { grid-template-columns: minmax(300px, 1fr) minmax(300px, 1fr); gap: 10px 22px; }
+.start-layout .menu-section { margin: 0 0 12px; }
+.map-list { max-height: clamp(150px, calc(94vh - 470px), 420px); }
+.map-list .menu-card { padding: 9px 12px; }
+.map-list .menu-card span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.map-preview { padding: 6px; margin-bottom: 0; }
+.map-preview-svg { max-height: clamp(120px, 22vh, 240px); width: auto; max-width: 100%; margin: 0 auto; }
+.faction-card { padding: 9px 12px; }
+.faction-card span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-row .menu-chip { font-family: var(--font-display); font-size: 0.9rem; letter-spacing: 0.04em; padding: 6px 12px; }
+.choice-blurb { margin: 8px 2px 0; min-height: 2.6em; color: var(--text-muted); font-size: 0.84rem; line-height: 1.3; }
+@media (max-width: 760px) { .start-layout { grid-template-columns: 1fr; } }
+
+/* 720p budget: the right column (faction / mode / difficulty) must fit ~470px. Faction cards go to
+   two rows (name + roster count on one line, a one-line blurb under it); tighter section rhythm. */
+.start-layout .menu-section { margin: 0 0 8px; }
+.start-layout .menu-label { margin-bottom: 6px; }
+.faction-grid { gap: 6px; }
+.faction-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1px 10px;
+  align-items: baseline;
+  padding: 7px 12px;
+}
+.faction-card strong { grid-column: 1; grid-row: 1; margin: 0; }
+.faction-card .faction-roster { grid-column: 2; grid-row: 1; margin: 0; font-size: 0.66rem; white-space: nowrap; }
+.faction-card span { grid-column: 1 / -1; grid-row: 2; -webkit-line-clamp: 1; }
+.chip-row .menu-chip { padding: 5px 10px; font-size: 0.86rem; }
+.choice-blurb { min-height: 1.3em; margin-top: 6px; font-size: 0.8rem; }
+.map-list { max-height: clamp(150px, calc(94vh - 440px), 420px); }
+.map-preview-svg { max-height: clamp(110px, 20vh, 240px); }

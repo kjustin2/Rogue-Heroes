@@ -70,14 +70,14 @@ function syncRevealTracking(base: CombatEntity): void {
 
 const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "move", label: "Move", tip: "Select Move, then click ground or a cover object. Costs 1 CP. Soldiers move farther than heavy units." },
-  { id: "shoot", label: "Shoot", tip: "Select Shoot, pick an enemy part, then confirm. The map line previews cover, high ground, estimated damage, and shot accuracy." },
+  { id: "shoot", label: "Shoot", tip: "Select Shoot, pick an enemy part, then confirm. The line previews cover, damage and accuracy." },
   { id: "grenade", label: "Grenade", tip: "Soldier only. Throw a limited-supply grenade in a short arc with splash damage." },
   { id: "ram", label: "Ram", tip: "Tank only. Select a close target or wall, then confirm. Costs 1 CP, deals 72 damage, and damages your front armor." },
-  { id: "melee", label: "Strike", tip: "Infantry only. Strike a hostile at close range. Strikers hit hardest with their Arc Blade; other infantry bayonet/rifle-butt for less. Needs an intact weapon." },
+  { id: "melee", label: "Strike", tip: "Infantry only. Strike a hostile at close range; Strikers hit hardest. Needs an intact weapon." },
   { id: "defend", label: "Crouch", tip: "Infantry only. Improves accuracy and makes head shots harder, but slows the next move." },
   { id: "overwatch", label: "Overwatch", tip: "Hold fire until a hostile MOVES within watch range this resolve, then take a snap reaction shot (reduced accuracy). Costs 1 CP." },
   { id: "mine", label: "Mine", tip: "Sapper only. Plant a proximity mine at this spot ($15 + 1 CP). Hostiles that step on it eat a splash blast. Invisible to the enemy." },
-  { id: "smoke", label: "Smoke", tip: "Mortar only. Lob a smoke round at a spot (1 CP, mortar range). The cloud lasts 3 turns and swallows every flat shot through it — arcing rounds still sail over." },
+  { id: "smoke", label: "Smoke", tip: "Mortar only. Lay a 3-turn smoke cloud that swallows flat shots; arcing rounds sail over. 1 CP." },
   { id: "load", label: "Load", tip: "Transport only. Click a friendly ground unit to airlift it aboard. Costs 1 CP." },
   { id: "unload", label: "Unload", tip: "Transport only. Click ground to fly there and set your passengers down. Costs 1 CP." },
 ];
@@ -715,19 +715,47 @@ export class Hud {
     this.tooltip.style.top = "-9999px";
   }
 
+  // A tooltip never covers the panel it came from. A deploy card's tip used to open upward over the
+  // deck's own stats and tabs (six lines of it); now it hangs OUTSIDE the anchoring HUD panel — above
+  // a bottom panel, beside a side rail — and only falls back to cursor-relative placement inside a
+  // full-screen menu card, where "outside" would be nowhere near the pointer.
   private positionTooltip(event: PointerEvent): void {
     const margin = 12;
-    const width = Math.min(320, window.innerWidth - margin * 2);
+    const width = Math.min(420, window.innerWidth - margin * 2);
     this.tooltip.style.maxWidth = `${width}px`;
     const rect = this.tooltip.getBoundingClientRect();
-    const nextLeft = Math.min(window.innerWidth - rect.width - margin, Math.max(margin, event.clientX + 14));
-    const below = event.clientY + 18 + rect.height < window.innerHeight - margin;
-    const nextTop = below
-      ? event.clientY + 18
-      : Math.max(margin, event.clientY - rect.height - 18);
-    this.tooltip.style.left = `${nextLeft}px`;
-    this.tooltip.style.top = `${nextTop}px`;
+    const clampX = (x: number): number => Math.min(window.innerWidth - rect.width - margin, Math.max(margin, x));
+    const clampY = (y: number): number => Math.min(window.innerHeight - rect.height - margin, Math.max(margin, y));
+    const panel = this.tooltipAnchor?.closest<HTMLElement>(".commandbar, .log, .money-bar, .roster, .unit-detail-panel, .target-panel, .topbar, .tutorial-panel");
+    let left = clampX(event.clientX + 14);
+    let top: number;
+    if (panel) {
+      const p = panel.getBoundingClientRect();
+      const bottomPanel = panel.matches(".commandbar, .log, .money-bar");
+      const rightRail = panel.matches(".target-panel, .topbar");
+      const leftRail = panel.matches(".roster, .unit-detail-panel");
+      if (bottomPanel) top = p.top - rect.height - 8;
+      else if (panel.matches(".tutorial-panel")) top = p.bottom + 8;
+      else top = clampY(event.clientY - rect.height / 2);
+      if (rightRail) left = p.left - rect.width - 8;
+      else if (leftRail) left = p.right + 8;
+      if (top < margin) top = p.bottom + 8; // no room above: hang below instead
+      top = clampY(top);
+      left = clampX(left);
+    } else {
+      const below = event.clientY + 18 + rect.height < window.innerHeight - margin;
+      top = below ? event.clientY + 18 : Math.max(margin, event.clientY - rect.height - 18);
+    }
+    this.tooltip.style.left = `${left}px`;
+    this.tooltip.style.top = `${top}px`;
   }
+}
+
+// "Striker on cooldown (2 turns)" on the Striker card reads as "On cooldown (2 turns)": the card
+// is the subject, the tip is the predicate.
+function withoutLabel(reason: string, label: string): string {
+  const rest = reason.startsWith(label) ? reason.slice(label.length).replace(/^[\s:]+/, "") : reason;
+  return rest.charAt(0).toUpperCase() + rest.slice(1);
 }
 
 // A one-line condition bar for the squad list. The roster showed a unit's kind, command points and
@@ -1583,10 +1611,10 @@ function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
     const cooldown = sim.troopCooldown(base, spec.kind);
     const ready = !reason;
     const isNew = isRecentlyRevealed(revealTracker.revealedTroopAt.get(spec.kind));
-    const sub = cooldown > 0 ? `${cooldown} rd` : `$${spec.cost}`;
+    const sub = cooldown > 0 ? `${cooldown} turn${cooldown === 1 ? "" : "s"}` : `$${spec.cost}`;
     const tip = reason
-      ? `${spec.label}: ${reason}.`
-      : `${spec.label} (${spec.role}): ${spec.tip} Costs 1 CP and $${spec.cost}; ${spec.cooldown}-turn cooldown.`;
+      ? `${withoutLabel(reason, spec.label)}.`
+      : `${spec.role}. ${spec.tip} 1 CP · $${spec.cost} · ${spec.cooldown}-turn cooldown.`;
     return `<button class="btn confirm ${ready ? "" : "disabled"} ${isNew ? "just-revealed" : ""}" data-spawn="${spec.kind}" data-disabled="${!ready}" data-tip="${escapeAttr(tip)}">
       ${escapeHtml(spec.label)}${isNew ? `<em class="new-badge">NEW</em>` : ""}
       <span>${sub}</span>
@@ -1631,10 +1659,10 @@ function supportDeckHtml(base: CombatEntity, sim: TacticalSim): string {
     const cooldown = sim.supportCooldown(base, spec.kind);
     const active = sim.pendingSupport === spec.kind;
     const ready = !reason;
-    const sub = active ? "Targeting…" : cooldown > 0 ? `${cooldown} rd` : `$${spec.cost}`;
+    const sub = active ? "Targeting…" : cooldown > 0 ? `${cooldown} turn${cooldown === 1 ? "" : "s"}` : `$${spec.cost}`;
     const tip = reason && !active
-      ? `${spec.label}: ${reason}.`
-      : `${spec.label} (${spec.role}): ${spec.tip} Costs 1 CP and $${spec.cost}; ${spec.cooldown}-turn cooldown. Then click the target point.`;
+      ? `${withoutLabel(reason, spec.label)}.`
+      : `${spec.role}. ${spec.tip} 1 CP · $${spec.cost} · ${spec.cooldown}-turn cooldown. Then click the target point.`;
     return `<button class="btn confirm ${active ? "active" : ready ? "" : "disabled"}" data-support="${spec.kind}" data-disabled="${!ready && !active}" data-tip="${escapeAttr(tip)}">
       ${escapeHtml(spec.label)}
       <span>${sub}</span>

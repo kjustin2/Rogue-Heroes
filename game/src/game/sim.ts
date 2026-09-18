@@ -1288,7 +1288,7 @@ export class TacticalSim {
       return `${spec.label} needs ${node?.name ?? "research"} first`;
     }
     const cooldown = this.troopCooldown(base, kind);
-    if (cooldown > 0) return `${spec.label} on cooldown (${cooldown} rd)`;
+    if (cooldown > 0) return `${spec.label} on cooldown (${cooldown} turn${cooldown === 1 ? "" : "s"})`;
     if (this.fieldUnitCount(base.team) >= POP_CAP) return `Field is full (${POP_CAP} units)`;
     if (this.money(base.team) < spec.cost) return `Not enough money for ${spec.label} ($${spec.cost})`;
     if (base.commandPoints <= 0) return `${base.name} has no command points`;
@@ -1350,7 +1350,7 @@ export class TacticalSim {
     spendCommandPoint(base);
     this.addMoney(base.team, -cost);
     base.incomeLevel = (base.incomeLevel ?? 0) + 1;
-    this.pushLog(`${base.name} boosts income to tier ${base.incomeLevel} ($${baseIncomeRate(base)}/rd)`);
+    this.pushLog(`${base.name} boosts income to tier ${base.incomeLevel} ($${baseIncomeRate(base)}/turn)`);
     return true;
   }
 
@@ -1418,7 +1418,7 @@ export class TacticalSim {
     }
     if (base.commandPoints <= 0) return `${base.name} has no command points`;
     const cooldown = this.supportCooldown(base, kind);
-    if (cooldown > 0) return `${spec.label} is on cooldown (${cooldown} rd)`;
+    if (cooldown > 0) return `${spec.label} on cooldown (${cooldown} turn${cooldown === 1 ? "" : "s"})`;
     if (this.money(base.team) < spec.cost) return `Not enough money for ${spec.label} ($${spec.cost})`;
     return undefined;
   }

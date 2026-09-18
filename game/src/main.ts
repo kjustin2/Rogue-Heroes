@@ -875,11 +875,11 @@ function showStartScreen(): void {
       <span>${m.feel}</span>
     </button>`,
   ).join("");
-  const modeCards = MODES.map(
-    (mode) => `<button class="menu-card mode-card ${mode.id === selectedMode ? "selected" : ""}" data-mode="${mode.id}" type="button">
-      <strong>${mode.name}</strong>
-      <span>${mode.blurb}</span>
-    </button>`,
+  // Mode and difficulty are CHIP rows with one blurb line for the picked one: five blurb cards
+  // pushed Faction and Difficulty below the fold at 720p, which is how "the faction pick seems
+  // hidden behind Deploy" was reported. Every choice on this page fits one screen now.
+  const modeChips = MODES.map(
+    (mode) => `<button class="menu-chip ${mode.id === selectedMode ? "on" : ""}" data-mode="${mode.id}" type="button">${mode.name}</button>`,
   ).join("");
   // Each card states the faction's IDENTITY and, explicitly, what it gives up. A roster is defined
   // as much by its hole as by its depth, and a player choosing blind cannot see the hole.
@@ -890,11 +890,8 @@ function showStartScreen(): void {
       <em class="faction-roster">${f.roster.length} troops &middot; ${f.defenses.length} defenses &middot; ${f.supports.length} support strikes</em>
     </button>`,
   ).join("");
-  const diffCards = DIFFICULTIES.map(
-    (d) => `<button class="menu-card diff-card ${d === selectedDifficulty ? "selected" : ""}" data-diff="${d}" type="button">
-      <strong>${difficultyLabel(d)}</strong>
-      <span>${difficultyBlurb(d)}</span>
-    </button>`,
+  const diffChips = DIFFICULTIES.map(
+    (d) => `<button class="menu-chip ${d === selectedDifficulty ? "on" : ""}" data-diff="${d}" type="button">${difficultyLabel(d)}</button>`,
   ).join("");
 
   const screen = mountScreen(
@@ -910,21 +907,25 @@ function showStartScreen(): void {
             <div class="menu-label">Map</div>
             <div class="map-list">${mapList}</div>
           </div>
+          <div class="menu-section">
+            <div class="menu-label">Preview</div>
+            <div class="map-preview" data-preview></div>
+          </div>
+        </div>
+        <div class="start-right">
           <div class="menu-section start-factions">
             <div class="menu-label">Faction</div>
             <div class="menu-grid faction-grid">${factionCards}</div>
           </div>
-        </div>
-        <div class="start-right">
-          <div class="menu-label">Preview</div>
-          <div class="map-preview" data-preview></div>
           <div class="menu-section">
             <div class="menu-label">Mode</div>
-            <div class="menu-grid mode-grid">${modeCards}</div>
+            <div class="chip-row">${modeChips}</div>
+            <p class="choice-blurb" data-mode-blurb>${escapeHtml(modeDef(selectedMode).blurb)}</p>
           </div>
           <div class="menu-section">
             <div class="menu-label">Difficulty</div>
-            <div class="menu-grid diff-grid">${diffCards}</div>
+            <div class="chip-row">${diffChips}</div>
+            <p class="choice-blurb" data-diff-blurb>${escapeHtml(difficultyBlurb(selectedDifficulty))}</p>
           </div>
         </div>
       </div>
@@ -966,13 +967,17 @@ function showStartScreen(): void {
     const modeBtn = target.closest<HTMLElement>("[data-mode]");
     if (modeBtn) {
       selectedMode = (modeBtn.dataset.mode as ModeId) ?? selectedMode;
-      for (const el of screen.querySelectorAll(".mode-card")) el.classList.toggle("selected", el === modeBtn);
+      for (const el of screen.querySelectorAll("[data-mode]")) el.classList.toggle("on", el === modeBtn);
+      const blurb = screen.querySelector("[data-mode-blurb]");
+      if (blurb) blurb.textContent = modeDef(selectedMode).blurb;
       return;
     }
     const diffBtn = target.closest<HTMLElement>("[data-diff]");
     if (diffBtn) {
       selectedDifficulty = (diffBtn.dataset.diff as Difficulty) ?? selectedDifficulty;
-      for (const el of screen.querySelectorAll(".diff-card")) el.classList.toggle("selected", el === diffBtn);
+      for (const el of screen.querySelectorAll("[data-diff]")) el.classList.toggle("on", el === diffBtn);
+      const blurb = screen.querySelector("[data-diff-blurb]");
+      if (blurb) blurb.textContent = difficultyBlurb(selectedDifficulty);
       return;
     }
     if (target.closest("[data-start]")) {
