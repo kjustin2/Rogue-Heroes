@@ -512,7 +512,9 @@ export function makeProjectileTrail(p: Projectile, family: ProjectileFamily, his
       const pt = history[i];
       const stage = Math.min(FIRE.length - 1, back);
       const smoke = back >= 5;
-      const scale = (smoke ? 1.1 - (back - 5) * 0.28 : 0.7 + back * 0.13) * (1 + Math.sin(p.age * 20 + i * 1.9) * 0.12);
+      // Smoke puffs start small and shrink fast: at the old 1.1 they read as grey discs hanging at
+      // head height in a firing line.
+      const scale = (smoke ? 0.6 - (back - 5) * 0.22 : 0.7 + back * 0.13) * (1 + Math.sin(p.age * 20 + i * 1.9) * 0.12);
       if (scale < 0.15) continue;
       const blob = solid("blob", FIRE[stage], 1.2, smoke ? INK : FIRE[Math.min(FIRE.length - 3, stage + 2)]);
       blob.position.set(pt.x + Math.sin(p.age * 9 + i * 2.3) * 0.1, pt.y + back * 0.06, pt.z + Math.cos(p.age * 7 + i * 1.3) * 0.1);
