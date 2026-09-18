@@ -19,6 +19,7 @@ const serve = () => new Promise((resolve) => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const scenarios = process.argv.slice(2).filter((a) => !a.startsWith("-"));
 if (!scenarios.length) scenarios.push("menu", "firefight", "high-ground", "siege", "base-defense", "lineup");
+// UI cases (all real-GPU, full FX): menu deploy settings armory campaign run tutorial pause victory defeat hover
 
 app.whenReady().then(async () => {
   const { server, port } = await serve();
@@ -26,21 +27,83 @@ app.whenReady().then(async () => {
   win.showInactive();
   win.webContents.setAudioMuted(true);
   const js = (src) => win.webContents.executeJavaScript(src);
-  const shot = async (name) => { const img = await win.webContents.capturePage(); fs.writeFileSync(path.join(__dirname, "..", "shots", `gpu-${name}.png`), img.toPNG()); console.log("shot: gpu-" + name + ".png"); };
+  const prefix = process.env.SHOT_PREFIX || "gpu-"; // SHOT_PREFIX=before- for a baseline build
+  const shot = async (name) => { const img = await win.webContents.capturePage(); fs.writeFileSync(path.join(__dirname, "..", "shots", `${prefix}${name}.png`), img.toPNG()); console.log("shot: " + prefix + name + ".png"); };
   try {
     await win.loadURL(`http://127.0.0.1:${port}/`);
     for (let i = 0; i < 100 && !(await js("Boolean(window.__rht)")); i += 1) await sleep(100);
     await sleep(3000);
     for (const s of scenarios) {
-      if (s === "menu") { await shot("menu"); continue; }
+      // Menu screens are reached the way the player reaches them: from the title, by button.
+      const toTitle = async () => { await js(`(() => { if (window.__rht.toMenu) window.__rht.toMenu(); else { const b = document.querySelector("[data-back]"); if (b) b.click(); } })()`); await sleep(900); };
+      const clickMenu = async (sel) => { await js(`(() => { const b = document.querySelector(${JSON.stringify(sel)}); if (b) b.click(); })()`); await sleep(900); };
+      if (s === "menu") { await toTitle(); await shot("menu"); continue; }
+      if (s === "mapselect") {
+        // The Skirmish set-up page at the three widths that have bitten this repo: is every choice
+        // (map, faction, mode, difficulty, Deploy) on screen, and is nothing under the CTA bar?
+        for (const [w, h] of [[1280, 720], [1600, 900], [2560, 1080]]) {
+          win.setSize(w, h); await sleep(500);
+          await toTitle(); await clickMenu('[data-menu="play"]');
+          await shot(`mapselect-${w}x${h}`);
+          await js(`(() => { const c = document.querySelectorAll("[data-map]")[2]; if (c) c.click(); })()`); await sleep(500);
+          await shot(`mapselect-${w}x${h}-picked`);
+        }
+        win.setSize(1600, 900); await sleep(500);
+        continue;
+      }
+      if (s === "deploy") { await toTitle(); await clickMenu('[data-menu="play"]'); await shot("deploy"); continue; }
+      if (s === "settings") { await toTitle(); await clickMenu('[data-menu="settings"]'); await shot("settings"); continue; }
+      if (s === "armory") { await toTitle(); await clickMenu('[data-menu="armory"]'); await shot("armory"); continue; }
+      if (s === "campaign") { await toTitle(); await clickMenu('[data-menu="campaign"]'); await shot("campaign"); continue; }
+      if (s === "run") { await toTitle(); await clickMenu('[data-menu="run"]'); await shot("run"); continue; }
+      if (s === "pause") {
+        // The in-battle pause card over a live firefight, then its Controls sub-page.
+        await js(`window.__rht.scenario("firefight"); window.__rht.deselect();`);
+        await sleep(1500);
+        await clickMenu('[data-command="open-menu"]');
+        await shot("pause");
+        await clickMenu('[data-pause="controls"]');
+        await shot("controls");
+        await js(`document.querySelectorAll(".pause-overlay").forEach((e) => e.remove())`);
+        continue;
+      }
+      if (s === "victory" || s === "defeat") {
+        await js(`window.__rht.scenario(${JSON.stringify(s)}); window.__rht.deselect();`);
+        await sleep(1800);
+        await shot(s);
+        continue;
+      }
+      if (s === "hover-deck") {
+        // A deploy card's tooltip: it must hang ABOVE the command deck, never over its stats/tabs.
+        await js(`window.__rht.scenario("firefight"); window.__rht.deselect();`);
+        await sleep(1500);
+        await js(`(() => { const sim = window.__rht.sim; const base = sim.entities.find((e) => e.team === "player" && e.kind === "base"); if (base) sim.select(base.id); })()`);
+        await sleep(700);
+        await js(`(() => { const el = document.querySelectorAll("[data-spawn]")[1] || document.querySelector("[data-spawn]"); if (!el) return; const r = el.getBoundingClientRect(); el.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 })); })()`);
+        await sleep(400);
+        await shot("hover-deck");
+        continue;
+      }
+      if (s === "hover") {
+        // A tooltip open over the treasury bar: the one transient surface no static screen shows.
+        await js(`window.__rht.scenario("firefight"); window.__rht.deselect();`);
+        await sleep(1500);
+        await js(`(() => { const el = document.querySelector(".money-bar"); const r = el.getBoundingClientRect(); const ev = new PointerEvent("pointerover", { bubbles: true, clientX: r.left + 40, clientY: r.top + 10 }); el.dispatchEvent(ev); })()`);
+        await sleep(400);
+        await shot("hover");
+        continue;
+      }
       if (s === "tutorial") {
         // The first three beats a new player sees, straight from the title link.
+        await toTitle();
         await js(`document.querySelector('[data-menu="tutorial"]').click()`);
         await sleep(3500);
         await shot("tutorial-1");
-        await js(`(() => { const b = document.querySelector('.tutorial-next, [data-tutorial-next], .tutorial-card button'); if (b) b.click(); })()`);
+        await js(`(() => { const b = document.querySelector('[data-tut="next"]'); if (b) b.click(); })()`);
         await sleep(1500);
         await shot("tutorial-2");
+        await js(`(() => { const b = document.querySelector('[data-tut="exit"]'); if (b) b.click(); })()`);
+        await sleep(400);
         continue;
       }
       if (s === "portrait") {

@@ -31,7 +31,7 @@ symbols fail the build.
 | Depth-fight repro (hide plates / kill shadows / lift plates / old near plane) | `npm run probe:depth <scenario>` |
 | Infantry lineup, near + far, for kit/proportion review | `npm run shots:lineup` |
 | **Real-GPU frame-time probe** (hidden Electron, diffs compiled programs across resolves) | `npm run soak:gpu [scenario]` |
-| **Real-GPU screenshots** (`-- menu firefight lineup rings abilities …`) | `npm run shots:gpu` |
+| **Real-GPU screenshots** (`-- menu firefight lineup rings abilities direction nowalk …`; UI screens `deploy settings armory campaign run tutorial pause victory defeat hover hover-deck`; `mapselect` shoots the Skirmish page at 1280×720 / 1600×900 / 2560×1080; `SHOT_PREFIX=before-` for a baseline build) | `npm run shots:gpu` |
 | Walk-up-a-step filmstrip (feet vs talus / plates) | `npm run shots:step` |
 | Build + Electron gameplay smoke | `npm run test:play` |
 | Desktop app (build + Electron) | `npm run standalone` |
@@ -169,7 +169,9 @@ Repo gotchas:
   The 2026-09 perf round was won by the profile, not by guessing: the frame was dominated by
   three's per-material uniform machinery, not by triangles or fill.
 - **`npm run smoke:ui-audit`** (wired into `smoke:core`, so `test:full` runs it) asserts
-  `window.__rht.auditUI()` finds nothing across four viewports x four screens. Every rule is a
+  `window.__rht.auditUI()` finds nothing across four viewports x eight screens (title, Skirmish
+  set-up, settings, pause, victory, battle, roster, targeting), then FAULT-INJECTS a strip over the
+  Skirmish choices and demands the `occluded` rule name it (the gate is decorative otherwise). Every rule is a
   geometric fact — rect intersection, `scrollWidth` vs `clientWidth`, `elementFromPoint` — so a
   failure is never a matter of taste. It exists because three real UI bugs shipped in one session
   and every one was caught by a human squinting at a screenshot. Two rules carry hard-won caveats:
@@ -360,6 +362,35 @@ All localStorage, keyed `rht.*`: `rht.settings.v1` (incl. `keybinds`, `unitSkin`
 in-battle sim itself still saves to `rht.savedBattle.v1`, so a paused sector resumes
 via Continue like a campaign mission), `rht.commander.v1` (battle stats, medals,
 doctrine mastery — cosmetic).
+
+## UI language: TOON (2026-09-18)
+
+The DOM chrome speaks the same language as the toon render: **inked outlines** (3px panels, 2px
+controls — `--ink`), **flat opaque fills** (`--paper` / `--paper-hi` / `--paper-lo`), **hard offset
+ink shadows** (`--drop-sm/--drop/--drop-lg`), a **one-step shade band** at a panel's foot
+(`--shade`), **segmented meters** (ink ticks over every bar), cream text on slate, and ONE saturated
+accent per surface — amber = the action (End Turn, active tab, toasts), cyan = the player /
+confirm / "on", red = the threat, green = OK. All of it is the `TOON UI LAYER` at the end of
+`style.css`: tokens on `:root` plus per-class overrides; the legacy `--line/--panel/--cyan/--amber`
+tokens are remapped there so the older layers inherit it. Rules that fall out of it:
+
+- **No gradients, no `backdrop-filter`, no blurred glows, no sheen/glint/bracket animations** on
+  UI. Depth is an offset solid; state is a fill or an outline colour. The "Blizzard chrome" layer
+  that did the opposite was deleted, not overridden — do not bring rivets back.
+- **Menus = title + buttons.** The cosmetic callsign line was removed from the title screen; it is
+  still equipped in the Armory. Difficulty is Easy / Normal / Hard (Recruit / Veteran / Elite
+  collided with the veteran ranks and the Recruit unit). The vocabulary is **turn**, never round.
+- **Every choice on a set-up page fits one 1280×720 screen in reading order, and nothing sits under
+  a sticky bar.** The Skirmish page is Map + Preview left, Faction → Mode → Difficulty right, Deploy
+  last; a card with a CTA footer is a header / scrolling-body / footer grid, never a sticky strip
+  laid over its own content (that is how the faction pick got "hidden behind Deploy").
+  `shots:gpu mapselect` is the repro at the three widths that have bitten this repo.
+- **Tooltips hang OUTSIDE the panel they came from** (above a bottom panel, beside a side rail —
+  `positionTooltip` in hud.ts), are ≤2 lines at 420px, and never repeat the card's own name ("Striker
+  on cooldown" on the Striker card is "On cooldown"). The listeners live on `<body>` so menu
+  `data-tip`s work; any pointerdown dismisses; the tooltip is `data-allow-overlap`.
+- Pause / edit overlays mark the HUD `inert` like a full menu does; a MutationObserver re-derives
+  the flag when any screen is added or removed (Resume used to be able to leave it stale).
 
 ## Owner's quality bars (each has bitten this repo)
 

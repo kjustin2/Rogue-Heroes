@@ -3761,671 +3761,6 @@ body.menus-open .menu-bg span {
 .reduced-motion .new-badge,
 .reduced-motion .btn.confirm.just-revealed { animation: none; }
 
-/* ============================================================
-   BLIZZARD CHROME LAYER (additive re-skin)
-   Machined gunmetal + weathered-brass frame treatment for the
-   menu/HUD chrome: beveled panel frames with rivets + chamfered
-   corners, metallic buttons with pressed/edge-light states,
-   embossed logo with a sheen sweep, bracketed selection states.
-   Selector-safe: only existing classes are re-skinned; nothing
-   is renamed or removed. All new animations are disabled under
-   body.reduced-motion (see the block at the very end).
-   ============================================================ */
-
-:root {
-  --brass-lite: #f2d9a2;
-  --brass: #c09a56;
-  --brass-deep: #6a5026;
-  --frame-line: rgba(176, 152, 104, 0.52);
-}
-
-/* ---- Battle HUD panels: riveted, chamfered metal frames ---- */
-.topbar,
-.panel,
-.commandbar,
-.log {
-  border-color: var(--frame-line);
-  background:
-    /* chamfered "cut plate" corners: darkened triangle + brass edge line */
-    linear-gradient(225deg, rgba(8, 6, 3, 0.62) 0 9px, rgba(232, 201, 138, 0.5) 9px 10.5px, transparent 10.5px),
-    linear-gradient(45deg, rgba(8, 6, 3, 0.62) 0 9px, rgba(232, 201, 138, 0.4) 9px 10.5px, transparent 10.5px),
-    /* brass corner rivets on the two square corners */
-    radial-gradient(3.5px at 9px 9px, var(--brass-lite) 0%, var(--brass) 42%, #33270f 74%, rgba(0, 0, 0, 0.55) 88%, transparent 100%),
-    radial-gradient(3.5px at calc(100% - 9px) calc(100% - 9px), var(--brass-lite) 0%, var(--brass) 42%, #33270f 74%, rgba(0, 0, 0, 0.55) 88%, transparent 100%),
-    /* original warm wash + hairline ribbing */
-    linear-gradient(135deg, rgba(255, 210, 140, 0.1), transparent 24%),
-    linear-gradient(315deg, rgba(255, 135, 95, 0.1), transparent 30%),
-    repeating-linear-gradient(90deg, rgba(230, 200, 140, 0.028) 0 1px, transparent 1px 28px),
-    linear-gradient(180deg, var(--panel-strong), var(--panel));
-  box-shadow:
-    0 24px 70px var(--shadow),
-    0 0 0 1px rgba(0, 0, 0, 0.66),
-    0 1px 0 1px rgba(255, 226, 168, 0.05),
-    inset 0 1px 0 rgba(255, 238, 205, 0.15),
-    inset 0 0 0 1px rgba(0, 0, 0, 0.4),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.5),
-    inset 0 0 26px rgba(0, 0, 0, 0.28),
-    inset 0 0 64px rgba(255, 190, 110, 0.04);
-}
-
-/* Restated so the "all orders set" roster keeps the new bevel. */
-.roster.all-set {
-  box-shadow:
-    0 24px 70px var(--shadow),
-    0 0 0 1px rgba(0, 0, 0, 0.66),
-    0 0 28px rgba(255, 202, 107, 0.14),
-    inset 0 1px 0 rgba(255, 238, 205, 0.15),
-    inset 0 0 0 1px rgba(0, 0, 0, 0.4),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.5),
-    inset 0 0 26px rgba(0, 0, 0, 0.28);
-}
-
-/* ---- Panel titles: brass rivet stud + energized underline ---- */
-.panel-title::before {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  border: 1px solid rgba(58, 42, 20, 0.9);
-  background: radial-gradient(circle at 35% 30%, #ffe9b8, var(--brass) 55%, var(--brass-deep));
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.7),
-    inset 0 -1px 1px rgba(0, 0, 0, 0.45),
-    0 0 8px rgba(255, 202, 107, 0.3);
-}
-
-.panel-title::after {
-  background: linear-gradient(90deg,
-    rgba(255, 202, 107, 0.06),
-    rgba(255, 224, 156, 0.7) 12%,
-    rgba(140, 239, 255, 0.38) 22%,
-    rgba(255, 202, 107, 0.16) 42%,
-    rgba(255, 202, 107, 0.05));
-  background-size: 260% 100%;
-  animation: rail-shimmer 4.2s linear infinite;
-}
-@keyframes rail-shimmer {
-  from { background-position: 130% 0; }
-  to { background-position: -130% 0; }
-}
-
-/* ---- Buttons: machined metal chrome ---- */
-.btn,
-.tool {
-  border-color: rgba(168, 150, 110, 0.45);
-  background:
-    linear-gradient(180deg,
-      rgba(255, 244, 214, 0.16) 0%,
-      rgba(255, 255, 255, 0.06) 12%,
-      rgba(255, 255, 255, 0.02) 46%,
-      rgba(0, 0, 0, 0.18) 54%,
-      rgba(255, 255, 255, 0.015) 88%,
-      rgba(255, 236, 190, 0.05) 100%),
-    linear-gradient(90deg, rgba(140, 239, 255, 0.03), transparent 40%, rgba(255, 202, 107, 0.05)),
-    linear-gradient(180deg, #2b251b, #16120d 58%, #1d1811);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 240, 205, 0.2),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.6),
-    inset 1px 0 0 rgba(255, 255, 255, 0.045),
-    inset -1px 0 0 rgba(0, 0, 0, 0.32),
-    0 2px 5px rgba(0, 0, 0, 0.42),
-    0 0 0 1px rgba(0, 0, 0, 0.45);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
-}
-
-/* Hover: amber edge-light (variants with their own chrome are excluded). */
-.btn:not(.confirm):not(.primary):not(.close-btn):not(.disabled):not([data-disabled="true"]):hover:not(:disabled),
-.tool:not(.active):not(.disabled):not([data-disabled="true"]):hover {
-  border-color: rgba(255, 214, 130, 0.92);
-  background:
-    linear-gradient(180deg,
-      rgba(255, 236, 190, 0.22) 0%,
-      rgba(255, 244, 214, 0.07) 14%,
-      rgba(255, 255, 255, 0.02) 46%,
-      rgba(0, 0, 0, 0.16) 54%,
-      rgba(255, 236, 190, 0.07) 100%),
-    linear-gradient(90deg, rgba(140, 239, 255, 0.04), transparent 40%, rgba(255, 202, 107, 0.1)),
-    linear-gradient(180deg, #332b1e, #191410 58%, #221b12);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 244, 210, 0.34),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.6),
-    inset 0 0 18px rgba(255, 202, 107, 0.1),
-    0 4px 14px rgba(0, 0, 0, 0.5),
-    0 0 18px rgba(255, 202, 107, 0.22),
-    0 0 0 1px rgba(0, 0, 0, 0.45);
-}
-
-/* The top hairline becomes a sweeping edge-light on hover. */
-.btn:hover:not(:disabled):not(.disabled):not([data-disabled="true"])::before {
-  background: linear-gradient(90deg, transparent, rgba(255, 232, 180, 0.95) 50%, transparent);
-  background-size: 45% 100%;
-  background-repeat: no-repeat;
-  background-position: 220% 0;
-  opacity: 1;
-  animation: edge-sweep 0.6s cubic-bezier(0.3, 0, 0.4, 1);
-}
-@keyframes edge-sweep {
-  from { background-position: -80% 0; }
-  to { background-position: 220% 0; }
-}
-
-/* Pressed: real depression. */
-.btn:active:not(:disabled):not(.disabled):not([data-disabled="true"]),
-.tool:active:not(.disabled) {
-  filter: brightness(0.88);
-  box-shadow:
-    inset 0 2px 6px rgba(0, 0, 0, 0.65),
-    inset 0 1px 0 rgba(0, 0, 0, 0.4),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.04),
-    0 0 0 1px rgba(0, 0, 0, 0.55);
-}
-
-/* Disabled: clearly flat, no machining. */
-.btn:disabled,
-.btn.disabled,
-.btn[data-disabled="true"],
-.tool.disabled,
-.tool[data-disabled="true"] {
-  background: rgba(24, 21, 16, 0.72);
-  border-color: rgba(140, 128, 100, 0.22);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
-  text-shadow: none;
-}
-
-/* Inner bevel for the chromed action variants (glow preserved). */
-.btn.primary,
-.btn.confirm {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 250, 230, 0.24),
-    inset 0 -2px 3px rgba(0, 0, 0, 0.42),
-    inset 0 0 0 1px rgba(0, 0, 0, 0.24),
-    0 2px 6px rgba(0, 0, 0, 0.45),
-    0 0 18px rgba(140, 239, 255, 0.1);
-}
-.close-btn,
-.mini-action,
-.log-toggle {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 244, 213, 0.3),
-    inset 0 -2px 3px rgba(46, 20, 4, 0.55),
-    inset 0 0 0 1px rgba(0, 0, 0, 0.28),
-    0 2px 6px rgba(0, 0, 0, 0.5),
-    0 0 20px rgba(255, 202, 107, 0.16);
-  text-shadow: 0 1px 2px rgba(40, 18, 4, 0.7);
-}
-
-/* ---- Main-menu logo: embossed metal + slow sheen sweep ---- */
-.title-logo {
-  background:
-    linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.85) 48%, rgba(196, 235, 248, 0.95) 50%, rgba(255, 255, 255, 0.85) 52%, transparent 70%),
-    linear-gradient(180deg, #ffffff 8%, #dcf2fa 34%, #93aebc 48%, #f0fbff 54%, #7d94a4 76%, #c3dce8 94%);
-  background-size: 300% 100%, 100% 100%;
-  background-repeat: no-repeat;
-  background-position: 160% 0, 0 0;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-  text-shadow:
-    0 -1px 0 rgba(255, 255, 255, 0.22),
-    0 2px 1px rgba(0, 0, 0, 0.55),
-    0 5px 2px rgba(0, 0, 0, 0.3),
-    0 0 28px rgba(140, 239, 255, 0.32),
-    0 12px 38px rgba(0, 0, 0, 0.65);
-  animation: logo-sheen 7s ease-in-out infinite;
-}
-@keyframes logo-sheen {
-  0%, 52% { background-position: 160% 0, 0 0; }
-  86%, 100% { background-position: -160% 0, 0 0; }
-}
-.title-logo span {
-  background: linear-gradient(180deg, #ffe9b0 0%, #ffca6b 46%, #b87f2e 54%, #ffd98c 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-  text-shadow:
-    0 -1px 0 rgba(255, 240, 200, 0.25),
-    0 2px 3px rgba(0, 0, 0, 0.55),
-    0 0 22px rgba(255, 202, 107, 0.45);
-}
-
-/* Kicker: letterspaced stencil line flanked by rails. */
-.title-kicker {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  font-weight: 700;
-  letter-spacing: 0.56em;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6), 0 0 14px rgba(140, 239, 255, 0.35);
-}
-.title-kicker::before,
-.title-kicker::after {
-  content: "";
-  flex: 0 0 46px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(140, 239, 255, 0.7));
-  box-shadow: 0 0 8px rgba(140, 239, 255, 0.4);
-}
-.title-kicker::after {
-  margin-left: -0.56em;
-  background: linear-gradient(270deg, transparent, rgba(140, 239, 255, 0.7));
-}
-
-/* ---- Main-menu buttons: forged plates with cut corners + glint ---- */
-.menu-action {
-  position: relative;
-  z-index: 0;
-  border-color: transparent;
-  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
-  background: linear-gradient(175deg,
-    rgba(236, 214, 165, 0.72) 0%,
-    rgba(150, 130, 92, 0.55) 30%,
-    rgba(70, 60, 42, 0.6) 62%,
-    rgba(190, 160, 110, 0.55) 100%);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
-}
-.menu-action::before {
-  content: "";
-  position: absolute;
-  inset: 1px;
-  z-index: -1;
-  clip-path: polygon(13.5px 0, 100% 0, 100% calc(100% - 13.5px), calc(100% - 13.5px) 100%, 0 100%, 0 13.5px);
-  background:
-    linear-gradient(180deg,
-      rgba(255, 244, 214, 0.14) 0%,
-      rgba(255, 255, 255, 0.05) 14%,
-      rgba(255, 255, 255, 0.015) 48%,
-      rgba(0, 0, 0, 0.2) 55%,
-      rgba(255, 255, 255, 0.02) 100%),
-    linear-gradient(180deg, #241f16, #100d09 60%, #191510);
-  pointer-events: none;
-}
-.menu-action:hover {
-  border-color: transparent;
-  background: linear-gradient(175deg,
-    rgba(255, 226, 160, 0.95) 0%,
-    rgba(200, 165, 110, 0.72) 32%,
-    rgba(120, 95, 58, 0.7) 62%,
-    rgba(255, 210, 140, 0.8) 100%);
-  box-shadow: none;
-}
-.menu-action:hover::before {
-  background:
-    linear-gradient(180deg,
-      rgba(255, 226, 170, 0.18) 0%,
-      rgba(255, 255, 255, 0.05) 18%,
-      rgba(0, 0, 0, 0.18) 55%,
-      rgba(255, 202, 107, 0.06) 100%),
-    linear-gradient(180deg, #2b2417, #16110b 60%, #1e180f);
-  box-shadow: inset 0 0 24px rgba(255, 202, 107, 0.14);
-}
-.menu-action--exit {
-  background: linear-gradient(175deg,
-    rgba(255, 170, 130, 0.62) 0%,
-    rgba(150, 90, 62, 0.52) 32%,
-    rgba(80, 45, 32, 0.55) 62%,
-    rgba(220, 140, 100, 0.5) 100%);
-}
-.menu-action--exit::before {
-  background:
-    linear-gradient(180deg,
-      rgba(255, 160, 120, 0.12) 0%,
-      rgba(255, 255, 255, 0.03) 16%,
-      rgba(0, 0, 0, 0.2) 55%,
-      rgba(255, 128, 78, 0.05) 100%),
-    linear-gradient(180deg, #241310, #120908 60%, #190e0b);
-}
-.menu-action--exit:hover {
-  border-color: transparent;
-  background: linear-gradient(175deg,
-    rgba(255, 180, 140, 0.9) 0%,
-    rgba(190, 110, 75, 0.7) 32%,
-    rgba(110, 58, 40, 0.7) 62%,
-    rgba(255, 160, 115, 0.75) 100%);
-  box-shadow: none;
-}
-.menu-action--exit:hover::before {
-  box-shadow: inset 0 0 24px rgba(255, 128, 78, 0.16);
-}
-
-/* Glint sweep shared by the hero menu buttons. The sweeping ::after travels to
-   left:140%; absolutely-positioned children count toward scrollable overflow, so without
-   clipping the hover flashes a horizontal scrollbar on the menu screen. */
-.menu-action,
-.title-start,
-.endscreen__btn {
-  overflow: clip;
-}
-.menu-action::after,
-.title-start::after,
-.endscreen__btn::after {
-  content: "";
-  position: absolute;
-  top: -30%;
-  bottom: -30%;
-  left: -75%;
-  width: 46%;
-  background: linear-gradient(105deg,
-    transparent 8%,
-    rgba(255, 250, 235, 0.2) 42%,
-    rgba(255, 252, 240, 0.5) 50%,
-    rgba(255, 250, 235, 0.2) 58%,
-    transparent 92%);
-  transform: skewX(-20deg);
-  opacity: 0;
-  pointer-events: none;
-}
-.menu-action:hover::after,
-.title-start:hover::after,
-.endscreen__btn:hover::after {
-  animation: chrome-glint 0.7s cubic-bezier(0.25, 0.1, 0.3, 1);
-}
-@keyframes chrome-glint {
-  0% { left: -75%; opacity: 0; }
-  12% { opacity: 1; }
-  100% { left: 140%; opacity: 0; }
-}
-
-/* ---- Primary CTA (Campaign / Deploy): cut corners + machined cyan ---- */
-.title-start {
-  position: relative;
-  clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
-  border-color: rgba(232, 252, 255, 0.9);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0) 42%),
-    linear-gradient(180deg, #c8f8ff 0%, #8ce4f6 46%, #57c8e4 53%, #7fdcf2 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    inset 0 -2px 4px rgba(8, 60, 80, 0.45),
-    inset 0 0 0 1px rgba(4, 40, 55, 0.25);
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
-}
-.title-start:hover {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.95),
-    inset 0 -2px 4px rgba(8, 60, 80, 0.5),
-    inset 0 0 26px rgba(255, 255, 255, 0.5);
-}
-/* The idle pulse now breathes inside the plate (outer glow would be clipped). */
-@keyframes start-pulse {
-  0%, 100% {
-    filter: brightness(1);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.9),
-      inset 0 -2px 4px rgba(8, 60, 80, 0.45),
-      inset 0 0 0 1px rgba(4, 40, 55, 0.25),
-      inset 0 0 14px rgba(255, 255, 255, 0);
-  }
-  50% {
-    filter: brightness(1.07);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.95),
-      inset 0 -2px 4px rgba(8, 60, 80, 0.45),
-      inset 0 0 0 1px rgba(4, 40, 55, 0.25),
-      inset 0 0 22px rgba(255, 255, 255, 0.55);
-  }
-}
-.endscreen__btn {
-  position: relative;
-  overflow: hidden;
-  box-shadow:
-    0 12px 30px rgba(0, 0, 0, 0.5),
-    0 0 26px rgba(140, 239, 255, 0.32),
-    inset 0 1px 0 rgba(255, 255, 255, 0.85),
-    inset 0 -2px 4px rgba(8, 60, 80, 0.4);
-}
-
-/* ---- Menu cards (map / mode / difficulty): cut plates + brackets ---- */
-.menu-card {
-  position: relative;
-  z-index: 0;
-  border-color: transparent;
-  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
-  background: linear-gradient(170deg,
-    rgba(190, 170, 125, 0.5) 0%,
-    rgba(105, 92, 66, 0.42) 30%,
-    rgba(52, 46, 34, 0.5) 62%,
-    rgba(150, 128, 88, 0.45) 100%);
-}
-.menu-card::before {
-  content: "";
-  position: absolute;
-  inset: 1px;
-  z-index: -1;
-  clip-path: polygon(11.5px 0, 100% 0, 100% calc(100% - 11.5px), calc(100% - 11.5px) 100%, 0 100%, 0 11.5px);
-  background:
-    linear-gradient(180deg, rgba(255, 244, 214, 0.05), transparent 32%),
-    linear-gradient(180deg, rgba(19, 24, 28, 0.92), rgba(9, 12, 15, 0.9));
-  pointer-events: none;
-}
-.menu-card:hover {
-  border-color: transparent;
-  background: linear-gradient(170deg,
-    rgba(255, 222, 150, 0.82) 0%,
-    rgba(170, 140, 92, 0.6) 32%,
-    rgba(90, 76, 50, 0.65) 62%,
-    rgba(230, 190, 125, 0.72) 100%);
-  transform: translateY(-2px);
-}
-.menu-card:hover::before {
-  background:
-    linear-gradient(180deg, rgba(255, 234, 180, 0.09), transparent 36%),
-    linear-gradient(180deg, rgba(26, 32, 38, 0.94), rgba(12, 15, 19, 0.92));
-  box-shadow: inset 0 0 26px rgba(255, 202, 107, 0.1);
-}
-.menu-card.selected {
-  border-color: transparent;
-  background: linear-gradient(170deg,
-    rgba(255, 214, 130, 0.95) 0%,
-    rgba(200, 160, 95, 0.75) 30%,
-    rgba(120, 92, 48, 0.8) 62%,
-    rgba(255, 202, 107, 0.85) 100%);
-  box-shadow: none;
-}
-.menu-card.selected::before {
-  background:
-    linear-gradient(180deg, rgba(255, 214, 140, 0.15), transparent 42%),
-    linear-gradient(180deg, rgba(31, 33, 28, 0.94), rgba(17, 15, 11, 0.94));
-  box-shadow: inset 0 0 30px rgba(255, 202, 107, 0.17);
-}
-/* Selected state: animated amber targeting brackets. */
-.menu-card.selected::after {
-  content: "";
-  position: absolute;
-  inset: 7px;
-  pointer-events: none;
-  background:
-    linear-gradient(var(--amber), var(--amber)) 0 0 / 15px 2px,
-    linear-gradient(var(--amber), var(--amber)) 0 0 / 2px 15px,
-    linear-gradient(var(--amber), var(--amber)) 100% 0 / 15px 2px,
-    linear-gradient(var(--amber), var(--amber)) 100% 0 / 2px 15px,
-    linear-gradient(var(--amber), var(--amber)) 0 100% / 15px 2px,
-    linear-gradient(var(--amber), var(--amber)) 0 100% / 2px 15px,
-    linear-gradient(var(--amber), var(--amber)) 100% 100% / 15px 2px,
-    linear-gradient(var(--amber), var(--amber)) 100% 100% / 2px 15px;
-  background-repeat: no-repeat;
-  filter: drop-shadow(0 0 4px rgba(255, 202, 107, 0.7));
-  animation: bracket-pulse 1.8s ease-in-out infinite;
-}
-@keyframes bracket-pulse {
-  0%, 100% { opacity: 0.6; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.014); }
-}
-
-/* Section labels get a brass rail so groups read as console modules. */
-.menu-label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.menu-label::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: linear-gradient(90deg, rgba(140, 239, 255, 0.42), rgba(255, 202, 107, 0.22), transparent);
-}
-.menu-heading {
-  text-shadow:
-    0 -1px 0 rgba(255, 255, 255, 0.12),
-    0 2px 4px rgba(0, 0, 0, 0.6),
-    0 0 22px rgba(140, 239, 255, 0.18);
-}
-
-/* ---- Secondary menu controls: small machined tabs ---- */
-.menu-back,
-.menu-toggle,
-.menu-chip {
-  border-color: rgba(168, 150, 110, 0.5);
-  background:
-    linear-gradient(180deg,
-      rgba(255, 244, 214, 0.12) 0%,
-      rgba(255, 255, 255, 0.03) 45%,
-      rgba(0, 0, 0, 0.16) 55%,
-      rgba(255, 255, 255, 0.02) 100%),
-    linear-gradient(180deg, #262019, #14100b);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 240, 205, 0.16),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.55),
-    0 2px 5px rgba(0, 0, 0, 0.4);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-}
-.menu-back:hover,
-.menu-toggle:hover,
-.menu-chip:hover {
-  border-color: rgba(255, 214, 130, 0.9);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 244, 210, 0.28),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.55),
-    0 3px 9px rgba(0, 0, 0, 0.45),
-    0 0 14px rgba(255, 202, 107, 0.2);
-}
-.menu-toggle.on,
-.menu-chip.on {
-  text-shadow: none;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.85),
-    inset 0 -2px 3px rgba(8, 60, 80, 0.4),
-    0 2px 6px rgba(0, 0, 0, 0.4),
-    0 0 14px rgba(140, 239, 255, 0.3);
-}
-
-/* ---- Overlay cards (settings/armory/campaign/pause/end): riveted frames ---- */
-.overlay-card,
-.endscreen__card {
-  border-color: var(--frame-line);
-  box-shadow:
-    0 30px 90px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(0, 0, 0, 0.7),
-    0 1px 0 1px rgba(255, 226, 168, 0.05),
-    inset 0 1px 0 rgba(255, 238, 205, 0.14),
-    inset 0 0 0 1px rgba(0, 0, 0, 0.4),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.5),
-    inset 0 0 46px rgba(0, 0, 0, 0.28);
-}
-.overlay-card {
-  background:
-    linear-gradient(225deg, rgba(8, 6, 3, 0.6) 0 11px, rgba(232, 201, 138, 0.5) 11px 12.5px, transparent 12.5px),
-    linear-gradient(45deg, rgba(8, 6, 3, 0.6) 0 11px, rgba(232, 201, 138, 0.4) 11px 12.5px, transparent 12.5px),
-    linear-gradient(135deg, rgba(140, 239, 255, 0.1), transparent 32%),
-    repeating-linear-gradient(90deg, rgba(230, 200, 140, 0.024) 0 1px, transparent 1px 30px),
-    linear-gradient(180deg, var(--panel-strong), var(--panel));
-}
-.endscreen__card {
-  background:
-    linear-gradient(225deg, rgba(8, 6, 3, 0.6) 0 11px, rgba(232, 201, 138, 0.5) 11px 12.5px, transparent 12.5px),
-    linear-gradient(45deg, rgba(8, 6, 3, 0.6) 0 11px, rgba(232, 201, 138, 0.4) 11px 12.5px, transparent 12.5px),
-    linear-gradient(135deg, rgba(140, 239, 255, 0.12), transparent 30%),
-    linear-gradient(180deg, var(--panel-strong), var(--panel));
-}
-.overlay-card::after,
-.endscreen__card::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  background:
-    radial-gradient(4px at 11px 11px, #f7e0ae 0%, var(--brass) 40%, #514021 72%, rgba(0, 0, 0, 0.5) 86%, transparent 100%),
-    radial-gradient(4px at calc(100% - 11px) calc(100% - 11px), #f7e0ae 0%, var(--brass) 40%, #514021 72%, rgba(0, 0, 0, 0.5) 86%, transparent 100%);
-}
-
-/* ---- Campaign mission cards + armory cards: bevel, lift, edge glow ---- */
-.campaign-card,
-.armory-card {
-  border-color: rgba(150, 132, 96, 0.38);
-  background:
-    linear-gradient(180deg, rgba(255, 244, 214, 0.05), transparent 26%),
-    linear-gradient(180deg, rgba(18, 21, 24, 0.88), rgba(9, 11, 13, 0.86));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 238, 205, 0.07),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
-    0 2px 8px rgba(0, 0, 0, 0.35);
-}
-.campaign-card {
-  transition:
-    transform 0.14s cubic-bezier(0.2, 0.7, 0.3, 1),
-    border-color 0.16s ease,
-    box-shadow 0.16s ease,
-    background-color 0.16s ease;
-}
-.campaign-card:hover:not(:disabled) {
-  border-color: rgba(255, 214, 130, 0.78);
-  background:
-    linear-gradient(180deg, rgba(255, 234, 180, 0.07), transparent 30%),
-    linear-gradient(180deg, rgba(26, 30, 34, 0.92), rgba(13, 15, 18, 0.9));
-  transform: translateY(-1px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 244, 210, 0.12),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
-    0 6px 18px rgba(0, 0, 0, 0.45),
-    0 0 18px rgba(255, 202, 107, 0.16);
-}
-
-/* ---- Reduced motion: kill every animation this layer added ---- */
-.reduced-motion .panel-title::after,
-.reduced-motion .title-logo,
-.reduced-motion .menu-card.selected::after,
-.reduced-motion .menu-action::after,
-.reduced-motion .menu-action:hover::after,
-.reduced-motion .title-start::after,
-.reduced-motion .title-start:hover::after,
-.reduced-motion .endscreen__btn::after,
-.reduced-motion .endscreen__btn:hover::after,
-.reduced-motion .btn::before,
-.reduced-motion .btn:hover::before {
-  animation: none !important;
-}
-@media (prefers-reduced-motion: reduce) {
-  .panel-title::after,
-  .title-logo,
-  .menu-card.selected::after,
-  .menu-action:hover::after,
-  .title-start:hover::after,
-  .endscreen__btn:hover::after,
-  .btn:hover::before {
-    animation: none !important;
-  }
-}
-
-/* Menu header row: brass baseline so screen titles read as console headers. */
-.menu-head {
-  position: relative;
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba(176, 152, 104, 0.26);
-}
-.menu-head::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  bottom: -1px;
-  width: 38%;
-  height: 1px;
-  background: linear-gradient(90deg, var(--amber), transparent);
-  box-shadow: 0 0 8px rgba(255, 202, 107, 0.35);
-  pointer-events: none;
-}
-
 /* ---- Environmental forecast chip ---- */
 .forecast-chip {
   display: inline-flex;
@@ -5572,3 +4907,730 @@ body.menus-open:not(.in-battle) #ui { visibility: hidden; }
    any toast that is not an onboarding hint (medals, intel, declassified) drops
    below it instead of landing on its buttons. */
 body:has(.tutorial-panel) #toasts { top: 214px; }
+
+/* ===========================================================================
+   TOON UI LAYER (2026-09-18)
+   ---------------------------------------------------------------------------
+   The 3D art went stylized toon: a stepped light ramp, inked outlines, flat
+   posterized colour. The DOM chrome underneath it was still "machined metal"
+   (rivets, sheens, glass blur, brass hairlines) — two art directions on one
+   screen. This layer makes the UI speak the same language as the world:
+
+     * INK: every panel and control has a solid dark outline (3px panels,
+       2px controls) — the same outline the units wear.
+     * FLAT: one opaque fill per surface, no gradients, no backdrop blur.
+       Depth is a HARD one-step shade (a solid band at the foot of a panel).
+     * HARD SHADOWS: offset solid ink (`--drop`), never a blurred glow.
+     * STEPPED METERS: every bar is segmented by ink ticks.
+     * PALETTE: cream text on slate paper, ONE saturated accent per surface
+       (amber = the action, cyan = the player, red = the threat, green = OK).
+
+   It is a token pass + per-class overrides: nothing in hud.ts/main.ts is
+   renamed, and the geometry the ui-audit gates is untouched. The previous
+   chrome layer ("BLIZZARD CHROME") was deleted rather than fought.
+   =========================================================================== */
+
+:root {
+  /* Ink + paper */
+  --ink: #0b0e12;
+  --ink-2: #131920;          /* the one-step shade */
+  --paper: #212b36;          /* panel fill */
+  --paper-hi: #2c3844;       /* control fill / hover */
+  --paper-hi-2: #37454f;     /* control hover */
+  --paper-lo: #171e27;       /* wells, meter tracks */
+  --paper-deep: #0f141b;     /* page + overlay tone */
+  /* Flat accents (posterized — no glow variants) */
+  --cyan: #6fdcf5;
+  --cyan-ink: #0a2e3a;
+  --amber: #f6b93b;
+  --amber-ink: #3a2405;
+  --orange: #ff8c5a;
+  --red: #f0604f;
+  --green: #8ddd6c;
+  --mint: #7fe6c4;
+  --cream: #f4efe4;
+  --text-muted: #b3bfca;
+  /* The legacy tokens the whole sheet leans on, remapped to ink + flat paper. */
+  --bg: var(--paper-deep);
+  --panel: var(--paper);
+  --panel-strong: var(--paper);
+  --panel-soft: var(--paper-hi);
+  --line: var(--ink);
+  --line-strong: var(--amber);
+  --frame-line: var(--ink);
+  --shadow: transparent;
+  --steel-rail: var(--ink-2);
+  --glass-edge: transparent;
+  --accent-glow: transparent;
+  --brass-lite: var(--amber);
+  --brass: var(--amber);
+  --brass-deep: var(--amber-ink);
+  /* Outline weights, drops, corners */
+  --ink-w: 2px;
+  --ink-w-panel: 3px;
+  --drop-sm: 2px 2px 0 0 var(--ink);
+  --drop: 4px 4px 0 0 var(--ink);
+  --drop-lg: 6px 6px 0 0 var(--ink);
+  --shade: inset 0 -4px 0 0 var(--ink-2);
+  --toon-r: 8px;
+  --toon-r-sm: 6px;
+  /* Type: Rajdhani carries headers now (chunky, condensed); Orbitron is the logo only. */
+  --font-display: "Rajdhani", "Inter", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-logo: "Orbitron", "Rajdhani", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  color: var(--cream);
+  background: var(--paper-deep);
+}
+
+/* ---- Page: flat. No wash, no ribbing, no scanlines, no vignette. ---- */
+body { background: var(--paper-deep); }
+#ui::before, #ui::after { display: none; }
+:focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; border-radius: 6px; }
+
+/* ---- PANELS: inked, flat, hard-shadowed, one-step shade at the foot. ---- */
+.topbar,
+.panel,
+.commandbar,
+.log,
+.overlay-card,
+.endscreen__card,
+.tutorial-panel,
+.money-bar {
+  border: var(--ink-w-panel) solid var(--ink);
+  border-radius: var(--toon-r);
+  background: var(--paper);
+  box-shadow: var(--drop-lg), var(--shade);
+  backdrop-filter: none;
+  text-shadow: none;
+}
+.topbar::before, .topbar::after,
+.panel::before, .panel::after,
+.commandbar::before, .commandbar::after,
+.log::before, .log::after,
+.overlay-card::before, .overlay-card::after,
+.endscreen__card::before, .endscreen__card::after { display: none; }
+/* The roster's "all orders set" state: an amber outline, not a glow. */
+.roster.all-set { border-color: var(--amber); box-shadow: var(--drop-lg), var(--shade); }
+.log.compact-log.expanded .log-toggle {
+  border: var(--ink-w) solid var(--ink);
+  background: var(--amber);
+  color: var(--amber-ink);
+}
+.panel { scrollbar-color: var(--ink) transparent; }
+.menu-head { padding-bottom: 10px; border-bottom: var(--ink-w) solid var(--ink); }
+.menu-head::after { display: none; }
+
+/* ---- PANEL TITLES: a flat amber tab + a solid ink rule. ---- */
+.panel-title {
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--cream);
+  border-bottom: 0;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  text-shadow: none;
+}
+.panel-title::before {
+  width: 9px;
+  height: 9px;
+  margin-right: 8px;
+  border: var(--ink-w) solid var(--ink);
+  border-radius: 2px;
+  background: var(--amber);
+  box-shadow: none;
+  animation: none;
+}
+.panel-title::after {
+  height: 2px;
+  margin-left: 10px;
+  background: var(--ink);
+  animation: none;
+  opacity: 1;
+}
+
+/* ---- CONTROLS: every clickable is an inked plate with a hard drop. ---- */
+.btn,
+.tool,
+.mini-action,
+.icon-btn,
+.log-toggle,
+.unit-card,
+.target-chip,
+.part-choice,
+.part-row,
+.queued-chip,
+.tech-node,
+.base-tab,
+.menu-back,
+.menu-toggle,
+.menu-chip,
+.menu-action,
+.menu-utility,
+.menu-mode,
+.menu-card,
+.campaign-card,
+.armory-card,
+.bind-key,
+.controls-row kbd,
+.edit-name {
+  border: var(--ink-w) solid var(--ink);
+  border-radius: var(--toon-r-sm);
+  background: var(--paper-hi);
+  color: var(--cream);
+  box-shadow: var(--drop-sm);
+  text-shadow: none;
+  filter: none;
+  clip-path: none;
+  transition: transform 80ms ease-out, box-shadow 80ms ease-out, background-color 80ms ease-out, border-color 80ms ease-out;
+}
+.btn::before, .btn::after,
+.mini-action::before,
+.log-toggle::before,
+.tool::after,
+.unit-card::after,
+.target-chip::after,
+.part-choice::after,
+.queued-chip::after,
+.menu-action::before, .menu-action::after,
+.menu-card::before, .menu-card::after,
+.title-start::before, .title-start::after,
+.endscreen__btn::before, .endscreen__btn::after,
+.money-chip::before { display: none; }
+
+/* Hover: lift one step (the drop grows), press: sit down on the shadow. */
+.btn:hover:not(:disabled):not(.disabled):not([data-disabled="true"]),
+.tool:hover:not(.disabled):not([data-disabled="true"]),
+.mini-action:hover,
+.icon-btn:hover,
+.log-toggle:hover,
+.unit-card:hover,
+.target-chip:hover,
+.part-choice:hover:not([disabled]),
+.part-row:hover,
+.tech-node:hover:not([data-disabled="true"]),
+.base-tab:hover,
+.menu-back:hover, .menu-toggle:hover, .menu-chip:hover,
+.menu-action:hover, .menu-utility:hover, .menu-mode:hover,
+.menu-card:hover,
+.campaign-card:hover:not(:disabled),
+.bind-key:hover,
+[data-spawn]:hover:not([data-disabled="true"]),
+[data-base-upgrade]:hover:not([data-disabled="true"]) {
+  background: var(--paper-hi-2);
+  border-color: var(--ink);
+  color: #fff;
+  filter: none;
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 0 var(--ink);
+}
+.btn:active:not(:disabled):not(.disabled):not([data-disabled="true"]),
+.tool:active:not(.disabled),
+.tool.action:active:not(.disabled),
+.mini-action:active,
+.icon-btn:active,
+.log-toggle:active,
+.unit-select:active,
+.target-chip:active,
+.part-choice:active:not([disabled]),
+.tech-node:active:not([data-disabled="true"]),
+.base-tab:active,
+.menu-back:active, .menu-toggle:active, .menu-chip:active,
+.menu-action:active, .menu-utility:active, .menu-mode:active,
+.menu-card:active,
+.campaign-card:active:not(:disabled),
+[data-spawn]:active,
+[data-base-upgrade]:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 0 var(--ink);
+  filter: none;
+}
+.btn:disabled, .btn.disabled, .btn[data-disabled="true"],
+.tool.disabled, .tool[data-disabled="true"],
+.disabled, [data-disabled="true"] {
+  background: var(--paper-lo);
+  border-color: var(--ink-2);
+  color: var(--text-muted);
+  box-shadow: none;
+  opacity: 0.6;
+}
+.btn:disabled:hover, .disabled:hover, [data-disabled="true"]:hover { transform: none; box-shadow: none; }
+
+/* Action cards: the accent bar stays (it is the action's colour) — flat, no glow. */
+.tool.action::before { box-shadow: none; width: 4px; top: 6px; bottom: 6px; border-radius: 2px; }
+.tool.action.active,
+.unit-card.selected,
+.part-row.active {
+  border-color: var(--cyan);
+  background: var(--paper-hi-2);
+  box-shadow: var(--drop-sm), inset 0 0 0 1px var(--cyan);
+}
+.target-chip.selected,
+.part-choice.active {
+  border-color: var(--amber);
+  background: var(--paper-hi-2);
+  box-shadow: var(--drop-sm), inset 0 0 0 1px var(--amber);
+}
+.commandbar .part-choice.active {
+  background: var(--amber);
+  color: var(--amber-ink);
+  box-shadow: var(--drop-sm);
+}
+.unit-card::before, .target-chip::before, .part-choice::before {
+  width: 4px;
+  background: var(--cyan);
+  box-shadow: none;
+}
+.unit-card.crouched { border-color: var(--ink); background: var(--paper-hi); }
+.unit-card.crouched::before { background: var(--mint); box-shadow: none; }
+.unit-card.spent::before { background: var(--text-muted); }
+.target-chip.hostile { border-left: var(--ink-w) solid var(--ink); background: var(--paper-hi); }
+.target-chip.hostile::before { background: var(--red); }
+.target-chip.neutral { background: var(--paper-lo); opacity: 0.85; }
+.target-chip.neutral::before { background: var(--text-muted); }
+.target-chip.selected { border-left-color: var(--amber); }
+.target-chip.selected::before { background: var(--amber); }
+.mini-action { color: var(--amber); }
+.mini-action.detail { color: var(--cyan); }
+
+/* ---- PRIMARY FILLS. Amber = the one action the screen exists for; cyan = confirm/go. ---- */
+.btn.primary,
+.compact-top .end-turn {
+  background: var(--amber);
+  border-color: var(--ink);
+  color: var(--amber-ink);
+  box-shadow: var(--drop), inset 0 -3px 0 0 rgba(0, 0, 0, 0.18);
+  text-shadow: none;
+}
+.compact-top .end-turn span { color: var(--amber-ink); background: rgba(255, 255, 255, 0.5); border: 1px solid var(--ink); }
+.compact-top .end-turn:hover { filter: none; background: #ffc95a; transform: translate(-1px, -1px); box-shadow: 5px 5px 0 0 var(--ink), inset 0 -3px 0 0 rgba(0, 0, 0, 0.18); }
+.compact-top .end-turn:active { transform: translate(2px, 2px); box-shadow: 0 0 0 0 var(--ink), inset 0 -3px 0 0 rgba(0, 0, 0, 0.18); }
+.compact-top .end-turn[disabled] { filter: none; background: var(--paper-lo); color: var(--text-muted); border-color: var(--ink-2); box-shadow: none; }
+.compact-top .end-turn[disabled] span { background: transparent; color: var(--text-muted); border-color: var(--ink-2); }
+.compact-top .menu-btn { opacity: 1; }
+.compact-top .menu-btn span { color: var(--text-muted); }
+
+.btn.confirm,
+.title-start,
+.endscreen__btn,
+.menu-toggle.on,
+.menu-chip.on {
+  background: var(--cyan);
+  border: var(--ink-w) solid var(--ink);
+  color: var(--cyan-ink);
+  box-shadow: var(--drop), inset 0 -3px 0 0 rgba(0, 0, 0, 0.16);
+  text-shadow: none;
+  clip-path: none;
+  animation: none;
+}
+.btn.confirm { box-shadow: var(--drop-sm), inset 0 -3px 0 0 rgba(0, 0, 0, 0.16); }
+.btn.confirm span, .btn.confirm em, .btn.confirm strong, .btn.confirm small { color: var(--cyan-ink); }
+.btn.confirm:hover:not([data-disabled="true"]):not(.disabled),
+.title-start:hover,
+.endscreen__btn:hover,
+.menu-toggle.on:hover, .menu-chip.on:hover {
+  background: #8ee7fb;
+  color: var(--cyan-ink);
+  filter: none;
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 0 var(--ink), inset 0 -3px 0 0 rgba(0, 0, 0, 0.16);
+}
+.btn.confirm:hover:not([data-disabled="true"]):not(.disabled) { box-shadow: 3px 3px 0 0 var(--ink), inset 0 -3px 0 0 rgba(0, 0, 0, 0.16); }
+.title-start:active, .endscreen__btn:active, .btn.confirm:active:not(.disabled) { transform: translate(2px, 2px); box-shadow: 0 0 0 0 var(--ink), inset 0 -3px 0 0 rgba(0, 0, 0, 0.16); }
+.btn.confirm.disabled, .btn.confirm[data-disabled="true"] { background: var(--paper-lo); color: var(--text-muted); }
+.btn.confirm.disabled span, .btn.confirm[data-disabled="true"] span,
+.btn.confirm.disabled em, .btn.confirm[data-disabled="true"] em,
+.btn.confirm.disabled strong, .btn.confirm[data-disabled="true"] strong { color: var(--text-muted); }
+.title-start {
+  border-radius: var(--toon-r);
+  border-width: var(--ink-w-panel);
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  letter-spacing: 0.14em;
+  padding: 14px 30px;
+}
+.endscreen__btn { border-radius: var(--toon-r); font-family: var(--font-display); font-size: 1.05rem; }
+.endscreen__btn--ghost { background: var(--paper-hi); color: var(--cream); }
+.endscreen__btn--ghost:hover { background: var(--paper-hi-2); color: #fff; }
+.btn.ghost { color: var(--cream); }
+.close-btn { background: var(--paper-hi); border-color: var(--ink); color: var(--cream); box-shadow: var(--drop-sm); }
+.close-btn span { background: var(--amber); color: var(--amber-ink); border: 1px solid var(--ink); box-shadow: none; }
+
+/* ---- CHIPS + BADGES: small inked tags, flat by state. ---- */
+.status-pill,
+.cp-badge,
+.turn-chip,
+.mode-chip,
+.stance-chip,
+.supply-chip,
+.all-orders-chip,
+.phase-chip,
+.unit-status,
+.vpart,
+.map-size-badge,
+.medal,
+.campaign-roster__member,
+.tl,
+.tech-unlocks,
+.new-badge,
+.menu-points,
+.money-chip,
+.tutorial-step,
+.role-badge,
+.team-badge,
+.forecast-chip {
+  border: var(--ink-w) solid var(--ink);
+  border-radius: 5px;
+  background: var(--paper-lo);
+  color: var(--cream);
+  box-shadow: none;
+  text-shadow: none;
+}
+.status-pill.ready, .unit-status--ready, .vpart--ok, .tl.done { color: var(--green); }
+.status-pill.spent, .unit-status--spent, .vpart--hurt, .tl.ready { color: var(--amber); }
+.unit-status--warn { color: var(--orange); }
+.status-pill.dead, .unit-status--dead, .vpart--critical, .tl.locked { color: var(--red); }
+.tl.blocked { color: var(--text-muted); }
+.cp-badge { background: var(--cyan); color: var(--cyan-ink); }
+.turn-chip { background: var(--paper-hi); }
+.turn-chip em { color: var(--text-muted); }
+.turn-chip.resolve, .turn-chip.resolve em { border-color: var(--ink); color: var(--amber); }
+.turn-chip.victory em { color: var(--green); }
+.turn-chip.defeat em { color: var(--red); }
+.all-orders-chip { background: var(--amber); color: var(--amber-ink); }
+.new-badge { background: var(--amber); color: var(--amber-ink); animation: none; }
+.medal { opacity: 0.55; }
+.medal.earned { opacity: 1; background: var(--amber); color: var(--amber-ink); }
+.menu-points { background: var(--amber); color: var(--amber-ink); border-radius: 6px; }
+.menu-points span { color: var(--amber-ink); }
+.map-size-badge.size-small { color: var(--cyan); border-color: var(--ink); background: var(--paper-lo); }
+.map-size-badge.size-medium { color: var(--amber); border-color: var(--ink); background: var(--paper-lo); }
+.tutorial-step { display: inline-block; padding: 2px 8px; background: var(--amber); color: var(--amber-ink); font-weight: 700; }
+.tech-unlocks { display: inline-block; padding: 1px 6px; margin-top: 3px; font-size: 0.68rem; color: var(--cyan); }
+.tech-node .tech-unlocks.spec { color: var(--amber); }
+.money-bar { padding: 6px 10px; }
+.money-bar__icon { background: var(--amber); color: var(--amber-ink); border: var(--ink-w) solid var(--ink); box-shadow: none; }
+.money-bar__label { color: var(--text-muted); }
+.money-bar__value { color: var(--amber); }
+
+/* ---- METERS: inked tracks with a flat fill, cut into segments by ink ticks. ---- */
+.bar,
+.unit-health,
+.vitals-bar,
+.boss-bar__track,
+.unit-line--sub .unit-health {
+  position: relative;
+  height: 10px;
+  border: var(--ink-w) solid var(--ink);
+  border-radius: 4px;
+  background: var(--paper-lo);
+  box-shadow: none;
+  overflow: hidden;
+}
+.unit-health, .unit-line--sub .unit-health { height: 8px; }
+.bar i, .unit-health > i, .vitals-bar > span, .boss-bar__track i {
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--green);
+}
+.vitals-bar--hurt > span, .unit-health--hurt > i { background: var(--amber); }
+.vitals-bar--critical > span, .unit-health--critical > i { background: var(--red); }
+.boss-bar__track i { background: var(--amber); }
+/* Segment ticks: an overlay of ink lines every 7px, cutting the fill wherever it is. */
+.bar::after,
+.unit-health::after,
+.vitals-bar::after,
+.boss-bar__track::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(90deg, transparent 0 7px, var(--ink) 7px 9px);
+}
+.boss-bar__track { height: 14px; }
+.boss-bar__track::after { background: repeating-linear-gradient(90deg, transparent 0 14px, var(--ink) 14px 16px); }
+.boss-bar__name { color: var(--amber); text-shadow: none; -webkit-text-stroke: 0.04em var(--ink); paint-order: stroke fill; }
+.vitals-bar > em { color: var(--cream); }
+
+/* ---- HEADINGS: flat cream, chunky. The logo and the end-screen verdict are inked + hard-shadowed. ---- */
+.menu-heading,
+.order-head h2,
+.inspect-head h2,
+.endscreen__kicker,
+.campaign-end__kicker,
+.armory-category-title,
+.menu-label,
+.settings-row--head label {
+  font-family: var(--font-display);
+  text-shadow: none;
+}
+.menu-heading { font-weight: 700; letter-spacing: 0.04em; color: var(--cream); }
+.menu-label { color: var(--amber); font-weight: 700; letter-spacing: 0.18em; display: flex; align-items: center; gap: 10px; }
+.menu-label::after { content: ""; flex: 1; height: 2px; background: var(--ink); }
+.armory-category-title, .settings-row--head label { color: var(--amber); opacity: 1; }
+.title-logo {
+  font-family: var(--font-logo);
+  color: var(--cream);
+  background: none;
+  -webkit-text-fill-color: var(--cream);
+  -webkit-text-stroke: 0.05em var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0.09em 0.09em 0 var(--ink);
+  animation: none;
+}
+.title-logo span {
+  background: none;
+  color: var(--amber);
+  -webkit-text-fill-color: var(--amber);
+  -webkit-text-stroke: 0.08em var(--ink);
+  text-shadow: 0.1em 0.1em 0 var(--ink);
+}
+.endscreen__title {
+  -webkit-text-stroke: 0.05em var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0.08em 0.08em 0 var(--ink);
+}
+.endscreen--victory .endscreen__title { color: var(--green); }
+.endscreen--defeat .endscreen__title { color: var(--red); }
+.endscreen--victory .endscreen__card { border-color: var(--green); }
+.endscreen--defeat .endscreen__card { border-color: var(--red); }
+.endscreen__kicker { color: var(--text-muted); }
+.campaign-end.defeat .campaign-end__kicker { color: var(--red); }
+.campaign-end.victory .campaign-end__kicker { color: var(--green); }
+
+/* ---- MENU BACKDROP + OVERLAYS: a flat dim with a screen-tone dot pattern — no blur, no radar. ---- */
+.menu-bg {
+  backdrop-filter: none;
+  background:
+    radial-gradient(circle at 1px 1px, rgba(11, 14, 18, 0.55) 1px, transparent 1.6px) 0 0 / 5px 5px,
+    rgba(15, 20, 27, 0.5);
+}
+.menu-bg::before, .menu-bg::after, .menu-bg span { display: none; }
+.pause-overlay, .edit-overlay, .endscreen {
+  backdrop-filter: none;
+  background:
+    radial-gradient(circle at 1px 1px, rgba(11, 14, 18, 0.55) 1px, transparent 1.6px) 0 0 / 5px 5px,
+    rgba(15, 20, 27, 0.62);
+}
+.title-screen.is-leaving, .menu-screen.is-leaving { backdrop-filter: none; }
+.menu-actions {
+  background: rgba(15, 20, 27, 0.94);
+  border-top: var(--ink-w) solid var(--ink);
+  padding-top: 12px;
+}
+.battle-loading { background: var(--paper-deep); }
+.battle-loading__spinner { border: 4px solid var(--ink-2); border-top-color: var(--amber); }
+.battle-loading__label { color: var(--cream); }
+.mission-intro__skip { border: var(--ink-w) solid var(--ink); background: var(--paper-hi); color: var(--cream); box-shadow: var(--drop-sm); }
+
+/* ---- MENU CARDS: inked plates; selection = amber outline + drop, never a bracket animation. ---- */
+.menu-card, .menu-mode, .campaign-card, .armory-card { border-radius: var(--toon-r); box-shadow: var(--drop); }
+.menu-card:hover, .menu-mode:hover, .campaign-card:hover:not(:disabled) { box-shadow: 5px 5px 0 0 var(--ink); transform: translate(-1px, -1px); }
+.menu-card.selected, .armory-card.active, .campaign-card.completed {
+  border-color: var(--amber);
+  background: var(--paper-hi-2);
+  box-shadow: var(--drop), inset 0 0 0 1px var(--amber);
+}
+.menu-card strong, .menu-mode strong { color: var(--cream); }
+.menu-card span, .menu-mode span { color: var(--text-muted); }
+.menu-card.selected strong { color: var(--amber); }
+.menu-utility { border-radius: 999px; box-shadow: var(--drop-sm); color: var(--cream); }
+.menu-utility--exit { color: var(--orange); }
+.menu-action--exit { color: var(--orange); }
+.menu-action { border-radius: var(--toon-r); box-shadow: var(--drop); font-family: var(--font-display); font-size: 1rem; letter-spacing: 0.1em; }
+.menu-action:hover { box-shadow: 5px 5px 0 0 var(--ink); }
+.menu-link { color: var(--amber); text-decoration-thickness: 2px; }
+.menu-link:hover { color: #ffd77a; }
+.map-preview { border: var(--ink-w) solid var(--ink); border-radius: var(--toon-r); background: var(--paper-lo); box-shadow: var(--drop); }
+.map-preview-svg { border: 0; }
+.briefing-map { border: var(--ink-w) solid var(--ink); box-shadow: var(--drop); }
+.briefing-objective { border: var(--ink-w) solid var(--ink); border-left: 6px solid var(--cyan); background: var(--paper-lo); border-radius: var(--toon-r-sm); }
+.campaign-card:disabled { background: var(--paper-lo); box-shadow: none; }
+.campaign-card__no { color: var(--amber); opacity: 1; }
+.campaign-card__status { color: var(--cyan); }
+.campaign-card.completed .campaign-card__status { color: var(--green); }
+.armory-swatch { border: var(--ink-w) solid var(--ink); box-shadow: none; }
+.armory-glyph { border: var(--ink-w) solid var(--ink); background: var(--paper-lo); }
+.edit-accent { border: var(--ink-w) solid var(--ink); box-shadow: var(--drop-sm); }
+.edit-accent.on { border-color: #fff; box-shadow: 0 0 0 2px var(--ink), var(--drop-sm); }
+.campaign-roster { border: var(--ink-w) solid var(--ink); background: var(--paper-lo); border-radius: var(--toon-r-sm); }
+.requisition-row .menu-action.active { border-color: var(--amber); background: var(--amber); color: var(--amber-ink); }
+
+/* ---- SETTINGS rows: ink dividers, amber range thumbs, keycaps as inked plates. ---- */
+.settings-row { border-bottom: 2px solid var(--ink-2); }
+.settings-row--head { border-bottom: var(--ink-w) solid var(--ink); }
+.settings-row label { color: var(--cream); }
+.settings-row--bind label { color: var(--text-muted); }
+.settings-row input[type="range"] { accent-color: var(--amber); }
+.settings-note { color: var(--text-muted); }
+.bind-key { border-bottom-width: 4px; background: var(--paper-hi); }
+.menu-toggle.bind-key.on { background: var(--amber); color: var(--amber-ink); border-color: var(--ink); box-shadow: var(--drop-sm); animation: none; }
+.menu-toggle.locked, .menu-chip.locked { opacity: 0.55; }
+.controls-row kbd { box-shadow: var(--drop-sm); color: var(--cream); }
+.controls-row span { color: var(--cream); }
+
+/* ---- BASE DECK: tabs are inked folder tabs; the active one is amber. ---- */
+.base-tab {
+  border-radius: 6px 6px 0 0;
+  border-bottom: 0;
+  background: var(--paper-lo);
+  color: var(--text-muted);
+  box-shadow: none;
+}
+.base-tab:hover { transform: none; box-shadow: none; background: var(--paper-hi); color: var(--cream); }
+.base-tab.active {
+  background: var(--amber);
+  color: var(--amber-ink);
+  border-color: var(--ink);
+  box-shadow: none;
+}
+.base-tab:active { transform: none; }
+.tech-node { box-shadow: var(--drop-sm); }
+.tech-node.ready { border-color: var(--amber); background: var(--paper-hi); }
+.tech-node.ready .tech-sub { color: var(--amber); }
+.tech-node.done { border-color: var(--cyan); background: var(--paper-lo); box-shadow: none; }
+.tech-node.done strong, .tech-node.done .tech-sub { color: var(--cyan); }
+.tech-node.blocked, .tech-node.locked { background: var(--paper-lo); box-shadow: none; opacity: 0.7; }
+.tech-node.locked { border-style: dashed; }
+.tech-node.classified {
+  background: repeating-linear-gradient(135deg, var(--paper-lo) 0 6px, var(--ink-2) 6px 12px);
+  border-color: var(--ink);
+  box-shadow: none;
+}
+.tech-children > .tech-branch::before { background: var(--ink); border-color: var(--ink); }
+.detail-statline div { border: var(--ink-w) solid var(--ink); background: var(--paper-lo); border-radius: 5px; box-shadow: none; }
+.detail-statline strong { color: var(--cream); }
+.order-note { border: var(--ink-w) solid var(--ink); background: var(--paper-lo); border-radius: var(--toon-r-sm); color: var(--cream); }
+.order-note--progress { border-left: 6px solid var(--amber); background: var(--paper-lo); color: var(--cream); }
+.order-hint { color: var(--text-muted); }
+.target-summary, .single-target-card { border: var(--ink-w) solid var(--ink); background: var(--paper-lo); border-radius: var(--toon-r-sm); box-shadow: none; }
+.target-summary.blocked, .single-target-card.blocked { border-color: var(--orange); }
+.damage-card { border: var(--ink-w) solid var(--ink); background: var(--paper-lo); border-radius: var(--toon-r-sm); box-shadow: none; }
+.turn-report { border: var(--ink-w) solid var(--ink); background: var(--paper-lo); border-radius: var(--toon-r-sm); }
+.log-line { color: var(--cream); }
+.placement-bar strong { color: var(--green); }
+
+/* ---- TOOLTIP / TOAST / TUTORIAL / TRANSITION: same plates. ---- */
+.hud-tooltip {
+  border: var(--ink-w) solid var(--ink);
+  border-radius: var(--toon-r-sm);
+  background: var(--paper-hi);
+  color: var(--cream);
+  box-shadow: var(--drop);
+  font-weight: 600;
+}
+.toast {
+  border: var(--ink-w) solid var(--ink);
+  border-radius: var(--toon-r-sm);
+  background: var(--amber);
+  color: var(--amber-ink);
+  box-shadow: var(--drop);
+  font-weight: 700;
+}
+.tutorial-panel { padding: 14px 16px 16px; }
+.tutorial-panel strong { color: var(--cream); font-family: var(--font-display); font-size: 1.15rem; margin: 8px 0 4px; }
+.tutorial-panel p { color: var(--cream); }
+.round-transition__bar {
+  background: var(--cyan);
+  border-top: var(--ink-w-panel) solid var(--ink);
+  border-bottom: var(--ink-w-panel) solid var(--ink);
+  height: 84px;
+}
+.round-transition__label span { color: var(--cyan-ink); font-weight: 700; }
+.round-transition__label strong {
+  color: var(--cream);
+  -webkit-text-stroke: 0.05em var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0.08em 0.08em 0 var(--ink);
+}
+.forecast-cell em { color: var(--text-muted); }
+.forecast-cell.now em { color: var(--amber); }
+.stance-chip { color: var(--mint); }
+.supply-chip { color: var(--amber); }
+.phase-chip { background: var(--paper-hi); }
+.unit-name { text-shadow: none; }
+.commander-profile__stats div { border: var(--ink-w) solid var(--ink); background: var(--paper-lo); border-radius: 5px; }
+
+/* Reduced motion: this layer adds no animation, so nothing to switch off — but the transforms
+   on hover/press are the only motion left, and they are instant enough to keep. */
+
+/* ---- Round 2: full-screen menus (deploy / run) are inked cards too, not text floating on the
+        dimmed diorama; the sticky CTA footer is opaque paper; scrollbars match the plates. ---- */
+.menu-screen > .menu-content:not(.main-menu__content) {
+  border: var(--ink-w-panel) solid var(--ink);
+  border-radius: var(--toon-r);
+  background: var(--paper);
+  box-shadow: var(--drop-lg), var(--shade);
+  padding: 26px 30px;
+}
+.menu-actions { background: var(--paper); margin: 12px -30px -26px; padding: 12px 30px 16px; }
+* { scrollbar-width: thin; scrollbar-color: var(--paper-hi-2) var(--paper-lo); }
+.mini-action.detail, .mini-action.undo { border-color: var(--ink); background: var(--paper-hi); }
+.mini-action.detail:hover, .mini-action.undo:hover { background: var(--paper-hi-2); }
+.menu-bg, .pause-overlay, .edit-overlay, .endscreen {
+  background:
+    radial-gradient(circle at 1px 1px, rgba(11, 14, 18, 0.42) 0.9px, transparent 1.5px) 0 0 / 6px 6px,
+    rgba(15, 20, 27, 0.55);
+}
+.pause-overlay, .edit-overlay, .endscreen { background-color: rgba(15, 20, 27, 0.66); }
+
+/* ---- Round 3: the sticky CTA footer sits flush on the card's bottom edge (the card's own
+        bottom padding moves into the footer), so nothing scrolls out underneath it. ---- */
+.menu-screen > .menu-content:not(.main-menu__content):has(.menu-actions) { padding-bottom: 0; }
+.menu-actions { margin: 12px -30px 0; padding: 12px 30px 18px; }
+/* Pause card: give the verdict/heading real weight and drop the dead space under the buttons. */
+.pause-card .menu-heading { font-size: 1.9rem; letter-spacing: 0.06em; }
+.pause-feedback:empty { display: none; }
+
+/* ---- Round 4: a card with a CTA footer is header / scrolling body / footer — the footer is a
+        real row, not a sticky strip laid over the last cards (the ui-audit caught the faction
+        card under it at 1080p). The map list keeps its own inner scroll. ---- */
+.menu-screen > .menu-content:not(.main-menu__content):has(> .menu-actions) {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+.menu-screen > .menu-content:not(.main-menu__content):has(> .menu-actions) > :not(.menu-head):not(.menu-actions) {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.menu-actions { position: static; border-top: var(--ink-w) solid var(--ink); }
+
+/* ---- Skirmish set-up fits ONE screen at 720p. Map list + preview left, the three choices right
+        (faction cards, then mode / difficulty chip rows with the picked one's blurb), Deploy last.
+        The map list is the only thing that scrolls, and it is sized to leave the preview room. ---- */
+.start-layout { grid-template-columns: minmax(300px, 1fr) minmax(300px, 1fr); gap: 10px 22px; }
+.start-layout .menu-section { margin: 0 0 12px; }
+.map-list { max-height: clamp(150px, calc(94vh - 470px), 420px); }
+.map-list .menu-card { padding: 9px 12px; }
+.map-list .menu-card span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.map-preview { padding: 6px; margin-bottom: 0; }
+.map-preview-svg { max-height: clamp(120px, 22vh, 240px); width: auto; max-width: 100%; margin: 0 auto; }
+.faction-card { padding: 9px 12px; }
+.faction-card span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-row .menu-chip { font-family: var(--font-display); font-size: 0.9rem; letter-spacing: 0.04em; padding: 6px 12px; }
+.choice-blurb { margin: 8px 2px 0; min-height: 2.6em; color: var(--text-muted); font-size: 0.84rem; line-height: 1.3; }
+@media (max-width: 760px) { .start-layout { grid-template-columns: 1fr; } }
+
+/* 720p budget: the right column (faction / mode / difficulty) must fit ~470px. Faction cards go to
+   two rows (name + roster count on one line, a one-line blurb under it); tighter section rhythm. */
+.start-layout .menu-section { margin: 0 0 8px; }
+.start-layout .menu-label { margin-bottom: 6px; }
+.faction-grid { gap: 6px; }
+.faction-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1px 10px;
+  align-items: baseline;
+  padding: 7px 12px;
+}
+.faction-card strong { grid-column: 1; grid-row: 1; margin: 0; }
+.faction-card .faction-roster { grid-column: 2; grid-row: 1; margin: 0; font-size: 0.66rem; white-space: nowrap; }
+.faction-card span { grid-column: 1 / -1; grid-row: 2; -webkit-line-clamp: 1; }
+.chip-row .menu-chip { padding: 5px 10px; font-size: 0.86rem; }
+.choice-blurb { min-height: 1.3em; margin-top: 6px; font-size: 0.8rem; }
+.map-list { max-height: clamp(150px, calc(94vh - 440px), 420px); }
+.map-preview-svg { max-height: clamp(110px, 20vh, 240px); }

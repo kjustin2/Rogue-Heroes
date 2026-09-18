@@ -493,6 +493,7 @@ function opposingFaction(mapId: string, player: FactionId): FactionId {
 
 function startBattle(mapId: string, modeId: ModeId, difficulty: Difficulty = settings.difficulty, faction: FactionId = settings.faction): void {
   tutorialActive = false;
+  renderTutorialPanel(); // a tutorial panel must not survive into the next battle
   activeCampaignMission = undefined;
   campaign.setActive(undefined); // a skirmish is not a campaign mission
   closeAllMenus();
@@ -718,10 +719,16 @@ function closeAllMenus(): void {
 function syncHudInert(): void {
   const hud = document.getElementById("ui");
   if (!hud) return;
-  const covered = Boolean(document.querySelector(".menu-screen:not(.is-leaving)"));
+  // A pause / edit overlay covers the HUD just as a full menu does: Tab must not walk under it.
+  const covered = Boolean(document.querySelector(".menu-screen:not(.is-leaving), .pause-overlay, .edit-overlay"));
   if (covered) hud.setAttribute("inert", "");
   else hud.removeAttribute("inert");
 }
+
+// Overlays are removed from a dozen click handlers (Resume, Back, Apply ...) that never call
+// syncHudInert; with pause/edit overlays now covering the HUD, a stale inert flag would leave the
+// HUD dead after Resume. Re-derive it from the DOM whenever a top-level screen comes or goes.
+new MutationObserver(() => syncHudInert()).observe(document.body, { childList: true });
 
 function dismissTopOverlay(): void {
   const overlays = [...document.querySelectorAll<HTMLElement>(".menu-screen:not(.is-leaving), .pause-overlay, .edit-overlay")];
@@ -805,7 +812,7 @@ function mapPreviewSvg(map: MapDef): string {
 }
 
 function pointsBadge(): string {
-  return `<div class="menu-points" data-tip="Points earned by playing battles. Spend them in the Armory on cosmetic unit accents."><span>★</span> ${progression.points} pts</div>`;
+  return `<div class="menu-points" data-tip="Earned by playing battles. Spend them in the Armory on cosmetics."><span>★</span> ${progression.points} pts</div>`;
 }
 
 function showMainMenu(): void {
@@ -818,7 +825,6 @@ function showMainMenu(): void {
     `
     <div class="title-screen__content menu-content main-menu__content">
       <h1 class="title-logo">ROGUE HEROES<span>TACTICS</span></h1>
-      <div class="commander-id" data-tip="Your commander loadout — change it in the Armory."><span class="commander-emblem">${escapeHtml(progression.emblemGlyph())}</span> ${escapeHtml(progression.titleText())}</div>
       <!-- ONE primary action, three ways to play, and the utilities demoted to a quiet row. Eight
            stacked buttons of equal weight told a new player nothing about where to start. -->
       <div class="main-menu__buttons" data-allow-overlap>
@@ -830,7 +836,7 @@ function showMainMenu(): void {
           <button class="menu-mode" data-menu="play" type="button"><strong>Skirmish</strong><span>One battle, your rules</span></button>
           <button class="menu-mode" data-menu="run" type="button"><strong>Skirmish Run</strong><span>${run.active ? `Sector ${run.sectorNumber}/${RUN_LENGTH} in progress` : "Survive a chain of sectors"}</span></button>
         </div>
-        <button class="menu-link" data-menu="tutorial" type="button">New here? Play the tutorial</button>
+        <button class="menu-link" data-menu="tutorial" type="button">Play the tutorial</button>
         <div class="menu-utilities">
           <button class="menu-utility" data-menu="armory" type="button">Armory</button>
           <button class="menu-utility" data-menu="settings" type="button">Settings</button>
@@ -869,11 +875,11 @@ function showStartScreen(): void {
       <span>${m.feel}</span>
     </button>`,
   ).join("");
-  const modeCards = MODES.map(
-    (mode) => `<button class="menu-card mode-card ${mode.id === selectedMode ? "selected" : ""}" data-mode="${mode.id}" type="button">
-      <strong>${mode.name}</strong>
-      <span>${mode.blurb}</span>
-    </button>`,
+  // Mode and difficulty are CHIP rows with one blurb line for the picked one: five blurb cards
+  // pushed Faction and Difficulty below the fold at 720p, which is how "the faction pick seems
+  // hidden behind Deploy" was reported. Every choice on this page fits one screen now.
+  const modeChips = MODES.map(
+    (mode) => `<button class="menu-chip ${mode.id === selectedMode ? "on" : ""}" data-mode="${mode.id}" type="button">${mode.name}</button>`,
   ).join("");
   // Each card states the faction's IDENTITY and, explicitly, what it gives up. A roster is defined
   // as much by its hole as by its depth, and a player choosing blind cannot see the hole.
@@ -881,14 +887,11 @@ function showStartScreen(): void {
     (f) => `<button class="menu-card faction-card ${f.id === selectedFaction ? "selected" : ""}" data-faction="${f.id}" data-tip="${escapeAttr(f.detail)}" type="button">
       <strong><span class="faction-pip" style="background:#${f.accent.toString(16).padStart(6, "0")}"></span>${escapeAttr(f.name)}</strong>
       <span>${escapeAttr(f.blurb)}</span>
-      <em class="faction-roster">${f.roster.length} units &middot; ${f.defenses.length} emplacements &middot; ${f.supports.length} support</em>
+      <em class="faction-roster">${f.roster.length} troops &middot; ${f.defenses.length} defenses &middot; ${f.supports.length} support strikes</em>
     </button>`,
   ).join("");
-  const diffCards = DIFFICULTIES.map(
-    (d) => `<button class="menu-card diff-card ${d === selectedDifficulty ? "selected" : ""}" data-diff="${d}" type="button">
-      <strong>${difficultyLabel(d)}</strong>
-      <span>${difficultyBlurb(d)}</span>
-    </button>`,
+  const diffChips = DIFFICULTIES.map(
+    (d) => `<button class="menu-chip ${d === selectedDifficulty ? "on" : ""}" data-diff="${d}" type="button">${difficultyLabel(d)}</button>`,
   ).join("");
 
   const screen = mountScreen(
@@ -896,29 +899,33 @@ function showStartScreen(): void {
     <div class="title-screen__content menu-content">
       <div class="menu-head">
         <button class="menu-back" data-overlay-close data-back type="button">&lsaquo; Back</button>
-        <h2 class="menu-heading">Deploy to Battle</h2>
+        <h2 class="menu-heading">Skirmish</h2>
       </div>
       <div class="start-layout">
         <div class="start-left">
           <div class="menu-section">
-            <div class="menu-label">Choose a battlefield</div>
+            <div class="menu-label">Map</div>
             <div class="map-list">${mapList}</div>
           </div>
+          <div class="menu-section">
+            <div class="menu-label">Preview</div>
+            <div class="map-preview" data-preview></div>
+          </div>
+        </div>
+        <div class="start-right">
           <div class="menu-section start-factions">
             <div class="menu-label">Faction</div>
             <div class="menu-grid faction-grid">${factionCards}</div>
           </div>
-        </div>
-        <div class="start-right">
-          <div class="menu-label">Preview</div>
-          <div class="map-preview" data-preview></div>
           <div class="menu-section">
             <div class="menu-label">Mode</div>
-            <div class="menu-grid mode-grid">${modeCards}</div>
+            <div class="chip-row">${modeChips}</div>
+            <p class="choice-blurb" data-mode-blurb>${escapeHtml(modeDef(selectedMode).blurb)}</p>
           </div>
           <div class="menu-section">
             <div class="menu-label">Difficulty</div>
-            <div class="menu-grid diff-grid">${diffCards}</div>
+            <div class="chip-row">${diffChips}</div>
+            <p class="choice-blurb" data-diff-blurb>${escapeHtml(difficultyBlurb(selectedDifficulty))}</p>
           </div>
         </div>
       </div>
@@ -960,13 +967,17 @@ function showStartScreen(): void {
     const modeBtn = target.closest<HTMLElement>("[data-mode]");
     if (modeBtn) {
       selectedMode = (modeBtn.dataset.mode as ModeId) ?? selectedMode;
-      for (const el of screen.querySelectorAll(".mode-card")) el.classList.toggle("selected", el === modeBtn);
+      for (const el of screen.querySelectorAll("[data-mode]")) el.classList.toggle("on", el === modeBtn);
+      const blurb = screen.querySelector("[data-mode-blurb]");
+      if (blurb) blurb.textContent = modeDef(selectedMode).blurb;
       return;
     }
     const diffBtn = target.closest<HTMLElement>("[data-diff]");
     if (diffBtn) {
       selectedDifficulty = (diffBtn.dataset.diff as Difficulty) ?? selectedDifficulty;
-      for (const el of screen.querySelectorAll(".diff-card")) el.classList.toggle("selected", el === diffBtn);
+      for (const el of screen.querySelectorAll("[data-diff]")) el.classList.toggle("on", el === diffBtn);
+      const blurb = screen.querySelector("[data-diff-blurb]");
+      if (blurb) blurb.textContent = difficultyBlurb(selectedDifficulty);
       return;
     }
     if (target.closest("[data-start]")) {
@@ -980,9 +991,9 @@ function showStartScreen(): void {
 }
 
 function difficultyBlurb(d: Difficulty): string {
-  if (d === "easy") return "Weaker enemy units and economy. Learn the ropes.";
-  if (d === "hard") return "Enemy units get more health, hit harder, and earn faster.";
-  return "A balanced, even fight.";
+  if (d === "easy") return "Weaker enemy. Learn the ropes.";
+  if (d === "hard") return "Tougher enemy that hits harder and earns faster.";
+  return "An even fight.";
 }
 
 function toggleFullscreen(): void {
@@ -1031,13 +1042,7 @@ function showSettings(): void {
         <input type="range" min="0" max="100" value="${Math.round(settings.musicVolume * 100)}" data-set="musicVolume" />
       </div>
       <div class="settings-row">
-        <label>Default difficulty</label>
-        <div class="settings-choices">
-          ${DIFFICULTIES.map((d) => `<button class="menu-chip ${settings.difficulty === d ? "on" : ""}" data-set="diff" data-value="${d}" type="button">${difficultyLabel(d)}</button>`).join("")}
-        </div>
-      </div>
-      <div class="settings-row">
-        <label>Action speed</label>
+        <label data-tip="How fast queued orders play out when the turn resolves.">Action speed</label>
         <div class="settings-choices">
           ${ACTION_PACES.map((p) => `<button class="menu-chip ${settings.actionPace === p ? "on" : ""}" data-set="pace" data-value="${p}" type="button">${PACE_LABEL[p]}</button>`).join("")}
         </div>
@@ -1049,30 +1054,30 @@ function showSettings(): void {
       <div class="settings-row">
         <label>Vehicle skin</label>
         ${commander.totalMastery() >= WINTER_SKIN_MASTERY
-          ? `<button class="menu-toggle ${settings.unitSkin === "winter" ? "on" : ""}" data-set="skin" type="button" data-tip="Cosmetic arctic-camo retexture pack for vehicles and structures — purely visual. Unlocked by doctrine mastery.">${settings.unitSkin === "winter" ? "Winter" : "Standard"}</button>`
-          : `<button class="menu-toggle locked" data-set="skin" type="button" data-tip="Locked cosmetic. Reach ${WINTER_SKIN_MASTERY} total doctrine-mastery stars (keep researching doctrines across your battles) to unlock the Winter skin pack.">🔒 ${commander.totalMastery()}/${WINTER_SKIN_MASTERY}</button>`}
+          ? `<button class="menu-toggle ${settings.unitSkin === "winter" ? "on" : ""}" data-set="skin" type="button" data-tip="Arctic camo for vehicles and structures. Cosmetic only.">${settings.unitSkin === "winter" ? "Winter" : "Standard"}</button>`
+          : `<button class="menu-toggle locked" data-set="skin" type="button" data-tip="Winter camo unlocks at ${WINTER_SKIN_MASTERY} doctrine-mastery stars. Research doctrines in battle to earn them.">🔒 ${commander.totalMastery()}/${WINTER_SKIN_MASTERY}</button>`}
       </div>
       <div class="settings-row">
         <label>High-contrast teams</label>
-        <button class="menu-toggle ${settings.highContrastTeams ? "on" : ""}" data-set="teams" type="button" data-tip="Colorblind-friendly team palette: your force reads blue, hostiles read orange.">${settings.highContrastTeams ? "On" : "Off"}</button>
+        <button class="menu-toggle ${settings.highContrastTeams ? "on" : ""}" data-set="teams" type="button" data-tip="Colorblind-safe palette: your side blue, enemy orange.">${settings.highContrastTeams ? "On" : "Off"}</button>
       </div>
       ${DEBUG_UNLOCKED ? `
-      <div class="settings-row settings-row--head"><label>🛠 Debug / Sandbox</label></div>
+      <div class="settings-row settings-row--head"><label>Debug</label></div>
       <div class="settings-row">
         <label>Infinite money</label>
         <button class="menu-toggle ${settings.debugInfiniteMoney ? "on" : ""}" data-set="debug-money" type="button" data-tip="Keeps your treasury topped up every command phase.">${settings.debugInfiniteMoney ? "On" : "Off"}</button>
       </div>
       <div class="settings-row">
-        <label>Free deploy cooldowns</label>
+        <label>No deploy cooldowns</label>
         <button class="menu-toggle ${settings.debugFreeCooldown ? "on" : ""}" data-set="debug-cd" type="button" data-tip="Zeroes deploy cooldowns so you can reinforce instantly.">${settings.debugFreeCooldown ? "On" : "Off"}</button>
       </div>` : ""}
-      <div class="settings-row settings-row--head"><label>Controls</label><button class="menu-toggle" data-set="binds-reset" type="button" data-tip="Restore every key to its default.">Reset</button></div>
+      <div class="settings-row settings-row--head"><label>Controls</label><button class="menu-toggle" data-set="binds-reset" type="button" data-tip="Restore every key to its default.">Reset keys</button></div>
       ${(Object.keys(KEYBIND_LABELS) as BindableAction[]).map((action) => `
         <div class="settings-row settings-row--bind">
           <label>${escapeHtml(KEYBIND_LABELS[action])}</label>
           <button class="menu-toggle bind-key" data-rebind="${action}" type="button" data-tip="Click, then press the new key.">${escapeHtml(keyDisplay(settings.keybinds[action]))}</button>
         </div>`).join("")}
-      <p class="settings-note">Action speed changes how fast queued orders play out. Settings are saved to this device.</p>
+      <p class="settings-note">Settings save automatically.</p>
     </div>
   `,
     "menu-screen",
@@ -1193,7 +1198,7 @@ function commanderProfileHtml(): string {
   const top = commander.topUnitKind();
   const medals = MEDALS.map((m) => {
     const earned = s.medals.includes(m.id);
-    return `<span class="medal ${earned ? "earned" : ""}" data-tip="${escapeAttr(`${m.name}: ${m.blurb}${earned ? " (earned)" : ""}`)}">🎖 ${escapeHtml(m.name)}</span>`;
+    return `<span class="medal ${earned ? "earned" : ""}" data-tip="${escapeAttr(`${m.name}: ${m.blurb}${earned ? " (earned)" : ""}`)}">✪ ${escapeHtml(m.name)}</span>`;
   }).join("");
   const mastered = TECH_TREE.filter((n) => n.tier < 4 && commander.masteryTier(n.id) > 0)
     .map((n) => `<span class="medal earned" data-tip="${escapeAttr(`${n.name} researched ${s.doctrineUse[n.id] ?? 0} times lifetime.`)}">${escapeHtml(n.name)} ${"I".repeat(commander.masteryTier(n.id))}</span>`)
@@ -1227,7 +1232,7 @@ function showArmory(): void {
         <h2 class="menu-heading">Armory</h2>
         ${pointsBadge()}
       </div>
-      <p class="settings-note">Earn points in battle to unlock unit accents, commander titles, and emblems — then equip your loadout.</p>
+      <p class="settings-note">Earn points in battle. Spend them here on unit accents, callsigns, and emblems.</p>
       ${commanderProfileHtml()}
       ${sections}
     </div>
@@ -1565,19 +1570,18 @@ function showRunIntro(): void {
   const active = run.active;
   const battle = active ? run.current() : undefined;
   const body = active && battle
-    ? `<p class="settings-note">A run is in progress. Resume where you left off, or scrap it and start fresh.</p>
+    ? `<p class="settings-note">A run is in progress.</p>
        <div class="campaign-progress">Sector ${run.sectorNumber} of ${RUN_LENGTH} — ${escapeHtml(mapDef(battle.map).name)} · ${escapeHtml(modeDef(battle.mode).name)} · ${escapeHtml(difficultyLabel(battle.difficulty))}</div>
        ${runRosterHtml()}`
-    : `<p class="settings-note">${RUN_LENGTH} back-to-back battles on random maps and modes, difficulty climbing each sector. Survivors carry forward as veterans — and stay dead if they fall. Clear all ${RUN_LENGTH} to win the run; lose once and it's over.</p>`;
+    : `<p class="settings-note">${RUN_LENGTH} battles back to back on random maps, each harder than the last. Survivors carry forward; the fallen stay dead. Lose once and the run is over.</p>`;
   const buttons = active
     ? `<button class="title-start" data-resume type="button">Resume Run</button>
-       <button class="menu-action" data-new type="button">Abandon & New Run</button>`
+       <button class="menu-action" data-new type="button">Abandon &amp; Start Over</button>`
     : `<button class="title-start" data-new type="button">Begin Run</button>`;
   const screen = mountScreen(
     `
     <div class="title-screen__content menu-content overlay-card">
-      <div class="title-kicker">Skirmish Run</div>
-      <h2 class="menu-heading">Roguelike Ladder</h2>
+      <h2 class="menu-heading">Skirmish Run</h2>
       ${body}
       <div class="pause-buttons">
         ${buttons}
@@ -1654,13 +1658,13 @@ function showControls(): void {
     ["Scroll", "Zoom"],
     ["Space", "End turn"],
     ["Tab", "Cycle squad units"],
-    ["1–6", "Activate the matching command-deck action"],
+    ["1–6", "Command-deck action"],
     ["M / F / G", "Move / Shoot / Grenade"],
-    ["X / B / V", "Ram / Strike / Crouch (defend)"],
+    ["X / B / V", "Ram / Strike / Crouch"],
     ["C", "Quick crouch"],
     ["Enter", "Confirm the armed order"],
     ["L", "Toggle the battle log"],
-    ["Esc", "Back out / open this menu"],
+    ["Esc", "Back / pause"],
     ["R", "Restart the battle"],
   ];
   const screen = mountScreen(
@@ -1786,13 +1790,13 @@ function safeStorageSet(key: string, value: string): boolean {
 
 // ---- Tutorial ----
 const TUTORIAL_STEPS: Array<{ title: string; body: string }> = [
-  { title: "Welcome, Commander", body: "This is a turn-based tactics skirmish. You start with only a Home Base. Let's learn the basics on an easy bot." },
+  { title: "Welcome, Commander", body: "Turn-based tactics. You start with only a Home Base. Learn the basics against an easy bot." },
   { title: "Select your base", body: "Click your blue Home Base. Its command deck opens at the bottom — from there you deploy troops, research tech, build defenses, and upgrade." },
-  { title: "Deploy a Recruit", body: "In the base deck, click 'Recruit' to deploy rifle infantry next to your base. It costs money and the base's command point." },
-  { title: "End the turn", body: "Press Space (or End Turn) to resolve the round. Income is paid and your new troop becomes ready to act next turn." },
+  { title: "Deploy a Recruit", body: "In the base deck, click Recruit to place rifle infantry beside your base. It costs money and the base's command point." },
+  { title: "End the turn", body: "Press Space (or End Turn) to resolve the turn. Income is paid and your new troop is ready to act next turn." },
   { title: "Move a unit", body: "Select your Recruit and press M (Move). A cyan circle shows how far it can go this turn — click inside it to move." },
   { title: "Attack", body: "Press F (Shoot), click an enemy, pick a body part, and Confirm. The line preview shows cover, accuracy, and estimated damage." },
-  { title: "Build defenses & win", body: "From the base you can build walls and turrets near it, and upgrade income and command points. Destroy the enemy base and force to win. Good luck!" },
+  { title: "Build defenses and win", body: "From the base, build walls and turrets nearby and upgrade income and command points. Destroy the enemy base and every enemy unit to win." },
 ];
 let tutorialStep = 0;
 
@@ -1846,7 +1850,7 @@ function showRoundTransition(turn: number): void {
   roundTransitionEl?.remove();
   const el = document.createElement("div");
   el.className = "round-transition";
-  el.innerHTML = `<div class="round-transition__bar"></div><div class="round-transition__label"><span>Round</span><strong>Turn ${turn}</strong></div>`;
+  el.innerHTML = `<div class="round-transition__bar"></div><div class="round-transition__label"><span>Next</span><strong>Turn ${turn}</strong></div>`;
   document.body.appendChild(el);
   roundTransitionEl = el;
   // Trigger the enter animation on the next frame, then auto-clear.
@@ -2342,6 +2346,7 @@ declare global {
       setAim(aim: AimMode): void;
       endTurn(): void;
       reset(): void;
+      toMenu(): void;
       deselect(): void;
       chooseBoardEntity(id: string): void;
       queueDefend(stance?: "standing" | "crouched" | "prone"): void;
@@ -2431,6 +2436,9 @@ window.__rht = {
     hud.resetGame();
     lastCommandCameraKey = "";
   },
+  // The title screen from ANY state (a battle, a sub-menu, an end screen) — what the UI shots and
+  // the ui-audit mean by "title". reset() alone only restarts the sim.
+  toMenu: () => showMainMenu(),
   deselect: () => sim.deselect(),
   chooseBoardEntity: (id) => hud.chooseBoardEntity(id),
   queueDefend: (stance) => sim.queueDefend(stance),
@@ -2470,6 +2478,7 @@ window.__rht = {
     closeAllMenus();
     if (!applyScenario(sim, id)) return false;
     tutorialActive = false;
+    renderTutorialPanel(); // the panel leaked from a tutorial cut into every later scenario shot
     lastEndPhase = undefined; // let victory/defeat scenarios render their end screen
     world.applyMap(sim.mapDef.theme);
     world.setPlayerAccent(progression.accentColor());

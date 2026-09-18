@@ -70,14 +70,14 @@ function syncRevealTracking(base: CombatEntity): void {
 
 const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "move", label: "Move", tip: "Select Move, then click ground or a cover object. Costs 1 CP. Soldiers move farther than heavy units." },
-  { id: "shoot", label: "Shoot", tip: "Select Shoot, pick an enemy part, then confirm. The map line previews cover, high ground, estimated damage, and shot accuracy." },
+  { id: "shoot", label: "Shoot", tip: "Select Shoot, pick an enemy part, then confirm. The line previews cover, damage and accuracy." },
   { id: "grenade", label: "Grenade", tip: "Soldier only. Throw a limited-supply grenade in a short arc with splash damage." },
   { id: "ram", label: "Ram", tip: "Tank only. Select a close target or wall, then confirm. Costs 1 CP, deals 72 damage, and damages your front armor." },
-  { id: "melee", label: "Strike", tip: "Infantry only. Strike a hostile at close range. Strikers hit hardest with their Arc Blade; other infantry bayonet/rifle-butt for less. Needs an intact weapon." },
+  { id: "melee", label: "Strike", tip: "Infantry only. Strike a hostile at close range; Strikers hit hardest. Needs an intact weapon." },
   { id: "defend", label: "Crouch", tip: "Infantry only. Improves accuracy and makes head shots harder, but slows the next move." },
   { id: "overwatch", label: "Overwatch", tip: "Hold fire until a hostile MOVES within watch range this resolve, then take a snap reaction shot (reduced accuracy). Costs 1 CP." },
   { id: "mine", label: "Mine", tip: "Sapper only. Plant a proximity mine at this spot ($15 + 1 CP). Hostiles that step on it eat a splash blast. Invisible to the enemy." },
-  { id: "smoke", label: "Smoke", tip: "Mortar only. Lob a smoke round at a spot (1 CP, mortar range). The cloud lasts 3 turns and swallows every flat shot through it — arcing rounds still sail over." },
+  { id: "smoke", label: "Smoke", tip: "Mortar only. Lay a 3-turn smoke cloud that swallows flat shots; arcing rounds sail over. 1 CP." },
   { id: "load", label: "Load", tip: "Transport only. Click a friendly ground unit to airlift it aboard. Costs 1 CP." },
   { id: "unload", label: "Unload", tip: "Transport only. Click ground to fly there and set your passengers down. Costs 1 CP." },
 ];
@@ -162,11 +162,18 @@ export class Hud {
     private readonly callbacks: HudCallbacks
   ) {
     this.root.addEventListener("click", (event) => this.handleClick(event));
-    this.root.addEventListener("pointerover", (event) => this.handleTooltipOver(event));
-    this.root.addEventListener("pointermove", (event) => this.handleTooltipMove(event));
-    this.root.addEventListener("pointerout", (event) => this.handleTooltipOut(event));
+    // On <body>, not #ui: the menu screens (faction cards, skin lock, medals) carry data-tip too.
+    document.body.addEventListener("pointerover", (event) => this.handleTooltipOver(event));
+    document.body.addEventListener("pointermove", (event) => this.handleTooltipMove(event));
+    document.body.addEventListener("pointerout", (event) => this.handleTooltipOut(event));
+    // A click always dismisses the tooltip: the thing it described is now being acted on (and a
+    // click that opens a menu would otherwise leave it hanging over the inert HUD).
+    document.body.addEventListener("pointerdown", () => this.hideTooltip(), true);
     this.tooltip = document.createElement("div");
     this.tooltip.className = "hud-tooltip";
+    // It follows the cursor and sits on its neighbours by design; the audit's overlap rule is for
+    // panels that collide, not for a tooltip doing its job.
+    this.tooltip.dataset.allowOverlap = "";
     document.body.append(this.tooltip);
   }
 
@@ -429,7 +436,7 @@ export class Hud {
         ${orderPlanner(actor, target, this.targetPartId, this.action, playerOrders.get(actor?.id ?? "") ?? [], this.sim)}
       </section>
 
-      <div class="money-bar" data-tip="Treasury. Your Home Base earns money each round (less if its reactor is damaged). Spend it deploying troops, building defenses, or upgrading your Home Base.">
+      <div class="money-bar" data-tip="Treasury. Your Home Base earns money each turn (less if its reactor is damaged). Spend it on troops, defenses, and base upgrades.">
         <span class="money-bar__icon">$</span>
         <span class="money-bar__label">Treasury</span>
         <span class="money-bar__value">${this.sim.money("player")}</span>
@@ -437,7 +444,7 @@ export class Hud {
 
       <section class="log compact-log ${this.logExpanded ? "expanded" : ""}" data-tip="${escapeAttr(this.sim.log.join(" / "))}">
         <button class="log-toggle" data-command="toggle-log" aria-label="${this.logExpanded ? "Close battle log" : "Open battle log"}" data-tip="${this.logExpanded ? "Collapse action log. Hotkey: L or Esc." : "Expand recent hits, misses, and system damage. Hotkey: L."}">
-          <span class="log-toggle-icon">${this.logExpanded ? "X" : "+"}</span>
+          <span class="log-toggle-icon">${this.logExpanded ? "×" : "+"}</span>
           <strong>${this.logExpanded ? "Close Log" : "Log"}</strong>
         </button>
         ${this.logExpanded ? battleLogPanel(this.sim) : `<span class="log-line">${escapeHtml(this.sim.log[0] ?? "No events")}</span>`}
@@ -708,19 +715,47 @@ export class Hud {
     this.tooltip.style.top = "-9999px";
   }
 
+  // A tooltip never covers the panel it came from. A deploy card's tip used to open upward over the
+  // deck's own stats and tabs (six lines of it); now it hangs OUTSIDE the anchoring HUD panel — above
+  // a bottom panel, beside a side rail — and only falls back to cursor-relative placement inside a
+  // full-screen menu card, where "outside" would be nowhere near the pointer.
   private positionTooltip(event: PointerEvent): void {
     const margin = 12;
-    const width = Math.min(320, window.innerWidth - margin * 2);
+    const width = Math.min(420, window.innerWidth - margin * 2);
     this.tooltip.style.maxWidth = `${width}px`;
     const rect = this.tooltip.getBoundingClientRect();
-    const nextLeft = Math.min(window.innerWidth - rect.width - margin, Math.max(margin, event.clientX + 14));
-    const below = event.clientY + 18 + rect.height < window.innerHeight - margin;
-    const nextTop = below
-      ? event.clientY + 18
-      : Math.max(margin, event.clientY - rect.height - 18);
-    this.tooltip.style.left = `${nextLeft}px`;
-    this.tooltip.style.top = `${nextTop}px`;
+    const clampX = (x: number): number => Math.min(window.innerWidth - rect.width - margin, Math.max(margin, x));
+    const clampY = (y: number): number => Math.min(window.innerHeight - rect.height - margin, Math.max(margin, y));
+    const panel = this.tooltipAnchor?.closest<HTMLElement>(".commandbar, .log, .money-bar, .roster, .unit-detail-panel, .target-panel, .topbar, .tutorial-panel");
+    let left = clampX(event.clientX + 14);
+    let top: number;
+    if (panel) {
+      const p = panel.getBoundingClientRect();
+      const bottomPanel = panel.matches(".commandbar, .log, .money-bar");
+      const rightRail = panel.matches(".target-panel, .topbar");
+      const leftRail = panel.matches(".roster, .unit-detail-panel");
+      if (bottomPanel) top = p.top - rect.height - 8;
+      else if (panel.matches(".tutorial-panel")) top = p.bottom + 8;
+      else top = clampY(event.clientY - rect.height / 2);
+      if (rightRail) left = p.left - rect.width - 8;
+      else if (leftRail) left = p.right + 8;
+      if (top < margin) top = p.bottom + 8; // no room above: hang below instead
+      top = clampY(top);
+      left = clampX(left);
+    } else {
+      const below = event.clientY + 18 + rect.height < window.innerHeight - margin;
+      top = below ? event.clientY + 18 : Math.max(margin, event.clientY - rect.height - 18);
+    }
+    this.tooltip.style.left = `${left}px`;
+    this.tooltip.style.top = `${top}px`;
   }
+}
+
+// "Striker on cooldown (2 turns)" on the Striker card reads as "On cooldown (2 turns)": the card
+// is the subject, the tip is the predicate.
+function withoutLabel(reason: string, label: string): string {
+  const rest = reason.startsWith(label) ? reason.slice(label.length).replace(/^[\s:]+/, "") : reason;
+  return rest.charAt(0).toUpperCase() + rest.slice(1);
 }
 
 // A one-line condition bar for the squad list. The roster showed a unit's kind, command points and
@@ -848,7 +883,7 @@ function endScreen(sim: TacticalSim): string {
   return `
     <div class="endscreen endscreen--${win ? "victory" : "defeat"}">
       <div class="endscreen__card">
-        <div class="endscreen__kicker">Battle Report</div>
+        <div class="endscreen__kicker">Battle Over</div>
         <h2 class="endscreen__title">${win ? "VICTORY" : "DEFEAT"}</h2>
         <p class="endscreen__sub">${escapeHtml(sub)}</p>
         <div class="endscreen__actions">
@@ -864,7 +899,7 @@ function endScreen(sim: TacticalSim): string {
 // orders are being planned or resolved.
 function turnChip(sim: TacticalSim): string {
   const phaseLabel = sim.phase === "command" ? "Command" : sim.phase === "resolve" ? "Resolving" : sim.phase === "victory" ? "Victory" : "Defeat";
-  return `<span class="turn-chip ${sim.phase}" data-tip="Current battle round and phase.">Turn ${sim.turn} <em>${phaseLabel}</em></span>`;
+  return `<span class="turn-chip ${sim.phase}" data-tip="Current turn and phase.">Turn ${sim.turn} <em>${phaseLabel}</em></span>`;
 }
 
 function modeChip(sim: TacticalSim): string {
@@ -934,7 +969,7 @@ function buildingDetail(entity: CombatEntity): string {
   const eff = generatorEfficiency(entity);
   const researched = (entity.unlockedTech ?? []).length;
   return `<div class="detail-statline building-statline">
-      <div data-tip="Money paid to your treasury each round. Falls as the Reactor Core takes damage and stops if it is destroyed. The base earns money and deploys troops; it cannot attack."><span>Income</span><strong>$${baseIncome(entity)}/rd</strong></div>
+      <div data-tip="Money paid to your treasury each turn. Falls as the Reactor Core takes damage and stops if it is destroyed."><span>Income</span><strong>$${baseIncome(entity)}/turn</strong></div>
       <div><span>Reactor</span><strong>${Math.round(eff * 100)}%</strong></div>
       <div data-tip="Doctrines researched on the tech tree, unlocking new troop types."><span>Tech</span><strong>${researched}/${TECH_TREE.length}</strong></div>
     </div>`;
@@ -1078,7 +1113,7 @@ function orderHint(actor: CombatEntity | undefined, focusedAction: boolean, sim:
   const text = !actor
     ? "Click a trooper in the world, or a card in the squad list."
     : sim.phase !== "command"
-      ? "Orders are resolving — the next round opens when the action ends."
+      ? "Orders are resolving — the next turn opens when the action ends."
       : !actor.status.alive
         ? `${actor.name} is out of action — pick another unit.`
         : actor.commandPoints <= 0 && !focusedAction
@@ -1493,7 +1528,7 @@ function baseCommandPanel(base: CombatEntity, sim: TacticalSim): string {
     <div class="command-layout single-detail">
       <div class="command-section detail-deck">
         <div class="order-body">
-          ${commanding ? baseCommandBody(base, sim) : `<div class="order-note">Orders are resolving — the base acts again next round.</div>${baseSummary(base, sim)}`}
+          ${commanding ? baseCommandBody(base, sim) : `<div class="order-note">Orders are resolving — the base acts again next turn.</div>${baseSummary(base, sim)}`}
         </div>
       </div>
     </div>
@@ -1505,9 +1540,9 @@ function baseSummary(base: CombatEntity, sim: TacticalSim): string {
   const researched = (base.unlockedTech ?? []).length;
   return `
     <div class="detail-statline building-statline base-summary">
-      <div data-tip="Money paid each round, scaled by reactor health. Upgrade income to raise it."><span>Income</span><strong>$${baseIncome(base)}/rd</strong></div>
+      <div data-tip="Money paid each turn, scaled by reactor health. Upgrade income to raise it."><span>Income</span><strong>$${baseIncome(base)}/turn</strong></div>
       <div data-tip="Doctrines researched on the tech tree, unlocking new troop types."><span>Tech</span><strong>${researched}/${TECH_TREE.length}</strong></div>
-      <div data-tip="Combat units you have on the field. Hard cap of ${POP_CAP}."><span>Field</span><strong>${field}/${POP_CAP}</strong></div>
+      <div data-tip="Combat units you have on the field. Hard cap of ${POP_CAP}."><span>Troops</span><strong>${field}/${POP_CAP}</strong></div>
     </div>
   `;
 }
@@ -1576,10 +1611,10 @@ function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
     const cooldown = sim.troopCooldown(base, spec.kind);
     const ready = !reason;
     const isNew = isRecentlyRevealed(revealTracker.revealedTroopAt.get(spec.kind));
-    const sub = cooldown > 0 ? `${cooldown} rd` : `$${spec.cost}`;
+    const sub = cooldown > 0 ? `${cooldown} turn${cooldown === 1 ? "" : "s"}` : `$${spec.cost}`;
     const tip = reason
-      ? `${spec.label}: ${reason}.`
-      : `${spec.label} (${spec.role}): ${spec.tip} Costs 1 CP and $${spec.cost}; ${spec.cooldown}-round cooldown.`;
+      ? `${withoutLabel(reason, spec.label)}.`
+      : `${spec.role}. ${spec.tip} 1 CP · $${spec.cost} · ${spec.cooldown}-turn cooldown.`;
     return `<button class="btn confirm ${ready ? "" : "disabled"} ${isNew ? "just-revealed" : ""}" data-spawn="${spec.kind}" data-disabled="${!ready}" data-tip="${escapeAttr(tip)}">
       ${escapeHtml(spec.label)}${isNew ? `<em class="new-badge">NEW</em>` : ""}
       <span>${sub}</span>
@@ -1624,10 +1659,10 @@ function supportDeckHtml(base: CombatEntity, sim: TacticalSim): string {
     const cooldown = sim.supportCooldown(base, spec.kind);
     const active = sim.pendingSupport === spec.kind;
     const ready = !reason;
-    const sub = active ? "Targeting…" : cooldown > 0 ? `${cooldown} rd` : `$${spec.cost}`;
+    const sub = active ? "Targeting…" : cooldown > 0 ? `${cooldown} turn${cooldown === 1 ? "" : "s"}` : `$${spec.cost}`;
     const tip = reason && !active
-      ? `${spec.label}: ${reason}.`
-      : `${spec.label} (${spec.role}): ${spec.tip} Costs 1 CP and $${spec.cost}; ${spec.cooldown}-round cooldown. Then click the target point.`;
+      ? `${withoutLabel(reason, spec.label)}.`
+      : `${spec.role}. ${spec.tip} 1 CP · $${spec.cost} · ${spec.cooldown}-turn cooldown. Then click the target point.`;
     return `<button class="btn confirm ${active ? "active" : ready ? "" : "disabled"}" data-support="${spec.kind}" data-disabled="${!ready && !active}" data-tip="${escapeAttr(tip)}">
       ${escapeHtml(spec.label)}
       <span>${sub}</span>
@@ -1647,7 +1682,7 @@ function upgradeDeckHtml(base: CombatEntity, sim: TacticalSim): string {
   const nextIncome = INCOME_BY_LEVEL[(base.incomeLevel ?? 0) + 1];
   const incomeTip = incomeCost === undefined
     ? "Income is fully upgraded."
-    : `Raise income to $${nextIncome}/rd before reactor scaling. Costs 1 CP and $${incomeCost}.`;
+    : `Raise income to $${nextIncome}/turn before reactor scaling. Costs 1 CP and $${incomeCost}.`;
   const cmdCost = commandUpgradeCost(base);
   const cmdReady = hasCp && cmdCost !== undefined && money >= cmdCost;
   const cmdTip = cmdCost === undefined
@@ -1681,8 +1716,8 @@ function techTreePanel(base: CombatEntity, sim: TacticalSim): string {
     <div class="tech-legend">
       <span class="tl done">Researched</span>
       <span class="tl ready">Available</span>
-      <span class="tl blocked">Locked</span>
-      <span class="tl locked">Locked out</span>
+      <span class="tl blocked">Needs prerequisite</span>
+      <span class="tl locked">Excluded</span>
     </div>
   `;
 }
@@ -1712,7 +1747,7 @@ function techNodeCard(node: TechNode, base: CombatEntity, sim: TacticalSim): str
   const troopUnlocks = troopsUnlockedBy(node.id).map((kind) => troopSpec(kind).label);
   const unlockLine = troopUnlocks.length
     ? `<span class="tech-unlocks">Unlocks ${escapeHtml(troopUnlocks.join(" + "))}</span>`
-    : node.effect ? `<span class="tech-unlocks spec">Specialization upgrade</span>` : "";
+    : node.effect ? `<span class="tech-unlocks spec">Upgrade</span>` : "";
 
   // Tier-4 specializations stay encrypted until their parent doctrine is researched.
   if (node.tier === 4 && !prereqsMet) {
