@@ -156,6 +156,7 @@ const AIRBURST_REACH = 2.7;
 export const FLAMER_FEAR_RADIUS = 6;
 // STRAFE (gunship): a move also fires one burst at every hostile within this much of the path.
 export const STRAFE_RADIUS = 4;
+const STRAFE_DAMAGE_SHARE = 0.75;
 // CARPET (bomber): three bombs in a line along the heading, this far apart.
 export const CARPET_BOMBS = 3;
 // A jump trooper landing next to an enemy: damage before difficulty scaling.
@@ -265,6 +266,8 @@ export interface TacticalOrder {
   start?: Vec2;
   startedCrouched?: boolean;
   projectileId?: string;
+  // STRAFE: hostiles this gunship move has already gunned (one burst each).
+  strafed?: string[];
 }
 
 /** One enemy unit's planned order for the coming resolve, as revealed by a drone op's recon pulse. */
@@ -2404,6 +2407,7 @@ export class TacticalSim {
       this.checkOverwatch(actor);
       this.checkMines(actor);
       this.checkPickups(actor);
+      if (actor.kind === "gunship") this.strafeAlongPath(order, actor);
       if (dist(actor.position, order.destination) < 0.08 || order.elapsed >= order.duration) order.done = true;
       return;
     }
@@ -2531,6 +2535,27 @@ export class TacticalSim {
       this.resolveRam(actor, target);
     }
     if (order.elapsed >= order.duration) order.done = true;
+  }
+
+  // STRAFE. A gunship on the move guns everything hostile it passes: one burst per unit within
+  // STRAFE_RADIUS of its path, resolved as direct damage the moment it comes into reach (the
+  // autocannon's air-to-air rule is for aimed fire; a gun run is the exception).
+  private strafeAlongPath(order: TacticalOrder, actor: CombatEntity): void {
+    if (!actor.status.canShoot) return;
+    const strafed = (order.strafed ??= []);
+    for (const target of this.entities) {
+      if (target.team === actor.team || target.team === "neutral" || !target.status.alive || target.downed || target.carriedById) continue;
+      if (target.kind === "cover" || isBuildingKind(target.kind) || strafed.includes(target.id)) continue;
+      if (dist(target.position, actor.position) > STRAFE_RADIUS + target.radius) continue;
+      strafed.push(target.id);
+      const part = preferredPart(target, "center");
+      const amount = Math.max(1, Math.round(this.estimateShotDamage(actor, target, part, "center", false) * STRAFE_DAMAGE_SHARE));
+      const result = applyDamage(target, part.id, amount);
+      this.pushLog(`${actor.name} strafes ${target.name}`);
+      this.effect("shot", actor.position, target.position, actor.team === "player" ? 0x75d8ff : 0xff765f, 0.3);
+      this.effect("impact", target.position, target.position, result.destroyed ? 0xffd166 : 0xffffff, 0.42, target.radius);
+      this.afterDamage(actor, target, result, "Strafe");
+    }
   }
 
   private hasActivePriorOrder(order: TacticalOrder): boolean {

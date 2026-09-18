@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TacticalSim, mapDef } from "./sim";
+import { STRAFE_RADIUS, TacticalSim, mapDef } from "./sim";
 
 // Unit identity abilities, round four (docs/unit-identity-ideas.md picks 5, 9, 10, 14, 15, 17, 18):
 // grenadier AIRBURST, flamer FEAR, drone op RECON, APC CARRY, artillery DEPLOY, gunship STRAFE,
@@ -204,5 +204,35 @@ describe("artillery deploy", () => {
     sim.debugSelect(tank.id);
     expect(sim.queueDeploy()).toBe(false);
     expect(sim.queueShootAt({ x: 10, z: 0 })).toBe(true);
+  });
+});
+
+describe("gunship strafe", () => {
+  it("a move guns each hostile within STRAFE_RADIUS of the path once, and leaves the one off the path alone", () => {
+    const sim = staged();
+    const gunship = sim.debugSpawn("gunship", "player", { x: -12, z: 0 });
+    const onPath = sim.debugSpawn("soldier", "enemy", { x: -4, z: 2 });
+    const alsoOnPath = sim.debugSpawn("soldier", "enemy", { x: 2, z: -2 });
+    const offPath = sim.debugSpawn("soldier", "enemy", { x: -4, z: STRAFE_RADIUS + 3 });
+    for (const e of [onPath, alsoOnPath, offPath]) disarm(e);
+    const before = [onPath, alsoOnPath, offPath].map(hp);
+    sim.debugSelect(gunship.id);
+    expect(sim.queueMove({ x: 8, z: 0 })).toBe(true);
+    sim.endTurn();
+    settle(sim);
+    expect(sim.log.filter((l) => l.includes("strafes")).length).toBe(2);
+    expect(hp(onPath)).toBeLessThan(before[0]);
+    expect(hp(alsoOnPath)).toBeLessThan(before[1]);
+    expect(hp(offPath)).toBe(before[2]);
+    // A transport flying the same line is unarmed and strafes nothing.
+    const sim2 = staged();
+    const transport = sim2.debugSpawn("transport", "player", { x: -12, z: 0 });
+    const bystander = sim2.debugSpawn("soldier", "enemy", { x: -4, z: 2 });
+    disarm(bystander);
+    sim2.debugSelect(transport.id);
+    expect(sim2.queueMove({ x: 8, z: 0 })).toBe(true);
+    sim2.endTurn();
+    settle(sim2);
+    expect(sim2.log.some((l) => l.includes("strafes"))).toBe(false);
   });
 });
