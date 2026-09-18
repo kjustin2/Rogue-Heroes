@@ -88,6 +88,7 @@ export class WorldRenderer {
   private readonly targetRing: THREE.Mesh;
   private readonly actionRangeRing: THREE.Mesh;
   private readonly shootRangeRing: THREE.Mesh;
+  private lastRangeSig = "";
   private readonly placementRing: THREE.Mesh;
   private readonly placementDisc: THREE.Mesh;
   private ghostedEntityIds = new Set<string>();
@@ -176,7 +177,7 @@ export class WorldRenderer {
     // area that brightens into a defined rim — which is how a tactics board shows reach. Same one
     // mesh, one draw call; the shape lives in a 256px gradient texture instead of in geometry.
     this.actionRangeRing = new THREE.Mesh(
-      new THREE.PlaneGeometry(2, 2),
+      new THREE.PlaneGeometry(2, 2, 56, 56), // subdivided so drapeToTerrain can lay it over steps
       new THREE.MeshBasicMaterial({
         color: 0xffbf4d,
         map: rangeFieldTexture(),
@@ -192,7 +193,7 @@ export class WorldRenderer {
     // Weapon reach is a HAIRLINE, never a field: the move field is the only filled shape a
     // selected unit projects, so the two can never be mistaken for each other or stack into a blur.
     this.shootRangeRing = new THREE.Mesh(
-      new THREE.RingGeometry(0.985, 1.0, 128),
+      new THREE.RingGeometry(0.985, 1.0, 160, 1),
       new THREE.MeshBasicMaterial({ color: 0xffa24d, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false })
     );
     this.shootRangeRing.rotation.x = -Math.PI / 2;
@@ -3186,13 +3187,21 @@ export class WorldRenderer {
     this.actionRangeRing.visible = Boolean(selected && range && !shoot);
     if (!selected || !range) return;
     const pulse = (Math.sin(performance.now() * 0.006) + 1) * 0.5;
+    // The overlay is re-draped only when what it covers changes (selection, projected position,
+    // radius), not per frame — 3k terrain samples is not a per-frame cost.
+    const sig = `${range.kind}|${range.position.x.toFixed(2)}|${range.position.z.toFixed(2)}|${range.radius.toFixed(2)}`;
     if (shoot) {
-      this.shootRangeRing.position.set(range.position.x, range.elevation + 0.07, range.position.z);
+      this.shootRangeRing.position.set(range.position.x, range.elevation, range.position.z);
       this.shootRangeRing.scale.setScalar(range.radius);
+      if (sig !== this.lastRangeSig) drapeToTerrain(this.shootRangeRing, 0.07);
+      this.lastRangeSig = sig;
       (this.shootRangeRing.material as THREE.MeshBasicMaterial).opacity = 0.55 + pulse * 0.2;
       return;
     }
-    this.actionRangeRing.position.set(range.position.x, range.elevation + 0.062, range.position.z);
+    this.actionRangeRing.position.set(range.position.x, range.elevation, range.position.z);
+    this.actionRangeRing.scale.setScalar(range.radius);
+    if (sig !== this.lastRangeSig) drapeToTerrain(this.actionRangeRing, 0.062);
+    this.lastRangeSig = sig;
     this.actionRangeRing.scale.setScalar(range.radius * (1 + pulse * 0.01));
     const mat = this.actionRangeRing.material as THREE.MeshBasicMaterial;
     mat.color.setHex(range.kind === "melee" ? 0xd28cff : range.kind === "grenade" ? 0xff7f67 : range.kind === "move" ? 0x9dfcff : 0xffbf4d);
@@ -4024,6 +4033,25 @@ function updateUnitMarker(marker: THREE.Group, entity: CombatEntity, color: numb
     ringMaterial.color.setHex(color);
     ringMaterial.opacity = 0.64 + pulse * 0.18;
   }
+}
+
+/**
+ * Ground overlays are flat discs rotated onto XZ. On stepped terrain a flat disc at the actor's
+ * elevation sinks into the next mesa and hangs in the air past a ledge — the "range circle
+ * breaks" report. This pulls every vertex of a laid-flat mesh down (or up) to the ground under
+ * it, in the mesh's own frame, so the shape follows the steps. Assumes rotation.x === -PI/2 and
+ * uniform scale; the mesh's position.y is the reference the offsets are measured from.
+ */
+function drapeToTerrain(mesh: THREE.Mesh, lift: number): void {
+  const pos = mesh.geometry.attributes.position as THREE.BufferAttribute;
+  const s = mesh.scale.x || 1;
+  for (let i = 0; i < pos.count; i += 1) {
+    const wx = mesh.position.x + pos.getX(i) * s;
+    const wz = mesh.position.z - pos.getY(i) * s; // local +y is world -z once laid flat
+    pos.setZ(i, (terrainHeightAt({ x: wx, z: wz }) + lift - mesh.position.y) / s);
+  }
+  pos.needsUpdate = true;
+  mesh.geometry.computeBoundingSphere();
 }
 
 function makeSplashDisc(position: Vec2, color: number, radius: number): THREE.Group {

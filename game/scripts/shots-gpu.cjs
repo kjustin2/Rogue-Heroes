@@ -54,6 +54,19 @@ app.whenReady().then(async () => {
         await shot("portrait");
         continue;
       }
+      if (s === "rings") {
+        // Range overlays on stepped terrain: a soldier at a mesa foot with the move field spanning the step,
+        // then the HQ selected (its big ring crosses everything).
+        await js(`window.__rht.scenario("high-ground"); window.__rht.deselect();`);
+        await sleep(1800);
+        await js(`(() => { const sim = window.__rht.sim; const covers = sim.entities.filter(e => e.kind === "cover" && e.coverKind === "ridge"); const r = covers[0]; const u = sim.debugSpawn("soldier", "player", { x: r ? r.position.x - r.radius - 0.8 : 0, z: r ? r.position.z : 0 }); sim.select(u.id); sim.setIntent("move"); window.__rht.setView({ x: u.position.x, z: u.position.z, zoom: 0.55, pitch: 0.6, yaw: 0.25 }); })()`);
+        await sleep(900);
+        await shot("rings-move");
+        await js(`(() => { const sim = window.__rht.sim; const hq = sim.entities.find(e => e.team === "player" && e.kind === "hq"); if (hq) { sim.select(hq.id); window.__rht.setView({ x: hq.position.x, z: hq.position.z, zoom: 0.9, pitch: 0.6, yaw: 0.25 }); } })()`);
+        await sleep(900);
+        await shot("rings-base");
+        continue;
+      }
       if (s === "abilities") {
         // Smoke cloud, a marked enemy, a downed trooper beside a medic: the three new cues in one frame.
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
