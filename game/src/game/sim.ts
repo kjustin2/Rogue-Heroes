@@ -4229,6 +4229,9 @@ export class TacticalSim {
         // A unit that has lost its weapon or is badly wounded retreats toward base instead of
         // feeding itself into fire — but only if it has somewhere to fall back to.
         const crippled = profile.retreat && !carrying && Boolean(home) && (!enemy.status.canShoot || coreHpFraction(enemy) < 0.3);
+        // FEAR (flamer): infantry near burning ground run from it instead of pressing. A flag
+        // carrier still runs the flag home; vehicles and flyers do not care.
+        const fire = isInfantryKind(enemy.kind) && !carrying ? this.nearestBurnZone(enemy.position, FLAMER_FEAR_RADIUS) : undefined;
         // Shooters hold at weapon range; melee always close; carriers run the flag home;
         // in objective modes, idle units push the hill/flag rather than over-extending.
         const wantsTarget = Boolean(target) && (isMelee || separation > Math.min(range * 0.8, 6));
@@ -4236,6 +4239,13 @@ export class TacticalSim {
         let advancing = false;
         if (carrying && homeGoal) {
           goal = homeGoal;
+        } else if (fire) {
+          const away = dist(enemy.position, fire) > 0.05
+            ? normalize({ x: enemy.position.x - fire.x, z: enemy.position.z - fire.z })
+            : normalize({ x: enemy.position.x - (target?.position.x ?? 0), z: enemy.position.z - (target?.position.z ?? 0) });
+          const flee = moveRange(enemy);
+          goal = clampToArena({ x: enemy.position.x + away.x * flee, z: enemy.position.z + away.z * flee });
+          this.pushLog(`${enemy.name} runs from the fire`);
         } else if (crippled) {
           goal = home;
         } else if (wantsTarget) {
@@ -4275,6 +4285,17 @@ export class TacticalSim {
         }
       }
     }
+  }
+
+  /** The closest burning ground within `radius` of a point, if any. */
+  private nearestBurnZone(point: Vec2, radius: number): Vec2 | undefined {
+    let best: Vec2 | undefined;
+    let bestDistance = radius;
+    for (const zone of this.burnZones) {
+      const d = dist(point, zone) - zone.radius;
+      if (d <= bestDistance) { bestDistance = d; best = zone; }
+    }
+    return best;
   }
 
   // The position the enemy army falls back to when crippled (its living Home Base), if any.

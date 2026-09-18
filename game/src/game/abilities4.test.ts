@@ -34,3 +34,22 @@ describe("grenadier airburst", () => {
     expect(before - hp(target)).toBeGreaterThanOrEqual(12);
   });
 });
+
+describe("flamer fear", () => {
+  it("enemy infantry beside burning ground run from it, where the same trooper otherwise advances through it", () => {
+    const run = (burning: boolean): number => {
+      const sim = staged();
+      const bait = sim.debugSpawn("soldier", "player", { x: -14, z: 0 });
+      disarm(bait);
+      const trooper = sim.debugSpawn("soldier", "enemy", { x: 4, z: 0 });
+      // The fire sits between the trooper and the player, 3m out (FLAMER_FEAR_RADIUS is 6).
+      if (burning) sim.burnZones.push({ id: "burn-test", x: 1, z: 0, radius: 1.6, turnsLeft: 3 });
+      sim.endTurn();
+      settle(sim);
+      expect(sim.log.some((l) => l.includes("runs from the fire"))).toBe(burning);
+      return trooper.position.x;
+    };
+    expect(run(true)).toBeGreaterThan(6); // fled away from the flames (+x)
+    expect(run(false)).toBeLessThan(2); // control: pressed the player (-x), straight past the spot
+  });
+});
