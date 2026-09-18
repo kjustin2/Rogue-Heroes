@@ -30,8 +30,11 @@ symbols fail the build.
 | 9-frame attack filmstrip at quarter speed (`-- melee` or `shoot`) — judge motion here, not in stills | `npm run shots:filmstrip` |
 | Depth-fight repro (hide plates / kill shadows / lift plates / old near plane) | `npm run probe:depth <scenario>` |
 | Infantry lineup, near + far, for kit/proportion review | `npm run shots:lineup` |
+| Rebuild the Blender kits (validated, AO-baked) | `npm run art:kit`, `npm run art:props`, `npm run art:validate:selftest` |
+| A/B two screenshots (hottest region, 3× crop) / inspect a GLB | `npm run shots:diff a.png b.png out.png`, `npm run art:inspect <glb>` |
+| Start one map headless and print the in-page error | `npm run probe:map <id>` |
 | **Real-GPU frame-time probe** (hidden Electron, diffs compiled programs across resolves) | `npm run soak:gpu [scenario]` |
-| **Real-GPU screenshots** (`-- menu firefight lineup rings abilities direction nowalk …`; UI screens `deploy settings armory campaign run tutorial pause victory defeat hover hover-deck`; `mapselect` shoots the Skirmish page at 1280×720 / 1600×900 / 2560×1080; `SHOT_PREFIX=before-` for a baseline build) | `npm run shots:gpu` |
+| **Real-GPU screenshots** (`-- menu firefight lineup rings abilities direction nowalk maps …`; `maps` = one gameplay frame per battlefield; UI screens `deploy settings armory campaign run tutorial pause victory defeat hover hover-deck`; `mapselect` shoots the Skirmish page at 1280×720 / 1600×900 / 2560×1080; `SHOT_PREFIX=before-` for a baseline build) | `npm run shots:gpu` |
 | Walk-up-a-step filmstrip (feet vs talus / plates) | `npm run shots:step` |
 | Build + Electron gameplay smoke | `npm run test:play` |
 | Desktop app (build + Electron) | `npm run standalone` |
@@ -124,8 +127,11 @@ change, and `shots:silhouette` for the outline test. Blender is found by `script
 
 Rules:
 
-- **Authored parts get `bakeVertexAO` on first use** (in `box()`): pooled part materials read
-  vertex colours and a GLB part has none, which samples as BLACK — that was the bowling-ball helmet.
+- **Every authored part ships vertex AO as `COLOR_0`** (`bake_ao` in `finish()`: Cycles AO baked
+  alone-in-the-world, folded into the same facing/height terms the runtime `bakeVertexAO` gives
+  procedural parts). `box()` still runtime-bakes any geometry WITHOUT a colour attribute, because a
+  pooled part material reads vertex colours and a missing attribute samples as BLACK — that was the
+  bowling-ball helmet. The validator fails a part that has no colour attribute.
 - Helmets are NOT `accent` meshes and take `helmetColor` (the body hue lifted toward bone): they are
   the largest surface on a trooper now and the old dark per-kit literals read as black domes.
 - Every kit mesh is exported **normalised to a 1x1x1 box centred on the origin**, so `size` in
@@ -138,10 +144,49 @@ Rules:
 - `modelsVersion()` bumps when the kit lands, which rebuilds entity groups so troopers pick the
   authored shapes up mid-session.
 
+### Blender rules (2026-09-18, from docs/blender-ai-pipeline.md)
+
+- **Background-first.** The pipeline is deterministic `bpy` scripts run headless through
+  `scripts/blender.mjs` (`--background --python-exit-code 1`), and `npm run art:*` is the ONLY thing
+  that writes `public/models/`. A live blender-mcp session is an inspection REPL (screenshot a part,
+  read a bbox / face count) — never a write path to the repo; the socket is unauthenticated, so
+  localhost + `BLENDER_MCP_SAFE_MODE=1` only. GLB out of a live session is not accepted.
+- **The validator is the gate** (`art/infantry/validate.py`, run by `art:kit` AND `art:props`
+  before export; any failure aborts with exit 1): loose verts / wire edges / 3+-face edges /
+  zero-area faces / NaN, inward-facing shells, a per-part tri budget (2400 kit, 900 props), the unit
+  cube with transforms applied, UVs + `COLOR_0`, and the NAME SET == the `KitPart` / `PropsPart`
+  union in `models.ts` (a part the game never asks for is dead weight; one it asks for and cannot
+  find is a silent box). It caught 104 zero-area faces on the mortar cap and a collapsed stump on
+  its first two runs. `npm run art:validate:selftest` fault-injects a rename, a flipped shell and a
+  stray primitive — keep it passing when the rules change. `npm run art:inspect <glb>` prints what
+  actually exported (tris, attributes, bbox, COLOR_0 range).
+- **Bake location into the mesh at creation.** `join()` keeps the FIRST object's origin, and
+  `floor()` / `displace()` measure mesh-local Z: a cylinder whose origin sat at its own centre had
+  its whole lower half collapsed onto the "floor". Every primitive helper applies its transform
+  immediately (`add_box`, `cyl`, `ico`); never leave a location on the object.
+- **A cut on one of a primitive's own rings leaves zero-area slivers** — `cut_below` dissolves
+  degenerates after the bisect; nudge the plane off the ring anyway.
+- **Props kit** (`art/props/author_props.py` → `props-kit.glb`, `npm run art:props`): seeded
+  variants per kind (`PROPS_VARIANTS` in models.ts), bmesh noise + flat floor + `shade_flat` + light
+  decimate. `propGeometry(kind, hash(entity.id))` in `buildCover`; every branch keeps its
+  procedural builder as the fallback. Props are pooled toon parts, so they take `tintPropToMap`
+  (0.3 props / 0.5 stone toward `rockTint`) and the ramp. **Rocks are never Meshy again** — the
+  photoreal hull needed a greyscale + retint to sit next to the troopers and was one silhouette on
+  every map.
+- **`tintPropToMap` / `partColors` must accept `MeshToonMaterial`.** Both tested for
+  `MeshStandardMaterial` after the parts went toon and were silent no-ops for weeks (no prop took
+  the map tint; `audit:unit` saw nothing). Any new "for every part material" walk goes through
+  the same `instanceof (Standard || Toon)` check as `warmUpSamplers`.
+- **Toon ramp is RGB** (`toonGradient()`): cool shade steps, warm lit steps, top channel ≤ 226.
+  Grey steps read as plastic; 255 bleaches crates and pillars.
+- **No `Draco` on any export** (vertex colours corrupt in the Blender exporter); meshopt via
+  gltf-transform is the sanctioned compressor. GN instances must be realized before export.
+
 ## Meshy scope (deliberate per-repo exception)
 
 This repo's sanctioned Meshy scope is **hard-surface vehicle/structure/prop hulls**
-(tank, apc, artillery, hq, turret, rock, crates, sandbags, barricade — it works here).
+(tank, apc, artillery, hq, turret, crates, sandbags, barricade — it works here; the rock was
+Meshy once and is now the props kit, see Blender rules).
 **Infantry/characters stay procedural.** This intentionally goes beyond the global
 "static set-dressing only" default — do not "fix" it back, and do not expand it to
 characters. Generation is offline: `MESHY_API_KEY` in gitignored `game/.env`, then
@@ -257,7 +302,7 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
 - Data catalogs are the tuning surface: `units.ts` (troops/defenses/support powers),
   `tech.ts`, `modes.ts`, `maps.ts`, `scenario.ts` (bases + cover only — no starting units).
 - **Part materials and part geometry are POOLED.** `partMaterial()` in `worldRenderer.ts` hands
-  every part mesh a SHARED `MeshStandardMaterial` keyed on a quantized version of its painted
+  every part mesh a SHARED `MeshToonMaterial` (same ramp as the hulls) keyed on a quantized version of its painted
   appearance, and `paintPart` re-resolves each mesh to the right one every frame. So:
   **never write to a part mesh's `material`** — you would repaint every other mesh that currently
   looks the same. Change `mesh.userData.baseColor` (or the spec paintPart builds) instead; that is
@@ -299,7 +344,7 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   kinds or the menu↔battle flip stalls on a shader relink. Tear down per-frame/per-swap
   groups via `disposeAndClear()`; `userData.shared` geometry is skipped.
 - **The ground detail layer** (`makeGroundDetail`) is one InstancedMesh per element kind (grass fans, pebbles, snow clumps, cinders, weeds), placed only on dry flat ground, bending in `windUniforms` (the same clock the cloud deck and tree sway use). Pebbles are 8-triangle octahedra on purpose — the 36-triangle version was 130k triangles on a large map. Costs are in `perf-baseline.json`; rebase after an intentional change.
-- **Stone hulls take the map's hue**: `tintModelToMap(group, "stone")` swaps the Meshy albedo for `greyscaleOf(map)` and paints `rockTint`. Multiplying a tint into an orange albedo only ever gives darker orange.
+- **Stone takes the map's hue**: rock / rubble / statue props are tinted 0.5 toward `rockTint` (the ground's own hue at a slightly higher value); wood, foliage and hardware only 0.3 toward `propTint`. A tint into an already-saturated albedo only ever darkens it — which is why the Meshy rock had to be greyscaled first, and why it is gone.
 - **Idle liveness is gated** (`smoke:animation`: head scan + body turn over 3s of standing). Whole-body idle lives at group level next to the flinch; per-part breathing in `paintPart`. Both are phased by `hash(entity.id)`.
 - **Melee**: the pose family follows the ORDER (`meleeTargetByActor`), the blade is carried by the shoulder about a grip pivot (it is a separate part with no authored motion), the group lunges, and the sim emits a `strike` effect (slash arc + flash + shards), never a blast. `__rht.setResolveScale(0.25)` slows the resolve clock for filmstrips.
 - **Jump Trooper** (`jumper`, `UNIT_STATS.jump`): its move is an arc (`canJump` → `jumpLanding` picks a dry, unoccupied landing; the order sets `flying`/`agl` on a sine until it lands). Mid-arc it IS a flyer to targeting. Pack destroyed = walks. Tests find a real cliff by measurement (`jumper.test.ts`).
