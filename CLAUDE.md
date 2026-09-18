@@ -385,6 +385,36 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
 - **Charge / dash / breach**: `meleeRange()` adds `STRIKER_CHARGE` for the striker and the melee
   order closes the gap first (a real move: overwatch + mines + separation apply; the swing clock
   starts in reach); scouts never trigger `checkOverwatch`; a sapper round vs cover/wall is 9999.
+- **Airburst** (grenadier): `airburstBehindCover` — a launcher round that strikes or proximity-fuses
+  on a COVER piece lands `AIRBURST_SHARE` (0.5) of its direct damage on the intended target within
+  `AIRBURST_REACH` of the burst. Cover is half protection against the launcher, never full.
+- **Fear** (flamer): in `queueEnemyOrders`, enemy INFANTRY within `FLAMER_FEAR_RADIUS` (6) of a
+  `burnZones` entry flee straight away from it (ahead of the retreat/press goals; a flag carrier
+  still runs the flag home).
+- **Recon** (drone op, OrderKind/Intent `"recon"`, whole turn): sets `revealedOrders` (serialized)
+  when it resolves; next command phase `enemyIntents()` DRY-RUNS `queueEnemyOrders(dryRun)` and
+  restores CP/grenades/yaw/orders/log/rng (`Rng.save/load`) so the preview equals the real command;
+  `addOrder` is silent while `previewingEnemy`. Cleared in `endTurn` after the real command.
+- **APC carry**: `isCarrierKind` (transport | apc) shares the airlift machinery; an APC boards only
+  foot troops standing beside it (`APC_LOAD_REACH`) and drops the ramp where it stands
+  (`APC_UNLOAD_REACH`, it does not drive to the point).
+- **Artillery deploy** (`deployed` on the entity, serialized): `queueShootFor`/`queueShootAt` refuse
+  an undeployed artillery; `endTurn` deploys one with no move/ram order (next to hull-down, both
+  sides) and undeploys one that moves; a move while deployed needs the whole turn (`"deploy"` order
+  = explicit whole-turn version). The AI holds an artillery once it has a target in reach.
+- **Strafe** (gunship): `strafeAlongPath` from the move order — one 0.75x autocannon burst as direct
+  damage at each hostile within `STRAFE_RADIUS` (4) of the aircraft as it passes, once per unit
+  (`order.strafed`). The air-to-air rule is for aimed fire; the gun run is the exception.
+- **Carpet** (bomber): the bomb order lays `CARPET_BOMBS` (3) bombs `CARPET_SPACING` apart along the
+  yaw, each released where it falls (`launchGrenadeAtPoint(…, airDropAt)` puts the origin at the drop
+  point so a bomb never flies through a flyer between the nose and the spot); a straight-down drop
+  keeps the aircraft's heading. One bomb load per run.
+- **Balance self-play** (`balance.test.ts`, ~1 min): `sim.debugCommandAsAi()` hotseats the enemy AI
+  onto the player's army (swaps entity teams, economy, mines; runs `queueEnemyOrders`; swaps back).
+  6 maps x 4 seeds, same 8-kind seeded roster both seats, prints a per-kind damage-per-$ table and
+  gates combat kinds to 0.5x-2.5x of the median (`UNGATED` lists the exceptions and why) and the
+  player seat to 40-60% of decided games. The AI's "crippled" retreat reads `status.disarmed`, not
+  `!canShoot` — strikers/bombers/transports never can shoot and used to retreat all game.
 - **Projectile / muzzle / impact FX live in `src/render/projectileFx.ts`** (2026-09-18), in the toon
   language: opaque flat colour + an INVERTED-HULL ink rim (the same pooled geometry drawn again
   BackSide, slightly larger), layered hulls for a white-hot core inside a team-colour sleeve, and NO

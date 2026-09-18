@@ -71,8 +71,20 @@ ground), drone op (spotter aura, 26m eyes), sapper (scattergun + mines), jumper 
 
 4 suppression, 12 slam landing, 13 hull down, 19 (flamer / scattergun / sidearm clips), 21 death
 variety. Sim side of 2 mark, 6 smoke, 7 stabilise (`abilities2.test.ts`; renderer cues still owed:
-red bracket on a marked unit, grey cloud for `smokeClouds`, downed body pose). Still open: 1, 3,
-5, 8–11, 14–18, 20.
+red bracket on a marked unit, grey cloud for `smokeClouds`, downed body pose).
+
+## Landed 2026-09-18
+
+1 dash, 3 charge, 11 breach (`abilities3.test.ts`). Round four (`abilities4.test.ts`): 5 airburst,
+9 fear, 10 recon pulse (sim side — `sim.enemyIntents()` exposes the revealed orders; the ghost
+arrows on the board are still owed to the renderer), 14 APC carry, 15 artillery deploy, 17 gunship
+strafe, 18 bomber carpet. **16 flak tracer wall was skipped**: it needs a new persistent line
+object (serialized, rendered, blocking air movement) and is not a cheap add — pick it again on its
+own if wanted. Still open: 8, 16, 20.
+
+`balance.test.ts` (same AI on both seats, seeded rosters, per-kind damage-per-$ table) landed the
+same day; it found strikers/bombers/transports retreating all game (the "crippled" rule read
+`!canShoot`) and priced the tank/striker/sapper/gunship up and the jumper/scout down.
 
 ## My picks if you say "you choose"
 
