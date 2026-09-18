@@ -114,6 +114,15 @@ sim items **1 jump trooper, 5 wide beam (marksman pierces), 13 gas, 17 slams, 22
 per-kind Blender helmets/weapons/packs for all 13 infantry (`shots:lineup`). Abilities/personality
 per unit are an ideas doc — **`docs/unit-identity-ideas.md`**, pick by number.
 
+**2026-09-17/18:** one art direction (Meshy hulls posterized + toon + inked outline; infantry
+parts on the same 4-step ramp), authored body parts + detail normal, eight theme props, unit
+identity picks **1 dash, 2 mark, 3 charge, 4 suppression, 6 smoke, 7 stabilise, 11 breach, 12 slam,
+13 hull down, 19, 21** (renderer cues for smoke/downed/mark), GUI clarity pass (hints, disclosure,
+chrome), range overlays draped onto terrain (`shots:gpu rings`), nothing clips into the map (talus
+profile, plate lift, vehicle radii = hull, `scatter.test.ts`, `shots:step`). In flight on the goal
+board (**`docs/loop-status.md`**): projectile polish, toon GUI + menu wording, Blender props kit /
+AO / validator (**`docs/blender-ai-pipeline.md`**), remaining identity picks + balance.
+
 Still open from the list: 2 demolitionist, 6 ghost, 7 siege battery, 9 flak shells, 10 faction
 rules, 11 tree-fall sweep (falls exist; sweep damage exists?), 12 chain-react volatiles (gas
 chains; fuel/ammo do not), 14 lightning, 15 moving storm, 16 deployable bridge, 18–21 maps,

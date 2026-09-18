@@ -31,7 +31,8 @@ symbols fail the build.
 | Depth-fight repro (hide plates / kill shadows / lift plates / old near plane) | `npm run probe:depth <scenario>` |
 | Infantry lineup, near + far, for kit/proportion review | `npm run shots:lineup` |
 | **Real-GPU frame-time probe** (hidden Electron, diffs compiled programs across resolves) | `npm run soak:gpu [scenario]` |
-| **Real-GPU screenshots** (`-- menu firefight lineup …`) | `npm run shots:gpu` |
+| **Real-GPU screenshots** (`-- menu firefight lineup rings abilities …`) | `npm run shots:gpu` |
+| Walk-up-a-step filmstrip (feet vs talus / plates) | `npm run shots:step` |
 | Build + Electron gameplay smoke | `npm run test:play` |
 | Desktop app (build + Electron) | `npm run standalone` |
 | **One-command shareable .exe** | `npm run dist:exe` (portable, → `release/`) |
@@ -320,6 +321,23 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
 - **Title diorama** (`stageMenuDiorama` in `main.ts`): the main menu sits over a live Verdant scene with `stage.menuDrift`; `body.in-battle` mirrors `inBattle` so CSS hides the HUD outside a battle; `stage.resetView()` restores the tactical camera only when leaving the diorama.
 - **`stage.warmUp()` extras must be visible AND unculled** (parked at y=-5000 in a wrapper): `renderer.compile()` walks `traverseVisible`, and only a composer DRAW compiles the post-chain variant (linear output, tone mapping off) — the lean path's key differs. It was a silent no-op for every GLB until `soak:gpu` diffed programs across a resolve. The warm-up also clones a transparent twin of every opaque standard material (death fades flip the `opaque` program bit). Any mid-resolve hitch report: run `soak:gpu` first; it names the compiling program.
 - **Abilities on entities** (all serialized): `suppressedUntilTurn` (heavy hits; one CP + crouch next turn, applied at turn start), `hullDown` (tank with no move/ram order this resolve, decided in `endTurn`, 0.7x shot damage), slam landing in the jump-landing block. Deaths: the group lingers `DEATH_MS` falling along the last flinch direction (`diedAt`/`deathDir` on the group), then sinks.
+- **Ground overlays are DRAPED** (`drapeToTerrain`): the move field / weapon ring are subdivided flat
+  meshes whose vertices are pulled to `terrainHeightAt` (re-draped only when selection/position/radius
+  change). A flat disc at the actor's elevation sinks into the next mesa and hangs past a ledge — that
+  was the "range circle breaks" report. `shots:gpu rings` is the repro.
+- **Units stand on the ground as DRAWN, not as simulated.** `visualGroundAt` mirrors the talus tiers
+  `makeTerrainBlocks` flares past a block's footprint (same constants — change both together); the
+  rendered elevation is the footprint-sampled max of it (capped at one `TERRAIN_STEP` above the sim
+  ground) plus `plateLiftAt` (ground plates record their discs). Sim elevation is untouched.
+  `npm run shots:step` films a walk up a step — judge feet there.
+- **Vehicle radii cover the hull half-length** (`TARGET_SIZE / 2` in models.ts ↔ `createTank/Apc/
+  Artillery`): a circle smaller than the hull let tanks park inside crates. Spawn clearance
+  (`freeSpawnNear`) is sized to the unit; `debugSpawn` separates from what is there and a staged wall
+  pushes standing units aside. `scatter.test.ts` audits every map: no prop overlap, no prop
+  straddling a step (`nudgeOffEdge` slides authored signature pieces, mirrored AFTER the nudge).
+- **Charge / dash / breach**: `meleeRange()` adds `STRIKER_CHARGE` for the striker and the melee
+  order closes the gap first (a real move: overwatch + mines + separation apply; the swing clock
+  starts in reach); scouts never trigger `checkOverwatch`; a sapper round vs cover/wall is 9999.
 - **Frame loop is guarded** (`frame` → `frameBody` in try/catch, `__rht.frameErrors()`); one bad frame never kills rAF again.
 - **`window.__rht`** is the entire test/debug surface (sim + `endTurn`/`reset`/
   `scenario(id)`/`perf()`/`diagnostics()`/`describeScene()` …). **Keep it in sync with
