@@ -27,14 +27,14 @@ symbols fail the build.
 | Scenario screenshot gallery | `npm run improve:gallery` |
 | Review contact sheet → `shots/` | `npm run screens` |
 | Quick gameplay-zoom look per scenario (`-- firefight siege`, `:select`/`:shoot`/`:base` HUD states) | `npm run shots:look` |
-| 9-frame attack filmstrip at quarter speed (`-- melee` or `shoot`) — judge motion here, not in stills | `npm run shots:filmstrip` |
+| 12-frame attack filmstrip at half/quarter speed (`-- melee`, `kill`, `jump`, or a projectile family: `shoot heavy sniper sapper pistol flame grenade launcher mortar tank artillery apc turret gunship`, `all` for every family) — judge motion here, not in stills | `npm run shots:filmstrip` |
 | Depth-fight repro (hide plates / kill shadows / lift plates / old near plane) | `npm run probe:depth <scenario>` |
 | Infantry lineup, near + far, for kit/proportion review | `npm run shots:lineup` |
 | Rebuild the Blender kits (validated, AO-baked) | `npm run art:kit`, `npm run art:props`, `npm run art:validate:selftest` |
 | A/B two screenshots (hottest region, 3× crop) / inspect a GLB | `npm run shots:diff a.png b.png out.png`, `npm run art:inspect <glb>` |
 | Start one map headless and print the in-page error | `npm run probe:map <id>` |
 | **Real-GPU frame-time probe** (hidden Electron, diffs compiled programs across resolves) | `npm run soak:gpu [scenario]` |
-| **Real-GPU screenshots** (`-- menu firefight lineup rings abilities direction nowalk maps …`; `maps` = one gameplay frame per battlefield; UI screens `deploy settings armory campaign run tutorial pause victory defeat hover hover-deck`; `mapselect` shoots the Skirmish page at 1280×720 / 1600×900 / 2560×1080; `SHOT_PREFIX=before-` for a baseline build) | `npm run shots:gpu` |
+| **Real-GPU screenshots** (`-- menu firefight lineup rings abilities direction nowalk maps volley …`; `maps` = one gameplay frame per battlefield (`volley` = a seven-family firing line mid-resolve: rounds, trails, flashes, blasts on the real GPU); UI screens `deploy settings armory campaign run tutorial pause victory defeat hover hover-deck`; `mapselect` shoots the Skirmish page at 1280×720 / 1600×900 / 2560×1080; `SHOT_PREFIX=before-` for a baseline build) | `npm run shots:gpu` |
 | Walk-up-a-step filmstrip (feet vs talus / plates) | `npm run shots:step` |
 | Build + Electron gameplay smoke | `npm run test:play` |
 | Desktop app (build + Electron) | `npm run standalone` |
@@ -385,6 +385,23 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
 - **Charge / dash / breach**: `meleeRange()` adds `STRIKER_CHARGE` for the striker and the melee
   order closes the gap first (a real move: overwatch + mines + separation apply; the swing clock
   starts in reach); scouts never trigger `checkOverwatch`; a sapper round vs cover/wall is 9999.
+- **Projectile / muzzle / impact FX live in `src/render/projectileFx.ts`** (2026-09-18), in the toon
+  language: opaque flat colour + an INVERTED-HULL ink rim (the same pooled geometry drawn again
+  BackSide, slightly larger), layered hulls for a white-hot core inside a team-colour sleeve, and NO
+  additive blending anywhere in a shot (the only additive light is the pooled flash light). Fades
+  shrink, never dim toward black. `projectileFamily()` maps the sim's four projectile kinds × the
+  firing unit to eighteen visual families; `syncProjectiles` only feeds it a position history.
+  Rules: (1) trails are sampled by WORLD DISTANCE (`pushTrailPoint`/`trailStep`), never per render
+  frame — a frame-sampled history is a different length at every refresh rate and resolve speed
+  (at quarter speed nine flame blobs stacked in 20cm and read as a balloon); (2) blast shapes scale
+  by `effect.radius / 0.22` (the blob geometry's width) and the column climbs at most
+  `min(radius, 1.3)` — a wide blast is not a tall one (grenade smoke was floating in the sky);
+  (3) every shape/material comes from the module's bounded caches and is `userData.shared`; the
+  opaque front/back programs are registered in `warmUpSamplers` via `projectileFxWarmUpMaterials()`;
+  (4) HIT REACTION is keyed off the visual event, not the damage report: `shoveNear` flinches every
+  body within a blast/impact/bolt radius, so a shell bursting beside a trooper, a burn tick or a bomb
+  can never land silently (rifle/melee still flinch through the damage report as well).
+  Evidence is `shots:filmstrip -- all` (SwiftShader) + `shots:gpu volley` (real GPU).
 - **Frame loop is guarded** (`frame` → `frameBody` in try/catch, `__rht.frameErrors()`); one bad frame never kills rAF again.
 - **`window.__rht`** is the entire test/debug surface (sim + `endTurn`/`reset`/
   `scenario(id)`/`perf()`/`diagnostics()`/`describeScene()` …). **Keep it in sync with

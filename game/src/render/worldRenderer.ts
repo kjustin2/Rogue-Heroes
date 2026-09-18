@@ -10,6 +10,11 @@ import { OVERWATCH_ARC_HALF } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec } from "../game/maps";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
 import { instantiate, kitGeometry, modelsVersion, propGeometry, toonGradient, type KitPart, type ModelKey } from "./models";
+import {
+  makeBlast, makeImpact, makeMuzzleFlash, makePing, makeProjectileModel, makeProjectileShadow, makeProjectileTrail,
+  orientAlongVelocity, prewarmProjectileFx, projectileFamily, projectileFxWarmUpMaterials, projectileGeometry,
+  projectileMaterial, pushTrailPoint,
+} from "./projectileFx";
 
 // Part materials are toon (see partMaterial); PartMaterial names the shared shape both use.
 type PartMaterial = THREE.MeshToonMaterial;
@@ -220,15 +225,9 @@ export class WorldRenderer {
   }
 
   private prewarmActionAssets(): void {
-    for (const key of [
-      "shell-body", "shell-nose", "shell-exhaust", "shell-band", "shell-fin",
-      "bolt-core", "bolt-ring",
-      "grenade-body", "grenade-band", "grenade-spark",
-      "rifle-slug", "rifle-tip", "rifle-spark", "rifle-tail",
-      "ember", "muzzle-flash",
-    ]) projectileGeometry(key);
+    prewarmProjectileFx();
     for (const radius of [0.026, 0.035, 0.04, 0.052, 0.07, 0.085, 0.11, 0.13]) tubeGeometry(radius);
-    for (const radius of [0.22, 0.34, 0.38, 0.46]) projectileShadowGeometry(radius);
+    for (const radius of [0.5]) projectileShadowGeometry(radius);
     for (const color of [0x75d8ff, 0xff765f, 0xffbf69, 0xffd166, 0xeaffff]) {
       lineMaterial(color, 0.5);
       tubeMaterial(color, 0.5);
@@ -639,6 +638,26 @@ export class WorldRenderer {
 
   // Hit-flinch impulse for an entity struck in the last FLINCH_MS: strength [0..1] (snappy
   // spring, peaks at the strike and settles fast) plus the normalized shove direction.
+  /** Flinch every living non-cover body within `radius` of `point`, away from `from` (or from the
+   *  point itself). Only ever raises an existing flinch, never dampens one. */
+  private shoveNear(sim: TacticalSim, point: Vec2, radius: number, power: number, from?: Vec2): void {
+    const now = performance.now();
+    for (const entity of sim.entities) {
+      if (!entity.status.alive || entity.kind === "cover" || entity.flying || entity.carriedById) continue;
+      const d = dist(entity.position, point);
+      if (d > radius + entity.radius) continue;
+      const origin = from ?? point;
+      let dx = entity.position.x - origin.x;
+      let dz = entity.position.z - origin.z;
+      const len = Math.hypot(dx, dz);
+      if (len < 0.05) { dx = -Math.sin(entity.yaw); dz = -Math.cos(entity.yaw); } else { dx /= len; dz /= len; }
+      const mag = Math.min(1.4, power * (from ? 1 : clamp(1.15 - d / (radius + entity.radius), 0.35, 1)));
+      const prev = this.flinchByEntity.get(entity.id);
+      if (prev && now - prev.at < FLINCH_MS && prev.mag >= mag) continue;
+      this.flinchByEntity.set(entity.id, { at: now, mag, dx, dz });
+    }
+  }
+
   private entityFlinch(entityId: string): { f: number; dx: number; dz: number } | undefined {
     const rec = this.flinchByEntity.get(entityId);
     if (!rec) return undefined;
@@ -698,6 +717,8 @@ export class WorldRenderer {
       new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false, depthTest: false }),
       new THREE.MeshStandardMaterial({ color: 0x8a7a5c, roughness: 0.92 }),
       new THREE.MeshStandardMaterial({ color: 0x8a7a5c, roughness: 0.92, transparent: true, opacity: 0.5 }),
+      // Projectile FX: opaque flat bodies and their BackSide inverted-hull rims are their own programs.
+      ...projectileFxWarmUpMaterials(),
     ]) out.push(new THREE.Mesh(geo, m));
     return out;
   }
@@ -3578,66 +3599,32 @@ export class WorldRenderer {
     const liveIds = new Set<string>();
     for (const projectile of projectiles) {
       liveIds.add(projectile.id);
-      const style = projectileStyle(projectile);
+      const family = projectileFamily(projectile);
 
-      // Comet tail: recent positions fade out behind the round. Opacities are quantized
-      // so every segment hits the cached line-material pool.
+      // Position history feeds every trail (tapered ribbon, smoke puffs, the flame chain).
       let history = this.trailHistory.get(projectile.id);
       if (!history) {
         history = [];
         this.trailHistory.set(projectile.id, history);
       }
-      history.push({ x: projectile.position.x, y: projectile.height, z: projectile.position.z });
-      if (history.length > 6) history.shift();
-      for (let i = history.length - 1; i > 0; i -= 1) {
-        const a = history[i - 1];
-        const b = history[i];
-        const fade = TRAIL_OPACITIES[Math.min(TRAIL_OPACITIES.length - 1, history.length - 1 - i)];
-        this.projectileRoot.add(fxLine(a, b, style.trailColor, fade, a.y, b.y));
-      }
-      // Heavy rounds drag a smoke wake behind the tracer; puffs grow and thin with age.
-      if (projectile.kind === "shell" || (projectile.kind === "grenade" && projectile.state !== "rolling")) {
-        for (let i = history.length - 3; i >= 0; i -= 2) {
-          const p = history[i];
-          const back = history.length - 1 - i;
-          const fadeIdx = Math.min(SMOKE_OPACITIES.length - 1, Math.floor(back / 2));
-          const puff = new THREE.Mesh(projectileGeometry("ember"), projectileMaterial(`trail-smoke-${fadeIdx}`, 0x8d8578, SMOKE_OPACITIES[fadeIdx]));
-          puff.position.set(p.x, p.y, p.z);
-          puff.scale.setScalar((projectile.kind === "shell" ? 3.4 : 2.2) + back * 0.9);
-          this.projectileRoot.add(withoutCulling(puff));
-        }
-      }
-      // White-hot head segment reads as a tracer and feeds the bloom pass. Each weapon
-      // family gets its own signature: fat plasma streak (bolt), heavy shell tracer,
-      // needle-thin brilliant line (sniper), standard rifle tracer.
-      const sniper = projectile.sourceKind === "sniper";
-      const headRadius = projectile.kind === "bolt" ? 0.048 : projectile.kind === "shell" ? 0.036 : sniper ? 0.018 : 0.028;
-      const headBlend = projectile.kind === "bolt" ? 0.7 : sniper ? 0.8 : 0.55;
-      this.projectileRoot.add(makeTubeLine(
-        projectile.previous, projectile.position,
-        blendHex(style.trailColor, 0xffffff, headBlend), 0.9,
-        projectile.previousHeight, headRadius, projectile.height,
-      ));
-      // Sniper rounds leave a long luminous vapor line across their last few meters.
-      if (sniper && history.length >= 4) {
-        const tail = history[history.length - 4];
-        this.projectileRoot.add(makeTubeLine(
-          tail, projectile.position,
-          blendHex(style.trailColor, 0xffffff, 0.5), 0.4,
-          tail.y, 0.012, projectile.height,
-        ));
-      }
-      this.projectileRoot.add(withoutCulling(makeProjectileShadow(projectile, style.trailColor)));
+      pushTrailPoint(history, projectile, family);
 
-      const flash = makeMuzzleFlash(projectile);
-      if (flash) this.projectileRoot.add(withoutCulling(flash));
-
-      // The head model + shadow + flash must NEVER frustum-cull: a fast/high round (e.g. a gunship's
-      // arc or a shot near a screen edge) would otherwise vanish while the un-culled trail lingers.
-      const model = makeProjectileModel(projectile);
+      // Everything a round draws lives in projectileFx.ts: the body, its trail, its ground shadow
+      // and the muzzle event. Nothing here is frustum-culled — a fast/high round near a screen edge
+      // would otherwise vanish while its un-culled trail lingers.
+      for (const part of makeProjectileTrail(projectile, family, history)) this.projectileRoot.add(part);
+      this.projectileRoot.add(makeProjectileShadow(projectile, family));
+      const flash = makeMuzzleFlash(projectile, family);
+      if (flash) this.projectileRoot.add(flash);
+      const model = makeProjectileModel(projectile, family);
       model.position.set(projectile.position.x, projectile.height, projectile.position.z);
-      orientAlongShot(model, projectile.previous, projectile.position);
-      this.projectileRoot.add(withoutCulling(model));
+      orientAlongVelocity(
+        model,
+        { x: projectile.previous.x, y: projectile.previousHeight, z: projectile.previous.z },
+        { x: projectile.position.x, y: projectile.height, z: projectile.position.z },
+      );
+      model.traverse((o) => { o.frustumCulled = false; });
+      this.projectileRoot.add(model);
     }
     for (const id of this.trailHistory.keys()) if (!liveIds.has(id)) this.trailHistory.delete(id);
   }
@@ -3722,6 +3709,15 @@ export class WorldRenderer {
       if (this.burstIds.has(effect.id)) continue;
       this.burstIds.add(effect.id);
       const ground = terrainHeightAt(effect.to);
+      // HIT REACTION. Every landing round shoves what it lands on or beside, whether or not the sim
+      // recorded damage for it: a shell bursting at a trooper's feet, a burn tick, a bomb — the body
+      // lurches away from the point of impact (rifle/melee already flinch through the damage report;
+      // this is the same spring, keyed off the visual event so no family can land silently).
+      if (effect.type === "blast" || effect.type === "impact" || effect.type === "bolt") {
+        const radius = (effect.radius ?? 0.5) + (effect.type === "blast" ? 0.6 : 0.2);
+        const power = effect.type === "blast" ? Math.min(1.4, 0.5 + (effect.radius ?? 1) * 0.3) : 0.55;
+        this.shoveNear(sim, effect.to, radius, power, effect.type === "impact" && dist(effect.from, effect.to) > 0.05 ? effect.from : undefined);
+      }
 
       if (effect.type === "impact") {
         // Sparks fly BACK toward the shooter, the way a real ricochet throws material at the
@@ -3964,35 +3960,7 @@ export class WorldRenderer {
           this.craterRoot.add(scorch);
           if (this.craterRoot.children.length > 40) this.craterRoot.remove(this.craterRoot.children[0]);
         }
-        const ring = new THREE.Mesh(
-          new THREE.RingGeometry((effect.radius ?? 1) * t, (effect.radius ?? 1) * t + 0.08, 32),
-          new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: opacity * 0.7, side: THREE.DoubleSide })
-        );
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.set(effect.to.x, 0.08, effect.to.z);
-        this.effectRoot.add(ring);
-        // White-hot core that punches through the bloom threshold for the blast's first
-        // beats. Additive so it reads as light, not a solid white egg.
-        if (t < 0.45) {
-          const core = new THREE.Mesh(
-            new THREE.SphereGeometry((effect.radius ?? 1) * (0.14 + t * 0.42), 12, 8),
-            new THREE.MeshBasicMaterial({ color: 0xffdba6, transparent: true, opacity: (1 - t / 0.45) * 0.85, depthWrite: false, blending: THREE.AdditiveBlending })
-          );
-          core.position.set(effect.to.x, 0.5 + t * 0.9, effect.to.z);
-          this.effectRoot.add(core);
-        }
-        const dome = new THREE.Mesh(
-          new THREE.SphereGeometry((effect.radius ?? 1) * (0.24 + t * 0.82), 12, 6),
-          new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: opacity * 0.2, depthWrite: false, blending: THREE.AdditiveBlending })
-        );
-        dome.scale.y = 0.36;
-        dome.position.set(effect.to.x, 0.22 + t * 0.36, effect.to.z);
-        this.effectRoot.add(dome);
-        // Ember spray arcing out of the blast.
-        const embers = new THREE.Group();
-        embers.position.set(effect.to.x, 0.3, effect.to.z);
-        addEmbers(embers, 4, 0xffb02e, (effect.radius ?? 1) * (0.4 + t * 0.9), 0.4 + t * 1.2, effect.age);
-        this.effectRoot.add(embers);
+        for (const part of makeBlast(effect, t, terrainHeightAt(effect.to))) this.effectRoot.add(part);
       } else if (effect.type === "bolt") {
         // LIGHTNING: a thin jagged column from the sky to the point, white-hot core with a pale
         // halo, three kinks re-rolled from the effect id so each bolt has its own shape, a flash
@@ -4062,27 +4030,10 @@ export class WorldRenderer {
         ring.rotation.x = -Math.PI / 2;
         ring.position.set(effect.to.x, terrainHeightAt(effect.to) + 0.1, effect.to.z);
         this.effectRoot.add(ring);
+      } else if (effect.type === "impact") {
+        for (const part of makeImpact(effect, t, terrainHeightAt(effect.to))) this.effectRoot.add(part);
       } else {
-        // Additive with capped growth — the old opaque 2x-growing sphere wrapped the
-        // whole unit in a colored balloon on heavy hits.
-        const hit = new THREE.Mesh(
-          new THREE.SphereGeometry((effect.radius ?? 0.45) * (0.65 + t * 0.45), 10, 8),
-          new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: opacity * 0.42, depthWrite: false, blending: THREE.AdditiveBlending })
-        );
-        hit.position.set(effect.to.x, 0.8, effect.to.z);
-        this.effectRoot.add(hit);
-        const impactRing = new THREE.Mesh(
-          new THREE.RingGeometry((effect.radius ?? 0.45) * (0.35 + t * 0.85), (effect.radius ?? 0.45) * (0.35 + t * 0.85) + 0.04, 24),
-          new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: opacity * 0.52, side: THREE.DoubleSide, depthWrite: false })
-        );
-        impactRing.rotation.x = -Math.PI / 2;
-        impactRing.position.set(effect.to.x, 0.11, effect.to.z);
-        this.effectRoot.add(impactRing);
-        // A few hot sparks kicked off the impact point.
-        const sparks = new THREE.Group();
-        sparks.position.set(effect.to.x, 0.65, effect.to.z);
-        addEmbers(sparks, 3, 0xffd27a, 0.25 + t * 0.55, 0.12, effect.age);
-        this.effectRoot.add(sparks);
+        for (const part of makePing(effect, t, terrainHeightAt(effect.to))) this.effectRoot.add(part);
       }
     }
   }
@@ -4422,268 +4373,11 @@ function splashRadiusFor(kind: Projectile["kind"]): number {
   return 0;
 }
 
-function projectileStyle(projectile: Projectile): {
-  trailColor: number;
-} {
-  if (projectile.kind === "shell") {
-    return {
-      trailColor: projectile.color,
-    };
-  }
-  if (projectile.kind === "bolt") {
-    return {
-      trailColor: 0xffd166,
-    };
-  }
-  if (projectile.kind === "grenade") {
-    if (projectile.state === "rolling") {
-      return {
-        trailColor: 0xffbf69,
-      };
-    }
-    return {
-      trailColor: 0xffbf69,
-    };
-  }
-  // Rifle family: brighten the marksman's tracer and give the heavy gunner a hot orange streak.
-  if (projectile.sourceKind === "sniper") return { trailColor: blendHex(projectile.color, 0xffffff, 0.4) };
-  if (projectile.sourceKind === "heavy") return { trailColor: 0xffae57 };
-  return {
-    trailColor: projectile.color,
-  };
-}
-
-function orientAlongShot(mesh: THREE.Object3D, from: { x: number; z: number }, to: { x: number; z: number }): void {
-  const delta = new THREE.Vector3(to.x - from.x, 0, to.z - from.z);
-  if (delta.lengthSq() < 0.0001) return;
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
-}
-
-// A few small trailing embers behind a round (in the model's local frame, where -Y is the
-// trailing direction). All use pooled geometry + cached materials, so they cost no GC churn.
-function addEmbers(group: THREE.Group, count: number, color: number, spread: number, baseY: number, age: number): void {
-  for (let i = 0; i < count; i += 1) {
-    const ember = new THREE.Mesh(projectileGeometry("ember"), projectileMaterial(`ember-${i}`, color, 0.55 - i * 0.13));
-    ember.position.set(Math.sin(age * 22 + i * 2.1) * spread, baseY - i * 0.16, Math.cos(age * 19 + i * 1.7) * spread);
-    ember.scale.setScalar(1 - i * 0.22);
-    group.add(ember);
-  }
-}
-
-// Disable frustum culling on an object and all its descendants (projectile head/shadow/flash),
-// so a round leaving the camera frustum can't disappear mid-flight while its trail keeps drawing.
-function withoutCulling<T extends THREE.Object3D>(obj: T): T {
-  obj.traverse((o) => { o.frustumCulled = false; });
-  return obj;
-}
-
-function makeProjectileModel(projectile: Projectile): THREE.Group {
-  const group = new THREE.Group();
-  const src = projectile.sourceKind;
-  const team = projectile.color;
-  if (projectile.kind === "shell") {
-    // Siege shells: artillery is the biggest with 6 fins and a smoky tail, the mortar turret
-    // lobs a fat blunt-nosed bomb, the tank fires a sleek AP round. All spin-stabilise in flight.
-    const heavy = src === "artillery";
-    const bomb = src === "exturret";
-    const body = new THREE.Mesh(projectileGeometry("shell-body"), projectileMaterial("shell-body", 0xbfd1cc, 0.98));
-    const nose = new THREE.Mesh(projectileGeometry("shell-nose"), projectileMaterial("shell-nose", team, 0.98));
-    const exhaust = new THREE.Mesh(projectileGeometry("shell-exhaust"), projectileMaterial("shell-exhaust", 0xffd166, 0.72, true));
-    // A ragged flame cone licking off the tail, flickering with age.
-    const flame = new THREE.Mesh(projectileGeometry("rifle-tail"), projectileMaterial("shell-flame", 0xff9a3c, 0.8, true));
-    flame.position.y = -0.42;
-    flame.rotation.x = Math.PI;
-    flame.scale.set(1.6, 1.9 + Math.sin(projectile.age * 31) * 0.5, 1.6);
-    group.add(flame);
-    const bandA = new THREE.Mesh(projectileGeometry("shell-band"), projectileMaterial("shell-band-a", 0x1d2426, 0.9));
-    const bandB = new THREE.Mesh(projectileGeometry("shell-band"), projectileMaterial("shell-band-b", team, 0.88));
-    nose.position.y = 0.33;
-    if (bomb) { nose.scale.set(1.35, 0.62, 1.35); nose.position.y = 0.26; }
-    exhaust.position.y = -0.32;
-    exhaust.scale.setScalar((1.08 + Math.sin(projectile.age * 24) * 0.16) * (heavy ? 1.45 : 1));
-    bandA.position.y = 0.02;
-    bandB.position.y = -0.14;
-    bandA.rotation.x = Math.PI / 2;
-    bandB.rotation.x = Math.PI / 2;
-    bandA.scale.setScalar(0.95);
-    bandB.scale.setScalar(0.78);
-    const finCount = heavy ? 6 : 4;
-    for (let i = 0; i < finCount; i += 1) {
-      const angle = (i / finCount) * Math.PI * 2;
-      const fin = new THREE.Mesh(projectileGeometry("shell-fin"), projectileMaterial("shell-fin", 0x6e7a78, 0.92));
-      fin.position.set(Math.cos(angle) * 0.13, -0.18, Math.sin(angle) * 0.13);
-      fin.rotation.y = angle;
-      group.add(fin);
-    }
-    group.add(body, nose, exhaust, bandA, bandB);
-    group.rotation.y = projectile.age * (heavy ? 6 : 11);
-    if (heavy) addEmbers(group, 3, 0xffae57, 0.12, -0.34, projectile.age);
-    // Sized against the 3.4-unit GLB tank — the old 1.14 base read as a toy bullet a
-    // third of the vehicle's length.
-    group.scale.setScalar(0.82 * (heavy ? 1.3 : bomb ? 1.12 : 1));
-    return group;
-  }
-  if (projectile.kind === "bolt") {
-    // Energy bolts: the APC autogun spits small fast bolts, the Home Base lobs a heavy haloed
-    // core, turrets fire the standard round. Cores pulse inside an additive plasma shell;
-    // containment rings counter-spin.
-    const small = src === "apc";
-    const big = src === "base";
-    const core = new THREE.Mesh(projectileGeometry("bolt-core"), projectileMaterial("bolt-core", 0xfff6d8, 0.98, true));
-    const shell = new THREE.Mesh(projectileGeometry("bolt-core"), projectileMaterial("bolt-shell", 0xffd166, 0.5, true));
-    shell.scale.setScalar(1.7 + Math.sin(projectile.age * 22) * 0.18);
-    group.add(shell);
-    // Crackling containment arcs: jagged lines whipping around the core, re-seeded by age.
-    for (let a = 0; a < 2; a += 1) {
-      const seed = projectile.age * 31 + a * 4.1;
-      const points: THREE.Vector3[] = [];
-      for (let p = 0; p <= 4; p += 1) {
-        const angle = seed + (p / 4) * Math.PI * 1.4;
-        const r = 0.14 + Math.abs(Math.sin(seed * 2.7 + p * 3.3)) * 0.1;
-        points.push(new THREE.Vector3(Math.cos(angle) * r, Math.sin(angle * 1.6 + a) * r * 0.8, Math.sin(angle) * r));
-      }
-      const arc = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), lineMaterial(0xfff1a6, 0.65));
-      group.add(arc);
-    }
-    const ringA = new THREE.Mesh(projectileGeometry("bolt-ring"), projectileMaterial("bolt-ring-a", 0xfff1a6, 0.62, true));
-    const ringB = new THREE.Mesh(projectileGeometry("bolt-ring"), projectileMaterial("bolt-ring-b", team, 0.5, true));
-    ringA.rotation.x = Math.PI / 2;
-    ringB.rotation.x = Math.PI / 2;
-    ringA.rotation.z = projectile.age * (small ? 10 : 6);
-    ringB.rotation.z = Math.PI / 2 - projectile.age * (small ? 12 : 8);
-    ringA.scale.setScalar(0.92);
-    ringB.scale.setScalar(0.68);
-    core.scale.setScalar(1 + Math.sin(projectile.age * 18) * 0.1);
-    group.add(core, ringA, ringB);
-    if (big) {
-      const halo = new THREE.Mesh(projectileGeometry("bolt-ring"), projectileMaterial("bolt-ring-c", 0xfff1a6, 0.32));
-      halo.rotation.x = Math.PI / 2;
-      halo.rotation.z = projectile.age * 4;
-      halo.scale.setScalar(1.25);
-      group.add(halo);
-    }
-    group.scale.setScalar(1.18 * (small ? 0.78 : big ? 1.35 : 1));
-    return group;
-  }
-  if (projectile.kind === "grenade") {
-    const mortar = src === "mortar";
-    const body = new THREE.Mesh(projectileGeometry("grenade-body"), projectileMaterial("grenade-body", 0x2f342a, 0.98));
-    const band = new THREE.Mesh(projectileGeometry("grenade-band"), projectileMaterial("grenade-band", 0xffbf69, 0.82));
-    const spark = new THREE.Mesh(projectileGeometry("grenade-spark"), projectileMaterial("grenade-spark", 0xfff1a6, 0.6, true));
-    // Armed-fuse blink: a red pip strobing faster as it flies — reads as "live ordnance".
-    const fuse = new THREE.Mesh(
-      projectileGeometry("ember"),
-      projectileMaterial("grenade-fuse", 0xff3b30, Math.sin(projectile.age * 26) > 0 ? 0.95 : 0.15, true),
-    );
-    fuse.position.y = 0.16;
-    fuse.scale.setScalar(1.5);
-    group.add(fuse);
-    band.rotation.x = Math.PI / 2;
-    band.rotation.z = projectile.age * (projectile.state === "rolling" ? 20 : 9);
-    spark.position.y = projectile.state === "rolling" ? -0.02 : -0.18;
-    spark.position.x = projectile.state === "rolling" ? Math.sin(projectile.age * 18) * 0.12 : 0;
-    spark.scale.setScalar((projectile.state === "rolling" ? 0.72 : 1) + Math.sin(projectile.age * 18) * 0.18);
-    group.add(body, band, spark);
-    // Mortar bomb: tail fins and a heavier body that tumbles end-over-end through its arc.
-    if (mortar && projectile.state !== "rolling") {
-      for (const angle of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
-        const fin = new THREE.Mesh(projectileGeometry("shell-fin"), projectileMaterial("mortar-fin", 0x4a4f33, 0.92));
-        fin.position.set(Math.cos(angle) * 0.12, 0.16, Math.sin(angle) * 0.12);
-        fin.rotation.y = angle;
-        fin.scale.set(0.6, 0.7, 0.6);
-        group.add(fin);
-      }
-      group.rotation.x = projectile.age * 5;
-    }
-    if (projectile.state === "rolling") group.rotation.z = projectile.age * 8;
-    group.scale.setScalar((projectile.state === "rolling" ? 0.94 : 1.08) * (mortar ? 1.22 : 1));
-    return group;
-  }
-  // Rifle family: the marksman fires a long bright tracer, the scout a small fast dart, the
-  // heavy gunner a fat hot round; everyone else the standard sparking tracer.
-  const sniper = src === "sniper";
-  const scout = src === "scout";
-  const heavyGun = src === "heavy";
-  const tipColor = heavyGun ? 0xffb24a : team;
-  // Additive throughout: a rifle round is a streak of light, not a painted pellet.
-  const slug = new THREE.Mesh(projectileGeometry("rifle-slug"), projectileMaterial("rifle-slug", 0xfffbe8, 0.98, true));
-  const tip = new THREE.Mesh(projectileGeometry("rifle-tip"), projectileMaterial("rifle-tip", tipColor, 0.96, true));
-  const spark = new THREE.Mesh(projectileGeometry("rifle-spark"), projectileMaterial("rifle-spark", heavyGun ? 0xffd08a : 0xfff1a6, 0.72, true));
-  const tailA = new THREE.Mesh(projectileGeometry("rifle-tail"), projectileMaterial("rifle-tail-a", tipColor, 0.42, true));
-  const tailB = new THREE.Mesh(projectileGeometry("rifle-tail"), projectileMaterial("rifle-tail-b", 0xeaffff, 0.28, true));
-  tip.position.y = 0.18;
-  spark.position.y = -0.2;
-  tailA.position.y = -0.24;
-  tailB.position.y = -0.34;
-  tailB.scale.setScalar(0.72);
-  group.add(slug, tip, spark, tailA, tailB);
-  if (sniper) {
-    group.scale.set(0.74, 1.7, 0.74);
-    const streak = new THREE.Mesh(projectileGeometry("rifle-tail"), projectileMaterial("rifle-streak", team, 0.22));
-    streak.position.y = -0.5;
-    streak.scale.set(0.6, 1.8, 0.6);
-    group.add(streak);
-  } else if (scout) {
-    group.scale.setScalar(0.78);
-  } else if (heavyGun) {
-    group.scale.set(1.32, 1.05, 1.32);
-    addEmbers(group, 2, 0xffae57, 0.07, -0.3, projectile.age);
-  } else {
-    addEmbers(group, 2, 0xffe6b0, 0.05, -0.3, projectile.age);
-  }
-  return group;
-}
-
-// A quick bright flash at the muzzle on the first frames of a round's life. Drawn at the
-// projectile's stored origin (the muzzle point), so it needs no separate sim event.
+// Firing recoil window (seconds) and how long debris chunks lie before sinking out of sight.
 const RECOIL_TIME = 0.16;
 // Debris chunks lie for this long, then sink out of sight over the second span (seconds).
 const DEBRIS_SINK_AT = 14;
 const DEBRIS_SINK_FOR = 4;
-const MUZZLE_FLASH_TIME = 0.12;
-function makeMuzzleFlash(projectile: Projectile): THREE.Object3D | undefined {
-  if (projectile.kind === "grenade" || projectile.age > MUZZLE_FLASH_TIME) return undefined;
-  const t = clamp01(projectile.age / MUZZLE_FLASH_TIME);
-  const fade = 1 - t;
-  const scale = muzzleFlashScale(projectile) * (0.55 + t * 0.9);
-  const group = new THREE.Group();
-  const core = new THREE.Mesh(projectileGeometry("muzzle-flash"), projectileMaterial("muzzle-core", 0xfff4cf, 0.9 * fade));
-  core.scale.setScalar(scale * 1.35);
-  const glow = new THREE.Mesh(projectileGeometry("muzzle-flash"), projectileMaterial("muzzle-glow", blendHex(projectile.color, 0xffd27a, 0.5), 0.4 * fade));
-  glow.scale.setScalar(scale * 2.6);
-  // A spike along the barrel: the flash is a cone of gas, not a ball. Stretched down the shot
-  // direction and gone in the first frames, it is what makes a shot read at tactical zoom.
-  const spike = new THREE.Mesh(projectileGeometry("muzzle-flash"), projectileMaterial("muzzle-core", 0xfff4cf, 0.75 * fade));
-  spike.scale.set(scale * 0.5, scale * 0.5, scale * (2.2 + t * 2.5));
-  spike.position.set(projectile.direction.x * scale * 0.9, 0, projectile.direction.z * scale * 0.9);
-  spike.lookAt(projectile.direction.x * 10, 0, projectile.direction.z * 10);
-  group.add(core, glow, spike);
-  group.position.set(projectile.origin.x, projectile.originHeight, projectile.origin.z);
-  return group;
-}
-
-function muzzleFlashScale(p: Projectile): number {
-  if (p.kind === "shell") return p.sourceKind === "artillery" ? 1.5 : 1.2;
-  if (p.kind === "bolt") return p.sourceKind === "base" ? 1.2 : 0.85;
-  if (p.sourceKind === "heavy") return 0.8;
-  if (p.sourceKind === "sniper") return 0.7;
-  return 0.55;
-}
-
-function makeProjectileShadow(projectile: Projectile, color: number): THREE.Mesh {
-  const groundY = terrainHeightAt(projectile.position) + 0.028;
-  const heightAboveGround = Math.max(0, projectile.height - groundY);
-  const radius = projectile.kind === "shell" ? 0.46 : projectile.kind === "grenade" ? projectile.state === "rolling" ? 0.24 : 0.38 : projectile.kind === "bolt" ? 0.34 : 0.22;
-  const opacity = projectile.state === "rolling" ? 0.24 : Math.max(0.1, 0.28 - heightAboveGround * 0.035);
-  const shadow = new THREE.Mesh(
-    projectileShadowGeometry(radius),
-    projectileShadowMaterial(projectile.kind === "bolt" ? color : 0x000000, opacity)
-  );
-  shadow.rotation.x = -Math.PI / 2;
-  shadow.position.set(projectile.position.x, groundY, projectile.position.z);
-  shadow.scale.z = 0.55;
-  return shadow;
-}
 
 // Team identity is applied by BLENDING toward a team hue, never by replacing a part's authored
 // colour outright.
@@ -6747,17 +6441,11 @@ const _paintTmp = new THREE.Color();
 // Scratch id->part map reused by syncEntity's per-frame traverse.
 const _partById = new Map<string, DamagePart>();
 
-// Quantized comet-tail opacities (newest segment first) — fixed values keep the cached
-// line-material pool bounded.
-const TRAIL_OPACITIES = [0.62, 0.4, 0.26, 0.16, 0.09, 0.05, 0.03];
-// Quantized smoke-wake opacities (behind shells/grenades), same cache discipline.
-const SMOKE_OPACITIES = [0.26, 0.17, 0.1, 0.05];
 
 const tubeGeometries = new Map<string, THREE.CylinderGeometry>();
 const endpointGeometries = new Map<string, THREE.RingGeometry>();
 const projectileShadowGeometries = new Map<string, THREE.CircleGeometry>();
 const materials = new Map<string, THREE.Material>();
-const projectileGeometries = new Map<string, THREE.BufferGeometry>();
 const labelTextures = new Map<string, { texture: THREE.CanvasTexture; aspect: number }>();
 const floatingNumberTextures = new Map<string, { texture: THREE.CanvasTexture; aspect: number }>();
 
@@ -6838,57 +6526,4 @@ function projectileShadowMaterial(color: number, opacity: number): THREE.MeshBas
   return material as THREE.MeshBasicMaterial;
 }
 
-function projectileGeometry(key: string): THREE.BufferGeometry {
-  let geometry = projectileGeometries.get(key);
-  if (!geometry) {
-    if (key === "shell-body") {
-      geometry = new THREE.CylinderGeometry(0.14, 0.16, 0.42, 16);
-    } else if (key === "shell-nose") {
-      geometry = new THREE.ConeGeometry(0.15, 0.3, 16);
-    } else if (key === "shell-exhaust") {
-      geometry = new THREE.SphereGeometry(0.14, 12, 8);
-    } else if (key === "shell-band") {
-      geometry = new THREE.TorusGeometry(0.16, 0.012, 8, 18);
-    } else if (key === "shell-fin") {
-      geometry = new THREE.BoxGeometry(0.05, 0.18, 0.34);
-    } else if (key === "bolt-core") {
-      geometry = new THREE.OctahedronGeometry(0.2, 0);
-    } else if (key === "bolt-ring") {
-      geometry = new THREE.TorusGeometry(0.26, 0.018, 8, 24);
-    } else if (key === "grenade-body") {
-      geometry = new THREE.IcosahedronGeometry(0.18, 1);
-    } else if (key === "grenade-band") {
-      geometry = new THREE.TorusGeometry(0.18, 0.014, 8, 18);
-    } else if (key === "grenade-spark") {
-      geometry = new THREE.SphereGeometry(0.1, 10, 8);
-    } else if (key === "rifle-slug") {
-      geometry = new THREE.CylinderGeometry(0.035, 0.045, 0.34, 10);
-    } else if (key === "rifle-tip") {
-      geometry = new THREE.SphereGeometry(0.055, 10, 8);
-    } else if (key === "rifle-spark") {
-      geometry = new THREE.SphereGeometry(0.08, 10, 8);
-    } else if (key === "rifle-tail") {
-      geometry = new THREE.ConeGeometry(0.055, 0.22, 10);
-    } else if (key === "ember") {
-      geometry = new THREE.SphereGeometry(0.05, 8, 6);
-    } else if (key === "muzzle-flash") {
-      geometry = new THREE.SphereGeometry(0.18, 12, 8);
-    } else {
-      geometry = new THREE.SphereGeometry(0.08, 10, 8);
-    }
-    geometry.userData.shared = true;
-    projectileGeometries.set(key, geometry);
-  }
-  return geometry;
-}
 
-function projectileMaterial(key: string, color: number, opacity: number, additive = false): THREE.MeshBasicMaterial {
-  const materialKey = `projectile:${key}:${color}:${opacity.toFixed(2)}:${additive ? "a" : "n"}`;
-  let material = materials.get(materialKey);
-  if (!material) {
-    material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending });
-    material.userData.shared = true; // pooled across frames — disposeSubtree must never free it
-    materials.set(materialKey, material);
-  }
-  return material as THREE.MeshBasicMaterial;
-}
