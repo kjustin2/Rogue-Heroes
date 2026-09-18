@@ -27,11 +27,15 @@ symbols fail the build.
 | Scenario screenshot gallery | `npm run improve:gallery` |
 | Review contact sheet → `shots/` | `npm run screens` |
 | Quick gameplay-zoom look per scenario (`-- firefight siege`, `:select`/`:shoot`/`:base` HUD states) | `npm run shots:look` |
-| 9-frame attack filmstrip at quarter speed (`-- melee` or `shoot`) — judge motion here, not in stills | `npm run shots:filmstrip` |
+| 12-frame attack filmstrip at half/quarter speed (`-- melee`, `kill`, `jump`, or a projectile family: `shoot heavy sniper sapper pistol flame grenade launcher mortar tank artillery apc turret gunship`, `all` for every family) — judge motion here, not in stills | `npm run shots:filmstrip` |
 | Depth-fight repro (hide plates / kill shadows / lift plates / old near plane) | `npm run probe:depth <scenario>` |
 | Infantry lineup, near + far, for kit/proportion review | `npm run shots:lineup` |
+| Rebuild the Blender kits (validated, AO-baked) | `npm run art:kit`, `npm run art:props`, `npm run art:validate:selftest` |
+| A/B two screenshots (hottest region, 3× crop) / inspect a GLB | `npm run shots:diff a.png b.png out.png`, `npm run art:inspect <glb>` |
+| Start one map headless and print the in-page error | `npm run probe:map <id>` |
 | **Real-GPU frame-time probe** (hidden Electron, diffs compiled programs across resolves) | `npm run soak:gpu [scenario]` |
-| **Real-GPU screenshots** (`-- menu firefight lineup …`) | `npm run shots:gpu` |
+| **Real-GPU screenshots** (`-- menu firefight lineup rings abilities direction nowalk maps volley …`; `maps` = one gameplay frame per battlefield (`volley` = a seven-family firing line mid-resolve: rounds, trails, flashes, blasts on the real GPU); UI screens `deploy settings armory campaign run tutorial pause victory defeat hover hover-deck`; `mapselect` shoots the Skirmish page at 1280×720 / 1600×900 / 2560×1080; `SHOT_PREFIX=before-` for a baseline build) | `npm run shots:gpu` |
+| Walk-up-a-step filmstrip (feet vs talus / plates) | `npm run shots:step` |
 | Build + Electron gameplay smoke | `npm run test:play` |
 | Desktop app (build + Electron) | `npm run standalone` |
 | **One-command shareable .exe** | `npm run dist:exe` (portable, → `release/`) |
@@ -123,8 +127,11 @@ change, and `shots:silhouette` for the outline test. Blender is found by `script
 
 Rules:
 
-- **Authored parts get `bakeVertexAO` on first use** (in `box()`): pooled part materials read
-  vertex colours and a GLB part has none, which samples as BLACK — that was the bowling-ball helmet.
+- **Every authored part ships vertex AO as `COLOR_0`** (`bake_ao` in `finish()`: Cycles AO baked
+  alone-in-the-world, folded into the same facing/height terms the runtime `bakeVertexAO` gives
+  procedural parts). `box()` still runtime-bakes any geometry WITHOUT a colour attribute, because a
+  pooled part material reads vertex colours and a missing attribute samples as BLACK — that was the
+  bowling-ball helmet. The validator fails a part that has no colour attribute.
 - Helmets are NOT `accent` meshes and take `helmetColor` (the body hue lifted toward bone): they are
   the largest surface on a trooper now and the old dark per-kit literals read as black domes.
 - Every kit mesh is exported **normalised to a 1x1x1 box centred on the origin**, so `size` in
@@ -137,10 +144,49 @@ Rules:
 - `modelsVersion()` bumps when the kit lands, which rebuilds entity groups so troopers pick the
   authored shapes up mid-session.
 
+### Blender rules (2026-09-18, from docs/blender-ai-pipeline.md)
+
+- **Background-first.** The pipeline is deterministic `bpy` scripts run headless through
+  `scripts/blender.mjs` (`--background --python-exit-code 1`), and `npm run art:*` is the ONLY thing
+  that writes `public/models/`. A live blender-mcp session is an inspection REPL (screenshot a part,
+  read a bbox / face count) — never a write path to the repo; the socket is unauthenticated, so
+  localhost + `BLENDER_MCP_SAFE_MODE=1` only. GLB out of a live session is not accepted.
+- **The validator is the gate** (`art/infantry/validate.py`, run by `art:kit` AND `art:props`
+  before export; any failure aborts with exit 1): loose verts / wire edges / 3+-face edges /
+  zero-area faces / NaN, inward-facing shells, a per-part tri budget (2400 kit, 900 props), the unit
+  cube with transforms applied, UVs + `COLOR_0`, and the NAME SET == the `KitPart` / `PropsPart`
+  union in `models.ts` (a part the game never asks for is dead weight; one it asks for and cannot
+  find is a silent box). It caught 104 zero-area faces on the mortar cap and a collapsed stump on
+  its first two runs. `npm run art:validate:selftest` fault-injects a rename, a flipped shell and a
+  stray primitive — keep it passing when the rules change. `npm run art:inspect <glb>` prints what
+  actually exported (tris, attributes, bbox, COLOR_0 range).
+- **Bake location into the mesh at creation.** `join()` keeps the FIRST object's origin, and
+  `floor()` / `displace()` measure mesh-local Z: a cylinder whose origin sat at its own centre had
+  its whole lower half collapsed onto the "floor". Every primitive helper applies its transform
+  immediately (`add_box`, `cyl`, `ico`); never leave a location on the object.
+- **A cut on one of a primitive's own rings leaves zero-area slivers** — `cut_below` dissolves
+  degenerates after the bisect; nudge the plane off the ring anyway.
+- **Props kit** (`art/props/author_props.py` → `props-kit.glb`, `npm run art:props`): seeded
+  variants per kind (`PROPS_VARIANTS` in models.ts), bmesh noise + flat floor + `shade_flat` + light
+  decimate. `propGeometry(kind, hash(entity.id))` in `buildCover`; every branch keeps its
+  procedural builder as the fallback. Props are pooled toon parts, so they take `tintPropToMap`
+  (0.3 props / 0.5 stone toward `rockTint`) and the ramp. **Rocks are never Meshy again** — the
+  photoreal hull needed a greyscale + retint to sit next to the troopers and was one silhouette on
+  every map.
+- **`tintPropToMap` / `partColors` must accept `MeshToonMaterial`.** Both tested for
+  `MeshStandardMaterial` after the parts went toon and were silent no-ops for weeks (no prop took
+  the map tint; `audit:unit` saw nothing). Any new "for every part material" walk goes through
+  the same `instanceof (Standard || Toon)` check as `warmUpSamplers`.
+- **Toon ramp is RGB** (`toonGradient()`): cool shade steps, warm lit steps, top channel ≤ 226.
+  Grey steps read as plastic; 255 bleaches crates and pillars.
+- **No `Draco` on any export** (vertex colours corrupt in the Blender exporter); meshopt via
+  gltf-transform is the sanctioned compressor. GN instances must be realized before export.
+
 ## Meshy scope (deliberate per-repo exception)
 
 This repo's sanctioned Meshy scope is **hard-surface vehicle/structure/prop hulls**
-(tank, apc, artillery, hq, turret, rock, crates, sandbags, barricade — it works here).
+(tank, apc, artillery, hq, turret, crates, sandbags, barricade — it works here; the rock was
+Meshy once and is now the props kit, see Blender rules).
 **Infantry/characters stay procedural.** This intentionally goes beyond the global
 "static set-dressing only" default — do not "fix" it back, and do not expand it to
 characters. Generation is offline: `MESHY_API_KEY` in gitignored `game/.env`, then
@@ -168,7 +214,9 @@ Repo gotchas:
   The 2026-09 perf round was won by the profile, not by guessing: the frame was dominated by
   three's per-material uniform machinery, not by triangles or fill.
 - **`npm run smoke:ui-audit`** (wired into `smoke:core`, so `test:full` runs it) asserts
-  `window.__rht.auditUI()` finds nothing across four viewports x four screens. Every rule is a
+  `window.__rht.auditUI()` finds nothing across four viewports x eight screens (title, Skirmish
+  set-up, settings, pause, victory, battle, roster, targeting), then FAULT-INJECTS a strip over the
+  Skirmish choices and demands the `occluded` rule name it (the gate is decorative otherwise). Every rule is a
   geometric fact — rect intersection, `scrollWidth` vs `clientWidth`, `elementFromPoint` — so a
   failure is never a matter of taste. It exists because three real UI bugs shipped in one session
   and every one was caught by a human squinting at a screenshot. Two rules carry hard-won caveats:
@@ -254,7 +302,7 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
 - Data catalogs are the tuning surface: `units.ts` (troops/defenses/support powers),
   `tech.ts`, `modes.ts`, `maps.ts`, `scenario.ts` (bases + cover only — no starting units).
 - **Part materials and part geometry are POOLED.** `partMaterial()` in `worldRenderer.ts` hands
-  every part mesh a SHARED `MeshStandardMaterial` keyed on a quantized version of its painted
+  every part mesh a SHARED `MeshToonMaterial` (same ramp as the hulls) keyed on a quantized version of its painted
   appearance, and `paintPart` re-resolves each mesh to the right one every frame. So:
   **never write to a part mesh's `material`** — you would repaint every other mesh that currently
   looks the same. Change `mesh.userData.baseColor` (or the spec paintPart builds) instead; that is
@@ -296,7 +344,7 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   kinds or the menu↔battle flip stalls on a shader relink. Tear down per-frame/per-swap
   groups via `disposeAndClear()`; `userData.shared` geometry is skipped.
 - **The ground detail layer** (`makeGroundDetail`) is one InstancedMesh per element kind (grass fans, pebbles, snow clumps, cinders, weeds), placed only on dry flat ground, bending in `windUniforms` (the same clock the cloud deck and tree sway use). Pebbles are 8-triangle octahedra on purpose — the 36-triangle version was 130k triangles on a large map. Costs are in `perf-baseline.json`; rebase after an intentional change.
-- **Stone hulls take the map's hue**: `tintModelToMap(group, "stone")` swaps the Meshy albedo for `greyscaleOf(map)` and paints `rockTint`. Multiplying a tint into an orange albedo only ever gives darker orange.
+- **Stone takes the map's hue**: rock / rubble / statue props are tinted 0.5 toward `rockTint` (the ground's own hue at a slightly higher value); wood, foliage and hardware only 0.3 toward `propTint`. A tint into an already-saturated albedo only ever darkens it — which is why the Meshy rock had to be greyscaled first, and why it is gone.
 - **Idle liveness is gated** (`smoke:animation`: head scan + body turn over 3s of standing). Whole-body idle lives at group level next to the flinch; per-part breathing in `paintPart`. Both are phased by `hash(entity.id)`.
 - **Melee**: the pose family follows the ORDER (`meleeTargetByActor`), the blade is carried by the shoulder about a grip pivot (it is a separate part with no authored motion), the group lunges, and the sim emits a `strike` effect (slash arc + flash + shards), never a blast. `__rht.setResolveScale(0.25)` slows the resolve clock for filmstrips.
 - **Jump Trooper** (`jumper`, `UNIT_STATS.jump`): its move is an arc (`canJump` → `jumpLanding` picks a dry, unoccupied landing; the order sets `flying`/`agl` on a sine until it lands). Mid-arc it IS a flyer to targeting. Pack destroyed = walks. Tests find a real cliff by measurement (`jumper.test.ts`).
@@ -320,6 +368,40 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
 - **Title diorama** (`stageMenuDiorama` in `main.ts`): the main menu sits over a live Verdant scene with `stage.menuDrift`; `body.in-battle` mirrors `inBattle` so CSS hides the HUD outside a battle; `stage.resetView()` restores the tactical camera only when leaving the diorama.
 - **`stage.warmUp()` extras must be visible AND unculled** (parked at y=-5000 in a wrapper): `renderer.compile()` walks `traverseVisible`, and only a composer DRAW compiles the post-chain variant (linear output, tone mapping off) — the lean path's key differs. It was a silent no-op for every GLB until `soak:gpu` diffed programs across a resolve. The warm-up also clones a transparent twin of every opaque standard material (death fades flip the `opaque` program bit). Any mid-resolve hitch report: run `soak:gpu` first; it names the compiling program.
 - **Abilities on entities** (all serialized): `suppressedUntilTurn` (heavy hits; one CP + crouch next turn, applied at turn start), `hullDown` (tank with no move/ram order this resolve, decided in `endTurn`, 0.7x shot damage), slam landing in the jump-landing block. Deaths: the group lingers `DEATH_MS` falling along the last flinch direction (`diedAt`/`deathDir` on the group), then sinks.
+- **Ground overlays are DRAPED** (`drapeToTerrain`): the move field / weapon ring are subdivided flat
+  meshes whose vertices are pulled to `terrainHeightAt` (re-draped only when selection/position/radius
+  change). A flat disc at the actor's elevation sinks into the next mesa and hangs past a ledge — that
+  was the "range circle breaks" report. `shots:gpu rings` is the repro.
+- **Units stand on the ground as DRAWN, not as simulated.** `visualGroundAt` mirrors the talus tiers
+  `makeTerrainBlocks` flares past a block's footprint (same constants — change both together); the
+  rendered elevation is the footprint-sampled max of it (capped at one `TERRAIN_STEP` above the sim
+  ground) plus `plateLiftAt` (ground plates record their discs). Sim elevation is untouched.
+  `npm run shots:step` films a walk up a step — judge feet there.
+- **Vehicle radii cover the hull half-length** (`TARGET_SIZE / 2` in models.ts ↔ `createTank/Apc/
+  Artillery`): a circle smaller than the hull let tanks park inside crates. Spawn clearance
+  (`freeSpawnNear`) is sized to the unit; `debugSpawn` separates from what is there and a staged wall
+  pushes standing units aside. `scatter.test.ts` audits every map: no prop overlap, no prop
+  straddling a step (`nudgeOffEdge` slides authored signature pieces, mirrored AFTER the nudge).
+- **Charge / dash / breach**: `meleeRange()` adds `STRIKER_CHARGE` for the striker and the melee
+  order closes the gap first (a real move: overwatch + mines + separation apply; the swing clock
+  starts in reach); scouts never trigger `checkOverwatch`; a sapper round vs cover/wall is 9999.
+- **Projectile / muzzle / impact FX live in `src/render/projectileFx.ts`** (2026-09-18), in the toon
+  language: opaque flat colour + an INVERTED-HULL ink rim (the same pooled geometry drawn again
+  BackSide, slightly larger), layered hulls for a white-hot core inside a team-colour sleeve, and NO
+  additive blending anywhere in a shot (the only additive light is the pooled flash light). Fades
+  shrink, never dim toward black. `projectileFamily()` maps the sim's four projectile kinds × the
+  firing unit to eighteen visual families; `syncProjectiles` only feeds it a position history.
+  Rules: (1) trails are sampled by WORLD DISTANCE (`pushTrailPoint`/`trailStep`), never per render
+  frame — a frame-sampled history is a different length at every refresh rate and resolve speed
+  (at quarter speed nine flame blobs stacked in 20cm and read as a balloon); (2) blast shapes scale
+  by `effect.radius / 0.22` (the blob geometry's width) and the column climbs at most
+  `min(radius, 1.3)` — a wide blast is not a tall one (grenade smoke was floating in the sky);
+  (3) every shape/material comes from the module's bounded caches and is `userData.shared`; the
+  opaque front/back programs are registered in `warmUpSamplers` via `projectileFxWarmUpMaterials()`;
+  (4) HIT REACTION is keyed off the visual event, not the damage report: `shoveNear` flinches every
+  body within a blast/impact/bolt radius, so a shell bursting beside a trooper, a burn tick or a bomb
+  can never land silently (rifle/melee still flinch through the damage report as well).
+  Evidence is `shots:filmstrip -- all` (SwiftShader) + `shots:gpu volley` (real GPU).
 - **Frame loop is guarded** (`frame` → `frameBody` in try/catch, `__rht.frameErrors()`); one bad frame never kills rAF again.
 - **`window.__rht`** is the entire test/debug surface (sim + `endTurn`/`reset`/
   `scenario(id)`/`perf()`/`diagnostics()`/`describeScene()` …). **Keep it in sync with
@@ -342,6 +424,35 @@ All localStorage, keyed `rht.*`: `rht.settings.v1` (incl. `keybinds`, `unitSkin`
 in-battle sim itself still saves to `rht.savedBattle.v1`, so a paused sector resumes
 via Continue like a campaign mission), `rht.commander.v1` (battle stats, medals,
 doctrine mastery — cosmetic).
+
+## UI language: TOON (2026-09-18)
+
+The DOM chrome speaks the same language as the toon render: **inked outlines** (3px panels, 2px
+controls — `--ink`), **flat opaque fills** (`--paper` / `--paper-hi` / `--paper-lo`), **hard offset
+ink shadows** (`--drop-sm/--drop/--drop-lg`), a **one-step shade band** at a panel's foot
+(`--shade`), **segmented meters** (ink ticks over every bar), cream text on slate, and ONE saturated
+accent per surface — amber = the action (End Turn, active tab, toasts), cyan = the player /
+confirm / "on", red = the threat, green = OK. All of it is the `TOON UI LAYER` at the end of
+`style.css`: tokens on `:root` plus per-class overrides; the legacy `--line/--panel/--cyan/--amber`
+tokens are remapped there so the older layers inherit it. Rules that fall out of it:
+
+- **No gradients, no `backdrop-filter`, no blurred glows, no sheen/glint/bracket animations** on
+  UI. Depth is an offset solid; state is a fill or an outline colour. The "Blizzard chrome" layer
+  that did the opposite was deleted, not overridden — do not bring rivets back.
+- **Menus = title + buttons.** The cosmetic callsign line was removed from the title screen; it is
+  still equipped in the Armory. Difficulty is Easy / Normal / Hard (Recruit / Veteran / Elite
+  collided with the veteran ranks and the Recruit unit). The vocabulary is **turn**, never round.
+- **Every choice on a set-up page fits one 1280×720 screen in reading order, and nothing sits under
+  a sticky bar.** The Skirmish page is Map + Preview left, Faction → Mode → Difficulty right, Deploy
+  last; a card with a CTA footer is a header / scrolling-body / footer grid, never a sticky strip
+  laid over its own content (that is how the faction pick got "hidden behind Deploy").
+  `shots:gpu mapselect` is the repro at the three widths that have bitten this repo.
+- **Tooltips hang OUTSIDE the panel they came from** (above a bottom panel, beside a side rail —
+  `positionTooltip` in hud.ts), are ≤2 lines at 420px, and never repeat the card's own name ("Striker
+  on cooldown" on the Striker card is "On cooldown"). The listeners live on `<body>` so menu
+  `data-tip`s work; any pointerdown dismisses; the tooltip is `data-allow-overlap`.
+- Pause / edit overlays mark the HUD `inert` like a full menu does; a MutationObserver re-derives
+  the flag when any screen is added or removed (Resume used to be able to leave it stale).
 
 ## Owner's quality bars (each has bitten this repo)
 

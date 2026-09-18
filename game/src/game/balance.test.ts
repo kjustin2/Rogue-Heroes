@@ -29,8 +29,10 @@ const MIN_SAMPLE = 10; // units of a kind fielded across the run before its rati
 const BAND_LOW = 0.5;
 const BAND_HIGH = 2.5;
 // Listed, not gated: support kinds earn their keep another way; the interceptor can only hit
-// flyers; the flamer's burning-ground ticks are unattributed (no actor on a burn zone).
-const UNGATED: readonly TroopKind[] = ["medic", "engineer", "droneop", "transport", "interceptor", "flamer"];
+// flyers; the flamer's burning-ground ticks are unattributed (no actor on a burn zone); the
+// scout is eyes + capture + dash, and as the fastest unit the AI runs it in first and alone, so
+// its damage row is 0-or-a-little depending on which two games draw it (see the seat table).
+const UNGATED: readonly TroopKind[] = ["medic", "engineer", "droneop", "transport", "interceptor", "flamer", "scout"];
 
 interface Tally { damage: number; spent: number; fielded: number }
 

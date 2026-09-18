@@ -9,7 +9,12 @@ import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/
 import { OVERWATCH_ARC_HALF } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec } from "../game/maps";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
-import { greyscaleOf, instantiate, kitGeometry, modelsVersion, toonGradient, type KitPart, type ModelKey } from "./models";
+import { instantiate, kitGeometry, modelsVersion, propGeometry, toonGradient, type KitPart, type ModelKey } from "./models";
+import {
+  makeBlast, makeImpact, makeMuzzleFlash, makePing, makeProjectileModel, makeProjectileShadow, makeProjectileTrail,
+  orientAlongVelocity, prewarmProjectileFx, projectileFamily, projectileFxWarmUpMaterials, projectileGeometry,
+  projectileMaterial, pushTrailPoint,
+} from "./projectileFx";
 
 // Part materials are toon (see partMaterial); PartMaterial names the shared shape both use.
 type PartMaterial = THREE.MeshToonMaterial;
@@ -89,6 +94,8 @@ export class WorldRenderer {
   private readonly actionRangeRing: THREE.Mesh;
   private readonly shootRangeRing: THREE.Mesh;
   private lastRangeSig = "";
+  private waterWaves: THREE.Texture | undefined;
+  private lastPlacementSig = "";
   private readonly placementRing: THREE.Mesh;
   private readonly placementDisc: THREE.Mesh;
   private ghostedEntityIds = new Set<string>();
@@ -201,7 +208,7 @@ export class WorldRenderer {
     this.scene.add(this.shootRangeRing);
 
     this.placementRing = new THREE.Mesh(
-      new THREE.RingGeometry(0.985, 1.0, 96),
+      new THREE.RingGeometry(0.985, 1.0, 160, 1),
       new THREE.MeshBasicMaterial({ color: 0x8ef2d1, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false })
     );
     this.placementRing.rotation.x = -Math.PI / 2;
@@ -209,8 +216,8 @@ export class WorldRenderer {
     this.scene.add(this.placementRing);
 
     this.placementDisc = new THREE.Mesh(
-      new THREE.CircleGeometry(1, 64),
-      new THREE.MeshBasicMaterial({ color: 0x8ef2d1, transparent: true, opacity: 0.08, side: THREE.DoubleSide, depthWrite: false })
+      new THREE.PlaneGeometry(2, 2, 48, 48), // subdivided so drapeToTerrain can lay it over steps
+      new THREE.MeshBasicMaterial({ color: 0x8ef2d1, transparent: true, opacity: 0.08, side: THREE.DoubleSide, depthWrite: false, map: discMaskTexture() })
     );
     this.placementDisc.rotation.x = -Math.PI / 2;
     this.placementDisc.visible = false;
@@ -218,15 +225,9 @@ export class WorldRenderer {
   }
 
   private prewarmActionAssets(): void {
-    for (const key of [
-      "shell-body", "shell-nose", "shell-exhaust", "shell-band", "shell-fin",
-      "bolt-core", "bolt-ring",
-      "grenade-body", "grenade-band", "grenade-spark",
-      "rifle-slug", "rifle-tip", "rifle-spark", "rifle-tail",
-      "ember", "muzzle-flash",
-    ]) projectileGeometry(key);
+    prewarmProjectileFx();
     for (const radius of [0.026, 0.035, 0.04, 0.052, 0.07, 0.085, 0.11, 0.13]) tubeGeometry(radius);
-    for (const radius of [0.22, 0.34, 0.38, 0.46]) projectileShadowGeometry(radius);
+    for (const radius of [0.5]) projectileShadowGeometry(radius);
     for (const color of [0x75d8ff, 0xff765f, 0xffbf69, 0xffd166, 0xeaffff]) {
       lineMaterial(color, 0.5);
       tubeMaterial(color, 0.5);
@@ -637,6 +638,26 @@ export class WorldRenderer {
 
   // Hit-flinch impulse for an entity struck in the last FLINCH_MS: strength [0..1] (snappy
   // spring, peaks at the strike and settles fast) plus the normalized shove direction.
+  /** Flinch every living non-cover body within `radius` of `point`, away from `from` (or from the
+   *  point itself). Only ever raises an existing flinch, never dampens one. */
+  private shoveNear(sim: TacticalSim, point: Vec2, radius: number, power: number, from?: Vec2): void {
+    const now = performance.now();
+    for (const entity of sim.entities) {
+      if (!entity.status.alive || entity.kind === "cover" || entity.flying || entity.carriedById) continue;
+      const d = dist(entity.position, point);
+      if (d > radius + entity.radius) continue;
+      const origin = from ?? point;
+      let dx = entity.position.x - origin.x;
+      let dz = entity.position.z - origin.z;
+      const len = Math.hypot(dx, dz);
+      if (len < 0.05) { dx = -Math.sin(entity.yaw); dz = -Math.cos(entity.yaw); } else { dx /= len; dz /= len; }
+      const mag = Math.min(1.4, power * (from ? 1 : clamp(1.15 - d / (radius + entity.radius), 0.35, 1)));
+      const prev = this.flinchByEntity.get(entity.id);
+      if (prev && now - prev.at < FLINCH_MS && prev.mag >= mag) continue;
+      this.flinchByEntity.set(entity.id, { at: now, mag, dx, dz });
+    }
+  }
+
   private entityFlinch(entityId: string): { f: number; dx: number; dz: number } | undefined {
     const rec = this.flinchByEntity.get(entityId);
     if (!rec) return undefined;
@@ -696,6 +717,8 @@ export class WorldRenderer {
       new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false, depthTest: false }),
       new THREE.MeshStandardMaterial({ color: 0x8a7a5c, roughness: 0.92 }),
       new THREE.MeshStandardMaterial({ color: 0x8a7a5c, roughness: 0.92, transparent: true, opacity: 0.5 }),
+      // Projectile FX: opaque flat bodies and their BackSide inverted-hull rims are their own programs.
+      ...projectileFxWarmUpMaterials(),
     ]) out.push(new THREE.Mesh(geo, m));
     return out;
   }
@@ -730,7 +753,7 @@ export class WorldRenderer {
     const out: { partId: string; color: string; emissive: string; intensity: number }[] = [];
     group.traverse((node) => {
       const mesh = node as PartMesh;
-      if (!mesh.isMesh || !(mesh.material instanceof THREE.MeshStandardMaterial)) return;
+      if (!mesh.isMesh || !(mesh.material instanceof THREE.MeshStandardMaterial || mesh.material instanceof THREE.MeshToonMaterial)) return;
       const partId = mesh.userData?.partId as string | undefined;
       if (!partId) return;
       out.push({
@@ -972,6 +995,7 @@ export class WorldRenderer {
     if (!ripple) return;
     const t = performance.now() * 0.00004;
     ripple.offset.set(t, t * 0.62);
+    if (this.waterWaves) this.waterWaves.offset.set(-t * 0.5, t * 0.3);
   }
 
   // Drift the ambient particles each frame, wrapping them within the arena bounds.
@@ -1059,6 +1083,7 @@ export class WorldRenderer {
     this.sceneryRoot.add(makeTerrainBlocks(theme.ground, theme.groundAccent, surface));
     const water = makeWaterAndBridges(theme, surface);
     this.waterRipple = (water.userData.ripple as THREE.Texture | undefined) ?? undefined;
+    this.waterWaves = (water.userData.waves as THREE.Texture | undefined) ?? undefined;
     this.sceneryRoot.add(water);
     this.sceneryRoot.add(makeSurroundings(theme, width, depth));
 
@@ -1571,7 +1596,7 @@ export class WorldRenderer {
     group.userData.entityId = entity.id;
     group.userData.glb = true;
     if (entity.kind === "cover") {
-      this.tintModelToMap(group, entity.coverKind === "rock" || entity.coverKind === "rubble" ? "stone" : "prop");
+      this.tintModelToMap(group);
       this.interactionGlow(group, entity, entity.parts[0]?.role === "volatile");
     } else {
       this.addModelAccents(group, entity);
@@ -1605,13 +1630,11 @@ export class WorldRenderer {
 
   // Nudge a GLB prop's albedo toward the map palette (mirror of tintPropToMap, but on the
   // clone's material records so per-frame damage tinting keeps the tint as its base).
-  private tintModelToMap(group: THREE.Group, mode: "prop" | "stone" = "prop"): void {
+  private tintModelToMap(group: THREE.Group): void {
     const mats = group.userData.glbMaterials as { material: THREE.MeshStandardMaterial; base: number }[] | undefined;
     if (!mats) return;
     for (const record of mats) {
-      // Stone drops the albedo's hue entirely and wears the map's ground colour (see greyscaleOf).
-      if (mode === "stone" && record.material.map) record.material.map = greyscaleOf(record.material.map);
-      const tinted = mode === "stone" ? this.rockTint.clone() : new THREE.Color(record.base).lerp(this.propTint, 0.74);
+      const tinted = new THREE.Color(record.base).lerp(this.propTint, 0.74);
       record.material.color.copy(tinted);
       record.base = tinted.getHex();
     }
@@ -2378,6 +2401,14 @@ export class WorldRenderer {
       this.box(group, entity, part.id, [0.9, 0.1, 0.7], [0.45, 0.62, 0.1], 0x171512, { rotation: [0.4, -0.3, 0.5] });
       this.cylinder(group, entity, part.id, 0.22, 0.14, [0.7, 0.24, 0.55], 0x0f0d0b, [Math.PI / 2, 0, 0.4]);
       this.box(group, entity, part.id, [0.5, 0.14, 0.3], [-0.3, 0.55, -0.2], 0xff7d26, { emissive: 0xff5a1a, emissiveIntensity: 0.55 });
+    } else if (entity.coverKind === "rock" && propGeometry("rock", hash(entity.id))) {
+      // Authored boulder from the props kit (one of four seeded facet variants), scaled to the
+      // entity's own radius/height so signature rocks keep their authored size. Sunk a few cm so
+      // it never stands on a rounded belly over a talus flare.
+      const v = hash(entity.id);
+      const s = entity.radius / 1.0;
+      this.box(group, entity, part.id, [2.0 * s, entity.height, 1.7 * s], [0, entity.height / 2 - 0.08, 0], 0x7d776c,
+        { geometry: propGeometry("rock", v), roughness: 0.98, rotation: [0, (v % 16) * 0.39, 0] });
     } else if (entity.coverKind === "rock") {
       // Three axis-aligned boxes read as a stack of crates, not a rock. Five CANTED slabs of
       // different sizes, each tipped on two axes and half-buried, give it a broken silhouette and
@@ -2389,6 +2420,12 @@ export class WorldRenderer {
       this.box(group, entity, part.id, [0.72, 0.66, 0.78], [-0.38, 0.72, 0.26], 0x5e5951, { roughness: 0.98, bevel: 0.36, rotation: [tip(6), tip(7) * 4, tip(2)] });
       this.box(group, entity, part.id, [0.55, 0.5, 0.5], [0.34, 1.28, 0.1], 0x9a9388, { roughness: 0.94, bevel: 0.4, rotation: [tip(1), tip(5) * 4, tip(4)] });
       this.box(group, entity, part.id, [0.9, 0.26, 0.85], [-0.1, 0.12, -0.05], 0x4c473f, { roughness: 1, bevel: 0.42, rotation: [0, tip(3) * 4, 0] });
+    } else if (entity.coverKind === "stump" && propGeometry("stump", hash(entity.id))) {
+      const v = hash(entity.id);
+      this.box(group, entity, part.id, [1.3, 0.7, 1.3], [0, 0.33, 0], 0x5a3f2a, { geometry: propGeometry("stump", v), roughness: 0.96, rotation: [0, (v % 9) * 0.7, 0] });
+      // The pale cut face is the read from above.
+      this.cylinder(group, entity, part.id, 0.34, 0.04, [0, 0.7, 0], 0xb8a07a, [0, 0, 0], { roughness: 0.9 });
+      this.cylinder(group, entity, part.id, 0.2, 0.03, [0, 0.725, 0], 0x8d7454, [0, 0, 0], { roughness: 0.9 });
     } else if (entity.coverKind === "stump") {
       // A cut trunk with a pale ring on top, bark ridges and two exposed roots.
       const v = hash(entity.id);
@@ -2396,6 +2433,11 @@ export class WorldRenderer {
       this.cylinder(group, entity, part.id, 0.36, 0.05, [0, 0.64, 0], 0xb8a07a, [0, 0, 0], { roughness: 0.9 });
       this.cylinder(group, entity, part.id, 0.22, 0.04, [0, 0.67, 0], 0x8d7454, [0, 0, 0], { roughness: 0.9 });
       for (const a of [0.4, 2.1, 3.9]) this.box(group, entity, part.id, [0.18, 0.16, 0.5], [Math.cos(a) * 0.5, 0.08, Math.sin(a) * 0.5], 0x3d2a1a, { rotation: [0, -a, 0], bevel: 0.3, roughness: 0.98 });
+    } else if (entity.coverKind === "log" && propGeometry("log", hash(entity.id))) {
+      const v = hash(entity.id);
+      const yaw = (v % 13) * 0.24;
+      this.box(group, entity, part.id, [2.6, 0.6, 0.9], [0, 0.27, 0], 0x4f3622, { geometry: propGeometry("log", v), roughness: 0.96, rotation: [0, yaw, 0] });
+      this.box(group, entity, part.id, [0.5, 0.1, 0.4], [-Math.cos(yaw) * 0.5, 0.05, Math.sin(yaw) * 0.5], 0x3f5a2c, { bevel: 0.4, roughness: 1 }); // moss
     } else if (entity.coverKind === "log") {
       // A fallen trunk lying across the ground: long, slightly tapered, one broken bough up.
       const v = hash(entity.id);
@@ -2404,6 +2446,11 @@ export class WorldRenderer {
       this.cylinder(group, entity, part.id, 0.28, 0.06, [Math.cos(yaw) * 1.26, 0.3, -Math.sin(yaw) * 1.26], 0xb39a76, [0, yaw, Math.PI / 2], { roughness: 0.9 });
       this.cylinder(group, entity, part.id, 0.08, 0.5, [Math.cos(yaw) * 0.3, 0.6, -Math.sin(yaw) * 0.3], 0x4f3622, [0.5, yaw, 0.3], { roughness: 0.96 });
       this.box(group, entity, part.id, [0.5, 0.12, 0.4], [-Math.cos(yaw) * 0.6, 0.06, Math.sin(yaw) * 0.6], 0x3f5a2c, { bevel: 0.4, roughness: 1 }); // moss
+    } else if (entity.coverKind === "bush" && propGeometry("bush", hash(entity.id))) {
+      const v = hash(entity.id);
+      const greens = [0x3f7a34, 0x4d8a3a, 0x5e9a44, 0x447f38];
+      this.box(group, entity, part.id, [1.6, 0.9, 1.6], [0, 0.44, 0], greens[v % 4], { geometry: propGeometry("bush", v), roughness: 0.95, rotation: [0, (v % 11) * 0.57, 0], emissive: 0x0f2c0e, emissiveIntensity: 0.06 });
+      for (let i = 0; i < 3; i += 1) this.sphere(group, entity, part.id, 0.05, [Math.cos(i * 2.2 + v) * 0.42, 0.66, Math.sin(i * 2.2 + v) * 0.42], 0xd94a3a, { accent: true });
     } else if (entity.coverKind === "bush") {
       // A low round shrub: four overlapping green masses, a darker one underneath, a few berries.
       const v = hash(entity.id);
@@ -2414,6 +2461,10 @@ export class WorldRenderer {
       }
       this.sphere(group, entity, part.id, 0.44, [0, 0.28, 0], greens[3], { scaleY: 0.6 });
       for (let i = 0; i < 3; i += 1) this.sphere(group, entity, part.id, 0.05, [Math.cos(i * 2.2) * 0.4, 0.62, Math.sin(i * 2.2) * 0.4], 0xd94a3a, { accent: true });
+    } else if (entity.coverKind === "cactus" && propGeometry("cactus", hash(entity.id))) {
+      const v = hash(entity.id);
+      this.box(group, entity, part.id, [1.0, 2.0, 1.0], [0, 1.0, 0], 0x4f7f3a, { geometry: propGeometry("cactus", v), roughness: 0.94, rotation: [0, (v % 7) * 0.9, 0] });
+      this.sphere(group, entity, part.id, 0.1, [0, 2.02, 0], 0xf2dfa0, { accent: true });
     } else if (entity.coverKind === "cactus") {
       // A saguaro: ribbed column, two arms, and a pale flower on top.
       const v = hash(entity.id);
@@ -2451,6 +2502,9 @@ export class WorldRenderer {
       for (const a of [0.6, 2.7, 4.8]) this.box(group, entity, part.id, [0.14, 0.5, 0.14], [Math.cos(a) * 0.62, 0.25, Math.sin(a) * 0.62], 0x2f3439, { metalness: 0.4 });
       this.box(group, entity, part.id, [0.06, 1.8, 0.3], [0.86, 1.3, 0], 0x9aa0a6, { metalness: 0.5 });
       this.box(group, entity, part.id, [0.3, 0.2, 0.06], [0, 1.5, 0.84], 0xd8b43a, { accent: true, emissive: 0x8a6a10, emissiveIntensity: 0.15 });
+    } else if (entity.coverKind === "statue" && propGeometry("statue", hash(entity.id))) {
+      const v = hash(entity.id);
+      this.box(group, entity, part.id, [1.9, 2.4, 1.9], [0, 1.2, 0], 0x9a948a, { geometry: propGeometry("statue", v), roughness: 0.92, rotation: [0, (v % 8) * 0.78, 0] });
     } else if (entity.coverKind === "statue") {
       // A broken monument: a plinth, a robed figure snapped off at the shoulder, one arm raised.
       const v = hash(entity.id);
@@ -2461,6 +2515,13 @@ export class WorldRenderer {
       this.cylinder(group, entity, part.id, 0.1, 0.7, [0.36, 2.2, 0.1], 0x9a948a, [0.3, 0, -0.9], { roughness: 0.92 });
       this.box(group, entity, part.id, [0.3, 0.26, 0.3], [-0.26, 2.16, 0.02], 0x8f8980, { bevel: 0.36, rotation: [0.3, 0.6, 0.5], roughness: 0.94 }); // the broken shoulder
       this.box(group, entity, part.id, [0.5, 0.3, 0.44], [0.7, 0.15, 0.55], 0x8a8478, { bevel: 0.3, rotation: [0.2, 0.7, 0.1], roughness: 0.92 }); // a fallen head at the foot
+    } else if (entity.coverKind === "tree" && propGeometry("trunk", hash(entity.id)) && propGeometry("canopy", hash(entity.id))) {
+      // Authored trunk + canopy variants; the group-level sway is unchanged.
+      const v = hash(entity.id);
+      const greens = [0x35722f, 0x437f36, 0x59963f];
+      const spin = (v % 13) * 0.48;
+      this.box(group, entity, part.id, [0.7, 1.75, 0.7], [0, 0.87, 0], 0x4a3220, { geometry: propGeometry("trunk", v), roughness: 0.95, rotation: [0, spin, 0] });
+      this.box(group, entity, part.id, [2.3, 1.7, 2.3], [0, 2.05, 0], greens[v % 3], { geometry: propGeometry("canopy", v >> 3), roughness: 0.94, rotation: [0, spin + 1.1, 0], emissive: 0x0f2c0e, emissiveIntensity: 0.08 });
     } else if (entity.coverKind === "tree") {
       // The old tree was a cube on a stick. This one has a tapered, leaning trunk, two boughs, and
       // a crown of six canted masses in three greens with a darker underside — an irregular
@@ -2499,6 +2560,9 @@ export class WorldRenderer {
       for (const [x, y] of [[-0.46, 0.18], [0.46, 0.18], [0, 0.18], [-0.24, 0.5], [0.24, 0.5]] as const) {
         this.box(group, entity, part.id, [0.5, 0.34, 0.72], [x, y, 0], 0xb8a86a, { metalness: 0.02 });
       }
+    } else if (entity.coverKind === "rubble" && propGeometry("rubble", hash(entity.id))) {
+      const v = hash(entity.id);
+      this.box(group, entity, part.id, [2.1, 0.9, 1.8], [0, 0.42, 0], 0x7c756a, { geometry: propGeometry("rubble", v), roughness: 0.96, rotation: [0, (v % 10) * 0.63, 0] });
     } else if (entity.coverKind === "rubble") {
       this.box(group, entity, part.id, [1.45, 0.5, 1.1], [0, 0.25, 0], 0x7c756a);
       this.box(group, entity, part.id, [0.5, 0.42, 0.5], [0.42, 0.6, 0.22], 0x8c857a);
@@ -2522,6 +2586,28 @@ export class WorldRenderer {
       this.box(group, entity, part.id, [1.5, 0.5, 1.0], [0, 1.18, 0], 0x807a6e, { metalness: 0.04 });
       this.box(group, entity, part.id, [1.42, 0.16, 0.1], [0, 0.62, 0.66], 0x14110d);
       this.cylinder(group, entity, part.id, 0.12, 0.55, [-0.72, 1.2, -0.3], 0x5a5449, [0, 0, 0], { metalness: 0.2 });
+    } else if (entity.coverKind === "span") {
+      // A BRIDGE SPAN is the destructible middle of a crossing: it reads as part of the deck —
+      // plank runs, two rail posts a side and a low rail — never as a crate parked on the bridge.
+      // Oriented along the crossing (the bridge rect's long axis) via the bridge under it.
+      const bridge = terrainBridges().find((b) => entity.position.x >= b.minX - 0.5 && entity.position.x <= b.maxX + 0.5 && entity.position.z >= b.minZ - 0.5 && entity.position.z <= b.maxZ + 0.5);
+      const along = bridge ? (bridge.maxX - bridge.minX >= bridge.maxZ - bridge.minZ ? 0 : Math.PI / 2) : 0;
+      const w = bridge ? Math.min(bridge.maxX - bridge.minX, bridge.maxZ - bridge.minZ) : 2.4;
+      // Local frame: +x runs ALONG the crossing; `along` turns it for a z-long bridge.
+      const at = (ax: number, az: number): [number, number, number] => [Math.cos(along) * ax + Math.sin(along) * az, 0, -Math.sin(along) * ax + Math.cos(along) * az];
+      for (const t of [-0.7, 0, 0.7]) {
+        const [px, , pz] = at(0, t * (w / 2.4));
+        this.box(group, entity, part.id, [1.9, 0.06, 0.42], [px, 0.2, pz], 0x6a4a2c, { rotation: [0, along, 0] });
+      }
+      for (const side of [-1, 1]) {
+        const off = side * (w / 2 - 0.12);
+        for (const t of [-0.85, 0.85]) {
+          const [px, , pz] = at(t, off);
+          this.box(group, entity, part.id, [0.12, 0.5, 0.12], [px, 0.42, pz], 0x4f3620, { rotation: [0, along, 0] });
+        }
+        const [rx, , rz] = at(0, off);
+        this.box(group, entity, part.id, [1.9, 0.08, 0.1], [rx, 0.66, rz], 0x7c5a36, { rotation: [0, along, 0] });
+      }
     } else {
       this.box(group, entity, part.id, [1.82, 1.25, 0.56], [0, 0.63, 0], 0xb98b5b);
       this.box(group, entity, part.id, [1.66, 0.22, 0.62], [0, 1.37, 0], 0xe0b673);
@@ -2529,7 +2615,12 @@ export class WorldRenderer {
       this.box(group, entity, part.id, [0.14, 1.12, 0.66], [0.58, 0.7, 0], 0x7a5535);
       for (const x of [-0.34, 0.34]) this.box(group, entity, part.id, [0.1, 1.02, 0.08], [x, 0.7, 0.34], 0xf0c37a, { emissive: 0x6c3a13, emissiveIntensity: 0.16 });
     }
-    this.tintPropToMap(group);
+    const stone = entity.coverKind === "rock" || entity.coverKind === "rubble" || entity.coverKind === "statue";
+    // Light touch: this tint was a silent no-op for months (it tested for MeshStandardMaterial after
+    // the parts went toon) and the prop palette was tuned without it; at 0.7 every trunk and log went
+    // the ground colour. Stone leans further into the map (a rock is OF the ground); wood, foliage
+    // and hardware keep most of their own hue and only pick up the map's cast.
+    this.tintPropToMap(group, stone ? 0.5 : 0.3, stone ? this.rockTint : this.propTint);
     this.interactionGlow(group, entity, volatile);
   }
 
@@ -2537,15 +2628,15 @@ export class WorldRenderer {
   // scene. Glowing gameplay-signal props (fuel/ammo/conduit, anything emissive) are left alone
   // so their cues stay legible. Both the live material and the stored baseColor are updated so
   // the per-part damage shading keeps the tint.
-  private tintPropToMap(group: THREE.Group, amount = 0.7): void {
+  private tintPropToMap(group: THREE.Group, amount = 0.7, tint: THREE.Color = this.propTint): void {
     group.traverse((obj) => {
       const mesh = obj as PartMesh;
-      if (!(mesh.isMesh) || !(mesh.material instanceof THREE.MeshStandardMaterial)) return;
+      if (!(mesh.isMesh) || !(mesh.material instanceof THREE.MeshStandardMaterial || mesh.material instanceof THREE.MeshToonMaterial)) return;
       if ((mesh.userData.baseEmissiveIntensity as number ?? 0) > 0.12) return; // keep glowing signals
       // Only the BASE colour moves. The live material is pooled and shared across every mesh that
       // currently looks the same, so writing to it here would repaint half the scene; paintPart
       // re-resolves this mesh to the right pooled material on the next frame anyway.
-      const tinted = new THREE.Color(mesh.userData.baseColor as number ?? mesh.material.color.getHex()).lerp(this.propTint, amount);
+      const tinted = new THREE.Color(mesh.userData.baseColor as number ?? mesh.material.color.getHex()).lerp(tint, amount);
       mesh.userData.baseColor = tinted.getHex();
     });
   }
@@ -2597,11 +2688,13 @@ export class WorldRenderer {
        * proportion stays here.
        */
       kit?: KitPart;
+      /** An already-resolved unit-cube geometry (props kit variant) — same contract as `kit`. */
+      geometry?: THREE.BufferGeometry;
     } = {}
   ): PartMesh {
     const roughness = materialOptions.roughness ?? 0.62;
     const metalness = materialOptions.metalness ?? 0.08;
-    const authored = materialOptions.kit ? kitGeometry(materialOptions.kit) : undefined;
+    const authored = materialOptions.geometry ?? (materialOptions.kit ? kitGeometry(materialOptions.kit) : undefined);
     // Pooled part materials read vertex colours (baked AO). An authored GLB part has none, and a
     // missing colour attribute samples as BLACK — the bowling-ball helmets. Bake once per shared
     // geometry, same as every procedural part.
@@ -3299,11 +3392,12 @@ export class WorldRenderer {
       if (tags.has("spotter-aura")) auras.push({ radius: 6.2, color: 0x8de4ff });
       for (const aura of auras) {
         const ring = new THREE.Mesh(
-          new THREE.RingGeometry(aura.radius - 0.13, aura.radius, 64),
+          new THREE.RingGeometry(aura.radius - 0.13, aura.radius, 96, 1),
           new THREE.MeshBasicMaterial({ color: aura.color, transparent: true, opacity: 0.16 + pulse * 0.1, side: THREE.DoubleSide, depthWrite: false }),
         );
         ring.rotation.x = -Math.PI / 2;
-        ring.position.set(entity.position.x, entity.elevation + 0.05, entity.position.z);
+        ring.position.set(entity.position.x, entity.elevation, entity.position.z);
+        drapeToTerrain(ring, 0.05); // aura rings cross ledges too (rebuilt only when the signature changes)
         this.auraRoot.add(ring);
       }
     }
@@ -3316,12 +3410,19 @@ export class WorldRenderer {
     this.placementDisc.visible = Boolean(placement);
     if (!placement) return;
     const pulse = (Math.sin(performance.now() * 0.006) + 1) * 0.5;
-    const y = terrainHeightAt(placement.center) + 0.05;
-    this.placementRing.position.set(placement.center.x, y + 0.02, placement.center.z);
+    const y = terrainHeightAt(placement.center);
+    const sig = `${placement.center.x.toFixed(2)}|${placement.center.z.toFixed(2)}|${placement.radius.toFixed(2)}`;
+    this.placementRing.position.set(placement.center.x, y, placement.center.z);
     this.placementRing.scale.setScalar(placement.radius);
-    (this.placementRing.material as THREE.MeshBasicMaterial).opacity = 0.5 + pulse * 0.2;
     this.placementDisc.position.set(placement.center.x, y, placement.center.z);
     this.placementDisc.scale.setScalar(placement.radius);
+    if (sig !== this.lastPlacementSig) {
+      // The build radius around a base spans mesa steps and the shoreline; drape both like the move field.
+      drapeToTerrain(this.placementRing, 0.07);
+      drapeToTerrain(this.placementDisc, 0.05);
+      this.lastPlacementSig = sig;
+    }
+    (this.placementRing.material as THREE.MeshBasicMaterial).opacity = 0.5 + pulse * 0.2;
   }
 
   private syncOrders(sim: TacticalSim): void {
@@ -3498,66 +3599,32 @@ export class WorldRenderer {
     const liveIds = new Set<string>();
     for (const projectile of projectiles) {
       liveIds.add(projectile.id);
-      const style = projectileStyle(projectile);
+      const family = projectileFamily(projectile);
 
-      // Comet tail: recent positions fade out behind the round. Opacities are quantized
-      // so every segment hits the cached line-material pool.
+      // Position history feeds every trail (tapered ribbon, smoke puffs, the flame chain).
       let history = this.trailHistory.get(projectile.id);
       if (!history) {
         history = [];
         this.trailHistory.set(projectile.id, history);
       }
-      history.push({ x: projectile.position.x, y: projectile.height, z: projectile.position.z });
-      if (history.length > 6) history.shift();
-      for (let i = history.length - 1; i > 0; i -= 1) {
-        const a = history[i - 1];
-        const b = history[i];
-        const fade = TRAIL_OPACITIES[Math.min(TRAIL_OPACITIES.length - 1, history.length - 1 - i)];
-        this.projectileRoot.add(fxLine(a, b, style.trailColor, fade, a.y, b.y));
-      }
-      // Heavy rounds drag a smoke wake behind the tracer; puffs grow and thin with age.
-      if (projectile.kind === "shell" || (projectile.kind === "grenade" && projectile.state !== "rolling")) {
-        for (let i = history.length - 3; i >= 0; i -= 2) {
-          const p = history[i];
-          const back = history.length - 1 - i;
-          const fadeIdx = Math.min(SMOKE_OPACITIES.length - 1, Math.floor(back / 2));
-          const puff = new THREE.Mesh(projectileGeometry("ember"), projectileMaterial(`trail-smoke-${fadeIdx}`, 0x8d8578, SMOKE_OPACITIES[fadeIdx]));
-          puff.position.set(p.x, p.y, p.z);
-          puff.scale.setScalar((projectile.kind === "shell" ? 3.4 : 2.2) + back * 0.9);
-          this.projectileRoot.add(withoutCulling(puff));
-        }
-      }
-      // White-hot head segment reads as a tracer and feeds the bloom pass. Each weapon
-      // family gets its own signature: fat plasma streak (bolt), heavy shell tracer,
-      // needle-thin brilliant line (sniper), standard rifle tracer.
-      const sniper = projectile.sourceKind === "sniper";
-      const headRadius = projectile.kind === "bolt" ? 0.048 : projectile.kind === "shell" ? 0.036 : sniper ? 0.018 : 0.028;
-      const headBlend = projectile.kind === "bolt" ? 0.7 : sniper ? 0.8 : 0.55;
-      this.projectileRoot.add(makeTubeLine(
-        projectile.previous, projectile.position,
-        blendHex(style.trailColor, 0xffffff, headBlend), 0.9,
-        projectile.previousHeight, headRadius, projectile.height,
-      ));
-      // Sniper rounds leave a long luminous vapor line across their last few meters.
-      if (sniper && history.length >= 4) {
-        const tail = history[history.length - 4];
-        this.projectileRoot.add(makeTubeLine(
-          tail, projectile.position,
-          blendHex(style.trailColor, 0xffffff, 0.5), 0.4,
-          tail.y, 0.012, projectile.height,
-        ));
-      }
-      this.projectileRoot.add(withoutCulling(makeProjectileShadow(projectile, style.trailColor)));
+      pushTrailPoint(history, projectile, family);
 
-      const flash = makeMuzzleFlash(projectile);
-      if (flash) this.projectileRoot.add(withoutCulling(flash));
-
-      // The head model + shadow + flash must NEVER frustum-cull: a fast/high round (e.g. a gunship's
-      // arc or a shot near a screen edge) would otherwise vanish while the un-culled trail lingers.
-      const model = makeProjectileModel(projectile);
+      // Everything a round draws lives in projectileFx.ts: the body, its trail, its ground shadow
+      // and the muzzle event. Nothing here is frustum-culled — a fast/high round near a screen edge
+      // would otherwise vanish while its un-culled trail lingers.
+      for (const part of makeProjectileTrail(projectile, family, history)) this.projectileRoot.add(part);
+      this.projectileRoot.add(makeProjectileShadow(projectile, family));
+      const flash = makeMuzzleFlash(projectile, family);
+      if (flash) this.projectileRoot.add(flash);
+      const model = makeProjectileModel(projectile, family);
       model.position.set(projectile.position.x, projectile.height, projectile.position.z);
-      orientAlongShot(model, projectile.previous, projectile.position);
-      this.projectileRoot.add(withoutCulling(model));
+      orientAlongVelocity(
+        model,
+        { x: projectile.previous.x, y: projectile.previousHeight, z: projectile.previous.z },
+        { x: projectile.position.x, y: projectile.height, z: projectile.position.z },
+      );
+      model.traverse((o) => { o.frustumCulled = false; });
+      this.projectileRoot.add(model);
     }
     for (const id of this.trailHistory.keys()) if (!liveIds.has(id)) this.trailHistory.delete(id);
   }
@@ -3642,6 +3709,15 @@ export class WorldRenderer {
       if (this.burstIds.has(effect.id)) continue;
       this.burstIds.add(effect.id);
       const ground = terrainHeightAt(effect.to);
+      // HIT REACTION. Every landing round shoves what it lands on or beside, whether or not the sim
+      // recorded damage for it: a shell bursting at a trooper's feet, a burn tick, a bomb — the body
+      // lurches away from the point of impact (rifle/melee already flinch through the damage report;
+      // this is the same spring, keyed off the visual event so no family can land silently).
+      if (effect.type === "blast" || effect.type === "impact" || effect.type === "bolt") {
+        const radius = (effect.radius ?? 0.5) + (effect.type === "blast" ? 0.6 : 0.2);
+        const power = effect.type === "blast" ? Math.min(1.4, 0.5 + (effect.radius ?? 1) * 0.3) : 0.55;
+        this.shoveNear(sim, effect.to, radius, power, effect.type === "impact" && dist(effect.from, effect.to) > 0.05 ? effect.from : undefined);
+      }
 
       if (effect.type === "impact") {
         // Sparks fly BACK toward the shooter, the way a real ricochet throws material at the
@@ -3884,35 +3960,7 @@ export class WorldRenderer {
           this.craterRoot.add(scorch);
           if (this.craterRoot.children.length > 40) this.craterRoot.remove(this.craterRoot.children[0]);
         }
-        const ring = new THREE.Mesh(
-          new THREE.RingGeometry((effect.radius ?? 1) * t, (effect.radius ?? 1) * t + 0.08, 32),
-          new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: opacity * 0.7, side: THREE.DoubleSide })
-        );
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.set(effect.to.x, 0.08, effect.to.z);
-        this.effectRoot.add(ring);
-        // White-hot core that punches through the bloom threshold for the blast's first
-        // beats. Additive so it reads as light, not a solid white egg.
-        if (t < 0.45) {
-          const core = new THREE.Mesh(
-            new THREE.SphereGeometry((effect.radius ?? 1) * (0.14 + t * 0.42), 12, 8),
-            new THREE.MeshBasicMaterial({ color: 0xffdba6, transparent: true, opacity: (1 - t / 0.45) * 0.85, depthWrite: false, blending: THREE.AdditiveBlending })
-          );
-          core.position.set(effect.to.x, 0.5 + t * 0.9, effect.to.z);
-          this.effectRoot.add(core);
-        }
-        const dome = new THREE.Mesh(
-          new THREE.SphereGeometry((effect.radius ?? 1) * (0.24 + t * 0.82), 12, 6),
-          new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: opacity * 0.2, depthWrite: false, blending: THREE.AdditiveBlending })
-        );
-        dome.scale.y = 0.36;
-        dome.position.set(effect.to.x, 0.22 + t * 0.36, effect.to.z);
-        this.effectRoot.add(dome);
-        // Ember spray arcing out of the blast.
-        const embers = new THREE.Group();
-        embers.position.set(effect.to.x, 0.3, effect.to.z);
-        addEmbers(embers, 4, 0xffb02e, (effect.radius ?? 1) * (0.4 + t * 0.9), 0.4 + t * 1.2, effect.age);
-        this.effectRoot.add(embers);
+        for (const part of makeBlast(effect, t, terrainHeightAt(effect.to))) this.effectRoot.add(part);
       } else if (effect.type === "bolt") {
         // LIGHTNING: a thin jagged column from the sky to the point, white-hot core with a pale
         // halo, three kinks re-rolled from the effect id so each bolt has its own shape, a flash
@@ -3982,27 +4030,10 @@ export class WorldRenderer {
         ring.rotation.x = -Math.PI / 2;
         ring.position.set(effect.to.x, terrainHeightAt(effect.to) + 0.1, effect.to.z);
         this.effectRoot.add(ring);
+      } else if (effect.type === "impact") {
+        for (const part of makeImpact(effect, t, terrainHeightAt(effect.to))) this.effectRoot.add(part);
       } else {
-        // Additive with capped growth — the old opaque 2x-growing sphere wrapped the
-        // whole unit in a colored balloon on heavy hits.
-        const hit = new THREE.Mesh(
-          new THREE.SphereGeometry((effect.radius ?? 0.45) * (0.65 + t * 0.45), 10, 8),
-          new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: opacity * 0.42, depthWrite: false, blending: THREE.AdditiveBlending })
-        );
-        hit.position.set(effect.to.x, 0.8, effect.to.z);
-        this.effectRoot.add(hit);
-        const impactRing = new THREE.Mesh(
-          new THREE.RingGeometry((effect.radius ?? 0.45) * (0.35 + t * 0.85), (effect.radius ?? 0.45) * (0.35 + t * 0.85) + 0.04, 24),
-          new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: opacity * 0.52, side: THREE.DoubleSide, depthWrite: false })
-        );
-        impactRing.rotation.x = -Math.PI / 2;
-        impactRing.position.set(effect.to.x, 0.11, effect.to.z);
-        this.effectRoot.add(impactRing);
-        // A few hot sparks kicked off the impact point.
-        const sparks = new THREE.Group();
-        sparks.position.set(effect.to.x, 0.65, effect.to.z);
-        addEmbers(sparks, 3, 0xffd27a, 0.25 + t * 0.55, 0.12, effect.age);
-        this.effectRoot.add(sparks);
+        for (const part of makePing(effect, t, terrainHeightAt(effect.to))) this.effectRoot.add(part);
       }
     }
   }
@@ -4062,13 +4093,77 @@ function updateUnitMarker(marker: THREE.Group, entity: CombatEntity, color: numb
  * it, in the mesh's own frame, so the shape follows the steps. Assumes rotation.x === -PI/2 and
  * uniform scale; the mesh's position.y is the reference the offsets are measured from.
  */
+let _waveStrokes: THREE.CanvasTexture | undefined;
+/**
+ * Toon water: a tiling multiplier texture of sparse pale wave arcs on white (the material colour
+ * supplies the hue, like the ground texture). Reads as "water, not floor" at any zoom.
+ */
+function waveStrokeTexture(): THREE.CanvasTexture {
+  if (_waveStrokes) return _waveStrokes;
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#b9c9d3";
+  ctx.fillRect(0, 0, size, size);
+  let seed = 0xa11ce;
+  const rand = (): number => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 0xffffffff; };
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineCap = "round";
+  // Draw each stroke at its position and at the wrapped positions so the tile is seamless.
+  for (let i = 0; i < 14; i += 1) {
+    const x = rand() * size, y = rand() * size, len = 26 + rand() * 34, lw = 4 + rand() * 3;
+    ctx.lineWidth = lw;
+    for (const [ox, oy] of [[0, 0], [size, 0], [-size, 0], [0, size], [0, -size]]) {
+      ctx.beginPath();
+      ctx.moveTo(x + ox, y + oy);
+      ctx.quadraticCurveTo(x + ox + len * 0.5, y + oy - len * 0.22, x + ox + len, y + oy);
+      ctx.stroke();
+    }
+  }
+  // A few darker troughs so the surface has two values, not one.
+  ctx.strokeStyle = "#7f97a6";
+  for (let i = 0; i < 8; i += 1) {
+    const x = rand() * size, y = rand() * size, len = 18 + rand() * 24;
+    ctx.lineWidth = 2.5;
+    for (const [ox, oy] of [[0, 0], [size, 0], [-size, 0], [0, size], [0, -size]]) {
+      ctx.beginPath();
+      ctx.moveTo(x + ox, y + oy);
+      ctx.quadraticCurveTo(x + ox + len * 0.5, y + oy + len * 0.2, x + ox + len, y + oy);
+      ctx.stroke();
+    }
+  }
+  _waveStrokes = new THREE.CanvasTexture(canvas);
+  _waveStrokes.wrapS = _waveStrokes.wrapT = THREE.RepeatWrapping;
+  _waveStrokes.colorSpace = THREE.SRGBColorSpace;
+  return _waveStrokes;
+}
+
+let _discMask: THREE.CanvasTexture | undefined;
+/** A hard-edged white disc on transparent — turns a subdivided square plane into a fillable circle. */
+function discMaskTexture(): THREE.CanvasTexture {
+  if (_discMask) return _discMask;
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = "#fff";
+  ctx.beginPath(); ctx.arc(size / 2, size / 2, size / 2 - 1, 0, Math.PI * 2); ctx.fill();
+  _discMask = new THREE.CanvasTexture(canvas);
+  return _discMask;
+}
+
 function drapeToTerrain(mesh: THREE.Mesh, lift: number): void {
   const pos = mesh.geometry.attributes.position as THREE.BufferAttribute;
   const s = mesh.scale.x || 1;
   for (let i = 0; i < pos.count; i += 1) {
     const wx = mesh.position.x + pos.getX(i) * s;
     const wz = mesh.position.z - pos.getY(i) * s; // local +y is world -z once laid flat
-    pos.setZ(i, (terrainHeightAt({ x: wx, z: wz }) + lift - mesh.position.y) / s);
+    const p = { x: wx, z: wz };
+    // The ground as drawn: talus tiers and the cosmetic plates both rise above terrainHeightAt.
+    const ground = Math.max(visualGroundAt(p), terrainHeightAt(p) + plateLiftAt(p, terrainHeightAt(p)));
+    pos.setZ(i, (ground + lift - mesh.position.y) / s);
   }
   pos.needsUpdate = true;
   mesh.geometry.computeBoundingSphere();
@@ -4278,268 +4373,11 @@ function splashRadiusFor(kind: Projectile["kind"]): number {
   return 0;
 }
 
-function projectileStyle(projectile: Projectile): {
-  trailColor: number;
-} {
-  if (projectile.kind === "shell") {
-    return {
-      trailColor: projectile.color,
-    };
-  }
-  if (projectile.kind === "bolt") {
-    return {
-      trailColor: 0xffd166,
-    };
-  }
-  if (projectile.kind === "grenade") {
-    if (projectile.state === "rolling") {
-      return {
-        trailColor: 0xffbf69,
-      };
-    }
-    return {
-      trailColor: 0xffbf69,
-    };
-  }
-  // Rifle family: brighten the marksman's tracer and give the heavy gunner a hot orange streak.
-  if (projectile.sourceKind === "sniper") return { trailColor: blendHex(projectile.color, 0xffffff, 0.4) };
-  if (projectile.sourceKind === "heavy") return { trailColor: 0xffae57 };
-  return {
-    trailColor: projectile.color,
-  };
-}
-
-function orientAlongShot(mesh: THREE.Object3D, from: { x: number; z: number }, to: { x: number; z: number }): void {
-  const delta = new THREE.Vector3(to.x - from.x, 0, to.z - from.z);
-  if (delta.lengthSq() < 0.0001) return;
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
-}
-
-// A few small trailing embers behind a round (in the model's local frame, where -Y is the
-// trailing direction). All use pooled geometry + cached materials, so they cost no GC churn.
-function addEmbers(group: THREE.Group, count: number, color: number, spread: number, baseY: number, age: number): void {
-  for (let i = 0; i < count; i += 1) {
-    const ember = new THREE.Mesh(projectileGeometry("ember"), projectileMaterial(`ember-${i}`, color, 0.55 - i * 0.13));
-    ember.position.set(Math.sin(age * 22 + i * 2.1) * spread, baseY - i * 0.16, Math.cos(age * 19 + i * 1.7) * spread);
-    ember.scale.setScalar(1 - i * 0.22);
-    group.add(ember);
-  }
-}
-
-// Disable frustum culling on an object and all its descendants (projectile head/shadow/flash),
-// so a round leaving the camera frustum can't disappear mid-flight while its trail keeps drawing.
-function withoutCulling<T extends THREE.Object3D>(obj: T): T {
-  obj.traverse((o) => { o.frustumCulled = false; });
-  return obj;
-}
-
-function makeProjectileModel(projectile: Projectile): THREE.Group {
-  const group = new THREE.Group();
-  const src = projectile.sourceKind;
-  const team = projectile.color;
-  if (projectile.kind === "shell") {
-    // Siege shells: artillery is the biggest with 6 fins and a smoky tail, the mortar turret
-    // lobs a fat blunt-nosed bomb, the tank fires a sleek AP round. All spin-stabilise in flight.
-    const heavy = src === "artillery";
-    const bomb = src === "exturret";
-    const body = new THREE.Mesh(projectileGeometry("shell-body"), projectileMaterial("shell-body", 0xbfd1cc, 0.98));
-    const nose = new THREE.Mesh(projectileGeometry("shell-nose"), projectileMaterial("shell-nose", team, 0.98));
-    const exhaust = new THREE.Mesh(projectileGeometry("shell-exhaust"), projectileMaterial("shell-exhaust", 0xffd166, 0.72, true));
-    // A ragged flame cone licking off the tail, flickering with age.
-    const flame = new THREE.Mesh(projectileGeometry("rifle-tail"), projectileMaterial("shell-flame", 0xff9a3c, 0.8, true));
-    flame.position.y = -0.42;
-    flame.rotation.x = Math.PI;
-    flame.scale.set(1.6, 1.9 + Math.sin(projectile.age * 31) * 0.5, 1.6);
-    group.add(flame);
-    const bandA = new THREE.Mesh(projectileGeometry("shell-band"), projectileMaterial("shell-band-a", 0x1d2426, 0.9));
-    const bandB = new THREE.Mesh(projectileGeometry("shell-band"), projectileMaterial("shell-band-b", team, 0.88));
-    nose.position.y = 0.33;
-    if (bomb) { nose.scale.set(1.35, 0.62, 1.35); nose.position.y = 0.26; }
-    exhaust.position.y = -0.32;
-    exhaust.scale.setScalar((1.08 + Math.sin(projectile.age * 24) * 0.16) * (heavy ? 1.45 : 1));
-    bandA.position.y = 0.02;
-    bandB.position.y = -0.14;
-    bandA.rotation.x = Math.PI / 2;
-    bandB.rotation.x = Math.PI / 2;
-    bandA.scale.setScalar(0.95);
-    bandB.scale.setScalar(0.78);
-    const finCount = heavy ? 6 : 4;
-    for (let i = 0; i < finCount; i += 1) {
-      const angle = (i / finCount) * Math.PI * 2;
-      const fin = new THREE.Mesh(projectileGeometry("shell-fin"), projectileMaterial("shell-fin", 0x6e7a78, 0.92));
-      fin.position.set(Math.cos(angle) * 0.13, -0.18, Math.sin(angle) * 0.13);
-      fin.rotation.y = angle;
-      group.add(fin);
-    }
-    group.add(body, nose, exhaust, bandA, bandB);
-    group.rotation.y = projectile.age * (heavy ? 6 : 11);
-    if (heavy) addEmbers(group, 3, 0xffae57, 0.12, -0.34, projectile.age);
-    // Sized against the 3.4-unit GLB tank — the old 1.14 base read as a toy bullet a
-    // third of the vehicle's length.
-    group.scale.setScalar(0.82 * (heavy ? 1.3 : bomb ? 1.12 : 1));
-    return group;
-  }
-  if (projectile.kind === "bolt") {
-    // Energy bolts: the APC autogun spits small fast bolts, the Home Base lobs a heavy haloed
-    // core, turrets fire the standard round. Cores pulse inside an additive plasma shell;
-    // containment rings counter-spin.
-    const small = src === "apc";
-    const big = src === "base";
-    const core = new THREE.Mesh(projectileGeometry("bolt-core"), projectileMaterial("bolt-core", 0xfff6d8, 0.98, true));
-    const shell = new THREE.Mesh(projectileGeometry("bolt-core"), projectileMaterial("bolt-shell", 0xffd166, 0.5, true));
-    shell.scale.setScalar(1.7 + Math.sin(projectile.age * 22) * 0.18);
-    group.add(shell);
-    // Crackling containment arcs: jagged lines whipping around the core, re-seeded by age.
-    for (let a = 0; a < 2; a += 1) {
-      const seed = projectile.age * 31 + a * 4.1;
-      const points: THREE.Vector3[] = [];
-      for (let p = 0; p <= 4; p += 1) {
-        const angle = seed + (p / 4) * Math.PI * 1.4;
-        const r = 0.14 + Math.abs(Math.sin(seed * 2.7 + p * 3.3)) * 0.1;
-        points.push(new THREE.Vector3(Math.cos(angle) * r, Math.sin(angle * 1.6 + a) * r * 0.8, Math.sin(angle) * r));
-      }
-      const arc = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), lineMaterial(0xfff1a6, 0.65));
-      group.add(arc);
-    }
-    const ringA = new THREE.Mesh(projectileGeometry("bolt-ring"), projectileMaterial("bolt-ring-a", 0xfff1a6, 0.62, true));
-    const ringB = new THREE.Mesh(projectileGeometry("bolt-ring"), projectileMaterial("bolt-ring-b", team, 0.5, true));
-    ringA.rotation.x = Math.PI / 2;
-    ringB.rotation.x = Math.PI / 2;
-    ringA.rotation.z = projectile.age * (small ? 10 : 6);
-    ringB.rotation.z = Math.PI / 2 - projectile.age * (small ? 12 : 8);
-    ringA.scale.setScalar(0.92);
-    ringB.scale.setScalar(0.68);
-    core.scale.setScalar(1 + Math.sin(projectile.age * 18) * 0.1);
-    group.add(core, ringA, ringB);
-    if (big) {
-      const halo = new THREE.Mesh(projectileGeometry("bolt-ring"), projectileMaterial("bolt-ring-c", 0xfff1a6, 0.32));
-      halo.rotation.x = Math.PI / 2;
-      halo.rotation.z = projectile.age * 4;
-      halo.scale.setScalar(1.25);
-      group.add(halo);
-    }
-    group.scale.setScalar(1.18 * (small ? 0.78 : big ? 1.35 : 1));
-    return group;
-  }
-  if (projectile.kind === "grenade") {
-    const mortar = src === "mortar";
-    const body = new THREE.Mesh(projectileGeometry("grenade-body"), projectileMaterial("grenade-body", 0x2f342a, 0.98));
-    const band = new THREE.Mesh(projectileGeometry("grenade-band"), projectileMaterial("grenade-band", 0xffbf69, 0.82));
-    const spark = new THREE.Mesh(projectileGeometry("grenade-spark"), projectileMaterial("grenade-spark", 0xfff1a6, 0.6, true));
-    // Armed-fuse blink: a red pip strobing faster as it flies — reads as "live ordnance".
-    const fuse = new THREE.Mesh(
-      projectileGeometry("ember"),
-      projectileMaterial("grenade-fuse", 0xff3b30, Math.sin(projectile.age * 26) > 0 ? 0.95 : 0.15, true),
-    );
-    fuse.position.y = 0.16;
-    fuse.scale.setScalar(1.5);
-    group.add(fuse);
-    band.rotation.x = Math.PI / 2;
-    band.rotation.z = projectile.age * (projectile.state === "rolling" ? 20 : 9);
-    spark.position.y = projectile.state === "rolling" ? -0.02 : -0.18;
-    spark.position.x = projectile.state === "rolling" ? Math.sin(projectile.age * 18) * 0.12 : 0;
-    spark.scale.setScalar((projectile.state === "rolling" ? 0.72 : 1) + Math.sin(projectile.age * 18) * 0.18);
-    group.add(body, band, spark);
-    // Mortar bomb: tail fins and a heavier body that tumbles end-over-end through its arc.
-    if (mortar && projectile.state !== "rolling") {
-      for (const angle of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
-        const fin = new THREE.Mesh(projectileGeometry("shell-fin"), projectileMaterial("mortar-fin", 0x4a4f33, 0.92));
-        fin.position.set(Math.cos(angle) * 0.12, 0.16, Math.sin(angle) * 0.12);
-        fin.rotation.y = angle;
-        fin.scale.set(0.6, 0.7, 0.6);
-        group.add(fin);
-      }
-      group.rotation.x = projectile.age * 5;
-    }
-    if (projectile.state === "rolling") group.rotation.z = projectile.age * 8;
-    group.scale.setScalar((projectile.state === "rolling" ? 0.94 : 1.08) * (mortar ? 1.22 : 1));
-    return group;
-  }
-  // Rifle family: the marksman fires a long bright tracer, the scout a small fast dart, the
-  // heavy gunner a fat hot round; everyone else the standard sparking tracer.
-  const sniper = src === "sniper";
-  const scout = src === "scout";
-  const heavyGun = src === "heavy";
-  const tipColor = heavyGun ? 0xffb24a : team;
-  // Additive throughout: a rifle round is a streak of light, not a painted pellet.
-  const slug = new THREE.Mesh(projectileGeometry("rifle-slug"), projectileMaterial("rifle-slug", 0xfffbe8, 0.98, true));
-  const tip = new THREE.Mesh(projectileGeometry("rifle-tip"), projectileMaterial("rifle-tip", tipColor, 0.96, true));
-  const spark = new THREE.Mesh(projectileGeometry("rifle-spark"), projectileMaterial("rifle-spark", heavyGun ? 0xffd08a : 0xfff1a6, 0.72, true));
-  const tailA = new THREE.Mesh(projectileGeometry("rifle-tail"), projectileMaterial("rifle-tail-a", tipColor, 0.42, true));
-  const tailB = new THREE.Mesh(projectileGeometry("rifle-tail"), projectileMaterial("rifle-tail-b", 0xeaffff, 0.28, true));
-  tip.position.y = 0.18;
-  spark.position.y = -0.2;
-  tailA.position.y = -0.24;
-  tailB.position.y = -0.34;
-  tailB.scale.setScalar(0.72);
-  group.add(slug, tip, spark, tailA, tailB);
-  if (sniper) {
-    group.scale.set(0.74, 1.7, 0.74);
-    const streak = new THREE.Mesh(projectileGeometry("rifle-tail"), projectileMaterial("rifle-streak", team, 0.22));
-    streak.position.y = -0.5;
-    streak.scale.set(0.6, 1.8, 0.6);
-    group.add(streak);
-  } else if (scout) {
-    group.scale.setScalar(0.78);
-  } else if (heavyGun) {
-    group.scale.set(1.32, 1.05, 1.32);
-    addEmbers(group, 2, 0xffae57, 0.07, -0.3, projectile.age);
-  } else {
-    addEmbers(group, 2, 0xffe6b0, 0.05, -0.3, projectile.age);
-  }
-  return group;
-}
-
-// A quick bright flash at the muzzle on the first frames of a round's life. Drawn at the
-// projectile's stored origin (the muzzle point), so it needs no separate sim event.
+// Firing recoil window (seconds) and how long debris chunks lie before sinking out of sight.
 const RECOIL_TIME = 0.16;
 // Debris chunks lie for this long, then sink out of sight over the second span (seconds).
 const DEBRIS_SINK_AT = 14;
 const DEBRIS_SINK_FOR = 4;
-const MUZZLE_FLASH_TIME = 0.12;
-function makeMuzzleFlash(projectile: Projectile): THREE.Object3D | undefined {
-  if (projectile.kind === "grenade" || projectile.age > MUZZLE_FLASH_TIME) return undefined;
-  const t = clamp01(projectile.age / MUZZLE_FLASH_TIME);
-  const fade = 1 - t;
-  const scale = muzzleFlashScale(projectile) * (0.55 + t * 0.9);
-  const group = new THREE.Group();
-  const core = new THREE.Mesh(projectileGeometry("muzzle-flash"), projectileMaterial("muzzle-core", 0xfff4cf, 0.9 * fade));
-  core.scale.setScalar(scale * 1.35);
-  const glow = new THREE.Mesh(projectileGeometry("muzzle-flash"), projectileMaterial("muzzle-glow", blendHex(projectile.color, 0xffd27a, 0.5), 0.4 * fade));
-  glow.scale.setScalar(scale * 2.6);
-  // A spike along the barrel: the flash is a cone of gas, not a ball. Stretched down the shot
-  // direction and gone in the first frames, it is what makes a shot read at tactical zoom.
-  const spike = new THREE.Mesh(projectileGeometry("muzzle-flash"), projectileMaterial("muzzle-core", 0xfff4cf, 0.75 * fade));
-  spike.scale.set(scale * 0.5, scale * 0.5, scale * (2.2 + t * 2.5));
-  spike.position.set(projectile.direction.x * scale * 0.9, 0, projectile.direction.z * scale * 0.9);
-  spike.lookAt(projectile.direction.x * 10, 0, projectile.direction.z * 10);
-  group.add(core, glow, spike);
-  group.position.set(projectile.origin.x, projectile.originHeight, projectile.origin.z);
-  return group;
-}
-
-function muzzleFlashScale(p: Projectile): number {
-  if (p.kind === "shell") return p.sourceKind === "artillery" ? 1.5 : 1.2;
-  if (p.kind === "bolt") return p.sourceKind === "base" ? 1.2 : 0.85;
-  if (p.sourceKind === "heavy") return 0.8;
-  if (p.sourceKind === "sniper") return 0.7;
-  return 0.55;
-}
-
-function makeProjectileShadow(projectile: Projectile, color: number): THREE.Mesh {
-  const groundY = terrainHeightAt(projectile.position) + 0.028;
-  const heightAboveGround = Math.max(0, projectile.height - groundY);
-  const radius = projectile.kind === "shell" ? 0.46 : projectile.kind === "grenade" ? projectile.state === "rolling" ? 0.24 : 0.38 : projectile.kind === "bolt" ? 0.34 : 0.22;
-  const opacity = projectile.state === "rolling" ? 0.24 : Math.max(0.1, 0.28 - heightAboveGround * 0.035);
-  const shadow = new THREE.Mesh(
-    projectileShadowGeometry(radius),
-    projectileShadowMaterial(projectile.kind === "bolt" ? color : 0x000000, opacity)
-  );
-  shadow.rotation.x = -Math.PI / 2;
-  shadow.position.set(projectile.position.x, groundY, projectile.position.z);
-  shadow.scale.z = 0.55;
-  return shadow;
-}
 
 // Team identity is applied by BLENDING toward a team hue, never by replacing a part's authored
 // colour outright.
@@ -5585,7 +5423,8 @@ const GROUND_TILE = 11;
  * A flat, irregular ground blob: a triangle fan whose rim radius wanders per vertex, so the outline
  * has no straight edge and no corner anywhere on it. Lies in the XZ plane at `y`.
  */
-function blobGeometry(radius: number, x: number, y: number, z: number, rand: () => number): THREE.BufferGeometry {
+type BlobRim = { p1: number; p2: number; a1: number; a2: number };
+function blobGeometry(radius: number, x: number, y: number, z: number, rand: () => number, rim?: BlobRim): THREE.BufferGeometry {
   const segments = 22;
   const positions = new Float32Array((segments + 2) * 3);
   const uvs = new Float32Array((segments + 2) * 2);
@@ -5598,6 +5437,7 @@ function blobGeometry(radius: number, x: number, y: number, z: number, rand: () 
   const p2 = rand() * Math.PI * 2;
   const a1 = 0.16 + rand() * 0.16;
   const a2 = 0.08 + rand() * 0.12;
+  if (rim) { rim.p1 = p1; rim.p2 = p2; rim.a1 = a1; rim.a2 = a2; }
   for (let i = 0; i <= segments; i += 1) {
     const t = (i % segments) / segments;
     const angle = t * Math.PI * 2;
@@ -5635,13 +5475,19 @@ function rewriteWorldUvs(geometry: THREE.BufferGeometry, tile: number): void {
 
 // Where the cosmetic ground plates lie (centre, nominal radius, top height), so units can stand ON
 // them instead of in them. Rebuilt with the plates; read by plateLiftAt every frame per unit.
-const plateDiscs: { x: number; z: number; r: number; y: number }[] = [];
+const plateDiscs: { x: number; z: number; r: number; y: number; rim: BlobRim }[] = [];
 function plateLiftAt(point: Vec2, groundHeight: number): number {
   if (groundHeight > 0.001) return 0; // plates only lie on the arena floor
   let lift = 0;
   for (const disc of plateDiscs) {
+    if (disc.y <= lift) continue;
     const dx = point.x - disc.x, dz = point.z - disc.z;
-    if (dx * dx + dz * dz <= disc.r * disc.r && disc.y > lift) lift = disc.y;
+    const d2 = dx * dx + dz * dz;
+    if (d2 > disc.r * disc.r * 2.4) continue; // outside the widest possible rim
+    // The exact jittered rim blobGeometry drew, so the lift ends where the plate ends.
+    const angle = Math.atan2(dz, dx);
+    const r = disc.r * (1 + Math.sin(angle * 2 + disc.rim.p1) * disc.rim.a1 + Math.sin(angle * 3 + disc.rim.p2) * disc.rim.a2);
+    if (d2 <= r * r) lift = disc.y;
   }
   return lift;
 }
@@ -5684,6 +5530,12 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
     for (let i = 0; i < perVariant; i += 1) {
       const cx = (rand() - 0.5) * width * 0.92;
       const cz = (rand() - 0.5) * depth * 0.92;
+      // Never over water: the plates sit above the water surface (ledger #5) and a 6–15m blob laid
+      // across a channel hid the whole crossing under ice-coloured ground. Skip any patch whose
+      // widest possible rim could touch a water rect (the three blobs spread ±4.5m from the centre).
+      const reach = 15 * 1.52 + 4.5;
+      if (terrainWater().some((w) => cx > w.minX - reach && cx < w.maxX + reach && cz > w.minZ - reach && cz < w.maxZ + reach
+        && Math.max(w.minX - cx, cx - w.maxX, 0) + Math.max(w.minZ - cz, cz - w.maxZ, 0) < 6 + 4.5)) continue;
       // Three overlapping JITTERED BLOBS per patch. The first version used rotated rounded boxes,
       // and the union of rectangles has straight edges and sharp corners — at tactical distance
       // those read as arrowheads and cut corners lying on the ground, i.e. as a rendering glitch
@@ -5692,7 +5544,8 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
         const blobRadius = 6 + rand() * 9;
         const blobX = cx + (rand() - 0.5) * 9;
         const blobY = 0.06 - (vi * 3 + k) * 0.005;
-        plateDiscs.push({ x: blobX, z: 0, r: blobRadius * 0.92, y: blobY });
+        const rim: BlobRim = { p1: 0, p2: 0, a1: 0, a2: 0 };
+        plateDiscs.push({ x: blobX, z: 0, r: blobRadius, y: blobY, rim });
         parts.push(blobGeometry(
           blobRadius,
           blobX,
@@ -5705,9 +5558,13 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
           blobY,
           (plateDiscs[plateDiscs.length - 1].z = cz + (rand() - 0.5) * 9),
           rand,
+          rim,
         ));
       }
     }
+    // A variant whose every blob fell over water has nothing to merge — mergeGeometries([]) throws
+    // (it reads geometries[0]), and that killed applyMap on Crossfire Basin.
+    if (!parts.length) continue;
     const merged = mergeGeometries(parts, false);
     for (const geo of parts) geo.dispose();
     if (!merged) continue;
@@ -5924,7 +5781,13 @@ function makeWaterAndBridges(theme: MapTheme, surface: GroundSurface): THREE.Gro
   const bedColor = new THREE.Color(theme.ground).multiplyScalar(0.34);
   const bedMat = new THREE.MeshStandardMaterial({ color: bedColor, roughness: 1, metalness: 0 });
   const bankMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(theme.ground).multiplyScalar(0.62), roughness: 0.98, metalness: 0 });
-  const waterColor = new THREE.Color(0x2f6d94).lerp(new THREE.Color(theme.fog), 0.22);
+  // Less fog in the tint than before: on the frozen map the channel washed out to the ice's grey
+  // and stopped reading as "cannot walk here".
+  const waterColor = new THREE.Color(0x3a7fb0).lerp(new THREE.Color(theme.fog), 0.08);
+  // Toon shoreline: an inked rim on the bank lip and foam strokes just inside it, the same
+  // language as the unit outlines. A channel must read as water at tactical distance.
+  const inkMat = new THREE.MeshBasicMaterial({ color: 0x10161c });
+  const foamMat = new THREE.MeshBasicMaterial({ color: 0xdfeef6, transparent: true, opacity: 0.55, depthWrite: false });
   // Smoother and glossier than the ground so it catches the key light and reads as a liquid
   // surface rather than a flat panel; still short of a mirror, which would strobe as the camera moves.
   // A flat translucent panel reads as blue tape laid on the ground however dark you make it: with
@@ -5934,17 +5797,23 @@ function makeWaterAndBridges(theme: MapTheme, surface: GroundSurface): THREE.Gro
   const ripple = surface.normalMap.clone();
   ripple.needsUpdate = true;
   ripple.repeat.set(2.4, 2.4);
+  // Toon wave strokes over the whole surface (a channel can be wider than the screen, so the rim
+  // alone cannot carry the read). World-tiled and scrolled with the ripple by syncWater.
+  const waves = waveStrokeTexture();
   const waterMat = new THREE.MeshStandardMaterial({
     color: waterColor,
+    map: waves,
     transparent: true,
-    opacity: 0.82,
-    roughness: 0.18,
-    metalness: 0.42,
+    opacity: 0.86,
+    // Flat, not glossy: a specular hot-spot under bloom blew out to a white sun on the channel.
+    roughness: 0.62,
+    metalness: 0.04,
     depthWrite: false,
     normalMap: ripple,
-    normalScale: new THREE.Vector2(0.55, 0.55),
+    normalScale: new THREE.Vector2(0.35, 0.35),
   });
   group.userData.ripple = ripple;
+  group.userData.waves = waves;
 
   for (const r of water) {
     const w = r.maxX - r.minX;
@@ -5975,9 +5844,39 @@ function makeWaterAndBridges(theme: MapTheme, surface: GroundSurface): THREE.Gro
     }
 
     const plane = new THREE.Mesh(new THREE.BoxGeometry(w, 0.09, d), waterMat);
+    rewriteWorldUvs(plane.geometry, 7); // one wave tile per 7 world units, continuous across rects
     plane.position.set(cx, SURFACE, cz);
     plane.receiveShadow = true;
     group.add(plane);
+    // Ink rim along the inside edge of each bank lip, sitting on the lip's top face.
+    const INK = 0.11;
+    for (const [ox, oz, sx, sz] of [
+      [0, -(d / 2) - INK / 2, w + INK * 2, INK],
+      [0, d / 2 + INK / 2, w + INK * 2, INK],
+      [-(w / 2) - INK / 2, 0, INK, d],
+      [w / 2 + INK / 2, 0, INK, d],
+    ] as const) {
+      const ink = new THREE.Mesh(new THREE.BoxGeometry(sx, 0.02, sz), inkMat);
+      ink.position.set(cx + ox, 0.075, cz + oz); // just above the lip top (-0.14 + 0.21)
+      group.add(ink);
+    }
+    // Foam strokes: short pale dashes a little inside the rim, staggered so they read as lapping
+    // water and not as a second outline.
+    const dash = (x: number, z: number, len: number, alongX: boolean, i: number): void => {
+      const jitter = ((i * 7) % 5) * 0.06;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(alongX ? len : 0.07, 0.015, alongX ? 0.07 : len), foamMat);
+      m.position.set(x, SURFACE + 0.06, z);
+      m.position[alongX ? "z" : "x"] += (i % 2 ? 1 : -1) * jitter;
+      group.add(m);
+    };
+    for (let x = r.minX + 0.6, i = 0; x < r.maxX - 0.6; x += 1.5, i += 1) {
+      dash(x + 0.4, r.minZ + 0.42, 0.7, true, i);
+      dash(x + 0.4, r.maxZ - 0.42, 0.7, true, i + 3);
+    }
+    for (let z = r.minZ + 0.6, i = 0; z < r.maxZ - 0.6; z += 1.5, i += 1) {
+      dash(r.minX + 0.42, z + 0.4, 0.7, false, i + 1);
+      dash(r.maxX - 0.42, z + 0.4, 0.7, false, i + 4);
+    }
   }
 
   const deckMat = new THREE.MeshStandardMaterial({ color: 0x6b5136, roughness: 0.82, metalness: 0.04 });
@@ -6132,8 +6031,7 @@ function modelKeyFor(entity: CombatEntity): ModelKey | null {
         case "barricade": return "barricade";
         case "sandbag": return "sandbags";
         case "crate": return "crates";
-        case "rock": return "rock";
-        case "rubble": return "rock";
+        // rock / rubble: the seeded props kit (art/props), procedural fallback — never a Meshy hull.
         default: return null;
       }
     default: return null;
@@ -6543,17 +6441,11 @@ const _paintTmp = new THREE.Color();
 // Scratch id->part map reused by syncEntity's per-frame traverse.
 const _partById = new Map<string, DamagePart>();
 
-// Quantized comet-tail opacities (newest segment first) — fixed values keep the cached
-// line-material pool bounded.
-const TRAIL_OPACITIES = [0.62, 0.4, 0.26, 0.16, 0.09, 0.05, 0.03];
-// Quantized smoke-wake opacities (behind shells/grenades), same cache discipline.
-const SMOKE_OPACITIES = [0.26, 0.17, 0.1, 0.05];
 
 const tubeGeometries = new Map<string, THREE.CylinderGeometry>();
 const endpointGeometries = new Map<string, THREE.RingGeometry>();
 const projectileShadowGeometries = new Map<string, THREE.CircleGeometry>();
 const materials = new Map<string, THREE.Material>();
-const projectileGeometries = new Map<string, THREE.BufferGeometry>();
 const labelTextures = new Map<string, { texture: THREE.CanvasTexture; aspect: number }>();
 const floatingNumberTextures = new Map<string, { texture: THREE.CanvasTexture; aspect: number }>();
 
@@ -6634,57 +6526,4 @@ function projectileShadowMaterial(color: number, opacity: number): THREE.MeshBas
   return material as THREE.MeshBasicMaterial;
 }
 
-function projectileGeometry(key: string): THREE.BufferGeometry {
-  let geometry = projectileGeometries.get(key);
-  if (!geometry) {
-    if (key === "shell-body") {
-      geometry = new THREE.CylinderGeometry(0.14, 0.16, 0.42, 16);
-    } else if (key === "shell-nose") {
-      geometry = new THREE.ConeGeometry(0.15, 0.3, 16);
-    } else if (key === "shell-exhaust") {
-      geometry = new THREE.SphereGeometry(0.14, 12, 8);
-    } else if (key === "shell-band") {
-      geometry = new THREE.TorusGeometry(0.16, 0.012, 8, 18);
-    } else if (key === "shell-fin") {
-      geometry = new THREE.BoxGeometry(0.05, 0.18, 0.34);
-    } else if (key === "bolt-core") {
-      geometry = new THREE.OctahedronGeometry(0.2, 0);
-    } else if (key === "bolt-ring") {
-      geometry = new THREE.TorusGeometry(0.26, 0.018, 8, 24);
-    } else if (key === "grenade-body") {
-      geometry = new THREE.IcosahedronGeometry(0.18, 1);
-    } else if (key === "grenade-band") {
-      geometry = new THREE.TorusGeometry(0.18, 0.014, 8, 18);
-    } else if (key === "grenade-spark") {
-      geometry = new THREE.SphereGeometry(0.1, 10, 8);
-    } else if (key === "rifle-slug") {
-      geometry = new THREE.CylinderGeometry(0.035, 0.045, 0.34, 10);
-    } else if (key === "rifle-tip") {
-      geometry = new THREE.SphereGeometry(0.055, 10, 8);
-    } else if (key === "rifle-spark") {
-      geometry = new THREE.SphereGeometry(0.08, 10, 8);
-    } else if (key === "rifle-tail") {
-      geometry = new THREE.ConeGeometry(0.055, 0.22, 10);
-    } else if (key === "ember") {
-      geometry = new THREE.SphereGeometry(0.05, 8, 6);
-    } else if (key === "muzzle-flash") {
-      geometry = new THREE.SphereGeometry(0.18, 12, 8);
-    } else {
-      geometry = new THREE.SphereGeometry(0.08, 10, 8);
-    }
-    geometry.userData.shared = true;
-    projectileGeometries.set(key, geometry);
-  }
-  return geometry;
-}
 
-function projectileMaterial(key: string, color: number, opacity: number, additive = false): THREE.MeshBasicMaterial {
-  const materialKey = `projectile:${key}:${color}:${opacity.toFixed(2)}:${additive ? "a" : "n"}`;
-  let material = materials.get(materialKey);
-  if (!material) {
-    material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending });
-    material.userData.shared = true; // pooled across frames — disposeSubtree must never free it
-    materials.set(materialKey, material);
-  }
-  return material as THREE.MeshBasicMaterial;
-}

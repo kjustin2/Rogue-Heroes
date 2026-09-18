@@ -61,7 +61,7 @@ export const FACTIONS: readonly FactionDef[] = [
   {
     id: "vanguard",
     name: "Vanguard",
-    blurb: "Combined arms — real armour and a full air wing, but no indirect fire.",
+    blurb: "Armour and a full air wing, but no indirect fire.",
     detail: "Combined-arms regulars: the honest baseline. Tanks, APCs, flak and the whole air wing, with no glaring weakness — except that it fields no mortar, grenadier or artillery at all. A dug-in enemy has to be taken, not shelled.",
     roster: ["soldier", "scout", "sniper", "striker", "heavy", "jumper", "medic", "engineer", "tank", "apc", "flak", "gunship", "interceptor", "transport"],
     tech: ["recon", "assault", "support", "armor", "airwing", "breach", "bulwark", "plating", "hunter", "triage", "welding", "optics", "ghillie"],

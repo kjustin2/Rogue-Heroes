@@ -7,7 +7,7 @@ const candidates = ["blender"];
 const root = "C:/Program Files/Blender Foundation";
 if (existsSync(root)) for (const d of readdirSync(root).sort().reverse()) candidates.push(join(root, d, "blender.exe"));
 for (const exe of candidates) {
-  const r = spawnSync(exe, ["--background", "--python", ...process.argv.slice(2)], { stdio: "inherit", shell: false });
+  const r = spawnSync(exe, ["--background", "--python-exit-code", "1", "--python", ...process.argv.slice(2)], { stdio: "inherit", shell: false });
   if (r.error?.code === "ENOENT") continue;
   process.exit(r.status ?? 1);
 }

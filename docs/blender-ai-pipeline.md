@@ -249,6 +249,12 @@ prototyping/inspection aid, not the pipeline.** Everything below sharpens that.
 
 ## Implement next (ranked by visual impact ÷ effort)
 
+**Status 2026-09-18:** items **1, 3, 4, 5, 10, 14** are DONE (Cycles vertex AO, validator + selftest,
+props kit with 29 seeded variants incl. tree canopies, warm/cool ramp, CLAUDE.md Blender rules);
+item 2 was already true (pooled parts are `MeshToonMaterial`). Remaining, in priority order: 6
+(gltf-transform post-pass on both kits), 7 (authored pivots as extras), 8/9 (walk-cycle channels,
+pose bank), 11 (sway weights in `COLOR_1`), 12 (cliff skirt — hatching-ledger blast radius), 13, 15.
+
 1. **Cycles AO → vertex colours inside `finish()`** for every kit part, exported as `COLOR_0`.
    Crevice AO on helmets/packs/boots is the cheapest "authored, not primitive" read there is.
    Touches: `game/art/infantry/author_kit.py` (`finish`, export `export_vertex_color="ACTIVE"`),

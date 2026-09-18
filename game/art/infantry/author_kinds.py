@@ -64,6 +64,9 @@ def cut_below(obj, z):
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=(0, 0, z), plane_no=(0, 0, 1), clear_inner=True)
+    # A cut that lands on one of the sphere's own rings leaves zero-area slivers (validate.py
+    # caught 104 on the mortar cap); dissolve them so the bevel never sees them.
+    bmesh.ops.dissolve_degenerate(bm, dist=1e-5, edges=bm.edges[:])
     bm.to_mesh(obj.data)
     bm.free()
 
@@ -137,7 +140,7 @@ def helmet_grenadier():
 
 def helmet_mortar():
     cap = add_sphere("cap", 0.5, scale=(0.96, 1.0, 0.7))
-    cut_below(cap, 0.0)
+    cut_below(cap, -0.01)
     brim = add_cyl("brim", 0.56, 0.06, vertices=18)
     cups = [add_cyl(f"cup{s}", 0.2, 0.1, location=(s * 0.5, 0, -0.16), rotation=(0, math.radians(90), 0), vertices=12) for s in (-1, 1)]
     band = add_box("band", (0.12, 0.1, 0.9), location=(0, 0, 0.1))

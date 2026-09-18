@@ -26,3 +26,4 @@ game/assets-raw/
 
 # One-off failing diagnostic used to investigate the maintained chaos suite
 game/src/game/_chaosdiag.test.ts
+__pycache__/
