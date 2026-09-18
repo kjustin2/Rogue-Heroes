@@ -18,14 +18,14 @@ until every row is DONE with evidence. Nothing is DONE from code alone: each row
 | 10 | Dash / charge / breach | main | DONE | abilities3.test.ts, chaos green |
 | 11 | GUI clarity pass (hints, disclosure, chrome) | gui agent | DONE (merged) | ui-audit clean 4×4 |
 | 12 | One art direction (toon infantry + stylized hulls) | main | DONE | `gpu-direction.png` (tank + APC + troopers, one ramp/outline) |
-| 13 | Remaining unit-identity picks (5, 8–10, 14–18, 20) | sim agent | RUNNING | tests per pick |
-| 14 | Balance check after all abilities (bot-vs-bot win rates) | sim agent | RUNNING | balance.test.ts table |
-| 15 | Docs: CLAUDE.md + fun-pass Status updated for everything above | main | TODO | diff |
+| 13 | Remaining unit-identity picks (5, 8–10, 14–18, 20) | sim agent | DONE (merged) | abilities4.test.ts (5,9,10,14,15,17,18; 16 skipped — needs a new persistent object); `gpu-recon.png` |
+| 14 | Balance check after all abilities (bot-vs-bot win rates) | sim agent | DONE (merged) | balance.test.ts: 6 maps × 4 seeds self-play, per-kind dmg/$ table, seats 60/40; tank/striker/sapper/gunship/jumper/scout retuned |
+| 15 | Docs: CLAUDE.md + fun-pass Status updated for everything above | main | DONE | CLAUDE.md + fun-pass + unit-identity-ideas + blender-ai-pipeline all updated in the merges |
 | 17 | Map-select page: faction pick is hidden behind the Deploy button; sweep every menu so no option is occluded/buried and every choice is clear | menu+toon agent | DONE (merged) | `gpu-mapselect-1280x720-picked.png` etc.; auditUI `occluded` rule fault-injected in smoke:ui-audit |
 | 18 | Where units can't walk must read (water/cliffs) — coordinator gap for ask 3 | main | DONE | `gpu-nowalk-water.png` (plates off water, toon waves, inked rim), `gpu-nowalk-cliff.png` |
 | 19 | Per-map prop variety (≥6 theme kinds per map) — coordinator gap for asks 2/7 | art agent | DONE (merged) | 8–12 kinds per map, `gpu-map-*.png` |
 | 20 | Hit reactions for cannon/mortar/flamer/bomb — coordinator gap for ask 1 | projectile agent | DONE (merged) | `shoveNear` on blast/impact/bolt; `filmstrip-flame.png` shows the target rock |
-| 16 | Final: `test:full`, `soak:gpu`, perf rebase, standalone build handed over | main | TODO | logs |
+| 16 | Final: `test:full`, `soak:gpu`, perf rebase, standalone build handed over | main | DONE | smoke:core 9/9, perf OK, soak:gpu 0% jank (2 first-resolve compiles, max 20.8ms), `release/Rogue Heroes Tactics 0.1.0.exe` |
 
 Rules every worker follows: gate with typecheck + vitest + the relevant smoke, commit on the
 worktree branch with `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`, never leave a dev
