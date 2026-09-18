@@ -89,6 +89,7 @@ export class WorldRenderer {
   private readonly actionRangeRing: THREE.Mesh;
   private readonly shootRangeRing: THREE.Mesh;
   private lastRangeSig = "";
+  private lastPlacementSig = "";
   private readonly placementRing: THREE.Mesh;
   private readonly placementDisc: THREE.Mesh;
   private ghostedEntityIds = new Set<string>();
@@ -201,7 +202,7 @@ export class WorldRenderer {
     this.scene.add(this.shootRangeRing);
 
     this.placementRing = new THREE.Mesh(
-      new THREE.RingGeometry(0.985, 1.0, 96),
+      new THREE.RingGeometry(0.985, 1.0, 160, 1),
       new THREE.MeshBasicMaterial({ color: 0x8ef2d1, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false })
     );
     this.placementRing.rotation.x = -Math.PI / 2;
@@ -209,8 +210,8 @@ export class WorldRenderer {
     this.scene.add(this.placementRing);
 
     this.placementDisc = new THREE.Mesh(
-      new THREE.CircleGeometry(1, 64),
-      new THREE.MeshBasicMaterial({ color: 0x8ef2d1, transparent: true, opacity: 0.08, side: THREE.DoubleSide, depthWrite: false })
+      new THREE.PlaneGeometry(2, 2, 48, 48), // subdivided so drapeToTerrain can lay it over steps
+      new THREE.MeshBasicMaterial({ color: 0x8ef2d1, transparent: true, opacity: 0.08, side: THREE.DoubleSide, depthWrite: false, map: discMaskTexture() })
     );
     this.placementDisc.rotation.x = -Math.PI / 2;
     this.placementDisc.visible = false;
@@ -3299,11 +3300,12 @@ export class WorldRenderer {
       if (tags.has("spotter-aura")) auras.push({ radius: 6.2, color: 0x8de4ff });
       for (const aura of auras) {
         const ring = new THREE.Mesh(
-          new THREE.RingGeometry(aura.radius - 0.13, aura.radius, 64),
+          new THREE.RingGeometry(aura.radius - 0.13, aura.radius, 96, 1),
           new THREE.MeshBasicMaterial({ color: aura.color, transparent: true, opacity: 0.16 + pulse * 0.1, side: THREE.DoubleSide, depthWrite: false }),
         );
         ring.rotation.x = -Math.PI / 2;
-        ring.position.set(entity.position.x, entity.elevation + 0.05, entity.position.z);
+        ring.position.set(entity.position.x, entity.elevation, entity.position.z);
+        drapeToTerrain(ring, 0.05); // aura rings cross ledges too (rebuilt only when the signature changes)
         this.auraRoot.add(ring);
       }
     }
@@ -3316,12 +3318,19 @@ export class WorldRenderer {
     this.placementDisc.visible = Boolean(placement);
     if (!placement) return;
     const pulse = (Math.sin(performance.now() * 0.006) + 1) * 0.5;
-    const y = terrainHeightAt(placement.center) + 0.05;
-    this.placementRing.position.set(placement.center.x, y + 0.02, placement.center.z);
+    const y = terrainHeightAt(placement.center);
+    const sig = `${placement.center.x.toFixed(2)}|${placement.center.z.toFixed(2)}|${placement.radius.toFixed(2)}`;
+    this.placementRing.position.set(placement.center.x, y, placement.center.z);
     this.placementRing.scale.setScalar(placement.radius);
-    (this.placementRing.material as THREE.MeshBasicMaterial).opacity = 0.5 + pulse * 0.2;
     this.placementDisc.position.set(placement.center.x, y, placement.center.z);
     this.placementDisc.scale.setScalar(placement.radius);
+    if (sig !== this.lastPlacementSig) {
+      // The build radius around a base spans mesa steps and the shoreline; drape both like the move field.
+      drapeToTerrain(this.placementRing, 0.07);
+      drapeToTerrain(this.placementDisc, 0.05);
+      this.lastPlacementSig = sig;
+    }
+    (this.placementRing.material as THREE.MeshBasicMaterial).opacity = 0.5 + pulse * 0.2;
   }
 
   private syncOrders(sim: TacticalSim): void {
@@ -4062,13 +4071,31 @@ function updateUnitMarker(marker: THREE.Group, entity: CombatEntity, color: numb
  * it, in the mesh's own frame, so the shape follows the steps. Assumes rotation.x === -PI/2 and
  * uniform scale; the mesh's position.y is the reference the offsets are measured from.
  */
+let _discMask: THREE.CanvasTexture | undefined;
+/** A hard-edged white disc on transparent — turns a subdivided square plane into a fillable circle. */
+function discMaskTexture(): THREE.CanvasTexture {
+  if (_discMask) return _discMask;
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = "#fff";
+  ctx.beginPath(); ctx.arc(size / 2, size / 2, size / 2 - 1, 0, Math.PI * 2); ctx.fill();
+  _discMask = new THREE.CanvasTexture(canvas);
+  return _discMask;
+}
+
 function drapeToTerrain(mesh: THREE.Mesh, lift: number): void {
   const pos = mesh.geometry.attributes.position as THREE.BufferAttribute;
   const s = mesh.scale.x || 1;
   for (let i = 0; i < pos.count; i += 1) {
     const wx = mesh.position.x + pos.getX(i) * s;
     const wz = mesh.position.z - pos.getY(i) * s; // local +y is world -z once laid flat
-    pos.setZ(i, (terrainHeightAt({ x: wx, z: wz }) + lift - mesh.position.y) / s);
+    const p = { x: wx, z: wz };
+    // The ground as drawn: talus tiers and the cosmetic plates both rise above terrainHeightAt.
+    const ground = Math.max(visualGroundAt(p), terrainHeightAt(p) + plateLiftAt(p, terrainHeightAt(p)));
+    pos.setZ(i, (ground + lift - mesh.position.y) / s);
   }
   pos.needsUpdate = true;
   mesh.geometry.computeBoundingSphere();
@@ -5585,7 +5612,8 @@ const GROUND_TILE = 11;
  * A flat, irregular ground blob: a triangle fan whose rim radius wanders per vertex, so the outline
  * has no straight edge and no corner anywhere on it. Lies in the XZ plane at `y`.
  */
-function blobGeometry(radius: number, x: number, y: number, z: number, rand: () => number): THREE.BufferGeometry {
+type BlobRim = { p1: number; p2: number; a1: number; a2: number };
+function blobGeometry(radius: number, x: number, y: number, z: number, rand: () => number, rim?: BlobRim): THREE.BufferGeometry {
   const segments = 22;
   const positions = new Float32Array((segments + 2) * 3);
   const uvs = new Float32Array((segments + 2) * 2);
@@ -5598,6 +5626,7 @@ function blobGeometry(radius: number, x: number, y: number, z: number, rand: () 
   const p2 = rand() * Math.PI * 2;
   const a1 = 0.16 + rand() * 0.16;
   const a2 = 0.08 + rand() * 0.12;
+  if (rim) { rim.p1 = p1; rim.p2 = p2; rim.a1 = a1; rim.a2 = a2; }
   for (let i = 0; i <= segments; i += 1) {
     const t = (i % segments) / segments;
     const angle = t * Math.PI * 2;
@@ -5635,13 +5664,19 @@ function rewriteWorldUvs(geometry: THREE.BufferGeometry, tile: number): void {
 
 // Where the cosmetic ground plates lie (centre, nominal radius, top height), so units can stand ON
 // them instead of in them. Rebuilt with the plates; read by plateLiftAt every frame per unit.
-const plateDiscs: { x: number; z: number; r: number; y: number }[] = [];
+const plateDiscs: { x: number; z: number; r: number; y: number; rim: BlobRim }[] = [];
 function plateLiftAt(point: Vec2, groundHeight: number): number {
   if (groundHeight > 0.001) return 0; // plates only lie on the arena floor
   let lift = 0;
   for (const disc of plateDiscs) {
+    if (disc.y <= lift) continue;
     const dx = point.x - disc.x, dz = point.z - disc.z;
-    if (dx * dx + dz * dz <= disc.r * disc.r && disc.y > lift) lift = disc.y;
+    const d2 = dx * dx + dz * dz;
+    if (d2 > disc.r * disc.r * 2.4) continue; // outside the widest possible rim
+    // The exact jittered rim blobGeometry drew, so the lift ends where the plate ends.
+    const angle = Math.atan2(dz, dx);
+    const r = disc.r * (1 + Math.sin(angle * 2 + disc.rim.p1) * disc.rim.a1 + Math.sin(angle * 3 + disc.rim.p2) * disc.rim.a2);
+    if (d2 <= r * r) lift = disc.y;
   }
   return lift;
 }
@@ -5692,7 +5727,8 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
         const blobRadius = 6 + rand() * 9;
         const blobX = cx + (rand() - 0.5) * 9;
         const blobY = 0.06 - (vi * 3 + k) * 0.005;
-        plateDiscs.push({ x: blobX, z: 0, r: blobRadius * 0.92, y: blobY });
+        const rim: BlobRim = { p1: 0, p2: 0, a1: 0, a2: 0 };
+        plateDiscs.push({ x: blobX, z: 0, r: blobRadius, y: blobY, rim });
         parts.push(blobGeometry(
           blobRadius,
           blobX,
@@ -5705,6 +5741,7 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
           blobY,
           (plateDiscs[plateDiscs.length - 1].z = cz + (rand() - 0.5) * 9),
           rand,
+          rim,
         ));
       }
     }

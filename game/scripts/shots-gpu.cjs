@@ -62,9 +62,18 @@ app.whenReady().then(async () => {
         await js(`(() => { const sim = window.__rht.sim; const covers = sim.entities.filter(e => e.kind === "cover" && e.coverKind === "ridge"); const r = covers[0]; const u = sim.debugSpawn("soldier", "player", { x: r ? r.position.x - r.radius - 0.8 : 0, z: r ? r.position.z : 0 }); sim.select(u.id); sim.setIntent("move"); window.__rht.setView({ x: u.position.x, z: u.position.z, zoom: 0.55, pitch: 0.6, yaw: 0.25 }); })()`);
         await sleep(900);
         await shot("rings-move");
-        await js(`(() => { const sim = window.__rht.sim; const hq = sim.entities.find(e => e.team === "player" && e.kind === "hq"); if (hq) { sim.select(hq.id); window.__rht.setView({ x: hq.position.x, z: hq.position.z, zoom: 0.9, pitch: 0.6, yaw: 0.25 }); } })()`);
+        await js(`(() => { const sim = window.__rht.sim; const hq = sim.entities.find(e => e.team === "player" && e.kind === "base"); if (hq) { sim.select(hq.id); window.__rht.setView({ x: hq.position.x, z: hq.position.z, zoom: 0.9, pitch: 0.6, yaw: 0.25 }); } })()`);
         await sleep(900);
         await shot("rings-base");
+        // ...and the build-placement circle (Defenses tab → wall), which spans the mesa step.
+        await js(`(() => { const sim = window.__rht.sim; sim.setIntent("build"); sim.setPendingBuild("wall"); })()`);
+        await sleep(700);
+        await shot("rings-build");
+        await js(`(() => { const sim = window.__rht.sim; sim.setPendingBuild(undefined); sim.setIntent("select"); })()`);
+        // A medic beside the ledge: its aura ring must follow the step like the move field does.
+        await js(`(() => { const sim = window.__rht.sim; const r = sim.entities.filter(e => e.kind === "cover" && e.coverKind === "ridge")[0]; const m = sim.debugSpawn("medic", "player", { x: r ? r.position.x - r.radius - 1.2 : 2, z: r ? r.position.z + 1 : 2 }); window.__rht.deselect(); window.__rht.setView({ x: m.position.x, z: m.position.z, zoom: 0.5, pitch: 0.6, yaw: 0.25 }); })()`);
+        await sleep(900);
+        await shot("rings-aura");
         continue;
       }
       if (s === "abilities") {
