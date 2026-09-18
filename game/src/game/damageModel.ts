@@ -112,6 +112,9 @@ export interface CombatEntity {
   suppressedUntilTurn?: number;
   // HULL DOWN: a tank that did not move this resolve takes 30% less damage until it moves.
   hullDown?: boolean;
+  // DEPLOYED (artillery): outriggers down. The gun only fires deployed; deploying costs a turn
+  // (an explicit order, or automatically when it does not move), and moving undeploys it.
+  deployed?: boolean;
   // DOWNED (medic stabilise): an infantry unit that would have died with a friendly medic in reach
   // lies as a body instead — alive but inert and untargetable — until the next turn start, when a
   // medic still in reach revives it or it dies for real.

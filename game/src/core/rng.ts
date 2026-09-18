@@ -9,6 +9,15 @@ export class Rng {
     this.state = seed >>> 0;
   }
 
+  /** The raw generator state, for a dry run that must leave the stream untouched. */
+  save(): number {
+    return this.state;
+  }
+
+  load(state: number): void {
+    this.state = state >>> 0;
+  }
+
   next(): number {
     this.state = (this.state + 0x6d2b79f5) >>> 0;
     let t = this.state;

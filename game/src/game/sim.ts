@@ -77,8 +77,8 @@ export { FACTIONS, factionDef, DEFAULT_FACTION, type FactionId, type FactionDef 
 export { MAPS, mapDef, flagPositions, mapCenter, mapSize, type MapDef, type MapTheme, type MapSize } from "./maps";
 
 export type Phase = "command" | "resolve" | "victory" | "defeat";
-export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "overwatch" | "mine" | "interact" | "inspect" | "inspect-detail" | "build" | "support" | "load" | "unload" | "smoke";
-export type OrderKind = "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "load" | "unload" | "smoke";
+export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "overwatch" | "mine" | "interact" | "inspect" | "inspect-detail" | "build" | "support" | "load" | "unload" | "smoke" | "recon" | "deploy";
+export type OrderKind = "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "load" | "unload" | "smoke" | "recon" | "deploy";
 
 // Hard cap on how many combat units one side can field at once.
 export const POP_CAP = 10;
@@ -145,6 +145,16 @@ const TRANSPORT_CAPACITY = 2; // how many ground units an air transport can carr
 export const STRIKER_CHARGE = 5;
 // Hull-down tanks take this fraction of incoming shot damage.
 const HULL_DOWN_DAMAGE = 0.7;
+// AIRBURST (grenadier): a launcher round that bursts on cover still lands this share of its direct
+// damage on the target sheltering right behind it — cover is half protection, not full.
+const AIRBURST_SHARE = 0.5;
+const AIRBURST_REACH = 2.7;
+// FEAR (flamer): enemy infantry this close to burning ground at turn start run from it.
+export const FLAMER_FEAR_RADIUS = 6;
+// STRAFE (gunship): a move also fires one burst at every hostile within this much of the path.
+export const STRAFE_RADIUS = 4;
+// CARPET (bomber): three bombs in a line along the heading, this far apart.
+export const CARPET_BOMBS = 3;
 // A jump trooper landing next to an enemy: damage before difficulty scaling.
 const SLAM_LANDING_DAMAGE = 15;
 
@@ -2985,8 +2995,26 @@ export class TacticalSim {
     this.pushLog(`${actor.name}'s ${projectile.kind === "grenade" ? "grenade" : "shell"} bursts near ${trigger.name}`);
     this.effect("blast", point, point, projectile.kind === "grenade" ? 0xffbf69 : 0xffd166, 0.72, projectile.kind === "grenade" ? 2.25 : 1.6);
     this.applyExplosiveRadius(actor, point, projectile.kind === "grenade" ? 2.55 : 1.75, projectile.kind === "grenade" ? 34 : 26, `${trigger.name} is caught in the blast`);
+    if (trigger.kind === "cover") this.airburstBehindCover(actor, projectile, trigger);
     this.removeProjectile(projectile.id);
     if (order) order.done = true;
+  }
+
+  // AIRBURST. A grenadier round that bursts on (or fuses beside) a cover piece still comes down on
+  // whoever is sheltering right behind it: the intended target takes half of the direct hit the
+  // cover just spared it. Cover is half protection against the launcher, not full.
+  private airburstBehindCover(actor: CombatEntity, projectile: Projectile, cover: CombatEntity): void {
+    if (actor.kind !== "grenadier") return;
+    const target = this.entity(projectile.targetId);
+    if (!target || target.id === cover.id || !target.status.alive || target.downed || target.flying) return;
+    if (dist(target.position, projectile.position) > AIRBURST_REACH + target.radius) return;
+    const part = preferredPart(target, "center");
+    const direct = this.estimateShotDamage(actor, target, part, "center", false, projectile.attackMode ?? "weapon");
+    const burst = applyDamage(target, part.id, Math.max(1, Math.round(direct * AIRBURST_SHARE)));
+    if (burst.amount <= 0) return;
+    this.pushLog(`${actor.name}'s round airbursts over ${cover.name} — ${target.name} is hit behind it`);
+    this.effect("impact", target.position, target.position, 0xffbf69, 0.42, target.radius);
+    this.afterDamage(actor, target, burst);
   }
 
   private impactProjectile(projectile: Projectile, target: CombatEntity, targetPart: DamagePart, cover: boolean): void {
@@ -3022,6 +3050,7 @@ export class TacticalSim {
       this.effect("impact", target.position, target.position, 0xffffff, 0.42, target.radius + 0.45);
       this.effect("blast", projectile.position, projectile.position, result.destroyed ? 0xffd166 : 0xffbf69, 0.7, target.radius + 1.05);
       this.resolveShellSplash(actor, target, targetPart, amount, projectile.position);
+      this.airburstBehindCover(actor, projectile, target);
     } else {
       this.effect("impact", target.position, target.position, result.destroyed ? 0xffd166 : 0xffffff, 0.42, target.radius);
     }
