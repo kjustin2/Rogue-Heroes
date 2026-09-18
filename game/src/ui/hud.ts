@@ -82,6 +82,24 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "unload", label: "Unload", tip: "Transport only. Click ground to fly there and set your passengers down. Costs 1 CP." },
 ];
 
+// WHAT THE CARD DOES, AS AN INSTRUCTION. The catalog tips above are reference text (what the
+// verb is, who has it, what it costs); the hover on the card is where a new player decides what
+// to click NEXT, so it reads as a step -- select this, then click that, then confirm -- with the
+// cost at the end. One line each; anything longer belongs in the order body once the verb is armed.
+// An action with no entry here falls back to its catalog tip.
+const ACTION_HOW: Partial<Record<Intent, string>> = {
+  move: "Select Move, then click ground inside the cyan ring. 1 CP.",
+  shoot: "Select Shoot, click an enemy, pick a part, then Confirm. 1 CP.",
+  grenade: "Select Grenade, then click ground or an enemy within throw range. Splash damage; limited supply.",
+  ram: "Select Ram, click a target beside the tank, then Confirm. 72 damage; dents your front armor. 1 CP.",
+  melee: "Select Strike, click an enemy within reach, then Confirm. Strikers hit hardest. 1 CP.",
+  defend: "Crouch where you stand: better accuracy, harder to head-shot, slower next move. 1 CP.",
+  overwatch: "Select Overwatch, then click ground to aim the cone; the first enemy to move into it takes a snap shot. 1 CP.",
+  mine: "Plant a hidden mine at the sapper's feet; enemies that step on it take a blast. $15 + 1 CP.",
+  load: "Select Load, then click a friendly ground unit to lift it aboard. 1 CP.",
+  unload: "Select Unload, then click ground to fly there and set passengers down. 1 CP.",
+};
+
 export interface HudCallbacks {
   setIntent(intent: Intent): void;
   endTurn(): void;
@@ -787,15 +805,22 @@ function targetChip(entity: CombatEntity, selected: boolean, actor: CombatEntity
   `;
 }
 
+// Same voice as the order bar's "what now" line: one imperative sentence naming the next click.
 function emptyTargetPanel(action: Intent): string {
-  const titleText = action === "move" ? "Move Active" : "Pick Target";
+  const titleText = action === "move" ? "Pick a destination" : "Pick a target";
   const body = action === "move"
-    ? "Click ground on the map or select a cover object below."
+    ? "Click ground inside the cyan ring, or a cover card below."
     : action === "ram"
-      ? "Choose a hostile or cover object for the ram."
+      ? "Click an enemy or cover beside the tank, or a card below."
       : action === "grenade"
-        ? "Click ground to throw at a location, or choose a hostile/cover target."
-      : "Choose a hostile or cover object, then pick a part in the order bar.";
+        ? "Click ground to throw there, or an enemy card below."
+        : action === "load"
+          ? "Click a friendly ground unit to lift it aboard."
+          : action === "unload"
+            ? "Click ground to fly there and set passengers down."
+            : action === "overwatch"
+              ? "Click ground to aim the watch cone, or Watch Ahead below."
+              : "Click an enemy on the map or a card below, then pick a part.";
   return `
     <div class="inspect-head">
       <div>
@@ -1005,7 +1030,8 @@ function orderPlanner(
       <div class="order-identity">
         <div class="panel-title">Order</div>
         <h2>${actor ? escapeHtml(actor.name) : "No unit selected"}</h2>
-        ${actor ? unitVitals(actor) : `<p class="order-hint">Click a trooper in the world, or a card in the squad list.</p>`}
+        ${actor ? unitVitals(actor) : ""}
+        ${orderHint(actor, focusedAction, sim)}
       </div>
       <div class="cp-badge" data-tip="${actor ? escapeAttr(cpTip(actor)) : "Select a living squad unit."}">
         ${actor ? `${actor.commandPoints}/${actor.maxCommandPoints} CP` : "-- CP"}
@@ -1025,9 +1051,9 @@ function orderPlanner(
               const jumps = option.id === "move" && actor?.kind === "jumper";
               const label = option.id === "grenade" ? bombVerb(actor) : jumps ? "Jump" : option.label;
               const tip = option.id === "grenade" && actor?.flying
-                ? "Drop a bomb straight down beneath the aircraft — blast radius shown. Fly over the target; cannot hit aircraft."
-                : jumps ? "Jet-jump to any dry ground in range — over cliffs, water and walls, onto the high ground. Airborne for the leap, so flak can catch it. Costs 1 CP."
-                : option.id === "ram" ? ramTip : option.id === "defend" ? defendTip : option.tip;
+                ? "Select Bomb, then Confirm to drop straight down on whatever is beneath the aircraft. Cannot hit aircraft."
+                : jumps ? "Select Jump, then click any dry ground in range — over cliffs, water and walls. Airborne for the leap, so flak can catch it. 1 CP."
+                : ACTION_HOW[option.id] ?? option.tip;
               // A disabled card states the REASON. Silently dead buttons are how a player concludes
               // a game is broken rather than that their unit is hurt.
               return `<button class="tool action action-${option.id} ${action === option.id ? "active" : ""} ${disabled ? "disabled" : ""}" data-order-action="${option.id}" data-disabled="${disabled}" data-tip="${escapeAttr(why ?? tip)}"><kbd>${index + 1}</kbd><strong>${label}</strong><span>${why ? escapeHtml(why) : actionCostLabel(option.id, actor)}</span></button>`;
@@ -1042,6 +1068,23 @@ function orderPlanner(
       </div>` : ""}
     </div>
   `;
+}
+
+// THE "WHAT NOW" LINE. One sentence under the order header that names the next click. It only
+// exists in the states where the bar would otherwise be silent: nothing selected, a unit that has
+// spent its command points (its cards are hidden, so without this the bar just shows a name), and
+// the resolve phase. While an order is armed the order body carries its own instruction.
+function orderHint(actor: CombatEntity | undefined, focusedAction: boolean, sim: TacticalSim): string {
+  const text = !actor
+    ? "Click a trooper in the world, or a card in the squad list."
+    : sim.phase !== "command"
+      ? "Orders are resolving — the next round opens when the action ends."
+      : !actor.status.alive
+        ? `${actor.name} is out of action — pick another unit.`
+        : actor.commandPoints <= 0 && !focusedAction
+          ? "Orders set — pick another unit, or press Space to end the turn."
+          : "";
+  return text ? `<p class="order-hint">${escapeHtml(text)}</p>` : "";
 }
 
 // UNIT VITALS.
@@ -1087,9 +1130,9 @@ function unitVitals(actor: CombatEntity | undefined): string {
 
   return `
     <div class="unit-vitals">
-      <div class="vitals-bar vitals-bar--${band}" data-tip="${escapeAttr(`${left} of ${total} hit points across ${actor.parts.length} parts`)}">
-        <span style="width:${pct}%"></span>
-        <em>${pct}%</em>
+      <div class="vitals-row" data-tip="${escapeAttr(`${left} of ${total} hit points across ${actor.parts.length} parts`)}">
+        <div class="vitals-bar vitals-bar--${band}"><span style="width:${pct}%"></span></div>
+        <em class="vitals-pct">${pct}%</em>
       </div>
       <div class="vitals-parts">${chips}</div>
       ${impaired}
@@ -1106,11 +1149,11 @@ function shootState(
   canShoot: boolean,
   sim: TacticalSim
 ): string {
-  if (!actor) return `<div class="order-note">No active unit.</div>`;
+  if (!actor) return `<div class="order-note">Click a trooper first.</div>`;
   if (!target) {
     return sim.selectedCanGroundTarget()
-      ? `<div class="order-note">Choose a hostile or cover target, or click open ground to shell a spot.</div>`
-      : `<div class="order-note">Choose a hostile or cover target.</div>`;
+      ? `<div class="order-note">Click an enemy or cover, or open ground to shell that spot.</div>`
+      : `<div class="order-note">Click an enemy on the map or a card in the Target list.</div>`;
   }
   if (target.team === "player") {
     return `
@@ -1177,7 +1220,7 @@ function grenadeState(
   reason: string | undefined,
   sim: TacticalSim
 ): string {
-  if (!actor) return `<div class="order-note">No active unit.</div>`;
+  if (!actor) return `<div class="order-note">Click a trooper first.</div>`;
   if (actor.flying) {
     // Aircraft bomb straight down beneath themselves — no target or aim, just confirm.
     const canDrop = actor.grenades > 0 && actor.commandPoints > 0 && actor.status.alive && sim.phase === "command";
@@ -1193,7 +1236,7 @@ function grenadeState(
       </button>
     `;
   }
-  if (!target) return `<div class="order-note">Click ground to throw at a location, or choose a hostile/cover target.</div>`;
+  if (!target) return `<div class="order-note">Click ground to throw there, or an enemy on the map.</div>`;
   if (target.team === "player") {
     return `
       <div class="target-summary blocked">
@@ -1340,7 +1383,7 @@ function coverInteractionState(actor: CombatEntity | undefined, target: CombatEn
 }
 
 function inspectTargetState(actor: CombatEntity | undefined, target: CombatEntity | undefined, expanded: boolean, sim: TacticalSim): string {
-  if (!target) return `<div class="order-note">Select a target.</div>`;
+  if (!target) return `<div class="order-note">Click an enemy on the map or a card in the Target list.</div>`;
   const parts = sim.targetableParts(target);
   return `
     <div class="target-summary">
@@ -1373,7 +1416,7 @@ function ramState(target: CombatEntity | undefined, canRam: boolean, reason: str
   return `
     <div class="target-summary ${canRam || !target ? "" : "blocked"}">
       <strong>${target ? escapeHtml(target.name) : "No target"}</strong>
-      <span>${reason ? escapeHtml(reason) : target ? "Impact: 72 target damage, 14 self armor damage." : "Choose a hostile or cover target."}</span>
+      <span>${reason ? escapeHtml(reason) : target ? "Impact: 72 target damage, 14 self armor damage." : "Click an enemy or cover beside the tank."}</span>
     </div>
     <button class="btn confirm ${canRam ? "" : "disabled"}" data-confirm="ram" data-disabled="${!canRam}" data-tip="${escapeAttr(tip)}">
       Confirm Ram
@@ -1440,7 +1483,7 @@ function baseCommandPanel(base: CombatEntity, sim: TacticalSim): string {
   return `
     <div class="order-head">
       <div>
-        <div class="panel-title">Home Base</div>
+        <div class="panel-title">Command</div>
         <h2>${escapeHtml(base.name)}</h2>
       </div>
       <div class="cp-badge" data-tip="${escapeAttr(cpTip(base))}">
@@ -1450,7 +1493,7 @@ function baseCommandPanel(base: CombatEntity, sim: TacticalSim): string {
     <div class="command-layout single-detail">
       <div class="command-section detail-deck">
         <div class="order-body">
-          ${commanding ? baseCommandBody(base, sim) : `<div class="order-note">The base can only act during the command phase.</div>${baseSummary(base, sim)}`}
+          ${commanding ? baseCommandBody(base, sim) : `<div class="order-note">Orders are resolving — the base acts again next round.</div>${baseSummary(base, sim)}`}
         </div>
       </div>
     </div>
@@ -1473,11 +1516,12 @@ function baseSummary(base: CombatEntity, sim: TacticalSim): string {
 // buttons. A tab bar switches between Deploy / Tech / Defenses / Support / Base; only the active
 // section renders. activeBaseTab is module state (there is one HUD).
 function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
-  if (!base.status.alive) return `<div class="order-note">${escapeHtml(base.name)} is disabled.</div>`;
+  if (!base.status.alive) return `<div class="order-note">${escapeHtml(base.name)} is out of action — it cannot deploy or research.</div>`;
   const hasCp = base.commandPoints > 0;
+  // Same voice as the order bar's "what now" line: the next click, then the rule it obeys.
   const note = hasCp
-    ? "One command point a turn — deploy, research, build, support or upgrade."
-    : `${base.name} has used its command point this turn.`;
+    ? "Pick a tab, then click a card — the base gets one order a turn."
+    : "Base order used — command your troops, or press Space to end the turn.";
   syncRevealTracking(base);
 
   // An armed support strike snaps to its tab so the targeting note stays visible. (A pending
@@ -1503,7 +1547,7 @@ function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
     : `<div class="spawn-options part-options">${troopDeckHtml(base, sim)}</div>`;
 
   return `
-    <div class="order-note">${escapeHtml(note)}</div>
+    <p class="order-hint base-hint">${escapeHtml(note)}</p>
     ${baseSummary(base, sim)}
     ${tabBar}
     <div class="base-tab-body base-tab-body--${activeBaseTab}">${section}</div>
@@ -1900,7 +1944,7 @@ function partButton(actor: CombatEntity, target: CombatEntity, part: DamagePart,
   return `
     <button class="part-choice ${selected ? "active" : ""} ${blocker || preview?.blockedByGround ? "blocked" : ""}" data-part="${part.id}" data-tip="${escapeAttr(tip)}">
       <strong>${escapeHtml(part.label)}</strong>
-      <span>${statusTextOverride ? `${statusTextOverride} / ` : ""}${roleLabel(part)} / ${Math.ceil(part.hp)} HP</span>
+      <span>${statusTextOverride ? `${statusTextOverride} / ` : ""}${partSub(part)}</span>
       <em>${accuracy} / ${preview ? `${preview.amount} dmg` : "--"}</em>
     </button>
   `;
@@ -1912,7 +1956,7 @@ function destroyedPartChip(part: DamagePart): string {
   return `
     <button class="part-choice destroyed" data-part="${part.id}" data-disabled="true" disabled data-tip="${escapeAttr(`${part.label} is destroyed (0 HP) and can no longer be targeted.`)}">
       <strong>${escapeHtml(part.label)}</strong>
-      <span>Destroyed / ${roleLabel(part)} / 0 HP</span>
+      <span>Destroyed / 0 HP</span>
       <em>—</em>
     </button>
   `;
@@ -1926,7 +1970,7 @@ function meleePartButton(part: DamagePart, selected: boolean, dmg?: number): str
   return `
     <button class="part-choice ${selected ? "active" : ""}" data-part="${part.id}" data-tip="${escapeAttr(`${partTip(part)} Strike this exact part if the striker is adjacent.${dmg !== undefined ? ` Estimated damage: ${dmg}.` : ""}`)}">
       <strong>${escapeHtml(part.label)}</strong>
-      <span>${roleLabel(part)} / ${Math.ceil(part.hp)} HP</span>
+      <span>${partSub(part)}</span>
       <em>${dmg !== undefined ? `${dmg} dmg` : "strike"}</em>
     </button>
   `;
@@ -2102,6 +2146,14 @@ function statusText(entity: CombatEntity): string {
 function kindLabel(entity: CombatEntity): string {
   if (entity.kind === "cover" && entity.coverKind) return title(entity.coverKind.replace("-", " "));
   return title(entity.kind);
+}
+
+// "Head / Head / 16 HP" said the role twice; the sub-line only names the role when it adds
+// something the label does not (Body -> Core, Rifle -> Weapon, Legs -> Mobility).
+function partSub(part: DamagePart): string {
+  const role = roleLabel(part);
+  const hp = `${Math.ceil(part.hp)} HP`;
+  return role.toLowerCase() === part.label.toLowerCase() ? hp : `${role} / ${hp}`;
 }
 
 function roleLabel(part: DamagePart): string {

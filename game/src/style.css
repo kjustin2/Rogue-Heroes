@@ -5497,3 +5497,78 @@ body.menus-open:not(.in-battle) #ui { visibility: hidden; }
   text-transform: uppercase;
   color: #7f8a90;
 }
+
+/* ---------------------------------------------------------------------------
+   IN-BATTLE HUD DISCLOSURE PASS (2026-09-16)
+   Geometry that the ui-audit can measure, plus the few pieces of chrome the
+   1600x900 / 1280x720 / 2560x1080 screenshots showed drifting.
+   --------------------------------------------------------------------------- */
+
+/* The order bar is ONE width. With the target drawer open it used to switch to
+   `right: 316px; width: auto`, which at 2560px stretched it to ~2000px while every
+   other state held 960px. It now keeps the 960px cap and only shrinks when the
+   drawer would actually collide with it. */
+@media (min-width: 1181px) {
+  #ui:has(.target-panel) .commandbar {
+    right: auto;
+    width: min(960px, calc(100vw - 250px - 316px));
+  }
+}
+
+/* Header row: identity grows, so the CP badge and the Back button hug the right
+   edge together instead of the badge floating mid-bar whenever Back appears. */
+.order-identity {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.order-head .cp-badge {
+  flex: 0 0 auto;
+}
+
+/* Condition percentage beside the bar, not painted over its lit end at 9px. */
+.vitals-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+.vitals-pct {
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 3ch;
+  text-align: right;
+}
+
+/* Part cards: name + hit-chance on the first row, role/HP on a full-width second
+   row. The old two-column grid wrapped "Mobility / 24 HP" onto a third line at
+   the 1600px card width and the row of cards read as different heights. */
+.commandbar .part-choice {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+}
+.commandbar .part-choice strong { grid-row: 1; grid-column: 1; }
+.commandbar .part-choice em { grid-row: 1; grid-column: 2; align-self: center; }
+.commandbar .part-choice span { grid-row: 2; grid-column: 1 / -1; white-space: nowrap; }
+
+/* Base deck: the readout strip was as tall as an action card and the note above it
+   was body copy. Same rhythm as the unit bar now -- hint line, slim stats, tabs. */
+.base-hint { margin: 2px 0 4px; }
+.base-summary.detail-statline { margin-top: 4px; }
+.base-summary.detail-statline div {
+  min-height: 0;
+  padding: 5px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.base-summary.detail-statline strong { margin-top: 0; }
+.order-hint { font-size: 0.78rem; }
+
+/* Toasts never sit on the tutorial panel: while it is up (top-centre, ~170px),
+   any toast that is not an onboarding hint (medals, intel, declassified) drops
+   below it instead of landing on its buttons. */
+body:has(.tutorial-panel) #toasts { top: 214px; }
