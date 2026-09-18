@@ -11,10 +11,13 @@ describe("map scatter", () => {
     it(`${map.id}: props do not overlap, straddle steps, or sit in water`, () => {
       const sim = new TacticalSim();
       sim.configure(mapDef(map.id), "destroy", "normal");
-      const props = sim.entities.filter((e) => e.kind === "cover" && e.coverKind !== "ridge" && e.coverKind !== "cliff");
+      const props = sim.entities.filter((e) => e.kind === "cover" && e.coverKind !== "ridge" && e.coverKind !== "cliff" && e.coverKind !== "span"); // a span IS the bridge
       const problems: string[] = [];
       for (let i = 0; i < props.length; i += 1) {
         const a = props[i];
+        for (const b of sim.mapDef.terrain.bridges ?? []) {
+          if (a.position.x >= b.minX - a.radius && a.position.x <= b.maxX + a.radius && a.position.z >= b.minZ - a.radius && a.position.z <= b.maxZ + a.radius) problems.push(`${a.name}@${a.position.x.toFixed(1)},${a.position.z.toFixed(1)} sits on a bridge`);
+        }
         if (onTerrainEdge(a.position, Math.min(0.6, a.radius * 0.8))) problems.push(`${a.name}@${a.position.x.toFixed(1)},${a.position.z.toFixed(1)} straddles a terrain step`);
         for (let j = i + 1; j < props.length; j += 1) {
           const b = props[j];

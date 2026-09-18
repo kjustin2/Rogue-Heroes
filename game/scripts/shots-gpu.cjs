@@ -76,6 +76,32 @@ app.whenReady().then(async () => {
         await shot("rings-aura");
         continue;
       }
+      if (s === "direction") {
+        // One art direction: a tank, an APC and two troopers in one close frame.
+        await js(`window.__rht.startBattle("verdant", "destroy", "normal")`);
+        await sleep(1500);
+        await js(`(() => { const sim = window.__rht.sim; const t = sim.debugSpawn("tank", "player", { x: -2, z: 0 }); t.yaw = 0.6; const a = sim.debugSpawn("apc", "enemy", { x: 3.5, z: -2 }); a.yaw = 2.4; const s1 = sim.debugSpawn("soldier", "player", { x: 0.6, z: 1.6 }); s1.yaw = 0.4; const s2 = sim.debugSpawn("heavy", "player", { x: 1.8, z: 2.4 }); s2.yaw = 0.2; window.__rht.deselect(); window.__rht.setView({ x: 0.5, z: 0.5, zoom: 0.36, pitch: 0.5, yaw: 0.35 }); })()`);
+        await sleep(2500);
+        await shot("direction");
+        continue;
+      }
+      if (s === "nowalk") {
+        // Impassable reads: a cliff face and a water channel with its bridge, close.
+        await js(`window.__rht.startBattle("causeway", "destroy", "normal")`);
+        await sleep(1500);
+        await js(`(() => { const sim = window.__rht.sim; const w = sim.mapDef.terrain.water?.[0]; const b = sim.mapDef.terrain.bridges?.[0]; const cx = b ? (b.minX + b.maxX) / 2 : (w ? (w.minX + w.maxX) / 2 : 0); const cz = w ? (w.minZ + w.maxZ) / 2 : 0; window.__rht.deselect(); window.__rht.setView({ x: cx, z: cz, zoom: 0.5, pitch: 0.55, yaw: 0.4 }); })()`);
+        await sleep(1200);
+        await shot("nowalk-water");
+        if (process.env.PROBE) console.log("water probe:", await js(`(() => { const out = []; window.__rht.sceneObject().traverse((o) => { if (o.isMesh && o.material && o.material.map && o.material.map.image && o.material.map.image.width === 256 && o.geometry.type === "BoxGeometry") out.push({ y: o.position.y.toFixed(2), w: o.geometry.parameters.width.toFixed(1), map: !!o.material.map, uv: !!o.geometry.getAttribute("uv"), op: o.material.opacity, color: o.material.color.getHexString() }); }); return JSON.stringify(out); })()`));
+        if (process.env.PROBE) { const data = await js(`(() => { let c; window.__rht.sceneObject().traverse((o) => { if (!c && o.isMesh && o.material && o.material.map && o.geometry.type === "BoxGeometry" && o.material.map.image && o.material.map.image.width === 256) c = o.material.map.image; }); return c ? c.toDataURL() : ""; })()`); if (data) fs.writeFileSync(path.join(__dirname, "..", "shots", "probe-waves.png"), Buffer.from(data.split(",")[1], "base64")); }
+        if (process.env.PROBE) { await js(`window.__rht.sceneObject().traverse((o) => { if (o.isMesh && o.material && o.material.map && o.geometry.type === "BoxGeometry" && o.material.map.image && o.material.map.image.width === 256) { o.material.color.set(0xff0000); o.material.opacity = 1; } })`); await sleep(400); await shot("probe-water-red"); }
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(1500);
+        await js(`(() => { const sim = window.__rht.sim; const b = sim.mapDef.terrain.blocks.filter(x => x.height > 1.5)[0]; window.__rht.deselect(); window.__rht.setView({ x: b.minX - 1, z: (b.minZ + b.maxZ) / 2, zoom: 0.5, pitch: 0.5, yaw: 0.6 }); })()`);
+        await sleep(1200);
+        await shot("nowalk-cliff");
+        continue;
+      }
       if (s === "abilities") {
         // Smoke cloud, a marked enemy, a downed trooper beside a medic: the three new cues in one frame.
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);

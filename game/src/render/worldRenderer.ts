@@ -89,6 +89,7 @@ export class WorldRenderer {
   private readonly actionRangeRing: THREE.Mesh;
   private readonly shootRangeRing: THREE.Mesh;
   private lastRangeSig = "";
+  private waterWaves: THREE.Texture | undefined;
   private lastPlacementSig = "";
   private readonly placementRing: THREE.Mesh;
   private readonly placementDisc: THREE.Mesh;
@@ -973,6 +974,7 @@ export class WorldRenderer {
     if (!ripple) return;
     const t = performance.now() * 0.00004;
     ripple.offset.set(t, t * 0.62);
+    if (this.waterWaves) this.waterWaves.offset.set(-t * 0.5, t * 0.3);
   }
 
   // Drift the ambient particles each frame, wrapping them within the arena bounds.
@@ -1060,6 +1062,7 @@ export class WorldRenderer {
     this.sceneryRoot.add(makeTerrainBlocks(theme.ground, theme.groundAccent, surface));
     const water = makeWaterAndBridges(theme, surface);
     this.waterRipple = (water.userData.ripple as THREE.Texture | undefined) ?? undefined;
+    this.waterWaves = (water.userData.waves as THREE.Texture | undefined) ?? undefined;
     this.sceneryRoot.add(water);
     this.sceneryRoot.add(makeSurroundings(theme, width, depth));
 
@@ -2523,6 +2526,28 @@ export class WorldRenderer {
       this.box(group, entity, part.id, [1.5, 0.5, 1.0], [0, 1.18, 0], 0x807a6e, { metalness: 0.04 });
       this.box(group, entity, part.id, [1.42, 0.16, 0.1], [0, 0.62, 0.66], 0x14110d);
       this.cylinder(group, entity, part.id, 0.12, 0.55, [-0.72, 1.2, -0.3], 0x5a5449, [0, 0, 0], { metalness: 0.2 });
+    } else if (entity.coverKind === "span") {
+      // A BRIDGE SPAN is the destructible middle of a crossing: it reads as part of the deck —
+      // plank runs, two rail posts a side and a low rail — never as a crate parked on the bridge.
+      // Oriented along the crossing (the bridge rect's long axis) via the bridge under it.
+      const bridge = terrainBridges().find((b) => entity.position.x >= b.minX - 0.5 && entity.position.x <= b.maxX + 0.5 && entity.position.z >= b.minZ - 0.5 && entity.position.z <= b.maxZ + 0.5);
+      const along = bridge ? (bridge.maxX - bridge.minX >= bridge.maxZ - bridge.minZ ? 0 : Math.PI / 2) : 0;
+      const w = bridge ? Math.min(bridge.maxX - bridge.minX, bridge.maxZ - bridge.minZ) : 2.4;
+      // Local frame: +x runs ALONG the crossing; `along` turns it for a z-long bridge.
+      const at = (ax: number, az: number): [number, number, number] => [Math.cos(along) * ax + Math.sin(along) * az, 0, -Math.sin(along) * ax + Math.cos(along) * az];
+      for (const t of [-0.7, 0, 0.7]) {
+        const [px, , pz] = at(0, t * (w / 2.4));
+        this.box(group, entity, part.id, [1.9, 0.06, 0.42], [px, 0.2, pz], 0x6a4a2c, { rotation: [0, along, 0] });
+      }
+      for (const side of [-1, 1]) {
+        const off = side * (w / 2 - 0.12);
+        for (const t of [-0.85, 0.85]) {
+          const [px, , pz] = at(t, off);
+          this.box(group, entity, part.id, [0.12, 0.5, 0.12], [px, 0.42, pz], 0x4f3620, { rotation: [0, along, 0] });
+        }
+        const [rx, , rz] = at(0, off);
+        this.box(group, entity, part.id, [1.9, 0.08, 0.1], [rx, 0.66, rz], 0x7c5a36, { rotation: [0, along, 0] });
+      }
     } else {
       this.box(group, entity, part.id, [1.82, 1.25, 0.56], [0, 0.63, 0], 0xb98b5b);
       this.box(group, entity, part.id, [1.66, 0.22, 0.62], [0, 1.37, 0], 0xe0b673);
@@ -4071,6 +4096,52 @@ function updateUnitMarker(marker: THREE.Group, entity: CombatEntity, color: numb
  * it, in the mesh's own frame, so the shape follows the steps. Assumes rotation.x === -PI/2 and
  * uniform scale; the mesh's position.y is the reference the offsets are measured from.
  */
+let _waveStrokes: THREE.CanvasTexture | undefined;
+/**
+ * Toon water: a tiling multiplier texture of sparse pale wave arcs on white (the material colour
+ * supplies the hue, like the ground texture). Reads as "water, not floor" at any zoom.
+ */
+function waveStrokeTexture(): THREE.CanvasTexture {
+  if (_waveStrokes) return _waveStrokes;
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#b9c9d3";
+  ctx.fillRect(0, 0, size, size);
+  let seed = 0xa11ce;
+  const rand = (): number => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 0xffffffff; };
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineCap = "round";
+  // Draw each stroke at its position and at the wrapped positions so the tile is seamless.
+  for (let i = 0; i < 14; i += 1) {
+    const x = rand() * size, y = rand() * size, len = 26 + rand() * 34, lw = 4 + rand() * 3;
+    ctx.lineWidth = lw;
+    for (const [ox, oy] of [[0, 0], [size, 0], [-size, 0], [0, size], [0, -size]]) {
+      ctx.beginPath();
+      ctx.moveTo(x + ox, y + oy);
+      ctx.quadraticCurveTo(x + ox + len * 0.5, y + oy - len * 0.22, x + ox + len, y + oy);
+      ctx.stroke();
+    }
+  }
+  // A few darker troughs so the surface has two values, not one.
+  ctx.strokeStyle = "#7f97a6";
+  for (let i = 0; i < 8; i += 1) {
+    const x = rand() * size, y = rand() * size, len = 18 + rand() * 24;
+    ctx.lineWidth = 2.5;
+    for (const [ox, oy] of [[0, 0], [size, 0], [-size, 0], [0, size], [0, -size]]) {
+      ctx.beginPath();
+      ctx.moveTo(x + ox, y + oy);
+      ctx.quadraticCurveTo(x + ox + len * 0.5, y + oy + len * 0.2, x + ox + len, y + oy);
+      ctx.stroke();
+    }
+  }
+  _waveStrokes = new THREE.CanvasTexture(canvas);
+  _waveStrokes.wrapS = _waveStrokes.wrapT = THREE.RepeatWrapping;
+  _waveStrokes.colorSpace = THREE.SRGBColorSpace;
+  return _waveStrokes;
+}
+
 let _discMask: THREE.CanvasTexture | undefined;
 /** A hard-edged white disc on transparent — turns a subdivided square plane into a fillable circle. */
 function discMaskTexture(): THREE.CanvasTexture {
@@ -5719,6 +5790,12 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
     for (let i = 0; i < perVariant; i += 1) {
       const cx = (rand() - 0.5) * width * 0.92;
       const cz = (rand() - 0.5) * depth * 0.92;
+      // Never over water: the plates sit above the water surface (ledger #5) and a 6–15m blob laid
+      // across a channel hid the whole crossing under ice-coloured ground. Skip any patch whose
+      // widest possible rim could touch a water rect (the three blobs spread ±4.5m from the centre).
+      const reach = 15 * 1.52 + 4.5;
+      if (terrainWater().some((w) => cx > w.minX - reach && cx < w.maxX + reach && cz > w.minZ - reach && cz < w.maxZ + reach
+        && Math.max(w.minX - cx, cx - w.maxX, 0) + Math.max(w.minZ - cz, cz - w.maxZ, 0) < 6 + 4.5)) continue;
       // Three overlapping JITTERED BLOBS per patch. The first version used rotated rounded boxes,
       // and the union of rectangles has straight edges and sharp corners — at tactical distance
       // those read as arrowheads and cut corners lying on the ground, i.e. as a rendering glitch
@@ -5961,7 +6038,13 @@ function makeWaterAndBridges(theme: MapTheme, surface: GroundSurface): THREE.Gro
   const bedColor = new THREE.Color(theme.ground).multiplyScalar(0.34);
   const bedMat = new THREE.MeshStandardMaterial({ color: bedColor, roughness: 1, metalness: 0 });
   const bankMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(theme.ground).multiplyScalar(0.62), roughness: 0.98, metalness: 0 });
-  const waterColor = new THREE.Color(0x2f6d94).lerp(new THREE.Color(theme.fog), 0.22);
+  // Less fog in the tint than before: on the frozen map the channel washed out to the ice's grey
+  // and stopped reading as "cannot walk here".
+  const waterColor = new THREE.Color(0x3a7fb0).lerp(new THREE.Color(theme.fog), 0.08);
+  // Toon shoreline: an inked rim on the bank lip and foam strokes just inside it, the same
+  // language as the unit outlines. A channel must read as water at tactical distance.
+  const inkMat = new THREE.MeshBasicMaterial({ color: 0x10161c });
+  const foamMat = new THREE.MeshBasicMaterial({ color: 0xdfeef6, transparent: true, opacity: 0.55, depthWrite: false });
   // Smoother and glossier than the ground so it catches the key light and reads as a liquid
   // surface rather than a flat panel; still short of a mirror, which would strobe as the camera moves.
   // A flat translucent panel reads as blue tape laid on the ground however dark you make it: with
@@ -5971,17 +6054,23 @@ function makeWaterAndBridges(theme: MapTheme, surface: GroundSurface): THREE.Gro
   const ripple = surface.normalMap.clone();
   ripple.needsUpdate = true;
   ripple.repeat.set(2.4, 2.4);
+  // Toon wave strokes over the whole surface (a channel can be wider than the screen, so the rim
+  // alone cannot carry the read). World-tiled and scrolled with the ripple by syncWater.
+  const waves = waveStrokeTexture();
   const waterMat = new THREE.MeshStandardMaterial({
     color: waterColor,
+    map: waves,
     transparent: true,
-    opacity: 0.82,
-    roughness: 0.18,
-    metalness: 0.42,
+    opacity: 0.86,
+    // Flat, not glossy: a specular hot-spot under bloom blew out to a white sun on the channel.
+    roughness: 0.62,
+    metalness: 0.04,
     depthWrite: false,
     normalMap: ripple,
-    normalScale: new THREE.Vector2(0.55, 0.55),
+    normalScale: new THREE.Vector2(0.35, 0.35),
   });
   group.userData.ripple = ripple;
+  group.userData.waves = waves;
 
   for (const r of water) {
     const w = r.maxX - r.minX;
@@ -6012,9 +6101,39 @@ function makeWaterAndBridges(theme: MapTheme, surface: GroundSurface): THREE.Gro
     }
 
     const plane = new THREE.Mesh(new THREE.BoxGeometry(w, 0.09, d), waterMat);
+    rewriteWorldUvs(plane.geometry, 7); // one wave tile per 7 world units, continuous across rects
     plane.position.set(cx, SURFACE, cz);
     plane.receiveShadow = true;
     group.add(plane);
+    // Ink rim along the inside edge of each bank lip, sitting on the lip's top face.
+    const INK = 0.11;
+    for (const [ox, oz, sx, sz] of [
+      [0, -(d / 2) - INK / 2, w + INK * 2, INK],
+      [0, d / 2 + INK / 2, w + INK * 2, INK],
+      [-(w / 2) - INK / 2, 0, INK, d],
+      [w / 2 + INK / 2, 0, INK, d],
+    ] as const) {
+      const ink = new THREE.Mesh(new THREE.BoxGeometry(sx, 0.02, sz), inkMat);
+      ink.position.set(cx + ox, 0.075, cz + oz); // just above the lip top (-0.14 + 0.21)
+      group.add(ink);
+    }
+    // Foam strokes: short pale dashes a little inside the rim, staggered so they read as lapping
+    // water and not as a second outline.
+    const dash = (x: number, z: number, len: number, alongX: boolean, i: number): void => {
+      const jitter = ((i * 7) % 5) * 0.06;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(alongX ? len : 0.07, 0.015, alongX ? 0.07 : len), foamMat);
+      m.position.set(x, SURFACE + 0.06, z);
+      m.position[alongX ? "z" : "x"] += (i % 2 ? 1 : -1) * jitter;
+      group.add(m);
+    };
+    for (let x = r.minX + 0.6, i = 0; x < r.maxX - 0.6; x += 1.5, i += 1) {
+      dash(x + 0.4, r.minZ + 0.42, 0.7, true, i);
+      dash(x + 0.4, r.maxZ - 0.42, 0.7, true, i + 3);
+    }
+    for (let z = r.minZ + 0.6, i = 0; z < r.maxZ - 0.6; z += 1.5, i += 1) {
+      dash(r.minX + 0.42, z + 0.4, 0.7, false, i + 1);
+      dash(r.maxX - 0.42, z + 0.4, 0.7, false, i + 4);
+    }
   }
 
   const deckMat = new THREE.MeshStandardMaterial({ color: 0x6b5136, roughness: 0.82, metalness: 0.04 });

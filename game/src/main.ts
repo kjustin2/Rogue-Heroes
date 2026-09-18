@@ -2392,6 +2392,7 @@ declare global {
       sceneRoot(): object;
       /** The live perspective camera (probes vary near/far to reproduce depth fights). */
       cameraObject(): object;
+      sceneObject(): object;
       /** Re-run the shader warm-up with the resolve-only samplers; returns programs before/after. */
       warmUp(): { before: number; after: number };
       /** Cache keys of every compiled shader program — diff across a resolve to find compile hitches. */
@@ -2488,6 +2489,7 @@ window.__rht = {
   sceneGraph: () => ({ total: countSceneObjects(), topLevel: stage.scene.children.length }),
   sceneRoot: () => stage.scene,
   cameraObject: () => stage.camera,
+  sceneObject: () => stage.scene,
   warmUp: () => { const before = stage.renderer.info.programs?.length ?? 0; stage.warmUp([...loadedTemplates(), ...world.warmUpSamplers()]); return { before, after: stage.renderer.info.programs?.length ?? 0 }; },
   programs: () => (stage.renderer.info.programs ?? []).map((p) => String((p as unknown as { cacheKey: string }).cacheKey)),
   frameErrors: () => frameErrors,

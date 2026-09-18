@@ -1,7 +1,7 @@
 import { Rng } from "../core/rng";
 import { dist, type Vec2 } from "../core/math";
 import { COVER_PROFILES, createCover, type CombatEntity, type CoverKind } from "./damageModel";
-import { onTerrainEdge, pointInWater, terrainHeightAt, type TerrainSpec } from "./terrain";
+import { onTerrainEdge, pointInWater, terrainHeightAt, type TerrainRect, type TerrainSpec } from "./terrain";
 
 // A drifting ambient particle bed that gives each map its own living atmosphere.
 export type AmbientKind = "dust" | "embers" | "pollen" | "snow" | "ash";
@@ -227,7 +227,7 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
     // An authored spot that lands on a block edge after map scaling is nudged to the nearest flat
     // ground, so the prop never straddles a step (half floating, half buried); the mirror copies
     // the nudged point so the layout stays symmetric.
-    const at = nudgeOffEdge({ x: sig.x, z: sig.z }, sig.radius ?? profile.radius);
+    const at = nudgeOffEdge({ x: sig.x, z: sig.z }, sig.radius ?? profile.radius, map.terrain.bridges ?? []);
     place(at.x, at.z);
     if (sig.mirror && Math.abs(sig.x - center.x) > 0.3) place(2 * center.x - at.x, 2 * center.z - at.z);
   }
@@ -259,14 +259,17 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
 }
 
 // Slide a point to the nearest spot whose footprint sits on one level (spiral search, 0.5m rings).
-function nudgeOffEdge(p: Vec2, r: number): Vec2 {
+function nudgeOffEdge(p: Vec2, r: number, bridges: TerrainRect[] = []): Vec2 {
   const margin = Math.min(0.7, r * 0.8);
-  if (!onTerrainEdge(p, margin)) return p;
+  // A crossing is an open lane: nothing may sit on a bridge or lean over its mouth.
+  const onBridge = (q: Vec2): boolean => bridges.some((b) => q.x >= b.minX - r && q.x <= b.maxX + r && q.z >= b.minZ - r && q.z <= b.maxZ + r);
+  const bad = (q: Vec2): boolean => onTerrainEdge(q, margin) || pointInWater(q) || onBridge(q);
+  if (!bad(p)) return p;
   for (let ring = 0.5; ring <= 4; ring += 0.5) {
     for (let i = 0; i < 12; i += 1) {
       const a = (Math.PI * 2 * i) / 12;
       const q = { x: p.x + Math.cos(a) * ring, z: p.z + Math.sin(a) * ring };
-      if (!onTerrainEdge(q, margin) && !pointInWater(q)) return q;
+      if (!bad(q)) return q;
     }
   }
   return p;
