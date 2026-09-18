@@ -370,7 +370,7 @@ function shellModel(family: ProjectileFamily, team: number, age: number): THREE.
   exhaust.scale.set(0.5, 0.7 + Math.sin(age * 36) * 0.16, 0.5);
   group.add(body, nose, band, exhaust);
   group.rotation.y = age * (heavy ? 5 : 10); // spin-stabilised
-  group.scale.setScalar(1.2 * (heavy ? 1.3 : blunt ? 1.12 : 1));
+  group.scale.setScalar(0.95 * (heavy ? 1.3 : blunt ? 1.12 : 1));
   return group;
 }
 
@@ -395,7 +395,7 @@ function boltModel(family: ProjectileFamily, team: number, age: number): THREE.G
     ring.rotation.z = age * 6;
     group.add(ring);
   }
-  group.scale.setScalar(air ? 0.8 : big ? 1.6 : 1.15);
+  group.scale.setScalar(air ? 0.7 : big ? 1.3 : 0.85);
   if (air) group.scale.y *= 1.5; // aircraft cannon: a dash, not a diamond
   return group;
 }

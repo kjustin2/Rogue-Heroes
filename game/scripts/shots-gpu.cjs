@@ -181,6 +181,39 @@ app.whenReady().then(async () => {
         await shot("abilities");
         continue;
       }
+      if (s === "volley") {
+        // Every projectile family in flight on the real GPU: a firing line (rifle, MG, marksman,
+        // flamer, mortar, tank, APC) resolves at a crawl and is shot three times through the volley
+        // (flight, impacts, smoke). Toon rounds + ink rims are opaque flat colour, which the headless
+        // SwiftShader strips already prove; this is the composer/bloom/tone-mapped truth.
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(1500);
+        await js(`(() => { const sim = window.__rht.sim; sim.economy.set("player", 9000);
+          const line = [["soldier", -3], ["heavy", -1.8], ["sniper", -0.6], ["flamer", 0.6], ["mortar", 1.8], ["tank", 3.4], ["apc", 5.2]];
+          const actors = line.map(([k, z]) => sim.debugSpawn(k, "player", { x: -4, z }));
+          const targets = line.map(([, z], i) => sim.debugSpawn(i % 2 ? "soldier" : "heavy", "enemy", { x: (i === 3 ? 1.5 : i >= 4 ? 5 : 3.5), z }));
+          for (const t of targets) { for (const p of t.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0; t.status.canShoot = false; t.status.canMove = false; }
+          actors.forEach((a, i) => { sim.select(a.id); sim.setIntent("shoot"); sim.queueShoot(targets[i].id); });
+          window.__rht.deselect(); window.__rht.setView({ x: 0.5, z: 1, zoom: 0.62, pitch: 0.55, yaw: 0.9 });
+          window.__rht.setResolveScale(0.2); window.__rht.endTurn(); })()`);
+        // Wait for the first rounds to leave their barrels, then let the volley spread out.
+        for (let i = 0; i < 60; i += 1) { if (await js(`window.__rht.sim.projectiles.length`)) break; await sleep(250); }
+        await sleep(1800);
+        await js(`window.__rht.setView({ x: 0.5, z: 1, zoom: 0.62, pitch: 0.55, yaw: 0.9 })`);
+        await sleep(200);
+        await shot("volley-flight");
+        await sleep(2600);
+        await js(`window.__rht.setView({ x: 0.5, z: 1, zoom: 0.62, pitch: 0.55, yaw: 0.9 })`);
+        await sleep(200);
+        await shot("volley-impact");
+        await sleep(3500);
+        await js(`window.__rht.setView({ x: 0.5, z: 1, zoom: 0.62, pitch: 0.55, yaw: 0.9 })`);
+        await sleep(200);
+        await shot("volley-late");
+        await js(`window.__rht.setResolveScale(1)`);
+        await sleep(4000);
+        continue;
+      }
       if (s === "lineup") {
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
         await sleep(1500);
