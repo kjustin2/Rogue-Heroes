@@ -174,12 +174,23 @@ function normalize(root: THREE.Object3D, targetSize: number): THREE.Group {
   return template;
 }
 
-// Four-step light ramp for the toon hulls: deep shade, shade, lit, highlight.
+// Four-step light ramp for every toon surface (hulls AND pooled parts AND props): deep shade,
+// shade, lit, highlight. The ramp is RGB, not grey: the two shade steps lean COOL (blue-violet)
+// and the two lit steps lean WARM (a touch of amber), which is how hand-painted / gradient-mapped
+// stylized art fakes bounce and sky light — a grey ramp reads as plastic under any sun. The shift
+// is small (≤10 units between channels) so the map's own key light still owns the hue; only the
+// contrast between a lit plane and its shaded neighbour picks up the warm/cool split.
 let _toonGradient: THREE.DataTexture | undefined;
 export function toonGradient(): THREE.DataTexture {
   if (_toonGradient) return _toonGradient;
   // Highlight band stops short of white: at 255 every lit crate and pillar bleached to cream.
-  const data = new Uint8Array([76, 76, 76, 255, 136, 136, 136, 255, 188, 188, 188, 255, 226, 226, 226, 255]);
+  // Top step's brightest channel is 226 for that reason — do not push it.
+  const data = new Uint8Array([
+    70, 74, 88, 255,      // deep shade: cool
+    130, 134, 146, 255,   // shade: cool
+    192, 188, 180, 255,   // lit: slight warm lift
+    226, 222, 210, 255,   // highlight: warm, capped at 226
+  ]);
   _toonGradient = new THREE.DataTexture(data, 4, 1, THREE.RGBAFormat);
   _toonGradient.minFilter = _toonGradient.magFilter = THREE.NearestFilter;
   _toonGradient.colorSpace = THREE.NoColorSpace;
