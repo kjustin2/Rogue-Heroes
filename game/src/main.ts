@@ -631,7 +631,7 @@ function runMissionIntro(): void {
   const playerBase = sim.entities.find((e) => e.kind === "base" && e.team === "player");
   if (!enemyBase || !playerBase) return;
   const beats: { focus: Vec2; zoom: number; hold: number; travel: number; caption: string }[] = [
-    { focus: enemyBase.position, zoom: 0.72, hold: 1400, travel: 0, caption: "Enemy lines" },
+    { focus: enemyBase.position, zoom: 0.76, hold: 1800, travel: 0, caption: "Enemy lines" },
     { focus: sim.modeState.hill ?? midpoint(enemyBase.position, playerBase.position), zoom: 0.95, hold: 1100, travel: 3000, caption: "The contested ground" },
     { focus: playerBase.position, zoom: 0.8, hold: 1200, travel: 3000, caption: "Home" },
   ];
@@ -655,7 +655,7 @@ function runMissionIntro(): void {
   };
   overlay.addEventListener("click", finish);
   // Start on the first beat before the fade lifts, so there is no cut from the base.
-  stage.debugSetView({ x: beats[0].focus.x, z: beats[0].focus.z, zoom: beats[0].zoom + 0.08, pitch, yaw });
+  stage.debugSetView({ x: beats[0].focus.x, z: beats[0].focus.z, zoom: beats[0].zoom, pitch, yaw });
   requestAnimationFrame(() => overlay.classList.add("show"));
   const ease = (t: number): number => t * t * (3 - 2 * t);
   const t0 = performance.now();
@@ -684,11 +684,12 @@ function runMissionIntro(): void {
       // Pull back a touch mid-travel so the pan reads as a flight, not a slide.
       zoom = a.zoom + (b.zoom - a.zoom) * u + Math.sin(u * Math.PI) * 0.12;
     } else {
-      // Slow push-in while holding: the shot is never static.
+      // The opening hold is a STILL — the owner wants the main image first, then the movement.
+      // Later holds get a slow push-in so the shot is never dead.
       x = a.focus.x; z = a.focus.z;
-      zoom = a.zoom + 0.08 - 0.08 * u;
+      zoom = seg.from === 0 ? a.zoom : a.zoom + 0.06 - 0.06 * u;
     }
-    stage.debugSetView({ x, z, zoom, pitch, yaw: yaw + now * 0.00004 });
+    stage.debugSetView({ x, z, zoom, pitch, yaw });
     if (b.caption !== shownCaption && seg.kind === "hold") { shownCaption = b.caption; caption.textContent = b.caption; caption.classList.remove("show"); void caption.offsetWidth; caption.classList.add("show"); }
     raf = requestAnimationFrame(tick);
   };

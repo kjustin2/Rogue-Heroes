@@ -173,7 +173,7 @@ app.whenReady().then(async () => {
         await sleep(800);
         await js(`(() => { const b = [...document.querySelectorAll("button")].find((x) => /deploy to battle/i.test(x.textContent || "")); if (b) b.click(); })()`);
         await sleep(200);
-        if (process.env.PROBE) { const views = []; for (let i = 0; i < 40; i += 1) { views.push(await js(`(() => { const v = window.__rht.viewState ? window.__rht.viewState() : null; return v ? [v.x.toFixed(1), v.z.toFixed(1), v.zoom.toFixed(2), v.yaw.toFixed(2), v.pitch.toFixed(2)].join(",") : "?"; })()`)); await sleep(100); } console.log("views:", views.join(" | ")); }
+        if (process.env.PROBE) { const views = []; for (let i = 0; i < 60; i += 1) { views.push(await js(`(() => { const v = window.__rht.viewState ? window.__rht.viewState() : null; return v ? [v.x.toFixed(2), v.z.toFixed(2), v.zoom.toFixed(3), v.yaw.toFixed(3), v.pitch.toFixed(3)].join(",") : "?"; })()`)); await sleep(30); } console.log("views:", views.join(" | ")); }
         await strip("boot-mission", 20, 300);
         continue;
       }
