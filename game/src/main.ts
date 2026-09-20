@@ -615,33 +615,84 @@ function startRunBattle(): void {
   showToast(`Sector ${run.sectorNumber} of ${RUN_LENGTH} · ${mapDef(battle.map).name} · ${modeDef(battle.mode).name}`);
 }
 
-// Mission-intro cinematic: a letterboxed rail flyover — enemy lines, the contested
-// center, then home — skippable with a click. Pure camera work; the sim is untouched.
+// Mission-intro cinematic: a letterboxed rail flyover — enemy lines, the contested centre, then
+// home — skippable with a click. Pure camera work; the sim is untouched.
+//
+// It is a RAIL, not a chain of camera guides: the first version handed three `guideTo`s to the
+// exponential follow-cam, which whipped 70m across the board in about a second each time — at
+// that speed every frame is a different view and the whole thing read as flashing. Now the
+// camera starts ON the first beat (behind a black fade), each leg is an eased tween at a rate
+// the eye can follow, and the HUD, hints and toasts stay hidden until the rail hands the
+// planning camera back.
+let introActive = false;
 function runMissionIntro(): void {
   if (settings.reducedMotion) return;
   const enemyBase = sim.entities.find((e) => e.kind === "base" && e.team === "enemy");
   const playerBase = sim.entities.find((e) => e.kind === "base" && e.team === "player");
+  if (!enemyBase || !playerBase) return;
+  const beats: { focus: Vec2; zoom: number; hold: number; travel: number; caption: string }[] = [
+    { focus: enemyBase.position, zoom: 0.72, hold: 1400, travel: 0, caption: "Enemy lines" },
+    { focus: sim.modeState.hill ?? midpoint(enemyBase.position, playerBase.position), zoom: 0.95, hold: 1100, travel: 3000, caption: "The contested ground" },
+    { focus: playerBase.position, zoom: 0.8, hold: 1200, travel: 3000, caption: "Home" },
+  ];
   const overlay = document.createElement("div");
   overlay.className = "mission-intro";
-  overlay.innerHTML = `<button class="mission-intro__skip" type="button">Skip ▸</button>`;
+  overlay.innerHTML = `<div class="mission-intro__caption"></div><button class="mission-intro__skip" type="button">Skip ▸</button>`;
   document.body.appendChild(overlay);
-  document.body.classList.add("killcam");
-  const timers: number[] = [];
+  document.body.classList.add("killcam", "intro-cam");
+  const caption = overlay.querySelector<HTMLElement>(".mission-intro__caption")!;
+  introActive = true;
+  let raf = 0;
+  const pitch = 0.62;
+  const yaw = stage.viewState().yaw;
   const finish = (): void => {
-    for (const t of timers) window.clearTimeout(t);
-    document.body.classList.remove("killcam");
+    if (!introActive) return;
+    introActive = false;
+    window.cancelAnimationFrame(raf);
+    document.body.classList.remove("killcam", "intro-cam");
     overlay.remove();
     focusOnPlayerBase();
   };
   overlay.addEventListener("click", finish);
-  if (enemyBase) stage.guideTo({ focus: enemyBase.position, zoom: 0.8 }, { mode: "resolve", strength: 2.2, durationMs: 1500 });
-  timers.push(window.setTimeout(() => {
-    stage.guideTo({ focus: sim.modeState.hill, zoom: 1.0 }, { mode: "resolve", strength: 2.2, durationMs: 1400 });
-  }, 1500));
-  timers.push(window.setTimeout(() => {
-    if (playerBase) stage.guideTo({ focus: playerBase.position, zoom: 0.9 }, { mode: "resolve", strength: 2.4, durationMs: 1300 });
-  }, 2900));
-  timers.push(window.setTimeout(finish, 4300));
+  // Start on the first beat before the fade lifts, so there is no cut from the base.
+  stage.debugSetView({ x: beats[0].focus.x, z: beats[0].focus.z, zoom: beats[0].zoom + 0.08, pitch, yaw });
+  requestAnimationFrame(() => overlay.classList.add("show"));
+  const ease = (t: number): number => t * t * (3 - 2 * t);
+  const t0 = performance.now();
+  // Timeline: [hold0][travel1][hold1][travel2][hold2]
+  const marks: { at: number; from: number; to: number; kind: "hold" | "travel" }[] = [];
+  let cursor = 0;
+  beats.forEach((b, i) => {
+    if (b.travel > 0) { marks.push({ at: cursor, from: i - 1, to: i, kind: "travel" }); cursor += b.travel; }
+    marks.push({ at: cursor, from: i, to: i, kind: "hold" }); cursor += b.hold;
+  });
+  const total = cursor;
+  let shownCaption = "";
+  const tick = (): void => {
+    if (!introActive) return;
+    const now = performance.now() - t0;
+    if (now >= total) { finish(); return; }
+    let seg = marks[0];
+    for (const m of marks) if (now >= m.at) seg = m;
+    const a = beats[seg.from], b = beats[seg.to];
+    const span = seg.kind === "travel" ? b.travel : a.hold;
+    const u = ease(Math.min(1, (now - seg.at) / Math.max(1, span)));
+    let x: number, z: number, zoom: number;
+    if (seg.kind === "travel") {
+      x = a.focus.x + (b.focus.x - a.focus.x) * u;
+      z = a.focus.z + (b.focus.z - a.focus.z) * u;
+      // Pull back a touch mid-travel so the pan reads as a flight, not a slide.
+      zoom = a.zoom + (b.zoom - a.zoom) * u + Math.sin(u * Math.PI) * 0.12;
+    } else {
+      // Slow push-in while holding: the shot is never static.
+      x = a.focus.x; z = a.focus.z;
+      zoom = a.zoom + 0.08 - 0.08 * u;
+    }
+    stage.debugSetView({ x, z, zoom, pitch, yaw: yaw + now * 0.00004 });
+    if (b.caption !== shownCaption && seg.kind === "hold") { shownCaption = b.caption; caption.textContent = b.caption; caption.classList.remove("show"); void caption.offsetWidth; caption.classList.add("show"); }
+    raf = requestAnimationFrame(tick);
+  };
+  raf = requestAnimationFrame(tick);
 }
 
 // Radio-drama beats: one-shot transmissions on their keyed turns during campaign battles.
@@ -1970,7 +2021,7 @@ const seenHints = ((): Set<string> => {
 let lastHintAt = -Infinity;
 const HINT_GAP_MS = 5000;
 function hintOnce(id: string, text: string): boolean {
-  if (tutorialActive || seenHints.has(id)) return false;
+  if (tutorialActive || introActive || seenHints.has(id)) return false;
   if (performance.now() - lastHintAt < HINT_GAP_MS) return false;
   lastHintAt = performance.now();
   seenHints.add(id);
@@ -2409,6 +2460,7 @@ declare global {
       sceneRoot(): object;
       /** The live perspective camera (probes vary near/far to reproduce depth fights). */
       cameraObject(): object;
+      viewState(): { x: number; z: number; zoom: number; yaw: number; pitch: number };
       sceneObject(): object;
       /** Re-run the shader warm-up with the resolve-only samplers; returns programs before/after. */
       warmUp(): { before: number; after: number };
@@ -2487,6 +2539,7 @@ window.__rht = {
   cancelOrder: (id) => sim.cancelOrder(id),
   camera: () => stage.viewState(),
   setView: (view) => stage.debugSetView(view),
+  viewState: () => stage.viewState(),
   renderDebug: () => world.debugState(),
   scenario: (id) => {
     closeAllMenus();

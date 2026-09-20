@@ -139,6 +139,32 @@ app.whenReady().then(async () => {
         await shot("rings-aura");
         continue;
       }
+      if (s === "boot") {
+        // The first six seconds after launch, then the campaign mission intro flyover: 12 frames each
+        // at 400ms so a flashing/flickering sequence is visible as a strip.
+        const strip = async (name, frames, gap) => {
+          const sharp = require("sharp");
+          const tiles = [];
+          for (let i = 0; i < frames; i += 1) { tiles.push((await win.webContents.capturePage()).toPNG()); await sleep(gap); }
+          const small = await Promise.all(tiles.map((b) => sharp(b).resize(400, 225).png().toBuffer()));
+          await sharp({ create: { width: 1600, height: 225 * Math.ceil(frames / 4), channels: 3, background: "#000" } })
+            .composite(small.map((input, i) => ({ input, left: (i % 4) * 400, top: Math.floor(i / 4) * 225 }))).png()
+            .toFile(path.join(__dirname, "..", "shots", `gpu-${name}.png`));
+          console.log("shot: gpu-" + name + ".png");
+        };
+        await win.webContents.reload();
+        await sleep(300);
+        await strip("boot-title", 12, 400);
+        await js(`(() => { const b = document.querySelector('[data-menu="campaign"]'); if (b) b.click(); })()`);
+        await sleep(1200);
+        await js(`(() => { const m = document.querySelector('[data-mission]'); if (m) m.click(); })()`);
+        await sleep(800);
+        await js(`(() => { const b = [...document.querySelectorAll("button")].find((x) => /deploy to battle/i.test(x.textContent || "")); if (b) b.click(); })()`);
+        await sleep(200);
+        if (process.env.PROBE) { const views = []; for (let i = 0; i < 40; i += 1) { views.push(await js(`(() => { const v = window.__rht.viewState ? window.__rht.viewState() : null; return v ? [v.x.toFixed(1), v.z.toFixed(1), v.zoom.toFixed(2), v.yaw.toFixed(2), v.pitch.toFixed(2)].join(",") : "?"; })()`)); await sleep(100); } console.log("views:", views.join(" | ")); }
+        await strip("boot-mission", 20, 300);
+        continue;
+      }
       if (s === "recon") {
         // Recon pulse ghost arrows + a deployed artillery piece on its outriggers.
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
