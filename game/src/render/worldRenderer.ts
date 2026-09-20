@@ -88,6 +88,8 @@ export class WorldRenderer {
   private particleClock = performance.now();
   private readonly ring: THREE.Mesh;
   private readonly selectionDisc: THREE.Mesh;
+  private readonly ringInk: THREE.Mesh;
+  private lastRingSig = "";
   private readonly selectionBeacon: THREE.Mesh;
   private readonly selectionLight: THREE.PointLight;
   private readonly targetRing: THREE.Mesh;
@@ -143,13 +145,22 @@ export class WorldRenderer {
     this.applyMap(MAPS[0].theme);
     this.prewarmActionAssets();
 
+    // SELECTION RING: a toon band of fixed proportion (14% of the unit's radius) with an ink rim
+    // under it, draped and lifted clear of the ground plates. The old 0.9–1.86 donut scaled by the
+    // unit's radius became a four-metre cyan puddle around a base, buried under the plates except
+    // for a stray wedge — the "circle around the base blends into the map" report.
     this.ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.9, 1.86, 72),
+      new THREE.RingGeometry(1.0, 1.14, 96, 1),
       new THREE.MeshBasicMaterial({ color: 0x9dfcff, transparent: true, opacity: 0.98, side: THREE.DoubleSide, depthWrite: false })
     );
     this.ring.rotation.x = -Math.PI / 2;
     this.ring.position.y = 0.045;
-    this.scene.add(this.ring);
+    this.ringInk = new THREE.Mesh(
+      new THREE.RingGeometry(0.94, 1.2, 96, 1),
+      new THREE.MeshBasicMaterial({ color: 0x0b0e12, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false })
+    );
+    this.ringInk.rotation.x = -Math.PI / 2;
+    this.scene.add(this.ringInk, this.ring);
 
     this.selectionDisc = new THREE.Mesh(
       new THREE.CircleGeometry(1.34, 64),
@@ -910,7 +921,8 @@ export class WorldRenderer {
   }
 
   // Re-theme the whole scene for a map: fog, sky, ground, terrain, grid, and lights.
-  applyMap(theme: MapTheme): void {
+  applyMap(theme: MapTheme, keepClear: Vec2[] = []): void {
+    plateKeepClear.splice(0, plateKeepClear.length, ...keepClear);
     // New battlefield: the last battle's scars don't carry over.
     this.disposeAndClear(this.craterRoot);
     this.scorchedIds.clear();
@@ -3249,18 +3261,27 @@ export class WorldRenderer {
   private syncSelection(sim: TacticalSim): void {
     const selected = sim.selected;
     this.ring.visible = Boolean(selected);
+    this.ringInk.visible = Boolean(selected);
     this.selectionDisc.visible = Boolean(selected);
     this.selectionBeacon.visible = Boolean(selected);
     this.selectionLight.visible = Boolean(selected);
     if (!selected) return;
     const color = selected.team === "player" ? (selected.accent ?? this.playerAccent) : selected.team === "enemy" ? TEAMS.enemyMarker : 0xf6d776;
-    const scale = Math.max(0.72, selected.radius * 0.96);
+    const scale = Math.max(0.72, selected.radius * 1.12);
     const pulse = (Math.sin(performance.now() * 0.009) + 1) * 0.5;
-    const pulseScale = 1.06 + pulse * 0.09;
-    this.ring.position.x = selected.position.x;
-    this.ring.position.y = selected.elevation + 0.045;
-    this.ring.position.z = selected.position.z;
+    const pulseScale = 1.0 + pulse * 0.04;
+    this.ring.position.set(selected.position.x, selected.elevation, selected.position.z);
+    this.ringInk.position.copy(this.ring.position);
+    this.ring.scale.setScalar(scale);
+    this.ringInk.scale.setScalar(scale);
+    const ringSig = `${selected.id}|${selected.position.x.toFixed(2)}|${selected.position.z.toFixed(2)}|${selected.elevation.toFixed(2)}`;
+    if (ringSig !== this.lastRingSig) {
+      drapeToTerrain(this.ringInk, 0.075);
+      drapeToTerrain(this.ring, 0.085);
+      this.lastRingSig = ringSig;
+    }
     this.ring.scale.setScalar(scale * pulseScale);
+    this.ringInk.scale.setScalar(scale * pulseScale);
     const mat = this.ring.material as THREE.MeshBasicMaterial;
     mat.color.setHex(color);
     mat.opacity = 0.88 + pulse * 0.12;
@@ -5521,6 +5542,9 @@ function rewriteWorldUvs(geometry: THREE.BufferGeometry, tile: number): void {
   uv.needsUpdate = true;
 }
 
+// Spots the plates must leave alone (base pads): a plate over a base's own concrete pad covered
+// it except for a stray wedge, which read as a broken selection circle. Set by applyMap.
+const plateKeepClear: Vec2[] = [];
 // Where the cosmetic ground plates lie (centre, nominal radius, top height), so units can stand ON
 // them instead of in them. Rebuilt with the plates; read by plateLiftAt every frame per unit.
 const plateDiscs: { x: number; z: number; r: number; y: number; rim: BlobRim }[] = [];
@@ -5581,6 +5605,7 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
       // Never over water: the plates sit above the water surface (ledger #5) and a 6–15m blob laid
       // across a channel hid the whole crossing under ice-coloured ground. Skip any patch whose
       // widest possible rim could touch a water rect (the three blobs spread ±4.5m from the centre).
+      if (plateKeepClear.some((c) => Math.hypot(cx - c.x, cz - c.z) < 6 + 4.5 + 4)) continue;
       const reach = 15 * 1.52 + 4.5;
       if (terrainWater().some((w) => cx > w.minX - reach && cx < w.maxX + reach && cz > w.minZ - reach && cz < w.maxZ + reach
         && Math.max(w.minX - cx, cx - w.maxX, 0) + Math.max(w.minZ - cz, cz - w.maxZ, 0) < 6 + 4.5)) continue;

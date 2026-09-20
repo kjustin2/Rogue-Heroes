@@ -194,7 +194,7 @@ const hud = new Hud(uiRoot, sim, {
   },
   reset: () => {
     sim.reset();
-    world.applyMap(sim.mapDef.theme);
+    world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
     focusOnPlayerBase();
     lastEndPhase = undefined;
   },
@@ -511,7 +511,7 @@ function startBattle(mapId: string, modeId: ModeId, difficulty: Difficulty = set
   // the same opponent, so a seeded run, a save reload and a replay all agree. Rolling it inside
   // the sim would put hidden nondeterminism in a system the chaos and determinism tests rely on.
   sim.configure(mapDef(mapId), modeId, difficulty, { player: faction, enemy: opposingFaction(mapId, faction) });
-  world.applyMap(sim.mapDef.theme);
+  world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
   world.setPlayerAccent(progression.accentColor());
   focusOnPlayerBase();
   lastEndPhase = undefined;
@@ -550,7 +550,7 @@ function startCampaignMission(mission: CampaignMission): void {
   }
   firedBeats.clear();
 
-  world.applyMap(sim.mapDef.theme);
+  world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
   world.setPlayerAccent(progression.accentColor());
   focusOnPlayerBase();
   lastEndPhase = undefined;
@@ -606,7 +606,7 @@ function startRunBattle(): void {
   deployRoster(run.roster);
   firedBeats.clear();
 
-  world.applyMap(sim.mapDef.theme);
+  world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
   world.setPlayerAccent(progression.accentColor());
   focusOnPlayerBase();
   lastEndPhase = undefined;
@@ -823,7 +823,7 @@ function stageMenuDiorama(): void {
     u.yaw = -Math.PI * 0.5;
   }
   sim.select("");
-  world.applyMap(sim.mapDef.theme);
+  world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
   world.setPlayerAccent(progression.accentColor());
   stage.debugSetView({ x: 0.5, z: 0.4, zoom: 0.62, pitch: 0.42, yaw: 0.6 });
   stage.menuDrift = true;
@@ -1824,7 +1824,7 @@ function loadSavedBattle(): void {
     // If the saved battle was a campaign mission, resume that context so victory still advances.
     activeCampaignMission = campaign.activeMissionId ? campaign.mission(campaign.activeMissionId) : undefined;
     closeAllMenus();
-    world.applyMap(sim.mapDef.theme);
+    world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
     world.setPlayerAccent(progression.accentColor());
     focusOnPlayerBase();
     lastEndPhase = undefined;
@@ -2547,7 +2547,7 @@ window.__rht = {
     tutorialActive = false;
     renderTutorialPanel(); // the panel leaked from a tutorial cut into every later scenario shot
     lastEndPhase = undefined; // let victory/defeat scenarios render their end screen
-    world.applyMap(sim.mapDef.theme);
+    world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
     world.setPlayerAccent(progression.accentColor());
     const focus = sim.selected;
     if (focus) stage.focusOn(focus.position);
