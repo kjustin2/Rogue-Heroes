@@ -459,15 +459,17 @@ def sheath_striker():
 
 
 def pauldron_heavy():
-    # A layered, ridged pauldron: three stepped plates with a raised centre ridge.
-    plates = []
-    for i in range(3):
-        p = add_box(f"plate{i}", (0.7 - i * 0.1, 0.9 - i * 0.14, 0.14), location=(0, 0, -0.16 + i * 0.16))
-        rot(p, y=8)
-        plates.append(p)
-    ridge = add_box("ridge", (0.12, 0.7, 0.14), location=(0, 0, 0.26))
-    obj = join(plates + [ridge], "pauldron-heavy")
-    finish(obj, bevel=0.012, angle=40)
+    # A domed shoulder shell with a raised centre ridge and a rim. (The first cut was three stepped
+    # plates, which read on the real GPU as a stack of brown planks laid on the shoulder.)
+    dome = add_sphere("dome", 0.5, scale=(0.9, 1.0, 0.6), segments=16, rings=9)
+    cut_below(dome, -0.04)
+    rim = add_cyl("rim", 0.5, 0.08, location=(0, 0, -0.06), vertices=16)
+    rim.scale = (0.94, 1.04, 1)
+    bpy.ops.object.transform_apply(scale=True)
+    ridge = add_box("ridge", (0.12, 0.8, 0.14), location=(0, 0, 0.26))
+    taper(ridge, 0.5)
+    obj = join([dome, rim, ridge], "pauldron-heavy")
+    finish(obj, bevel=0.01, angle=44)
     return obj
 
 

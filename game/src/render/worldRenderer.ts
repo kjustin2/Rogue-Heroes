@@ -2017,7 +2017,7 @@ export class WorldRenderer {
       // (The old chest slab and shoulder yoke are gone: with the authored torso underneath they
       // read as a plank laid across the shoulders. Bulk is the build's girth plus big pauldrons.)
       // Layered, ridged pauldrons on the barrel-chest torso's shelves (mirrored by a half turn).
-      for (const side of [-1, 1]) this.box(rig, entity, "body", [0.28, 0.16, 0.36], [side * 0.44, 1.14, 0.02], 0x3e3430, { accent: true, metalness: 0.34, rotation: [0, side < 0 ? Math.PI : 0, side * -0.26], kit: "pauldron-heavy" });
+      for (const side of [-1, 1]) this.box(rig, entity, "body", [0.3, 0.16, 0.38], [side * 0.44, 1.14, 0.02], 0x3e3430, { accent: true, metalness: 0.34, rotation: [0, 0, side * -0.3], kit: "pauldron-heavy" });
       this.box(rig, entity, "rifle", [0.3, 0.36, 1.1], [0.5, 0.92, 0.4], 0x2b2f31, { metalness: 0.32, kit: "weapon-mg" });
       // (accent, so the team tint never turns the ammo drum into a pale blue disc at the hip)
       this.cylinder(rig, entity, "rifle", 0.22, 0.22, [0.54, 0.76, 0.5], 0x1a1c1e, [0, 0, 0], { accent: true, metalness: 0.3 });
