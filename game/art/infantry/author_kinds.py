@@ -511,3 +511,9 @@ def body_head():
 
 
 BUILDERS += [body_torso, body_arm, body_leg, body_hips, body_head]
+
+# Per-kind bodies, limb variants, extras and the jumper SMG (author_bodies.py, imported last so it
+# can reuse the helpers above).
+from author_bodies import BUILDERS as BODY_BUILDERS  # noqa: E402
+
+BUILDERS += BODY_BUILDERS

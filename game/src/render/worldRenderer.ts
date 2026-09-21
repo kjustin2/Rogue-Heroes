@@ -1942,7 +1942,14 @@ export class WorldRenderer {
     // Torso: a tapered barrel with a SEPARATE upper chest mass that overhangs it. The overhang is
     // what gives the trooper a shoulder line and a shadow under the chest -- a single cylinder
     // reads as a bottle no matter how it is lit.
-    this.box(rig, entity, "body", [0.58, 0.64, 0.42], [0, 0.9, 0], bodyColor, { metalness: 0.14, outline: true, kit: "torso" });
+    // PER-KIND BODY (2026-09-20). The torso is the largest shape on a trooper and it used to be the
+    // same authored chest on all thirteen kinds, so a squad read as one uniform in thirteen hats.
+    // Each kind now wears its own torso variant (barrel chest + shelf pauldrons, cropped jacket +
+    // scarf, ghillie ruff, asymmetric sword guard, hazmat barrel...), and where the read needs it
+    // its own arm/leg variant too. Same part id, same pivot, same unit-cube contract — the rig,
+    // the walk cycle, the pooled paint and per-part damage are untouched (INFANTRY_KIT_PARTS).
+    const kitParts = INFANTRY_KIT_PARTS[entity.kind] ?? DEFAULT_KIT_PARTS;
+    this.box(rig, entity, "body", kitParts.torsoSize, [0, 0.9, 0], bodyColor, { metalness: 0.14, outline: true, kit: kitParts.torso });
     // The glowing core seam stays: it is the one lit thing on the chest and carries the team read.
     this.box(rig, entity, "body", [0.1, 0.16, 0.05], [0, 1.0, 0.22], 0x10171a, { emissive: teamGlow, emissiveIntensity: 0.21, rotation: [-0.16, 0, 0] });
     // Gorget + neck column.
@@ -1950,9 +1957,14 @@ export class WorldRenderer {
     this.cylinder(rig, entity, "body", 0.085, 0.12, [0, 1.25, 0.01], 0x1a2226, [0, 0, 0], { metalness: 0.3 });
     // Pauldrons: angled, bevelled plates with a rim, canted outward off the shoulder. Squashed
     // spheres read as balls at any distance; a plate with a lit top edge reads as armour.
-    for (const side of [-1, 1]) {
-      this.box(rig, entity, "body", [0.25, 0.18, 0.32], [side * 0.35, 1.05, 0.01], 0x39434a, { metalness: 0.32, rotation: [0, 0, side * -0.3], bevel: 0.3 });
-      this.box(rig, entity, "body", [0.26, 0.05, 0.33], [side * 0.37, 1.15, 0.01], trimColor, { metalness: 0.4, rotation: [0, 0, side * -0.3], bevel: 0.4 });
+    // ...unless the kind's own torso carries its shoulders (heavy shelves, striker guard, flamer
+    // seal ring, scout's cropped jacket, sniper's ghillie ruff): a plate on top of those reads as
+    // a second pair of shoulders.
+    if (kitParts.pauldrons) {
+      for (const side of [-1, 1]) {
+        this.box(rig, entity, "body", [0.25, 0.18, 0.32], [side * 0.35, 1.05, 0.01], 0x39434a, { metalness: 0.32, rotation: [0, 0, side * -0.3], bevel: 0.3 });
+        this.box(rig, entity, "body", [0.26, 0.05, 0.33], [side * 0.37, 1.15, 0.01], trimColor, { metalness: 0.4, rotation: [0, 0, side * -0.3], bevel: 0.4 });
+      }
     }
     // Head: skull, a brow ridge over the visor, and a rear comms block. The brow is the single
     // detail that stops a head reading as a featureless ball.
@@ -1968,10 +1980,10 @@ export class WorldRenderer {
       this.box(rig, entity, "rifle", [0.1, 0.1, 0.12], [0.46, 1.13, -0.06], 0x8de4ff, { accent: true, emissive: 0x8de4ff, emissiveIntensity: 0.38 });
       this.cylinder(rig, entity, "rifle", 0.03, 0.44, [0.38, 0.74, 1.04], 0x14181a, [0.5, 0, 0.32], { metalness: 0.3 });
       this.cylinder(rig, entity, "rifle", 0.03, 0.44, [0.54, 0.74, 1.04], 0x14181a, [0.5, 0, -0.32], { metalness: 0.3 });
-      // (The old shoulder "cloak" slab is gone: a flat pale box across the shoulders read as a
-      // plank once the hood carried the ghillie read on its own.)
-      this.box(rig, entity, "body", [0.5, 0.5, 0.16], [0, 0.74, -0.34], 0x4c5436, { accent: true });
-      for (const x of [-0.22, 0.04, 0.26]) this.box(rig, entity, "body", [0.1, 0.2, 0.08], [x, 0.5, -0.36], 0x5d663f, { accent: true });
+      // A ragged ghillie CAPE down the back (torso part, so it turns and breathes with the chest)
+      // over the ghillie ruff the torso itself carries; a rangefinder on the chest is the accent.
+      this.box(rig, entity, "body", [0.52, 0.72, 0.16], [0, 0.76, -0.3], 0x4c5436, { accent: true, rotation: [0.1, 0, 0], kit: "cape-sniper" });
+      this.box(rig, entity, "body", [0.16, 0.1, 0.08], [0.12, 1.0, 0.25], 0x0a1418, { accent: true, emissive: 0x8de4ff, emissiveIntensity: 0.3 });
       this.box(rig, entity, "head", [0.5, 0.4, 0.52], [0, 1.4, -0.02], helmetColor, { kit: "helmet-sniper" });
       this.box(rig, entity, "head", [0.36, 0.1, 0.101], [0, 1.4, 0.2], 0x0a1418, { accent: true, emissive: 0x8de4ff, emissiveIntensity: 0.23 });
     } else if (entity.kind === "grenadier") {
@@ -1979,8 +1991,10 @@ export class WorldRenderer {
       // the chest, more on the pack, and a round pot helmet.
       this.box(rig, entity, "rifle", [0.3, 0.4, 0.96], [0.48, 0.93, 0.3], trimColor, { metalness: 0.2, kit: "weapon-launcher" });
       this.cylinder(rig, entity, "rifle", 0.21, 0.2, [0.48, 0.93, 0.74], 0x2b2418, [0.5, 0, 0], { accent: true, emissive: 0xffb02e, emissiveIntensity: 0.18 });
-      this.cylinder(rig, entity, "body", 0.06, 0.94, [0, 0.86, 0.2], 0x2e2110, [0, 0, 0.72], { accent: true });
-      for (const [x, y] of [[-0.2, 0.66], [0, 0.86], [0.2, 1.06]] as const) this.box(rig, entity, "body", [0.12, 0.15, 0.12], [x, y, 0.25], 0xffb84a, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.17 });
+      // The torso is a padded vest of drum pouches; the two chest drums get lit amber heads (the
+      // accent), and a pair of fat ammo drums rides the hips.
+      for (const x of [-0.14, 0.14]) this.cylinder(rig, entity, "body", 0.075, 0.05, [x, 0.98, 0.27], 0xffb84a, [Math.PI / 2, 0, 0], { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.2 });
+      this.box(rig, entity, "legs", [0.66, 0.24, 0.26], [0, 0.56, 0], 0x4a4030, { accent: true, metalness: 0.3, kit: "drums-grenadier" });
       for (const x of [-0.16, 0, 0.16]) this.box(rig, entity, "pack", [0.11, 0.16, 0.11], [x, 1.08, -0.42], 0xffca6b, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.35 });
       this.box(rig, entity, "head", [0.44, 0.36, 0.46], [0, 1.4, 0.0], helmetColor, { kit: "helmet-grenadier" });
       this.box(rig, entity, "head", [0.36, 0.09, 0.13], [0, 1.42, 0.22], 0x6a5626, { accent: true });
@@ -1991,7 +2005,9 @@ export class WorldRenderer {
       this.box(rig, entity, "rifle", [0.16, 0.2, 0.22], [0.52, 0.92, -0.12], 0x2a2142, { accent: true, emissive: 0xb48cff, emissiveIntensity: 0.19 });
       this.box(rig, entity, "body", [0.12, 0.6, 0.5], [-0.52, 0.86, 0.06], 0x3a2c5c, { accent: true });
       this.box(rig, entity, "body", [0.08, 0.4, 0.1], [-0.58, 0.86, 0.06], 0x8a6ecf, { accent: true, emissive: 0xb48cff, emissiveIntensity: 0.15 });
-      this.box(rig, entity, "body", [0.3, 0.2, 0.36], [0.46, 1.14, 0.02], 0x4a3a72, { accent: true });
+      // (The sword-shoulder guard is authored into torso-striker; the off arm is bare — arm-striker.)
+      // A long scabbard on the left hip: the one unit with a blade-length diagonal below the belt.
+      this.box(rig, entity, "legs", [0.1, 0.72, 0.16], [-0.3, 0.46, -0.08], 0x2a2142, { accent: true, metalness: 0.3, rotation: [0.12, 0, 0.22], kit: "sheath-striker" });
       this.box(rig, entity, "head", [0.42, 0.5, 0.46], [0, 1.44, 0.0], helmetColor, { metalness: 0.2, kit: "helmet-striker" });
       this.box(rig, entity, "head", [0.346, 0.08, 0.115], [0, 1.4, 0.22], 0xc6a8ff, { accent: true, emissive: 0xb48cff, emissiveIntensity: 0.34 });
       this.box(rig, entity, "head", [0.072, 0.26, 0.086], [0, 1.66, -0.04], 0x6a4fae, { accent: true, emissive: 0xb48cff, emissiveIntensity: 0.21 });
@@ -2000,14 +2016,15 @@ export class WorldRenderer {
       // ammo belt looping to a big glowing back drum, and a slab face-visor helmet.
       // (The old chest slab and shoulder yoke are gone: with the authored torso underneath they
       // read as a plank laid across the shoulders. Bulk is the build's girth plus big pauldrons.)
-      for (const x of [-0.36, 0.36]) this.box(rig, entity, "body", [0.24, 0.2, 0.34], [x, 1.12, 0.02], 0x6a3a1c, { accent: true, metalness: 0.2, bevel: 0.3 });
+      // Layered, ridged pauldrons on the barrel-chest torso's shelves (mirrored by a half turn).
+      for (const side of [-1, 1]) this.box(rig, entity, "body", [0.32, 0.22, 0.44], [side * 0.46, 1.12, 0.02], 0x6a3a1c, { accent: true, metalness: 0.2, rotation: [0, side < 0 ? Math.PI : 0, side * -0.22], kit: "pauldron-heavy" });
       this.box(rig, entity, "rifle", [0.3, 0.36, 1.1], [0.5, 0.92, 0.4], 0x2b2f31, { metalness: 0.32, kit: "weapon-mg" });
       this.cylinder(rig, entity, "rifle", 0.26, 0.24, [0.54, 0.74, 0.5], 0x14181a, [0, 0, 0], { metalness: 0.3 });
       this.box(rig, entity, "rifle", [0.34, 0.3, 0.22], [0.54, 0.92, 1.12], 0xb2842f, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.12 });
       for (let i = 0; i < 4; i++) this.box(rig, entity, "rifle", [0.12, 0.09, 0.1], [0.34 - i * 0.07, 0.8 - i * 0.015, 0.18 - i * 0.13], 0xb2842f, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.14 });
-      this.cylinder(rig, entity, "pack", 0.17, 0.3, [-0.03, 0.95, -0.34], 0xc8761f, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.32 });
-      this.box(rig, entity, "pack", [0.12, 0.1, 0.26], [0.2, 0.95, -0.26], 0x8a5a22, { accent: true, metalness: 0.3, bevel: 0.3 });
-      this.box(rig, entity, "pack", [0.3, 0.08, 0.1], [0, 1.14, -0.3], 0xc8871f, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.16, bevel: 0.35 });
+      // The back ammunition box (drum + feed chute + frame) replaces the generic rucksack.
+      this.box(rig, entity, "pack", [0.52, 0.44, 0.3], [0, 0.94, -0.36], 0xc8761f, { accent: true, metalness: 0.32, kit: "ammobox-heavy" });
+      this.box(rig, entity, "pack", [0.3, 0.08, 0.1], [0, 1.2, -0.3], 0xc8871f, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.16, bevel: 0.35 });
       this.box(rig, entity, "head", [0.46, 0.5, 0.46], [0, 1.36, 0.0], helmetColor, { metalness: 0.18, kit: "helmet-heavy" });
       this.box(rig, entity, "head", [0.389, 0.14, 0.115], [0, 1.32, 0.22], 0x141819, { accent: true, emissive: 0xffb02e, emissiveIntensity: 0.25 });
     } else if (entity.kind === "mortar") {
@@ -2016,24 +2033,27 @@ export class WorldRenderer {
       this.box(rig, entity, "rifle", [0.46, 0.56, 0.86], [0.5, 0.9, 0.24], trimColor, { metalness: 0.2, kit: "weapon-mortar" });
       this.cylinder(rig, entity, "rifle", 0.13, 1.1, [0.14, 1.2, -0.12], 0x2a2f31, [Math.PI * 0.32, 0, 0], { metalness: 0.34 });
       this.cylinder(rig, entity, "rifle", 0.16, 0.12, [-0.06, 1.6, -0.42], 0xffd27a, [Math.PI * 0.32, 0, 0], { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.19 });
-      this.cylinder(rig, entity, "pack", 0.33, 0.08, [0, 1.0, -0.47], 0x4a4f33, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.3 });
-      this.cylinder(rig, entity, "pack", 0.12, 0.1, [0, 1.0, -0.52], 0x2c2f22, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.3 });
-      for (const x of [-0.16, 0.16]) this.box(rig, entity, "pack", [0.04, 0.62, 0.04], [x, 0.86, -0.5], 0x3a3f2c, { accent: true });
+      // Baseplate + folded bipod authored as one back piece (replaces the generic rucksack); the
+      // torso carries the shoulder saddle the tube rides on. Accent: a range card on the chest.
+      this.box(rig, entity, "pack", [0.66, 0.66, 0.2], [0, 0.98, -0.44], 0x4a4f33, { accent: true, metalness: 0.3, kit: "bipod-mortar" });
+      this.box(rig, entity, "body", [0.16, 0.18, 0.06], [0.16, 0.98, 0.26], 0xffd27a, { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.2 });
       this.box(rig, entity, "head", [0.46, 0.34, 0.44], [0, 1.4, 0.0], helmetColor, { metalness: 0.16, kit: "helmet-mortar" });
       this.box(rig, entity, "head", [0.36, 0.09, 0.13], [0, 1.41, 0.22], 0x3a3f28, { accent: true });
     } else if (entity.kind === "medic") {
       // Support: a clean white vest + helmet emblazoned with a bold red cross, a hip med
       // satchel, a glowing green heal vial, and only a small sidearm — reads as "help."
       this.box(rig, entity, "rifle", [0.16, 0.3, 0.48], [0.45, 0.92, 0.24], 0xb8b2ae, { metalness: 0.2, kit: "weapon-pistol" });
-      this.box(rig, entity, "body", [0.5, 0.66, 0.06], [0, 0.86, 0.19], 0xaba695, { accent: true });
-      this.box(rig, entity, "body", [0.18, 0.42, 0.05], [0, 0.9, 0.23], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.21 });
-      this.box(rig, entity, "body", [0.42, 0.16, 0.05], [0, 0.94, 0.23], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.21 });
+      // The vest and crossed satchel straps are authored into torso-medic; the red cross sits on
+      // its sternum plate (the accent) and a red armband rides the left upper arm — a "body"
+      // mesh tagged as the arm limb, so it swings with the arm in the walk cycle.
+      this.box(rig, entity, "body", [0.18, 0.42, 0.05], [0, 0.9, 0.24], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.21 });
+      this.box(rig, entity, "body", [0.42, 0.16, 0.05], [0, 0.94, 0.24], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.21 });
+      this.box(rig, entity, "body", [0.23, 0.1, 0.25], [-0.43, 0.9, 0.03], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.12, bevel: 0.2 }).userData.limb = "arm-l";
       // SILHOUETTE. In the black-shape test the medic, engineer and sapper were the same outline:
       // a human with small chest kit that vanishes the moment colour does. Each now carries one
       // LARGE shape that changes the outline itself. Medic: a rolled stretcher standing proud of
       // the shoulder, and a satchel that hangs clear of the hip.
-      this.cylinder(rig, entity, "pack", 0.11, 1.02, [-0.24, 1.28, -0.3], 0xaba695, [0.22, 0, 0.28], { accent: true });
-      this.cylinder(rig, entity, "pack", 0.12, 0.06, [-0.35, 1.72, -0.36], 0xff3b4e, [0.22, 0, 0.28], { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.2 });
+      this.box(rig, entity, "pack", [0.28, 1.08, 0.28], [-0.24, 1.28, -0.3], 0xaba695, { accent: true, rotation: [0.22, 0, 0.28], kit: "stretcher-medic" });
       this.box(rig, entity, "pack", [0.38, 0.42, 0.3], [0.44, 0.6, -0.02], 0xa39e8e, { accent: true, kit: "pack-medic" });
       this.box(rig, entity, "pack", [0.36, 0.06, 0.28], [0.44, 0.8, -0.02], 0x7d7a6c, { accent: true });
       this.box(rig, entity, "pack", [0.14, 0.05, 0.05], [0.36, 0.7, 0.07], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.19 });
@@ -2063,8 +2083,11 @@ export class WorldRenderer {
       this.box(rig, entity, "pack", [0.13, 1.0, 0.13], [-0.3, 1.12, -0.3], 0x8f979e, { accent: true, metalness: 0.42, rotation: [0.16, 0, 0.34] });
       this.box(rig, entity, "pack", [0.42, 0.2, 0.2], [-0.52, 1.62, -0.22], 0x8f979e, { accent: true, metalness: 0.42, rotation: [0.16, 0, 0.34] });
       this.box(rig, entity, "pack", [0.16, 0.2, 0.22], [-0.68, 1.66, -0.22], 0x5c6268, { accent: true, metalness: 0.4, rotation: [0.16, 0, 0.34] });
-      this.box(rig, entity, "body", [0.6, 0.12, 0.4], [0, 0.62, 0.02], 0xffce4a, { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.17 });
-      for (const x of [-0.18, 0.12]) this.box(rig, entity, "body", [0.08, 0.18, 0.06], [x, 0.5, 0.18], 0xbfc6cc, { accent: true, metalness: 0.4 });
+      // Hi-vis: the tool harness is authored into torso-engineer (tool tubes, belly pocket, hip
+      // pouches) and leg-engineer (square kneepads); a yellow chest tab is the accent and a tool
+      // roll hangs off the belt.
+      this.box(rig, entity, "body", [0.3, 0.12, 0.05], [0, 1.02, 0.25], 0xffce4a, { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.2 });
+      this.box(rig, entity, "legs", [0.32, 0.22, 0.2], [0.32, 0.5, 0.08], 0x4a4a3a, { accent: true, metalness: 0.3, kit: "toolroll-engineer" });
       this.box(rig, entity, "head", [0.5, 0.34, 0.52], [0, 1.42, 0.0], helmetColor, { emissive: 0xff9e2b, emissiveIntensity: 0.14, kit: "helmet-engineer" });
       this.box(rig, entity, "head", [0.115, 0.1, 0.058], [0, 1.46, 0.24], 0xbfe8ff, { accent: true, emissive: 0xbfe8ff, emissiveIntensity: 0.38 });
     } else if (entity.kind === "flamer") {
@@ -2076,6 +2099,9 @@ export class WorldRenderer {
       this.box(rig, entity, "rifle", [0.1, 0.1, 0.34], [0.47, 1.04, 0.4], 0x5a2f10, { accent: true });
       this.box(rig, entity, "body", [0.34, 0.16, 0.4], [-0.36, 1.08, 0.02], 0xffb02e, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.2 });
       this.box(rig, entity, "pack", [0.56, 0.7, 0.3], [0, 0.86, -0.42], 0xd84a14, { accent: true, emissive: 0xff5a1a, emissiveIntensity: 0.3, metalness: 0.3, kit: "pack-flamer" });
+      // The fuel HOSE arcs from the tanks over the right shoulder toward the projector — a pack
+      // part, so a shot-out pack drags the hose down with it.
+      this.box(rig, entity, "pack", [0.36, 0.56, 0.5], [0.34, 1.0, -0.14], 0x2a2422, { accent: true, metalness: 0.2, kit: "hose-flamer" });
       this.box(rig, entity, "head", [0.44, 0.46, 0.48], [0, 1.36, 0.0], helmetColor, { metalness: 0.2, kit: "helmet-flamer" });
     } else if (entity.kind === "droneop") {
       // Drone operator: a signal wand, a control slate on the chest, and the recon drone
@@ -2084,7 +2110,9 @@ export class WorldRenderer {
       this.box(rig, entity, "body", [0.3, 0.22, 0.06], [0, 0.96, 0.23], 0x0e1a26, { accent: true, emissive: 0x6fd7ff, emissiveIntensity: 0.23 });
       this.box(rig, entity, "head", [0.46, 0.4, 0.46], [0, 1.4, 0.0], helmetColor, { kit: "helmet-droneop" });
       this.box(rig, entity, "head", [0.144, 0.08, 0.173], [0.16, 1.48, 0.14], 0x9fdcff, { accent: true, emissive: 0x6fd7ff, emissiveIntensity: 0.29 });
-      // The drone (pack part, so shooting the pack downs the optics — cause and effect).
+      // The relay pack on the back (dish + whip mast) replaces the generic rucksack...
+      this.box(rig, entity, "pack", [0.36, 0.62, 0.22], [0, 1.0, -0.34], 0x35485c, { accent: true, metalness: 0.3, kit: "antenna-droneop" });
+      // ...and the drone (pack part, so shooting the pack downs the optics — cause and effect).
       this.box(rig, entity, "pack", [0.6, 0.16, 0.6], [0, 2.25, -0.1], 0x35485c, { accent: true, metalness: 0.3, kit: "pack-drone" });
       this.cylinder(rig, entity, "pack", 0.26, 0.05, [0, 2.33, -0.1], 0x9fdcff, [0, 0, 0], { accent: true, emissive: 0x6fd7ff, emissiveIntensity: 0.21 });
       this.sphere(rig, entity, "pack", 0.07, [0, 2.18, 0.08], 0xff5a4d, { accent: true, emissive: 0xff3b30, emissiveIntensity: 0.36 });
@@ -2092,13 +2120,15 @@ export class WorldRenderer {
       // Jump trooper: the silhouette is the JET PACK -- two fat thruster bells angled out behind
       // the shoulders with glowing nozzles, a stub carbine, knee guards and a full visor. From
       // above the twin bells read even when the body does not.
-      this.box(rig, entity, "rifle", [0.2, 0.26, 0.72], [0.46, 0.92, 0.26], 0x2f333a, { metalness: 0.34, kit: "weapon-carbine" });
-      this.cylinder(rig, entity, "rifle", 0.035, 0.28, [0.46, 0.94, 0.7], 0x1c1e22, [Math.PI / 2, 0, 0], { metalness: 0.4 });
-      this.box(rig, entity, "rifle", [0.06, 0.1, 0.16], [0.46, 1.02, 0.3], 0x9fdcff, { accent: true, emissive: 0x6fd7ff, emissiveIntensity: 0.2 });
+      // Its own gun: a short FAT suppressed bullpup (the scout's carbine is short and thin).
+      this.box(rig, entity, "rifle", [0.22, 0.3, 0.74], [0.46, 0.92, 0.26], 0x2f333a, { metalness: 0.34, kit: "weapon-smg" });
+      this.box(rig, entity, "rifle", [0.06, 0.1, 0.16], [0.46, 1.04, 0.2], 0x9fdcff, { accent: true, emissive: 0x6fd7ff, emissiveIntensity: 0.2 });
       for (const side of [-1, 1]) {
         this.cylinder(rig, entity, "pack", 0.1, 0.05, [side * 0.3, 0.6, -0.5], 0xffc266, [0.35, 0, side * -0.28], { accent: true, emissive: 0xff8a2a, emissiveIntensity: 0.5 });
-        this.box(rig, entity, "legs", [0.2, 0.16, 0.12], [side * 0.15, 0.48, 0.12], 0x3a4048, { accent: true, metalness: 0.3 });
       }
+      // Flight harness in the torso, control gauntlet on the arms, stabiliser fins on the legs
+      // (kit variants); an altimeter on the chest plate is the accent.
+      this.box(rig, entity, "body", [0.14, 0.14, 0.06], [0.14, 1.0, 0.26], 0xffb14a, { accent: true, emissive: 0xff7d1e, emissiveIntensity: 0.24 });
       this.box(rig, entity, "pack", [0.62, 0.66, 0.34], [0, 0.94, -0.4], 0x2b3036, { metalness: 0.4, kit: "pack-jumper" });
       this.box(rig, entity, "head", [0.42, 0.44, 0.5], [0, 1.42, 0.0], helmetColor, { metalness: 0.3, kit: "helmet-jumper" });
       this.box(rig, entity, "head", [0.3, 0.09, 0.09], [0, 1.44, 0.16], 0xffb14a, { accent: true, emissive: 0xff7d1e, emissiveIntensity: 0.4 });
@@ -2113,8 +2143,12 @@ export class WorldRenderer {
       this.cylinder(rig, entity, "pack", 0.045, 1.15, [-0.5, 0.72, 0.16], 0x6a6250, [0.5, 0, 0.62], { accent: true, metalness: 0.34 });
       this.cylinder(rig, entity, "pack", 0.3, 0.05, [-0.92, 0.2, 0.44], 0x8a7a3a, [Math.PI / 2.1, 0, 0.1], { accent: true, metalness: 0.3 });
       this.cylinder(rig, entity, "pack", 0.1, 0.06, [-0.92, 0.26, 0.44], 0xffca6b, [Math.PI / 2.1, 0, 0.1], { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.26 });
-      for (const x of [-0.18, 0.02, 0.22]) this.cylinder(rig, entity, "body", 0.07, 0.04, [x, 0.58, 0.22], 0x8a7a3a, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.3 });
-      this.box(rig, entity, "body", [0.44, 0.5, 0.07], [0, 0.72, 0.2], 0x5a4a1a, { accent: true });
+      // Bandolier of charges + blast apron are authored into torso-sapper. A detonator box on the
+      // belt, a stack of mine discs on the back (replaces the generic rucksack), and a lit charge
+      // on the bandolier at chest height as the accent.
+      this.box(rig, entity, "legs", [0.2, 0.24, 0.18], [0.3, 0.52, 0.12], 0x4a4232, { accent: true, metalness: 0.3, kit: "detonator-sapper" });
+      this.box(rig, entity, "pack", [0.5, 0.5, 0.22], [0, 0.92, -0.36], 0x5a5038, { accent: true, metalness: 0.3, kit: "mines-sapper" });
+      this.box(rig, entity, "body", [0.12, 0.1, 0.08], [0.06, 1.0, 0.26], 0xffca6b, { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.24 });
       this.box(rig, entity, "head", [0.346, 0.26, 0.072], [0, 1.34, 0.2], 0x3a342a, { accent: true, metalness: 0.24 });
       this.box(rig, entity, "head", [0.44, 0.42, 0.46], [0, 1.38, 0.0], helmetColor, { kit: "helmet-sapper" });
     } else {
@@ -2133,11 +2167,15 @@ export class WorldRenderer {
       this.box(rig, entity, "body", [0.5, 0.12, 0.06], [0, 0.94, 0.2], 0x2c3a30, { accent: true });
       for (const x of [-0.16, 0.16]) this.box(rig, entity, "body", [0.14, 0.18, 0.1], [x, 0.74, 0.2], 0x35463a, { accent: true });
       this.box(rig, entity, "body", [0.12, 0.16, 0.12], [-0.3, 0.66, 0.12], 0x3f5036, { accent: true });
+      // Rank chevron on the chest webbing: the baseline trooper's one saturated mark.
+      this.box(rig, entity, "body", [0.18, 0.08, 0.05], [0, 1.03, 0.25], 0x8df0ff, { accent: true, emissive: 0x5ff1ff, emissiveIntensity: 0.2 });
       this.box(rig, entity, "head", [0.42, 0.34, 0.44], [0, 1.42, 0.0], helmetColor, { metalness: 0.14, kit: "helmet" });
       this.box(rig, entity, "head", [0.346, 0.07, 0.115], [0, 1.39, 0.22], 0x141819, { accent: true });
       this.box(rig, entity, "head", [0.065, 0.08, 0.05], [0.2, 1.46, 0.1], 0x8df0ff, { accent: true, emissive: 0x5ff1ff, emissiveIntensity: 0.29 });
     }
-    this.box(rig, entity, "pack", [0.38, 0.44, 0.2], [0, 0.84, -0.3], packColor, entity.kind === "grenadier" ? { emissive: 0xff7d26, emissiveIntensity: 0.26, kit: "pack" } : { kit: "pack" });
+    // The generic rucksack — unless the kind's authored back piece (ammo box, bipod, relay,
+    // mine stack) already fills that slot.
+    if (kitParts.rucksack) this.box(rig, entity, "pack", [0.38, 0.44, 0.2], [0, 0.84, -0.3], packColor, entity.kind === "grenadier" ? { emissive: 0xff7d26, emissiveIntensity: 0.26, kit: "pack" } : { kit: "pack" });
     // Team-lit status lamp on the pack. (No twin tanks / comm nub — invisible at tactics
     // zoom and each small mesh is a draw call across a 40-unit battle.)
     this.box(rig, entity, "pack", [0.1, 0.14, 0.06], [-0.22, 1.04, -0.38], 0xbcd4dc, { emissive: teamGlow, emissiveIntensity: 0.18 });
@@ -2148,13 +2186,14 @@ export class WorldRenderer {
     // there for silhouette, not for a second joint.
     for (const side of [-1, 1]) {
       const tag = side < 0 ? "arm-l" : "arm-r";
-      this.box(rig, entity, "body", [0.2, 0.62, 0.22], [side * 0.43, 0.68, 0.03], bodyColor, { metalness: 0.18, kit: "arm" }).userData.limb = tag;
+      const arm = side < 0 ? kitParts.armL : kitParts.armR;
+      this.box(rig, entity, "body", kitParts.armSize, [side * 0.43, 0.68, 0.03], bodyColor, { metalness: 0.18, kit: arm }).userData.limb = tag;
     }
     // Legs: thigh, a knee plate, and a boot with a raised toe. The knee plate is what breaks the
     // "two smooth pipes" read, and the toe is what makes a planted foot look planted.
     for (const side of [-1, 1]) {
       const tag = side < 0 ? "leg-l" : "leg-r";
-      this.box(rig, entity, "legs", [0.22, 0.5, 0.26], [side * 0.18, 0.36, 0.02], 0x162225, { metalness: 0.2, outline: true, kit: "leg" }).userData.limb = tag;
+      this.box(rig, entity, "legs", kitParts.legSize, [side * 0.18, 0.36, 0.02], 0x162225, { metalness: 0.2, outline: true, kit: kitParts.leg }).userData.limb = tag;
     }
     this.box(rig, entity, "legs", [0.22, 0.14, 0.32], [-0.18, 0.07, 0.06], 0x101516, { metalness: 0.14, kit: "boot" }).userData.limb = "leg-l";
     this.box(rig, entity, "legs", [0.22, 0.14, 0.32], [0.18, 0.07, 0.06], 0x101516, { metalness: 0.14, kit: "boot" }).userData.limb = "leg-r";
@@ -4638,6 +4677,47 @@ const INFANTRY_BUILDS: Partial<Record<EntityKind, Partial<InfantryBuild>>> = {
 };
 
 const DEFAULT_BUILD: InfantryBuild = { girth: 1, stature: 1, lean: 0 };
+
+// PER-KIND CHASSIS PARTS (2026-09-20). Which authored torso / arm / leg variant a kind wears, the
+// `size` each is scaled to (a variant with shelf pauldrons or a ghillie ruff is normalised into
+// the same unit cube as the plain chest, so it needs a wider box to come out the same scale), and
+// whether the shared procedural pauldrons / rucksack still belong on top. Shape lives in
+// art/infantry/author_bodies.py; proportion lives here — same rule as every kit part.
+interface InfantryKitParts {
+  torso: KitPart;
+  torsoSize: [number, number, number];
+  armL: KitPart;
+  armR: KitPart;
+  armSize: [number, number, number];
+  leg: KitPart;
+  legSize: [number, number, number];
+  /** Shared procedural shoulder plates on top of the torso. Off when the torso carries its own. */
+  pauldrons: boolean;
+  /** The generic rucksack. Off when the kind has an authored back piece in that slot. */
+  rucksack: boolean;
+}
+
+const DEFAULT_KIT_PARTS: InfantryKitParts = {
+  torso: "torso", torsoSize: [0.58, 0.64, 0.42],
+  armL: "arm", armR: "arm", armSize: [0.2, 0.62, 0.22],
+  leg: "leg", legSize: [0.22, 0.5, 0.26],
+  pauldrons: true, rucksack: true,
+};
+
+const INFANTRY_KIT_PARTS: Partial<Record<EntityKind, InfantryKitParts>> = {
+  heavy: { ...DEFAULT_KIT_PARTS, torso: "torso-heavy", torsoSize: [0.8, 0.66, 0.5], armL: "arm-heavy", armR: "arm-heavy", armSize: [0.24, 0.62, 0.26], leg: "leg-heavy", legSize: [0.26, 0.5, 0.3], pauldrons: false, rucksack: false },
+  scout: { ...DEFAULT_KIT_PARTS, torso: "torso-scout", torsoSize: [0.54, 0.64, 0.42], leg: "leg-scout", legSize: [0.2, 0.5, 0.26], pauldrons: false },
+  sniper: { ...DEFAULT_KIT_PARTS, torso: "torso-sniper", torsoSize: [0.7, 0.64, 0.5], pauldrons: false },
+  striker: { ...DEFAULT_KIT_PARTS, torso: "torso-striker", torsoSize: [0.7, 0.66, 0.44], armL: "arm-striker", pauldrons: false },
+  medic: { ...DEFAULT_KIT_PARTS, torso: "torso-medic", torsoSize: [0.58, 0.64, 0.44], armL: "arm-medic", armR: "arm-medic" },
+  engineer: { ...DEFAULT_KIT_PARTS, torso: "torso-engineer", torsoSize: [0.62, 0.64, 0.46], leg: "leg-engineer", legSize: [0.24, 0.5, 0.28] },
+  flamer: { ...DEFAULT_KIT_PARTS, torso: "torso-flamer", torsoSize: [0.64, 0.64, 0.5], armL: "arm-flamer", armR: "arm-flamer", armSize: [0.24, 0.62, 0.26], pauldrons: false },
+  droneop: { ...DEFAULT_KIT_PARTS, torso: "torso-droneop", torsoSize: [0.56, 0.64, 0.42], rucksack: false },
+  sapper: { ...DEFAULT_KIT_PARTS, torso: "torso-sapper", torsoSize: [0.6, 0.64, 0.46], rucksack: false },
+  mortar: { ...DEFAULT_KIT_PARTS, torso: "torso-mortar", torsoSize: [0.66, 0.64, 0.46], rucksack: false },
+  grenadier: { ...DEFAULT_KIT_PARTS, torso: "torso-grenadier", torsoSize: [0.66, 0.64, 0.48] },
+  jumper: { ...DEFAULT_KIT_PARTS, torso: "torso-jumper", torsoSize: [0.58, 0.64, 0.44], armL: "arm-jumper", armR: "arm-jumper", leg: "leg-jumper", legSize: [0.26, 0.5, 0.28] },
+};
 
 // ATTACK CHOREOGRAPHY.
 //

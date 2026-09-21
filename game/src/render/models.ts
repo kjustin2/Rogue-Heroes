@@ -263,7 +263,17 @@ export type KitPart =
   | "weapon-carbine" | "weapon-longrifle" | "weapon-blade" | "weapon-mg" | "weapon-launcher" | "weapon-mortar"
   | "weapon-pistol" | "weapon-wrench" | "weapon-flamethrower" | "weapon-wand" | "weapon-shotgun"
   | "pack-medic" | "pack-engineer" | "pack-flamer" | "pack-drone" | "pack-jumper"
-  | "arm" | "leg" | "hips" | "head";
+  | "arm" | "leg" | "hips" | "head"
+  // Per-kind BODY variants (art/infantry/author_bodies.py): same rig contract as the chassis part
+  // they replace, so the walk cycle / pooled paint / per-part damage never know the difference.
+  | "torso-heavy" | "torso-scout" | "torso-sniper" | "torso-striker" | "torso-medic" | "torso-engineer"
+  | "torso-flamer" | "torso-droneop" | "torso-sapper" | "torso-mortar" | "torso-grenadier" | "torso-jumper"
+  | "arm-striker" | "arm-medic" | "arm-heavy" | "arm-flamer" | "arm-jumper"
+  | "leg-engineer" | "leg-jumper" | "leg-heavy" | "leg-scout"
+  // Per-kind EXTRAS, hung off an existing part id so they ride the rig.
+  | "cape-sniper" | "antenna-droneop" | "hose-flamer" | "sheath-striker" | "pauldron-heavy" | "ammobox-heavy"
+  | "stretcher-medic" | "toolroll-engineer" | "detonator-sapper" | "mines-sapper" | "bipod-mortar" | "drums-grenadier"
+  | "weapon-smg";
 
 const kit = new Map<string, THREE.BufferGeometry>();
 let kitState: "idle" | "loading" | "ready" | "failed" = "idle";

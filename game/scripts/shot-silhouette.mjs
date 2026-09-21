@@ -18,12 +18,14 @@ mkdirSync(OUT, { recursive: true });
 const ROWS = [
   ["01-line", ["soldier", "scout", "sniper", "striker"]],
   ["02-weight", ["heavy", "grenadier", "mortar", "flamer"]],
-  ["03-support", ["medic", "engineer", "sapper", "droneop"]],
+  ["03-support", ["medic", "engineer", "sapper", "droneop", "jumper"]],
   ["04-vehicles", ["tank", "apc", "artillery"]],
 ];
 
 const { page, errors, close } = await launchGame({ port: 5194, query: "?lowfx=1", viewport: { width: 1600, height: 560 } });
 try {
+  // The sheet is the SHAPES; the HUD panels were covering the first and last of a five-wide rank.
+  await page.addStyleTag({ content: "#ui, .toast { visibility: hidden !important; }" });
   for (const [name, kinds] of ROWS) {
     await page.evaluate(() => window.__rht.startBattle("ironworks", "destroy", "normal"));
     await page.waitForFunction(() => window.__rht.sim.phase === "command");
@@ -41,7 +43,7 @@ try {
       // head-on foreshortens the long rifles, tool rigs and blades that distinguish them into
       // nothing — the first version of this sheet failed four kits that were actually fine.
       // Units are staged along x, so the camera looks down the rank from the side.
-      window.__rht.setView({ x: 0, z: 0, zoom: 0.34, pitch: 0.26, yaw: 1.5 });
+      window.__rht.setView({ x: 0, z: 0, zoom: kinds.length > 4 ? 0.4 : 0.34, pitch: 0.26, yaw: 1.5 });
       window.__rht.silhouette(true);
     }, { kinds, spacing: kinds.length > 3 ? 2.6 : 4.4 });
     await delay(800);
