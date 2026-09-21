@@ -5,8 +5,8 @@ every row names its proof, nothing is DONE from code alone.
 
 | # | Ask (owner's words) | Owner | Status | Proof |
 |---|---|---|---|---|
-| 1a | Infantry walk looks weird/unnatural | motion agent | TODO (wave 2) | `shots:step` + `shots:filmstrip -- walk` read by eye; smoke:animation gate |
-| 1b | Gun turret does not aim where it fires | main | RUNNING | filmstrip of turret firing: barrel yaw == shot direction |
+| 1a | Infantry walk looks weird/unnatural | motion agent | RUNNING | `shots:step` + `shots:filmstrip -- walk` read by eye; smoke:animation gate |
+| 1b | Gun turret does not aim where it fires | main | DONE | `filmstrip-turret.png` (no idle hunt in resolve, 4 rad/s traverse) |
 | 1c | GUI text hard to read — larger/easier where applicable | gui agent | RUNNING | contrast + min font-size audit in auditUI; gpu shots of HUD/menus |
 | 2 | Deploy from base: pick WHERE in the circle the unit lands | deploy agent | DONE (merged) | `gpu-deployflow-ring/-placed.png`, deploy.test.ts (6), smokes deploy via a point |
 | 4 | Skirmish map preview could look way cooler | gui agent | RUNNING | `gpu-mapselect-*.png` |

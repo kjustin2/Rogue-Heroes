@@ -3,6 +3,7 @@
 // no boot inside the block face on the approach, no body sunk in the plate. Run: npm run shots:step
 import { launchGame, delay } from "../improve/lib/harness.mjs";
 import sharp from "sharp";
+const MODE = process.argv[2] ?? "step"; // "walk": flat ground, side view, half speed
 const { page, close } = await launchGame({ port: 5209, viewport: { width: 1200, height: 700 } });
 try {
   await page.waitForSelector(".main-menu");
@@ -11,24 +12,24 @@ try {
   await page.click('[data-map="dustbowl"]');
   await page.click("[data-start]");
   await page.waitForFunction(() => window.__rht?.sim?.phase === "command", null, { timeout: 20000 });
-  const staged = await page.evaluate(() => {
+  const staged = await page.evaluate((mode) => {
     const sim = window.__rht.sim;
     // The lowest walkable block with flat floor beside it.
     const blocks = sim.mapDef.terrain.blocks.filter((b) => b.height > 0.3 && b.height <= 0.95);
     const b = blocks.sort((p, q) => p.height - q.height)[0];
     if (!b) return { ok: false };
-    const z = (b.minZ + b.maxZ) / 2;
-    const foot = { x: b.minX - 2.2, z };
-    const top = { x: Math.min(b.maxX - 0.5, b.minX + 1.8), z };
+    const z = mode === "walk" ? 2.5 : (b.minZ + b.maxZ) / 2;
+    const foot = mode === "walk" ? { x: -24, z } : { x: b.minX - 2.2, z };
+    const top = mode === "walk" ? { x: -17, z } : { x: Math.min(b.maxX - 0.5, b.minX + 1.8), z };
     const actor = sim.debugSpawn("soldier", "player", foot);
     sim.select(actor.id);
     const queued = sim.queueMove(top);
     window.__rht.deselect();
     return { ok: queued, height: b.height, foot, top, id: actor.id };
-  });
+  }, MODE);
   console.log("staged", JSON.stringify(staged));
   await delay(600);
-  await page.evaluate(() => { window.__rht.setResolveScale(0.1); window.__rht.endTurn(); });
+  await page.evaluate((m) => { window.__rht.setResolveScale(m === "walk" ? 0.3 : 0.1); window.__rht.endTurn(); }, MODE);
   const frames = [];
   for (let i = 0; i < 12; i += 1) {
     // Follow the walker from the side so the block face and the boots are in profile.
@@ -39,8 +40,8 @@ try {
   const tiles = await Promise.all(frames.map((b) => sharp(b).resize(400, 280).png().toBuffer()));
   await sharp({ create: { width: 1600, height: 840, channels: 3, background: "#000" } })
     .composite(tiles.map((input, i) => ({ input, left: (i % 4) * 400, top: Math.floor(i / 4) * 280 })))
-    .png().toFile("shots/filmstrip-step.png");
+    .png().toFile(`shots/filmstrip-${MODE}.png`);
   await page.evaluate(() => window.__rht.setResolveScale(1));
   await page.waitForFunction(() => window.__rht.sim.phase === "command", null, { timeout: 30000 }).catch(() => {});
-  console.log("wrote shots/filmstrip-step.png");
+  console.log(`wrote shots/filmstrip-${MODE}.png`);
 } finally { await close(); }
