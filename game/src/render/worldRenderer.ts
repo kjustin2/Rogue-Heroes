@@ -2017,13 +2017,14 @@ export class WorldRenderer {
       // (The old chest slab and shoulder yoke are gone: with the authored torso underneath they
       // read as a plank laid across the shoulders. Bulk is the build's girth plus big pauldrons.)
       // Layered, ridged pauldrons on the barrel-chest torso's shelves (mirrored by a half turn).
-      for (const side of [-1, 1]) this.box(rig, entity, "body", [0.32, 0.22, 0.44], [side * 0.46, 1.12, 0.02], 0x6a3a1c, { accent: true, metalness: 0.2, rotation: [0, side < 0 ? Math.PI : 0, side * -0.22], kit: "pauldron-heavy" });
+      for (const side of [-1, 1]) this.box(rig, entity, "body", [0.28, 0.16, 0.36], [side * 0.44, 1.14, 0.02], 0x3e3430, { accent: true, metalness: 0.34, rotation: [0, side < 0 ? Math.PI : 0, side * -0.26], kit: "pauldron-heavy" });
       this.box(rig, entity, "rifle", [0.3, 0.36, 1.1], [0.5, 0.92, 0.4], 0x2b2f31, { metalness: 0.32, kit: "weapon-mg" });
-      this.cylinder(rig, entity, "rifle", 0.26, 0.24, [0.54, 0.74, 0.5], 0x14181a, [0, 0, 0], { metalness: 0.3 });
+      // (accent, so the team tint never turns the ammo drum into a pale blue disc at the hip)
+      this.cylinder(rig, entity, "rifle", 0.22, 0.22, [0.54, 0.76, 0.5], 0x1a1c1e, [0, 0, 0], { accent: true, metalness: 0.3 });
       this.box(rig, entity, "rifle", [0.34, 0.3, 0.22], [0.54, 0.92, 1.12], 0xb2842f, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.12 });
       for (let i = 0; i < 4; i++) this.box(rig, entity, "rifle", [0.12, 0.09, 0.1], [0.34 - i * 0.07, 0.8 - i * 0.015, 0.18 - i * 0.13], 0xb2842f, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.14 });
       // The back ammunition box (drum + feed chute + frame) replaces the generic rucksack.
-      this.box(rig, entity, "pack", [0.52, 0.44, 0.3], [0, 0.94, -0.36], 0xc8761f, { accent: true, metalness: 0.32, kit: "ammobox-heavy" });
+      this.box(rig, entity, "pack", [0.44, 0.38, 0.26], [0, 0.92, -0.34], 0x6a4a2a, { accent: true, metalness: 0.32, kit: "ammobox-heavy" });
       this.box(rig, entity, "pack", [0.3, 0.08, 0.1], [0, 1.2, -0.3], 0xc8871f, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.16, bevel: 0.35 });
       this.box(rig, entity, "head", [0.46, 0.5, 0.46], [0, 1.36, 0.0], helmetColor, { metalness: 0.18, kit: "helmet-heavy" });
       this.box(rig, entity, "head", [0.389, 0.14, 0.115], [0, 1.32, 0.22], 0x141819, { accent: true, emissive: 0xffb02e, emissiveIntensity: 0.25 });
