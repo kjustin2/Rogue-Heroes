@@ -54,9 +54,11 @@ function makeProj(map: MapDef, w: number, h: number, tilt: number): Proj {
   const spanY = Math.max(...rot.map((r) => r[1])) - Math.min(...rot.map((r) => r[1]));
   const maxH = map.terrain.maxHeight ?? 1.9;
   const liftPerUnit = 0.55; // world units of height drawn as this many world units of screen rise
-  const scale = Math.min((w - 36) / spanX, (h - 44) / (spanY + maxH * liftPerUnit + 2));
+  // The diamond may bleed past the plate's sides a little: its corners are empty ground and the
+  // clipped edge reads as a diorama in a box rather than a drawing floating in one.
+  const scale = Math.min((w * 1.18) / spanX, (h - 18) / (spanY + maxH * liftPerUnit + 1.2));
   const ox = w / 2;
-  const oy = h / 2 + (maxH * liftPerUnit * scale) / 2 - 6;
+  const oy = h / 2 + (maxH * liftPerUnit * scale) / 2 - 4;
   return {
     lift: liftPerUnit * scale,
     p(x, z, y = 0) {
@@ -215,9 +217,12 @@ export function drawMapPreview(ctx: CanvasRenderingContext2D, scene: Scene, w: n
   const proj = makeProj(map, w, h, tilt);
   const b = map.terrain.bounds;
   const unit = proj.p(1, 0)[0] - proj.p(0, 0)[0]; // px per world unit along the iso x axis
-  const glyphSize = Math.max(4, Math.min(11, unit * 1.6));
+  const glyphSize = Math.max(7, Math.min(15, unit * 2.6));
 
-  ctx.clearRect(0, 0, w, h);
+  // The plate behind the board is the map's own sky, deepened — a diorama in a box, not a
+  // drawing on the panel.
+  ctx.fillStyle = css(darken(rgb(t.sky), 0.55));
+  ctx.fillRect(0, 0, w, h);
 
   // Hard offset shadow under the whole board, then the board itself as a lit slab.
   ctx.save();
@@ -409,8 +414,11 @@ export function mountMapPreview(host: HTMLElement, map: MapDef, mode: ModeId, op
   const reduceMotion = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const paint = (): void => {
+    // Fit the plate to the host's width AND the canvas's CSS max-height, so a short viewport
+    // gets a shorter (not squashed) plate; the board is re-projected to whatever box results.
+    const maxH = parseFloat(getComputedStyle(canvas).maxHeight) || Infinity;
     const cssW = Math.max(200, Math.round(host.clientWidth - 12));
-    const cssH = Math.round(cssW * 0.6);
+    const cssH = Math.round(Math.min(cssW * 0.58, maxH));
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
       canvas.width = Math.round(cssW * dpr);

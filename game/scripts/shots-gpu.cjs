@@ -46,7 +46,7 @@ app.whenReady().then(async () => {
           win.setSize(w, h); await sleep(500);
           await toTitle(); await clickMenu('[data-menu="play"]');
           await shot(`mapselect-${w}x${h}`);
-          await js(`(() => { const c = document.querySelectorAll("[data-map]")[2]; if (c) c.click(); })()`); await sleep(500);
+          await js(`(() => { const c = document.querySelectorAll("[data-map]")[${Number(process.env.MAP_PICK || 2)}]; if (c) c.click(); })()`); await sleep(500);
           await shot(`mapselect-${w}x${h}-picked`);
         }
         win.setSize(1600, 900); await sleep(500);
@@ -81,6 +81,7 @@ app.whenReady().then(async () => {
       if (s === "deploy") { await toTitle(); await clickMenu('[data-menu="play"]'); await shot("deploy"); continue; }
       if (s === "settings") { await toTitle(); await clickMenu('[data-menu="settings"]'); await shot("settings"); continue; }
       if (s === "armory") { await toTitle(); await clickMenu('[data-menu="armory"]'); await shot("armory"); continue; }
+      if (s === "briefing") { await toTitle(); await clickMenu('[data-menu="campaign"]'); await clickMenu('[data-mission]'); await shot("briefing"); continue; }
       if (s === "campaign") { await toTitle(); await clickMenu('[data-menu="campaign"]'); await shot("campaign"); continue; }
       if (s === "run") { await toTitle(); await clickMenu('[data-menu="run"]'); await shot("run"); continue; }
       if (s === "pause") {

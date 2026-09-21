@@ -5970,12 +5970,11 @@ kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
 .map-preview-canvas {
   display: block;
   width: 100%;
-  height: auto;
   margin: 0 auto;
+  border: var(--ink-w) solid var(--ink);
   border-radius: var(--toon-r-sm);
   background: var(--paper-deep);
-  max-height: clamp(120px, 24vh, 320px);
-  object-fit: contain;
+  max-height: clamp(130px, 26vh, 360px);
 }
 .map-preview-caption {
   display: grid;
@@ -5990,3 +5989,13 @@ kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
   .map-preview-canvas { max-height: clamp(110px, 22vh, 240px); }
   .map-preview-caption span { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
 }
+
+/* The Skirmish left column is a grid: the map list takes whatever height the preview leaves
+   (the list used to be capped by a vh formula that knew nothing about the preview, so at
+   1600x900 the caption scrolled off the card's foot). */
+.menu-screen > .menu-content:not(.main-menu__content):has(> .menu-actions) > .start-layout { align-items: stretch; }
+.start-left { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: clamp(380px, 60vh, 760px); }
+.start-left > .menu-section:first-child { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; margin-bottom: 10px; }
+.map-list, .start-layout .map-list { max-height: none; min-height: 0; height: 100%; }
+.start-left > .menu-section:last-child { margin: 0; }
+@media (max-height: 800px) { .start-left { min-height: 0; } .start-layout .map-list { max-height: none; } }

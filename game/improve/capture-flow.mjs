@@ -101,7 +101,7 @@ const main = async () => {
         maps: document.querySelectorAll(".map-card").length,
         modes: document.querySelectorAll(".mode-card").length,
         diffs: document.querySelectorAll(".diff-card").length,
-        preview: Boolean(document.querySelector(".map-preview-svg, .map-preview svg")),
+        preview: Boolean(document.querySelector(".map-preview-canvas, .map-preview svg")),
       }));
       await snap(page, "02-deploy-screen", "Deploy / map select", { dom });
     }
