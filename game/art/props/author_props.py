@@ -34,6 +34,7 @@ import bpy
 from mathutils import Vector, noise
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "..", "infantry"))
 import author_kit  # noqa: E402
 import validate  # noqa: E402
@@ -41,7 +42,11 @@ from author_kit import add_box, finish, join  # noqa: E402
 
 OUT = os.path.join(HERE, "..", "..", "public", "models", "props-kit.glb")
 VARIANTS = {"rock": 4, "stump": 3, "log": 3, "bush": 4, "canopy": 3, "trunk": 3, "cactus": 3, "statue": 3, "rubble": 3}
-TRI_BUDGET = 900
+# Landmarks (author_landmarks.py) are kitbashed from a dozen-plus primitives each and skip the bevel
+# (a 2-segment bevel is ~8x the tris of a box, and at tactical distance a flat-shaded landmark reads
+# the same). Budget lifted for the furnace (hoops + ring main + chute on a 14-sided stack).
+
+TRI_BUDGET = 1600
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -308,6 +313,13 @@ def build_cactus(i):
 
 BUILDERS = {"rock": build_rock, "stump": build_stump, "log": build_log, "bush": build_bush, "canopy": build_canopy,
             "trunk": build_trunk, "cactus": build_cactus, "statue": build_statue, "rubble": build_rubble}
+
+# The per-map landmarks live in their own module (imported after the helpers above exist, since
+# it calls back into cyl/ico/flat/floor).
+import author_landmarks  # noqa: E402
+
+BUILDERS.update(author_landmarks.LANDMARK_BUILDERS)
+VARIANTS.update(author_landmarks.LANDMARK_VARIANTS)
 
 
 def main():

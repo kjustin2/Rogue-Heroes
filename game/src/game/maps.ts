@@ -18,8 +18,13 @@ export interface AmbientSpec {
  */
 export type GroundSurfaceKind = "cracked" | "grass" | "slag" | "paved" | "ice";
 
+// The horizon silhouette behind the board: cheap flat-shaded shapes in makeSurroundings, one
+// family per map so the distance tells the same story as the ground.
+export type SkylineKind = "mountains" | "stacks" | "forest" | "floes" | "ziggurats" | "fences";
+
 export interface MapTheme {
   ground: number;
+  skyline?: SkylineKind;
   surface?: GroundSurfaceKind;
   groundAccent: number;
   grid: number;
@@ -33,6 +38,11 @@ export interface MapTheme {
 
 // A scatter group authors a cohesive band of objects; positions are generated in the
 // west half and mirrored east, guaranteeing a fair, non-clumped, varied layout.
+//
+// A SECTION is a group with a `rect`: the objects of one named place on the map (an orchard, a
+// rail yard, a fishing village) confined to that place rather than sprinkled across the board.
+// A `grid` lays the section out on a lattice — an orchard is rows of trees, a rail yard is lines
+// of cars — with a little jitter so it reads as planted, not stamped.
 export interface ScatterGroup {
   palette: CoverKind[];
   count: number; // objects per side (mirrored to the other half)
@@ -40,6 +50,10 @@ export interface ScatterGroup {
   minZ?: number;
   maxZ?: number;
   centerGap?: number; // keep this far off the centerline
+  /** Section bounds in authored (west-half) coordinates; the mirror lands on the east. */
+  rect?: TerrainRect;
+  /** Lattice layout: cell size in world units (object size, so it is NOT scaled with the map) + jitter. */
+  grid?: { dx: number; dz: number; jitter?: number };
 }
 
 export interface SignatureObject {
@@ -50,6 +64,8 @@ export interface SignatureObject {
   radius?: number;
   height?: number;
   mirror?: boolean; // also place a mirrored copy across the map center
+  /** Facing in radians (landmarks are placed, not spun); the mirror copy faces the opposite way. */
+  yaw?: number;
 }
 
 // Dynamic battlefield events — opt-in per map, deterministic (seeded), telegraphed a turn ahead.
@@ -145,6 +161,7 @@ function scaleMapDef(def: MapDef): MapDef {
       centerGap: g.centerGap === undefined ? undefined : g.centerGap * f,
       minZ: g.minZ === undefined ? undefined : g.minZ * f,
       maxZ: g.maxZ === undefined ? undefined : g.maxZ * f,
+      rect: g.rect ? scaleRect(g.rect, f) : undefined, // the section grows; its lattice cell does not
     })),
     signature: def.signature?.map((s) => ({ ...s, x: s.x * f, z: s.z * f })), // positions scale, object size fixed
     neutrals: def.neutrals?.map((n) => ({ ...n, x: n.x * f, z: n.z * f })),
@@ -222,45 +239,65 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
   // Signature features first (explicit, optionally mirrored).
   for (const sig of map.signature ?? []) {
     const profile = COVER_PROFILES[sig.kind];
-    const place = (x: number, z: number): void => {
-      objects.push(
-        createCover(`map-${map.id}-sig-${++seq}`, profile.label, { x, z }, {
-          coverKind: sig.kind,
-          hp: sig.hp,
-          radius: sig.radius,
-          height: sig.height,
-        })
-      );
+    const place = (x: number, z: number, yaw: number): void => {
+      const entity = createCover(`map-${map.id}-sig-${++seq}`, profile.label, { x, z }, {
+        coverKind: sig.kind,
+        hp: sig.hp,
+        radius: sig.radius,
+        height: sig.height,
+      });
+      entity.yaw = yaw;
+      objects.push(entity);
       placed.push({ x, z, r: sig.radius ?? profile.radius });
     };
     // An authored spot that lands on a block edge after map scaling is nudged to the nearest flat
     // ground, so the prop never straddles a step (half floating, half buried); the mirror copies
     // the nudged point so the layout stays symmetric.
     const at = nudgeOffEdge({ x: sig.x, z: sig.z }, sig.radius ?? profile.radius, map.terrain.bridges ?? []);
-    place(at.x, at.z);
-    if (sig.mirror && Math.abs(sig.x - center.x) > 0.3) place(2 * center.x - at.x, 2 * center.z - at.z);
+    place(at.x, at.z, sig.yaw ?? 0);
+    if (sig.mirror && Math.abs(sig.x - center.x) > 0.3) place(2 * center.x - at.x, 2 * center.z - at.z, (sig.yaw ?? 0) + Math.PI);
   }
 
-  // Scatter groups, generated in the west half and mirrored east for fairness.
+  // Scatter groups, generated in the west half and mirrored east for fairness. A section (rect)
+  // confines the group to its place; a grid lays it on a lattice, row by row, deterministically.
   for (const group of map.scatter) {
     const gap = group.centerGap ?? 2.5;
-    const minZ = group.minZ ?? bounds.minZ + 2.5;
-    const maxZ = group.maxZ ?? bounds.maxZ - 2.5;
+    const minZ = group.rect?.minZ ?? group.minZ ?? bounds.minZ + 2.5;
+    const maxZ = group.rect?.maxZ ?? group.maxZ ?? bounds.maxZ - 2.5;
+    const minX = group.rect?.minX ?? bounds.minX + 2.5;
+    const maxX = Math.min(group.rect?.maxX ?? center.x - gap, center.x - gap);
     let made = 0;
+    const pick = (): CoverKind => group.palette[Math.floor(rng.range(0, group.palette.length)) % group.palette.length];
+    const tryPlace = (x: number, z: number): boolean => {
+      const kind = pick();
+      const r = COVER_PROFILES[kind].radius + group.spacing;
+      const west = { x, z };
+      const east = { x: 2 * center.x - x, z: 2 * center.z - z };
+      if (blocked(west, r) || blocked(east, r)) return false;
+      add(kind, west);
+      add(kind, east);
+      made += 1;
+      return true;
+    };
+    if (group.grid) {
+      const { dx, dz } = group.grid;
+      const jitter = group.grid.jitter ?? 0;
+      const cols = Math.max(1, Math.floor((maxX - minX) / dx));
+      const rows = Math.max(1, Math.floor((maxZ - minZ) / dz));
+      const x0 = minX + ((maxX - minX) - (cols - 1) * dx) / 2;
+      const z0 = minZ + ((maxZ - minZ) - (rows - 1) * dz) / 2;
+      for (let row = 0; row < rows && made < group.count; row += 1) {
+        for (let col = 0; col < cols && made < group.count; col += 1) {
+          tryPlace(x0 + col * dx + rng.range(-jitter, jitter), z0 + row * dz + rng.range(-jitter, jitter));
+        }
+      }
+      continue;
+    }
     let attempts = 0;
     const cap = group.count * 160; // crowded maps (Ironworks) need the retries now that neutrals are reserved
     while (made < group.count && attempts < cap) {
       attempts += 1;
-      const x = rng.range(bounds.minX + 2.5, center.x - gap);
-      const z = rng.range(minZ, maxZ);
-      const kind = group.palette[Math.floor(rng.range(0, group.palette.length)) % group.palette.length];
-      const r = COVER_PROFILES[kind].radius + group.spacing;
-      const west = { x, z };
-      const east = { x: 2 * center.x - x, z: 2 * center.z - z };
-      if (blocked(west, r) || blocked(east, r)) continue;
-      add(kind, west);
-      add(kind, east);
-      made += 1;
+      tryPlace(rng.range(minX, maxX), rng.range(minZ, maxZ));
     }
   }
 

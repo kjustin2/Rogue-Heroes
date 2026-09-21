@@ -141,8 +141,14 @@ function loadInfantryKit(): void {
 // with the GLB missing. The kit REPLACED the photoreal Meshy rock.glb (30 credits, greyscaled and
 // re-tinted to sit next to the toon troopers, and one silhouette on every map).
 // ---------------------------------------------------------------------------
-export type PropsKind = "rock" | "stump" | "log" | "bush" | "canopy" | "trunk" | "cactus" | "statue" | "rubble";
-export const PROPS_VARIANTS: Record<PropsKind, number> = { rock: 4, stump: 3, log: 3, bush: 4, canopy: 3, trunk: 3, cactus: 3, statue: 3, rubble: 3 };
+export type PropsKind = "rock" | "stump" | "log" | "bush" | "canopy" | "trunk" | "cactus" | "statue" | "rubble"
+  | "convoy" | "derrick" | "furnace" | "railcar" | "chapel" | "mill" | "hull" | "hut" | "colossus" | "cistern" | "gate" | "radar";
+export const PROPS_VARIANTS: Record<PropsKind, number> = {
+  rock: 4, stump: 3, log: 3, bush: 4, canopy: 3, trunk: 3, cactus: 3, statue: 3, rubble: 3,
+  // Landmarks: one authored shape each (they are the thing you recognise, so they do not vary),
+  // except the two that are laid in lines/clusters and want a second silhouette.
+  convoy: 1, derrick: 1, furnace: 1, railcar: 2, chapel: 1, mill: 1, hull: 1, hut: 2, colossus: 1, cistern: 1, gate: 1, radar: 1,
+};
 // The full name set (kept literal so the Blender validator can diff it against what it built).
 export type PropsPart =
   | "rock-0" | "rock-1" | "rock-2" | "rock-3"
@@ -153,7 +159,9 @@ export type PropsPart =
   | "trunk-0" | "trunk-1" | "trunk-2"
   | "cactus-0" | "cactus-1" | "cactus-2"
   | "statue-0" | "statue-1" | "statue-2"
-  | "rubble-0" | "rubble-1" | "rubble-2";
+  | "rubble-0" | "rubble-1" | "rubble-2"
+  | "convoy-0" | "derrick-0" | "furnace-0" | "railcar-0" | "railcar-1" | "chapel-0" | "mill-0" | "hull-0"
+  | "hut-0" | "hut-1" | "colossus-0" | "cistern-0" | "gate-0" | "radar-0";
 
 const props = new Map<string, THREE.BufferGeometry>();
 let propsState: "idle" | "loading" | "ready" | "failed" = "idle";
