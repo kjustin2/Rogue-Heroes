@@ -27,7 +27,7 @@ const STAGES = {
   tank: { actor: "tank", target: "soldier", dist: 8.5, order: "shoot", zoom: 0.8, scale: 0.5, span: 4.7 },
   artillery: { actor: "artillery", target: "soldier", dist: 11, order: "shoot", zoom: 1.0, scale: 0.5, span: 5.7 },
   apc: { actor: "apc", target: "soldier", dist: 7, order: "shoot", zoom: 0.7, scale: 0.5, span: 3.6 },
-  turret: { actor: "turret", target: "soldier", dist: 6.5, order: "shoot", zoom: 0.7, scale: 0.5, span: 3.4 },
+  turret: { actor: "turret", target: "soldier", dist: 6.5, order: "shoot", zoom: 0.7, scale: 0.5, span: 3.4, targetZ: 3.5 },
   gunship: { actor: "gunship", target: "gunship", dist: 7, order: "shoot", zoom: 0.75, scale: 0.5, span: 3.3 },
   // "through": the target stands just behind a prop on the line of fire. The rounds must stop AT
   // the prop (chip effect) or clearly clear it — never pass through the mesh.
@@ -76,8 +76,10 @@ try {
         window.__rht.deselect();
         return { queued, why: queued ? "" : sim.log.slice(0, 2), orders: sim.orders.length };
       }
-      const actor = sim.debugSpawn(stage.actor, "player", { x: -0.7, z: 0 });
-      const target = sim.debugSpawn(stage.target, "enemy", { x: stage.dist - 0.7, z: 0 });
+      const actor = stage.actor === "turret" || stage.actor === "exturret"
+        ? (() => { const t = sim.debugBuild(stage.actor, "player", { x: -0.7, z: 0 }); t.commandPoints = t.maxCommandPoints; return t; })()
+        : sim.debugSpawn(stage.actor, "player", { x: -0.7, z: 0 });
+      const target = sim.debugSpawn(stage.target, "enemy", { x: stage.dist - 0.7, z: stage.targetZ ?? 0 });
       if (stage.cover) sim.debugCover(stage.cover, { x: -0.7 + stage.dist * stage.coverAt, z: 0.15 });
       // A blast wall across the line, offset so the round crosses its OUTER third (the old disc let it through).
       if (stage.wall) { const w = sim.debugBuild("wall", "enemy", { x: -0.7 + stage.dist * stage.coverAt, z: 0.8 }); w.yaw = Math.PI / 2; }

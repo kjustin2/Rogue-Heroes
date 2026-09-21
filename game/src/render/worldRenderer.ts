@@ -97,6 +97,7 @@ export class WorldRenderer {
   private readonly actionRangeRing: THREE.Mesh;
   private readonly shootRangeRing: THREE.Mesh;
   private lastRangeSig = "";
+  private resolving = false;
   private waterWaves: THREE.Texture | undefined;
   private lastPlacementSig = "";
   private readonly placementRing: THREE.Mesh;
@@ -316,6 +317,7 @@ export class WorldRenderer {
       }
       const existing = this.groups.get(entity.id);
       if (existing && !existing.visible) existing.visible = true; // reappears when dropped off
+      this.resolving = sim.phase === "resolve";
       this.syncEntity(entity, sim.selectedId, targetId, targetPartId, sim.defending.has(entity.id), this.ghostedEntityIds.has(entity.id));
     }
     this.syncUnitMarkers(sim);
@@ -1380,9 +1382,22 @@ export class WorldRenderer {
     const tree = entity.coverKind === "tree" && entity.status.alive;
     const swayT = performance.now() * 0.001 + (variety % 97) * 0.13;
     const sway = tree ? (Math.sin(swayT * 0.7) * 0.6 + Math.sin(swayT * 2.1) * 0.4) * 0.028 : 0;
+    // Emplacements TRAVERSE to their target instead of snapping: the sim sets yaw the instant an
+    // order starts, and the wind-up before the shot is long enough for a 4 rad/s turn to arrive.
+    let shownYaw = entity.yaw;
+    if (entity.kind === "turret" || entity.kind === "exturret") {
+      const prev = group.userData.shownYaw as number | undefined;
+      if (prev === undefined) shownYaw = entity.yaw;
+      else {
+        const delta = Math.atan2(Math.sin(entity.yaw - prev), Math.cos(entity.yaw - prev));
+        const maxStep = 4 * (1 / 60);
+        shownYaw = prev + Math.max(-maxStep, Math.min(maxStep, delta));
+      }
+      group.userData.shownYaw = shownYaw;
+    }
     group.rotation.set(
       (isInfantryKind(entity.kind) ? 0.06 * walkWeight : 0) + sway * 0.45,
-      entity.yaw + (scenery ? ((variety % 360) / 360) * Math.PI * 2 : 0),
+      shownYaw + (scenery ? ((variety % 360) / 360) * Math.PI * 2 : 0),
       (entity.kind === "tank" ? Math.sin(motionTime * 4.8) * 0.018 * walkWeight : 0) + sway
     );
     if (defending && isInfantryKind(entity.kind) && entity.status.alive) {
@@ -1428,8 +1443,10 @@ export class WorldRenderer {
         group.rotation.x += Math.sin(t * 0.7) * 0.006 * idle + Math.sin(t * 47) * 0.0025 * idle;
         group.rotation.z += Math.sin(t * 0.45) * 0.005 * idle;
       } else if (entity.kind === "turret" || entity.kind === "exturret") {
-        // Emplacements: a slow traverse hunt, like a gun looking for work. (Walls stay put.)
-        group.rotation.y += Math.sin(t * 0.25) * 0.12;
+        // Emplacements: a slow traverse hunt while PLANNING, like a gun looking for work. During
+        // the resolve the barrel must point exactly where the round goes — the hunt (up to 7°)
+        // made a turret fire visibly off its own muzzle. (Walls stay put.)
+        if (!this.resolving) group.rotation.y += Math.sin(t * 0.25) * 0.12;
       }
     }
     // Damage you can see from the camera: a legless trooper is down on one knee, a vehicle with a
