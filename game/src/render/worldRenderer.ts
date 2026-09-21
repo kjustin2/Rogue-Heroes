@@ -1640,7 +1640,7 @@ export class WorldRenderer {
       this.vpart(group, entity, "front-plate", "apc-front", 0x7d918f);
       this.vpart(group, entity, "left-tread", "apc-wheels", TRACK, { dx: -0.9, metalness: 0.2 });
       this.vpart(group, entity, "right-tread", "apc-wheels", TRACK, { dx: 0.9, metalness: 0.2 });
-      this.vpart(group, entity, "turret", "apc-cupola", 0x3d6478);
+      this.vpart(group, entity, "turret", "apc-cupola", 0x2b4a5a);
       this.vpart(group, entity, "cannon", "apc-autogun", 0x8e9c98, { metalness: 0.3 });
       for (const x of [-0.6, 0.6]) this.box(group, entity, "front-plate", [0.34, 0.12, 0.1], [x, 1.02, 1.56], 0xfff4ca, lamp);
       for (const side of [-1, 1]) for (const z of [-0.5, 0.0, 0.5]) this.box(group, entity, "hull", [0.05, 0.16, 0.2], [side * 0.95, 1.42, z], 0x121a1e, stripe);
@@ -1655,7 +1655,7 @@ export class WorldRenderer {
       this.vpart(group, entity, "front-plate", "arty-front", 0x7d918f);
       this.vpart(group, entity, "left-tread", "arty-track", TRACK, { dx: -0.9, metalness: 0.2 });
       this.vpart(group, entity, "right-tread", "arty-track", TRACK, { dx: 0.9, metalness: 0.2 });
-      this.vpart(group, entity, "turret", "arty-mount", 0x3a5560);
+      this.vpart(group, entity, "turret", "arty-mount", 0x2b4a5a);
       this.vpart(group, entity, "cannon", "arty-gun", 0x8e9c98, { metalness: 0.32 });
       for (const x of [-0.5, 0.5]) this.box(group, entity, "front-plate", [0.3, 0.12, 0.1], [x, 1.16, 1.42], 0xfff4ca, lamp);
       for (const x of [-0.58, 0.58]) this.box(group, entity, "turret", [0.06, 0.1, 0.6], [x, 1.7, -0.3], 0xdaf7ff, stripe);
@@ -1667,7 +1667,7 @@ export class WorldRenderer {
     this.vpart(group, entity, "front-plate", "tank-front", 0x7d918f);
     this.vpart(group, entity, "left-tread", "tank-track", TRACK, { dx: -0.9, metalness: 0.2 });
     this.vpart(group, entity, "right-tread", "tank-track", TRACK, { dx: 0.9, metalness: 0.2 });
-    this.vpart(group, entity, "turret", "tank-turret", 0x3d6478);
+    this.vpart(group, entity, "turret", "tank-turret", 0x2b4a5a);
     this.vpart(group, entity, "cannon", "tank-cannon", 0x8e9c98, { metalness: 0.32 });
     for (const x of [-0.7, 0.7]) this.box(group, entity, "front-plate", [0.4, 0.14, 0.1], [x, 0.95, 1.5], 0xfff4ca, lamp);
     for (const x of [-0.8, 0.8]) this.box(group, entity, "turret", [0.06, 0.12, 0.9], [x, 1.42, 0.05], 0xdaf7ff, stripe);

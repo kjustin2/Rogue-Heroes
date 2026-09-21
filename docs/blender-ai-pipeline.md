@@ -252,8 +252,16 @@ prototyping/inspection aid, not the pipeline.** Everything below sharpens that.
 **Status 2026-09-18:** items **1, 3, 4, 5, 10, 14** are DONE (Cycles vertex AO, validator + selftest,
 props kit with 29 seeded variants incl. tree canopies, warm/cool ramp, CLAUDE.md Blender rules);
 item 2 was already true (pooled parts are `MeshToonMaterial`). Remaining, in priority order: 6
-(gltf-transform post-pass on both kits), 7 (authored pivots as extras), 8/9 (walk-cycle channels,
-pose bank), 11 (sway weights in `COLOR_1`), 12 (cliff skirt — hatching-ledger blast radius), 13, 15.
+(gltf-transform post-pass on the kits), 7 (authored pivots as extras), 8/9 (walk-cycle channels,
+pose bank), 11 (sway weights in `COLOR_1`), 12 (cliff skirt — hatching-ledger blast radius), 15.
+
+**Status 2026-09-20:** the **vehicles kit** (not on the list above — the owner's ask) is DONE and it
+retired the Meshy pipeline entirely; item 13 (palette atlas on the Meshy hulls) is moot and dropped. `art/vehicles/
+author_vehicles.py` → `vehicles-kit.glb` + generated `vehiclesLayout.ts`; one mesh per damage-model
+part for tank / APC / artillery / gun turret / HQ, single meshes for crates / sandbags / barricade;
+pooled toon parts with an inverted-hull ink rim. See CLAUDE.md "Meshy is gone; vehicles are a
+Blender kit" for the rules and the two gotchas (world-space `add_box` meshes, bevel vs greeble
+thickness).
 
 1. **Cycles AO → vertex colours inside `finish()`** for every kit part, exported as `COLOR_0`.
    Crevice AO on helmets/packs/boots is the cheapest "authored, not primitive" read there is.
@@ -296,7 +304,7 @@ pose bank), 11 (sway weights in `COLOR_1`), 12 (cliff skirt — hatching-ledger 
 12. **Cliff-face skirt tile** (1x1x1 authored, stretched per exposed block face, `castShadow=false`,
     never a cap) for stepped mesas. Touches: `author_props.py`, `makeTerrainBlocks`. Gate:
     `smoke:ground` + `probe:depth` must stay green — this is inside the hatching ledger's blast radius.
-13. **Palette atlas for static props** via `gltf-transform palette` on the Meshy hulls + a UV-offset
+13. ~~**Palette atlas for static props** via `gltf-transform palette` on the Meshy hulls~~ (DROPPED 2026-09-20: no Meshy hulls) + a UV-offset
     tint instead of a material swap in `tintModelToMap`. Touches: `build-models.mjs`, `models.ts`.
 14. **blender-mcp as an inspection REPL only**: document the `--background`-first rule and the
     localhost/safe-mode caveat in `CLAUDE.md`; no write path to `public/models/` from a live session.

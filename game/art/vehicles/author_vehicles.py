@@ -366,12 +366,25 @@ def build_hq_gate():
 
 # ----------------------------------------------------------------------------- COVER
 def build_crates():
-    # A stack: two on the ground, one up top turned a little; banding grooves as thin proud slats.
-    a = gbox("a", (0.9, 0.7, 0.9), (-0.28, 0.35, 0.02))
-    b = gbox("b", (0.66, 0.56, 0.7), (0.5, 0.28, -0.08), yaw=0.2)
-    c = gbox("c", (0.7, 0.56, 0.7), (-0.2, 0.98, -0.02), yaw=-0.35)
-    slats = [gbox(f"slat{i}", (0.94, 0.08, 0.08), (-0.28, 0.16 + i * 0.36, 0.48)) for i in range(2)]
-    return part([a, b, c, *slats], "crates", bevel=0.03)
+    # A stack: two on the ground, one up top turned a little. Every crate wears proud steel banding
+    # on all four faces — a plain box read as a block of cheese at tactical zoom.
+    def crate(name, size, at, yaw=0.0):
+        sx, sy, sz = size
+        body = gbox(name, size, at)
+        pieces = [body]
+        for k, dy in enumerate((-0.28, 0.28)):
+            y = at[1] + dy * sy
+            pieces.append(gbox(f"{name}bx{k}", (sx + 0.06, 0.08, sz + 0.06), (at[0], y, at[2])))
+        for k, dx in enumerate((-0.3, 0.3)):
+            pieces.append(gbox(f"{name}bz{k}", (0.08, sy + 0.06, sz + 0.06), (at[0] + dx * sx, at[1], at[2])))
+        obj = join(pieces, name)
+        if yaw:
+            _pivot_rotate(obj, at, 0.0, yaw)
+        return obj
+    a = crate("a", (0.9, 0.72, 0.9), (-0.3, 0.36, 0.02))
+    b = crate("b", (0.66, 0.58, 0.7), (0.5, 0.29, -0.08), yaw=0.25)
+    c = crate("c", (0.66, 0.56, 0.66), (-0.22, 1.0, -0.02), yaw=-0.4)
+    return part([a, b, c], "crates", bevel=0.02)
 
 
 def build_sandbags():

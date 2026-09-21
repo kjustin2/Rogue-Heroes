@@ -30,11 +30,11 @@ symbols fail the build.
 | 12-frame attack filmstrip at half/quarter speed (`-- melee`, `kill`, `jump`, or a projectile family: `shoot heavy sniper sapper pistol flame grenade launcher mortar tank artillery apc turret gunship`, `all` for every family) — judge motion here, not in stills | `npm run shots:filmstrip` |
 | Depth-fight repro (hide plates / kill shadows / lift plates / old near plane) | `npm run probe:depth <scenario>` |
 | Infantry lineup, near + far, for kit/proportion review | `npm run shots:lineup` |
-| Rebuild the Blender kits (validated, AO-baked) | `npm run art:kit`, `npm run art:props`, `npm run art:validate:selftest` |
+| Rebuild the Blender kits (validated, AO-baked) | `npm run art:kit`, `npm run art:props`, `npm run art:vehicles`, `npm run art:validate:selftest` |
 | A/B two screenshots (hottest region, 3× crop) / inspect a GLB | `npm run shots:diff a.png b.png out.png`, `npm run art:inspect <glb>` |
 | Start one map headless and print the in-page error | `npm run probe:map <id>` |
 | **Real-GPU frame-time probe** (hidden Electron, diffs compiled programs across resolves) | `npm run soak:gpu [scenario]` |
-| **Real-GPU screenshots** (`-- menu firefight lineup rings abilities direction nowalk maps volley …`; `maps` = one gameplay frame per battlefield (`volley` = a seven-family firing line mid-resolve: rounds, trails, flashes, blasts on the real GPU); UI screens `deploy settings armory campaign run tutorial pause victory defeat hover hover-deck`; `mapselect` shoots the Skirmish page at 1280×720 / 1600×900 / 2560×1080; `SHOT_PREFIX=before-` for a baseline build) | `npm run shots:gpu` |
+| **Real-GPU screenshots** (`-- menu firefight lineup rings abilities direction nowalk maps volley vehicles structures …`; `vehicles` / `structures` = the vehicles-kit review frames, both teams; `maps` = one gameplay frame per battlefield (`volley` = a seven-family firing line mid-resolve: rounds, trails, flashes, blasts on the real GPU); UI screens `deploy settings armory campaign run tutorial pause victory defeat hover hover-deck`; `mapselect` shoots the Skirmish page at 1280×720 / 1600×900 / 2560×1080; `SHOT_PREFIX=before-` for a baseline build) | `npm run shots:gpu` |
 | Walk-up-a-step filmstrip (feet vs talus / plates) | `npm run shots:step` |
 | Build + Electron gameplay smoke | `npm run test:play` |
 | Desktop app (build + Electron) | `npm run standalone` |
@@ -171,11 +171,11 @@ Rules:
   that writes `public/models/`. A live blender-mcp session is an inspection REPL (screenshot a part,
   read a bbox / face count) — never a write path to the repo; the socket is unauthenticated, so
   localhost + `BLENDER_MCP_SAFE_MODE=1` only. GLB out of a live session is not accepted.
-- **The validator is the gate** (`art/infantry/validate.py`, run by `art:kit` AND `art:props`
-  before export; any failure aborts with exit 1): loose verts / wire edges / 3+-face edges /
+- **The validator is the gate** (`art/infantry/validate.py`, run by `art:kit`, `art:props` AND
+  `art:vehicles` before export; any failure aborts with exit 1): loose verts / wire edges / 3+-face edges /
   zero-area faces / NaN, inward-facing shells, a per-part tri budget (2400 kit, 900 props), the unit
-  cube with transforms applied, UVs + `COLOR_0`, and the NAME SET == the `KitPart` / `PropsPart`
-  union in `models.ts` (a part the game never asks for is dead weight; one it asks for and cannot
+  cube with transforms applied, UVs + `COLOR_0`, and the NAME SET == the `KitPart` / `PropsPart` /
+  `VehiclesPart` union in `models.ts` (a part the game never asks for is dead weight; one it asks for and cannot
   find is a silent box). It caught 104 zero-area faces on the mortar cap and a collapsed stump on
   its first two runs. `npm run art:validate:selftest` fault-injects a rename, a flipped shell and a
   stray primitive — keep it passing when the rules change. `npm run art:inspect <glb>` prints what
@@ -202,21 +202,48 @@ Rules:
 - **No `Draco` on any export** (vertex colours corrupt in the Blender exporter); meshopt via
   gltf-transform is the sanctioned compressor. GN instances must be realized before export.
 
-## Meshy scope (deliberate per-repo exception)
+## Meshy is gone; vehicles are a Blender kit (2026-09-20)
 
-This repo's sanctioned Meshy scope is **hard-surface vehicle/structure/prop hulls**
-(tank, apc, artillery, hq, turret, crates, sandbags, barricade — it works here; the rock was
-Meshy once and is now the props kit, see Blender rules).
-**Infantry/characters stay procedural.** This intentionally goes beyond the global
-"static set-dressing only" default — do not "fix" it back, and do not expand it to
-characters. Generation is offline: `MESHY_API_KEY` in gitignored `game/.env`, then
-`node --env-file=.env scripts/build-models.mjs` (`--balance` first; ~30 credits/model;
-raw GLBs cache in `assets-raw/`). GLBs live in `game/public/models/` with `.meshy.json`
-sidecars; `src/render/models.ts` async-loads them and **falls back to procedural
-builders** — dev/CI never depend on assets. Cosmetic skin packs are Meshy *retextures*
-(~10 credits, `scripts/retexture-models.mjs`, reuses sidecar task ids) saved as
-`<name>-<skin>.glb`; `setModelSkin(skin)` swaps the cache, missing skins fall back to
-the standard hull.
+**Owner's rule: "Get rid of any of the mesh generated units and replace with blender and toon
+style ones to ensure game has a consistent look and feel."** The former per-repo Meshy exception
+(hard-surface hulls for tank / apc / artillery / hq / turret / crates / sandbags / barricade) is
+revoked: the photoreal GLBs, the winter retextures, the `.meshy.json` sidecars, `build-models` /
+`gen-model` / `retexture-models`, `setModelSkin` and the `unitSkin` setting are all deleted. There
+is **no Meshy scope in this repo any more** — not for set-dressing either — and no per-model
+texture path in `models.ts`. Every hull now comes from **`art/vehicles/author_vehicles.py` →
+`public/models/vehicles-kit.glb`** (`npm run art:vehicles`), the third Blender kit:
+
+- **One mesh per damage-model part.** `tank-hull` / `tank-front` / `tank-turret` / `tank-cannon` /
+  `tank-track` (one mesh placed at ±x for the two treads), `apc-*` (wheeled 6x6 — wheels, not
+  tracks, are the one-glance difference from the tank), `arty-*` (howitzer parked at 24°, dozer
+  blade, spade), `turret-*`, `hq-*`, and single meshes for `crates` / `sandbags` / `barricade`.
+  The name set is the `VehiclesPart` union in `models.ts`; the validator diffs it like the others.
+  Per-part damage, cannon recoil, dead-track listing and team paint work because every part is an
+  ordinary pooled part mesh — the pick-proxy layouts the Meshy hulls needed are gone.
+- **Authored at game scale, in game coordinates**, and the script writes the generated
+  `src/render/vehiclesLayout.ts` (each part's authored bbox). `vpart()` in `worldRenderer.ts`
+  scales the unit-cube part back to that bbox, so for vehicles SHAPE AND PROPORTION live in
+  Blender (a hull's parts must fit each other); the tank / APC / artillery rig is scaled once by
+  `VEHICLE_KIT_SCALE` (0.78) to toy proportions. Team colour, accent lamps (headlamps, turret
+  stripe, cupola beacon, HQ banner + windows) and animation stay in TS — a pooled part material is
+  ONE colour, so anything emissive is a separate small `accent` box.
+- **Every kit part wears an inverted-hull ink rim** (`ink` in `box()`: the same geometry drawn
+  BackSide, scaled per axis so the line is `VEHICLE_INK` thick in world units). Its material is
+  registered in `warmUpSamplers`; ghosted parts hide it (`paintOutline`).
+- **The mortar battery shares the kit plinth + berm** (`buildTurretMountKit`) under its
+  procedural tubes, so the two emplacements speak one language. Sandbags are a wall of FAT
+  overlapping bags over a filler core — separate bags showed each other's ink rim through the
+  gaps and read as a honeycomb.
+- **Fallback is the older procedural builder**, chosen per entity by `vehiclesKitReady()` at
+  build time and re-chosen when `modelsVersion()` bumps; the game runs with `public/models/`
+  empty. Structures and cover check `vehicleGeometry(part)` per branch, like the props kit.
+- **Gotchas that cost a round each:** `add_box` leaves the mesh in WORLD coordinates, so a
+  rotation set on the object spins the box about the world origin — every orientation in this
+  script is applied to vertices about the piece's own centre (`_pivot_rotate`); and a bevel wider
+  than ~half a greeble's thickness collapses faces (the validator's zero-area check caught ribs,
+  slats and rails at 0.05–0.06 thick — keep small pieces ≥0.1 or use `BEVEL_FINE`).
+- Evidence: `npm run shots:gpu -- vehicles structures direction` (both teams, close passes),
+  `shots:silhouette`. Review those after any kit change.
 
 ## Perf / vision / improve loop
 
@@ -327,8 +354,8 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   **never write to a part mesh's `material`** — you would repaint every other mesh that currently
   looks the same. Change `mesh.userData.baseColor` (or the spec paintPart builds) instead; that is
   what `tintPropToMap` does. Pooled materials and geometry carry `userData.shared`, which is how
-  `disposeSubtree` knows to leave them alone. GLB clone materials are per-instance and are still
-  mutated directly by `paintModel` — that path is unaffected.
+  `disposeSubtree` knows to leave them alone. There are no per-instance GLB materials any more
+  (the vehicles kit is pooled parts too).
 - **The ground texture is a neutral MULTIPLIER, not an albedo.** `makeGroundTexture` draws around
   white and the material's own `color` supplies the hue, so the arena floor, the mesa caps and the
   outer plain share one texture at three tints. Baking `theme.ground` into the texture *and* setting
@@ -397,8 +424,8 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   rendered elevation is the footprint-sampled max of it (capped at one `TERRAIN_STEP` above the sim
   ground) plus `plateLiftAt` (ground plates record their discs). Sim elevation is untouched.
   `npm run shots:step` films a walk up a step — judge feet there.
-- **Vehicle radii cover the hull half-length** (`TARGET_SIZE / 2` in models.ts ↔ `createTank/Apc/
-  Artillery`): a circle smaller than the hull let tanks park inside crates. Spawn clearance
+- **Vehicle radii cover the hull half-length** (`createTank/Apc/Artillery` ↔ the kit hull's authored
+  length × `VEHICLE_KIT_SCALE`, ~2.4 for the tank): a circle smaller than the hull let tanks park inside crates. Spawn clearance
   (`freeSpawnNear`) is sized to the unit; `debugSpawn` separates from what is there and a staged wall
   pushes standing units aside. `scatter.test.ts` audits every map: no prop overlap, no prop
   straddling a step (`nudgeOffEdge` slides authored signature pieces, mirrored AFTER the nudge).
@@ -467,7 +494,7 @@ origin-keyed, so a new port every launch silently wipes all saves** (real 06-24 
 
 ## Persistence
 
-All localStorage, keyed `rht.*`: `rht.settings.v1` (incl. `keybinds`, `unitSkin`,
+All localStorage, keyed `rht.*`: `rht.settings.v1` (incl. `keybinds`,
 `highContrastTeams`, `debugInfiniteMoney`/`debugFreeCooldown`), `rht.progression.v1` (purely cosmetic), `rht.savedBattle.v1`,
 `rht.campaign.v1` (mission clears + roster/veterancy + requisition),
 `rht.run.v1` (Skirmish Run: seed + sector index + carried roster/banked cash — the

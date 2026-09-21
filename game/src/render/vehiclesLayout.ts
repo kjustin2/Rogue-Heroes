@@ -17,7 +17,7 @@ export const VEHICLE_LAYOUT: Record<VehiclesPart, { size: [number, number, numbe
   "arty-mount": { size: [1.48, 0.87, 1.48], center: [0.0, 1.415, -0.25] },
   "arty-track": { size: [0.62, 0.72, 3.114], center: [0.0, 0.42, -0.207] },
   "barricade": { size: [1.9, 0.92, 0.7354], center: [0.0, 0.46, -0.2277] },
-  "crates": { size: [1.643, 1.26, 1.0086], center: [0.0715, 0.63, 0.0157] },
+  "crates": { size: [1.7228, 1.34, 1.0373], center: [0.0814, 0.64, -0.0186] },
   "hq-comms": { size: [0.66, 1.9, 0.6145], center: [-0.92, 2.6, -0.0627] },
   "hq-core": { size: [3.0, 2.53, 2.6], center: [0.0, 1.265, -0.0] },
   "hq-gate": { size: [2.7, 1.06, 0.55], center: [0.0, 0.63, 1.285] },
