@@ -43,7 +43,17 @@ try {
     throw new Error(`Base command deck never appeared: ${JSON.stringify(diag)}`);
   }
   const fieldBefore = await page.evaluate(() => window.__rht.sim.fieldUnitCount("player"));
+  // First click ARMS the placement ring (nothing spent), then the chosen ground point fields it.
   await page.click('[data-spawn="soldier"]');
+  const armed = await page.evaluate(() => ({ pending: window.__rht.sim.pendingDeploy, money: window.__rht.money("player") }));
+  if (armed.pending !== "soldier") throw new Error(`Deploy card did not arm placement: ${JSON.stringify(armed)}`);
+  if (armed.money !== startMoney) throw new Error(`Arming placement must not spend: ${JSON.stringify({ startMoney, ...armed })}`);
+  const chosen = await page.evaluate(() => {
+    const base = window.__rht.sim.entities.find((e) => e.kind === "base" && e.team === "player");
+    const point = { x: base.position.x + 3.5, z: base.position.z - 2 };
+    return { ok: window.__rht.queueDeployAt("soldier", point), point };
+  });
+  if (!chosen.ok) throw new Error(`Placed deploy rejected: ${JSON.stringify(chosen)}`);
   const afterDeploy = await page.evaluate(() => {
     const sim = window.__rht.sim;
     const base = sim.entities.find((e) => e.kind === "base" && e.team === "player");
@@ -55,6 +65,8 @@ try {
     };
   });
   if (!afterDeploy.spawned) throw new Error(`Deploy did not place a troop: ${JSON.stringify(afterDeploy)}`);
+  const landed = await page.evaluate(() => window.__rht.sim.entities.find((e) => e.id.startsWith("p-spawn-")).position);
+  if (Math.hypot(landed.x - chosen.point.x, landed.z - chosen.point.z) > 2.2) throw new Error(`Recruit not fielded at the chosen point: ${JSON.stringify({ landed, chosen })}`);
   if (afterDeploy.field !== fieldBefore + 1) throw new Error(`Field count did not grow: ${JSON.stringify({ fieldBefore, ...afterDeploy })}`);
   if (afterDeploy.money >= startMoney) throw new Error(`Deploy did not spend money: ${JSON.stringify({ startMoney, ...afterDeploy })}`);
   if (afterDeploy.baseCp !== 0) throw new Error(`Deploy did not spend the base CP: ${JSON.stringify(afterDeploy)}`);
@@ -91,6 +103,9 @@ try {
   await page.click(`[data-select="${baseId}"]`);
   await page.click('[data-base-tab="deploy"]'); // switch back from the tech tab
   await page.waitForSelector('[data-spawn="striker"]:not([data-disabled="true"])', { timeout: 4000 });
+  // Quick deploy: a second click on the armed card drops the troop at the base's own spot.
+  await page.click('[data-spawn="striker"]');
+  if ((await page.evaluate(() => window.__rht.sim.pendingDeploy)) !== "striker") throw new Error("Striker card did not arm placement");
   await page.click('[data-spawn="striker"]');
   const striker = await page.evaluate(() => window.__rht.sim.entities.some((e) => e.kind === "striker" && e.team === "player" && e.id.startsWith("p-spawn-")));
   if (!striker) throw new Error("Tech-unlocked Striker did not deploy");

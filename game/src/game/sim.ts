@@ -77,6 +77,10 @@ export { FACTIONS, factionDef, DEFAULT_FACTION, type FactionId, type FactionDef 
 export { MAPS, mapDef, flagPositions, mapCenter, mapSize, type MapDef, type MapTheme, type MapSize } from "./maps";
 
 export type Phase = "command" | "resolve" | "victory" | "defeat";
+// A placed deploy whose exact point is blocked slides to the nearest clear spot within this reach
+// (measured from the click to the edge of the unit's footprint).
+export const DEPLOY_SNAP = 1.5;
+
 export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "overwatch" | "mine" | "interact" | "inspect" | "inspect-detail" | "build" | "support" | "load" | "unload" | "smoke" | "recon" | "deploy";
 export type OrderKind = "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "load" | "unload" | "smoke" | "recon" | "deploy";
 
@@ -520,6 +524,9 @@ export class TacticalSim {
   turn = 1;
   // The defense kind queued for placement when intent is "build" (set by the HUD build deck).
   pendingBuild: DefenseKind | undefined;
+  // The troop kind awaiting a ground point when intent is "deploy" (set by the HUD deploy deck).
+  // Command-phase UI state only — never serialized.
+  pendingDeploy: TroopKind | undefined;
   // The support power awaiting a ground target when intent is "support" (set by the HUD).
   pendingSupport: SupportPowerKind | undefined;
   // Support strikes committed this command phase; they fly in during the next resolve.
@@ -689,6 +696,7 @@ export class TacticalSim {
     this.economy.set("enemy", START_MONEY_ENEMY);
     this.economy.set("neutral", 0);
     this.pendingBuild = undefined;
+    this.pendingDeploy = undefined;
     this.pendingSupport = undefined;
     this.queuedSupport = [];
     this.pendingFx = [];
@@ -1431,19 +1439,109 @@ export class TacticalSim {
     return undefined;
   }
 
+  /** Quick deploy: the troop appears at the base's own auto-picked spot (`freeSpawnNear`). The
+   *  tutorial, the enemy AI and the smokes use this path; the HUD card's second click too. */
   queueSpawnTroop(kind: TroopKind): boolean {
     const base = this.requirePlayerActor();
     if (!base) return false;
-    return this.spawnTroopFor(base, kind);
+    const ok = this.spawnTroopFor(base, kind);
+    if (ok && this.pendingDeploy === kind) this.setPendingDeploy(undefined);
+    return ok;
   }
 
-  private spawnTroopFor(base: CombatEntity, kind: TroopKind): boolean {
+  // ---- Placed deploy: the player picks the spot inside the ring around the base ----
+
+  // How far from its base a troop can be fielded (radius around the base centre).
+  deployPlacementRadius(base: CombatEntity): number {
+    return base.radius + 6;
+  }
+
+  // The placement footprint for the armed deploy, or undefined if not placing a troop.
+  deployPlacement(): { center: Vec2; radius: number } | undefined {
+    if (this.intent !== "deploy" || !this.pendingDeploy) return undefined;
+    const base = this.selected;
+    if (!base || base.kind !== "base" || base.team !== "player") return undefined;
+    return { center: { ...base.position }, radius: this.deployPlacementRadius(base) };
+  }
+
+  setPendingDeploy(kind: TroopKind | undefined): void {
+    this.pendingDeploy = kind;
+    this.intent = kind ? "deploy" : "select";
+    if (kind) {
+      this.pendingBuild = undefined;
+      this.pendingSupport = undefined;
+    }
+  }
+
+  // The footprint a troop of this kind needs on the ground (rng-free probe entity, never fielded).
+  private troopFootprint(kind: TroopKind, team: Team): { radius: number; flying: boolean } {
+    const probe = makeTroop(kind, "probe", "probe", team, { x: 0, z: 0 });
+    return { radius: probe.radius, flying: Boolean(probe.flying) };
+  }
+
+  // Same clearance rules as `freeSpawnNear`: clear of the base and every living body (sized to
+  // THIS unit), off a terrain step, and — for ground troops — dry.
+  private deploySpotBlocked(base: CombatEntity, point: Vec2, unitRadius: number, flying: boolean): boolean {
+    if (dist(point, base.position) < base.radius + unitRadius + 0.3) return true;
+    if (this.entities.some((e) => e.id !== base.id && e.status.alive && !e.carriedById && dist(e.position, point) < e.radius + unitRadius + 0.3)) return true;
+    if (onTerrainEdge(point, unitRadius * 0.8)) return true;
+    if (!flying && pointInWater(point)) return true;
+    return false;
+  }
+
+  /** Where a troop would actually land if deployed at `point`: the point itself when clear, else
+   *  the nearest clear spot within `DEPLOY_SNAP` of it that is still inside the ring. `reason` is
+   *  set when there is no such spot (and `point` is then the clicked point, unchanged). */
+  deployPointPreview(base: CombatEntity | undefined, kind: TroopKind, point: Vec2): { point: Vec2; snapped: boolean; reason?: string } {
+    const clicked = clampToArena(point);
+    if (!base || base.kind !== "base") return { point: clicked, snapped: false, reason: "Select your Home Base to deploy troops" };
+    const ring = this.deployPlacementRadius(base);
+    if (dist(clicked, base.position) > ring) return { point: clicked, snapped: false, reason: "Deploy inside the ring around your base" };
+    const { radius, flying } = this.troopFootprint(kind, base.team);
+    if (!this.deploySpotBlocked(base, clicked, radius, flying)) return { point: clicked, snapped: false };
+    let best: Vec2 | undefined;
+    let bestDist = Infinity;
+    // Reach is measured to the footprint EDGE, so a trooper clicked onto another trooper still
+    // finds the spot beside it (two 0.65 bodies plus the 0.3 gap need 1.6 centre to centre).
+    const reach = DEPLOY_SNAP + radius;
+    for (let r = 0.3; r <= reach + 1e-6; r += 0.3) {
+      for (let i = 0; i < 16; i += 1) {
+        const angle = (Math.PI * 2 * i) / 16;
+        const candidate = clampToArena({ x: clicked.x + Math.sin(angle) * r, z: clicked.z + Math.cos(angle) * r });
+        if (dist(candidate, base.position) > ring) continue;
+        if (this.deploySpotBlocked(base, candidate, radius, flying)) continue;
+        const d = dist(candidate, clicked);
+        if (d < bestDist) { bestDist = d; best = candidate; }
+      }
+      if (best) break;
+    }
+    if (best) return { point: best, snapped: true };
+    const spec = troopSpec(kind);
+    const why = !flying && pointInWater(clicked) ? "in the water" : onTerrainEdge(clicked, radius * 0.8) ? "on a cliff edge" : "blocked";
+    return { point: clicked, snapped: false, reason: `No room for ${spec.label} there (${why})` };
+  }
+
+  /** Player API: field `kind` at a chosen point inside the deploy ring. Spends the CP and cash
+   *  exactly once, only when the spot is accepted; a rejection costs nothing. */
+  queueDeployAt(kind: TroopKind, point: Vec2): boolean {
+    const base = this.requirePlayerActor();
+    if (!base) return false;
+    const failure = this.spawnFailureReason(base, kind);
+    if (failure) return this.reject(failure);
+    const spot = this.deployPointPreview(base, kind, point);
+    if (spot.reason) return this.reject(spot.reason);
+    const ok = this.spawnTroopFor(base, kind, spot.point);
+    if (ok) this.setPendingDeploy(undefined);
+    return ok;
+  }
+
+  private spawnTroopFor(base: CombatEntity, kind: TroopKind, at?: Vec2): boolean {
     const failure = this.spawnFailureReason(base, kind);
     if (failure) return this.reject(failure);
     const spec = troopSpec(kind);
     spendCommandPoint(base);
     this.addMoney(base.team, -spec.cost);
-    const unit = this.createTroop(kind, base);
+    const unit = this.createTroop(kind, base, at);
     this.entities.push(unit);
     this.syncEntityElevation(unit);
     // The deployed troop holds position until the next turn.
@@ -1453,15 +1551,15 @@ export class TacticalSim {
     return true;
   }
 
-  private createTroop(kind: TroopKind, base: CombatEntity): CombatEntity {
+  private createTroop(kind: TroopKind, base: CombatEntity, at?: Vec2): CombatEntity {
     const spec = troopSpec(kind);
     const prefix = base.team === "player" ? "p" : "e";
     const id = `${prefix}-spawn-${++this.troopSeq}`;
     const name = `${spec.label} ${this.troopSeq}`;
     const spawnAt = makeTroop(kind, id, name, base.team, base.position);
     // Clearance is sized to THIS unit: a tank fielded with an infantry-sized gap sat inside the
-    // nearest crate or wall.
-    spawnAt.position = this.freeSpawnNear(base, spawnAt.radius);
+    // nearest crate or wall. A placed deploy (`at`) was validated by deployPointPreview.
+    spawnAt.position = at ? { ...at } : this.freeSpawnNear(base, spawnAt.radius);
     if (!spawnAt.flying) spawnAt.position = nearestDryPoint(spawnAt.position);
     const unit = spawnAt;
     // Difficulty scaling: enemy units field with more health on higher difficulties.
@@ -1530,6 +1628,7 @@ export class TacticalSim {
   setPendingBuild(kind: DefenseKind | undefined): void {
     this.pendingBuild = kind;
     this.intent = kind ? "build" : "select";
+    if (kind) this.pendingDeploy = undefined;
   }
 
   // ---- Off-map support powers (airstrike / cluster / orbital lance) ----
@@ -1537,7 +1636,10 @@ export class TacticalSim {
   setPendingSupport(kind: SupportPowerKind | undefined): void {
     this.pendingSupport = kind;
     this.intent = kind ? "support" : "select";
-    if (kind) this.pendingBuild = undefined;
+    if (kind) {
+      this.pendingBuild = undefined;
+      this.pendingDeploy = undefined;
+    }
   }
 
   supportCooldown(base: CombatEntity, kind: SupportPowerKind): number {
@@ -2131,6 +2233,7 @@ export class TacticalSim {
       this.intent = "select";
       this.aim = "center";
       this.pendingBuild = undefined;
+      this.pendingDeploy = undefined;
       this.pendingSupport = undefined;
       this.queuedSupport = [];
       this.pendingFx = [];

@@ -79,8 +79,24 @@ try {
   });
   await page.click(`[data-select="${baseId}"]`);
   await page.waitForSelector('[data-spawn="soldier"]');
+  // Placed deploy: the card click arms the ring (nothing spent yet), then a ground point inside it
+  // fields the troop THERE. Mirrors the build flow below.
   await page.click('[data-spawn="soldier"]');
-  if (!(await page.evaluate(() => window.__rht.sim.entities.some((e) => e.id.startsWith("p-spawn-"))))) fail("Deploy button did not spawn");
+  const armed = await page.evaluate(() => ({ pending: window.__rht.sim.pendingDeploy, intent: window.__rht.sim.intent, ring: Boolean(window.__rht.sim.deployPlacement()), spawned: window.__rht.sim.entities.some((e) => e.id.startsWith("p-spawn-")) }));
+  if (armed.pending !== "soldier" || armed.intent !== "deploy" || !armed.ring) fail(`Deploy card did not arm placement: ${JSON.stringify(armed)}`);
+  if (armed.spawned) fail("Arming placement must not spawn");
+  if (!(await page.$(".placing-note"))) fail("Placing note missing while a deploy is armed");
+  const placed = await page.evaluate(() => {
+    const sim = window.__rht.sim;
+    const base = sim.entities.find((e) => e.kind === "base" && e.team === "player");
+    const point = { x: base.position.x + 2.5, z: base.position.z - 3.5 }; // clear of the turret spot below
+    const ok = window.__rht.queueDeployAt("soldier", point);
+    const unit = sim.entities.find((e) => e.id.startsWith("p-spawn-"));
+    return { ok, point, at: unit && unit.position, pending: sim.pendingDeploy };
+  });
+  if (!placed.ok || !placed.at) fail(`Placed deploy failed: ${JSON.stringify(placed)}`);
+  if (Math.hypot(placed.at.x - placed.point.x, placed.at.z - placed.point.z) > 2.2) fail(`Troop not fielded at the chosen point: ${JSON.stringify(placed)}`);
+  if (placed.pending) fail("Placement did not clear after the deploy");
   await refreshBaseCp(page, baseId);
   // The base deck is now split into subcategory tabs — open each tab before its buttons.
   await page.click('[data-base-tab="tech"]');

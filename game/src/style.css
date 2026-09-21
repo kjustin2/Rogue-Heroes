@@ -5534,6 +5534,9 @@ body { background: var(--paper-deep); }
 .turn-report { border: var(--ink-w) solid var(--ink); background: var(--paper-lo); border-radius: var(--toon-r-sm); }
 .log-line { color: var(--cream); }
 .placement-bar strong { color: var(--green); }
+/* Placed-deploy note above the troop deck: the copy, then Beside base / Cancel on one line. */
+.placing-note { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 8px; padding: 6px 10px; border-left: 6px solid var(--green); }
+.placing-note .icon-btn:first-of-type { margin-left: auto; }
 
 /* ---- TOOLTIP / TOAST / TUTORIAL / TRANSITION: same plates. ---- */
 .hud-tooltip {

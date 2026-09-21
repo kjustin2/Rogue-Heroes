@@ -84,6 +84,26 @@ app.whenReady().then(async () => {
         await shot("hover-deck");
         continue;
       }
+      if (s === "deployflow") {
+        // Placed deploy end to end: base selected → Deploy tab → card click arms the ring with the
+        // cursor ghost hovering a spot inside it (deployflow-ring) → the click fields the troop at
+        // that spot (deployflow-placed). The ghost is the same intent the player's cursor drives.
+        await js(`window.__rht.scenario("firefight"); window.__rht.deselect();`);
+        await sleep(1500);
+        await js(`(() => { const sim = window.__rht.sim; sim.economy.set("player", 3000); const base = sim.entities.find((e) => e.team === "player" && e.kind === "base"); base.commandPoints = 1; sim.select(base.id); window.__rht.setView({ x: base.position.x, z: base.position.z + 2, zoom: 0.8, pitch: 0.62, yaw: 0.2 }); })()`);
+        await sleep(700);
+        await js(`(() => { const t = document.querySelector('[data-base-tab="deploy"]'); if (t) t.click(); })()`); await sleep(300);
+        await js(`(() => { const c = document.querySelector('[data-spawn="soldier"]'); if (c) c.click(); })()`); await sleep(300);
+        const armed = await js(`(() => { const sim = window.__rht.sim; const base = sim.entities.find((e) => e.team === "player" && e.kind === "base"); const point = { x: base.position.x + 3.2, z: base.position.z + 2.6 }; window.__rht.hoverGround(point); return JSON.stringify({ pending: sim.pendingDeploy, intent: sim.intent, ring: sim.deployPlacement(), ghost: sim.deployPointPreview(base, "soldier", point) }); })()`);
+        console.log("deployflow armed:", armed);
+        await sleep(600);
+        await shot("deployflow-ring");
+        const placed = await js(`(() => { const sim = window.__rht.sim; const base = sim.entities.find((e) => e.team === "player" && e.kind === "base"); const point = { x: base.position.x + 3.2, z: base.position.z + 2.6 }; const ok = window.__rht.queueDeployAt("soldier", point); window.__rht.hoverGround(undefined); const u = sim.entities.find((e) => e.id.startsWith("p-spawn-")); return JSON.stringify({ ok, point, at: u && u.position, pending: sim.pendingDeploy }); })()`);
+        console.log("deployflow placed:", placed);
+        await sleep(700);
+        await shot("deployflow-placed");
+        continue;
+      }
       if (s === "hover") {
         // A tooltip open over the treasury bar: the one transient surface no static screen shows.
         await js(`window.__rht.scenario("firefight"); window.__rht.deselect();`);

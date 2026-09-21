@@ -8,6 +8,7 @@ import { isBuildingKind, isDefenseKind, isInfantryKind, isVehicleKind, type Comb
 import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
 import { OVERWATCH_ARC_HALF } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec } from "../game/maps";
+import type { TroopKind } from "../game/units";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
 import { instantiate, kitGeometry, modelsVersion, propGeometry, toonGradient, type KitPart, type ModelKey } from "./models";
 import {
@@ -3431,9 +3432,10 @@ export class WorldRenderer {
     }
   }
 
-  // The circle showing where a base defense can be placed (active during the build flow).
+  // The circle showing where a base defense can be placed (build flow) or where a troop can be
+  // fielded (placed-deploy flow) — one ring, whichever is armed.
   private syncBuildPlacement(sim: TacticalSim): void {
-    const placement = sim.buildPlacement();
+    const placement = sim.buildPlacement() ?? sim.deployPlacement();
     this.placementRing.visible = Boolean(placement);
     this.placementDisc.visible = Boolean(placement);
     if (!placement) return;
@@ -3526,6 +3528,12 @@ export class WorldRenderer {
       this.drawSupportReticle(sim, sim.pendingSupport, point);
       return;
     }
+    // Placing a troop: a ghost footprint where it would actually stand (snapped to the nearest
+    // clear spot), green when the spot is accepted, red when the click would be rejected.
+    if (sim.pendingDeploy && sim.deployPlacement()) {
+      this.drawDeployGhost(sim, sim.pendingDeploy, point);
+      return;
+    }
     // Aiming overwatch: preview the watch cone toward the cursor so the player sees the arc and
     // radius before committing. The click direction becomes the watched facing.
     if (sim.intent === "overwatch") {
@@ -3553,6 +3561,27 @@ export class WorldRenderer {
     // Blast footprint at where it actually lands (the marked spot, or the obstacle it clips).
     this.groundAimRoot.add(makeSplashDisc(landing.point, color, aim.radius));
     this.groundAimRoot.add(makeEndpoint(landing.point, color, 0.5, landing.height + 0.05));
+  }
+
+  private drawDeployGhost(sim: TacticalSim, kind: TroopKind, point: Vec2): void {
+    const spot = sim.deployPointPreview(sim.selected, kind, point);
+    const ok = !spot.reason;
+    // Saturated, not the ring's pale mint: the ghost sits ON the placement disc and has to read
+    // against it; the same red as a blocked shot when the click would be rejected.
+    const color = ok ? 0x2ee88a : 0xff3b5c;
+    const pulse = (Math.sin(performance.now() * 0.008) + 1) * 0.5;
+    const y = terrainHeightAt(spot.point) + 0.12;
+    const footprint = 0.7 + pulse * 0.08;
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(footprint - 0.2, footprint, 48),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1, side: THREE.DoubleSide, depthWrite: false })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(spot.point.x, y, spot.point.z);
+    this.groundAimRoot.add(ring);
+    this.groundAimRoot.add(makeEndpoint(spot.point, color, 0.22, y));
+    // A snapped spot keeps a thin tether back to the cursor so the slide reads as deliberate.
+    if (spot.snapped) this.groundAimRoot.add(makeLine(point, spot.point, color, 0.6, y));
   }
 
   // The hover footprint while calling in a support power: line of bomb circles (airstrike),

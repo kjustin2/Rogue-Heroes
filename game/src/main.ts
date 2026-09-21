@@ -231,6 +231,16 @@ const hud = new Hud(uiRoot, sim, {
     if (ok) sfx.deploy();
     return ok;
   },
+  beginDeploy: (kind: TroopKind) => {
+    sim.setPendingDeploy(kind);
+    sfx.ui();
+  },
+  cancelDeploy: () => sim.setPendingDeploy(undefined),
+  queueDeployAt: (kind, point) => {
+    const ok = sim.queueDeployAt(kind, point);
+    if (ok) sfx.deploy();
+    return ok;
+  },
   upgradeBaseIncome: () => sim.upgradeBaseIncome(),
   upgradeBaseCommand: () => sim.upgradeBaseCommand(),
   beginBuild: (kind: DefenseKind) => {
@@ -371,6 +381,13 @@ canvas.addEventListener("pointerup", stopOrbit);
 canvas.addEventListener("pointercancel", stopOrbit);
 canvas.addEventListener("auxclick", (event) => {
   if (event.button === 1) event.preventDefault();
+});
+canvas.addEventListener("contextmenu", (event) => {
+  event.preventDefault();
+  if (sim.pendingDeploy && sim.phase === "command") {
+    sim.setPendingDeploy(undefined);
+    hud.update();
+  }
 });
 
 // A click anywhere in the HUD plays a soft UI blip (the deploy/build/turn cues layer on top).
@@ -1854,7 +1871,7 @@ function safeStorageSet(key: string, value: string): boolean {
 const TUTORIAL_STEPS: Array<{ title: string; body: string }> = [
   { title: "Welcome, Commander", body: "Turn-based tactics. You start with only a Home Base. Learn the basics against an easy bot." },
   { title: "Select your base", body: "Click your blue Home Base. Its command deck opens at the bottom — from there you deploy troops, research tech, build defenses, and upgrade." },
-  { title: "Deploy a Recruit", body: "In the base deck, click Recruit to place rifle infantry beside your base. It costs money and the base's command point." },
+  { title: "Deploy a Recruit", body: "In the base deck, click Recruit, then click a spot inside the green ring to place rifle infantry there (click Recruit again to drop it beside the base). It costs money and the base's command point." },
   { title: "End the turn", body: "Press Space (or End Turn) to resolve the turn. Income is paid and your new troop is ready to act next turn." },
   { title: "Move a unit", body: "Select your Recruit and press M (Move). A cyan circle shows how far it can go this turn — click inside it to move." },
   { title: "Attack", body: "Press F (Shoot), click an enemy, pick a body part, and Confirm. The line preview shows cover, accuracy, and estimated damage." },
@@ -2201,6 +2218,7 @@ requestAnimationFrame(frame);
 function groundAimHover(): Vec2 | undefined {
   if (anyOverlayOpen() || sim.phase !== "command") return undefined;
   if (sim.pendingSupport) return hoverWorld; // strike-call targeting reticle
+  if (sim.pendingDeploy) return hoverWorld; // placed-deploy ghost footprint
   // Overwatch aims a watch cone at the cursor; grenade/shell aim a landing arc.
   const aiming = sim.intent === "grenade" || sim.intent === "overwatch" || (sim.intent === "shoot" && sim.selectedCanGroundTarget());
   return aiming ? hoverWorld : undefined;
@@ -2425,6 +2443,9 @@ declare global {
       queueMelee(id: string): boolean;
       queueMeleePart(id: string, partId: string): boolean;
       queueSpawnTroop(kind: TroopKind): boolean;
+      beginDeploy(kind: TroopKind): void;
+      queueDeployAt(kind: TroopKind, point: Vec2): boolean;
+      hoverGround(point: Vec2 | undefined): void;
       queueBuildStructure(point: Vec2): boolean;
       beginBuild(kind: DefenseKind): void;
       beginSupport(kind: SupportPowerKind): void;
@@ -2520,6 +2541,10 @@ window.__rht = {
   queueMelee: (id) => sim.queueMelee(id),
   queueMeleePart: (id, partId) => sim.queueMeleePart(id, partId),
   queueSpawnTroop: (kind) => sim.queueSpawnTroop(kind),
+  beginDeploy: (kind) => sim.setPendingDeploy(kind),
+  queueDeployAt: (kind, point) => sim.queueDeployAt(kind, point),
+  // Park the cursor over a ground point (what pointermove does) so shots can show the hover ghost.
+  hoverGround: (point) => { hoverWorld = point; },
   queueBuildStructure: (point) => sim.queueBuildStructure(point),
   beginBuild: (kind) => sim.setPendingBuild(kind),
   beginSupport: (kind) => sim.setPendingSupport(kind),
