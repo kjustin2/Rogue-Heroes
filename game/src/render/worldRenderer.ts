@@ -697,8 +697,19 @@ export class WorldRenderer {
    * (measured on the real GPU by soak:gpu, which diffs the program list across a resolve).
    */
   warmUpSamplers(): THREE.Object3D[] {
+    // A program key is material x GEOMETRY attributes, so every material is sampled on three
+    // geometries: RGB vertex colour + uv (the procedural parts), RGBA vertex colour + uv (every
+    // Blender kit exports COLOR_0 as VEC4 -> three's `vertexAlphas` variant), and RGB with no uv.
+    // soak:gpu caught the RGBA transparent twin (a fading kit part) compiling mid-resolve.
     const geo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
-    geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(geo.getAttribute("position").count * 3).fill(1), 3));
+    const n = geo.getAttribute("position").count;
+    geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(n * 3).fill(1), 3));
+    const geo4 = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+    geo4.setAttribute("color", new THREE.BufferAttribute(new Float32Array(n * 4).fill(1), 4));
+    const geoNoUv = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+    geoNoUv.deleteAttribute("uv");
+    geoNoUv.setAttribute("color", new THREE.BufferAttribute(new Float32Array(n * 3).fill(1), 3));
+    const geos = [geo, geo4, geoNoUv];
     const out: THREE.Object3D[] = [];
     // Every opaque standard material in the scene gets a TRANSPARENT twin compiled now. Units and
     // props fade out when they die, and that fade is the only thing that flips a material's
@@ -718,10 +729,12 @@ export class WorldRenderer {
         const twin = m.clone();
         twin.transparent = true;
         twin.opacity = 0.5;
-        const sampler = new THREE.Mesh(geo, twin);
-        sampler.receiveShadow = mesh.receiveShadow;
-        sampler.castShadow = mesh.castShadow;
-        out.push(sampler);
+        for (const g of geos) {
+          const sampler = new THREE.Mesh(g, twin);
+          sampler.receiveShadow = mesh.receiveShadow;
+          sampler.castShadow = mesh.castShadow;
+          out.push(sampler);
+        }
       }
     });
     for (const m of [
@@ -734,7 +747,7 @@ export class WorldRenderer {
       ...projectileFxWarmUpMaterials(),
       // The vehicles kit's inverted-hull ink rim.
       inkMaterial(),
-    ]) out.push(new THREE.Mesh(geo, m));
+    ]) for (const g of geos) out.push(new THREE.Mesh(g, m));
     return out;
   }
 
@@ -6344,10 +6357,8 @@ export function disposeSubtree(obj: THREE.Object3D): void {
     if (geometry && typeof geometry.dispose === "function" && !geometry.userData?.shared) {
       geometry.dispose();
     }
-    // Also free materials. Pooled/singleton materials are tagged userData.shared and skipped, and
-    // GLB clones own per-instance materials (models.ts instantiate clones them) whose textures stay
-    // shared with the template (material.dispose() never frees a texture) — so this only frees the
-    // per-entity (procedural part / outline / accent / GLB-clone) and per-frame overlay materials
+    // Also free materials. Pooled/singleton materials are tagged userData.shared and skipped, so
+    // this only frees the per-entity (accent / contact shadow) and per-frame overlay materials
     // that previously leaked on every unit death, group rebuild, and overlay refresh.
     const material = (node as Partial<THREE.Mesh>).material as THREE.Material | THREE.Material[] | undefined;
     if (material) {
