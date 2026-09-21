@@ -5878,3 +5878,79 @@ kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
 .detail-nameplate span, .detail-nameplate em { font-size: var(--fs-small); }
 .commander-profile__stats span, .campaign-card__branch, .campaign-card__no { font-size: var(--fs-micro); letter-spacing: 0.06em; }
 .commander-profile__stats strong { font-size: var(--fs-name); }
+
+/* ===========================================================================
+   SPACE LAYER (2026-09-20)
+   ---------------------------------------------------------------------------
+   "Display options with proper space if there's space." Every panel used to
+   be a fixed pixel width sized for 1280x720 — at 2560x1080 the command bar
+   was a 960px strip on the left, the Skirmish card a 900px island, and the
+   roster / Info panel the same 226/344px they are on a laptop. Panels now
+   GROW into free width with clamp(): the floor is the 720p figure that the
+   ui-audit already gates, the ceiling keeps line lengths readable.
+   `shots:gpu viewports` is the evidence at 1280 / 1600 / 1920 / 2560.
+   =========================================================================== */
+:root {
+  --rail-w: clamp(252px, 14.5vw, 340px);          /* roster / treasury / log */
+  --hud-side: clamp(284px, 16vw, 400px);          /* target drawer */
+  --bar-max: clamp(960px, 58vw, 1500px);          /* order bar / command deck */
+  --menu-w: clamp(900px, 62vw, 1360px);           /* full-screen menu cards */
+}
+.target-panel { width: var(--hud-side); }
+#ui:has(.target-panel) .commandbar { right: calc(var(--hud-side) + 32px); }
+.commandbar { width: min(calc(100vw - var(--rail-w) - 56px), var(--bar-max)); }
+.unit-detail-panel { width: clamp(344px, 22vw, 520px); max-height: min(60vh, calc(100vh - 30px)); }
+.log.compact-log.expanded { right: calc(var(--hud-side) + 32px); }
+.menu-content { max-width: var(--menu-w); width: min(94vw, var(--menu-w)); }
+.armory-screen, .campaign-screen, .briefing-screen { max-width: var(--menu-w); }
+.pause-card { max-width: min(680px, 92vw); }
+
+/* Wider bars get MORE columns, not wider cards: every card grid is auto-fit on a floor. */
+.part-options { grid-template-columns: repeat(auto-fit, minmax(clamp(132px, 9vw, 170px), 1fr)); }
+.action-grid { grid-template-columns: repeat(auto-fit, minmax(clamp(118px, 8vw, 160px), 1fr)); }
+/* The tech tree lays its doctrine branches side by side once there is room for two. */
+.tech-tree { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 10px 18px; align-items: start; }
+.tech-node .tech-unlocks { display: inline-block; }
+.base-tab-body { max-height: clamp(44vh, calc(100vh - 420px), 60vh); }
+
+/* Skirmish page: three columns once the card is wide enough (map list | preview | choices), so
+   the map blurbs stop clamping at two lines and the preview gets a real frame. */
+@media (min-width: 1600px) {
+  .start-layout { grid-template-columns: minmax(300px, 0.9fr) minmax(300px, 1.1fr); gap: 12px 30px; }
+  .map-list .menu-card span, .faction-card span { -webkit-line-clamp: 3; }
+  .faction-card span { -webkit-line-clamp: 2; }
+  .map-list { max-height: clamp(150px, calc(94vh - 440px), 560px); }
+  .map-preview-svg, .map-preview-canvas { max-height: clamp(160px, 30vh, 420px); }
+  .settings-row { padding: 14px 6px; }
+  .menu-screen > .menu-content:not(.main-menu__content) { padding: 30px 38px; }
+  .menu-actions { margin: 12px -38px 0; padding: 12px 38px 18px; }
+}
+/* Faction card: name + roster count share the first row when the CARD is wide enough (a
+   container query — the card is ~400px on a 1280 laptop and ~320px inside a 2560 layout's
+   narrower column, so the viewport is the wrong thing to ask). Narrow cards drop the count to
+   its own row instead of running "Vanguard" into "14 troops". */
+.faction-grid { container-type: inline-size; }
+.faction-card { grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; }
+.faction-card strong { white-space: nowrap; overflow: hidden; text-overflow: clip; }
+.faction-card .faction-roster { text-align: right; }
+@container (max-width: 560px) {
+  .faction-card { grid-template-columns: minmax(0, 1fr); }
+  .faction-card .faction-roster { grid-column: 1; grid-row: 3; text-align: left; margin-top: 2px; }
+  .faction-card span { grid-row: 2; }
+}
+/* 720p budget with the bigger type: the Skirmish page must still put Map, Faction, Mode,
+   Difficulty and Deploy on one screen (smoke:ui-audit asserts the card body does not scroll). */
+@media (max-height: 800px) {
+  .start-layout .menu-section { margin: 0 0 6px; }
+  .start-layout .menu-label { margin-bottom: 4px; }
+  .faction-card { padding: 5px 12px; }
+  .faction-grid { gap: 5px; }
+  .chip-row .menu-chip { padding: 4px 10px; }
+  .choice-blurb { min-height: 0; margin-top: 4px; }
+  .menu-head { padding-bottom: 6px; margin-bottom: 8px; }
+  .menu-screen > .menu-content:not(.main-menu__content) { padding-top: 18px; }
+  .map-list { max-height: clamp(140px, calc(94vh - 430px), 420px); }
+  .map-preview-svg, .map-preview-canvas { max-height: clamp(110px, 21vh, 240px); }
+}
+.action-grid .action > strong { font-size: var(--fs-name); }
+.action-grid .action > span { font-size: var(--fs-small); }

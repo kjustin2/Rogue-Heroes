@@ -55,7 +55,11 @@ function textLeaves(root: Element): Element[] {
     // "Wrapped" means a laid-out child, whatever its opacity: a toast mid fade-in must not turn
     // its container into a leaf that then reads as bare text over the board.
     const hasElementChild = Array.from(el.children).some((c) => getComputedStyle(c).display !== "none");
-    if (hasElementChild) continue;
+    // An element that paints its OWN text beside a child (a faction name next to its colour pip)
+    // is a leaf too — the first sheet missed "Vanguard" running into "14 troops" because the
+    // <strong> holding the name had a child and so was never compared with its sibling.
+    const ownText = Array.from(el.childNodes).some((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim());
+    if (hasElementChild && !ownText) continue;
     if (!(el.textContent ?? "").trim()) continue;
     out.push(el);
   }
