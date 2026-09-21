@@ -8,12 +8,12 @@ every row names its proof, nothing is DONE from code alone.
 | 1a | Infantry walk looks weird/unnatural | motion agent | TODO (wave 2) | `shots:step` + `shots:filmstrip -- walk` read by eye; smoke:animation gate |
 | 1b | Gun turret does not aim where it fires | main | RUNNING | filmstrip of turret firing: barrel yaw == shot direction |
 | 1c | GUI text hard to read — larger/easier where applicable | gui agent | RUNNING | contrast + min font-size audit in auditUI; gpu shots of HUD/menus |
-| 2 | Deploy from base: pick WHERE in the circle the unit lands | deploy agent | RUNNING | smoke:flow/buttons + gpu shot of the placement flow |
+| 2 | Deploy from base: pick WHERE in the circle the unit lands | deploy agent | DONE (merged) | `gpu-deployflow-ring/-placed.png`, deploy.test.ts (6), smokes deploy via a point |
 | 4 | Skirmish map preview could look way cooler | gui agent | RUNNING | `gpu-mapselect-*.png` |
-| 5 | Infantry still basic — more exciting and unique per unit | infantry agent | RUNNING | `shots:lineup` near/far + silhouette sheet |
+| 5 | Infantry still basic — more exciting and unique per unit | infantry agent | DONE (merged) | `gpu-lineup.png`, `shots/silhouette/*`, 34 new kit parts, per-kind body/limb/extras |
 | 6 | Replace every Meshy hull with Blender toon models (consistent look) | vehicles agent | RUNNING | `gpu-direction.png`, `gpu-siege.png`, `gpu-maps`; no `.meshy.json` left in public/models |
 | 7 | Projectiles pass 2 — more fun to watch, on-theme | projectile agent | TODO (wave 2) | filmstrips per family + `gpu-volley` |
-| 8 | Bullets going through items | main | RUNNING | repro filmstrip; sim LOS vs visual hull audit test |
+| 8 | Bullets going through items | main | DONE | shotBlocking.test.ts (wall slab), `filmstrip-through-*.png` ×6; bystander hulls block over footprint |
 | 9 | GUIs use available space — more room to read | gui agent | RUNNING | gpu shots at 1280×720 / 1600×900 / 2560×1080 |
 | 10 | Mechanics/bug/optimisation audit + dead-code refactor | audit agent | TODO (wave 2) | test:full green, perf OK, soak:gpu clean, dead-code list in the commit |
 | 3 | (done) selection ring is a toon band; plates keep clear of base pads | main | DONE | `shots/basering-sheet.png` (all 6 maps) |
