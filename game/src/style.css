@@ -5954,3 +5954,39 @@ kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
 }
 .action-grid .action > strong { font-size: var(--fs-name); }
 .action-grid .action > span { font-size: var(--fs-small); }
+
+/* ---- ILLUSTRATED MAP PREVIEW (2026-09-20): an isometric canvas plate with the name / size /
+        feel caption under it. Same ink + hard drop as every other toon plate. ---- */
+.map-preview--illustrated {
+  display: grid;
+  gap: 6px;
+  padding: 6px 6px 8px;
+  background: var(--paper-lo);
+  border: var(--ink-w) solid var(--ink);
+  border-radius: var(--toon-r);
+  box-shadow: var(--drop);
+  overflow: hidden;
+}
+.map-preview-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 auto;
+  border-radius: var(--toon-r-sm);
+  background: var(--paper-deep);
+  max-height: clamp(120px, 24vh, 320px);
+  object-fit: contain;
+}
+.map-preview-caption {
+  display: grid;
+  gap: 2px;
+  padding: 0 4px;
+  text-align: left;
+}
+.map-preview-caption strong { font-family: var(--font-display); font-size: var(--fs-name); color: var(--cream); letter-spacing: 0.02em; }
+.map-preview-caption span { font-size: var(--fs-small); color: var(--text-muted); line-height: 1.3; }
+.briefing-map.map-preview--illustrated { padding: 6px; }
+@media (max-height: 800px) {
+  .map-preview-canvas { max-height: clamp(110px, 22vh, 240px); }
+  .map-preview-caption span { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+}
