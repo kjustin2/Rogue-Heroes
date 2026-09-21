@@ -13,7 +13,7 @@ import "@fontsource/inter/600.css";
 import { dist, type Vec2 } from "./core/math";
 import { Stage } from "./render/stage";
 import { WorldRenderer, type WorldRenderDebug } from "./render/worldRenderer";
-import { preloadAll as preloadModels, loadedTemplates, modelsVersion, setModelSkin } from "./render/models";
+import { preloadAll as preloadModels, modelsVersion } from "./render/models";
 import { FeelDirector } from "./render/feel";
 import { POI_WEIGHT, ResolveDirector } from "./render/resolveDirector";
 import { Hud } from "./ui/hud";
@@ -69,7 +69,6 @@ const uiRoot = ui;
 
 // Total doctrine-mastery stars needed to unlock the Winter skin pack — a slow, earned cosmetic
 // (respecting the "meta unlocks slow" bar) instead of a free toggle.
-const WINTER_SKIN_MASTERY = 3;
 
 const stage = new Stage(canvas);
 // ?lowfx=1 forces the composer-free performance path — headless SwiftShader (smokes,
@@ -87,7 +86,6 @@ stage.setQuality(LOWFX ? "performance" : settings.renderScale);
 const DEBUG_UNLOCKED = new URLSearchParams(location.search).has("debug");
 stage.setPixelRatioCap(RENDER_SCALE_DPR[settings.renderScale]);
 preloadModels(); // kick GLB loads immediately; renderer swaps them in as they arrive
-setModelSkin(settings.unitSkin);
 const sim = new TacticalSim();
 const world = new WorldRenderer(stage.scene);
 // Points the camera at the best moment of each resolve. Presentation only -- it reads outcomes and
@@ -1131,12 +1129,6 @@ function showSettings(): void {
         <button class="menu-toggle ${settings.reducedMotion ? "on" : ""}" data-set="motion" type="button">${settings.reducedMotion ? "On" : "Off"}</button>
       </div>
       <div class="settings-row">
-        <label>Vehicle skin</label>
-        ${commander.totalMastery() >= WINTER_SKIN_MASTERY
-          ? `<button class="menu-toggle ${settings.unitSkin === "winter" ? "on" : ""}" data-set="skin" type="button" data-tip="Arctic camo for vehicles and structures. Cosmetic only.">${settings.unitSkin === "winter" ? "Winter" : "Standard"}</button>`
-          : `<button class="menu-toggle locked" data-set="skin" type="button" data-tip="Winter camo unlocks at ${WINTER_SKIN_MASTERY} doctrine-mastery stars. Research doctrines in battle to earn them.">🔒 ${commander.totalMastery()}/${WINTER_SKIN_MASTERY}</button>`}
-      </div>
-      <div class="settings-row">
         <label>High-contrast teams</label>
         <button class="menu-toggle ${settings.highContrastTeams ? "on" : ""}" data-set="teams" type="button" data-tip="Colorblind-safe palette: your side blue, enemy orange.">${settings.highContrastTeams ? "On" : "Off"}</button>
       </div>
@@ -1199,13 +1191,6 @@ function showSettings(): void {
     } else if (set === "teams") {
       settings.highContrastTeams = !settings.highContrastTeams;
       world.setHighContrastTeams(settings.highContrastTeams);
-    } else if (set === "skin") {
-      if (commander.totalMastery() < WINTER_SKIN_MASTERY) {
-        showToast(`Winter skin unlocks at ${WINTER_SKIN_MASTERY} doctrine-mastery stars — keep researching doctrines`);
-      } else {
-        settings.unitSkin = settings.unitSkin === "winter" ? "" : "winter";
-        setModelSkin(settings.unitSkin);
-      }
     } else if (set === "debug-money") {
       settings.debugInfiniteMoney = !settings.debugInfiniteMoney;
       if (settings.debugInfiniteMoney && inBattle) sim.debugGrant("player", 999999);
@@ -2201,7 +2186,7 @@ function frameBody(now: number): void {
   // path so the first deploy of that unit doesn't hitch.
   if (modelsVersion() !== warmedModelsVersion) {
     warmedModelsVersion = modelsVersion();
-    stage.warmUp([...loadedTemplates(), ...world.warmUpSamplers()]);
+    stage.warmUp(world.warmUpSamplers());
   }
 
   // Perf instrumentation — sample the inter-frame delta (skip first frame + tab-switch
@@ -2499,8 +2484,7 @@ declare global {
       // Deterministic HUD geometry checks (overlap / truncation / clipping / occlusion).
       // Empty array is the assertion; smoke:ui-audit drives it across viewports and screens.
       auditUI(): UiFinding[];
-      // Cosmetic toggles (skin pack + colorblind palette) for screenshot harnesses.
-      setModelSkin(skin: string): void;
+      // Colorblind palette toggle for screenshot harnesses.
       setHighContrastTeams(on: boolean): void;
       // Dynamic map events: read current weather/zone state; force one for screenshots/tests.
       environment(): { sandstorm: number; ionstorm: number; notice?: string; zones: Array<{ kind: string; x: number; z: number; radius: number }> };
@@ -2592,14 +2576,13 @@ window.__rht = {
   sceneRoot: () => stage.scene,
   cameraObject: () => stage.camera,
   sceneObject: () => stage.scene,
-  warmUp: () => { const before = stage.renderer.info.programs?.length ?? 0; stage.warmUp([...loadedTemplates(), ...world.warmUpSamplers()]); return { before, after: stage.renderer.info.programs?.length ?? 0 }; },
+  warmUp: () => { const before = stage.renderer.info.programs?.length ?? 0; stage.warmUp(world.warmUpSamplers()); return { before, after: stage.renderer.info.programs?.length ?? 0 }; },
   programs: () => (stage.renderer.info.programs ?? []).map((p) => String((p as unknown as { cacheKey: string }).cacheKey)),
   frameErrors: () => frameErrors,
   setResolveScale: (scale: number) => { resolveScale = scale; },
   setDebugOverlay: (on) => { debugOverlay.setEnabled(on); return debugOverlay.isEnabled(); },
   silhouette: (on) => { world.setSilhouette(on); stage.setSilhouette(on); },
   auditUI: () => auditUI(),
-  setModelSkin: (skin: string) => setModelSkin(skin),
   setHighContrastTeams: (on: boolean) => world.setHighContrastTeams(on),
   environment: () => sim.environment(),
   forceEvent: (kind) => sim.debugForceEvent(kind),

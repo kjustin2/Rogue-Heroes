@@ -297,6 +297,50 @@ app.whenReady().then(async () => {
         await sleep(4000);
         continue;
       }
+      if (s === "vehicles" || s === "structures") {
+        // Review frames for the Blender vehicles kit (art/vehicles): same ramp and ink as the
+        // troopers, team read via accent, nothing floating or sunk. `vehicles` = tank / APC /
+        // artillery for both teams with a trooper for scale (plus a close pass); `structures` =
+        // gun turret / mortar battery / HQ for both teams, and the crate / sandbag / barricade cover.
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(1500);
+        if (s === "vehicles") {
+          await js(`(() => { const sim = window.__rht.sim;
+            ["tank","apc","artillery"].forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -6 + i * 6, z: 2.5 }); u.yaw = 0.5; });
+            ["tank","apc","artillery"].forEach((k, i) => { const u = sim.debugSpawn(k, "enemy", { x: -6 + i * 6, z: -4 }); u.yaw = 2.6; });
+            const s1 = sim.debugSpawn("soldier", "player", { x: 9.5, z: 2.5 }); s1.yaw = 0.5;
+            const s2 = sim.debugSpawn("heavy", "player", { x: -9.5, z: 2.5 }); s2.yaw = 0.5;
+            window.__rht.deselect(); })()`);
+          await sleep(2500);
+          await js(`window.__rht.setView({ x: 0, z: -0.5, zoom: 0.5, pitch: 0.5, yaw: 0.35 })`);
+          await sleep(600);
+          await shot("vehicles");
+          await js(`window.__rht.setView({ x: -3, z: 2.5, zoom: 0.3, pitch: 0.42, yaw: 0.7 })`);
+          await sleep(600);
+          await shot("vehicles-close");
+        } else {
+          await js(`(() => { const sim = window.__rht.sim;
+            const t = sim.debugStructure("turret", "player", { x: -7, z: 2.5 }); t.yaw = 0.5;
+            const x = sim.debugStructure("exturret", "player", { x: -3, z: 2.5 }); x.yaw = 0.5;
+            const b = sim.debugStructure("base", "player", { x: 3, z: 2.5 }); b.yaw = 0.5;
+            const t2 = sim.debugStructure("turret", "enemy", { x: -7, z: -4 }); t2.yaw = 2.6;
+            const b2 = sim.debugStructure("base", "enemy", { x: 3, z: -4 }); b2.yaw = 2.6;
+            sim.debugCover("crate", { x: 8, z: 3.5 }); sim.debugCover("sandbag", { x: 8.5, z: 0.5 }); sim.debugCover("barricade", { x: 8, z: -2.5 });
+            const s1 = sim.debugSpawn("soldier", "player", { x: 10.5, z: 1 }); s1.yaw = 0.5;
+            window.__rht.deselect(); })()`);
+          await sleep(2500);
+          await js(`window.__rht.setView({ x: 1, z: -0.5, zoom: 0.5, pitch: 0.5, yaw: 0.35 })`);
+          await sleep(600);
+          await shot("structures");
+          await js(`window.__rht.setView({ x: 7.5, z: 0.5, zoom: 0.28, pitch: 0.45, yaw: 0.6 })`);
+          await sleep(600);
+          await shot("structures-close");
+          await js(`window.__rht.setView({ x: -5, z: 2.5, zoom: 0.3, pitch: 0.45, yaw: 0.6 })`);
+          await sleep(600);
+          await shot("structures-turret");
+        }
+        continue;
+      }
       if (s === "lineup") {
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
         await sleep(1500);

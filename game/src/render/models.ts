@@ -3,178 +3,66 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 
 /**
- * Async cache of Meshy-generated GLB hero models (public/models/*.glb).
+ * Async loaders for the three Blender-authored PART kits in public/models/:
  *
- * The renderer never awaits: `instantiate()` returns a ready clone or null, and the
- * caller falls back to its procedural builder. `modelsVersion()` bumps on every
- * finished load so the renderer knows to rebuild entity groups that were born
- * procedural. A missing/failed GLB is cached as "failed" — dev/CI never depend on
- * the assets existing.
+ *   infantry-kit.glb  — trooper shapes (art/infantry)      → kitGeometry(part)
+ *   props-kit.glb     — seeded cover props (art/props)     → propGeometry(kind, seed)
+ *   vehicles-kit.glb  — vehicle / structure hulls as parts (art/vehicles) → vehicleGeometry(part)
  *
- * Disposal contract: template geometry is tagged `userData.shared` so the renderer's
- * disposeSubtree leaves it alone; clones share geometry with the template and get
- * cloned materials (textures stay shared with the template).
+ * Every kit mesh is a unit cube centred on the origin with UVs and baked vertex AO (COLOR_0);
+ * the renderer scales it to size through the pooled part-material path, so all three kits take
+ * the same toon ramp, ink rim and team paint. The renderer never awaits: a part that has not
+ * loaded (or never will — the game runs with public/models/ EMPTY) keeps its procedural builder,
+ * and `modelsVersion()` bumps when a kit lands so entity groups rebuild and pick the shapes up.
+ *
+ * There are no whole-model hulls any more. The Meshy GLBs (tank/apc/artillery/hq/turret/crates/
+ * sandbags/barricade, plus the winter retextures) were photoreal meshes posterized at load, and
+ * stood next to the flat-banded troopers as a different game; the vehicles kit replaced them in
+ * 2026-09 and the pipeline was deleted. Do not reintroduce a per-model texture path.
+ *
+ * Disposal contract: kit geometry is tagged `userData.shared` so disposeSubtree leaves it alone.
  */
-
-export type ModelKey =
-  | "tank" | "apc" | "artillery" | "hq" | "turret"
-  | "barricade" | "sandbags" | "crates";
-
-// Horizontal footprint (max of width/length, world units) each model is scaled to —
-// matched to the procedural builder it replaces so silhouettes read at gameplay scale.
-const TARGET_SIZE: Record<ModelKey, number> = {
-  tank: 3.2,
-  apc: 2.9,
-  artillery: 3.5,
-  hq: 3.6,
-  turret: 2.3,
-  barricade: 1.9,
-  sandbags: 1.7,
-  crates: 1.5,
-};
 
 const loader = new GLTFLoader();
 loader.setMeshoptDecoder(MeshoptDecoder);
 
-const cache = new Map<string, THREE.Group | "loading" | "failed">();
 let version = 0;
-// Cosmetic skin pack suffix ("" = standard, "winter" = <name>-winter.glb). Kinds without
-// a skinned file silently fall back to their standard model.
-let activeSkin = "";
 
-export function setModelSkin(skin: string): void {
-  if (skin === activeSkin) return;
-  activeSkin = skin;
-  version += 1; // renderers rebuild; instantiate() resolves against the new skin
-}
-
-function cacheKeyFor(key: ModelKey, skin: string): string {
-  return skin ? `${key}-${skin}` : key;
-}
-
-/** Bumps whenever a model finishes loading; renderers watch it to rebuild groups. */
+/** Bumps whenever a kit finishes loading; renderers watch it to rebuild groups. */
 export function modelsVersion(): number {
   return version;
 }
 
-/** Kick off every model load (call once at boot, behind the loading veil). */
+/** Kick off every kit load (call once at boot, behind the loading veil). */
 export function preloadAll(): void {
-  for (const key of Object.keys(TARGET_SIZE) as ModelKey[]) ensureLoad(key);
+  if (kitState === "idle") loadInfantryKit();
+  if (propsState === "idle") loadPropsKit();
+  if (vehiclesState === "idle") loadVehiclesKit();
 }
 
-/** Loaded templates (for shader warm-up staging). */
-export function loadedTemplates(): THREE.Group[] {
-  const out: THREE.Group[] = [];
-  for (const value of cache.values()) if (value instanceof THREE.Group) out.push(value);
-  return out;
-}
-
-/**
- * A ready-to-place clone of the model, or null while loading / after failure.
- * The clone shares geometry with the template and owns cloned materials, listed in
- * `userData.glbMaterials` for per-frame tinting. `userData.dims` holds the template's
- * normalized bounding-box size.
- */
-export function instantiate(key: ModelKey): THREE.Group | null {
-  let template = ensureLoad(key, activeSkin);
-  // Skinned variant missing (still loading counts as missing only if FAILED): fall back
-  // to the standard hull so a partial skin pack never blanks a unit.
-  if (!template && activeSkin && cache.get(cacheKeyFor(key, activeSkin)) === "failed") {
-    template = ensureLoad(key, "");
-  }
-  if (!template) return null;
-  const clone = template.clone(true);
-  const mats: { material: THREE.MeshStandardMaterial; base: number }[] = [];
-  clone.traverse((node) => {
-    const mesh = node as THREE.Mesh;
-    if (!mesh.isMesh || mesh.userData.outline) return; // the ink line is never tinted
-    const source = mesh.material as THREE.MeshStandardMaterial;
-    const material = source.clone();
-    mesh.material = material;
-    mats.push({ material, base: material.color.getHex() });
-  });
-  clone.userData.glbMaterials = mats;
-  clone.userData.dims = (template.userData.dims as THREE.Vector3).clone();
-  return clone;
-}
-
-function ensureLoad(key: ModelKey, skin = ""): THREE.Group | null {
-  const cacheKey = cacheKeyFor(key, skin);
-  const hit = cache.get(cacheKey);
-  if (hit !== undefined) return hit instanceof THREE.Group ? hit : null;
-  cache.set(cacheKey, "loading");
-  const url = `${import.meta.env.BASE_URL}models/${cacheKey}.glb`;
+function loadKit(url: string, into: Map<string, THREE.BufferGeometry>, onDone: (ok: boolean) => void): void {
   loader.load(
     url,
     (gltf) => {
-      try {
-        cache.set(cacheKey, normalize(gltf.scene, TARGET_SIZE[key]));
-      } catch (error) {
-        // A throw here used to vanish: the loader has no error path for onLoad, so a broken
-        // stylization step silently left every hull procedural. Say so and fall back the same way.
-        console.error(`model ${cacheKey} failed to prepare:`, error);
-        cache.set(cacheKey, "failed");
-      }
+      gltf.scene.traverse((node) => {
+        const mesh = node as THREE.Mesh;
+        if (!mesh.isMesh || !mesh.geometry) return;
+        const geometry = mesh.geometry as THREE.BufferGeometry;
+        // Bake the node's own transform in and tag it shared: one geometry serves every mesh
+        // wearing that part. UVs stay for the pooled materials' shared detail normal map.
+        geometry.applyMatrix4(mesh.matrixWorld);
+        geometry.userData.shared = true;
+        into.set(node.name, geometry);
+      });
+      onDone(true);
       version += 1;
     },
     undefined,
-    () => {
-      cache.set(cacheKey, "failed"); // no asset — fallback (standard skin or procedural)
-      if (skin) version += 1; // let instantiate() re-resolve to the standard hull
-    },
+    () => onDone(false),
   );
-  return null;
 }
 
-// Recenter (feet at y=0), rescale to the target footprint, and apply the material/
-// shadow/disposal conventions the renderer expects.
-function normalize(root: THREE.Object3D, targetSize: number): THREE.Group {
-  const box = new THREE.Box3().setFromObject(root);
-  const size = box.getSize(new THREE.Vector3());
-  const scale = targetSize / Math.max(0.001, Math.max(size.x, size.z));
-  root.scale.setScalar(scale);
-  const center = box.getCenter(new THREE.Vector3()).multiplyScalar(scale);
-  root.position.set(-center.x, -box.min.y * scale, -center.z);
-
-  const template = new THREE.Group();
-  template.add(root);
-  template.userData.dims = size.multiplyScalar(scale);
-  // Collect first, attach outlines after: adding children mid-traverse visits them too, and an
-  // outline of an outline of an outline is a stack overflow that silently left every hull procedural.
-  const meshes: THREE.Mesh[] = [];
-  template.traverse((node) => { if ((node as THREE.Mesh).isMesh) meshes.push(node as THREE.Mesh); });
-  for (const mesh of meshes) {
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.geometry.userData.shared = true; // clones share it; disposeSubtree must skip it
-    // ONE ART DIRECTION. Meshy hulls arrive photoreal -- PBR albedo, roughness maps, smooth
-    // lighting -- and stood next to the flat-banded, outlined troopers as a different game. They
-    // are STYLIZED here, once, at load: the albedo is posterized into a few value bands, the
-    // material becomes a stepped toon shader, and an inverted-hull outline gives every vehicle the
-    // same ink line the troopers carry. (Into the Breach / Advance Wars readability.)
-    const source = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
-    const std = source as THREE.MeshStandardMaterial;
-    const toon = new THREE.MeshToonMaterial({
-      color: std.color ?? new THREE.Color(0xffffff),
-      map: std.map ? posterizedOf(std.map) : null,
-      normalMap: std.normalMap ?? null,
-      normalScale: new THREE.Vector2(0.55, 0.55),
-      gradientMap: toonGradient(),
-      side: THREE.FrontSide,
-    });
-    mesh.material = toon;
-    const outline = new THREE.Mesh(mesh.geometry, outlineMaterial());
-    outline.scale.setScalar(1.028);
-    outline.castShadow = false;
-    outline.receiveShadow = false;
-    outline.userData.outline = true;
-    outline.userData.decor = true;
-    mesh.add(outline);
-  }
-  return template;
-}
-
-// Four-step light ramp for every toon surface (hulls AND pooled parts AND props): deep shade,
+// Four-step light ramp for every toon surface (pooled parts AND props): deep shade,
 // shade, lit, highlight. The ramp is RGB, not grey: the two shade steps lean COOL (blue-violet)
 // and the two lit steps lean WARM (a touch of amber), which is how hand-painted / gradient-mapped
 // stylized art fakes bounce and sky light — a grey ramp reads as plastic under any sun. The shift
@@ -196,52 +84,6 @@ export function toonGradient(): THREE.DataTexture {
   _toonGradient.colorSpace = THREE.NoColorSpace;
   _toonGradient.needsUpdate = true;
   return _toonGradient;
-}
-
-let _outlineMaterial: THREE.MeshBasicMaterial | undefined;
-function outlineMaterial(): THREE.MeshBasicMaterial {
-  if (!_outlineMaterial) _outlineMaterial = new THREE.MeshBasicMaterial({ color: 0x0b0d10, side: THREE.BackSide });
-  return _outlineMaterial;
-}
-
-// Posterize an albedo: luminance snapped to five bands, saturation lifted, hue kept. Cached per
-// source texture so the winter skins and the standard hull each pay once.
-const posterCache = new WeakMap<THREE.Texture, THREE.Texture>();
-function posterizedOf(map: THREE.Texture): THREE.Texture {
-  const hit = posterCache.get(map);
-  if (hit) return hit;
-  const image = map.image as HTMLImageElement | ImageBitmap | HTMLCanvasElement;
-  const canvas = document.createElement("canvas");
-  canvas.width = image.width;
-  canvas.height = image.height;
-  const ctx = canvas.getContext("2d")!;
-  ctx.drawImage(image, 0, 0);
-  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const d = img.data;
-  const bands = 5;
-  for (let i = 0; i < d.length; i += 4) {
-    const r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255;
-    const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    const l = (max + min) / 2;
-    const ql = (Math.round(l * (bands - 1)) / (bands - 1)) * 0.9 + 0.08;
-    const k = l > 0.001 ? ql / l : 1;
-    // Scale toward the quantized luminance, then push saturation a little.
-    let nr = r * k, ng = g * k, nb = b * k;
-    const m = (nr + ng + nb) / 3;
-    nr = m + (nr - m) * 1.25; ng = m + (ng - m) * 1.25; nb = m + (nb - m) * 1.25;
-    d[i] = Math.max(0, Math.min(255, Math.round(nr * 255)));
-    d[i + 1] = Math.max(0, Math.min(255, Math.round(ng * 255)));
-    d[i + 2] = Math.max(0, Math.min(255, Math.round(nb * 255)));
-  }
-  ctx.putImageData(img, 0, 0);
-  const poster = new THREE.CanvasTexture(canvas);
-  poster.colorSpace = map.colorSpace;
-  poster.flipY = map.flipY;
-  poster.wrapS = map.wrapS;
-  poster.wrapT = map.wrapT;
-  poster.channel = map.channel;
-  posterCache.set(map, poster);
-  return poster;
 }
 
 // ---------------------------------------------------------------------------
@@ -286,27 +128,7 @@ export function kitGeometry(part: KitPart): THREE.BufferGeometry | undefined {
 
 function loadInfantryKit(): void {
   kitState = "loading";
-  loader.load(
-    "models/infantry-kit.glb",
-    (gltf) => {
-      gltf.scene.traverse((node) => {
-        const mesh = node as THREE.Mesh;
-        if (!mesh.isMesh || !mesh.geometry) return;
-        const geometry = mesh.geometry as THREE.BufferGeometry;
-        // Bake the node's own transform in, drop everything but position+normal, and tag it
-        // shared: one geometry serves every trooper wearing that part.
-        geometry.applyMatrix4(mesh.matrixWorld);
-        // UVs stay: the pooled part materials carry a shared detail normal map (see
-        // partDetailNormal in worldRenderer) and authored parts are smart-projected for it.
-        geometry.userData.shared = true;
-        kit.set(node.name, geometry);
-      });
-      kitState = "ready";
-      version += 1; // rebuild entity groups so troopers pick the authored shapes up
-    },
-    undefined,
-    () => { kitState = "failed"; },
-  );
+  loadKit("models/infantry-kit.glb", kit, (ok) => { kitState = ok ? "ready" : "failed"; });
 }
 
 // ---------------------------------------------------------------------------
@@ -349,21 +171,46 @@ export function propsKitReady(): boolean {
 
 function loadPropsKit(): void {
   propsState = "loading";
-  loader.load(
-    "models/props-kit.glb",
-    (gltf) => {
-      gltf.scene.traverse((node) => {
-        const mesh = node as THREE.Mesh;
-        if (!mesh.isMesh || !mesh.geometry) return;
-        const geometry = mesh.geometry as THREE.BufferGeometry;
-        geometry.applyMatrix4(mesh.matrixWorld);
-        geometry.userData.shared = true; // one geometry serves every prop of that variant
-        props.set(node.name, geometry);
-      });
-      propsState = "ready";
-      version += 1; // rebuild cover groups so props pick the authored shapes up
-    },
-    undefined,
-    () => { propsState = "failed"; },
-  );
+  loadKit("models/props-kit.glb", props, (ok) => { propsState = ok ? "ready" : "failed"; });
+}
+
+// ---------------------------------------------------------------------------
+// VEHICLES KIT — Blender-authored hulls for every vehicle and structure, AS PARTS
+// (art/vehicles/author_vehicles.py → vehicles-kit.glb + the generated vehiclesLayout.ts).
+//
+// One mesh per damage-model part: `tank-hull` / `tank-turret` / `tank-cannon` / `tank-front` and
+// `tank-track` (one mesh placed at ±x for the two treads); the same for the APC (wheeled), the
+// artillery, the gun turret, the HQ, and one mesh each for the crate / sandbag / barricade cover.
+// The parts are authored at GAME SCALE and the layout file carries each one's bbox, so the
+// renderer's kit builders only assemble: per-part damage, cannon recoil, dead-track listing and
+// the pooled team paint all keep working because every part is an ordinary part mesh. Every
+// kit builder keeps the older procedural builder as its fallback (`vehiclesKitReady()` false).
+// This kit REPLACED the Meshy hulls (2026-09) — see the module header.
+// ---------------------------------------------------------------------------
+export type VehiclesPart =
+  | "tank-hull" | "tank-front" | "tank-turret" | "tank-cannon" | "tank-track"
+  | "apc-hull" | "apc-front" | "apc-cupola" | "apc-autogun" | "apc-wheels"
+  | "arty-hull" | "arty-front" | "arty-mount" | "arty-gun" | "arty-track"
+  | "turret-mount" | "turret-gun" | "turret-sensor"
+  | "hq-core" | "hq-comms" | "hq-power" | "hq-gate"
+  | "crates" | "sandbags" | "barricade";
+
+const vehicles = new Map<string, THREE.BufferGeometry>();
+let vehiclesState: "idle" | "loading" | "ready" | "failed" = "idle";
+
+/** Authored geometry for a vehicle part, or undefined — the caller falls back to a box. */
+export function vehicleGeometry(part: VehiclesPart): THREE.BufferGeometry | undefined {
+  if (vehiclesState === "idle") loadVehiclesKit();
+  return vehicles.get(part);
+}
+
+/** True once the vehicles kit has loaded: the kit builders take over from the procedural ones. */
+export function vehiclesKitReady(): boolean {
+  if (vehiclesState === "idle") loadVehiclesKit();
+  return vehiclesState === "ready";
+}
+
+function loadVehiclesKit(): void {
+  vehiclesState = "loading";
+  loadKit("models/vehicles-kit.glb", vehicles, (ok) => { vehiclesState = ok ? "ready" : "failed"; });
 }
