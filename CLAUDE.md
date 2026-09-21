@@ -121,9 +121,29 @@ shapes and the game keeps the rig.
 one helmet and one weapon per kind, plus a pack where the pack IS the unit (medic case, flamer
 tanks, drone, jump thrusters). Each kit branch in `buildSoldier` swaps its main head/weapon/pack box
 for `kit: "helmet-<kind>"` / `"weapon-<name>"` / `"pack-<name>"`; everything else stays procedural.
-`npm run shots:lineup` renders all thirteen in a row (near + far) — review THAT after any kit
-change, and `shots:silhouette` for the outline test. Blender is found by `scripts/blender.mjs`
-(PATH or Program Files), so `art:kit` works from a fresh shell.
+`npm run shots:lineup` renders all thirteen in a row (near + far, plus two HUD-less close frames
+`lineup-close-a/b` at portrait zoom) — review THAT after any kit change, and `shots:silhouette`
+for the outline test. Blender is found by `scripts/blender.mjs` (PATH or Program Files), so
+`art:kit` works from a fresh shell.
+
+**Per-kind BODIES** (2026-09-20, `art/infantry/author_bodies.py`, imported by `author_kinds.py`):
+a helmet and a weapon on one shared chest read as a uniform in thirteen hats, so every kind now
+wears its own `torso-<kind>` (barrel chest + shelf pauldrons / cropped jacket + scarf / ghillie
+ruff / asymmetric sword guard / satchel straps / tool harness / hazmat barrel / control rig /
+bandolier / bipod saddle / drum pouches / flight harness), plus `arm-<kind>` / `leg-<kind>` where
+the read needs it, and two or three EXTRAS hung off an existing part id so they ride the rig
+(`cape-sniper` on "body", `hose-flamer` / `antenna-droneop` / `ammobox-heavy` / `mines-sapper` /
+`bipod-mortar` / `stretcher-medic` on "pack", `sheath-striker` / `drums-grenadier` /
+`toolroll-engineer` / `detonator-sapper` on "legs"). `INFANTRY_KIT_PARTS` in `worldRenderer.ts`
+is the ONLY place a kind picks its variants and the `size` each is scaled to (a chest with shelf
+pauldrons is normalised into the same unit cube as a plain chest, so it needs a wider box to come
+out the same scale); it also switches the shared procedural pauldrons / rucksack off when the
+kind's own torso / back piece fills that slot. The rig contract is untouched — same part ids,
+same pivots, same unit cube — so the walk cycle, `paintPart` pooling and per-part damage never
+know a variant is in play. A limb-riding extra (the medic armband) is a `"body"` mesh with
+`userData.limb = "arm-l"`. The jumper carries `weapon-smg` (short + FAT) so it no longer shares
+the scout's thin carbine. Tri budget stayed at 2400: a bevel on a run of capped cylinders (hose,
+stretcher) blows it for nothing — `finish(obj, bevel=0)` on those.
 
 Rules:
 
