@@ -5662,3 +5662,219 @@ body { background: var(--paper-deep); }
 .choice-blurb { min-height: 1.3em; margin-top: 6px; font-size: 0.8rem; }
 .map-list { max-height: clamp(150px, calc(94vh - 440px), 420px); }
 .map-preview-svg { max-height: clamp(110px, 20vh, 240px); }
+
+/* ===========================================================================
+   READABILITY LAYER (2026-09-20)
+   ---------------------------------------------------------------------------
+   "Some of the words in the GUI can be hard to read." Measured, not guessed:
+   `auditUI()` now flags any visible text under 12px (13px for body copy) and
+   any text under 4.5:1 against the surface it actually sits on; the first run
+   found 1001 findings / 69 distinct offenders — every HUD chip, the roster
+   status, the Info buttons, the log line, the treasury label, panel titles,
+   tooltips and the Skirmish blurbs were all 9-12px. This layer is the fix:
+
+     * ROOT scales with the screen height (16px at 720p-1080p, up to 21px at
+       1440p+) so a 4K/1440p player is not reading 1080p-sized labels.
+     * ONE type scale (--fs-*) with floors: micro 12px (kickers/mono chips,
+       always with letter-spacing), small 13px (HUD labels), body 14px (card
+       copy), name 15px (order/action labels), title 17px.
+     * Every explicit sub-floor size in the older layers is overridden here by
+       class — the older rules are left in place (deleting 190 declarations
+       across nine layers is a bigger diff than a floor).
+     * Text that floats over the 3D board gets an inked PLATE, never bare ink
+       (the audit's `no-owned-surface` rule).
+     * Line-height tightened to 1.15-1.25 on labels so the bigger type does not
+       eat the 720p budget.
+   =========================================================================== */
+
+:root {
+  font-size: clamp(16px, 1.48vh, 21px);
+  line-height: 1.3;
+  --fs-micro: 0.75rem;   /* 12px */
+  --fs-small: 0.8125rem; /* 13px */
+  --fs-body: 0.875rem;   /* 14px */
+  --fs-name: 0.9375rem;  /* 15px */
+  --fs-title: 1.0625rem; /* 17px */
+  --text-muted: #c1ccd6; /* lifted: the old #b3bfca sat at 4.3:1 on the hover plate */
+}
+
+/* ---- HUD labels ≥ 13px. Chips keep their caps + tracking, at a size you can read. ---- */
+.panel-title { font-size: var(--fs-small); letter-spacing: 0.12em; line-height: 1.2; }
+.panel-title.small { font-size: var(--fs-micro); }
+.unit-status,
+.stance-chip,
+.supply-chip,
+.cp-badge,
+.turn-chip,
+.turn-chip em,
+.mode-chip,
+.phase-chip,
+.all-orders-chip,
+.money-bar__label,
+.money-bar__icon,
+.log.compact-log strong,
+.log-line,
+.log.compact-log,
+.log.compact-log.expanded,
+.log-lines span,
+.vitals-pct,
+.unit-line--sub,
+.queued-order,
+.target-chip .target-chip__detail,
+.target-chip.neutral .target-chip__name,
+.tech-sub,
+.tech-unlocks,
+.tl,
+.forecast-cell em,
+.compact-top .end-turn span,
+.compact-top .menu-btn span,
+.compact-top .menu-btn,
+.endscreen__kicker,
+.campaign-end__kicker,
+.faction-roster,
+.menu-label,
+.armory-category-title,
+.settings-row--head label,
+.map-size-badge,
+.new-badge,
+.medal,
+.status-pill,
+.team-badge,
+.role-badge,
+.detail-statline span,
+.detail-statline small,
+.base-summary,
+.tech-legend,
+.tech-more,
+.classified-name {
+  font-size: var(--fs-small);
+  line-height: 1.2;
+}
+.supply-chip, .map-size-badge, .vpart, .forecast-cell em, .tl, .tech-unlocks, .new-badge, .menu-label, .stance-chip, .phase-chip, .all-orders-chip {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+}
+.menu-label { letter-spacing: 0.18em; }
+.vpart { padding: 2px 7px; }
+.tool.action kbd,
+.part-choice kbd,
+.controls-row kbd,
+kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
+.log-toggle-icon { font-size: var(--fs-name); line-height: 1; }
+.mini-action { font-size: var(--fs-small); padding: 4px 9px; letter-spacing: 0.04em; }
+.unit-line .unit-name { font-size: var(--fs-name); }
+.target-chip .target-chip__name { font-size: var(--fs-body); }
+.hud-tooltip { font-size: var(--fs-body); line-height: 1.3; max-width: min(420px, calc(100vw - 24px)); }
+.toast { font-size: var(--fs-body); }
+.money-bar__value { font-size: 1.05rem; }
+.money-bar__icon { width: 22px; height: 22px; line-height: 20px; }
+
+/* ---- Card body copy ≥ 14px. ---- */
+.order-hint,
+.order-note,
+.choice-blurb,
+.settings-note,
+.menu-card span,
+.menu-mode span,
+.faction-card span,
+.map-list .menu-card span,
+.campaign-card span,
+.armory-card span,
+.tutorial-panel p,
+.target-summary span,
+.single-target-card span,
+.damage-card span,
+.turn-report,
+.turn-notes,
+.briefing-objective,
+.settings-row label,
+.controls-row span,
+.detail-statline strong,
+.base-summary strong {
+  font-size: var(--fs-body);
+  line-height: 1.3;
+}
+.menu-utility { font-size: var(--fs-body); padding: 7px 16px; }
+.menu-link { font-size: var(--fs-body); }
+.chip-row .menu-chip { font-size: var(--fs-name); }
+
+/* ---- Order / action labels ≥ 15px: the words you act on outrank the words you read. ---- */
+.tool.action strong,
+.part-choice strong,
+.btn.confirm,
+.btn.confirm strong,
+.target-summary strong,
+.single-target-card strong,
+.unit-card strong,
+.tech-node strong,
+[data-spawn] strong,
+[data-base-upgrade] strong,
+.base-tab,
+.order-head h2,
+.inspect-head h2 {
+  font-size: var(--fs-name);
+  line-height: 1.2;
+}
+.tool.action span,
+.part-choice span,
+.part-choice em,
+.confirm span,
+.btn.confirm span,
+.btn.confirm em,
+.btn.confirm small,
+[data-spawn] span,
+[data-spawn] em,
+[data-base-upgrade] span,
+[data-base-upgrade] em,
+.tech-node span,
+.tech-node em { font-size: var(--fs-small); line-height: 1.2; }
+.order-head h2, .inspect-head h2 { font-size: var(--fs-title); }
+.part-choice { grid-template-columns: minmax(0, 1fr) 84px; }
+
+/* ---- Contrast: colour-on-plate pairs the audit measured under 4.5:1. ---- */
+.map-size-badge.size-large { color: #ffa27a; background: var(--paper-lo); border-color: var(--ink); }
+.map-size-badge.size-small, .map-size-badge.size-medium { background: var(--paper-lo); border-color: var(--ink); }
+.faction-roster { color: var(--text-muted); opacity: 1; }
+.menu-mode span, .menu-card span { color: var(--text-muted); }
+.turn-chip em, .forecast-cell em, .endscreen__kicker, .money-bar__label { color: var(--text-muted); }
+.log-toggle-icon { color: var(--cream); }
+.compact-top .menu-btn span { color: var(--text-muted); }
+
+/* ---- Text over the board gets a plate. The tutorial link floated bare on the diorama. ---- */
+.menu-link {
+  border: var(--ink-w) solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--amber);
+  padding: 6px 16px;
+  box-shadow: var(--drop-sm);
+  text-decoration: none;
+}
+.menu-link:hover { background: var(--paper-hi); color: #ffd77a; }
+.placement-bar { border: var(--ink-w-panel) solid var(--ink); background: var(--paper); box-shadow: var(--drop); }
+.boss-bar__name { font-size: var(--fs-name); }
+
+/* ---- Room for the bigger type. The left rail (roster / treasury / log) and the roster's
+        action column were sized for 9px labels; "Info" and the log line ellipsised at 13px. ---- */
+:root { --rail-w: 252px; --rail-x: 16px; }
+.roster, .log.compact-log, .money-bar { width: var(--rail-w); }
+.commandbar, #ui:has(.unit-detail-panel) .commandbar, .unit-detail-panel { left: calc(var(--rail-x) + var(--rail-w) + 8px); }
+.commandbar { width: min(960px, calc(100vw - var(--rail-w) - 56px)); }
+.log.compact-log.expanded { left: calc(var(--rail-x) + var(--rail-w) + 8px); }
+.unit-actions { width: 62px; padding: 5px 6px 5px 0; }
+.mini-action { padding: 4px 6px; }
+.faction-card .faction-roster { font-size: var(--fs-micro); letter-spacing: 0.04em; }
+.unit-card { grid-template-columns: minmax(0, 1fr) 62px; }
+
+/* ---- Second sweep: the deck, tech tree, Info panel, Armory and Campaign screens joined the
+        audit and turned up 31 more offenders. ---- */
+.tech-node .tech-sub, .tech-node .tech-unlocks { font-size: var(--fs-small); }
+.tech-node .tech-unlocks { letter-spacing: 0.02em; }
+.tech-more { font-size: var(--fs-micro); color: var(--text-muted); }
+.tech-node.classified .classified-name,
+.btn.confirm.classified .classified-name { color: #d8b05a; letter-spacing: 0.16em; }
+.btn.confirm.classified span:last-child { color: var(--text-muted); font-size: var(--fs-small); }
+.close-btn strong, .icon-btn strong { font-size: var(--fs-small); }
+.detail-nameplate span, .detail-nameplate em { font-size: var(--fs-small); }
+.commander-profile__stats span, .campaign-card__branch, .campaign-card__no { font-size: var(--fs-micro); letter-spacing: 0.06em; }
+.commander-profile__stats strong { font-size: var(--fs-name); }

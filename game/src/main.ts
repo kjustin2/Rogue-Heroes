@@ -882,8 +882,8 @@ function mapPreviewSvg(map: MapDef): string {
     })
     .join("");
   const hill = `<circle cx="${sx(map.hill.x).toFixed(1)}" cy="${sy(map.hill.z).toFixed(1)}" r="${((map.hillRadius / w) * W).toFixed(1)}" fill="none" stroke="#ffe08a" stroke-width="2" stroke-dasharray="5 4" opacity="0.8"/>`;
-  const player = `<g><circle cx="${sx(map.playerBase.x).toFixed(1)}" cy="${sy(map.playerBase.z).toFixed(1)}" r="9" fill="#6fd7ff"/><text x="${sx(map.playerBase.x).toFixed(1)}" y="${(sy(map.playerBase.z) + 4).toFixed(1)}" text-anchor="middle" font-size="10" fill="#03121a" font-weight="700">P</text></g>`;
-  const enemy = `<g><circle cx="${sx(map.enemyBase.x).toFixed(1)}" cy="${sy(map.enemyBase.z).toFixed(1)}" r="9" fill="#ff7c5e"/><text x="${sx(map.enemyBase.x).toFixed(1)}" y="${(sy(map.enemyBase.z) + 4).toFixed(1)}" text-anchor="middle" font-size="10" fill="#1a0603" font-weight="700">E</text></g>`;
+  const player = `<g><circle cx="${sx(map.playerBase.x).toFixed(1)}" cy="${sy(map.playerBase.z).toFixed(1)}" r="9" fill="#6fd7ff"/><text x="${sx(map.playerBase.x).toFixed(1)}" y="${(sy(map.playerBase.z) + 4).toFixed(1)}" text-anchor="middle" font-size="12" fill="#03121a" font-weight="700">P</text></g>`;
+  const enemy = `<g><circle cx="${sx(map.enemyBase.x).toFixed(1)}" cy="${sy(map.enemyBase.z).toFixed(1)}" r="9" fill="#ff7c5e"/><text x="${sx(map.enemyBase.x).toFixed(1)}" y="${(sy(map.enemyBase.z) + 4).toFixed(1)}" text-anchor="middle" font-size="12" fill="#1a0603" font-weight="700">E</text></g>`;
   return `<svg class="map-preview-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapeAttr(map.name)} preview">
     <rect x="0" y="0" width="${W}" height="${H}" rx="8" fill="${hex(map.theme.ground)}"/>
     ${blocks}${hill}${player}${enemy}
