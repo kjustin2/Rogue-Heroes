@@ -4260,7 +4260,7 @@ body.intro-cam #ui, body.intro-cam #toasts, body.intro-cam .hint-toast { visibil
 .map-size-badge.size-medium { color: var(--amber); border-color: rgba(255, 202, 107, 0.5); background: rgba(255, 202, 107, 0.1); }
 .map-size-badge.size-large { color: var(--orange); border-color: rgba(255, 135, 95, 0.55); background: rgba(255, 135, 95, 0.12); }
 
-/* A cosmetic toggle still locked behind progression (e.g. the mastery-gated Winter skin). */
+/* A cosmetic toggle still locked behind progression. */
 .menu-toggle.locked {
   opacity: 0.62;
   cursor: not-allowed;

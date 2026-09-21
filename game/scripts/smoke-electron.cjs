@@ -128,8 +128,8 @@ async function run() {
     await waitFor(() => js("Boolean(window.__rht && document.querySelector('.main-menu'))"), "menu boot", 20000);
     await shot(win, "menu");
 
-    // Hero GLBs (incl. the winter skin pack) must be served with a real model MIME.
-    const glb = await js(`fetch('/models/tank-winter.glb').then(r => ({ ok: r.ok, type: r.headers.get('content-type') }))`);
+    // The Blender kits must be served with a real model MIME.
+    const glb = await js(`fetch('/models/vehicles-kit.glb').then(r => ({ ok: r.ok, type: r.headers.get('content-type') }))`);
     if (!glb.ok || !/model\\/gltf-binary/.test(glb.type || "")) {
       throw new Error(`GLB serving broken: ${JSON.stringify(glb)}`);
     }

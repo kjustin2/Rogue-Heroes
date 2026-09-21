@@ -67,9 +67,6 @@ const ui = document.getElementById("ui");
 if (!canvas || !ui) throw new Error("Missing game canvas or UI root");
 const uiRoot = ui;
 
-// Total doctrine-mastery stars needed to unlock the Winter skin pack — a slow, earned cosmetic
-// (respecting the "meta unlocks slow" bar) instead of a free toggle.
-
 const stage = new Stage(canvas);
 // ?lowfx=1 forces the composer-free performance path — headless SwiftShader (smokes,
 // perf bench) stalls on the HalfFloat bloom chain; real GPUs get the graded stack.

@@ -1926,7 +1926,7 @@ export class WorldRenderer {
     // hips with hanging thigh plates and a buckle, a torso with chest plates, straps, side pouches
     // and a back plate, a head with a jaw and neck under the helmet, arms with shoulder caps,
     // elbow pads and gloves, legs with kneepads and shin guards. The primitives they replace were
-    // the reason a trooper stood next to a Meshy tank and read as a different game.
+    // the reason a trooper stood next to a photoreal tank hull and read as a different game.
     this.box(rig, entity, "legs", [0.42, 0.22, 0.3], [0, 0.52, 0], trimColor, { metalness: 0.16, kit: "hips" });
     // Utility belt with pouches. Three small blocks around the front is the cheapest thing that
     // reads as "kit carried by a person" instead of a smooth mannequin.
@@ -6162,9 +6162,6 @@ function hash(value: string): number {
 //   * Sprites are skipped — THREE.Sprite.geometry is a single module-shared geometry; disposing
 //     it would break every sprite.
 //   * geometries tagged `userData.shared` (the pooled projectile/tube/ring caches) are skipped.
-// Which Meshy GLB (if any) stands in for this entity. Infantry keep their procedural
-// bodies (walk cycle + per-part damage posing), walls stay parametric, and glow-signal
-// props (ammo/fuel/conduit) keep their emissive gameplay cue.
 // A vertical gradient sky derived from the map theme: deep zenith fading through the
 // theme's sky color into a warm fogged horizon band, so every map gets atmosphere depth
 // instead of a flat color backdrop.
