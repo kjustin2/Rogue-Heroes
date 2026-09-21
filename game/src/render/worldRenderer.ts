@@ -2399,7 +2399,11 @@ export class WorldRenderer {
   private buildCover(group: THREE.Group, entity: CombatEntity): void {
     const part = entity.parts[0];
     const volatile = part.role === "volatile";
-    if (entity.coverKind === "ammo") {
+    // Landmarks first: a wrecked truck is volatile (it burns), and the fuel-drum branch below would
+    // otherwise claim it.
+    if (isLandmarkKind(entity.coverKind)) {
+      this.buildLandmark(group, entity);
+    } else if (entity.coverKind === "ammo") {
       // A pallet of banded shell crates with one round standing proud of the stack, so it reads as
       // "munitions" from above rather than as a generic box.
       this.box(group, entity, part.id, [1.0, 0.12, 0.8], [0, 0.06, 0], 0x4a3f31, { bevel: 0.2 });
@@ -2647,8 +2651,6 @@ export class WorldRenderer {
           emissiveIntensity: tone === 3 ? 0.04 : 0.1,
         });
       }
-    } else if (isLandmarkKind(entity.coverKind)) {
-      this.buildLandmark(group, entity);
     } else if (entity.coverKind === "crate" && vehicleGeometry("crates")) {
       this.vpart(group, entity, part.id, "crates", 0x9a6a3a, { roughness: 0.9, rotation: [0, (hash(entity.id) % 4) * (Math.PI / 2) + 0.1, 0] });
     } else if (entity.coverKind === "sandbag" && vehicleGeometry("sandbags")) {

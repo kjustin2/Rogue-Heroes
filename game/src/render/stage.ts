@@ -565,11 +565,13 @@ export class Stage {
 
   // Debug-only: hard-set the camera (bypasses the interactive zoom clamp) so test/capture
   // scripts can frame tight inspection shots of models. Not used by normal gameplay input.
-  debugSetView(view: { x?: number; z?: number; zoom?: number; yaw?: number; pitch?: number }): void {
+  // `overview` lifts the zoom clamp for whole-map screenshots (shots:gpu overview); play never does.
+  debugSetView(view: { x?: number; z?: number; zoom?: number; yaw?: number; pitch?: number; overview?: boolean }): void {
     this.suppressGuide();
     if (view.x !== undefined) this.focus.x = view.x;
     if (view.z !== undefined) this.focus.z = view.z;
-    if (view.zoom !== undefined) this.zoom = Math.max(0.18, Math.min(1.55, view.zoom));
+    if (view.zoom !== undefined) this.zoom = Math.max(0.18, Math.min(view.overview ? 6 : 1.55, view.zoom));
+    if (view.overview) { this.camera.far = 400; this.camera.updateProjectionMatrix(); }
     if (view.yaw !== undefined) this.orbitYaw = view.yaw;
     if (view.pitch !== undefined) this.orbitPitch = Math.max(0.05, Math.min(1.4, view.pitch));
     this.updateCamera();

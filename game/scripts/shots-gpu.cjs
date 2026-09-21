@@ -322,6 +322,31 @@ app.whenReady().then(async () => {
         }
         continue;
       }
+      if (s === "overview") {
+        // The whole battlefield from high up, plus one close frame per named section: does the map
+        // read as a PLACE with sections and a landmark at a glance, not a sprinkle of props?
+        const views = {
+          dustbowl: [["river", -18, 0, 0.55], ["plateau", -18, 12, 0.55], ["canyon", -10, 24, 0.55]],
+          ironworks: [["foundry", -18, 10, 0.55], ["railyard", -14, -11, 0.55], ["overpass", 0, 0, 0.55]],
+          verdant: [["orchard", -21, -14, 0.55], ["chapel", -22, 12, 0.55], ["millpond", -12, 12, 0.55]],
+          causeway: [["harbour", -34, 16, 0.55], ["village", -34, -16, 0.55], ["causeway", -8, 0, 0.55]],
+          karak: [["precinct", -3, 8, 0.55], ["amphitheatre", -20, -16, 0.55], ["cistern", -19, 2, 0.55]],
+          crossfire: [["checkpoint", -8, 0, 0.55], ["radar", -23, 11, 0.55], ["trench", -8, -11, 0.55]],
+        };
+        for (const map of Object.keys(views)) {
+          await js(`window.__rht.startBattle(${JSON.stringify(map)}, "destroy", "normal"); window.__rht.deselect();`);
+          await sleep(3000);
+          await js(`window.__rht.setView({ x: 0, z: 0, zoom: 3.4, pitch: 1.2, yaw: 3.73, overview: true })`);
+          await sleep(900);
+          await shot("map-" + map + "-wide");
+          for (const [name, x, z, zoom] of views[map]) {
+            await js(`window.__rht.setView({ x: ${x}, z: ${z}, zoom: ${zoom}, pitch: 0.7, yaw: 0.35 })`);
+            await sleep(700);
+            await shot("map-" + map + "-" + name);
+          }
+        }
+        continue;
+      }
       if (s === "volley") {
         // Every projectile family in flight on the real GPU: a firing line (rifle, MG, marksman,
         // flamer, mortar, tank, APC) resolves at a crawl and is shot three times through the volley

@@ -2427,7 +2427,7 @@ declare global {
       money(team: Team): number;
       cancelOrder(id: string): void;
       camera(): { x: number; z: number; zoom: number; yaw: number; pitch: number };
-      setView(view: { x?: number; z?: number; zoom?: number; yaw?: number; pitch?: number }): void;
+      setView(view: { x?: number; z?: number; zoom?: number; yaw?: number; pitch?: number; overview?: boolean }): void;
       renderDebug(): WorldRenderDebug;
       // Debug scenario harness: cut straight to a staged battle state for tests/screenshots.
       scenario(id: string): boolean;
