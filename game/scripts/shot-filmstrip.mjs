@@ -29,8 +29,16 @@ const STAGES = {
   apc: { actor: "apc", target: "soldier", dist: 7, order: "shoot", zoom: 0.7, scale: 0.5, span: 3.6 },
   turret: { actor: "turret", target: "soldier", dist: 6.5, order: "shoot", zoom: 0.7, scale: 0.5, span: 3.4 },
   gunship: { actor: "gunship", target: "gunship", dist: 7, order: "shoot", zoom: 0.75, scale: 0.5, span: 3.3 },
+  // "through": the target stands just behind a prop on the line of fire. The rounds must stop AT
+  // the prop (chip effect) or clearly clear it — never pass through the mesh.
+  "through-crate": { actor: "soldier", target: "soldier", dist: 6.4, order: "shoot", zoom: 0.55, scale: 0.4, span: 3.2, cover: "crate", coverAt: 0.55 },
+  "through-sandbag": { actor: "heavy", target: "soldier", dist: 6.4, order: "shoot", zoom: 0.55, scale: 0.4, span: 3.2, cover: "sandbag", coverAt: 0.55 },
+  "through-rock": { actor: "sniper", target: "soldier", dist: 8, order: "shoot", zoom: 0.65, scale: 0.4, span: 3.6, cover: "rock", coverAt: 0.5 },
+  "through-incover": { actor: "soldier", target: "soldier", dist: 6.4, order: "shoot", zoom: 0.55, scale: 0.4, span: 3.2, cover: "sandbag", coverAt: 0.82 },
+  "through-wall": { actor: "soldier", target: "soldier", dist: 7, order: "shoot", zoom: 0.6, scale: 0.4, span: 3.4, wall: true, coverAt: 0.5 },
+  "through-tree": { actor: "soldier", target: "soldier", dist: 7, order: "shoot", zoom: 0.6, scale: 0.4, span: 3.4, cover: "tree", coverAt: 0.5 },
 };
-const PROJECTILE_STAGES = ["shoot", "heavy", "sniper", "sapper", "pistol", "flame", "grenade", "launcher", "mortar", "tank", "artillery", "apc", "turret", "gunship"];
+const PROJECTILE_STAGES = ["through-crate", "through-sandbag", "through-rock", "through-tree", "shoot", "heavy", "sniper", "sapper", "pistol", "flame", "grenade", "launcher", "mortar", "tank", "artillery", "apc", "turret", "gunship"];
 
 const FRAME_COST = 180;
 const arg = process.argv[2] ?? "melee";
@@ -70,6 +78,9 @@ try {
       }
       const actor = sim.debugSpawn(stage.actor, "player", { x: -0.7, z: 0 });
       const target = sim.debugSpawn(stage.target, "enemy", { x: stage.dist - 0.7, z: 0 });
+      if (stage.cover) sim.debugCover(stage.cover, { x: -0.7 + stage.dist * stage.coverAt, z: 0.15 });
+      // A blast wall across the line, offset so the round crosses its OUTER third (the old disc let it through).
+      if (stage.wall) { const w = sim.debugBuild("wall", "enemy", { x: -0.7 + stage.dist * stage.coverAt, z: 0.8 }); w.yaw = Math.PI / 2; }
       // "kill": the target is one hit from dead, so the strip shows the death fall.
       if (kind === "kill") for (const p of target.parts) p.hp = Math.min(p.hp, 4);
       // The target must not shoot back in the same resolve, or the strip shows the actor's death

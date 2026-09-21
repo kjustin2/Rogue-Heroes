@@ -3775,6 +3775,11 @@ export class TacticalSim {
       wreck.yaw = target.yaw;
       this.entities.push(wreck);
       this.syncEntityElevation(wreck);
+      // A rammer that killed on contact is standing on the spot the wreck now occupies; step aside.
+      for (const other of this.entities) {
+        if (other.id === wreck.id || !other.status.alive || other.flying || other.kind === "cover" || isBuildingKind(other.kind) || isDefenseKind(other.kind)) continue;
+        if (dist(other.position, wreck.position) < other.radius + wreck.radius) this.separateFromUnits(other);
+      }
       this.salvage.set(wreck.id, SALVAGE_PER_WRECK);
       this.pushLog(`${target.name} burns out — the wreck is hard cover and holds $${SALVAGE_PER_WRECK} salvage`);
     }
@@ -3957,10 +3962,23 @@ export class TacticalSim {
         const maxVerticalMiss = part.role === "head" ? 0.12 : part.role === "weapon" ? 0.18 : 0.24;
         if (verticalDistance > maxVerticalMiss) continue;
         const distanceToLine = pointToSegmentDistance(partPoint, from, to);
-        const radius = entity.kind === "cover"
-          ? entity.radius + (projectile.kind === "shell" || projectile.kind === "grenade" ? 0.22 : 0.12)
-          : projectilePartRadius(entity, part, projectile);
-        if (distanceToLine > radius) continue;
+        // A blast wall is a 2.3m SLAB, not a disc: flat rounds test against its oriented box, or
+        // they sailed through its outer thirds (the "bullets go through items" report). Lobbed
+        // shells keep the disc: plunging fire landing just behind a wall is the whole point of them.
+        if (entity.kind === "wall" && part.role === "core" && projectile.arcHeight <= 0.5) {
+          if (!segmentHitsOrientedBox(from, to, entity.position, entity.yaw, 1.17, 0.41 + (projectile.kind === "shell" || projectile.kind === "grenade" ? 0.2 : 0.08))) continue;
+        } else {
+          // The INTENDED target is hit by aim precision (unchanged); anything else in the way blocks
+          // over its whole footprint, so a round never draws through a hull or a building it did
+          // not hit.
+          // Flat rounds only: a lobbed shell leaves low and would clip the friendly hull it is
+          // parked beside on its way up.
+          const bystanderHull = projectile.arcHeight <= 0.5 && entity.id !== projectile.targetId && part.role === "core" && (isVehicleKind(entity.kind) || isBuildingKind(entity.kind) || isDefenseKind(entity.kind));
+          const radius = entity.kind === "cover"
+            ? entity.radius + (projectile.kind === "shell" || projectile.kind === "grenade" ? 0.22 : 0.12)
+            : bystanderHull ? entity.radius * 0.92 : projectilePartRadius(entity, part, projectile);
+          if (distanceToLine > radius) continue;
+        }
         hits.push({
           entity,
           part,
@@ -4144,10 +4162,20 @@ export class TacticalSim {
           if (onTop) continue;
         }
         const minDist = actor.radius + other.radius;
-        const dx = actor.position.x - other.position.x;
-        const dz = actor.position.z - other.position.z;
-        const d = Math.hypot(dx, dz);
-        if (d > 0.0001 && d < minDist) {
+        let dx = actor.position.x - other.position.x;
+        let dz = actor.position.z - other.position.z;
+        let d = Math.hypot(dx, dz);
+        // Exactly on top of another body (cargo dropped where its carrier died): pick a
+        // deterministic direction from the ids rather than skipping the push.
+        if (d <= 0.0001 && minDist > 0) {
+          let h = 0;
+          for (const ch of actor.id + other.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+          const a = (h % 360) * (Math.PI / 180);
+          dx = Math.cos(a) * 0.01;
+          dz = Math.sin(a) * 0.01;
+          d = 0.01;
+        }
+        if (d < minDist) {
           const push = minDist - d;
           actor.position.x += (dx / d) * push;
           actor.position.z += (dz / d) * push;
@@ -5795,6 +5823,25 @@ function roleHitPriority(role: DamagePart["role"]): number {
   if (role === "mobility") return 3;
   if (role === "utility" || role === "volatile") return 4;
   return 5;
+}
+
+/** True when segment a→b crosses an axis-aligned box of half extents (hx, hz) rotated by yaw at c. */
+function segmentHitsOrientedBox(a: Vec2, b: Vec2, c: Vec2, yaw: number, hx: number, hz: number): boolean {
+  // Into the box's local frame (yaw = atan2(dx, dz) convention: local +z is the facing).
+  const cos = Math.cos(yaw), sin = Math.sin(yaw);
+  const local = (p: Vec2): Vec2 => { const dx = p.x - c.x, dz = p.z - c.z; return { x: dx * cos - dz * sin, z: dx * sin + dz * cos }; };
+  const p = local(a), q = local(b);
+  // Slab test (Liang–Barsky) on both axes.
+  let t0 = 0, t1 = 1;
+  const dx = q.x - p.x, dz = q.z - p.z;
+  for (const [pp, d, h] of [[p.x, dx, hx], [p.z, dz, hz]] as const) {
+    if (Math.abs(d) < 1e-9) { if (Math.abs(pp) > h) return false; continue; }
+    let tn = (-h - pp) / d, tf = (h - pp) / d;
+    if (tn > tf) [tn, tf] = [tf, tn];
+    t0 = Math.max(t0, tn); t1 = Math.min(t1, tf);
+    if (t0 > t1) return false;
+  }
+  return true;
 }
 
 function projectilePartRadius(entity: CombatEntity, part: DamagePart, projectile: Projectile): number {

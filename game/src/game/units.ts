@@ -175,12 +175,12 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   // JUMP TROOPER. Vertical movement: its move is a jet-assisted arc that ignores cliffs, water and
   // cover and lands on any dry ground in range, then it fires a carbine from wherever it landed.
   // Mid-arc it is a flyer -- anti-air can pick it out of the sky and it can be shot by interceptors.
-  jumper: foot({ jump: true, moveRange: 9.0, moveSpeed: 8.5, shotDamage: 26, weaponRange: 17, spread: 2.6, accurateFraction: 0.44, spreadPerMeter: 0.11, accuracyLabel: "carbine", hpMultiplier: 0.95, aiValue: 6 }),
+  jumper: foot({ jump: true, moveRange: 9.0, moveSpeed: 8.5, shotDamage: 30, weaponRange: 17, spread: 2.6, accurateFraction: 0.44, spreadPerMeter: 0.11, accuracyLabel: "carbine", hpMultiplier: 0.95, aiValue: 6 }),
 
   // --- Ground vehicles ---
-  tank: u({ moveRange: 5.4, moveSpeed: 5.5, shotDamage: 58, weaponRange: 28, projectile: "shell", projectileSpeed: 2.45, spread: 2.65, accurateFraction: 0.5, accuracyLabel: "stabilized cannon", ramRange: 2.85, groundShell: true, hpMultiplier: 1.3, aiValue: 3 }),
+  tank: u({ moveRange: 5.4, moveSpeed: 5.5, shotDamage: 55, weaponRange: 28, projectile: "shell", projectileSpeed: 2.45, spread: 2.65, accurateFraction: 0.5, accuracyLabel: "stabilized cannon", ramRange: 2.85, groundShell: true, hpMultiplier: 1.3, aiValue: 3 }),
   apc: u({ moveRange: 7.2, moveSpeed: 7.4, shotDamage: 30, weaponRange: 24, projectile: "bolt", projectileSpeed: 2.8, spread: 3.1, accurateFraction: 0.375, accuracyLabel: "autogun", hpMultiplier: 1.16, aiValue: 3 }),
-  artillery: u({ moveRange: 4.2, moveSpeed: 4.4, shotDamage: 78, weaponRange: 42, projectile: "shell", projectileSpeed: 2.45, spread: 5.4, accurateFraction: 0.48, accuracyLabel: "siege gun", groundShell: true, hpMultiplier: 1.2, aiValue: 9 }),
+  artillery: u({ moveRange: 4.2, moveSpeed: 4.4, shotDamage: 88, weaponRange: 42, projectile: "shell", projectileSpeed: 2.45, spread: 4.6, accurateFraction: 0.55, accuracyLabel: "siege gun", groundShell: true, hpMultiplier: 1.2, aiValue: 9 }),
   flak: u({ moveRange: 6.0, moveSpeed: 6.2, shotDamage: 16, weaponRange: 32, accurateFraction: 0.3, projectile: "bolt", accuracyLabel: "flak cannon", aiValue: 6 }),
 
   // --- Aircraft. Guns are air-to-air; bombs use the grenade path and fall straight down. ---
@@ -227,7 +227,7 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "sapper", label: "Scattergun", role: "Breacher", cost: 280, cooldown: 2, tech: "ordnance", tip: "Scattergun: brutal inside 5m, useless past 10. Plants mines ($15) and BREACHES any wall or cover piece in one shot." },
   { kind: "tank", label: "Tank", role: "Armor", cost: 450, cooldown: 3, tech: "armor", tip: "Massive HP, big gun, rams and crushes cover. HULL DOWN: a turn spent still takes 30% less damage until it moves." },
   { kind: "apc", label: "APC", role: "Vehicle", cost: 250, cooldown: 2, tech: "armor", tip: "Fast armored flanker; durable and quick, shrugs off small arms. CARRY: two foot troops board from beside the hull and unload beside it." },
-  { kind: "artillery", label: "Artillery", role: "Siege", cost: 440, cooldown: 4, tech: "siege", tip: "Long-range siege gun; devastating at distance and tough, but helpless up close. DEPLOY: fires only with outriggers down (a turn, or any turn it holds still); packing up to move costs a turn." },
+  { kind: "artillery", label: "Artillery", role: "Siege", cost: 380, cooldown: 3, tech: "siege", tip: "Long-range siege gun; devastating at distance and tough, but helpless up close. DEPLOY: fires only with outriggers down (a turn, or any turn it holds still); packing up to move costs a turn." },
   { kind: "flak", label: "Flak Track", role: "Anti-Air", cost: 260, cooldown: 2, tech: "armor", tip: "Anti-air specialist: shreds aircraft at range and its overwatch cone covers the air lane. Weak against ground armour." },
   { kind: "gunship", label: "Gunship", role: "Air", cost: 420, cooldown: 3, tech: "airwing", tip: "Overflies all terrain. Autocannon duels aircraft; bombs drop straight down on ground targets. STRAFE: every move guns each hostile within 4m of its path. Fragile to flak; cannot capture." },
   { kind: "interceptor", label: "Interceptor", role: "Air Superiority", cost: 320, cooldown: 2, tech: "airwing", tip: "Gun-only fighter that wins the dogfight. No bombs. Fragile to ground flak." },
