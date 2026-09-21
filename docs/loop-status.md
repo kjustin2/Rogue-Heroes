@@ -11,8 +11,8 @@ every row names its proof, nothing is DONE from code alone.
 | 2 | Deploy from base: pick WHERE in the circle the unit lands | deploy agent | DONE (merged) | `gpu-deployflow-ring/-placed.png`, deploy.test.ts (6), smokes deploy via a point |
 | 4 | Skirmish map preview could look way cooler | gui agent | RUNNING | `gpu-mapselect-*.png` |
 | 5 | Infantry still basic — more exciting and unique per unit | infantry agent | DONE (merged) | `gpu-lineup.png`, `shots/silhouette/*`, 34 new kit parts, per-kind body/limb/extras |
-| 6 | Replace every Meshy hull with Blender toon models (consistent look) | vehicles agent | RUNNING | `gpu-direction.png`, `gpu-siege.png`, `gpu-maps`; no `.meshy.json` left in public/models |
-| 7 | Projectiles pass 2 — more fun to watch, on-theme | projectile agent | TODO (wave 2) | filmstrips per family + `gpu-volley` |
+| 6 | Replace every Meshy hull with Blender toon models (consistent look) | vehicles agent | DONE (merged) | `gpu-siege.png`, `gpu-direction.png`; vehicles-kit.glb 25 parts, Meshy pipeline deleted, perf 483k→232k tris |
+| 7 | Projectiles pass 2 — more fun to watch, on-theme | projectile agent | RUNNING | filmstrips per family + `gpu-volley` |
 | 8 | Bullets going through items | main | DONE | shotBlocking.test.ts (wall slab), `filmstrip-through-*.png` ×6; bystander hulls block over footprint |
 | 9 | GUIs use available space — more room to read | gui agent | RUNNING | gpu shots at 1280×720 / 1600×900 / 2560×1080 |
 | 10 | Mechanics/bug/optimisation audit + dead-code refactor | audit agent | TODO (wave 2) | test:full green, perf OK, soak:gpu clean, dead-code list in the commit |
