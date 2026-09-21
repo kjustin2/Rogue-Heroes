@@ -1,72 +1,72 @@
 {
-  "at": "2026-09-17T01:46:13.459Z",
+  "at": "2026-09-21T22:08:48.153Z",
   "command": {
     "label": "command-stress",
-    "fps": 106.61,
-    "windowMs": 3490.7,
+    "fps": 56.69,
+    "windowMs": 3490.4,
     "frame": {
-      "count": 373,
-      "mean": 9.38,
-      "p50": 7,
-      "p95": 13.9,
-      "p99": 14,
-      "max": 17.6,
+      "count": 199,
+      "mean": 17.64,
+      "p50": 20.7,
+      "p95": 20.9,
+      "p99": 24.5,
+      "max": 28,
       "jank": 0,
       "jankRatio": 0
     },
     "render": {
-      "calls": 815,
-      "triangles": 482974,
-      "geometries": 446,
-      "textures": 28,
+      "calls": 777,
+      "triangles": 232018,
+      "geometries": 555,
+      "textures": 9,
       "programs": 54
     },
-    "sceneObjects": 2668
+    "sceneObjects": 2724
   },
   "resolve": {
     "label": "resolve-stress",
-    "fps": 57.8,
-    "windowMs": 6005.7,
+    "fps": 46.47,
+    "windowMs": 6039.8,
     "frame": {
-      "count": 348,
-      "mean": 17.3,
-      "p50": 13.9,
+      "count": 282,
+      "mean": 21.52,
+      "p50": 20.8,
       "p95": 34.7,
-      "p99": 76.4,
-      "max": 104.2,
-      "jank": 19,
-      "jankRatio": 0.055
+      "p99": 48.7,
+      "max": 236.1,
+      "jank": 16,
+      "jankRatio": 0.057
     },
     "render": {
-      "calls": 1269,
-      "triangles": 629754,
-      "geometries": 675,
-      "textures": 47,
-      "programs": 57
+      "calls": 1071,
+      "triangles": 305796,
+      "geometries": 733,
+      "textures": 22,
+      "programs": 58
     },
-    "sceneObjects": 2705
+    "sceneObjects": 2742
   },
   "light": {
     "label": "command-light",
-    "fps": 118.62,
-    "windowMs": 3008,
+    "fps": 121.65,
+    "windowMs": 2993.8,
     "frame": {
-      "count": 431,
-      "mean": 8.43,
-      "p50": 6.9,
-      "p95": 7.1,
-      "p99": 10.5,
-      "max": 625.1,
-      "jank": 1,
-      "jankRatio": 0.002
+      "count": 365,
+      "mean": 8.22,
+      "p50": 7,
+      "p95": 13.9,
+      "p99": 14,
+      "max": 17.7,
+      "jank": 0,
+      "jankRatio": 0
     },
     "render": {
-      "calls": 509,
-      "triangles": 508428,
-      "geometries": 439,
-      "textures": 28,
-      "programs": 54
+      "calls": 551,
+      "triangles": 101330,
+      "geometries": 516,
+      "textures": 9,
+      "programs": 53
     },
-    "sceneObjects": 1012
+    "sceneObjects": 1001
   }
 }

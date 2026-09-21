@@ -57,7 +57,8 @@
     "desktop": "electron .",
     "standalone": "npm run build && electron .",
     "dist:exe": "npm run build && electron-builder --win portable",
-    "shots:step": "node scripts/shot-step.mjs"
+    "shots:step": "node scripts/shot-step.mjs",
+    "art:vehicles": "node scripts/blender.mjs art/vehicles/author_vehicles.py"
   },
   "author": "Rogue Heroes",
   "build": {

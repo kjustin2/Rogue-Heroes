@@ -10,7 +10,8 @@ import { OVERWATCH_ARC_HALF } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec } from "../game/maps";
 import type { TroopKind } from "../game/units";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
-import { instantiate, kitGeometry, modelsVersion, propGeometry, toonGradient, type KitPart, type ModelKey } from "./models";
+import { kitGeometry, modelsVersion, propGeometry, toonGradient, vehicleGeometry, vehiclesKitReady, type KitPart, type VehiclesPart } from "./models";
+import { VEHICLE_LAYOUT } from "./vehiclesLayout";
 import {
   makeBlast, makeImpact, makeMuzzleFlash, makePing, makeProjectileModel, makeProjectileShadow, makeProjectileTrail,
   orientAlongVelocity, prewarmProjectileFx, projectileFamily, projectileFxWarmUpMaterials, projectileGeometry,
@@ -698,8 +699,19 @@ export class WorldRenderer {
    * (measured on the real GPU by soak:gpu, which diffs the program list across a resolve).
    */
   warmUpSamplers(): THREE.Object3D[] {
+    // A program key is material x GEOMETRY attributes, so every material is sampled on three
+    // geometries: RGB vertex colour + uv (the procedural parts), RGBA vertex colour + uv (every
+    // Blender kit exports COLOR_0 as VEC4 -> three's `vertexAlphas` variant), and RGB with no uv.
+    // soak:gpu caught the RGBA transparent twin (a fading kit part) compiling mid-resolve.
     const geo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
-    geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(geo.getAttribute("position").count * 3).fill(1), 3));
+    const n = geo.getAttribute("position").count;
+    geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(n * 3).fill(1), 3));
+    const geo4 = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+    geo4.setAttribute("color", new THREE.BufferAttribute(new Float32Array(n * 4).fill(1), 4));
+    const geoNoUv = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+    geoNoUv.deleteAttribute("uv");
+    geoNoUv.setAttribute("color", new THREE.BufferAttribute(new Float32Array(n * 3).fill(1), 3));
+    const geos = [geo, geo4, geoNoUv];
     const out: THREE.Object3D[] = [];
     // Every opaque standard material in the scene gets a TRANSPARENT twin compiled now. Units and
     // props fade out when they die, and that fade is the only thing that flips a material's
@@ -719,10 +731,12 @@ export class WorldRenderer {
         const twin = m.clone();
         twin.transparent = true;
         twin.opacity = 0.5;
-        const sampler = new THREE.Mesh(geo, twin);
-        sampler.receiveShadow = mesh.receiveShadow;
-        sampler.castShadow = mesh.castShadow;
-        out.push(sampler);
+        for (const g of geos) {
+          const sampler = new THREE.Mesh(g, twin);
+          sampler.receiveShadow = mesh.receiveShadow;
+          sampler.castShadow = mesh.castShadow;
+          out.push(sampler);
+        }
       }
     });
     for (const m of [
@@ -733,7 +747,9 @@ export class WorldRenderer {
       new THREE.MeshStandardMaterial({ color: 0x8a7a5c, roughness: 0.92, transparent: true, opacity: 0.5 }),
       // Projectile FX: opaque flat bodies and their BackSide inverted-hull rims are their own programs.
       ...projectileFxWarmUpMaterials(),
-    ]) out.push(new THREE.Mesh(geo, m));
+      // The vehicles kit's inverted-hull ink rim.
+      inkMaterial(),
+    ]) for (const g of geos) out.push(new THREE.Mesh(g, m));
     return out;
   }
 
@@ -1554,15 +1570,6 @@ export class WorldRenderer {
       group.rotation.z += Math.sin(performance.now() * 0.075) * s * 0.07;
     }
     const renderGhosted = ghosted;
-    if (group.userData.glb) {
-      // Whole-vehicle recoil kick for model-based units (no per-part weapon mesh to punch).
-      const recoil = (group.userData.recoil as number | undefined) ?? 0;
-      if (recoil > 0 && entity.status.alive) {
-        group.position.x -= Math.sin(entity.yaw) * recoil * 0.14;
-        group.position.z -= Math.cos(entity.yaw) * recoil * 0.14;
-        group.rotation.x -= recoil * 0.02;
-      }
-    }
     // One id->part map per entity per frame instead of a parts.find per part MESH —
     // paintPart runs for ~20 meshes on an 8-part unit, so the linear scans added up.
     _partById.clear();
@@ -1575,15 +1582,9 @@ export class WorldRenderer {
       const part = _partById.get(partId);
       if (!part) return;
       this.syncDebris(entity, part);
-      if (mesh.userData.pickProxy) {
-        // Invisible raycast box over a GLB region — pickable, never painted.
-        if (entity.status.alive) this.pickables.push(mesh);
-        return;
-      }
       this.paintPart(group, mesh, entity, part, entity.id === selectedId, entity.id === targetId, part.id === targetPartId, renderGhosted);
       if (entity.status.alive) this.pickables.push(mesh);
     });
-    if (group.userData.glb) this.paintModel(group, entity, entity.id === selectedId, entity.id === targetId, renderGhosted);
   }
 
   private syncDebris(entity: CombatEntity, part: DamagePart): void {
@@ -1598,156 +1599,150 @@ export class WorldRenderer {
   }
 
   private buildEntity(entity: CombatEntity): THREE.Group {
-    const model = this.buildFromModel(entity);
-    if (model) {
-      if (entity.kind !== "cover") model.add(makeContactShadow(entity.radius));
-      if (entity.kind === "artillery") model.add(makeOutriggers());
-      return model;
-    }
     const group = new THREE.Group();
     group.userData.entityId = entity.id;
+    // Vehicles and structures: the Blender vehicles kit (art/vehicles) assembles authored parts
+    // through the pooled part path; until it has loaded (or if it never does) the older
+    // procedural builders stand in, so the game runs with public/models/ empty.
+    const kit = vehiclesKitReady();
     if (entity.kind === "gunship") this.buildGunship(group, entity);
     else if (entity.kind === "interceptor") this.buildInterceptor(group, entity);
     else if (entity.kind === "bomber") this.buildBomber(group, entity);
     else if (entity.kind === "transport") this.buildTransport(group, entity);
     else if (entity.kind === "flak") this.buildFlak(group, entity);
-    else if (isVehicleKind(entity.kind)) this.buildTank(group, entity);
+    else if (isVehicleKind(entity.kind)) { if (kit) this.buildVehicleKit(group, entity); else this.buildTank(group, entity); }
     if (isInfantryKind(entity.kind)) this.buildSoldier(group, entity);
-    if (entity.kind === "base") this.buildBase(group, entity);
-    if (isDefenseKind(entity.kind)) this.buildDefense(group, entity);
+    if (entity.kind === "base") { if (kit) this.buildBaseKit(group, entity); else this.buildBase(group, entity); }
+    if (isDefenseKind(entity.kind)) { if (kit && entity.kind === "turret") this.buildTurretKit(group, entity); else this.buildDefense(group, entity); }
     if (entity.kind === "cover") this.buildCover(group, entity);
+    if (entity.kind === "artillery") group.add(makeOutriggers());
     // Flyers add their own ground shadow (dropped to terrain level) in buildGunship; everyone else
     // gets a contact shadow at their feet.
     if (entity.kind !== "cover" && !entity.flying) group.add(makeContactShadow(entity.radius));
     return group;
   }
 
-  // Try the Meshy GLB for this entity kind; null (not loaded / no mapping) keeps the
-  // procedural builder in charge. Infantry, walls, and glow-signal props are always
-  // procedural — their walk cycle / parametric height / gameplay glow is the point.
-  private buildFromModel(entity: CombatEntity): THREE.Group | null {
-    const key = modelKeyFor(entity);
-    if (!key) return null;
-    const group = instantiate(key);
-    if (!group) return null;
-    group.userData.entityId = entity.id;
-    group.userData.glb = true;
-    if (entity.kind === "cover") {
-      this.tintModelToMap(group);
-      this.interactionGlow(group, entity, entity.parts[0]?.role === "volatile");
-    } else {
-      this.addModelAccents(group, entity);
-    }
-    this.addPickProxies(group, entity);
-    return group;
+  // ===========================================================================
+  // VEHICLES KIT (art/vehicles/author_vehicles.py → vehicles-kit.glb + vehiclesLayout.ts)
+  //
+  // One authored mesh per damage-model part, placed at the bbox the layout file recorded, so
+  // per-part damage, cannon recoil, dead-track listing and the pooled team paint all work on it
+  // exactly as on a procedural part. Team colour is what it is everywhere else: the part's base
+  // hue goes through `roleColor` (hull sits in the team hue family) and the saturated read is a
+  // handful of small ACCENT boxes — headlamps, a turret stripe, a cupola lamp — in the faction
+  // glow. Every part carries an inverted-hull ink rim (`ink`), the same line the troopers wear.
+  // The procedural builders below stay as the fallback while the GLB is missing.
+  // ===========================================================================
+  private vpart(
+    group: THREE.Group,
+    entity: CombatEntity,
+    partId: string,
+    part: VehiclesPart,
+    color: number,
+    options: { dx?: number; metalness?: number; roughness?: number; emissive?: number; emissiveIntensity?: number; accent?: boolean; rotation?: [number, number, number]; ink?: number } = {},
+  ): PartMesh {
+    const layout = VEHICLE_LAYOUT[part];
+    const { dx = 0, ...rest } = options;
+    return this.box(group, entity, partId, layout.size, [layout.center[0] + dx, layout.center[1], layout.center[2]], color, {
+      geometry: vehicleGeometry(part),
+      ink: VEHICLE_INK,
+      bevel: 0.06,
+      metalness: 0.12,
+      roughness: 0.7,
+      ...rest,
+    });
   }
 
-  // Team-colored emissive trim (roof light bar + side strips) so a weathered GLB still
-  // reads player-cyan vs enemy-red at tactics camera distance — the same accent language
-  // the procedural units use.
-  private addModelAccents(group: THREE.Group, entity: CombatEntity): void {
-    if (entity.team === "neutral") return;
-    const color = entity.team === "enemy" ? TEAMS.enemyAccent : (entity.accent ?? this.playerAccent);
-    const dims = group.userData.dims as THREE.Vector3;
-    const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.85, roughness: 0.4, metalness: 0.1 });
-    mat.userData.shared = false;
-    // Roof-mounted only: flank strips either z-fight (embedded in the hull surface) or
-    // float in mid-air, because the bbox doesn't follow the hull's actual profile. A light
-    // bar + a small beacon above the silhouette are always safely clear of the mesh.
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.32, dims.x * 0.22), 0.07, 0.07), mat);
-    bar.position.set(0, dims.y + 0.06, -dims.z * 0.16);
-    bar.userData.decor = true;
-    group.add(bar);
-    const beacon = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.09), mat);
-    beacon.position.set(0, dims.y + 0.06, dims.z * 0.2);
-    beacon.userData.decor = true;
-    group.add(beacon);
-    group.userData.accentMaterial = mat; // paintModel pulses it like a running light
+  private buildVehicleKit(actor: THREE.Group, entity: CombatEntity): void {
+    // The kit is authored at a comfortable modelling scale; the board wants toy proportions — a
+    // tank about a trooper-and-a-half long, turret top at head height (Advance Wars, not a scale
+    // model next to a giant). One rig scale keeps the authored parts fitting each other exactly.
+    const group = new THREE.Group();
+    group.scale.setScalar(VEHICLE_KIT_SCALE);
+    actor.add(group);
+    const glow = entity.team === "enemy" ? TEAMS.enemyAccent : (entity.accent ?? this.playerAccent);
+    const lamp = { accent: true, emissive: glow, emissiveIntensity: 0.4, bevel: 0.3 } as const;
+    const stripe = { accent: true, emissive: glow, emissiveIntensity: 0.22, bevel: 0.3 } as const;
+    const TRACK = 0x2a3034;
+    if (entity.kind === "apc") {
+      // Wheeled 6x6 troop carrier: tall slab-sided box on big tyres, cupola autogun, rear ramp.
+      this.vpart(group, entity, "hull", "apc-hull", 0x557784);
+      this.vpart(group, entity, "front-plate", "apc-front", 0x7d918f);
+      this.vpart(group, entity, "left-tread", "apc-wheels", TRACK, { dx: -0.9, metalness: 0.2 });
+      this.vpart(group, entity, "right-tread", "apc-wheels", TRACK, { dx: 0.9, metalness: 0.2 });
+      this.vpart(group, entity, "turret", "apc-cupola", 0x2b4a5a);
+      this.vpart(group, entity, "cannon", "apc-autogun", 0x8e9c98, { metalness: 0.3 });
+      for (const x of [-0.6, 0.6]) this.box(group, entity, "front-plate", [0.34, 0.12, 0.1], [x, 1.02, 1.56], 0xfff4ca, lamp);
+      for (const side of [-1, 1]) for (const z of [-0.5, 0.0, 0.5]) this.box(group, entity, "hull", [0.05, 0.16, 0.2], [side * 0.95, 1.42, z], 0x121a1e, stripe);
+      this.box(group, entity, "hull", [1.0, 0.1, 0.06], [0, 1.24, -1.47], 0x3a5563, stripe); // ramp stripe
+      this.cylinder(group, entity, "turret", 0.025, 0.7, [0.82, 2.3, -0.62], 0xdfeaf2, [0, 0, 0], { accent: true, emissive: glow, emissiveIntensity: 0.16 });
+      this.box(group, entity, "turret", [0.08, 0.08, 0.08], [0.82, 2.66, -0.62], 0x9dfcff, { accent: true, emissive: glow, emissiveIntensity: 0.85 });
+      return;
+    }
+    if (entity.kind === "artillery") {
+      // Self-propelled gun: low tracked carriage, dozer blade, howitzer parked at elevation.
+      this.vpart(group, entity, "hull", "arty-hull", 0x527570);
+      this.vpart(group, entity, "front-plate", "arty-front", 0x7d918f);
+      this.vpart(group, entity, "left-tread", "arty-track", TRACK, { dx: -0.9, metalness: 0.2 });
+      this.vpart(group, entity, "right-tread", "arty-track", TRACK, { dx: 0.9, metalness: 0.2 });
+      this.vpart(group, entity, "turret", "arty-mount", 0x2b4a5a);
+      this.vpart(group, entity, "cannon", "arty-gun", 0x8e9c98, { metalness: 0.32 });
+      for (const x of [-0.5, 0.5]) this.box(group, entity, "front-plate", [0.3, 0.12, 0.1], [x, 1.16, 1.42], 0xfff4ca, lamp);
+      for (const x of [-0.58, 0.58]) this.box(group, entity, "turret", [0.06, 0.1, 0.6], [x, 1.7, -0.3], 0xdaf7ff, stripe);
+      this.box(group, entity, "hull", [0.3, 0.06, 0.3], [0.92, 0.78, 0.4], 0xffd9a0, { accent: true, emissive: 0xffa04a, emissiveIntensity: 0.25, bevel: 0.3 });
+      return;
+    }
+    // Tank: tracked hull, sloped glacis, big rounded turret, long gun.
+    this.vpart(group, entity, "hull", "tank-hull", 0x527c88);
+    this.vpart(group, entity, "front-plate", "tank-front", 0x7d918f);
+    this.vpart(group, entity, "left-tread", "tank-track", TRACK, { dx: -0.9, metalness: 0.2 });
+    this.vpart(group, entity, "right-tread", "tank-track", TRACK, { dx: 0.9, metalness: 0.2 });
+    this.vpart(group, entity, "turret", "tank-turret", 0x2b4a5a);
+    this.vpart(group, entity, "cannon", "tank-cannon", 0x8e9c98, { metalness: 0.32 });
+    for (const x of [-0.7, 0.7]) this.box(group, entity, "front-plate", [0.4, 0.14, 0.1], [x, 0.95, 1.5], 0xfff4ca, lamp);
+    for (const x of [-0.8, 0.8]) this.box(group, entity, "turret", [0.06, 0.12, 0.9], [x, 1.42, 0.05], 0xdaf7ff, stripe);
+    this.box(group, entity, "turret", [0.12, 0.1, 0.12], [0.34, 1.8, -0.12], 0x8df0ff, { accent: true, emissive: glow, emissiveIntensity: 0.85, bevel: 0.3 });
+    for (const x of [-0.7, 0.7]) this.box(group, entity, "hull", [0.14, 0.14, 0.06], [x, 1.1, -1.72], 0x151b1d, { emissive: 0xff7d26, emissiveIntensity: 0.18, bevel: 0.3 });
   }
 
-  // Nudge a GLB prop's albedo toward the map palette (mirror of tintPropToMap, but on the
-  // clone's material records so per-frame damage tinting keeps the tint as its base).
-  private tintModelToMap(group: THREE.Group): void {
-    const mats = group.userData.glbMaterials as { material: THREE.MeshStandardMaterial; base: number }[] | undefined;
-    if (!mats) return;
-    for (const record of mats) {
-      const tinted = new THREE.Color(record.base).lerp(this.propTint, 0.74);
-      record.material.color.copy(tinted);
-      record.base = tinted.getHex();
+  private buildBaseKit(group: THREE.Group, entity: CombatEntity): void {
+    const factionGlow = entity.team === "enemy" ? TEAMS.enemyAccent : 0x5fe6ff;
+    this.vpart(group, entity, "core", "hq-core", 0x585a52, { roughness: 0.9, metalness: 0.06 });
+    this.vpart(group, entity, "comms", "hq-comms", 0x8f958b, { metalness: 0.3 });
+    this.vpart(group, entity, "power", "hq-power", 0x4b4a3f, { metalness: 0.22, roughness: 0.86 });
+    this.vpart(group, entity, "gate", "hq-gate", 0x3b3d37, { metalness: 0.2, roughness: 0.85 });
+    // Accents, as on the procedural HQ: lit window band, team banner, roof lamps, comms beacon,
+    // reactor vent glow, gate sill lamps. Same positions — the kit was authored to the same numbers.
+    const glass = { emissive: factionGlow, emissiveIntensity: 0.32, metalness: 0.3, bevel: 0.3 } as const;
+    this.box(group, entity, "core", [1.28, 0.2, 0.06], [0.1, 2.16, 0.69], 0x1d2a2e, glass);
+    this.box(group, entity, "core", [0.06, 0.2, 1.1], [-0.62, 2.16, 0.05], 0x1d2a2e, glass);
+    this.cylinder(group, entity, "core", 0.045, 1.15, [1.06, 2.5, 0.66], 0x9aa096, [0, 0, 0], { metalness: 0.34 });
+    this.box(group, entity, "core", [0.05, 0.46, 0.66], [1.06, 2.82, 0.99], factionGlow, { emissive: factionGlow, emissiveIntensity: 0.45 });
+    this.box(group, entity, "core", [0.05, 0.46, 0.16], [1.06, 2.82, 1.4], factionGlow, { emissive: factionGlow, emissiveIntensity: 0.28 });
+    for (const x of [-0.9, 0.9]) this.box(group, entity, "core", [0.12, 0.08, 0.12], [x, 1.82, -0.94], 0xffd9a0, { emissive: 0xffa04a, emissiveIntensity: 0.5 });
+    this.box(group, entity, "comms", [0.1, 0.1, 0.1], [-0.92, 3.58, -0.2], 0xffb08a, { emissive: 0xff6a4a, emissiveIntensity: 0.6, bevel: 0.4 });
+    this.box(group, entity, "power", [0.5, 0.16, 0.06], [1.0, 0.68, -0.34], 0xffb347, { emissive: 0xff8c1a, emissiveIntensity: 0.55, bevel: 0.35 });
+    for (const x of [-0.5, 0, 0.5]) this.box(group, entity, "gate", [0.26, 0.06, 0.06], [x, 1.02, 1.4], 0xffd9a0, { emissive: 0xffa04a, emissiveIntensity: 0.4, bevel: 0.4 });
+  }
+
+  // Authored plinth + traverse ring, dug in behind a sandbag berm on three sides (an emplacement
+  // on a bare plinth reads as furniture). Sand-coloured accents so the team paint leaves them alone.
+  private buildTurretMountKit(group: THREE.Group, entity: CombatEntity): void {
+    this.vpart(group, entity, "mount", "turret-mount", 0x333a42, { metalness: 0.24 });
+    const bags = vehicleGeometry("sandbags");
+    for (const [x, z, yaw] of [[0, -0.98, 0], [-0.98, 0.04, Math.PI / 2], [0.98, 0.04, Math.PI / 2]] as const) {
+      this.box(group, entity, "mount", [1.5, 0.5, 0.56], [x, 0.25, z], 0x8a7f66, { geometry: bags, ink: VEHICLE_INK, accent: true, metalness: 0.04, roughness: 0.95, rotation: [0, yaw, 0], bevel: 0.4 });
     }
   }
 
-  // Invisible raycast boxes standing in for the procedural part meshes, so part-aiming,
-  // hover and the vision overlay keep working over a single-skin GLB.
-  private addPickProxies(group: THREE.Group, entity: CombatEntity): void {
-    const dims = group.userData.dims as THREE.Vector3;
-    const layout: [string, [number, number, number], [number, number, number]][] =
-      entity.kind === "cover"
-        ? [[entity.parts[0]?.id ?? "wall", [dims.x, dims.y, dims.z], [0, dims.y / 2, 0]]]
-        : PICK_PROXY_LAYOUTS[entity.kind] ?? [];
-    for (const [partId, size, pos] of layout) {
-      if (!entity.parts.some((p) => p.id === partId)) continue;
-      const proxy = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), pickProxyMaterial());
-      proxy.position.set(pos[0], pos[1], pos[2]);
-      proxy.userData.entityId = entity.id;
-      proxy.userData.partId = partId;
-      proxy.userData.pickProxy = true;
-      proxy.visible = false; // raycaster tests invisible meshes; renderer never draws them
-      proxy.castShadow = false;
-      proxy.receiveShadow = false;
-      group.add(proxy);
-    }
-  }
-
-  // Per-frame tint/feedback for GLB entities: damage char, death darkening, selection /
-  // target / hit-flash cues and ghosting — the coarse-grained sibling of paintPart.
-  private paintModel(group: THREE.Group, entity: CombatEntity, selected: boolean, targeted: boolean, ghosted: boolean): void {
-    const mats = group.userData.glbMaterials as { material: THREE.MeshStandardMaterial; base: number }[] | undefined;
-    if (!mats) return;
-    // Running-light pulse on the team accent trim — parked armor still reads alive.
-    const accentMat = group.userData.accentMaterial as THREE.MeshStandardMaterial | undefined;
-    if (accentMat) {
-      accentMat.emissiveIntensity = entity.status.alive
-        ? 0.6 + (Math.sin(performance.now() * 0.0035 + (hash(entity.id) % 63)) + 1) * 0.22
-        : 0;
-    }
-    let totalHp = 0;
-    let totalMax = 0;
-    let flash = 0;
-    for (const part of entity.parts) {
-      totalHp += part.hp;
-      totalMax += part.maxHp;
-      flash = Math.max(flash, this.partFlash(entity.id, part.id));
-    }
-    const injury = 1 - clamp01(totalHp / Math.max(1, totalMax));
-    const alive = entity.status.alive;
-    const unitGlow = entity.kind !== "cover" && entity.team !== "neutral";
-    const glowColor = entity.team === "enemy" ? TEAMS.enemyGlowDim : TEAMS.playerGlowDim;
-    for (const record of mats) {
-      const material = record.material;
-      const color = _paintColor.set(record.base).lerp(_paintTmp.set(0x33120f), injury * 0.5);
-      if (!alive) color.lerp(_paintTmp.set(0x08090a), 0.55);
-      if (selected && alive) color.lerp(_paintTmp.set(0xffffff), 0.14);
-      if (targeted && alive) color.lerp(_paintTmp.set(0xffd166), 0.26);
-      if (flash > 0 && alive) color.lerp(_paintTmp.set(0xffffff), flash * 0.55);
-      material.color.copy(color);
-      if (flash > 0 && alive) {
-        material.emissive.setHex(0xffffff);
-        material.emissiveIntensity = 0.35 + flash * 0.5;
-      } else if (alive && (selected || targeted)) {
-        material.emissive.setHex(targeted ? 0x4f3000 : 0x0b3844);
-        material.emissiveIntensity = targeted ? 0.4 : 0.5;
-      } else if (alive && unitGlow) {
-        material.emissive.setHex(glowColor);
-        material.emissiveIntensity = 0.18 + injury * 0.1;
-      } else {
-        material.emissive.setHex(0x000000);
-        material.emissiveIntensity = 0;
-      }
-      material.transparent = ghosted && alive;
-      material.opacity = ghosted && alive ? (targeted ? 0.48 : 0.34) : 1;
-      material.depthWrite = !(ghosted && alive);
-    }
+  private buildTurretKit(group: THREE.Group, entity: CombatEntity): void {
+    const glow = entity.team === "enemy" ? TEAMS.enemyAccent : 0x5fe6ff;
+    this.buildTurretMountKit(group, entity);
+    this.vpart(group, entity, "gun", "turret-gun", 0x3c454f, { metalness: 0.28 });
+    this.vpart(group, entity, "sensor", "turret-sensor", 0x1a2024, { metalness: 0.3 });
+    // The lens is the only thing that emits; the belt box is the one warm hardware accent.
+    this.box(group, entity, "sensor", [0.12, 0.1, 0.05], [-0.34, 1.36, 0.03], 0xdaf7ff, { accent: true, emissive: glow, emissiveIntensity: 0.5, bevel: 0.3 });
+    this.box(group, entity, "gun", [0.1, 0.06, 0.3], [0.5, 0.86, 0.06], 0x8a7340, { accent: true, metalness: 0.4, bevel: 0.35 });
   }
 
   private buildTank(group: THREE.Group, entity: CombatEntity): void {
@@ -1961,7 +1956,7 @@ export class WorldRenderer {
     // hips with hanging thigh plates and a buckle, a torso with chest plates, straps, side pouches
     // and a back plate, a head with a jaw and neck under the helmet, arms with shoulder caps,
     // elbow pads and gloves, legs with kneepads and shin guards. The primitives they replace were
-    // the reason a trooper stood next to a Meshy tank and read as a different game.
+    // the reason a trooper stood next to a photoreal tank hull and read as a different game.
     this.box(rig, entity, "legs", [0.42, 0.22, 0.3], [0, 0.52, 0], trimColor, { metalness: 0.16, kit: "hips" });
     // Utility belt with pouches. Three small blocks around the front is the cheapest thing that
     // reads as "kit carried by a person" instead of a smooth mannequin.
@@ -2303,6 +2298,13 @@ export class WorldRenderer {
 
   private buildDefense(group: THREE.Group, entity: CombatEntity): void {
     const glow = entity.team === "enemy" ? TEAMS.enemyAccent : 0x5fe6ff;
+    if (entity.kind === "exturret" && vehiclesKitReady()) {
+      // The mortar battery shares the gun turret's authored plinth and sandbag berm (one
+      // emplacement language), and keeps its own procedural twin tubes + shell rack on top.
+      this.buildTurretMountKit(group, entity);
+      this.buildMortarBattery(group, entity);
+      return;
+    }
     if (entity.kind === "wall") {
       const h = entity.height;
       this.box(group, entity, "barrier", [2.15, h, 0.62], [0, h / 2, 0], 0x6a7078, { metalness: 0.2, bevel: 0.08 });
@@ -2342,7 +2344,15 @@ export class WorldRenderer {
       this.box(group, entity, "mount", [0.18, 0.3, 0.18], [x, 0.18, z], 0x1c2126, { metalness: 0.35, bevel: 0.2 });
     }
     if (entity.kind === "exturret") {
-      // Twin mortar tubes on a braced cradle, fed from a rack of shells behind.
+      this.buildMortarBattery(group, entity);
+    } else {
+      this.buildAutoCannon(group, entity, glow);
+    }
+  }
+
+  // Twin mortar tubes on a braced cradle, fed from a rack of shells behind.
+  private buildMortarBattery(group: THREE.Group, entity: CombatEntity): void {
+    {
       this.box(group, entity, "gun", [0.9, 0.36, 0.86], [0, 0.74, 0], 0x3a434c, { metalness: 0.26, bevel: 0.16 });
       // Trunnion the tubes sit in, so they are carried by something rather than growing out of a box.
       for (const x of [-0.3, 0.3]) {
@@ -2360,8 +2370,13 @@ export class WorldRenderer {
         this.cylinder(group, entity, "ammo", 0.07, 0.34, [x, 0.74 - i * 0.01, -0.72], 0x6d6047, [0, 0, 0], { metalness: 0.34 });
         this.cylinder(group, entity, "ammo", 0.07, 0.1, [x, 0.95 - i * 0.01, -0.72], 0xb8923f, [0, 0, 0], { metalness: 0.42 });
       }
-    } else {
-      // Single auto-cannon: gun housing, a slimmer barrel with a brake, a belt box and a sensor head.
+    }
+  }
+
+  // Single auto-cannon: gun housing, a slimmer barrel with a brake, a belt box and a sensor head
+  // (the procedural gun turret; the kit version is buildTurretKit).
+  private buildAutoCannon(group: THREE.Group, entity: CombatEntity, glow: number): void {
+    {
       this.box(group, entity, "gun", [0.78, 0.4, 0.86], [0, 0.76, -0.02], 0x3c454f, { metalness: 0.28, bevel: 0.16 });
       this.cylinder(group, entity, "gun", 0.075, 1.15, [0, 0.84, 0.72], 0x22282e, [Math.PI / 2, 0, 0], { metalness: 0.44 });
       // Muzzle brake -- a shaped piece of metal, where there used to be a white glowing block.
@@ -2437,6 +2452,8 @@ export class WorldRenderer {
       this.cylinder(group, entity, part.id, 0.372, 0.15, [0, 0.68, 0], 0xd8952f, [0, 0, 0], { metalness: 0.2 });
       this.cylinder(group, entity, part.id, 0.16, 0.12, [0, 1.02, 0], 0x4a4436, [0, 0, 0], { metalness: 0.42 });
       this.box(group, entity, part.id, [0.26, 0.05, 0.05], [0, 1.1, 0], 0x8f8672, { metalness: 0.45, bevel: 0.35 });
+    } else if (entity.coverKind === "barricade" && vehicleGeometry("barricade")) {
+      this.vpart(group, entity, part.id, "barricade", 0x9b7045, { roughness: 0.9, rotation: [0, ((hash(entity.id) % 5) - 2) * 0.08, 0] });
     } else if (entity.coverKind === "barricade") {
       this.box(group, entity, part.id, [1.72, 0.62, 0.46], [0, 0.32, 0], 0x9b7045);
       this.box(group, entity, part.id, [1.54, 0.18, 0.56], [0, 0.72, 0], 0xc18a50);
@@ -2628,6 +2645,10 @@ export class WorldRenderer {
           emissiveIntensity: tone === 3 ? 0.04 : 0.1,
         });
       }
+    } else if (entity.coverKind === "crate" && vehicleGeometry("crates")) {
+      this.vpart(group, entity, part.id, "crates", 0x9a6a3a, { roughness: 0.9, rotation: [0, (hash(entity.id) % 4) * (Math.PI / 2) + 0.1, 0] });
+    } else if (entity.coverKind === "sandbag" && vehicleGeometry("sandbags")) {
+      this.vpart(group, entity, part.id, "sandbags", 0xb8a86a, { roughness: 0.95, metalness: 0.02 });
     } else if (entity.coverKind === "crate") {
       this.box(group, entity, part.id, [0.92, 0.7, 0.92], [0, 0.35, 0], 0x9a6a3a);
       this.box(group, entity, part.id, [0.72, 0.55, 0.72], [0.1, 0.96, -0.06], 0xb07c45);
@@ -2765,8 +2786,15 @@ export class WorldRenderer {
        * proportion stays here.
        */
       kit?: KitPart;
-      /** An already-resolved unit-cube geometry (props kit variant) — same contract as `kit`. */
+      /** An already-resolved unit-cube geometry (props / vehicles kit part) — same contract as `kit`. */
       geometry?: THREE.BufferGeometry;
+      /**
+       * Inverted-hull ink rim of this width (world units): the same geometry drawn again BackSide,
+       * pushed out so the line stays this thick in world space whatever the part's size. The
+       * vehicles kit wears it on every part — the same ink line the troopers and the projectile
+       * FX carry. One extra draw call per part, so hulls only.
+       */
+      ink?: number;
     } = {}
   ): PartMesh {
     const roughness = materialOptions.roughness ?? 0.62;
@@ -2800,8 +2828,23 @@ export class WorldRenderer {
     // LineSegments and therefore a whole extra draw call, so only the few shapes that carry a
     // trooper's silhouette at tactical distance are worth tracing.
     if (materialOptions.outline && isInfantryKind(entity.kind) && OUTLINED_PARTS.has(partId)) this.outline(mesh);
+    if (materialOptions.ink) this.inkRim(mesh, size, materialOptions.ink);
     group.add(mesh);
     return mesh;
+  }
+
+  // Inverted-hull ink rim: a BackSide copy of the part, scaled so the rim is `width` thick in
+  // world units on every axis (the child lives in the part's pre-scale space, so a uniform 1.03
+  // would make a thin plate's rim thin and a long gun's rim fat). Pooled material; never a caster;
+  // hidden while the part is ghosted (see paintOutline).
+  private inkRim(mesh: PartMesh, size: [number, number, number], width: number): void {
+    const rim = new THREE.Mesh(mesh.geometry, inkMaterial());
+    rim.scale.set((size[0] + 2 * width) / size[0], (size[1] + 2 * width) / size[1], (size[2] + 2 * width) / size[2]);
+    rim.castShadow = false;
+    rim.receiveShadow = false;
+    rim.userData.decor = true;
+    rim.userData.ink = true;
+    mesh.add(rim);
   }
 
   private cylinder(
@@ -3311,6 +3354,7 @@ export class WorldRenderer {
 
   private paintOutline(mesh: PartMesh, ghosted: boolean): void {
     for (const child of mesh.children) {
+      if (child.userData.ink) { child.visible = !ghosted; continue; }
       if (!child.userData.outline) continue;
       (child as THREE.LineSegments).material = ghosted ? OUTLINE_MATERIALS.ghost : OUTLINE_MATERIALS.solid;
     }
@@ -6148,9 +6192,6 @@ function hash(value: string): number {
 //   * Sprites are skipped — THREE.Sprite.geometry is a single module-shared geometry; disposing
 //     it would break every sprite.
 //   * geometries tagged `userData.shared` (the pooled projectile/tube/ring caches) are skipped.
-// Which Meshy GLB (if any) stands in for this entity. Infantry keep their procedural
-// bodies (walk cycle + per-part damage posing), walls stay parametric, and glow-signal
-// props (ammo/fuel/conduit) keep their emissive gameplay cue.
 // A vertical gradient sky derived from the map theme: deep zenith fading through the
 // theme's sky color into a warm fogged horizon band, so every map gets atmosphere depth
 // instead of a flat color backdrop.
@@ -6214,80 +6255,6 @@ function makeThemeSky(theme: MapTheme): { texture: THREE.CanvasTexture; horizon:
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.needsUpdate = true;
   return { texture, horizon };
-}
-
-function modelKeyFor(entity: CombatEntity): ModelKey | null {
-  switch (entity.kind) {
-    case "tank": return "tank";
-    case "apc": return "apc";
-    case "artillery": return "artillery";
-    case "base": return "hq";
-    case "turret": return "turret";
-    // exturret stays procedural: two Meshy attempts both produced sprawled/flat tube
-    // heaps — the authored angled-mortar emplacement reads far better.
-    case "cover":
-      if (entity.parts[0]?.role === "volatile") return null;
-      switch (entity.coverKind) {
-        case "barricade": return "barricade";
-        case "sandbag": return "sandbags";
-        case "crate": return "crates";
-        // rock / rubble: the seeded props kit (art/props), procedural fallback — never a Meshy hull.
-        default: return null;
-      }
-    default: return null;
-  }
-}
-
-// Invisible raycast boxes approximating where each damage-model part sits on the GLB —
-// sized/positioned to match the procedural builders they replace so part-aiming feels
-// identical. Raycaster ignores `visible`, so these cost zero draw calls.
-const PICK_PROXY_LAYOUTS: Record<string, [string, [number, number, number], [number, number, number]][]> = {
-  tank: [
-    ["hull", [2.4, 0.9, 1.5], [0, 0.55, 0]],
-    ["front-plate", [2.3, 0.5, 0.3], [0, 0.65, 0.85]],
-    ["left-tread", [0.45, 0.6, 1.8], [-1.25, 0.3, 0]],
-    ["right-tread", [0.45, 0.6, 1.8], [1.25, 0.3, 0]],
-    ["turret", [1.2, 0.6, 1.0], [0, 1.25, 0]],
-    ["cannon", [0.35, 0.35, 1.7], [0, 1.2, 1.2]],
-  ],
-  apc: [
-    ["hull", [2.2, 1.4, 1.5], [0, 0.9, 0]],
-    ["front-plate", [2.1, 0.7, 0.3], [0, 1.0, 0.75]],
-    ["left-tread", [0.45, 0.6, 1.8], [-1.2, 0.3, 0]],
-    ["right-tread", [0.45, 0.6, 1.8], [1.2, 0.3, 0]],
-    ["turret", [0.7, 0.4, 0.8], [0, 1.7, 0.08]],
-    ["cannon", [0.25, 0.25, 0.9], [0.16, 1.8, 0.5]],
-  ],
-  artillery: [
-    ["hull", [2.4, 0.9, 1.6], [0, 0.55, -0.3]],
-    ["front-plate", [2.3, 0.5, 0.3], [0, 0.65, 0.6]],
-    ["left-tread", [0.45, 0.6, 1.9], [-1.25, 0.3, -0.2]],
-    ["right-tread", [0.45, 0.6, 1.9], [1.25, 0.3, -0.2]],
-    ["turret", [1.2, 0.6, 1.0], [0, 1.25, -0.2]],
-    ["cannon", [0.35, 0.35, 2.6], [0, 1.35, 1.3]],
-  ],
-  base: [
-    ["core", [2.6, 1.7, 2.2], [0, 0.85, 0]],
-    ["comms", [0.5, 1.9, 0.5], [-0.9, 2.2, -0.15]],
-    ["power", [0.95, 1.1, 0.95], [0.9, 0.6, -0.6]],
-    ["gate", [2.7, 0.8, 0.5], [0, 0.4, 1.2]],
-  ],
-  turret: [
-    ["mount", [1.8, 0.6, 1.8], [0, 0.3, 0]],
-    ["gun", [0.9, 0.6, 2.0], [0, 0.95, 0.4]],
-    ["sensor", [0.5, 0.5, 0.5], [-0.26, 1.25, -0.12]],
-  ],
-  exturret: [
-    ["mount", [1.8, 0.6, 1.8], [0, 0.3, 0]],
-    ["gun", [1.2, 1.0, 1.2], [0, 1.1, 0.05]],
-    ["ammo", [0.75, 0.55, 0.6], [0, 0.62, -0.7]],
-  ],
-};
-
-const _pickProxyMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
-_pickProxyMaterial.userData.shared = true;
-function pickProxyMaterial(): THREE.MeshBasicMaterial {
-  return _pickProxyMaterial;
 }
 
 // Infantry part ids that earn a silhouette outline (each outline = one extra draw call).
@@ -6407,10 +6374,8 @@ export function disposeSubtree(obj: THREE.Object3D): void {
     if (geometry && typeof geometry.dispose === "function" && !geometry.userData?.shared) {
       geometry.dispose();
     }
-    // Also free materials. Pooled/singleton materials are tagged userData.shared and skipped, and
-    // GLB clones own per-instance materials (models.ts instantiate clones them) whose textures stay
-    // shared with the template (material.dispose() never frees a texture) — so this only frees the
-    // per-entity (procedural part / outline / accent / GLB-clone) and per-frame overlay materials
+    // Also free materials. Pooled/singleton materials are tagged userData.shared and skipped, so
+    // this only frees the per-entity (accent / contact shadow) and per-frame overlay materials
     // that previously leaked on every unit death, group rebuild, and overlay refresh.
     const material = (node as Partial<THREE.Mesh>).material as THREE.Material | THREE.Material[] | undefined;
     if (material) {
@@ -6517,6 +6482,16 @@ function setShadowBudget(mesh: THREE.Mesh, size: number): void {
   const big = size >= SHADOW_MIN_SIZE;
   mesh.castShadow = big;
   mesh.receiveShadow = big;
+}
+
+// Vehicles-kit ink rim (world units). Matches the trooper edge weight at tactical zoom.
+const VEHICLE_INK = 0.03;
+// Rig scale for the tank / APC / artillery kit parts (structures and cover are authored 1:1).
+const VEHICLE_KIT_SCALE = 0.78;
+const _inkMaterial = new THREE.MeshBasicMaterial({ color: 0x0b0d10, side: THREE.BackSide });
+_inkMaterial.userData.shared = true;
+function inkMaterial(): THREE.MeshBasicMaterial {
+  return _inkMaterial;
 }
 
 const OUTLINE_MATERIALS = {
@@ -6637,7 +6612,6 @@ function hexColor(hex: number): THREE.Color {
 
 // Scratch colors reused by paintPart's per-frame, per-mesh hot path (avoids allocating).
 const _paintColor = new THREE.Color();
-const _paintTmp = new THREE.Color();
 // Scratch id->part map reused by syncEntity's per-frame traverse.
 const _partById = new Map<string, DamagePart>();
 

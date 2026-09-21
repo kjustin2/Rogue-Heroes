@@ -1,4 +1,4 @@
-// Evidence shots for task 21: settings Controls/rebind rows + toggles, winter skin
+// Evidence shots for task 21: settings Controls/rebind rows + toggles
 // pack in battle, and the high-contrast (colorblind) team palette.
 import { spawn } from "node:child_process";
 import { mkdirSync, readdirSync } from "node:fs";
@@ -70,14 +70,9 @@ try {
     await page.screenshot({ path });
   }
 
-  // 3. Standard vs winter skin.
+  // 3. High-contrast team palette on a live scene.
   await stageBattle();
-  await pinAndShoot("shots/settings/05-skin-standard.png");
-  await page.evaluate(() => window.__rht.setModelSkin("winter"));
-  await delay(3500); // winter GLBs load + rebuild
-  await pinAndShoot("shots/settings/06-skin-winter.png");
-
-  // 4. High-contrast team palette on the same scene.
+  await pinAndShoot("shots/settings/05-standard.png");
   await page.evaluate(() => window.__rht.setHighContrastTeams(true));
   await delay(600);
   await pinAndShoot("shots/settings/07-high-contrast.png");
