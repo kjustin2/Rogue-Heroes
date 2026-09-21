@@ -59,8 +59,10 @@ try {
   await page.evaluate(() => {
     const api = window.__rht;
     api.sim.economy.set("player", 2000);
-    api.sim.select(api.sim.entities.find((e) => e.kind === "base" && e.team === "player").id);
-    api.queueSpawnTroop("striker");
+    const base = api.sim.entities.find((e) => e.kind === "base" && e.team === "player");
+    api.sim.select(base.id);
+    // Placed deploy through the seam: pick the spot inside the ring around the base.
+    if (!api.queueDeployAt("striker", { x: base.position.x + 3, z: base.position.z + 3 })) throw new Error("queueDeployAt(striker) rejected: " + api.sim.log[0]);
     api.endTurn();
   });
   await page.waitForFunction(() => window.__rht.sim.phase === "resolve" || window.__rht.sim.turn >= 3, undefined, { timeout: 6000 });

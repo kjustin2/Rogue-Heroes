@@ -130,6 +130,9 @@ export interface HudCallbacks {
   queueRecon(): boolean;
   queueDeploy(): boolean;
   queueSpawnTroop(kind: TroopKind): boolean;
+  beginDeploy(kind: TroopKind): void;
+  cancelDeploy(): void;
+  queueDeployAt(kind: TroopKind, point: Vec2): boolean;
   upgradeBaseIncome(): boolean;
   upgradeBaseCommand(): boolean;
   beginBuild(kind: DefenseKind): void;
@@ -196,6 +199,10 @@ export class Hud {
   chooseBoardEntity(id: string): void {
     const entity = this.sim.entity(id);
     if (!entity) return;
+    if (this.sim.pendingDeploy && this.sim.phase === "command") {
+      this.chooseGround(entity.position);
+      return;
+    }
     // Airlift: with Load armed, clicking a friendly ground unit takes it aboard the transport.
     if (this.action === "load" && this.sim.phase === "command") {
       if (this.callbacks.queueLoad(entity.id)) {
@@ -251,6 +258,11 @@ export class Hud {
       this.update();
       return true;
     }
+    if (this.sim.pendingDeploy) {
+      this.callbacks.cancelDeploy();
+      this.update();
+      return true;
+    }
     if (this.sim.pendingSupport) {
       this.callbacks.cancelSupport();
       this.update();
@@ -274,6 +286,7 @@ export class Hud {
   setAction(action: Intent): void {
     // Picking any unit action cancels an in-progress defense placement or strike call.
     if (this.sim.pendingBuild) this.callbacks.cancelBuild();
+    if (this.sim.pendingDeploy) this.callbacks.cancelDeploy();
     if (this.sim.pendingSupport) this.callbacks.cancelSupport();
     this.action = action;
     if (action === "select" || action === "move") this.targetPartId = undefined;
@@ -306,6 +319,16 @@ export class Hud {
         this.action = "select";
         this.callbacks.setIntent("select");
       }
+      return;
+    }
+    // Placing a troop: field it at the clicked spot (snapped to the nearest clear point).
+    if (this.sim.pendingDeploy && this.sim.phase === "command") {
+      if (this.callbacks.queueDeployAt(this.sim.pendingDeploy, destination)) {
+        this.action = "select";
+        this.callbacks.setIntent("select");
+        this.afterConfirmedOrder();
+      }
+      this.update();
       return;
     }
     // Calling a support strike: mark the clicked spot as the target point.
@@ -505,8 +528,17 @@ export class Hud {
 
     const spawnKind = target.closest<HTMLElement>("[data-spawn]")?.dataset.spawn as TroopKind | undefined;
     if (spawnKind) {
-      if (this.callbacks.queueSpawnTroop(spawnKind)) this.afterConfirmedOrder();
+      // First click arms placement (the ring + ghost appear); a second click on the same card, or
+      // the note's "Beside base" button, is the quick deploy at the base's own spot. A card that
+      // cannot deploy goes through queueSpawnTroop only so the log names the reason.
+      const quick = this.sim.pendingDeploy === spawnKind || Boolean(target.closest("[data-spawn-quick]"));
+      if (quick || this.sim.spawnFailureReason(this.sim.selected, spawnKind)) {
+        if (this.callbacks.queueSpawnTroop(spawnKind)) this.afterConfirmedOrder();
+      } else {
+        this.callbacks.beginDeploy(spawnKind);
+      }
     }
+    if (target.closest<HTMLElement>("[data-deploy-cancel]")) this.callbacks.cancelDeploy();
 
     const baseTab = target.closest<HTMLElement>("[data-base-tab]")?.dataset.baseTab as BaseTab | undefined;
     if (baseTab) activeBaseTab = baseTab;
@@ -1594,14 +1626,17 @@ function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
   if (!base.status.alive) return `<div class="order-note">${escapeHtml(base.name)} is out of action — it cannot deploy or research.</div>`;
   const hasCp = base.commandPoints > 0;
   // Same voice as the order bar's "what now" line: the next click, then the rule it obeys.
-  const note = hasCp
-    ? "Pick a tab, then click a card — the base gets one order a turn."
-    : "Base order used — command your troops, or press Space to end the turn.";
+  const note = sim.pendingDeploy
+    ? "Click a spot inside the green ring near your Home Base."
+    : hasCp
+      ? "Pick a tab, then click a card — the base gets one order a turn."
+      : "Base order used — command your troops, or press Space to end the turn.";
   syncRevealTracking(base);
 
   // An armed support strike snaps to its tab so the targeting note stays visible. (A pending
   // BUILD is handled by baseCommandPanel's slim placement bar before this body renders.)
   if (sim.pendingSupport) activeBaseTab = "support";
+  if (sim.pendingDeploy) activeBaseTab = "deploy";
 
   const tabs: Array<{ id: BaseTab; label: string; tip: string }> = [
     { id: "deploy", label: "Deploy", tip: "Deploy a troop onto the battlefield." },
@@ -1619,7 +1654,7 @@ function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
     : activeBaseTab === "defenses" ? defenseDeckHtml(base, sim)
     : activeBaseTab === "support" ? supportDeckHtml(base, sim)
     : activeBaseTab === "upgrade" ? upgradeDeckHtml(base, sim)
-    : `<div class="spawn-options part-options">${troopDeckHtml(base, sim)}</div>`;
+    : `${deployNoteHtml(sim)}<div class="spawn-options part-options">${troopDeckHtml(base, sim)}</div>`;
 
   return `
     <p class="order-hint base-hint">${escapeHtml(note)}</p>
@@ -1652,14 +1687,27 @@ function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
     const ready = !reason;
     const isNew = isRecentlyRevealed(revealTracker.revealedTroopAt.get(spec.kind));
     const sub = cooldown > 0 ? `${cooldown} turn${cooldown === 1 ? "" : "s"}` : `$${spec.cost}`;
+    const active = sim.pendingDeploy === spec.kind;
     const tip = reason
       ? `${withoutLabel(reason, spec.label)}.`
-      : `${spec.role}. ${spec.tip} 1 CP · $${spec.cost} · ${spec.cooldown}-turn cooldown.`;
-    return `<button class="btn confirm ${ready ? "" : "disabled"} ${isNew ? "just-revealed" : ""}" data-spawn="${spec.kind}" data-disabled="${!ready}" data-tip="${escapeAttr(tip)}">
+      : active
+        ? "Click a spot inside the green ring near your base, or click again to deploy beside the base."
+        : `${spec.role}. ${spec.tip} 1 CP · $${spec.cost} · ${spec.cooldown}-turn cooldown. Then click a spot inside the green ring near your base.`;
+    return `<button class="btn confirm ${active ? "active" : ready ? "" : "disabled"} ${isNew ? "just-revealed" : ""}" data-spawn="${spec.kind}" data-disabled="${!ready}" data-tip="${escapeAttr(tip)}">
       ${escapeHtml(spec.label)}${isNew ? `<em class="new-badge">NEW</em>` : ""}
-      <span>${sub}</span>
+      <span>${active ? "Placing…" : sub}</span>
     </button>`;
   }).join("") + classified;
+}
+
+// The slim placing line above the troop deck while a deploy is armed — same copy as the build
+// flow's placement bar, plus the quick-deploy fallback and Cancel (Escape / right-click also cancel).
+function deployNoteHtml(sim: TacticalSim): string {
+  if (!sim.pendingDeploy) return "";
+  const label = troopSpec(sim.pendingDeploy).label;
+  return `<div class="order-note order-note--progress placing-note">Placing ${escapeHtml(label)} — click a spot inside the green ring near your Home Base.
+    <button class="icon-btn" data-spawn="${sim.pendingDeploy}" data-spawn-quick="1" data-tip="Deploy at the base's own spot, no aiming.">Beside base</button>
+    <button class="icon-btn" data-deploy-cancel="1" data-tip="Cancel placement.">Cancel</button></div>`;
 }
 
 function defenseDeckHtml(base: CombatEntity, sim: TacticalSim): string {
