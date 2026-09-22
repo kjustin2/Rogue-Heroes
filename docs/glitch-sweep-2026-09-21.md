@@ -191,3 +191,106 @@ All artefacts under `game/shots/glitch/`.
   bottom measures 0.42-0.97 world units above the sim ground across maps. Where it looks cut off
   (`pickup-causeway-bob.png`) it is intersecting a raised plate curb it was placed beside, not the
   floor. Low severity.
+
+---
+
+## 4b. RESOLVED — the canopy hatch is the per-part DETAIL NORMAL MAP, minified
+
+Finding 4's remaining suspect is now confirmed by bisection.
+
+- Probe: null `material.normalMap` on every material that has one (46 materials), re-capture the
+  same frame. **The hatch band on the canopy facet disappears completely.**
+- Evidence: `game/shots/glitch/canopy-normalmap.png` (left = shipped, right = `normalMap` nulled).
+  Compare with `canopy-bisect.png` (shadows off: band survives) and `canopyz-nearplane.png`
+  (near 1/4/12: band identical) — the other two suspects are excluded by measurement.
+- Owner: the detail normal map handed to every pooled part material —
+  `partDetailNormal()` (weave + grooves + rivets), applied in `partMaterial()` /
+  `game/src/render/worldRenderer.ts`. On a large low-poly facet seen at a grazing angle the
+  normal map minifies into a regular diagonal hash — **this is ground-hatching ledger class #1
+  (a minified tiled map aliasing into a dashed hatch) reappearing on PROP materials instead of on
+  the ground.**
+- Proposed fix: same shape as the ledger's own fix. Either give the detail normal a sane
+  `repeat` per part SIZE (a tree canopy is metres across and is taking a texture scaled for a
+  trooper's webbing), or turn the detail normal off for large flat-shaded prop facets (foliage /
+  canopy / rock), or give the texture proper mipmaps + anisotropy so minification stops ringing.
+  Do NOT chase this in the shadow pass or the depth buffer — both are measured clean here.
+
+---
+
+## 5. POP / clipping — flat ground overlays in the pickups/mines/zones block are NOT draped, so they bury themselves in stepped ground
+
+**Rank: 3. Every map except dustbowl; worst on ironworks (3 of 3 pickups).**
+
+- Scenario: crossfire, command phase, gameplay zoom — a cash-cache ring beside a terrace.
+- Measured: pickups whose ring radius (0.74) crosses a real sim terrain-block edge:
+
+  | map | pickups | rings straddling a step |
+  |---|---|---|
+  | ironworks | 3 | **3** |
+  | verdant | 5 | 2 |
+  | causeway | 8 | 2 |
+  | karak | 3 | 2 |
+  | crossfire | 4 | 1 |
+  | dustbowl | 4 | 0 |
+  | **total** | **27** | **10 (37%)** |
+
+  That count only sees SIM terrain steps. The crossfire case in the screenshot is a render-only
+  PLATE edge (`plateLiftAt`), which this metric cannot see — so the true rate is higher than 37%.
+- Evidence: `game/shots/glitch/read-crossfire-ringsmear.png` — most of the ring is buried inside
+  the raised terrace and only a crescent pokes out, reading as a tan comma/squiggle with the coin
+  floating over it. Nothing about it says "ring".
+- Owner: `game/src/render/worldRenderer.ts:505-570`, the environment-overlay block. Every overlay
+  there is a flat disc placed at the SIM height with `rotation.x = -Math.PI / 2`:
+  - the mine disc (`CircleGeometry(0.26, 16)`),
+  - the cash-cache ring (`RingGeometry(0.5, 0.74, 32)`) and its click disc,
+  - **the map-event zone rings and discs** (`RingGeometry(zone.radius - 0.4, zone.radius, 72)`) —
+    i.e. the barrage / lightning / collapse TELEGRAPH.
+- Why this is already-solved work: the repo fixed exactly this class for the move field and the
+  weapon ring — "Ground overlays are DRAPED (`drapeToTerrain`) ... A flat disc at the actor's
+  elevation sinks into the next mesa and hangs past a ledge — that was the 'range circle breaks'
+  report." These four overlays never got the same treatment.
+- Proposed fix: route them through `drapeToTerrain` like the move field, and use the DRAWN ground
+  (`visualGroundAt` + `plateLiftAt`) rather than `terrainHeightAt`, so a plate lip buries them no
+  more than a mesa does. The zone telegraph is the priority — a buried strike telegraph is a
+  gameplay-legibility bug, not just a visual one.
+
+---
+
+## 6. FROZEN/HITCH — one toon shader program still compiles mid-resolve; the warm-up's twin-cloning is ONE-WAY
+
+**Rank: 6. First resolve of every battle.**
+
+- `npm run soak:gpu`, scenario `stress`.
+  **GL_RENDERER: `ANGLE (NVIDIA, NVIDIA GeForce RTX 5070 Ti (0x00002C05) Direct3D11 vs_5_0 ps_5_0, D3D11)`**
+- Measured: `programs 199` before the first resolve, `200` after; stable at 200 for resolves 2 and
+  3, so it is a one-off first-resolve relink.
+
+  ```
+  compiled mid-resolve (55 fields): differs from nearest by #52: 1027->132099
+    full: toon,TOON,,highp,srgb-linear,... ,1,132099,srgb,onBeforeCompile(){}
+    programs already at non-opaque mask before resolve: 34
+    nearest NON-OPAQUE existing differs by: #52: 1027->132099
+  ```
+
+  Field #52 is three's second `_programLayers` mask. `132099 - 1027 = 131072 = bit 17`, and in
+  three 0.170.0 (`three.module.js`, second layer block) **bit 17 is `parameters.opaque`**. So a
+  `MeshToonMaterial` that was TRANSPARENT at warm-up time is drawn OPAQUE during the resolve, and
+  that opaque variant was never pre-compiled.
+- Owner: `game/src/render/worldRenderer.ts:706` `warmUpSamplers()`:
+
+  ```ts
+  if (!(m instanceof THREE.MeshStandardMaterial || m instanceof THREE.MeshToonMaterial) || m.transparent) continue;
+  ...
+  const twin = m.clone();
+  twin.transparent = true;
+  ```
+
+  The walk clones an opaque material into a TRANSPARENT twin (for death fades) but `continue`s on
+  anything already transparent — so **no OPAQUE twin is ever compiled for a material that is
+  transparent when the warm-up runs.** The direction that just fired is the one not covered.
+- Proposed fix: make the twin-cloning symmetric — for every Standard/Toon material in the scene
+  emit BOTH an `transparent: true` and a `transparent: false` sampler, rather than branching on
+  the material's current state. Re-run `soak:gpu` and require `programs` to be unchanged across
+  resolve 1 (that is already the gate this tool exists for).
+- Perf context from the same run (advisory, not a gate): command p50 7.1ms / p95 20.8ms;
+  resolve 1 p50 13.9ms / max 27.8ms / jank 0%; resolve 2 max 34.8ms / jank 1%; frame errors 0.
