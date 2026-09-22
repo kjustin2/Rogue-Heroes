@@ -3085,11 +3085,6 @@ h2,
 .turn-chip.defeat { border-color: rgba(255, 143, 127, 0.5); }
 
 /* ---- Base command deck: tech tree + locked troops ---- */
-.tech-options .btn.confirm.done {
-  border-color: rgba(140, 239, 255, 0.5);
-  background: rgba(18, 50, 62, 0.55);
-  color: #bff6ff;
-}
 .spawn-options .btn.confirm.locked {
   opacity: 0.72;
   border-style: dashed;
@@ -3423,51 +3418,14 @@ body.menus-open .menu-bg span {
 .commander-emblem { color: var(--cyan); margin-right: 4px; }
 
 /* Campaign */
-.campaign-screen { max-width: 720px; text-align: left; }
-.campaign-synopsis { margin-top: 8px; line-height: 1.5; }
-.campaign-progress { margin: 12px 0 8px; font-family: var(--font-ui); font-size: 0.82rem; color: #eafdff; letter-spacing: 0.04em; }
-.campaign-list { display: grid; gap: 8px; max-height: 52vh; overflow-y: auto; padding-right: 4px; }
-.campaign-card {
-  display: grid;
-  grid-template-columns: 44px 1fr auto;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: rgba(10, 18, 26, 0.6);
-  text-align: left;
-  cursor: pointer;
-  color: #eafdff;
-  font: inherit;
-}
-.campaign-card:hover:not(:disabled) { border-color: var(--cyan); background: rgba(16, 30, 40, 0.8); }
-.campaign-card:disabled { opacity: 0.45; cursor: not-allowed; }
-.campaign-card.completed { border-color: rgba(140, 239, 255, 0.4); }
-.campaign-card__no { font-family: var(--font-ui); font-size: 1.3rem; font-weight: 800; color: var(--cyan); opacity: 0.7; }
-.campaign-card__body { display: grid; gap: 3px; }
-.campaign-card__body strong { font-family: var(--font-ui); color: #f4fdff; }
-.campaign-card__region { color: var(--text-muted); font-size: 0.78rem; }
-.campaign-card__status { font-family: var(--font-ui); font-size: 0.78rem; color: var(--cyan); white-space: nowrap; }
-.campaign-card.completed .campaign-card__status { color: #8effb0; }
-.campaign-card.locked .campaign-card__status { color: var(--text-muted); }
+
 
 /* Mission briefing */
-.briefing-screen { max-width: 760px; text-align: left; }
-.briefing-layout { display: grid; grid-template-columns: 1fr 320px; gap: 22px; margin: 8px 0 18px; align-items: start; }
-.briefing-text p { line-height: 1.6; color: #d7e6ea; margin: 8px 0; }
-.briefing-meta { font-family: var(--font-ui); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--cyan); margin-bottom: 6px; }
-.briefing-objective { margin-top: 14px; padding: 10px 12px; border-left: 3px solid var(--cyan); background: rgba(10, 20, 28, 0.6); border-radius: 0 8px 8px 0; color: #eafdff; }
-.briefing-objective span { display: block; font-family: var(--font-ui); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--cyan); margin-bottom: 3px; }
-.briefing-map { border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
-@media (max-width: 720px) { .briefing-layout { grid-template-columns: 1fr; } }
+
+
 
 /* Campaign end overlays */
-.campaign-end { max-width: 520px; }
-.campaign-end__kicker { font-family: var(--font-ui); letter-spacing: 0.16em; text-transform: uppercase; font-size: 0.84rem; color: var(--cyan); }
-.campaign-end.defeat .campaign-end__kicker { color: #ff8f7f; }
-.campaign-end__story { line-height: 1.6; color: #d7e6ea; margin: 12px 0; }
-.campaign-end__reward { font-family: var(--font-ui); color: #ffd166; font-weight: 700; margin-bottom: 14px; }
+
 
 /* Pause + controls + edit overlays */
 .pause-overlay, .edit-overlay {
@@ -3827,68 +3785,7 @@ body.menus-open .menu-bg span {
 }
 
 /* ---- Campaign 2.0: operation rail, branches, roster, requisition ---- */
-.campaign-list--operation {
-  position: relative;
-  padding-left: 14px;
-}
-.campaign-list--operation::before {
-  content: "";
-  position: absolute;
-  left: 4px;
-  top: 12px;
-  bottom: 12px;
-  width: 2px;
-  background: linear-gradient(180deg, rgba(255, 202, 107, 0.55), rgba(198, 174, 122, 0.18));
-}
-.campaign-card--branch {
-  margin-left: 22px;
-  border-left: 2px solid rgba(255, 202, 107, 0.4);
-}
-.campaign-card__branch {
-  font-style: normal;
-  margin-left: 8px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  border: 1px solid rgba(255, 202, 107, 0.45);
-  font-size: 0.6rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--amber);
-}
-.campaign-card__bonus { color: var(--amber); }
-.campaign-roster {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin: 10px 0 4px;
-}
-.campaign-roster__title {
-  flex-basis: 100%;
-  font-size: 0.62rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-.campaign-roster__member {
-  padding: 3px 9px;
-  border-radius: 999px;
-  border: 1px solid rgba(198, 174, 122, 0.4);
-  background: rgba(38, 36, 28, 0.6);
-  font-size: 0.72rem;
-  font-weight: 600;
-}
-.campaign-roster__member em {
-  font-style: normal;
-  color: var(--amber);
-}
-.campaign-requisition { margin: 10px 0 2px; }
-.requisition-row .menu-action.active {
-  border-color: var(--amber);
-  box-shadow: 0 0 18px rgba(255, 202, 107, 0.35);
-}
+
 
 /* ---- Kill-cam / cinematic letterbox ---- */
 body.killcam::before,
@@ -4054,136 +3951,11 @@ body.intro-cam #ui, body.intro-cam #toasts, body.intro-cam .hint-toast { visibil
 }
 
 /* Tech tree: nested branches with connector spines so lineage reads at a glance. */
-.tech-tree {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.tech-branch {
-  display: flex;
-  flex-direction: column;
-}
+
 /* Children of a node are indented under it with an L-connector, file-tree style. */
-.tech-children {
-  margin-left: 12px;
-  padding-left: 12px;
-  border-left: 2px solid rgba(198, 174, 122, 0.34);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 6px;
-}
-.tech-children > .tech-branch {
-  position: relative;
-}
-.tech-children > .tech-branch::before {
-  content: "";
-  position: absolute;
-  left: -12px;
-  top: 18px;
-  width: 10px;
-  height: 2px;
-  background: rgba(198, 174, 122, 0.34);
-}
-.tech-node {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 7px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.035);
-  color: #edf7f6;
-  cursor: pointer;
-  transition: border-color 0.12s, background 0.12s, transform 0.08s;
-}
-.tech-node:hover { transform: translateY(-1px); }
-.tech-node strong {
-  display: block;
-  font-family: var(--font-ui);
-  font-weight: 700;
-  font-size: 0.9rem;
-}
-.tech-node .tech-unlocks {
-  display: block;
-  font-size: 0.72rem;
-  color: var(--cyan);
-  margin-top: 1px;
-}
-.tech-node .tech-unlocks.spec { color: var(--amber); }
-.tech-node .tech-sub {
-  display: block;
-  font-size: 0.74rem;
-  color: var(--text-muted);
-  margin-top: 2px;
-}
+
 /* States: available (amber), researched (cyan/checked), locked (dim), locked-out (red). */
-.tech-node.ready {
-  border-color: var(--line-strong);
-  background: linear-gradient(180deg, rgba(255, 202, 107, 0.12), rgba(255, 202, 107, 0.02));
-}
-.tech-node.ready .tech-sub { color: #ffe9a8; }
-.tech-node.done {
-  border-color: rgba(140, 239, 255, 0.5);
-  background: rgba(18, 50, 62, 0.5);
-}
-.tech-node.done strong { color: #bff6ff; }
-.tech-node.done .tech-sub { color: var(--cyan); }
-.tech-node.blocked {
-  opacity: 0.72;
-  cursor: not-allowed;
-}
-.tech-node.locked {
-  opacity: 0.72;
-  border-style: dashed;
-  cursor: not-allowed;
-}
-.tech-node.locked .tech-sub { color: var(--red); }
-.tech-node.classified {
-  cursor: not-allowed;
-  border-color: rgba(140, 126, 92, 0.3);
-  background:
-    repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.35) 0 6px, rgba(60, 54, 40, 0.35) 6px 12px),
-    rgba(16, 15, 11, 0.8);
-}
-.tech-node.classified .classified-name {
-  display: block;
-  font-family: var(--font-ui);
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  color: rgba(255, 202, 107, 0.45);
-}
-.tech-node.just-revealed {
-  animation: just-revealed-flash 1.6s ease-out 1;
-  border-color: rgba(255, 202, 107, 0.75);
-}
-.reduced-motion .tech-node.just-revealed { animation: none; }
-.tech-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-  font-size: 0.72rem;
-  color: var(--text-muted);
-}
-.tech-legend .tl {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.tech-legend .tl::before {
-  content: "";
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-  border: 1px solid var(--line);
-}
-.tech-legend .tl.done::before { background: var(--cyan); border-color: var(--cyan); }
-.tech-legend .tl.ready::before { background: var(--amber); border-color: var(--amber); }
-.tech-legend .tl.blocked::before { background: rgba(255, 255, 255, 0.1); }
-.tech-legend .tl.locked::before { background: var(--red); border-color: var(--red); border-style: dashed; }
+
 
 /* ============================================================
    THEMED SCROLLBARS (Chromium/Electron)
@@ -4573,8 +4345,7 @@ body.intro-cam #ui, body.intro-cam #toasts, body.intro-cam .hint-toast { visibil
 .turn-chip,
 .unit-status,
 .supply-chip,
-.tech-sub,
-.log-line {
+.log-line  {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
 }
@@ -4798,27 +4569,6 @@ body.menus-open:not(.in-battle) #ui { visibility: hidden; }
 
 /* MAIN MENU HIERARCHY. Primary (title-start) > mode cards > a text link > utilities. */
 .main-menu__buttons { max-width: 440px; gap: 14px; }
-.menu-modes {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 10px;
-}
-.menu-mode {
-  pointer-events: auto;
-  cursor: pointer;
-  display: grid;
-  gap: 4px;
-  padding: 12px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(140, 239, 255, 0.08), rgba(255, 255, 255, 0.02)), rgba(10, 18, 26, 0.72);
-  color: #eafdff;
-  text-align: left;
-  transition: transform 0.12s cubic-bezier(0.2, 0.7, 0.3, 1), border-color 0.16s ease, box-shadow 0.16s ease;
-}
-.menu-mode strong { font-family: var(--font-display); font-size: 0.86rem; letter-spacing: 0.1em; text-transform: uppercase; }
-.menu-mode span { font-family: var(--font-ui); font-size: 0.74rem; color: #9fc4cc; }
-.menu-mode:hover { border-color: var(--line-strong); transform: translateY(-1px); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 18px rgba(140, 239, 255, 0.2); }
 .menu-link {
   pointer-events: auto;
   cursor: pointer;
@@ -4849,14 +4599,6 @@ body.menus-open:not(.in-battle) #ui { visibility: hidden; }
 }
 .menu-utility:hover { border-color: var(--line-strong); color: #eafdff; }
 .menu-utility--exit { color: #ffc9b8; border-color: rgba(255, 128, 78, 0.3); }
-.tech-more {
-  margin: 4px 0 2px 12px;
-  font-family: var(--font-ui);
-  font-size: 0.74rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #7f8a90;
-}
 
 /* ---------------------------------------------------------------------------
    IN-BATTLE HUD DISCLOSURE PASS (2026-09-16)
@@ -5085,20 +4827,17 @@ body { background: var(--paper-deep); }
 .part-choice,
 .part-row,
 .queued-chip,
-.tech-node,
 .base-tab,
 .menu-back,
 .menu-toggle,
 .menu-chip,
 .menu-action,
 .menu-utility,
-.menu-mode,
 .menu-card,
-.campaign-card,
 .armory-card,
 .bind-key,
 .controls-row kbd,
-.edit-name {
+.edit-name   {
   border: var(--ink-w) solid var(--ink);
   border-radius: var(--toon-r-sm);
   background: var(--paper-hi);
@@ -5133,15 +4872,13 @@ body { background: var(--paper-deep); }
 .target-chip:hover,
 .part-choice:hover:not([disabled]),
 .part-row:hover,
-.tech-node:hover:not([data-disabled="true"]),
 .base-tab:hover,
 .menu-back:hover, .menu-toggle:hover, .menu-chip:hover,
-.menu-action:hover, .menu-utility:hover, .menu-mode:hover,
+.menu-action:hover, .menu-utility:hover,
 .menu-card:hover,
-.campaign-card:hover:not(:disabled),
 .bind-key:hover,
 [data-spawn]:hover:not([data-disabled="true"]),
-[data-base-upgrade]:hover:not([data-disabled="true"]) {
+[data-base-upgrade]:hover:not([data-disabled="true"])   {
   background: var(--paper-hi-2);
   border-color: var(--ink);
   color: #fff;
@@ -5158,14 +4895,12 @@ body { background: var(--paper-deep); }
 .unit-select:active,
 .target-chip:active,
 .part-choice:active:not([disabled]),
-.tech-node:active:not([data-disabled="true"]),
 .base-tab:active,
 .menu-back:active, .menu-toggle:active, .menu-chip:active,
-.menu-action:active, .menu-utility:active, .menu-mode:active,
+.menu-action:active, .menu-utility:active,
 .menu-card:active,
-.campaign-card:active:not(:disabled),
 [data-spawn]:active,
-[data-base-upgrade]:active {
+[data-base-upgrade]:active   {
   transform: translate(2px, 2px);
   box-shadow: 0 0 0 0 var(--ink);
   filter: none;
@@ -5294,16 +5029,13 @@ body { background: var(--paper-deep); }
 .vpart,
 .map-size-badge,
 .medal,
-.campaign-roster__member,
-.tl,
-.tech-unlocks,
 .new-badge,
 .menu-points,
 .money-chip,
 .tutorial-step,
 .role-badge,
 .team-badge,
-.forecast-chip {
+.forecast-chip   {
   border: var(--ink-w) solid var(--ink);
   border-radius: 5px;
   background: var(--paper-lo);
@@ -5311,11 +5043,10 @@ body { background: var(--paper-deep); }
   box-shadow: none;
   text-shadow: none;
 }
-.status-pill.ready, .unit-status--ready, .vpart--ok, .tl.done { color: var(--green); }
-.status-pill.spent, .unit-status--spent, .vpart--hurt, .tl.ready { color: var(--amber); }
+.status-pill.ready, .unit-status--ready, .vpart--ok { color: var(--green); }
+.status-pill.spent, .unit-status--spent, .vpart--hurt { color: var(--amber); }
 .unit-status--warn { color: var(--orange); }
-.status-pill.dead, .unit-status--dead, .vpart--critical, .tl.locked { color: var(--red); }
-.tl.blocked { color: var(--text-muted); }
+.status-pill.dead, .unit-status--dead, .vpart--critical { color: var(--red); }
 .cp-badge { background: var(--cyan); color: var(--cyan-ink); }
 .turn-chip { background: var(--paper-hi); }
 .turn-chip em { color: var(--text-muted); }
@@ -5331,8 +5062,6 @@ body { background: var(--paper-deep); }
 .map-size-badge.size-small { color: var(--cyan); border-color: var(--ink); background: var(--paper-lo); }
 .map-size-badge.size-medium { color: var(--amber); border-color: var(--ink); background: var(--paper-lo); }
 .tutorial-step { display: inline-block; padding: 2px 8px; background: var(--amber); color: var(--amber-ink); font-weight: 700; }
-.tech-unlocks { display: inline-block; padding: 1px 6px; margin-top: 3px; font-size: 0.68rem; color: var(--cyan); }
-.tech-node .tech-unlocks.spec { color: var(--amber); }
 .money-bar { padding: 6px 10px; }
 .money-bar__icon { background: var(--amber); color: var(--amber-ink); border: var(--ink-w) solid var(--ink); box-shadow: none; }
 .money-bar__label { color: var(--text-muted); }
@@ -5382,10 +5111,9 @@ body { background: var(--paper-deep); }
 .order-head h2,
 .inspect-head h2,
 .endscreen__kicker,
-.campaign-end__kicker,
 .armory-category-title,
 .menu-label,
-.settings-row--head label {
+.settings-row--head label  {
   font-family: var(--font-display);
   text-shadow: none;
 }
@@ -5420,8 +5148,6 @@ body { background: var(--paper-deep); }
 .endscreen--victory .endscreen__card { border-color: var(--green); }
 .endscreen--defeat .endscreen__card { border-color: var(--red); }
 .endscreen__kicker { color: var(--text-muted); }
-.campaign-end.defeat .campaign-end__kicker { color: var(--red); }
-.campaign-end.victory .campaign-end__kicker { color: var(--green); }
 
 /* ---- MENU BACKDROP + OVERLAYS: a flat dim with a screen-tone dot pattern — no blur, no radar. ---- */
 .menu-bg {
@@ -5449,15 +5175,15 @@ body { background: var(--paper-deep); }
 .mission-intro__skip { border: var(--ink-w) solid var(--ink); background: var(--paper-hi); color: var(--cream); box-shadow: var(--drop-sm); }
 
 /* ---- MENU CARDS: inked plates; selection = amber outline + drop, never a bracket animation. ---- */
-.menu-card, .menu-mode, .campaign-card, .armory-card { border-radius: var(--toon-r); box-shadow: var(--drop); }
-.menu-card:hover, .menu-mode:hover, .campaign-card:hover:not(:disabled) { box-shadow: 5px 5px 0 0 var(--ink); transform: translate(-1px, -1px); }
-.menu-card.selected, .armory-card.active, .campaign-card.completed {
+.menu-card, .armory-card  { border-radius: var(--toon-r); box-shadow: var(--drop); }
+.menu-card:hover { box-shadow: 5px 5px 0 0 var(--ink); transform: translate(-1px, -1px); }
+.menu-card.selected, .armory-card.active {
   border-color: var(--amber);
   background: var(--paper-hi-2);
   box-shadow: var(--drop), inset 0 0 0 1px var(--amber);
 }
-.menu-card strong, .menu-mode strong { color: var(--cream); }
-.menu-card span, .menu-mode span { color: var(--text-muted); }
+.menu-card strong { color: var(--cream); }
+.menu-card span { color: var(--text-muted); }
 .menu-card.selected strong { color: var(--amber); }
 .menu-utility { border-radius: 999px; box-shadow: var(--drop-sm); color: var(--cream); }
 .menu-utility--exit { color: var(--orange); }
@@ -5468,18 +5194,10 @@ body { background: var(--paper-deep); }
 .menu-link:hover { color: #ffd77a; }
 .map-preview { border: var(--ink-w) solid var(--ink); border-radius: var(--toon-r); background: var(--paper-lo); box-shadow: var(--drop); }
 .map-preview-svg { border: 0; }
-.briefing-map { border: var(--ink-w) solid var(--ink); box-shadow: var(--drop); }
-.briefing-objective { border: var(--ink-w) solid var(--ink); border-left: 6px solid var(--cyan); background: var(--paper-lo); border-radius: var(--toon-r-sm); }
-.campaign-card:disabled { background: var(--paper-lo); box-shadow: none; }
-.campaign-card__no { color: var(--amber); opacity: 1; }
-.campaign-card__status { color: var(--cyan); }
-.campaign-card.completed .campaign-card__status { color: var(--green); }
 .armory-swatch { border: var(--ink-w) solid var(--ink); box-shadow: none; }
 .armory-glyph { border: var(--ink-w) solid var(--ink); background: var(--paper-lo); }
 .edit-accent { border: var(--ink-w) solid var(--ink); box-shadow: var(--drop-sm); }
 .edit-accent.on { border-color: #fff; box-shadow: 0 0 0 2px var(--ink), var(--drop-sm); }
-.campaign-roster { border: var(--ink-w) solid var(--ink); background: var(--paper-lo); border-radius: var(--toon-r-sm); }
-.requisition-row .menu-action.active { border-color: var(--amber); background: var(--amber); color: var(--amber-ink); }
 
 /* ---- SETTINGS rows: ink dividers, amber range thumbs, keycaps as inked plates. ---- */
 .settings-row { border-bottom: 2px solid var(--ink-2); }
@@ -5510,19 +5228,6 @@ body { background: var(--paper-deep); }
   box-shadow: none;
 }
 .base-tab:active { transform: none; }
-.tech-node { box-shadow: var(--drop-sm); }
-.tech-node.ready { border-color: var(--amber); background: var(--paper-hi); }
-.tech-node.ready .tech-sub { color: var(--amber); }
-.tech-node.done { border-color: var(--cyan); background: var(--paper-lo); box-shadow: none; }
-.tech-node.done strong, .tech-node.done .tech-sub { color: var(--cyan); }
-.tech-node.blocked, .tech-node.locked { background: var(--paper-lo); box-shadow: none; opacity: 0.7; }
-.tech-node.locked { border-style: dashed; }
-.tech-node.classified {
-  background: repeating-linear-gradient(135deg, var(--paper-lo) 0 6px, var(--ink-2) 6px 12px);
-  border-color: var(--ink);
-  box-shadow: none;
-}
-.tech-children > .tech-branch::before { background: var(--ink); border-color: var(--ink); }
 .detail-statline div { border: var(--ink-w) solid var(--ink); background: var(--paper-lo); border-radius: 5px; box-shadow: none; }
 .detail-statline strong { color: var(--cream); }
 .order-note { border: var(--ink-w) solid var(--ink); background: var(--paper-lo); border-radius: var(--toon-r-sm); color: var(--cream); }
@@ -5722,15 +5427,11 @@ body { background: var(--paper-deep); }
 .queued-order,
 .target-chip .target-chip__detail,
 .target-chip.neutral .target-chip__name,
-.tech-sub,
-.tech-unlocks,
-.tl,
 .forecast-cell em,
 .compact-top .end-turn span,
 .compact-top .menu-btn span,
 .compact-top .menu-btn,
 .endscreen__kicker,
-.campaign-end__kicker,
 .faction-roster,
 .menu-label,
 .armory-category-title,
@@ -5744,13 +5445,11 @@ body { background: var(--paper-deep); }
 .detail-statline span,
 .detail-statline small,
 .base-summary,
-.tech-legend,
-.tech-more,
-.classified-name {
+.classified-name   {
   font-size: var(--fs-small);
   line-height: 1.2;
 }
-.supply-chip, .map-size-badge, .vpart, .forecast-cell em, .tl, .tech-unlocks, .new-badge, .menu-label, .stance-chip, .phase-chip, .all-orders-chip {
+.supply-chip, .map-size-badge, .vpart, .forecast-cell em, .new-badge, .menu-label, .stance-chip, .phase-chip, .all-orders-chip  {
   font-size: var(--fs-micro);
   letter-spacing: 0.08em;
 }
@@ -5775,10 +5474,8 @@ kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
 .choice-blurb,
 .settings-note,
 .menu-card span,
-.menu-mode span,
 .faction-card span,
 .map-list .menu-card span,
-.campaign-card span,
 .armory-card span,
 .tutorial-panel p,
 .target-summary span,
@@ -5786,11 +5483,10 @@ kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
 .damage-card span,
 .turn-report,
 .turn-notes,
-.briefing-objective,
 .settings-row label,
 .controls-row span,
 .detail-statline strong,
-.base-summary strong {
+.base-summary strong  {
   font-size: var(--fs-body);
   line-height: 1.3;
 }
@@ -5806,12 +5502,11 @@ kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
 .target-summary strong,
 .single-target-card strong,
 .unit-card strong,
-.tech-node strong,
 [data-spawn] strong,
 [data-base-upgrade] strong,
 .base-tab,
 .order-head h2,
-.inspect-head h2 {
+.inspect-head h2  {
   font-size: var(--fs-name);
   line-height: 1.2;
 }
@@ -5825,9 +5520,7 @@ kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
 [data-spawn] span,
 [data-spawn] em,
 [data-base-upgrade] span,
-[data-base-upgrade] em,
-.tech-node span,
-.tech-node em { font-size: var(--fs-small); line-height: 1.2; }
+[data-base-upgrade] em { font-size: var(--fs-small); line-height: 1.2; }
 .order-head h2, .inspect-head h2 { font-size: var(--fs-title); }
 .part-choice { grid-template-columns: minmax(0, 1fr) 84px; }
 
@@ -5835,7 +5528,7 @@ kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
 .map-size-badge.size-large { color: #ffa27a; background: var(--paper-lo); border-color: var(--ink); }
 .map-size-badge.size-small, .map-size-badge.size-medium { background: var(--paper-lo); border-color: var(--ink); }
 .faction-roster { color: var(--text-muted); opacity: 1; }
-.menu-mode span, .menu-card span { color: var(--text-muted); }
+ .menu-card span  { color: var(--text-muted); }
 .turn-chip em, .forecast-cell em, .endscreen__kicker, .money-bar__label { color: var(--text-muted); }
 .log-toggle-icon { color: var(--cream); }
 .compact-top .menu-btn span { color: var(--text-muted); }
@@ -5868,15 +5561,12 @@ kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
 
 /* ---- Second sweep: the deck, tech tree, Info panel, Armory and Campaign screens joined the
         audit and turned up 31 more offenders. ---- */
-.tech-node .tech-sub, .tech-node .tech-unlocks { font-size: var(--fs-small); }
-.tech-node .tech-unlocks { letter-spacing: 0.02em; }
-.tech-more { font-size: var(--fs-micro); color: var(--text-muted); }
-.tech-node.classified .classified-name,
-.btn.confirm.classified .classified-name { color: #d8b05a; letter-spacing: 0.16em; }
+
+.btn.confirm.classified .classified-name  { color: #d8b05a; letter-spacing: 0.16em; }
 .btn.confirm.classified span:last-child { color: var(--text-muted); font-size: var(--fs-small); }
 .close-btn strong, .icon-btn strong { font-size: var(--fs-small); }
 .detail-nameplate span, .detail-nameplate em { font-size: var(--fs-small); }
-.commander-profile__stats span, .campaign-card__branch, .campaign-card__no { font-size: var(--fs-micro); letter-spacing: 0.06em; }
+.commander-profile__stats span { font-size: var(--fs-micro); letter-spacing: 0.06em; }
 .commander-profile__stats strong { font-size: var(--fs-name); }
 
 /* ===========================================================================
@@ -5902,15 +5592,14 @@ kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
 .unit-detail-panel { width: clamp(344px, 22vw, 520px); max-height: min(60vh, calc(100vh - 30px)); }
 .log.compact-log.expanded { right: calc(var(--hud-side) + 32px); }
 .menu-content { max-width: var(--menu-w); width: min(94vw, var(--menu-w)); }
-.armory-screen, .campaign-screen, .briefing-screen { max-width: var(--menu-w); }
+.armory-screen { max-width: var(--menu-w); }
 .pause-card { max-width: min(680px, 92vw); }
 
 /* Wider bars get MORE columns, not wider cards: every card grid is auto-fit on a floor. */
 .part-options { grid-template-columns: repeat(auto-fit, minmax(clamp(132px, 9vw, 170px), 1fr)); }
 .action-grid { grid-template-columns: repeat(auto-fit, minmax(clamp(118px, 8vw, 160px), 1fr)); }
 /* The tech tree lays its doctrine branches side by side once there is room for two. */
-.tech-tree { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 10px 18px; align-items: start; }
-.tech-node .tech-unlocks { display: inline-block; }
+
 .base-tab-body { max-height: clamp(44vh, calc(100vh - 420px), 60vh); }
 
 /* Skirmish page: three columns once the card is wide enough (map list | preview | choices), so
@@ -5984,7 +5673,6 @@ kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
 }
 .map-preview-caption strong { font-family: var(--font-display); font-size: var(--fs-name); color: var(--cream); letter-spacing: 0.02em; }
 .map-preview-caption span { font-size: var(--fs-small); color: var(--text-muted); line-height: 1.3; }
-.briefing-map.map-preview--illustrated { padding: 6px; }
 @media (max-height: 800px) {
   .map-preview-canvas { max-height: clamp(110px, 22vh, 240px); }
   .map-preview-caption span { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
@@ -5999,3 +5687,82 @@ kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
 .map-list, .start-layout .map-list { max-height: none; min-height: 0; height: 100%; }
 .start-left > .menu-section:last-child { margin: 0; }
 @media (max-height: 800px) { .start-left { min-height: 0; } .start-layout .map-list { max-height: none; } }
+
+/* ---- Achievements (main menu): the service record's own page, toon cards in a grid ---- */
+.achievements-screen { max-width: var(--menu-w); text-align: left; max-height: 86vh; overflow-y: auto; }
+.achievements-screen .commander-profile__stats { margin: 4px 0 14px; }
+.achievement-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(clamp(220px, 17vw, 300px), 1fr)); gap: 10px; }
+.achievement {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  column-gap: 10px;
+  row-gap: 3px;
+  padding: 10px 12px;
+  border: var(--ink-w, 2px) solid var(--ink);
+  border-radius: 6px;
+  background: var(--paper-lo);
+  box-shadow: var(--drop-sm, 3px 3px 0 #0b0e12);
+}
+.achievement__badge {
+  grid-row: 1 / span 3;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: var(--ink-w, 2px) solid var(--ink);
+  border-radius: 50%;
+  background: var(--paper-hi);
+  color: var(--text-muted);
+  font-size: 1.2rem;
+}
+.achievement strong { font-size: var(--fs-name); color: var(--cream); }
+.achievement__blurb { font-size: var(--fs-small, 0.74rem); color: var(--text-muted); line-height: 1.3; }
+.achievement__state { display: flex; align-items: center; gap: 8px; font-size: var(--fs-micro); }
+.achievement__state em { font-style: normal; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+.achievement__meter { flex: 1; height: 8px; border: 2px solid var(--ink); border-radius: 3px; background: var(--paper-deep); overflow: hidden; }
+.achievement__meter span { display: block; height: 100%; background: var(--cyan); }
+.achievement.earned { background: var(--paper-hi); }
+.achievement.earned .achievement__badge { background: var(--amber); color: var(--amber-ink); }
+.achievement.earned .achievement__state em { color: var(--amber); }
+.achievements-screen .commander-profile__stats div { padding: 6px 10px; }
+.achievements-screen .menu-head .menu-points { margin-left: auto; }
+
+/* ---- Research table (base Tech tab): one row per doctrine, its two specializations beside it ---- */
+.base-tab-body--tech { max-height: clamp(44vh, calc(100vh - 420px), 640px); }
+.research { display: grid; gap: 8px; }
+.research__head, .research__row { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr); gap: 14px; align-items: stretch; }
+.research__head span { font-size: var(--fs-micro); font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+.research__row { padding-top: 8px; border-top: 2px solid var(--paper-lo); }
+.research__doctrine { display: flex; flex-direction: column; gap: 3px; padding-left: calc(var(--depth, 0) * 18px); position: relative; }
+.research__row[style*="--depth:1"] .research__doctrine,
+.research__row[style*="--depth:2"] .research__doctrine { border-left: 3px solid var(--ink); margin-left: 6px; }
+.research__specs { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; align-items: stretch; }
+.research__or { align-self: center; font-weight: 900; font-size: var(--fs-micro); letter-spacing: 0.1em; color: var(--amber); padding: 3px 6px; border: 2px solid var(--ink); border-radius: 4px; background: var(--paper-deep); }
+.research__none { grid-column: 1 / -1; align-self: center; font-size: var(--fs-small, 0.74rem); color: var(--text-muted); }
+.research-card {
+  display: grid;
+  gap: 3px;
+  text-align: left;
+  padding: 8px 10px;
+  border: var(--ink-w, 2px) solid var(--ink);
+  border-radius: 6px;
+  background: var(--paper-lo);
+  color: var(--cream);
+  box-shadow: var(--drop-sm, 3px 3px 0 #0b0e12);
+  cursor: pointer;
+  font: inherit;
+}
+.research-card strong { font-size: var(--fs-name); }
+.research-card__what { font-size: var(--fs-small, 0.74rem); color: var(--text-muted); line-height: 1.3; }
+.research-card__foot { font-size: var(--fs-micro); font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); }
+.research-card.ready { background: var(--paper-hi); border-color: var(--ink); }
+.research-card.ready .research-card__foot { color: var(--amber-ink); background: var(--amber); justify-self: start; padding: 2px 8px; border-radius: 3px; }
+.research-card.ready:hover { background: var(--paper-hi-2); transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
+.research-card.done { background: var(--cyan-ink); }
+.research-card.done strong { color: var(--cyan); }
+.research-card.done .research-card__foot { color: var(--green); }
+.research-card.blocked { opacity: 0.72; box-shadow: none; cursor: default; }
+.research-card.locked { opacity: 0.45; box-shadow: none; cursor: default; }
+.research-card.locked strong { text-decoration: line-through; }
+.research-card[data-disabled="true"] { cursor: default; }

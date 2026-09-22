@@ -83,4 +83,17 @@ describe("Commander", () => {
     expect(reloaded.stats.doctrineUse.armor).toBe(1);
     expect(reloaded.stats.medals).toContain("first-victory");
   });
+
+  it("tracks distinct map/mode/faction wins and the context medals", () => {
+    const c = new Commander();
+    c.reset();
+    const base = { turns: 9, losses: 1, killsByKind: {}, toppleHappened: false };
+    const fresh = c.recordBattle({ ...base, victory: true, map: "verdant", mode: "ctf", faction: "bastion", difficulty: "hard", baseHealth: 0.2, arms: { infantry: true, vehicle: true, air: true } }).map((m) => m.id);
+    expect(fresh).toEqual(expect.arrayContaining(["iron", "last-stand", "combined-arms"]));
+    c.recordBattle({ ...base, victory: false, map: "karak", mode: "hill" });
+    c.recordBattle({ ...base, victory: true, map: "verdant", mode: "ctf" });
+    expect(c.stats.mapWins).toEqual(["verdant"]); // a loss and a repeat add nothing
+    expect(c.stats.modeWins).toEqual(["ctf"]);
+    expect(c.stats.factionWins).toEqual(["bastion"]);
+  });
 });

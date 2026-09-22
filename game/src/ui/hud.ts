@@ -33,7 +33,6 @@ const revealTracker = {
   seenTech: new Set<string>(),
   seeded: false,
   revealedTroopAt: new Map<string, number>(),
-  revealedTechAt: new Map<string, number>(),
 };
 
 function isRecentlyRevealed(at: number | undefined): boolean {
@@ -52,7 +51,6 @@ function syncRevealTracking(base: CombatEntity): void {
       // Battle reset — start the discovery arc over.
       revealTracker.seenTech.clear();
       revealTracker.revealedTroopAt.clear();
-      revealTracker.revealedTechAt.clear();
       revealTracker.seeded = false;
       break;
     }
@@ -63,7 +61,6 @@ function syncRevealTracking(base: CombatEntity): void {
     if (!revealTracker.seeded) continue; // don't badge tech from a restored save
     const now = Date.now();
     for (const spec of TROOP_CATALOG) if (spec.tech === id) revealTracker.revealedTroopAt.set(spec.kind, now);
-    for (const node of TECH_TREE) if (node.tier === 4 && node.requires.includes(id)) revealTracker.revealedTechAt.set(node.id, now);
   }
   revealTracker.seeded = true;
 }
@@ -1788,78 +1785,60 @@ function upgradeDeckHtml(base: CombatEntity, sim: TacticalSim): string {
     </div>`;
 }
 
-// The tech tree drawn as an actual branching tree: two root doctrines (Recon, Assault), each
-// with its unlocked doctrines/specializations nested beneath it (every node requires at most one
-// prerequisite, so the graph is a clean forest). Nesting + connector lines make "what unlocks
-// what" legible at a glance.
+// THE RESEARCH TABLE (2026-09-22). The tree used to be nested cards in a scrolling box: the
+// "pick one of two" rule was invisible, every specialization just said "Upgrade", and a
+// researched doctrine looked disabled. Now each DOCTRINE is one row, indented under the doctrine
+// it needs: left, what it unlocks; right, its two specializations side by side with an OR between
+// them and their real effect on the card. Everything is always visible -- nothing encrypted.
 function techTreePanel(base: CombatEntity, sim: TacticalSim): string {
-  // Only this faction's doctrine. Drawing the whole tree would show branches researchFailureReason
-  // refuses outright -- Bastion has no Air Wing to buy, so the node should not be on its board.
+  // Only this faction's doctrine: Bastion has no Air Wing to buy, so the row is not on its board.
   const doctrine = sim.factionOf(base.team).tech;
-  const roots = TECH_TREE.filter((node) => node.requires.length === 0 && doctrine.includes(node.id));
+  const rows: string[] = [];
+  const walk = (node: TechNode, depth: number): void => {
+    rows.push(researchRow(node, depth, base, sim));
+    for (const child of TECH_TREE) if (child.tier < 4 && child.requires.includes(node.id) && doctrine.includes(child.id)) walk(child, depth + 1);
+  };
+  for (const root of TECH_TREE) if (root.requires.length === 0 && doctrine.includes(root.id)) walk(root, 0);
   return `
-    <div class="tech-tree">
-      ${roots.map((root) => techBranch(root, base, sim)).join("")}
-    </div>
-    <div class="tech-legend">
-      <span class="tl done">Researched</span>
-      <span class="tl ready">Available</span>
-      <span class="tl blocked">Needs prerequisite</span>
-      <span class="tl locked">Excluded</span>
+    <div class="research">
+      <div class="research__head"><span>Doctrine — unlocks troops</span><span>Specialize — pick ONE of two</span></div>
+      ${rows.join("")}
     </div>
   `;
 }
 
-function techBranch(node: TechNode, base: CombatEntity, sim: TacticalSim): string {
+function researchRow(node: TechNode, depth: number, base: CombatEntity, sim: TacticalSim): string {
   const doctrine = sim.factionOf(base.team).tech;
-  const children = TECH_TREE.filter((n) => n.requires.includes(node.id) && doctrine.includes(n.id));
-  // Encrypted tier-4 files under an unresearched parent collapse to ONE line. Drawing each as a
-  // full hatched card made the tree a wall of placeholders before a single doctrine was bought.
-  const parentMet = node.requires.every((id) => isTechUnlocked(base, id));
-  const hidden = children.filter((c) => c.tier === 4 && !(parentMet && isTechUnlocked(base, node.id)));
-  const shown = children.filter((c) => !hidden.includes(c));
-  const summary = hidden.length
-    ? `<div class="tech-more" data-tip="${escapeAttr(`Research ${node.name} to decrypt ${hidden.length === 1 ? "it" : "them"}.`)}">+${hidden.length} encrypted file${hidden.length === 1 ? "" : "s"}</div>`
-    : "";
-  return `
-    <div class="tech-branch">
-      ${techNodeCard(node, base, sim)}
-      ${shown.length || summary ? `<div class="tech-children">${shown.map((child) => techBranch(child, base, sim)).join("")}${summary}</div>` : ""}
+  const specs = TECH_TREE.filter((n) => n.tier === 4 && n.requires.includes(node.id) && doctrine.includes(n.id));
+  const pair = specs.length
+    ? specs.map((spec) => researchCard(spec, base, sim)).join(`<span class="research__or">OR</span>`)
+    : `<span class="research__none">No specialization</span>`;
+  return `<div class="research__row" style="--depth:${depth}">
+    <div class="research__doctrine">
+      ${researchCard(node, base, sim)}
     </div>
-  `;
+    <div class="research__specs">${pair}</div>
+  </div>`;
 }
 
-function techNodeCard(node: TechNode, base: CombatEntity, sim: TacticalSim): string {
+function researchCard(node: TechNode, base: CombatEntity, sim: TacticalSim): string {
   const unlocked = isTechUnlocked(base, node.id);
-  const prereqsMet = node.requires.every((id) => isTechUnlocked(base, id));
-  const troopUnlocks = troopsUnlockedBy(node.id).map((kind) => troopSpec(kind).label);
-  const unlockLine = troopUnlocks.length
-    ? `<span class="tech-unlocks">Unlocks ${escapeHtml(troopUnlocks.join(" + "))}</span>`
-    : node.effect ? `<span class="tech-unlocks spec">Upgrade</span>` : "";
-
-  // Tier-4 specializations stay encrypted until their parent doctrine is researched.
-  if (node.tier === 4 && !prereqsMet) {
-    const parentName = TECH_TREE.find((n) => n.id === node.requires[0])?.name ?? "a doctrine";
-    return `<button class="tech-node classified" data-tech="${node.id}" data-disabled="true" data-tip="${escapeAttr(`Encrypted R&D file. Research ${parentName} to decrypt it.`)}">
-      <strong class="classified-name">ENCRYPTED</strong>
-      <span class="tech-sub">Research ${escapeHtml(parentName)}</span>
-    </button>`;
-  }
-  const reason = sim.researchFailureReason(base, node.id);
-  const ready = !reason;
+  const reason = unlocked ? undefined : sim.researchFailureReason(base, node.id);
   const lockedOut = Boolean(reason && /locked out/i.test(reason));
-  const isNew = node.tier === 4 && !unlocked && isRecentlyRevealed(revealTracker.revealedTechAt.get(node.id));
-  const state = unlocked ? "done" : lockedOut ? "locked" : ready ? "ready" : "blocked";
-  const sub = unlocked ? "✓ Researched" : lockedOut ? "Locked out" : `$${node.cost}`;
-  const tip = unlocked
-    ? `${node.name}: ${node.blurb} (researched)`
-    : reason
-      ? `${node.name}: ${reason}.`
-      : `${node.name}: ${node.blurb} Costs 1 CP and $${node.cost}.`;
-  return `<button class="tech-node ${state} ${isNew ? "just-revealed" : ""}" data-tech="${node.id}" data-disabled="${unlocked || !ready}" data-tip="${escapeAttr(tip)}">
-    <strong>${escapeHtml(node.name)}${isNew ? `<em class="new-badge">NEW</em>` : ""}</strong>
-    ${unlockLine}
-    <span class="tech-sub">${sub}</span>
+  const needs = node.requires.find((id) => !isTechUnlocked(base, id));
+  const troops = troopsUnlockedBy(node.id).map((kind) => troopSpec(kind).label);
+  // A specialization's blurb ends "Locks out X." -- the OR between the pair already says that.
+  const what = troops.length ? `Unlocks ${troops.join(", ")}` : node.blurb.replace(/\s*Locks out [^.]*\.?\s*$/, "");
+  const state = unlocked ? "done" : lockedOut ? "locked" : !reason ? "ready" : "blocked";
+  const foot = unlocked ? "✓ Researched"
+    : lockedOut ? "Locked — other pick taken"
+    : needs ? `Needs ${escapeHtml(TECH_TREE.find((n) => n.id === needs)?.name ?? "prerequisite")}`
+    : !reason ? `Research · $${node.cost}`
+    : `$${node.cost} · ${escapeHtml(reason ?? "")}`;
+  return `<button class="research-card ${state}" data-tech="${node.id}" data-disabled="${unlocked || Boolean(reason)}" data-tip="${escapeAttr(unlocked ? node.blurb : reason ? `${reason}.` : `Costs the base's order this turn and $${node.cost}.`)}">
+    <strong>${escapeHtml(node.name)}</strong>
+    <span class="research-card__what">${escapeHtml(what)}</span>
+    <span class="research-card__foot">${foot}</span>
   </button>`;
 }
 

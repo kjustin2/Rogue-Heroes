@@ -36,15 +36,13 @@ import {
   type FactionId,
 } from "./game/sim";
 import type { AimMode, Team } from "./game/damageModel";
-import { isInfantryKind } from "./game/damageModel";
+import { isAirKind, isInfantryKind, isVehicleKind } from "./game/damageModel";
 import { TECH_TREE, troopsUnlockedBy } from "./game/tech";
 import { troopSpec, unitStats } from "./game/units";
 import { sfx } from "./audio";
 import { music } from "./music";
 import { progression, COSMETICS, COSMETIC_CATEGORIES, type Cosmetic } from "./progression";
 import { battleReward } from "./progression";
-import { campaign, CAMPAIGN_TITLE, CAMPAIGN_SYNOPSIS, rankFor, rankHpBonus, rankInsignia, type CampaignMission, type RosterMember } from "./campaign";
-import { run, RUN_LENGTH } from "./run";
 import { commander, MEDALS } from "./commander";
 import { settings, ACTION_PACES, PACE_LABEL, RENDER_SCALES, RENDER_SCALE_LABEL, RENDER_SCALE_DPR, DEFAULT_KEYBINDS, KEYBIND_LABELS, keyDisplay, type ActionPace, type RenderScale, type BindableAction } from "./settings";
 import { applyScenario, scenarioInfo } from "./game/scenarios";
@@ -158,9 +156,6 @@ function perfSnapshot(): PerfSnapshot {
 const SAVE_KEY = "rht.savedBattle.v1";
 
 let tutorialActive = false;
-// The campaign mission the current battle belongs to (undefined for skirmish/tutorial). Drives
-// whether a victory advances the campaign ladder and shows the story overlay.
-let activeCampaignMission: CampaignMission | undefined;
 let inBattle = false; // true between starting/loading a battle and it ending or being left
 // Mirrored onto <body class="in-battle"> so the HUD can be hidden behind the title diorama in CSS.
 function setInBattle(on: boolean): void {
@@ -516,8 +511,6 @@ function opposingFaction(mapId: string, player: FactionId): FactionId {
 function startBattle(mapId: string, modeId: ModeId, difficulty: Difficulty = settings.difficulty, faction: FactionId = settings.faction): void {
   tutorialActive = false;
   renderTutorialPanel(); // a tutorial panel must not survive into the next battle
-  activeCampaignMission = undefined;
-  campaign.setActive(undefined); // a skirmish is not a campaign mission
   closeAllMenus();
   // The enemy's faction is DERIVED, never rolled: same map plus same player faction always gives
   // the same opponent, so a seeded run, a save reload and a replay all agree. Rolling it inside
@@ -529,102 +522,6 @@ function startBattle(mapId: string, modeId: ModeId, difficulty: Difficulty = set
   lastEndPhase = undefined;
   setInBattle(true);
   hud.update();
-}
-
-// Configure a campaign mission battle and remember which mission it is (so victory advances the
-// ladder and a save can resume it). Mirrors startBattle but tags the active mission.
-function startCampaignMission(mission: CampaignMission): void {
-  tutorialActive = false;
-  activeCampaignMission = mission;
-  campaign.setActive(mission.id);
-  closeAllMenus();
-  sim.configure(mapDef(mission.map), mission.mode, mission.difficulty, { player: settings.faction, enemy: opposingFaction(mission.map, settings.faction) });
-
-  // Requisition perk banked on the last victory screen.
-  const perk = campaign.consumeRequisition();
-  if (perk === "cash") {
-    sim.economy.set("player", (sim.economy.get("player") ?? 0) + 200);
-    showToast("Requisition delivered: +$200 starting funds");
-  } else if (perk === "doctrine") {
-    const base = sim.entities.find((e) => e.kind === "base" && e.team === "player");
-    if (base && !(base.unlockedTech ?? []).includes("recon")) {
-      base.unlockedTech = [...(base.unlockedTech ?? []), "recon"];
-      showToast("Requisition delivered: Recon Doctrine pre-researched");
-    }
-  }
-
-  // The veteran roster deploys free, named, ranked, and tougher — and dies for good.
-  deployRoster(campaign.roster);
-
-  // Finale set piece: the named Warden, tracked by the top-of-screen HP bar.
-  if (mission.boss) {
-    sim.debugSpawn(mission.boss.kind as TroopKind, "enemy", { x: mission.boss.x, z: mission.boss.z }, { bossName: mission.boss.name });
-  }
-  firedBeats.clear();
-
-  world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
-  world.setPlayerAccent(progression.accentColor());
-  focusOnPlayerBase();
-  lastEndPhase = undefined;
-  setInBattle(true);
-  hud.update();
-  runMissionIntro();
-}
-
-// Deploy a carried veteran roster at the player base: free, named, ranked, tougher, permadeath.
-// Shared by campaign missions and skirmish-run sectors.
-function deployRoster(roster: readonly RosterMember[]): void {
-  const playerBase = sim.entities.find((e) => e.kind === "base" && e.team === "player");
-  if (!playerBase || !roster.length) return;
-  roster.forEach((member, index) => {
-    const angle = -0.8 + index * 0.5;
-    const spot = {
-      x: playerBase.position.x + Math.sin(angle + Math.PI / 2) * 3.4,
-      z: playerBase.position.z + Math.cos(angle + Math.PI / 2) * 3.4,
-    };
-    const unit = sim.debugSpawn(member.kind as TroopKind, "player", spot);
-    const rank = rankFor(member.kills);
-    unit.name = `${member.name} ${rankInsignia(rank)}`.trim();
-    const bonus = rankHpBonus(rank);
-    if (bonus > 1) for (const part of unit.parts) { part.maxHp = Math.round(part.maxHp * bonus); part.hp = part.maxHp; }
-  });
-  showToast(`${roster.length} veteran${roster.length > 1 ? "s" : ""} deployed with you`);
-}
-
-// The player units that walked away, as roster-merge input (star suffixes stripped so a
-// veteran's name stays stable across battles). Air and armor carry forward like infantry.
-function collectSurvivors(): Array<{ name: string; kind: string; kills: number }> {
-  const carriable = ["tank", "apc", "artillery", "gunship", "interceptor", "bomber", "transport", "flak"];
-  return sim.entities
-    .filter((e) => e.team === "player" && e.status.alive && (isInfantryKind(e.kind) || carriable.includes(e.kind)))
-    .map((e) => ({ name: e.name.replace(/ ★+$/, ""), kind: e.kind, kills: sim.killsBy.get(e.id) ?? 0 }));
-}
-
-// Configure and launch the current sector of an active skirmish run. Mirrors startCampaignMission
-// (roster carry + a starting-funds bonus) minus the story/boss scaffolding.
-function startRunBattle(): void {
-  tutorialActive = false;
-  activeCampaignMission = undefined;
-  campaign.setActive(undefined);
-  closeAllMenus();
-  const battle = run.current();
-  sim.configure(mapDef(battle.map), battle.mode, battle.difficulty, { player: settings.faction, enemy: opposingFaction(battle.map, settings.faction) });
-
-  const cash = run.consumeCash();
-  if (cash > 0) {
-    sim.economy.set("player", (sim.economy.get("player") ?? 0) + cash);
-    showToast(`Salvage banked: +$${cash} starting funds`);
-  }
-  deployRoster(run.roster);
-  firedBeats.clear();
-
-  world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
-  world.setPlayerAccent(progression.accentColor());
-  focusOnPlayerBase();
-  lastEndPhase = undefined;
-  setInBattle(true);
-  hud.update();
-  showToast(`Sector ${run.sectorNumber} of ${RUN_LENGTH} · ${mapDef(battle.map).name} · ${modeDef(battle.mode).name}`);
 }
 
 // Mission-intro cinematic: a letterboxed rail flyover — enemy lines, the contested centre, then
@@ -709,25 +606,11 @@ function runMissionIntro(): void {
 }
 
 // Radio-drama beats: one-shot transmissions on their keyed turns during campaign battles.
-const firedBeats = new Set<string>();
-function watchCampaignBeats(): void {
-  const mission = activeCampaignMission;
-  if (!mission?.beats || sim.phase !== "command") return;
-  for (const beat of mission.beats) {
-    const key = `${mission.id}:${beat.turn}`;
-    if (beat.turn === sim.turn && !firedBeats.has(key)) {
-      firedBeats.add(key);
-      showToast(`📻 ${beat.text}`);
-      sfx.ui();
-    }
-  }
-}
-
 // Deploy with a brief full-screen loading veil. startBattle() rebuilds the whole arena
 // (geometry + materials) synchronously, so without this the click just freezes for a beat.
 // We paint the veil first (two rAFs let it reach the screen), then run the heavy build under
 // it, then fade it once the battle has had a frame to render. Min visible time avoids a flash.
-function deployWithLoadingScreen(mapId: string, modeId: ModeId, difficulty: Difficulty, faction: FactionId, mission?: CampaignMission): void {
+function deployWithLoadingScreen(mapId: string, modeId: ModeId, difficulty: Difficulty, faction: FactionId): void {
   const veil = document.createElement("div");
   veil.className = "battle-loading";
   veil.innerHTML = `<div class="battle-loading__inner">
@@ -739,14 +622,11 @@ function deployWithLoadingScreen(mapId: string, modeId: ModeId, difficulty: Diff
   const startedAt = performance.now();
   const minVisible = settings.reducedMotion ? 250 : 600;
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    if (mission) {
-      startCampaignMission(mission);
-    } else {
-      startBattle(mapId, modeId, difficulty, faction);
-      // First time the player tries a mode, spell out how it's won (the tutorial only covers Annihilation).
-      const mode = modeDef(modeId);
-      hintOnce(`mode-${modeId}`, `${mode.name} — ${mode.blurb}`);
-    }
+    startBattle(mapId, modeId, difficulty, faction);
+    // First time the player tries a mode, spell out how it's won (the tutorial only covers Annihilation).
+    const mode = modeDef(modeId);
+    hintOnce(`mode-${modeId}`, `${mode.name} — ${mode.blurb}`);
+    runMissionIntro();
     const hold = Math.max(0, minVisible - (performance.now() - startedAt));
     window.setTimeout(() => {
       veil.classList.add("leaving");
@@ -874,19 +754,16 @@ function showMainMenu(): void {
     `
     <div class="title-screen__content menu-content main-menu__content">
       <h1 class="title-logo">ROGUE HEROES<span>TACTICS</span></h1>
-      <!-- ONE primary action, three ways to play, and the utilities demoted to a quiet row. Eight
-           stacked buttons of equal weight told a new player nothing about where to start. -->
+      <!-- ONE primary action and the utilities demoted to a quiet row. Skirmish is the game for
+           now: Campaign and Skirmish Run were cut (2026-09-22) until Skirmish is perfected. -->
       <div class="main-menu__buttons" data-allow-overlap>
         ${hasSave
-          ? `<button class="title-start" data-menu="continue" type="button">Continue Battle</button>`
-          : `<button class="title-start" data-menu="campaign" type="button">Play Campaign</button>`}
-        <div class="menu-modes">
-          ${hasSave ? `<button class="menu-mode" data-menu="campaign" type="button"><strong>Campaign</strong><span>Story missions</span></button>` : ""}
-          <button class="menu-mode" data-menu="play" type="button"><strong>Skirmish</strong><span>One battle, your rules</span></button>
-          <button class="menu-mode" data-menu="run" type="button"><strong>Skirmish Run</strong><span>${run.active ? `Sector ${run.sectorNumber}/${RUN_LENGTH} in progress` : "Survive a chain of sectors"}</span></button>
-        </div>
+          ? `<button class="title-start" data-menu="continue" type="button">Continue Battle</button>
+             <button class="menu-action" data-menu="play" type="button">New Skirmish</button>`
+          : `<button class="title-start" data-menu="play" type="button">Play Skirmish</button>`}
         <button class="menu-link" data-menu="tutorial" type="button">Play the tutorial</button>
         <div class="menu-utilities">
+          <button class="menu-utility" data-menu="achievements" type="button">Achievements</button>
           <button class="menu-utility" data-menu="armory" type="button">Armory</button>
           <button class="menu-utility" data-menu="settings" type="button">Settings</button>
           <button class="menu-utility menu-utility--exit" data-menu="exit" type="button">Exit</button>
@@ -900,11 +777,10 @@ function showMainMenu(): void {
   screen.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
     const action = target.closest<HTMLElement>("[data-menu]")?.dataset.menu;
-    if (action === "campaign") showCampaign();
-    else if (action === "run") showRunIntro();
-    else if (action === "play") showStartScreen();
+    if (action === "play") showStartScreen();
     else if (action === "continue") loadSavedBattle();
     else if (action === "tutorial") startTutorial();
+    else if (action === "achievements") showAchievements();
     else if (action === "armory") showArmory();
     else if (action === "settings") showSettings();
     else if (action === "exit") window.close(); // Electron: closes window → app.quit(); no-op in a browser tab
@@ -1231,30 +1107,53 @@ function armoryCardHtml(c: Cosmetic): string {
   </div>`;
 }
 
-// Lifetime service record: stats, medals (earned lit, unearned ghosted), doctrine mastery.
-function commanderProfileHtml(): string {
+// ACHIEVEMENTS: the lifetime service record -- stats, every medal (earned lit, the rest ghosted
+// with how close they are), and doctrine mastery. Its own main-menu page; it used to be a strip
+// at the top of the Armory where nobody looked for it.
+function showAchievements(): void {
+  closeAllMenus();
   const s = commander.stats;
   const top = commander.topUnitKind();
+  const earnedCount = MEDALS.filter((m) => s.medals.includes(m.id)).length;
   const medals = MEDALS.map((m) => {
     const earned = s.medals.includes(m.id);
-    return `<span class="medal ${earned ? "earned" : ""}" data-tip="${escapeAttr(`${m.name}: ${m.blurb}${earned ? " (earned)" : ""}`)}">✪ ${escapeHtml(m.name)}</span>`;
+    const [have, need] = m.progress?.(s) ?? [earned ? 1 : 0, 1];
+    const meter = m.progress && !earned
+      ? `<span class="achievement__meter"><span style="width:${Math.round((Math.min(have, need) / need) * 100)}%"></span></span><em>${Math.min(have, need)} / ${need}</em>`
+      : `<em>${earned ? "Earned" : "Locked"}</em>`;
+    return `<div class="achievement ${earned ? "earned" : ""}">
+      <span class="achievement__badge">${earned ? "✪" : "✧"}</span>
+      <strong>${escapeHtml(m.name)}</strong>
+      <span class="achievement__blurb">${escapeHtml(m.blurb)}</span>
+      <span class="achievement__state">${meter}</span>
+    </div>`;
   }).join("");
   const mastered = TECH_TREE.filter((n) => n.tier < 4 && commander.masteryTier(n.id) > 0)
-    .map((n) => `<span class="medal earned" data-tip="${escapeAttr(`${n.name} researched ${s.doctrineUse[n.id] ?? 0} times lifetime.`)}">${escapeHtml(n.name)} ${"I".repeat(commander.masteryTier(n.id))}</span>`)
+    .map((n) => `<span class="medal earned">${escapeHtml(n.name)} ${"I".repeat(commander.masteryTier(n.id))}</span>`)
     .join("");
-  return `
-    <div class="armory-category-title">Service Record</div>
-    <div class="commander-profile">
+  const screen = mountScreen(
+    `
+    <div class="title-screen__content menu-content overlay-card achievements-screen">
+      <div class="menu-head">
+        <button class="menu-back" data-overlay-close data-back type="button">&lsaquo; Back</button>
+        <h2 class="menu-heading">Achievements</h2>
+        <div class="menu-points"><span>✪</span> ${earnedCount} / ${MEDALS.length}</div>
+      </div>
       <div class="commander-profile__stats">
         <div><span>Battles</span><strong>${s.battles}</strong></div>
         <div><span>Wins / Losses</span><strong>${s.wins} / ${s.losses}</strong></div>
         <div><span>Unit Kills</span><strong>${s.kills}</strong></div>
         <div><span>Deadliest Unit</span><strong>${top ? escapeHtml(top) : "—"}</strong></div>
       </div>
-      <div class="commander-profile__medals">${medals}</div>
-      ${mastered ? `<div class="commander-profile__medals">${mastered}</div>` : ""}
+      <div class="achievement-grid">${medals}</div>
+      ${mastered ? `<div class="armory-category-title">Doctrine Mastery</div><div class="commander-profile__medals">${mastered}</div>` : ""}
     </div>
-  `;
+  `,
+    "menu-screen",
+  );
+  screen.addEventListener("click", (event) => {
+    if ((event.target as HTMLElement).closest("[data-back]")) showMainMenu();
+  });
 }
 
 function showArmory(): void {
@@ -1272,7 +1171,6 @@ function showArmory(): void {
         ${pointsBadge()}
       </div>
       <p class="settings-note">Earn points in battle. Spend them here on unit accents, callsigns, and emblems.</p>
-      ${commanderProfileHtml()}
       ${sections}
     </div>
   `,
@@ -1298,351 +1196,6 @@ function showArmory(): void {
       progression.setEquipped(equip);
       world.setPlayerAccent(progression.accentColor());
       showArmory();
-    }
-  });
-}
-
-// ---- Campaign ----
-function showCampaign(): void {
-  closeAllMenus();
-  const missions = campaign.missions();
-  const completedCount = missions.filter((m) => campaign.isCompleted(m.id)).length;
-  const cards = missions
-    .map((m, i) => {
-      const done = campaign.isCompleted(m.id);
-      const unlocked = campaign.isUnlocked(i);
-      const status = done ? "completed" : unlocked ? "available" : "locked";
-      const label = done ? "✓ Cleared" : unlocked ? "Briefing ›" : "Locked";
-      return `<button class="campaign-card ${status} ${m.branchLabel ? "campaign-card--branch" : ""}" data-mission="${m.id}" ${unlocked ? "" : "disabled"} type="button">
-        <span class="campaign-card__no">${String(i + 1).padStart(2, "0")}</span>
-        <span class="campaign-card__body">
-          <strong>${escapeHtml(m.name)}${m.branchLabel ? ` <em class="campaign-card__branch">${escapeHtml(m.branchLabel)}</em>` : ""}</strong>
-          <span class="campaign-card__region">${escapeHtml(m.region)} · ${escapeHtml(modeDef(m.mode).name)} · ${escapeHtml(difficultyLabel(m.difficulty))}${m.bonus ? ` · <span class="campaign-card__bonus">☆ ${escapeHtml(m.bonus.text)}</span>` : ""}</span>
-        </span>
-        <span class="campaign-card__status">${label}</span>
-      </button>`;
-    })
-    .join("");
-  const screen = mountScreen(
-    `
-    <div class="title-screen__content menu-content overlay-card campaign-screen">
-      <div class="menu-head">
-        <button class="menu-back" data-overlay-close data-back type="button">&lsaquo; Back</button>
-        <h2 class="menu-heading">${escapeHtml(CAMPAIGN_TITLE)}</h2>
-        ${pointsBadge()}
-      </div>
-      <p class="settings-note campaign-synopsis">${escapeHtml(CAMPAIGN_SYNOPSIS)}</p>
-      <div class="campaign-progress">Progress · ${completedCount} / ${missions.length}${campaign.isAllComplete() ? " — Campaign complete ★" : ""}</div>
-      ${campaign.roster.length ? `<div class="campaign-roster campaign-roster--map"><span class="campaign-roster__title">Squad Roster — deploys free on every mission</span>${campaign.roster
-        .map((m) => `<span class="campaign-roster__member" data-tip="${escapeAttr(`${rankFor(m.kills)} ${m.kind} — ${m.kills} kills, ${m.missions} mission${m.missions === 1 ? "" : "s"}. Falls in battle = gone for good.`)}">${escapeHtml(m.name)} <em>${rankInsignia(rankFor(m.kills)) || "·"}</em></span>`)
-        .join("")}</div>` : ""}
-      <div class="campaign-list campaign-list--operation">${cards}</div>
-    </div>
-  `,
-    "menu-screen",
-  );
-  screen.addEventListener("click", (event) => {
-    const target = event.target as HTMLElement;
-    if (target.closest("[data-back]")) {
-      showMainMenu();
-      return;
-    }
-    const id = target.closest<HTMLElement>("[data-mission]")?.dataset.mission;
-    if (!id) return;
-    const mission = campaign.mission(id);
-    if (mission && campaign.isUnlocked(missions.indexOf(mission))) showBriefing(mission);
-  });
-}
-
-function showBriefing(mission: CampaignMission): void {
-  closeAllMenus();
-  const map = mapDef(mission.map);
-  const paras = mission.briefing.map((p) => `<p>${escapeHtml(p)}</p>`).join("");
-  const screen = mountScreen(
-    `
-    <div class="title-screen__content menu-content overlay-card briefing-screen">
-      <div class="menu-head">
-        <button class="menu-back" data-back type="button">&lsaquo; Missions</button>
-        <h2 class="menu-heading">${escapeHtml(mission.name)}</h2>
-      </div>
-      <div class="briefing-layout">
-        <div class="briefing-text">
-          <div class="briefing-meta">${escapeHtml(mission.region)} · ${escapeHtml(modeDef(mission.mode).name)} · ${escapeHtml(difficultyLabel(mission.difficulty))}</div>
-          ${paras}
-          <div class="briefing-objective"><span>Objective</span> ${escapeHtml(mission.objective)}</div>
-        </div>
-        <div class="briefing-map map-preview" data-briefing-preview></div>
-      </div>
-      <div class="menu-actions"><button class="title-start" data-deploy type="button">Deploy to Battle</button></div>
-    </div>
-  `,
-    "menu-screen",
-  );
-  const briefingHost = screen.querySelector<HTMLElement>("[data-briefing-preview]");
-  if (briefingHost) mountMapPreview(briefingHost, map, mission.mode, { caption: false });
-  screen.addEventListener("click", (event) => {
-    const target = event.target as HTMLElement;
-    if (target.closest("[data-back]")) {
-      showCampaign();
-      return;
-    }
-    if (target.closest("[data-deploy]")) {
-      screen.classList.add("is-leaving");
-      deployWithLoadingScreen(mission.map, mission.mode, mission.difficulty, settings.faction, mission);
-    }
-  });
-}
-
-function showCampaignVictory(mission: CampaignMission, reward: number, bonusText?: string): void {
-  const next = campaign.nextMission(mission.id);
-  const complete = campaign.isAllComplete();
-  const roster = campaign.roster;
-  const rosterHtml = roster.length
-    ? `<div class="campaign-roster"><span class="campaign-roster__title">Squad Roster</span>${roster
-        .map((m) => {
-          const rank = rankFor(m.kills);
-          return `<span class="campaign-roster__member" data-tip="${escapeAttr(`${rank} — ${m.kills} kills over ${m.missions} mission${m.missions === 1 ? "" : "s"}. Veterans deploy free next mission (${Math.round((rankHpBonus(rank) - 1) * 100)}% bonus HP). If they fall, they're gone.`)}">${escapeHtml(m.name)} <em>${rankInsignia(rank) || "·"}</em></span>`;
-        })
-        .join("")}</div>`
-    : "";
-  const requisitionHtml = !complete && next
-    ? `<div class="campaign-requisition">
-        <span class="campaign-roster__title">Requisition — choose one for the next mission</span>
-        <div class="pause-buttons requisition-row">
-          <button class="menu-action" data-req="cash" type="button">+$200 starting funds</button>
-          <button class="menu-action" data-req="doctrine" type="button">Recon Doctrine pre-researched</button>
-        </div>
-      </div>`
-    : "";
-  const screen = mountScreen(
-    `
-    <div class="overlay-card campaign-end victory">
-      <div class="campaign-end__kicker">${complete ? "Campaign Complete ★" : "Mission Complete"}</div>
-      <h2 class="menu-heading">${escapeHtml(mission.name)}</h2>
-      <p class="campaign-end__story">${escapeHtml(mission.victory)}</p>
-      <div class="campaign-end__reward">+${reward} points${bonusText ? ` · Bonus objective: ${escapeHtml(bonusText)} ✓` : ""}</div>
-      ${rosterHtml}
-      ${requisitionHtml}
-      <div class="pause-buttons">
-        ${!complete && next ? `<button class="title-start" data-next type="button">Next · ${escapeHtml(next.name)}</button>` : ""}
-        <button class="menu-action" data-menu-btn type="button">${complete ? "Return to Menu" : "Mission Select"}</button>
-      </div>
-    </div>
-  `,
-    "pause-overlay campaign-overlay",
-  );
-  screen.addEventListener("click", (event) => {
-    const target = event.target as HTMLElement;
-    const req = target.closest<HTMLElement>("[data-req]")?.dataset.req as "cash" | "doctrine" | undefined;
-    if (req) {
-      campaign.setRequisition(req);
-      for (const btn of screen.querySelectorAll<HTMLElement>("[data-req]")) btn.classList.toggle("active", btn.dataset.req === req);
-      sfx.select();
-      return;
-    }
-    if (target.closest("[data-next]") && next) {
-      screen.remove();
-      showBriefing(next);
-    } else if (target.closest("[data-menu-btn]")) {
-      screen.remove();
-      if (complete) showMainMenu();
-      else showCampaign();
-    }
-  });
-}
-
-function showCampaignDefeat(mission: CampaignMission): void {
-  const screen = mountScreen(
-    `
-    <div class="overlay-card campaign-end defeat">
-      <div class="campaign-end__kicker">Mission Failed</div>
-      <h2 class="menu-heading">${escapeHtml(mission.name)}</h2>
-      <p class="campaign-end__story">The Vanguard is thrown back — but not broken. Regroup and try again, Commander.</p>
-      <div class="pause-buttons">
-        <button class="title-start" data-retry type="button">Retry Mission</button>
-        <button class="menu-action" data-menu-btn type="button">Mission Select</button>
-      </div>
-    </div>
-  `,
-    "pause-overlay campaign-overlay",
-  );
-  screen.addEventListener("click", (event) => {
-    const target = event.target as HTMLElement;
-    if (target.closest("[data-retry]")) {
-      screen.remove();
-      deployWithLoadingScreen(mission.map, mission.mode, mission.difficulty, settings.faction, mission);
-    } else if (target.closest("[data-menu-btn]")) {
-      screen.remove();
-      showCampaign();
-    }
-  });
-}
-
-// Compact veteran-roster strip for the run overlays (reuses the campaign roster styling).
-function runRosterHtml(): string {
-  if (!run.roster.length) return "";
-  const members = run.roster
-    .map((m) => {
-      const rank = rankFor(m.kills);
-      return `<span class="campaign-roster__member" data-tip="${escapeAttr(`${rank} ${m.kind} — ${m.kills} kills over ${m.missions} sector${m.missions === 1 ? "" : "s"}. Redeploys free next sector. Falls in battle = gone for good.`)}">${escapeHtml(m.name)} <em>${rankInsignia(rank) || "·"}</em></span>`;
-    })
-    .join("");
-  return `<div class="campaign-roster"><span class="campaign-roster__title">Squad Roster — veterans of this run</span>${members}</div>`;
-}
-
-// Between-sector screen: a cleared, non-final sector. run.index already points at the next one.
-function showRunSector(reward: number): void {
-  const next = run.current();
-  const cashLine = run.bankedCash > 0 ? ` · Salvage banked: +$${run.bankedCash}` : "";
-  const screen = mountScreen(
-    `
-    <div class="overlay-card campaign-end victory">
-      <div class="campaign-end__kicker">Sector ${run.index} Cleared</div>
-      <h2 class="menu-heading">Skirmish Run</h2>
-      <p class="campaign-end__story">The line holds. Regroup and push to the next sector — your veterans and salvage come with you.</p>
-      <div class="campaign-end__reward">+${reward} points${cashLine}</div>
-      ${runRosterHtml()}
-      <div class="campaign-progress">Next · Sector ${run.sectorNumber} of ${RUN_LENGTH} — ${escapeHtml(mapDef(next.map).name)} · ${escapeHtml(modeDef(next.mode).name)} · ${escapeHtml(difficultyLabel(next.difficulty))}</div>
-      <div class="pause-buttons">
-        <button class="title-start" data-next type="button">Deploy · Sector ${run.sectorNumber}</button>
-        <button class="menu-action" data-menu-btn type="button">Abandon Run</button>
-      </div>
-    </div>
-  `,
-    "pause-overlay campaign-overlay",
-  );
-  screen.addEventListener("click", (event) => {
-    const target = event.target as HTMLElement;
-    if (target.closest("[data-next]")) {
-      screen.remove();
-      deployRunWithLoadingScreen();
-    } else if (target.closest("[data-menu-btn]")) {
-      run.end();
-      screen.remove();
-      showMainMenu();
-    }
-  });
-}
-
-function showRunComplete(reward: number): void {
-  const screen = mountScreen(
-    `
-    <div class="overlay-card campaign-end victory">
-      <div class="campaign-end__kicker">Run Complete ★</div>
-      <h2 class="menu-heading">Skirmish Run</h2>
-      <p class="campaign-end__story">All ${RUN_LENGTH} sectors cleared in one unbroken push. The frontier is yours, Commander — for now.</p>
-      <div class="campaign-end__reward">+${reward} points</div>
-      ${runRosterHtml()}
-      <div class="pause-buttons">
-        <button class="title-start" data-menu-btn type="button">Return to Menu</button>
-      </div>
-    </div>
-  `,
-    "pause-overlay campaign-overlay",
-  );
-  screen.addEventListener("click", (event) => {
-    if ((event.target as HTMLElement).closest("[data-menu-btn]")) {
-      screen.remove();
-      showMainMenu();
-    }
-  });
-}
-
-function showRunDefeat(): void {
-  const cleared = run.index; // sectors banked before the loss
-  const screen = mountScreen(
-    `
-    <div class="overlay-card campaign-end defeat">
-      <div class="campaign-end__kicker">Run Over</div>
-      <h2 class="menu-heading">Skirmish Run</h2>
-      <p class="campaign-end__story">The Vanguard is overrun on Sector ${cleared + 1}. ${cleared > 0 ? `You held ${cleared} sector${cleared === 1 ? "" : "s"} before the line broke.` : "No ground held — regroup and run it again."}</p>
-      <div class="pause-buttons">
-        <button class="title-start" data-new type="button">New Run</button>
-        <button class="menu-action" data-menu-btn type="button">Return to Menu</button>
-      </div>
-    </div>
-  `,
-    "pause-overlay campaign-overlay",
-  );
-  screen.addEventListener("click", (event) => {
-    const target = event.target as HTMLElement;
-    if (target.closest("[data-new]")) {
-      screen.remove();
-      beginNewRun();
-    } else if (target.closest("[data-menu-btn]")) {
-      screen.remove();
-      showMainMenu();
-    }
-  });
-}
-
-// Loading veil around a run sector start (mirrors deployWithLoadingScreen for campaign/skirmish).
-function deployRunWithLoadingScreen(): void {
-  const battle = run.current();
-  const veil = document.createElement("div");
-  veil.className = "battle-loading";
-  veil.innerHTML = `<div class="battle-loading__inner">
-    <div class="battle-loading__spinner"></div>
-    <div class="battle-loading__label"><span>Deploying to</span><strong>${escapeAttr(mapDef(battle.map).name)}</strong></div>
-  </div>`;
-  document.body.appendChild(veil);
-  requestAnimationFrame(() => veil.classList.add("show"));
-  const startedAt = performance.now();
-  const minVisible = settings.reducedMotion ? 250 : 600;
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    startRunBattle();
-    const hold = Math.max(0, minVisible - (performance.now() - startedAt));
-    window.setTimeout(() => {
-      veil.classList.add("leaving");
-      window.setTimeout(() => veil.remove(), 360);
-    }, hold);
-  }));
-}
-
-// Fresh run: pick a new seed (app-side, so a real clock is fine here) and drop into sector 1.
-function beginNewRun(): void {
-  run.begin(Math.floor(performance.now() * 1000) ^ (progression.points * 2654435761));
-  deployRunWithLoadingScreen();
-}
-
-// Skirmish Run entry: start a fresh ladder, or resume/abandon one already in progress.
-function showRunIntro(): void {
-  closeAllMenus();
-  const active = run.active;
-  const battle = active ? run.current() : undefined;
-  const body = active && battle
-    ? `<p class="settings-note">A run is in progress.</p>
-       <div class="campaign-progress">Sector ${run.sectorNumber} of ${RUN_LENGTH} — ${escapeHtml(mapDef(battle.map).name)} · ${escapeHtml(modeDef(battle.mode).name)} · ${escapeHtml(difficultyLabel(battle.difficulty))}</div>
-       ${runRosterHtml()}`
-    : `<p class="settings-note">${RUN_LENGTH} battles back to back on random maps, each harder than the last. Survivors carry forward; the fallen stay dead. Lose once and the run is over.</p>`;
-  const buttons = active
-    ? `<button class="title-start" data-resume type="button">Resume Run</button>
-       <button class="menu-action" data-new type="button">Abandon &amp; Start Over</button>`
-    : `<button class="title-start" data-new type="button">Begin Run</button>`;
-  const screen = mountScreen(
-    `
-    <div class="title-screen__content menu-content overlay-card">
-      <h2 class="menu-heading">Skirmish Run</h2>
-      ${body}
-      <div class="pause-buttons">
-        ${buttons}
-        <button class="menu-action" data-back type="button">Back</button>
-      </div>
-    </div>
-  `,
-    "menu-screen",
-  );
-  screen.addEventListener("click", (event) => {
-    const target = event.target as HTMLElement;
-    if (target.closest("[data-resume]")) {
-      screen.remove();
-      deployRunWithLoadingScreen();
-    } else if (target.closest("[data-new]")) {
-      screen.remove();
-      beginNewRun();
-    } else if (target.closest("[data-back]")) {
-      screen.remove();
-      showMainMenu();
     }
   });
 }
@@ -1801,8 +1354,6 @@ function loadSavedBattle(): void {
   }
   if (sim.restore(raw)) {
     tutorialActive = false;
-    // If the saved battle was a campaign mission, resume that context so victory still advances.
-    activeCampaignMission = campaign.activeMissionId ? campaign.mission(campaign.activeMissionId) : undefined;
     closeAllMenus();
     world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
     world.setPlayerAccent(progression.accentColor());
@@ -2116,7 +1667,10 @@ function frame(now: number): void {
 
 function frameBody(now: number): void {
   const frameMs = now - last;
-  const dt = Math.min(0.05, frameMs / 1000);
+  // Floor at 0: rAF's timestamp is the frame's START, which can predate `last` (set at boot), so
+  // the first frame's delta is negative. A negative dt ran the trauma decay backwards into a full
+  // strength camera shake -- the title screen's opening "earthquake".
+  const dt = Math.max(0, Math.min(0.05, frameMs / 1000));
   last = now;
   stage.update(dt, {
     up: heldKeys.has("KeyW"),
@@ -2136,7 +1690,6 @@ function frameBody(now: number): void {
   if (DEBUG_UNLOCKED && inBattle && sim.phase === "command") applyDebugCheats();
   processBattleEvents();
   watchEnemyIntel();
-  watchCampaignBeats();
   feel.update(dt);
   music.setState(
     sim.phase === "resolve" ? "resolve"
@@ -2300,12 +1853,25 @@ function handleEndState(): void {
       const kind = sim.entity(id)?.kind ?? "unknown";
       killsByKind[kind] = (killsByKind[kind] ?? 0) + count;
     }
+    const mine = sim.entities.filter((e) => e.team === "player" && e.status.alive);
+    const base = sim.entities.find((e) => e.team === "player" && e.kind === "base");
+    const hp = base ? base.parts.reduce((sum, p) => sum + p.hp, 0) / Math.max(1, base.parts.reduce((sum, p) => sum + p.maxHp, 0)) : undefined;
     const freshMedals = commander.recordBattle({
       victory,
       turns: sim.turn,
       losses: sim.playerLosses,
       killsByKind,
       toppleHappened: sim.toppled.size > 0,
+      map: sim.mapDef.id,
+      mode: sim.mode,
+      faction: sim.factionIdOf("player"),
+      difficulty: sim.difficulty,
+      baseHealth: hp,
+      arms: {
+        infantry: mine.some((e) => isInfantryKind(e.kind)),
+        vehicle: mine.some((e) => isVehicleKind(e.kind) && !isAirKind(e.kind)),
+        air: mine.some((e) => isAirKind(e.kind)),
+      },
     });
     for (const medal of freshMedals) showToast(`🎖 Medal earned — ${medal.name}: ${medal.blurb}`);
   }
@@ -2331,48 +1897,6 @@ function handleEndState(): void {
 // The end-of-battle overlays/toasts, split out so the kill-cam can delay them.
 function concludeEndState(victory: boolean): void {
   clearToasts(); // no lingering start-of-battle notice should overlap the end overlay
-  // Campaign battles advance the story ladder and show their own end overlay.
-  const mission = activeCampaignMission;
-  if (mission) {
-    if (victory) {
-      const firstClear = !campaign.isCompleted(mission.id);
-      // Optional objective: +50% mission reward when passed.
-      const bonusPassed = mission.bonus
-        ? (mission.bonus.check === "noLosses" ? sim.playerLosses === 0 : sim.turn <= (mission.bonus.turns ?? 8))
-        : false;
-      const bonusReward = bonusPassed ? Math.round(mission.reward * 0.5) : 0;
-      const reward = (firstClear ? mission.reward : Math.round(mission.reward * 0.25)) + bonusReward + battleReward(true, sim.difficulty, sim.turn);
-      // Veteran roster: survivors carry forward with their kills; the fallen are gone.
-      campaign.recordBattleOutcome(collectSurvivors());
-      campaign.markComplete(mission.id); // records progress + clears the active-mission save tag
-      activeCampaignMission = undefined;
-      progression.award(reward);
-      showCampaignVictory(mission, reward, bonusPassed ? mission.bonus?.text : undefined);
-    } else {
-      showCampaignDefeat(mission); // keep the mission active so Retry re-runs it
-    }
-    return;
-  }
-  // Skirmish run: a cleared sector carries survivors + cash and advances; a loss ends the run.
-  if (run.active) {
-    if (victory) {
-      const leftover = sim.economy.get("player") ?? 0;
-      const reward = battleReward(true, sim.difficulty, sim.turn);
-      progression.award(reward);
-      const complete = run.advance(collectSurvivors(), leftover); // mutates roster/index BEFORE the overlay reads them
-      if (complete) {
-        const bonus = 120; // clearing the whole ladder is worth a chunk on top of the last battle
-        progression.award(bonus);
-        showRunComplete(reward + bonus);
-      } else {
-        showRunSector(reward);
-      }
-    } else {
-      run.end();
-      showRunDefeat();
-    }
-    return;
-  }
   if (!tutorialActive) {
     const reward = battleReward(victory, sim.difficulty, sim.turn);
     progression.award(reward);
@@ -2422,7 +1946,6 @@ declare global {
       upgradeBaseCommand(): boolean;
       researchTech(nodeId: string): boolean;
       startBattle(mapId: string, modeId: ModeId, difficulty?: Difficulty): void;
-      startRun(seed?: number): void;
       inspectPickup(id: string): void;
       money(team: Team): number;
       cancelOrder(id: string): void;
@@ -2469,7 +1992,6 @@ declare global {
       // Dynamic map events: read current weather/zone state; force one for screenshots/tests.
       environment(): { sandstorm: number; ionstorm: number; notice?: string; zones: Array<{ kind: string; x: number; z: number; radius: number }> };
       forceEvent(kind: "sandstorm" | "barrage" | "collapse" | "ionstorm"): void;
-      startCampaign(id: string): void;
       save(): boolean;
       // True when audio is silenced (settings mute or running under test automation).
       audioMuted(): boolean;
@@ -2523,7 +2045,6 @@ window.__rht = {
   upgradeBaseCommand: () => sim.upgradeBaseCommand(),
   researchTech: (nodeId) => sim.researchTech(nodeId),
   startBattle: (mapId, modeId, difficulty) => startBattle(mapId, modeId, difficulty),
-  startRun: (seed?: number) => { run.begin(seed ?? 12345); startRunBattle(); },
   inspectPickup: (id: string) => inspectPickup(id),
   money: (team) => sim.money(team),
   cancelOrder: (id) => sim.cancelOrder(id),
@@ -2568,7 +2089,6 @@ window.__rht = {
   setHighContrastTeams: (on: boolean) => world.setHighContrastTeams(on),
   environment: () => sim.environment(),
   forceEvent: (kind) => sim.debugForceEvent(kind),
-  startCampaign: (id) => { const m = campaign.mission(id); if (m) startCampaignMission(m); },
   save: () => saveBattle(),
   audioMuted: () => sfx.isMuted,
 };

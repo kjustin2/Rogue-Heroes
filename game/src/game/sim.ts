@@ -503,7 +503,7 @@ export class TacticalSim {
   // Loose cash caches scattered on the field at battle start: a unit that runs over one banks its
   // cash for that team, then it's gone. A "grab the loot" incentive to spread out and take ground.
   readonly pickups: { id: string; x: number; z: number; amount: number }[] = [];
-  // Battle bookkeeping for campaign veterancy/bonuses: kills per player unit, and how
+  // Battle bookkeeping for the Achievements medals: kills per player unit, and how
   // many player field units died this battle.
   readonly killsBy = new Map<string, number>();
   playerLosses = 0;

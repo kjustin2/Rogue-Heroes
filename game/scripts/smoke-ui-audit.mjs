@@ -77,8 +77,7 @@ const SCREENS = [
     await page.evaluate(() => document.querySelectorAll(".pause-overlay").forEach((e) => e.remove()));
   }],
   ["armory", async (page) => { await page.evaluate(() => window.__rht.toMenu()); await delay(400); await page.click('[data-menu="armory"]'); await delay(500); }],
-  ["campaign", async (page) => { await page.evaluate(() => window.__rht.toMenu()); await delay(400); await page.click('[data-menu="campaign"]'); await delay(500); }],
-  ["run", async (page) => { await page.evaluate(() => window.__rht.toMenu()); await delay(400); await page.click('[data-menu="run"]'); await delay(500); }],
+  ["achievements", async (page) => { await page.evaluate(() => window.__rht.toMenu()); await delay(400); await page.click('[data-menu="achievements"]'); await delay(500); }],
   ["targeting", async (page) => {
     await page.evaluate(() => window.__rht.scenario("firefight"));
     await delay(500);

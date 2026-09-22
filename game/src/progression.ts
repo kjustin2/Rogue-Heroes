@@ -23,7 +23,7 @@ export const COSMETICS: readonly Cosmetic[] = [
   { id: "ice", kind: "accent", name: "Glacier Blue", cost: 120, accent: 0x8fe9ff, desc: "Frostline detachment." },
   { id: "royal", kind: "accent", name: "Royal Violet", cost: 150, accent: 0xc08cff, desc: "Honour-guard trim." },
   { id: "crimson", kind: "accent", name: "Crimson Edge", cost: 190, accent: 0xff6b7a, desc: "Veterans of the red line." },
-  { id: "gold", kind: "accent", name: "Gilded Gold", cost: 260, accent: 0xffd166, desc: "Elite campaign honours." },
+  { id: "gold", kind: "accent", name: "Gilded Gold", cost: 260, accent: 0xffd166, desc: "Elite battle honours." },
   { id: "abyss", kind: "accent", name: "Abyssal Teal", cost: 220, accent: 0x2fd4c0, desc: "Deep-strike raiders." },
   { id: "magma", kind: "accent", name: "Magma Red", cost: 240, accent: 0xff5230, desc: "Scorched-earth shock troops." },
   { id: "phantom", kind: "accent", name: "Phantom White", cost: 320, accent: 0xf0f6ff, desc: "Ghost company colours." },

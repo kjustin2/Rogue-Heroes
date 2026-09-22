@@ -418,20 +418,16 @@ export class WorldRenderer {
     // Burning ground: flickering fire ring + rising flame cones + an orange ground glow.
     const flicker = (Math.sin(performance.now() * 0.02) + 1) * 0.5;
     for (const burn of sim.burnZones) {
-      const y = terrainHeightAt(burn) + 0.07;
+      const y = drawnGroundAt(burn) + 0.07;
       const ring = new THREE.Mesh(
-        new THREE.RingGeometry(burn.radius - 0.25, burn.radius, 40),
+        drapedDisc(burn.x, burn.z, burn.radius - 0.25, burn.radius, 40, 0.07),
         new THREE.MeshBasicMaterial({ color: 0xff6b1a, transparent: true, opacity: 0.35 + flicker * 0.3, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }),
       );
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.set(burn.x, y, burn.z);
       this.environmentRoot.add(ring);
       const glow = new THREE.Mesh(
-        new THREE.CircleGeometry(burn.radius * 0.9, 24),
+        drapedDisc(burn.x, burn.z, 0, burn.radius * 0.9, 24, 0.05),
         new THREE.MeshBasicMaterial({ color: 0xff7a2a, transparent: true, opacity: 0.12 + flicker * 0.08, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }),
       );
-      glow.rotation.x = -Math.PI / 2;
-      glow.position.set(burn.x, y - 0.02, burn.z);
       this.environmentRoot.add(glow);
       for (let f = 0; f < 4; f += 1) {
         const t = performance.now() * 0.003 + f * 1.7 + (hash(burn.id) % 10);
@@ -451,21 +447,16 @@ export class WorldRenderer {
     // GAS CLOUDS: a drifting, breathing dome of pale green with a low skirt, so its reach reads
     // on the ground and its volume reads against the units inside it. Sickly, never pretty.
     for (const cloud of sim.gasClouds) {
-      const y = terrainHeightAt(cloud) + 0.05;
-      const breathe = 1 + Math.sin(performance.now() * 0.0011 + (hash(cloud.id) % 7)) * 0.04;
+      const y = drawnGroundAt(cloud) + 0.05;
       const skirt = new THREE.Mesh(
-        new THREE.CircleGeometry(cloud.radius * breathe, 40),
+        drapedDisc(cloud.x, cloud.z, 0, cloud.radius, 40, 0.05),
         new THREE.MeshBasicMaterial({ color: 0x9bd44a, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }),
       );
-      skirt.rotation.x = -Math.PI / 2;
-      skirt.position.set(cloud.x, y, cloud.z);
       this.environmentRoot.add(skirt);
       const rim = new THREE.Mesh(
-        new THREE.RingGeometry(cloud.radius * breathe - 0.14, cloud.radius * breathe, 48),
+        drapedDisc(cloud.x, cloud.z, cloud.radius - 0.14, cloud.radius, 48, 0.06),
         new THREE.MeshBasicMaterial({ color: 0xc8f06a, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }),
       );
-      rim.rotation.x = -Math.PI / 2;
-      rim.position.set(cloud.x, y + 0.01, cloud.z);
       this.environmentRoot.add(rim);
       for (let b = 0; b < 7; b += 1) {
         const t = performance.now() * 0.00035 + b * 2.1 + (hash(cloud.id) % 11);
@@ -482,14 +473,12 @@ export class WorldRenderer {
     // SMOKE: a mortar smoke round. Grey, dense, harmless — it reads as a wall you cannot shoot
     // through, so the blobs are opaque-ish and stacked high rather than a low sickly skirt.
     for (const cloud of sim.smokeClouds) {
-      const y = terrainHeightAt(cloud) + 0.05;
+      const y = drawnGroundAt(cloud) + 0.05;
       const fade = Math.min(1, cloud.turnsLeft / 2);
       const skirt = new THREE.Mesh(
-        new THREE.CircleGeometry(cloud.radius, 40),
+        drapedDisc(cloud.x, cloud.z, 0, cloud.radius, 40, 0.05),
         new THREE.MeshBasicMaterial({ color: 0x6f757a, transparent: true, opacity: 0.22 * fade, side: THREE.DoubleSide, depthWrite: false }),
       );
-      skirt.rotation.x = -Math.PI / 2;
-      skirt.position.set(cloud.x, y, cloud.z);
       this.environmentRoot.add(skirt);
       for (let b = 0; b < 10; b += 1) {
         const t = performance.now() * 0.00025 + b * 1.9 + (hash(cloud.id) % 13);
@@ -507,26 +496,21 @@ export class WorldRenderer {
     const downPulse = (Math.sin(performance.now() * 0.006) + 1) * 0.5;
     for (const entity of sim.entities) {
       if (!entity.downed || !entity.status.alive) continue;
-      const y = terrainHeightAt(entity.position) + 0.06;
       const disc = new THREE.Mesh(
-        new THREE.RingGeometry(0.55 + downPulse * 0.15, 0.7 + downPulse * 0.15, 32),
+        drapedDisc(entity.position.x, entity.position.z, 0.55, 0.7, 32, 0.06),
         new THREE.MeshBasicMaterial({ color: 0xff5c5c, transparent: true, opacity: 0.45 + downPulse * 0.35, side: THREE.DoubleSide, depthWrite: false }),
       );
-      disc.rotation.x = -Math.PI / 2;
-      disc.position.set(entity.position.x, y, entity.position.z);
       this.environmentRoot.add(disc);
     }
     // Friendly mines only — the enemy never sees yours until they step on one.
     const minePulse = Math.sin(performance.now() * 0.009) > 0.2;
     for (const mine of sim.mines) {
       if (mine.team !== "player") continue;
-      const y = terrainHeightAt(mine) + 0.05;
+      const y = drawnGroundAt(mine) + 0.05;
       const disc = new THREE.Mesh(
-        new THREE.CircleGeometry(0.26, 16),
+        drapedDisc(mine.x, mine.z, 0, 0.26, 16, 0.05),
         new THREE.MeshBasicMaterial({ color: 0x39434a, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }),
       );
-      disc.rotation.x = -Math.PI / 2;
-      disc.position.set(mine.x, y, mine.z);
       this.environmentRoot.add(disc);
       if (minePulse) {
         const pip = new THREE.Mesh(
@@ -541,13 +525,11 @@ export class WorldRenderer {
     // Cash caches: a spinning gold diamond bobbing over a warm ground glow — "run over this for money".
     const cachePulse = (Math.sin(performance.now() * 0.005) + 1) * 0.5;
     for (const cache of sim.pickups) {
-      const y = terrainHeightAt(cache) + 0.05;
+      const y = drawnGroundAt(cache) + 0.05;
       const ring = new THREE.Mesh(
-        new THREE.RingGeometry(0.5, 0.74, 32),
+        drapedDisc(cache.x, cache.z, 0.5, 0.74, 32, 0.05),
         new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.26 + cachePulse * 0.24, side: THREE.DoubleSide, depthWrite: false }),
       );
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.set(cache.x, y, cache.z);
       this.environmentRoot.add(ring);
       const coin = new THREE.Mesh(
         new THREE.OctahedronGeometry(0.26),
@@ -560,11 +542,9 @@ export class WorldRenderer {
       // A flat, invisible-but-raycastable disc over the whole footprint so the cache is easy to
       // click (the thin ring + floating coin alone are a fiddly target). Clicking it shows its payout.
       const hit = new THREE.Mesh(
-        new THREE.CircleGeometry(0.74, 16),
+        drapedDisc(cache.x, cache.z, 0, 0.74, 16, 0.08),
         new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
       );
-      hit.rotation.x = -Math.PI / 2;
-      hit.position.set(cache.x, y + 0.03, cache.z);
       hit.userData.pickupId = cache.id;
       this.environmentRoot.add(hit);
       this.pickables.push(hit, coin);
@@ -572,20 +552,15 @@ export class WorldRenderer {
     const pulse = (Math.sin(performance.now() * 0.006) + 1) * 0.5;
     for (const zone of env.zones) {
       const color = zone.kind === "barrage" ? 0xff5a3c : zone.kind === "lightning" ? 0xbfe4ff : 0xffb24a;
-      const y = terrainHeightAt(zone) + 0.07;
       const ring = new THREE.Mesh(
-        new THREE.RingGeometry(zone.radius - 0.4, zone.radius, 72),
+        drapedDisc(zone.x, zone.z, zone.radius - 0.4, zone.radius, 72, 0.07),
         new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4 + pulse * 0.42, side: THREE.DoubleSide, depthWrite: false }),
       );
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.set(zone.x, y, zone.z);
       this.environmentRoot.add(ring);
       const disc = new THREE.Mesh(
-        new THREE.CircleGeometry(zone.radius, 56),
+        drapedDisc(zone.x, zone.z, 0, zone.radius, 56, 0.06),
         new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.06 + pulse * 0.05, side: THREE.DoubleSide, depthWrite: false }),
       );
-      disc.rotation.x = -Math.PI / 2;
-      disc.position.set(zone.x, y, zone.z);
       this.environmentRoot.add(disc);
     }
   }
@@ -743,13 +718,16 @@ export class WorldRenderer {
       if (!mesh.isMesh) return;
       const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
       for (const m of mats) {
-        if (!(m instanceof THREE.MeshStandardMaterial || m instanceof THREE.MeshToonMaterial) || m.transparent) continue;
+        if (!(m instanceof THREE.MeshStandardMaterial || m instanceof THREE.MeshToonMaterial)) continue;
         const key = `${m.uuid.slice(0, 8)}|${mesh.receiveShadow}`;
         if (seen.has(key)) continue;
         seen.add(key);
+        // SYMMETRIC: the twin is the opposite of the live state. A material that is transparent at
+        // warm-up (a fading part) is drawn opaque again later, and soak:gpu caught that opaque
+        // variant (program-key bit 17) compiling mid-resolve when only opaque->transparent was covered.
         const twin = m.clone();
-        twin.transparent = true;
-        twin.opacity = 0.5;
+        twin.transparent = !m.transparent;
+        twin.opacity = twin.transparent ? 0.5 : 1;
         for (const g of geos) {
           const sampler = new THREE.Mesh(g, twin);
           sampler.receiveShadow = mesh.receiveShadow;
@@ -880,40 +858,30 @@ export class WorldRenderer {
       s.hills.forEach((sector, index) => {
         const holder = s.hillHolders?.[index];
         const color = holder === "player" ? 0x6fd7ff : holder === "enemy" ? 0xff7c5e : 0xffe08a;
-        const y = terrainHeightAt(sector);
         const ring = new THREE.Mesh(
-          new THREE.RingGeometry(radius - 0.24, radius, 56),
+          drapedDisc(sector.x, sector.z, radius - 0.24, radius, 56, 0.06),
           new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }),
         );
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.set(sector.x, y + 0.06, sector.z);
         this.objectiveRoot.add(ring);
         const disc = new THREE.Mesh(
-          new THREE.CircleGeometry(radius, 40),
+          drapedDisc(sector.x, sector.z, 0, radius, 40, 0.04),
           new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.09, side: THREE.DoubleSide, depthWrite: false }),
         );
-        disc.rotation.x = -Math.PI / 2;
-        disc.position.set(sector.x, y + 0.04, sector.z);
         this.objectiveRoot.add(disc);
       });
       return;
     }
     if (sim.mode === "hill") {
       const color = s.hillHolder === "player" ? 0x6fd7ff : s.hillHolder === "enemy" ? 0xff7c5e : 0xffe08a;
-      const y = terrainHeightAt(s.hill);
       const ring = new THREE.Mesh(
-        new THREE.RingGeometry(s.hillRadius - 0.28, s.hillRadius, 64),
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.65, side: THREE.DoubleSide, depthWrite: false })
+        drapedDisc(s.hill.x, s.hill.z, s.hillRadius - 0.28, s.hillRadius, 64, 0.06),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.65, side: THREE.DoubleSide, depthWrite: false }),
       );
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.set(s.hill.x, y + 0.06, s.hill.z);
       this.objectiveRoot.add(ring);
       const disc = new THREE.Mesh(
-        new THREE.CircleGeometry(s.hillRadius, 48),
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false })
+        drapedDisc(s.hill.x, s.hill.z, 0, s.hillRadius, 48, 0.04),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false }),
       );
-      disc.rotation.x = -Math.PI / 2;
-      disc.position.set(s.hill.x, y + 0.04, s.hill.z);
       this.objectiveRoot.add(disc);
     } else if (sim.mode === "ctf") {
       for (const flag of s.flags) {
@@ -930,14 +898,12 @@ export class WorldRenderer {
         );
         cloth.position.set(0.42, 1.5, 0);
         pole.add(mast, cloth);
-        pole.position.set(flag.pos.x, terrainHeightAt(flag.pos), flag.pos.z);
+        pole.position.set(flag.pos.x, drawnGroundAt(flag.pos), flag.pos.z);
         this.objectiveRoot.add(pole);
         const homeRing = new THREE.Mesh(
-          new THREE.RingGeometry(1.0, 1.2, 32),
-          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false })
+          drapedDisc(flag.home.x, flag.home.z, 1.0, 1.2, 32, 0.05),
+          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false }),
         );
-        homeRing.rotation.x = -Math.PI / 2;
-        homeRing.position.set(flag.home.x, terrainHeightAt(flag.home) + 0.05, flag.home.z);
         this.objectiveRoot.add(homeRing);
       }
     }
@@ -996,6 +962,7 @@ export class WorldRenderer {
   // Re-theme the whole scene for a map: fog, sky, ground, terrain, grid, and lights.
   applyMap(theme: MapTheme, keepClear: Vec2[] = []): void {
     plateKeepClear.splice(0, plateKeepClear.length, ...keepClear);
+    clearDrapedDiscs();
     // New battlefield: the last battle's scars don't carry over.
     this.disposeAndClear(this.craterRoot);
     this.scorchedIds.clear();
@@ -1058,7 +1025,33 @@ export class WorldRenderer {
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    const material = new THREE.PointsMaterial({ color: spec.color, size: m.size, transparent: true, opacity: m.opacity, depthWrite: false, sizeAttenuation: true });
+    // A soft round mote with a CLAMPED screen size that fades out near the lens. A bare
+    // PointsMaterial draws every point as its full square quad and grows without limit toward the
+    // camera -- that was a 35px solid white square lying over the ice on Frozen Causeway.
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uColor: { value: new THREE.Color(spec.color) },
+        uOpacity: { value: m.opacity },
+        uSize: { value: m.size * window.innerHeight * 0.5 * Math.min(2, window.devicePixelRatio || 1) },
+      },
+      vertexShader: `uniform float uSize; varying float vFade;
+        void main() {
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = min(7.0, uSize / -mv.z);
+          vFade = smoothstep(3.0, 7.0, -mv.z);
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: `uniform vec3 uColor; uniform float uOpacity; varying float vFade;
+        void main() {
+          float a = smoothstep(1.0, 0.25, length(gl_PointCoord - 0.5) * 2.0) * uOpacity * vFade;
+          if (a < 0.01) discard;
+          gl_FragColor = vec4(uColor, a);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+      transparent: true,
+      depthWrite: false,
+    });
     this.ambientPoints = new THREE.Points(geometry, material);
     this.ambientPoints.frustumCulled = false;
     this.ambientVel = vel;
@@ -1449,6 +1442,15 @@ export class WorldRenderer {
       const stepUp = Math.min(TERRAIN_STEP, footprint - centreGround);
       if (stepUp > 0) targetElevation += stepUp;
       if (Math.abs(entity.elevation - centreGround) < 0.01) targetElevation += plateLiftAt(entity.position, centreGround);
+    } else if (entity.kind === "cover") {
+      // Props stand on the DRAWN ground too: a crate on a talus tier or a ground plate sat at the
+      // sim height and was cut off flat by the hillside. Static, so measured once per position.
+      const key = `${entity.position.x},${entity.position.z}`;
+      if (group.userData.liftKey !== key) {
+        group.userData.liftKey = key;
+        group.userData.groundLift = Math.max(0, Math.min(TERRAIN_STEP, drawnGroundAt(entity.position) - terrainHeightAt(entity.position)));
+      }
+      targetElevation += group.userData.groundLift as number;
     }
     const prevElevation = group.userData.renderElevation as number | undefined;
     const ease = prevElevation !== undefined && targetElevation > prevElevation ? 0.45 : 0.2;
@@ -1748,7 +1750,7 @@ export class WorldRenderer {
       this.vpart(group, entity, "right-tread", "apc-wheels", TRACK, { dx: 0.9, metalness: 0.2 });
       this.vpart(group, entity, "turret", "apc-cupola", 0x2b4a5a);
       this.vpart(group, entity, "cannon", "apc-autogun", 0x8e9c98, { metalness: 0.3 });
-      for (const x of [-0.6, 0.6]) this.box(group, entity, "front-plate", [0.34, 0.12, 0.1], [x, 1.02, 1.56], 0xfff4ca, lamp);
+      for (const x of [-0.6, 0.6]) this.box(group, entity, "front-plate", [0.34, 0.12, 0.1], [x, 1.02, 1.56], 0xd8b870, lamp);
       for (const side of [-1, 1]) for (const z of [-0.5, 0.0, 0.5]) this.box(group, entity, "hull", [0.05, 0.16, 0.2], [side * 0.95, 1.42, z], 0x121a1e, stripe);
       this.box(group, entity, "hull", [1.0, 0.1, 0.06], [0, 1.24, -1.47], 0x3a5563, stripe); // ramp stripe
       this.cylinder(group, entity, "turret", 0.025, 0.7, [0.82, 2.3, -0.62], 0xdfeaf2, [0, 0, 0], { accent: true, emissive: glow, emissiveIntensity: 0.16 });
@@ -1763,7 +1765,7 @@ export class WorldRenderer {
       this.vpart(group, entity, "right-tread", "arty-track", TRACK, { dx: 0.9, metalness: 0.2 });
       this.vpart(group, entity, "turret", "arty-mount", 0x2b4a5a);
       this.vpart(group, entity, "cannon", "arty-gun", 0x8e9c98, { metalness: 0.32 });
-      for (const x of [-0.5, 0.5]) this.box(group, entity, "front-plate", [0.3, 0.12, 0.1], [x, 1.16, 1.42], 0xfff4ca, lamp);
+      for (const x of [-0.5, 0.5]) this.box(group, entity, "front-plate", [0.3, 0.12, 0.1], [x, 1.16, 1.42], 0xd8b870, lamp);
       for (const x of [-0.58, 0.58]) this.box(group, entity, "turret", [0.06, 0.1, 0.6], [x, 1.7, -0.3], 0xdaf7ff, stripe);
       this.box(group, entity, "hull", [0.3, 0.06, 0.3], [0.92, 0.78, 0.4], 0xffd9a0, { accent: true, emissive: 0xffa04a, emissiveIntensity: 0.25, bevel: 0.3 });
       return;
@@ -1775,7 +1777,7 @@ export class WorldRenderer {
     this.vpart(group, entity, "right-tread", "tank-track", TRACK, { dx: 0.9, metalness: 0.2 });
     this.vpart(group, entity, "turret", "tank-turret", 0x2b4a5a);
     this.vpart(group, entity, "cannon", "tank-cannon", 0x8e9c98, { metalness: 0.32 });
-    for (const x of [-0.7, 0.7]) this.box(group, entity, "front-plate", [0.4, 0.14, 0.1], [x, 0.95, 1.5], 0xfff4ca, lamp);
+    for (const x of [-0.7, 0.7]) this.box(group, entity, "front-plate", [0.4, 0.14, 0.1], [x, 0.95, 1.5], 0xd8b870, lamp);
     for (const x of [-0.8, 0.8]) this.box(group, entity, "turret", [0.06, 0.12, 0.9], [x, 1.42, 0.05], 0xdaf7ff, stripe);
     this.box(group, entity, "turret", [0.12, 0.1, 0.12], [0.34, 1.8, -0.12], 0x8df0ff, { accent: true, emissive: glow, emissiveIntensity: 0.85, bevel: 0.3 });
     for (const x of [-0.7, 0.7]) this.box(group, entity, "hull", [0.14, 0.14, 0.06], [x, 1.1, -1.72], 0x151b1d, { emissive: 0xff7d26, emissiveIntensity: 0.18, bevel: 0.3 });
@@ -1852,8 +1854,8 @@ export class WorldRenderer {
       this.box(group, entity, "front-plate", [1.86, 0.66, 0.2], [0, 1.12, 0.6], 0x9fb0ac, { metalness: 0.12 });
       this.box(group, entity, "hull", [1.6, 0.12, 1.18], [0, 1.58, -0.06], 0x274550, { metalness: 0.18 });
       this.box(group, entity, "turret", [0.62, 0.34, 0.7], [0, 1.66, 0.08], 0x46606e, { metalness: 0.2 });
-      this.box(group, entity, "cannon", [0.14, 0.14, 0.78], [0.16, 1.78, 0.46], 0xd9e6df, { metalness: 0.3 });
-      this.box(group, entity, "cannon", [0.2, 0.18, 0.14], [0.16, 1.78, 0.86], 0xffffff, { emissive: factionGlow, emissiveIntensity: 0.32 });
+      this.box(group, entity, "cannon", [0.14, 0.14, 0.78], [0.16, 1.78, 0.46], 0x7c8a84, { metalness: 0.3 });
+      this.box(group, entity, "cannon", [0.2, 0.18, 0.14], [0.16, 1.78, 0.86], 0x2c3e48, { emissive: factionGlow, emissiveIntensity: 0.32 });
       for (const z of [-0.42, 0.06, 0.54]) {
         this.box(group, entity, "hull", [0.05, 0.22, 0.2], [0.99, 1.16, z], 0x121a1e, { emissive: factionGlow, emissiveIntensity: 0.18 });
         this.box(group, entity, "hull", [0.05, 0.22, 0.2], [-0.99, 1.16, z], 0x121a1e, { emissive: factionGlow, emissiveIntensity: 0.18 });
@@ -1873,7 +1875,7 @@ export class WorldRenderer {
     // Tank / artillery: a real turret with a long main gun.
     this.box(group, entity, "turret", [1.08, 0.44, 0.86], [0, 1.12, 0.04], 0x5ba2c5);
     this.box(group, entity, "turret", [0.78, 0.16, 0.56], [0, 1.42, -0.08], 0x25444d, { metalness: 0.2 });
-    this.box(group, entity, "cannon", [0.24, 0.24, 1.45], [0, 1.16, 1.03], 0xd9e6df, { metalness: 0.35 });
+    this.box(group, entity, "cannon", [0.24, 0.24, 1.45], [0, 1.16, 1.03], 0x7c8a84, { metalness: 0.35 });
     this.box(group, entity, "cannon", [0.36, 0.34, 0.22], [0, 1.16, 1.8], 0xffffff, { emissive: 0x88ecff, emissiveIntensity: 0.28 });
     this.box(group, entity, "cannon", [0.42, 0.1, 0.16], [0, 1.32, 0.52], 0x121617, { metalness: 0.36 });
     this.box(group, entity, "turret", [0.44, 0.16, 0.18], [-0.58, 1.34, -0.16], 0xdaf7ff, { emissive: 0x50d7ff, emissiveIntensity: 0.4 });
@@ -1907,7 +1909,7 @@ export class WorldRenderer {
     const factionGlow = entity.team === "enemy" ? TEAMS.enemyAccent : 0x50d7ff;
     const factionPanel = entity.team === "enemy" ? 0x6a2722 : 0x123f55;
     this.box(group, entity, "hull", [1.0, 0.58, 2.0], [0, 0, 0], 0x5a93ad, { metalness: 0.22 });        // body
-    this.box(group, entity, "hull", [0.72, 0.4, 0.8], [0, 0.16, 0.72], 0x9fc0d0, { metalness: 0.22 });   // cockpit
+    this.box(group, entity, "hull", [0.72, 0.4, 0.8], [0, 0.16, 0.72], 0x5b8aa0, { metalness: 0.22 });   // cockpit
     this.box(group, entity, "hull", [0.3, 0.28, 1.4], [0, 0.06, -1.25], 0x466070, { metalness: 0.2 });   // tail boom
     this.box(group, entity, "hull", [0.5, 0.34, 0.12], [0, 0.28, -1.85], factionPanel, { emissive: factionGlow, emissiveIntensity: 0.22 }); // tail fin
     // Main rotor (mobility): a mast + two crossed blades — spun each frame in syncEntity.
@@ -1916,8 +1918,8 @@ export class WorldRenderer {
     this.box(group, entity, "rotor", [0.16, 0.04, 3.0], [0, 0.7, 0.05], 0x14181a);
     this.box(group, entity, "rotor", [0.06, 0.72, 0.06], [0.2, 0.06, -1.9], 0x14181a);                    // tail rotor
     // Chin autocannon (weapon).
-    this.box(group, entity, "gun", [0.26, 0.26, 0.7], [0, -0.3, 0.92], 0xd9e6df, { metalness: 0.35 });
-    this.box(group, entity, "gun", [0.32, 0.32, 0.16], [0, -0.3, 1.32], 0xffffff, { emissive: factionGlow, emissiveIntensity: 0.4 });
+    this.box(group, entity, "gun", [0.26, 0.26, 0.7], [0, -0.3, 0.92], 0x7c8a84, { metalness: 0.35 });
+    this.box(group, entity, "gun", [0.32, 0.32, 0.16], [0, -0.3, 1.32], 0x2c3e48, { emissive: factionGlow, emissiveIntensity: 0.4 });
     // Bomb rack (pack/volatile).
     this.box(group, entity, "pack", [0.72, 0.16, 0.95], [0, -0.44, -0.05], 0x3a4042, { metalness: 0.22 });
     for (const x of [-0.24, 0.24]) this.box(group, entity, "pack", [0.16, 0.3, 0.55], [x, -0.58, -0.05], 0xffb02e, { emissive: 0xff7d26, emissiveIntensity: 0.32 });
@@ -1933,12 +1935,12 @@ export class WorldRenderer {
     const factionGlow = entity.team === "enemy" ? TEAMS.enemyAccent : 0x50d7ff;
     const factionPanel = entity.team === "enemy" ? 0x6a2722 : 0x123f55;
     this.box(group, entity, "hull", [0.5, 0.4, 2.4], [0, 0, 0], 0x6a8a9a, { metalness: 0.3 });         // fuselage
-    this.box(group, entity, "hull", [0.34, 0.32, 0.7], [0, 0.04, 1.25], 0x9fc0d0, { metalness: 0.3 });  // canopy
-    this.box(group, entity, "hull", [0.16, 0.14, 0.5], [0, 0, 1.7], 0xd9e6df, { metalness: 0.35 });      // nose tip
+    this.box(group, entity, "hull", [0.34, 0.32, 0.7], [0, 0.04, 1.25], 0x5b8aa0, { metalness: 0.3 });  // canopy
+    this.box(group, entity, "hull", [0.16, 0.14, 0.5], [0, 0, 1.7], 0x7c8a84, { metalness: 0.35 });      // nose tip
     for (const side of [-1, 1]) this.box(group, entity, "wing", [1.5, 0.06, 0.9], [side * 0.9, -0.02, -0.2], 0x4a6472, { rotation: [0, side * 0.5, 0], metalness: 0.25 }); // swept delta wings
     for (const side of [-1, 1]) this.box(group, entity, "hull", [0.06, 0.42, 0.42], [side * 0.22, 0.22, -1.05], factionPanel, { emissive: factionGlow, emissiveIntensity: 0.26 }); // twin tail fins
-    for (const side of [-1, 1]) this.box(group, entity, "gun", [0.1, 0.1, 0.8], [side * 0.5, -0.06, 0.62], 0xd9e6df, { metalness: 0.4 }); // wing cannons
-    for (const side of [-1, 1]) this.box(group, entity, "gun", [0.14, 0.14, 0.14], [side * 0.5, -0.06, 1.02], 0xffffff, { emissive: factionGlow, emissiveIntensity: 0.4 }); // muzzles
+    for (const side of [-1, 1]) this.box(group, entity, "gun", [0.1, 0.1, 0.8], [side * 0.5, -0.06, 0.62], 0x7c8a84, { metalness: 0.4 }); // wing cannons
+    for (const side of [-1, 1]) this.box(group, entity, "gun", [0.14, 0.14, 0.14], [side * 0.5, -0.06, 1.02], 0x2c3e48, { emissive: factionGlow, emissiveIntensity: 0.4 }); // muzzles
     for (const side of [-1, 1]) this.box(group, entity, "hull", [0.22, 0.22, 0.34], [side * 0.16, 0, -1.3], 0xff8c3a, { emissive: 0xff6a1e, emissiveIntensity: 0.55 }); // engine cans
     const shadow = makeContactShadow(entity.radius * 1.1);
     shadow.position.y = -(entity.agl ?? 7.5);
@@ -1949,7 +1951,7 @@ export class WorldRenderer {
   // bomb bay. No gun. Slow and unmistakably a bomb truck, distinct from the fighter and the gunship.
   private buildBomber(group: THREE.Group, entity: CombatEntity): void {
     this.box(group, entity, "hull", [1.1, 0.7, 3.0], [0, 0, 0], 0x5f6f66, { metalness: 0.18 });        // fuselage
-    this.box(group, entity, "hull", [0.7, 0.5, 0.9], [0, 0.22, 1.3], 0x9fb0a6, { metalness: 0.2 });     // cockpit
+    this.box(group, entity, "hull", [0.7, 0.5, 0.9], [0, 0.22, 1.3], 0x6f8479, { metalness: 0.2 });     // cockpit
     this.box(group, entity, "hull", [0.3, 0.55, 0.5], [0, 0.4, -1.72], 0x46564e);                       // tail fin
     this.box(group, entity, "hull", [1.5, 0.06, 0.42], [0, 0.5, -1.62], 0x46564e);                      // tailplane
     for (const side of [-1, 1]) this.box(group, entity, "engine", [2.4, 0.12, 1.0], [side * 1.7, 0.02, -0.1], 0x4a5a52, { metalness: 0.18 }); // long wings
@@ -1966,7 +1968,7 @@ export class WorldRenderer {
   private buildTransport(group: THREE.Group, entity: CombatEntity): void {
     const factionGlow = entity.team === "enemy" ? TEAMS.enemyAccent : 0x50d7ff;
     this.box(group, entity, "hull", [1.2, 0.9, 2.2], [0, 0, 0], 0x6a7a6a, { metalness: 0.18 });       // cargo cabin
-    this.box(group, entity, "hull", [0.9, 0.5, 0.7], [0, 0.2, 1.2], 0x9fc0d0, { metalness: 0.2 });     // cockpit glass
+    this.box(group, entity, "hull", [0.9, 0.5, 0.7], [0, 0.2, 1.2], 0x5b8aa0, { metalness: 0.2 });     // cockpit glass
     this.box(group, entity, "hull", [0.32, 0.32, 1.5], [0, 0.22, -1.5], 0x46564e);                     // tail boom
     this.box(group, entity, "hull", [0.5, 0.42, 0.12], [0, 0.46, -2.15], 0x46564e, { emissive: factionGlow, emissiveIntensity: 0.2 }); // tail fin
     this.cylinder(group, entity, "rotor", 0.08, 0.42, [0, 0.64, 0.05], 0x2a3236);                      // rotor mast
@@ -1989,8 +1991,8 @@ export class WorldRenderer {
     this.box(group, entity, "right-tread", [0.3, 0.45, 1.62], [1.1, 0.28, 0], 0x22282a);
     for (const side of [-1, 1]) for (const z of [-0.5, 0, 0.5]) this.cylinder(group, entity, side < 0 ? "left-tread" : "right-tread", 0.24, 0.14, [side * 1.12, 0.28, z], 0x0d1112);
     this.box(group, entity, "gun", [0.72, 0.42, 0.72], [0, 1.02, -0.08], 0x46606e, { metalness: 0.2 }); // gun mount
-    for (const x of [-0.15, 0.15]) this.cylinder(group, entity, "gun", 0.07, 1.15, [x, 1.55, 0.15], 0xd9e6df, [0.95, 0, 0], { metalness: 0.35 }); // barrels angled up
-    this.box(group, entity, "gun", [0.42, 0.16, 0.16], [0, 2.05, 0.6], 0xffffff, { emissive: factionGlow, emissiveIntensity: 0.42 }); // muzzle
+    for (const x of [-0.15, 0.15]) this.cylinder(group, entity, "gun", 0.07, 1.15, [x, 1.55, 0.15], 0x7c8a84, [0.95, 0, 0], { metalness: 0.35 }); // barrels angled up
+    this.box(group, entity, "gun", [0.42, 0.16, 0.16], [0, 2.05, 0.6], 0x2c3e48, { emissive: factionGlow, emissiveIntensity: 0.42 }); // muzzle
     this.cylinder(group, entity, "radar", 0.05, 0.55, [-0.72, 1.2, -0.42], 0x3a4042);
     this.box(group, entity, "radar", [0.52, 0.5, 0.06], [-0.72, 1.6, -0.42], 0x8fb0c0, { emissive: factionGlow, emissiveIntensity: 0.22, rotation: [0.32, 0.42, 0], accent: true });
   }
@@ -2821,7 +2823,6 @@ export class WorldRenderer {
     // the ground colour. Stone leans further into the map (a rock is OF the ground); wood, foliage
     // and hardware keep most of their own hue and only pick up the map's cast.
     this.tintPropToMap(group, stone ? 0.5 : steel ? 0.12 : 0.3, stone ? this.rockTint : this.propTint);
-    this.interactionGlow(group, entity, volatile);
   }
 
   /**
@@ -2996,28 +2997,6 @@ export class WorldRenderer {
     });
   }
 
-  private interactionGlow(group: THREE.Group, entity: CombatEntity, volatile: boolean): void {
-    // Neutral cover glows warm white — cyan is reserved for the player team, so a crate
-    // must never wear the same edge light as friendly kit.
-    const color = entity.coverKind === "cliff" ? 0xb48cff : volatile ? 0xffca6b : entity.coverKind === "ridge" ? 0xf0c37a : 0xffe9c4;
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.72, depthWrite: false });
-    const width = Math.max(0.58, entity.radius * 1.08);
-    const depth = Math.max(0.42, entity.radius * 0.54);
-    const y = Math.max(0.34, entity.height * 0.58);
-    for (const [sx, sy, sz, x, z, rotation] of [
-      [width, 0.035, 0.055, 0, depth, 0],
-      [width, 0.035, 0.055, 0, -depth, 0],
-      [0.055, 0.035, width * 0.72, depth, 0, 0],
-      [0.055, 0.035, width * 0.72, -depth, 0, 0],
-    ] as const) {
-      const glow = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat);
-      glow.position.set(x, y, z);
-      glow.rotation.y = rotation;
-      glow.userData.decor = true;
-      group.add(glow);
-    }
-  }
-
   private box(
     group: THREE.Group,
     entity: CombatEntity,
@@ -3085,9 +3064,20 @@ export class WorldRenderer {
     // LineSegments and therefore a whole extra draw call, so only the few shapes that carry a
     // trooper's silhouette at tactical distance are worth tracing.
     if (materialOptions.outline && isInfantryKind(entity.kind) && OUTLINED_PARTS.has(partId)) this.outline(mesh);
-    if (materialOptions.ink) this.inkRim(mesh, size, materialOptions.ink);
+    const ink = materialOptions.ink ?? this.defaultInk(entity, materialOptions.accent);
+    if (ink) this.inkRim(mesh, size, ink);
     group.add(mesh);
     return mesh;
+  }
+
+  /**
+   * Every procedurally built machine (aircraft, flak, the fallback hulls) wears the same ink rim as
+   * the vehicles kit. Without it the flyers were the one family of soft, outline-less boxes on the
+   * board and read as blurry next to everything else. Troopers and scenery keep their own rules;
+   * accent lamps stay rimless so a glow is never boxed in black.
+   */
+  private defaultInk(entity: CombatEntity, accent?: boolean): number {
+    return !accent && entity.kind !== "cover" && !isInfantryKind(entity.kind) ? VEHICLE_INK : 0;
   }
 
   // Inverted-hull ink rim: a BackSide copy of the part, scaled so the rim is `width` thick in
@@ -3123,6 +3113,8 @@ export class WorldRenderer {
     );
     mesh.position.set(pos[0], pos[1], pos[2]);
     mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
+    const ink = this.defaultInk(entity, materialOptions.accent);
+    if (ink) this.inkRim(mesh, [radius * 2, depth, radius * 2], ink);
     mesh.userData.roughness = roughness;
     mesh.userData.metalness = metalness;
     setShadowBudget(mesh, Math.max(depth, radius * 2));
@@ -4569,21 +4561,15 @@ function makeUnitMarker(entity: CombatEntity, color: number): THREE.Group {
   const group = new THREE.Group();
   const radius = Math.max(0.18, Math.min(0.48, entity.radius * 0.34));
   const ringMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.72, side: THREE.DoubleSide, depthWrite: false, depthTest: false });
-  const pipMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.72, side: THREE.DoubleSide, depthWrite: false, depthTest: false });
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(radius, radius + 0.035, 24),
     ringMaterial
   );
   ring.rotation.x = -Math.PI / 2;
-  const pip = new THREE.Mesh(
-    new THREE.CircleGeometry(radius * 0.34, 18),
-    pipMaterial
-  );
-  pip.rotation.x = -Math.PI / 2;
-  pip.position.y = 0.015;
+  // The ring alone: the white pip that sat inside it bloomed into a soft white blob over every
+  // unit -- the brightest thing above an aircraft, and part of why the flyers read blurry.
   group.userData.ringMaterial = ringMaterial;
-  group.userData.pipMaterial = pipMaterial;
-  group.add(ring, pip);
+  group.add(ring);
   // No floating type tag — each unit's distinct silhouette (built in buildSoldier /
   // buildTank) is what identifies its kind now, so the battlefield stays uncluttered.
   updateUnitMarker(group, entity, color, 0.5);
@@ -4696,6 +4682,37 @@ function discMaskTexture(): THREE.CanvasTexture {
   return _discMask;
 }
 
+/** The ground as DRAWN: talus tiers and the cosmetic plates both rise above terrainHeightAt. */
+function drawnGroundAt(p: Vec2): number {
+  return Math.max(visualGroundAt(p), terrainHeightAt(p) + plateLiftAt(p, terrainHeightAt(p)));
+}
+
+/**
+ * A flat ground ring/disc (inner 0 = filled) laid over the DRAWN ground in world space, cached by its
+ * arguments and marked shared so the per-frame overlay rebuilds reuse it. A disc placed flat at the
+ * sim height buried itself in the next plate or step -- a pickup ring read as a tan comma with the
+ * coin floating over it. Cache is cleared per map (clearDrapedDiscs).
+ */
+const drapedDiscs = new Map<string, THREE.BufferGeometry>();
+function drapedDisc(x: number, z: number, inner: number, outer: number, segments: number, lift: number): THREE.BufferGeometry {
+  const key = [x, z, inner, outer].map((n) => n.toFixed(2)).join(",") + `,${segments},${lift}`;
+  let geo = drapedDiscs.get(key);
+  if (geo) return geo;
+  // Filled discs get radial rings too, so their interior follows a step instead of bridging it.
+  const rings = Math.max(1, Math.min(12, Math.ceil((outer - inner) / 0.45)));
+  geo = new THREE.RingGeometry(inner, outer, segments, rings).rotateX(-Math.PI / 2).translate(x, 0, z);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i += 1) pos.setY(i, drawnGroundAt({ x: pos.getX(i), z: pos.getZ(i) }) + lift);
+  geo.computeBoundingSphere();
+  geo.userData.shared = true;
+  drapedDiscs.set(key, geo);
+  return geo;
+}
+function clearDrapedDiscs(): void {
+  for (const geo of drapedDiscs.values()) geo.dispose();
+  drapedDiscs.clear();
+}
+
 function drapeToTerrain(mesh: THREE.Mesh, lift: number): void {
   const pos = mesh.geometry.attributes.position as THREE.BufferAttribute;
   const s = mesh.scale.x || 1;
@@ -4703,8 +4720,7 @@ function drapeToTerrain(mesh: THREE.Mesh, lift: number): void {
     const wx = mesh.position.x + pos.getX(i) * s;
     const wz = mesh.position.z - pos.getY(i) * s; // local +y is world -z once laid flat
     const p = { x: wx, z: wz };
-    // The ground as drawn: talus tiers and the cosmetic plates both rise above terrainHeightAt.
-    const ground = Math.max(visualGroundAt(p), terrainHeightAt(p) + plateLiftAt(p, terrainHeightAt(p)));
+    const ground = drawnGroundAt(p);
     pos.setZ(i, (ground + lift - mesh.position.y) / s);
   }
   pos.needsUpdate = true;
@@ -4715,7 +4731,7 @@ function makeSplashDisc(position: Vec2, color: number, radius: number): THREE.Gr
   const group = new THREE.Group();
   const y = terrainHeightAt(position) + 0.085;
   const fill = new THREE.Mesh(
-    new THREE.CircleGeometry(radius, 64),
+    new THREE.RingGeometry(0, radius, 64, 6), // radial rings so the drape follows a step
     new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false })
   );
   fill.rotation.x = -Math.PI / 2;
@@ -4729,6 +4745,9 @@ function makeSplashDisc(position: Vec2, color: number, radius: number): THREE.Gr
   );
   ring.rotation.x = -Math.PI / 2;
   ring.position.set(position.x, y + 0.012, position.z);
+  // Draped like the move field: a flat disc at the landing height sank into the next step.
+  drapeToTerrain(fill, 0.085);
+  drapeToTerrain(ring, 0.097);
   group.add(fill, ring);
   return group;
 }
@@ -5288,58 +5307,6 @@ function bakeVertexAO(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
   return geometry;
 }
 
-const PART_DETAIL_NORMAL_SCALE = new THREE.Vector2(0.45, 0.45);
-let _partDetailNormal: THREE.CanvasTexture | undefined;
-/**
- * A 256px tiling normal map for infantry parts: a fine woven grain with a few scratched plate
- * lines and rivet dimples. Generated once from a height field (sobel), shared by every pooled
- * part material, so it costs one texture for the whole roster.
- */
-function partDetailNormal(): THREE.CanvasTexture {
-  if (_partDetailNormal) return _partDetailNormal;
-  const size = 256;
-  const h = new Float32Array(size * size);
-  let seed = 0x5eed1234;
-  const rand = (): number => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 0xffffffff; };
-  for (let y = 0; y < size; y += 1) for (let x = 0; x < size; x += 1) {
-    // Weave: two crossed sine grains plus noise.
-    h[y * size + x] = 0.5 + 0.06 * Math.sin(x * 0.9) * Math.sin(y * 0.9) + 0.04 * (rand() - 0.5);
-  }
-  // Plate lines (shallow grooves) and rivets, wrapped.
-  for (let i = 0; i < 6; i += 1) {
-    const y0 = Math.floor(rand() * size);
-    for (let x = 0; x < size; x += 1) { h[((y0) % size) * size + x] -= 0.12; h[((y0 + 1) % size) * size + x] -= 0.08; }
-    const x0 = Math.floor(rand() * size);
-    for (let y = 0; y < size; y += 1) { h[y * size + (x0 % size)] -= 0.12; h[y * size + ((x0 + 1) % size)] -= 0.08; }
-  }
-  for (let i = 0; i < 40; i += 1) {
-    const cx = Math.floor(rand() * size), cy = Math.floor(rand() * size);
-    for (let dy = -2; dy <= 2; dy += 1) for (let dx = -2; dx <= 2; dx += 1) {
-      if (dx * dx + dy * dy > 4) continue;
-      h[((cy + dy + size) % size) * size + ((cx + dx + size) % size)] += 0.1;
-    }
-  }
-  const canvas = document.createElement("canvas");
-  canvas.width = size; canvas.height = size;
-  const ctx = canvas.getContext("2d")!;
-  const img = ctx.createImageData(size, size);
-  for (let y = 0; y < size; y += 1) for (let x = 0; x < size; x += 1) {
-    const l = h[y * size + ((x - 1 + size) % size)], r = h[y * size + ((x + 1) % size)];
-    const u = h[((y - 1 + size) % size) * size + x], d = h[((y + 1) % size) * size + x];
-    const nx = (l - r) * 2, ny = (u - d) * 2;
-    const len = Math.hypot(nx, ny, 1);
-    const o = (y * size + x) * 4;
-    img.data[o] = Math.round((nx / len * 0.5 + 0.5) * 255);
-    img.data[o + 1] = Math.round((ny / len * 0.5 + 0.5) * 255);
-    img.data[o + 2] = Math.round((1 / len * 0.5 + 0.5) * 255);
-    img.data[o + 3] = 255;
-  }
-  ctx.putImageData(img, 0, 0);
-  _partDetailNormal = new THREE.CanvasTexture(canvas);
-  _partDetailNormal.wrapS = _partDetailNormal.wrapT = THREE.RepeatWrapping;
-  _partDetailNormal.repeat.set(2, 2);
-  return _partDetailNormal;
-}
 
 const bevelCache = new Map<string, THREE.BufferGeometry>();
 
@@ -6978,11 +6945,9 @@ function partMaterial(spec: PartMatSpec): PartMaterial {
     // material identity but a toon material has neither; the ramp carries the read.
     material = new THREE.MeshToonMaterial({
       vertexColors: true, // baked AO — see bakeVertexAO
-      // One shared detail normal map (weave + plate scratches) on every part: this is what
-      // separates "painted plastic" from "equipment" under the key light. Authored kit parts
-      // export UVs for it; primitives have theirs already.
-      normalMap: partDetailNormal(),
-      normalScale: PART_DETAIL_NORMAL_SCALE,
+      // NO detail normal map. A weave normal under a four-band toon ramp jittered every band edge:
+      // speckle up close (units read blurry) and a minified dashed hatch on large facets at range
+      // (glitch sweep 4b, tree canopies). Flat bands + the ink rim are the toon read.
       gradientMap: toonGradient(),
       color: spec.color,
       emissive: spec.emissive,

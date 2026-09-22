@@ -19,7 +19,7 @@ const serve = () => new Promise((resolve) => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const scenarios = process.argv.slice(2).filter((a) => !a.startsWith("-"));
 if (!scenarios.length) scenarios.push("menu", "firefight", "high-ground", "siege", "base-defense", "lineup");
-// UI cases (all real-GPU, full FX): menu deploy settings armory campaign run tutorial pause victory defeat hover
+// UI cases (all real-GPU, full FX): menu deploy settings armory achievements tutorial pause victory defeat hover
 // viewports = battle + deck + tech + mapselect + settings at 1280x720 / 1600x900 / 1920x1080 / 2560x1080
 
 app.whenReady().then(async () => {
@@ -81,9 +81,7 @@ app.whenReady().then(async () => {
       if (s === "deploy") { await toTitle(); await clickMenu('[data-menu="play"]'); await shot("deploy"); continue; }
       if (s === "settings") { await toTitle(); await clickMenu('[data-menu="settings"]'); await shot("settings"); continue; }
       if (s === "armory") { await toTitle(); await clickMenu('[data-menu="armory"]'); await shot("armory"); continue; }
-      if (s === "briefing") { await toTitle(); await clickMenu('[data-menu="campaign"]'); await clickMenu('[data-mission]'); await shot("briefing"); continue; }
-      if (s === "campaign") { await toTitle(); await clickMenu('[data-menu="campaign"]'); await shot("campaign"); continue; }
-      if (s === "run") { await toTitle(); await clickMenu('[data-menu="run"]'); await shot("run"); continue; }
+      if (s === "achievements") { await toTitle(); await clickMenu('[data-menu="achievements"]'); await shot("achievements"); continue; }
       if (s === "pause") {
         // The in-battle pause card over a live firefight, then its Controls sub-page.
         await js(`window.__rht.scenario("firefight"); window.__rht.deselect();`);
@@ -230,8 +228,8 @@ app.whenReady().then(async () => {
         continue;
       }
       if (s === "boot") {
-        // The first six seconds after launch, then the campaign mission intro flyover: 12 frames each
-        // at 400ms so a flashing/flickering sequence is visible as a strip.
+        // The first six seconds after launch, then the skirmish intro flyover: frames at 300-400ms
+        // so a flashing/flickering sequence is visible as a strip.
         const strip = async (name, frames, gap) => {
           const sharp = require("sharp");
           const tiles = [];
@@ -245,13 +243,10 @@ app.whenReady().then(async () => {
         await win.webContents.reload();
         await sleep(300);
         await strip("boot-title", 12, 400);
-        await js(`(() => { const b = document.querySelector('[data-menu="campaign"]'); if (b) b.click(); })()`);
-        await sleep(1200);
-        await js(`(() => { const m = document.querySelector('[data-mission]'); if (m) m.click(); })()`);
-        await sleep(800);
-        await js(`(() => { const b = [...document.querySelectorAll("button")].find((x) => /deploy to battle/i.test(x.textContent || "")); if (b) b.click(); })()`);
+        await js(`(() => { const b = document.querySelector('[data-menu="play"]'); if (b) b.click(); })()`);
+        await sleep(900);
+        await js(`(() => { const b = document.querySelector("[data-start]"); if (b) b.click(); })()`);
         await sleep(200);
-        if (process.env.PROBE) { const views = []; for (let i = 0; i < 60; i += 1) { views.push(await js(`(() => { const v = window.__rht.viewState ? window.__rht.viewState() : null; return v ? [v.x.toFixed(2), v.z.toFixed(2), v.zoom.toFixed(3), v.yaw.toFixed(3), v.pitch.toFixed(3)].join(",") : "?"; })()`)); await sleep(30); } console.log("views:", views.join(" | ")); }
         await strip("boot-mission", 20, 300);
         continue;
       }
@@ -378,6 +373,36 @@ app.whenReady().then(async () => {
         await shot("volley-late");
         await js(`window.__rht.setResolveScale(1)`);
         await sleep(4000);
+        continue;
+      }
+      if (s === "tech") {
+        // The base's Tech tab at 1600x900: fresh (nothing researched) and mid-game (a branch bought).
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(1500);
+        const openTech = async () => { await js(`(() => { const sim = window.__rht.sim; sim.economy.set("player", 9000); const base = sim.entities.find((e) => e.team === "player" && e.kind === "base"); sim.select(base.id); })()`); await sleep(500); await js(`(() => { const b = document.querySelector('[data-base-tab="tech"]'); if (b) b.click(); })()`); await sleep(600); };
+        await openTech();
+        await shot("tech-fresh");
+        await js(`(() => { const base = window.__rht.sim.entities.find((e) => e.team === "player" && e.kind === "base"); base.unlockedTech = ["assault", "armor", "recon", "breach"]; })()`);
+        await openTech();
+        await shot("tech-mid");
+        continue;
+      }
+      if (s === "air") {
+        // The four flyers, both teams, low over the field with a trooper for scale.
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(1500);
+        await js(`(() => { const sim = window.__rht.sim;
+          ["gunship","interceptor","bomber","transport"].forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -7 + i * 5, z: 2.5 }); u.yaw = 0.5; });
+          ["gunship","bomber"].forEach((k, i) => { const u = sim.debugSpawn(k, "enemy", { x: -4 + i * 6, z: -5 }); u.yaw = 2.6; });
+          const s1 = sim.debugSpawn("soldier", "player", { x: 9.5, z: 2.5 }); s1.yaw = 0.5;
+          window.__rht.deselect(); })()`);
+        await sleep(2500);
+        await js(`window.__rht.setView({ x: 0, z: -2, zoom: 0.8, pitch: 0.95, yaw: 0.35 })`);
+        await sleep(600);
+        await shot("air");
+        await js(`window.__rht.setView({ x: -4.5, z: -1.5, zoom: 0.42, pitch: 0.9, yaw: 0.7 })`);
+        await sleep(600);
+        await shot("air-close");
         continue;
       }
       if (s === "vehicles" || s === "structures") {

@@ -34,7 +34,7 @@ symbols fail the build.
 | A/B two screenshots (hottest region, 3× crop) / inspect a GLB | `npm run shots:diff a.png b.png out.png`, `npm run art:inspect <glb>` |
 | Start one map headless and print the in-page error | `npm run probe:map <id>` |
 | **Real-GPU frame-time probe** (hidden Electron, diffs compiled programs across resolves) | `npm run soak:gpu [scenario]` |
-| **Real-GPU screenshots** (`-- menu firefight lineup rings abilities direction nowalk maps volley vehicles structures …`; `vehicles` / `structures` = the vehicles-kit review frames, both teams; `maps` = one gameplay frame per battlefield (`volley` = a seven-family firing line mid-resolve: rounds, trails, flashes, blasts on the real GPU); UI screens `deploy settings armory campaign run tutorial pause victory defeat hover hover-deck`; `mapselect` shoots the Skirmish page at 1280×720 / 1600×900 / 2560×1080; `SHOT_PREFIX=before-` for a baseline build) | `npm run shots:gpu` |
+| **Real-GPU screenshots** (`-- menu firefight lineup rings abilities direction nowalk maps volley vehicles structures …`; `vehicles` / `structures` = the vehicles-kit review frames, both teams; `maps` = one gameplay frame per battlefield (`volley` = a seven-family firing line mid-resolve: rounds, trails, flashes, blasts on the real GPU); UI screens `deploy settings armory achievements tech tutorial pause victory defeat hover hover-deck`; `air` = the four flyers, both teams; `mapselect` shoots the Skirmish page at 1280×720 / 1600×900 / 2560×1080; `SHOT_PREFIX=before-` for a baseline build) | `npm run shots:gpu` |
 | Locomotion filmstrips (`-- walk` flat-ground stride in profile, `march` scout, `trudge` heavy, `crouch`, `step` = up a terrain step vs talus / plates) | `npm run shots:step` |
 | Build + Electron gameplay smoke | `npm run test:play` |
 | Desktop app (build + Electron) | `npm run standalone` |
@@ -546,12 +546,21 @@ origin-keyed, so a new port every launch silently wipes all saves** (real 06-24 
 ## Persistence
 
 All localStorage, keyed `rht.*`: `rht.settings.v1` (incl. `keybinds`,
-`highContrastTeams`, `debugInfiniteMoney`/`debugFreeCooldown`), `rht.progression.v1` (purely cosmetic), `rht.savedBattle.v1`,
-`rht.campaign.v1` (mission clears + roster/veterancy + requisition),
-`rht.run.v1` (Skirmish Run: seed + sector index + carried roster/banked cash — the
-in-battle sim itself still saves to `rht.savedBattle.v1`, so a paused sector resumes
-via Continue like a campaign mission), `rht.commander.v1` (battle stats, medals,
-doctrine mastery — cosmetic).
+`highContrastTeams`, `debugInfiniteMoney`/`debugFreeCooldown`), `rht.progression.v1` (purely cosmetic),
+`rht.savedBattle.v1`, `rht.commander.v1` (battle stats, medals + the distinct map/mode/faction wins the
+Achievements page counts, doctrine mastery — cosmetic).
+
+## SKIRMISH ONLY (owner's rule, 2026-09-22)
+
+**"Just skirmish mode for now — we want it actually perfected before anything else."** Campaign and
+Skirmish Run were deleted (`campaign.ts`, `run.ts`, their screens, tests, CSS, `startCampaign` /
+`startRun` on the seam, the `campaign` / `run` / `briefing` shot cases). Do NOT reintroduce either,
+or add another mode/ladder, until the owner asks. Banned identifiers (grep to zero): `rht.campaign.v1`,
+`rht.run.v1`, `startCampaignMission`, `startRunBattle`, `showCampaign`, `showRunIntro`, `RUN_LENGTH`,
+`requisition`, `campaign-card`. The main menu is Continue / Play Skirmish, the tutorial link, and
+Achievements · Armory · Settings · Exit. Elites/bosses (`debugSpawn` options + the top-of-screen boss
+bar) survive only for a future Skirmish set piece. The mission-intro rail now plays at the start of
+every Skirmish battle.
 
 ## UI language: TOON (2026-09-18)
 
