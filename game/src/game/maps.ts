@@ -351,11 +351,12 @@ const RAW_MAPS: readonly MapDef[] = [
       maxHeight: 3.6,
       blocks: [
         { minX: -4.5, maxX: 4.5, minZ: -4.5, maxZ: 4.5, height: 0.7 }, // central rise (the contested hill)
-        // The dry river bed: low banks either side of the centre lane (a step, not a wall).
-        { minX: -25, maxX: -6.5, minZ: 3.6, maxZ: 5.2, height: 0.5 },   // west bed, north bank
-        { minX: -25, maxX: -6.5, minZ: -5.2, maxZ: -3.6, height: 0.5 }, // west bed, south bank
-        { minX: 6.5, maxX: 25, minZ: 3.6, maxZ: 5.2, height: 0.5 },     // east bed, north bank
-        { minX: 6.5, maxX: 25, minZ: -5.2, maxZ: -3.6, height: 0.5 },   // east bed, south bank
+        // The dry river bed: low banks either side of the centre lane (a step, not a wall). They
+        // stop short of each base so a gun parked at home still has the whole bed as a firing lane.
+        { minX: -21, maxX: -6.5, minZ: 3.6, maxZ: 5.2, height: 0.5 },   // west bed, north bank
+        { minX: -21, maxX: -6.5, minZ: -5.2, maxZ: -3.6, height: 0.5 }, // west bed, south bank
+        { minX: 6.5, maxX: 21, minZ: 3.6, maxZ: 5.2, height: 0.5 },     // east bed, north bank
+        { minX: 6.5, maxX: 21, minZ: -5.2, maxZ: -3.6, height: 0.5 },   // east bed, south bank
         // Plateau outposts (climbable mesas that overlook the river bed).
         { minX: -17, maxX: -9, minZ: 5.5, maxZ: 12, height: 0.85 },    // west plateau
         { minX: 9, maxX: 17, minZ: -12, maxZ: -5.5, height: 0.85 },    // east plateau (mirror)
@@ -365,15 +366,18 @@ const RAW_MAPS: readonly MapDef[] = [
         { minX: 18, maxX: 21, minZ: 8, maxZ: 12, height: 1.6 },        // east butte (stacked)
         // The canyon passes: sheer sandstone walls (unclimbable) with a one-lane corridor between,
         // open at both ends and through one gap in the inner wall at the middle.
+        // The inner walls are SHORT buttresses, not a second range: a full-length pair sheltered
+        // the whole flank and took the basin's firing lanes with it (balance self-play: the
+        // artillery row halved on this map).
         { minX: -13, maxX: 13, minZ: 18.5, maxZ: 22, height: 2.4 },    // north canyon, outer wall
-        { minX: -13, maxX: -2.5, minZ: 12.5, maxZ: 15.5, height: 2.4 }, // north canyon, inner wall (west)
-        { minX: 2.5, maxX: 13, minZ: 12.5, maxZ: 15.5, height: 2.4 },   // north canyon, inner wall (east)
+        { minX: -12, maxX: -6.5, minZ: 12.5, maxZ: 15, height: 2.4 },  // north canyon, buttress (west)
+        { minX: 6.5, maxX: 12, minZ: 12.5, maxZ: 15, height: 2.4 },    // north canyon, buttress (east)
         { minX: -13, maxX: 13, minZ: -22, maxZ: -18.5, height: 2.4 },  // south canyon, outer wall
-        { minX: -13, maxX: -2.5, minZ: -15.5, maxZ: -12.5, height: 2.4 }, // south canyon, inner wall (west)
-        { minX: 2.5, maxX: 13, minZ: -15.5, maxZ: -12.5, height: 2.4 }, // south canyon, inner wall (east)
+        { minX: -12, maxX: -6.5, minZ: -15, maxZ: -12.5, height: 2.4 }, // south canyon, buttress (west)
+        { minX: 6.5, maxX: 12, minZ: -15, maxZ: -12.5, height: 2.4 },  // south canyon, buttress (east)
         // Spires off the river bed: they break the long straight shot without closing the lane.
-        { minX: -14, maxX: -12, minZ: -10.5, maxZ: -6.5, height: 2.4 }, // west spire
-        { minX: 12, maxX: 14, minZ: 6.5, maxZ: 10.5, height: 2.4 },     // east spire (mirror)
+        { minX: -14, maxX: -12, minZ: -10.5, maxZ: -8, height: 2.4 },   // west spire (short: a long one walled the basin)
+        { minX: 12, maxX: 14, minZ: 8, maxZ: 10.5, height: 2.4 },       // east spire (mirror)
       ],
     },
     playerBase: { x: -31, z: 0 },
@@ -383,17 +387,17 @@ const RAW_MAPS: readonly MapDef[] = [
     hillRadius: 4.2,
     scatter: [
       // The river bed: what fell off the convoy.
-      { palette: ["wreck", "crate", "fuel", "ammo", "barricade", "sandbag"], count: 4, spacing: 1.2, rect: { minX: -25, maxX: -16, minZ: -3, maxZ: 3 } },
+      { palette: ["wreck", "crate", "fuel", "ammo", "barricade", "sandbag"], count: 3, spacing: 1.2, rect: { minX: -25, maxX: -16, minZ: -3.2, maxZ: 3.2 } },
       // The plateau camp around the derrick.
       { palette: ["tent", "tent", "sandbag", "ammo", "bunker", "crate"], count: 4, spacing: 1.0, rect: { minX: -16.4, maxX: -9.6, minZ: 6.2, maxZ: 11.4 } },
       // Scrub at the canyon mouths and across the open basin.
-      { palette: ["rock", "cactus", "cactus", "rock", "rubble"], count: 5, spacing: 1.5, rect: { minX: -31, maxX: -14, minZ: 12, maxZ: 20 } },
-      { palette: ["rock", "cactus", "rubble", "cactus", "rock"], count: 5, spacing: 1.5, rect: { minX: -31, maxX: -6, minZ: -12, maxZ: -6 } },
+      { palette: ["rock", "cactus", "cactus", "rock", "rubble"], count: 3, spacing: 1.5, rect: { minX: -31, maxX: -14, minZ: 12, maxZ: 20 } },
+      { palette: ["rock", "cactus", "rubble", "cactus", "rock"], count: 3, spacing: 1.5, rect: { minX: -31, maxX: -12, minZ: -12, maxZ: -6 } },
     ],
     signature: [
       // The dead convoy, strung along the river bed where it was caught in the open.
-      { kind: "convoy", x: -15, z: 0.6, yaw: 0.18, mirror: true },
-      { kind: "convoy", x: -8, z: 1.4, yaw: -0.35, mirror: true },
+      { kind: "convoy", x: -15.5, z: 2.9, yaw: 0.18, mirror: true },
+      { kind: "convoy", x: -6.5, z: -2.9, yaw: -0.35, mirror: true },
       { kind: "derrick", x: -13, z: 8.6, yaw: 0.4, mirror: true },
       { kind: "rock", x: -6, z: 4, mirror: true, radius: 1.3, height: 1.6 },
       { kind: "sandbag", x: -3.2, z: -2.4, mirror: true },
@@ -497,8 +501,8 @@ const RAW_MAPS: readonly MapDef[] = [
       ],
       // The mill ponds: still water on the hill's shoulders; ground units go round, flyers over.
       water: [
-        { minX: -10, maxX: -4.5, minZ: 6, maxZ: 10.5 },   // west mill pond
-        { minX: 4.5, maxX: 10, minZ: -10.5, maxZ: -6 },   // east mill pond (mirror)
+        { minX: -14, maxX: -9, minZ: 6.5, maxZ: 10.5 },   // west mill pond
+        { minX: 9, maxX: 14, minZ: -10.5, maxZ: -6.5 },   // east mill pond (mirror)
       ],
     },
     playerBase: { x: -24, z: 0 },
@@ -510,15 +514,15 @@ const RAW_MAPS: readonly MapDef[] = [
     events: [{ kind: "lightning", startTurn: 4, period: 1, power: 46 }],
     scatter: [
       // The orchard: fruit trees planted in rows.
-      { palette: ["tree"], count: 14, spacing: 0.5, rect: { minX: -23, maxX: -8, minZ: -15.5, maxZ: -5 }, grid: { dx: 3.0, dz: 3.0, jitter: 0.25 } },
+      { palette: ["tree"], count: 9, spacing: 0.5, rect: { minX: -23, maxX: -10, minZ: -15.5, maxZ: -7 }, grid: { dx: 3.4, dz: 3.4, jitter: 0.25 } },
       // Chapel green: the yard of stones, stumps and scrub around the ruin.
-      { palette: ["rubble", "stump", "bush", "bush", "rock", "log"], count: 5, spacing: 1.2, rect: { minX: -23, maxX: -12, minZ: 3, maxZ: 13 } },
+      { palette: ["rubble", "stump", "bush", "bush", "rock", "log"], count: 5, spacing: 1.2, rect: { minX: -24, maxX: -16, minZ: -1, maxZ: 9 } },
       // Field edge between the orchard and the pass.
       { palette: ["bush", "log", "sandbag", "rock"], count: 3, spacing: 1.6, rect: { minX: -20, maxX: -7, minZ: -4, maxZ: 3 }, centerGap: 6.5 },
     ],
     signature: [
-      { kind: "chapel", x: -18.5, z: 8, yaw: 0.35, mirror: true },
-      { kind: "mill", x: -12.2, z: 8.6, yaw: 0, mirror: true },
+      { kind: "chapel", x: -21, z: 3.5, yaw: 0.35, mirror: true },
+      { kind: "mill", x: -16.2, z: 8.6, yaw: 0, mirror: true },
       { kind: "rock", x: -4.5, z: -6.8, mirror: true, radius: 1.1 },
       { kind: "tree", x: -7.6, z: 3.2, mirror: true },
       { kind: "tree", x: -11.5, z: 1.6, mirror: true },
@@ -574,11 +578,11 @@ const RAW_MAPS: readonly MapDef[] = [
     hillRadius: 3.6,
     scatter: [
       // The fishing village: huts and tents on a loose grid, sleds and stumps between.
-      { palette: ["hut", "hut", "hut", "stump", "log"], count: 8, spacing: 0.4, rect: { minX: -33, maxX: -17, minZ: -17, maxZ: -6 }, grid: { dx: 3.6, dz: 3.6, jitter: 0.5 } },
+      { palette: ["hut", "hut", "hut", "stump", "log"], count: 6, spacing: 0.4, rect: { minX: -33, maxX: -19, minZ: -17, maxZ: -8 }, grid: { dx: 4.2, dz: 4.2, jitter: 0.5 } },
       // The harbour: the freighter's cargo, spilled and frozen in.
       { palette: ["container", "container", "crate", "fuel", "wreck", "barricade"], count: 5, spacing: 1.0, rect: { minX: -31, maxX: -17, minZ: 6, maxZ: 17 } },
       // The causeway: a wrecked supply route's debris.
-      { palette: ["rubble", "rock", "wall", "wreck", "sandbag", "crate"], count: 6, spacing: 1.6, minZ: -6, maxZ: 6, centerGap: 2.5 },
+      { palette: ["rubble", "rock", "wall", "wreck", "sandbag", "crate"], count: 4, spacing: 1.8, minZ: -6, maxZ: 6, centerGap: 2.5, rect: { minX: -18, maxX: -6, minZ: -6, maxZ: 6 } },
     ],
     signature: [
       { kind: "hull", x: -24.5, z: 11.5, yaw: 0.55, mirror: true },
@@ -625,8 +629,8 @@ const RAW_MAPS: readonly MapDef[] = [
         { minX: 13, maxX: 20, minZ: 11.5, maxZ: 17, height: 1.6 },   // NE amphitheatre (mid)
         { minX: 15, maxX: 18, minZ: 14, maxZ: 17, height: 2.4 },     // NE amphitheatre (stage)
         // Tower stumps: sheer ruin walls framing the precinct's south and north corners.
-        { minX: -9, maxX: -6.5, minZ: -14, maxZ: -10, height: 3.2 }, // west tower stump
-        { minX: 6.5, maxX: 9, minZ: 10, maxZ: 14, height: 3.2 },     // east tower stump (mirror)
+        { minX: -13, maxX: -10.5, minZ: -16, maxZ: -12.5, height: 3.2 }, // west tower stump
+        { minX: 10.5, maxX: 13, minZ: 12.5, maxZ: 16, height: 3.2 },     // east tower stump (mirror)
       ],
       // The old aqueduct burst: a flooded ravine runs down each side of the centre. Ground units
       // take one of three crossings per side (or go the long way around the ends); flyers overfly.
@@ -650,7 +654,7 @@ const RAW_MAPS: readonly MapDef[] = [
     hillRadius: 3.2,
     scatter: [
       // The colonnade: standing pillars in a line down each side of the precinct.
-      { palette: ["pillar"], count: 5, spacing: 0.3, rect: { minX: -7.6, maxX: -6.0, minZ: -9, maxZ: 9 }, grid: { dx: 2, dz: 3.2, jitter: 0.15 }, centerGap: 5.5 },
+      { palette: ["pillar"], count: 3, spacing: 0.3, rect: { minX: -7.6, maxX: -6.0, minZ: -9, maxZ: 9 }, grid: { dx: 2, dz: 4.6, jitter: 0.15 }, centerGap: 5.5 },
       // The amphitheatre tiers: broken statues on the steps.
       { palette: ["statue", "statue", "pillar", "rubble"], count: 3, spacing: 1.0, rect: { minX: -21.5, maxX: -11.5, minZ: -16.5, maxZ: -9.5 } },
       // The approaches: fallen city between the cistern and the ravine, scrub reclaiming it.
@@ -718,7 +722,7 @@ const RAW_MAPS: readonly MapDef[] = [
     hillRadius: 3.8,
     scatter: [
       // The trench line: a run of sandbags from the nest toward the checkpoint.
-      { palette: ["sandbag"], count: 3, spacing: 0.15, rect: { minX: -11, maxX: -2, minZ: -9.4, maxZ: -8.6 }, grid: { dx: 2.2, dz: 1, jitter: 0.1 }, centerGap: 1.5 },
+      { palette: ["sandbag"], count: 3, spacing: 0.15, rect: { minX: -13, maxX: -7, minZ: -9.4, maxZ: -8.6 }, grid: { dx: 2.4, dz: 1, jitter: 0.1 }, centerGap: 6 },
       // The radar station's plant.
       { palette: ["conduit", "ammo", "container", "sandbag", "crate"], count: 4, spacing: 1.0, rect: { minX: -24, maxX: -17, minZ: 4, maxZ: 13.5 } },
       // Scrub in the open ground between the nests and the streams.
