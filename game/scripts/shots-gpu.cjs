@@ -199,6 +199,36 @@ app.whenReady().then(async () => {
         }
         continue;
       }
+      if (s === "temporal") {
+        // Consecutive real-GPU frames at FULL resolve speed during a volley: a shape that pops,
+        // splotches or flickers frame to frame shows up as a difference between neighbours.
+        const sharp = require("sharp");
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(1500);
+        await js(`(() => { const sim = window.__rht.sim; sim.economy.set("player", 9000);
+          const line = [["soldier", -3], ["heavy", -1.8], ["sniper", -0.6], ["flamer", 0.6], ["mortar", 1.8], ["tank", 3.4], ["apc", 5.2]];
+          const actors = line.map(([k, z]) => sim.debugSpawn(k, "player", { x: -4, z }));
+          const targets = line.map(([, z], i) => sim.debugSpawn(i % 2 ? "soldier" : "heavy", "enemy", { x: (i % 2 ? 4 : 6), z }));
+          for (const t of targets) { for (const p of t.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0; t.status.canShoot = false; t.status.canMove = false; t.commandPoints = 0; t.maxCommandPoints = 0; }
+          actors.forEach((a, i) => { sim.select(a.id); sim.setIntent("shoot"); sim.queueShoot(targets[i].id); });
+          window.__rht.deselect(); window.__rht.setView({ x: 0.5, z: 1, zoom: 0.62, pitch: 0.55, yaw: 0.9 });
+          window.__rht.setResolveScale(0.5); window.__rht.endTurn(); })()`);
+        for (let i = 0; i < 60; i += 1) { if (await js(`window.__rht.sim.projectiles.length`)) break; await sleep(50); }
+        await sleep(350);
+        const frames = [];
+        for (let i = 0; i < 12; i += 1) { await js(`window.__rht.setView({ x: 0.5, z: 1, zoom: 0.62, pitch: 0.55, yaw: 0.9 })`); frames.push((await win.webContents.capturePage({ x: 300, y: 150, width: 1000, height: 600 })).toPNG()); }
+        const tiles = await Promise.all(frames.map((b) => sharp(b).resize(400, 240).png().toBuffer()));
+        await sharp({ create: { width: 1600, height: 720, channels: 3, background: "#000" } })
+          .composite(tiles.map((input, i) => ({ input, left: (i % 4) * 400, top: Math.floor(i / 4) * 240 }))).png()
+          .toFile(path.join(__dirname, "..", "shots", "gpu-temporal.png"));
+        // Full-size pair for close inspection.
+        fs.writeFileSync(path.join(__dirname, "..", "shots", "gpu-temporal-a.png"), frames[4]);
+        fs.writeFileSync(path.join(__dirname, "..", "shots", "gpu-temporal-b.png"), frames[5]);
+        console.log("shot: gpu-temporal.png (+ -a/-b full pair)");
+        await js(`window.__rht.setResolveScale(1)`);
+        await sleep(4000);
+        continue;
+      }
       if (s === "boot") {
         // The first six seconds after launch, then the campaign mission intro flyover: 12 frames each
         // at 400ms so a flashing/flickering sequence is visible as a strip.
