@@ -5,7 +5,7 @@ every row names its proof, nothing is DONE from code alone.
 
 | # | Ask (owner's words) | Owner | Status | Proof |
 |---|---|---|---|---|
-| 1a | Infantry walk looks weird/unnatural | motion agent | RUNNING | `shots:step` + `shots:filmstrip -- walk` read by eye; smoke:animation gate |
+| 1a | Infantry walk looks weird/unnatural | motion agent | DONE (merged) | `filmstrip-walk/-march/-trudge/-crouch.png`; gait.ts + legSplit.ts, skate 2.00→0.08 cm/frame (gate fault-injected) |
 | 1b | Gun turret does not aim where it fires | main | DONE | `filmstrip-turret.png` (no idle hunt in resolve, 4 rad/s traverse) |
 | 1c | GUI text hard to read — larger/easier where applicable | gui agent | DONE (merged) | auditUI small-text + contrast rules (fault-injected), type floors; `gpu-firefight.png` |
 | 2 | Deploy from base: pick WHERE in the circle the unit lands | deploy agent | DONE (merged) | `gpu-deployflow-ring/-placed.png`, deploy.test.ts (6), smokes deploy via a point |

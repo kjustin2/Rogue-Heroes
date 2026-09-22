@@ -131,6 +131,72 @@ app.whenReady().then(async () => {
         " if (Math.abs(pr.x - ndc.x) < 0.035 && Math.abs(pr.y - ndc.y) < 0.055 && pr.z < 1) out.push({ name: o.name || '(anon)', geo: o.geometry.type, mat: o.material.type, color: o.material.color && o.material.color.getHexString(), y: +v.y.toFixed(2), parent: o.parent && (o.parent.name || o.parent.type), pr: [+pr.x.toFixed(3), +pr.y.toFixed(3)] }); });" +
         " return JSON.stringify(out.slice(0, 25)); })()"));
     }
+
+    if (probe === "shadowzoom") {
+      // SHADOW_RADIUS is a FIXED 42 world units (stage.ts:56) while the interactive wheel clamp
+      // lets the player zoom out to 2.6. Anything outside the 42-unit window samples the shadow
+      // map's CLAMPED BORDER texel, which smears as flat grey regions + long straight streaks.
+      // Bisection: capture with the key light casting, then with castShadow = false, at each zoom.
+      const map = arg || "dustbowl";
+      await js("window.__rht.startBattle(" + JSON.stringify(map) + ", \"destroy\", \"normal\"); window.__rht.deselect();");
+      await sleep(3500);
+      for (const zoom of [0.8, 1.2, 1.6, 2.0, 2.6]) {
+        await js("window.__rht.setView({ x: 0, z: 0, zoom: 0.62, pitch: 0.6, yaw: 0.2 })"); await sleep(500);
+        // debugSetView CLAMPS zoom to 1.55; the interactive wheel clamp goes to 2.6. Drive the
+        // wheel so the framing is one a player can actually reach.
+        await js("(() => { const c = document.querySelector('canvas'); const n = Math.round((" + zoom + " - 0.62) / 0.05); for (let i = 0; i < n; i += 1) c.dispatchEvent(new WheelEvent('wheel', { deltaY: 120, bubbles: true, clientX: 800, clientY: 450 })); })()");
+        await sleep(1500);
+        console.log("  actual view " + (await js("JSON.stringify(window.__rht.viewState())")));
+        await js("window.__rht.sceneObject().traverse((o) => { if (o.isDirectionalLight && o.castShadow) o.castShadow = true; })");
+        await sleep(300);
+        const a = await cap();
+        await js("window.__rht.sceneObject().traverse((o) => { if (o.isDirectionalLight) { o.userData.hadShadow = o.castShadow; o.castShadow = false; } })");
+        await sleep(500);
+        const b = await cap();
+        await js("window.__rht.sceneObject().traverse((o) => { if (o.isDirectionalLight && o.userData.hadShadow) o.castShadow = true; })");
+        const bl = blobs(await raw(a), await raw(b), 16);
+        // A shadow-map BORDER SMEAR is a huge, solidly-filled region; a real shadow is small.
+        const huge = bl.filter((x) => x.n > 20000);
+        const area = bl.reduce((t, x) => t + x.n, 0);
+        console.log(map + " zoom " + zoom + ": shadow pixels " + (+(area / (1600 * 900) * 100).toFixed(2)) + "%, blobs " + bl.length +
+          ", biggest " + (bl[0] ? bl[0].w + "x" + bl[0].h + " n=" + bl[0].n + " fill=" + bl[0].fill : "-") + ", regions>20k px: " + huge.length);
+        const pair = await sharp({ create: { width: 1600, height: 900 * 2 + 8, channels: 3, background: "#101010" } })
+          .composite([{ input: a, left: 0, top: 0 }, { input: b, left: 0, top: 908 }]).png().toBuffer();
+        fs.writeFileSync(path.join(outDir, "shadowzoom-" + map + "-" + String(zoom).replace(".", "p") + ".png"), pair);
+      }
+      console.log("  shadowzoom-*.png written (top = shadows ON, bottom = key light castShadow OFF)");
+    }
+
+    if (probe === "wedge") {
+      // What is the flat grey region at max zoom-out? Hide the big meshes ONE AT A TIME and watch
+      // the colour of a probe pixel inside the region.
+      const map = arg || "dustbowl";
+      await js("window.__rht.startBattle(" + JSON.stringify(map) + ", \"destroy\", \"normal\"); window.__rht.deselect();");
+      await sleep(3500);
+      await js("window.__rht.setView({ x: 0, z: 0, zoom: 0.62, pitch: 0.6, yaw: 0.2 })"); await sleep(400);
+      await js("(() => { const c = document.querySelector('canvas'); for (let i = 0; i < 60; i += 1) c.dispatchEvent(new WheelEvent('wheel', { deltaY: 300, bubbles: true, clientX: 800, clientY: 450 })); })()");
+      await sleep(1600);
+      console.log("view " + (await js("JSON.stringify(window.__rht.viewState())")));
+      const list = JSON.parse(await js("(() => { const out = []; let i = 0; window.__rht.sceneObject().traverse((o) => { if (!o.isMesh || !o.visible) return; o.userData.__probeIdx = i; o.geometry.computeBoundingSphere(); const r = o.geometry.boundingSphere.radius * Math.max(o.scale.x, o.scale.y, o.scale.z); if (r > 20) out.push({ idx: i, r: +r.toFixed(1), geo: o.geometry.type, mat: o.material.type, color: o.material.color ? o.material.color.getHexString() : '', y: +o.position.y.toFixed(2), name: o.name || '', parent: (o.parent && (o.parent.name || o.parent.type)) || '' }); i += 1; }); return JSON.stringify(out); })()"));
+      console.log("big meshes: " + JSON.stringify(list, null, 1));
+      const a = await cap();
+      fs.writeFileSync(path.join(outDir, "wedge-" + map + "-base.png"), a);
+      const px = async (buf, x, y) => { const { data, ch } = await raw(buf); const i = (y * 1600 + x) * ch; return [data[i], data[i + 1], data[i + 2]]; };
+      const PX = [[1500, 800], [1450, 720], [1560, 760]];
+      for (const p0 of PX) console.log("probe pixel " + p0 + " base rgb " + (await px(a, p0[0], p0[1])));
+      for (const m of list) {
+        await js("window.__rht.sceneObject().traverse((o) => { if (o.userData && o.userData.__probeIdx === " + m.idx + ") o.visible = false; })");
+        await sleep(350);
+        const b = await cap();
+        const bl = blobs(await raw(a), await raw(b), 16);
+        const changed = bl.reduce((t, x) => t + x.n, 0);
+        const cols = []; for (const p0 of PX) cols.push((await px(b, p0[0], p0[1])).join(","));
+        console.log("hide idx " + m.idx + " (" + m.geo + " r=" + m.r + " col=" + m.color + " y=" + m.y + "): changed " + (+(changed / 14400).toFixed(2)) + "% | probe px -> " + cols.join(" | "));
+        if (changed > 50000) fs.writeFileSync(path.join(outDir, "wedge-" + map + "-hide-" + m.idx + ".png"), b);
+        await js("window.__rht.sceneObject().traverse((o) => { if (o.userData && o.userData.__probeIdx === " + m.idx + ") o.visible = true; })");
+        await sleep(200);
+      }
+    }
   } catch (e) { console.error("probe failed:", e); process.exitCode = 1; }
   finally { server.close(); app.quit(); }
 });
