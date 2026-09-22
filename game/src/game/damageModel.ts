@@ -841,7 +841,7 @@ export const COVER_PROFILES: Record<CoverKind, CoverProfile> = {
   railcar: { hp: 130, radius: 1.9, height: 1.8, volatile: false, label: "Rail Car" },
   chapel: { hp: 300, radius: 2.4, height: 3.65, volatile: false, label: "Chapel Ruin" },
   mill: { hp: 180, radius: 1.9, height: 3.2, volatile: false, label: "Old Mill" },
-  hull: { hp: 360, radius: 2.9, height: 3.2, volatile: false, label: "Beached Hull" },
+  hull: { hp: 360, radius: 3.6, height: 4.2, volatile: false, label: "Beached Hull" },
   hut: { hp: 60, radius: 1.1, height: 1.9, volatile: false, label: "Fishing Hut" },
   colossus: { hp: 340, radius: 2.8, height: 1.7, volatile: false, label: "Fallen Colossus" },
   cistern: { hp: 200, radius: 2.1, height: 1.8, volatile: false, label: "Cistern" },

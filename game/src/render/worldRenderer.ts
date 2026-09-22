@@ -2721,11 +2721,14 @@ export class WorldRenderer {
     }
     const stone = entity.coverKind === "rock" || entity.coverKind === "rubble" || entity.coverKind === "statue"
       || entity.coverKind === "chapel" || entity.coverKind === "colossus" || entity.coverKind === "cistern";
+    // A steel landmark keeps its own colour: at the prop tint the furnace and the hull went the
+    // colour of the slag and the ice they stand on.
+    const steel = isLandmarkKind(entity.coverKind) && !stone;
     // Light touch: this tint was a silent no-op for months (it tested for MeshStandardMaterial after
     // the parts went toon) and the prop palette was tuned without it; at 0.7 every trunk and log went
     // the ground colour. Stone leans further into the map (a rock is OF the ground); wood, foliage
     // and hardware keep most of their own hue and only pick up the map's cast.
-    this.tintPropToMap(group, stone ? 0.5 : 0.3, stone ? this.rockTint : this.propTint);
+    this.tintPropToMap(group, stone ? 0.5 : steel ? 0.12 : 0.3, stone ? this.rockTint : this.propTint);
     this.interactionGlow(group, entity, volatile);
   }
 
@@ -2748,10 +2751,11 @@ export class WorldRenderer {
     const rough = { roughness: 0.94 };
     if (kind === "convoy") {
       const g = authored("convoy");
-      if (g) this.box(group, entity, part.id, [4.51, 1.94, 1.95], [0.16, 0.81, 0], 0x6e6248, { geometry: g, ...rough });
+      // Olive drab, well below the sand's value: the first cut was the ground colour and vanished.
+      if (g) this.box(group, entity, part.id, [4.51, 1.94, 1.95], [0.16, 0.81, 0], 0x454a36, { geometry: g, ...rough });
       else {
-        this.box(group, entity, part.id, [2.2, 0.22, 1.6], [-0.55, 0.7, 0], 0x6e6248, rough);
-        this.box(group, entity, part.id, [1.15, 1.1, 1.45], [1.1, 1.15, 0], 0x6e6248, { ...rough, rotation: [0, 0, -0.16] });
+        this.box(group, entity, part.id, [2.2, 0.22, 1.6], [-0.55, 0.7, 0], 0x454a36, rough);
+        this.box(group, entity, part.id, [1.15, 1.1, 1.45], [1.1, 1.15, 0], 0x454a36, { ...rough, rotation: [0, 0, -0.16] });
         this.box(group, entity, part.id, [0.7, 0.7, 0.7], [-0.2, 1.11, 0.25], 0x8a6f3f, rough);
         for (const [x, z] of [[-1.1, -0.8], [-1.1, 0.8], [0.95, 0.8]] as const) this.cylinder(group, entity, part.id, 0.42, 0.3, [x, 0.42, z], 0x242220, [Math.PI / 2, 0, 0], rough);
       }
@@ -2770,7 +2774,7 @@ export class WorldRenderer {
       this.sphere(group, entity, part.id, 0.14, [0, 4.55, 0], 0xff4a3a, { emissive: 0xff3a2a, emissiveIntensity: 0.8, accent: true });
     } else if (kind === "furnace") {
       const g = authored("furnace");
-      if (g) this.box(group, entity, part.id, [5.13, 4.4, 3.1], [-0.765, 2.2, 0], 0x4d4b50, { geometry: g, roughness: 0.75, metalness: 0.32 });
+      if (g) this.box(group, entity, part.id, [5.13, 4.4, 3.1], [-0.765, 2.2, 0], 0x33353a, { geometry: g, roughness: 0.75, metalness: 0.32 });
       else {
         this.box(group, entity, part.id, [3.2, 0.7, 3.0], [0, 0.35, 0], 0x4d4b50, { metalness: 0.3 });
         this.cylinder(group, entity, part.id, 0.95, 3.0, [0, 2.2, 0], 0x4d4b50, [0, 0, 0], { radiusBottom: 1.35, metalness: 0.32 });
@@ -2778,8 +2782,9 @@ export class WorldRenderer {
       }
       // The tap hole and the throat glow: the furnace is lit from inside, nothing else here is.
       this.box(group, entity, part.id, [0.7, 0.5, 0.3], [0, 0.95, 1.45], 0xff8a2a, { emissive: 0xff5a10, emissiveIntensity: 0.75 });
-      this.cylinder(group, entity, part.id, 0.55, 0.06, [0, 4.42, 0], 0xffb040, [0, 0, 0], { emissive: 0xff7a1a, emissiveIntensity: 0.6 });
-      this.box(group, entity, part.id, [0.5, 0.12, 0.6], [2.1, 0.86, -0.9], 0xffa030, { emissive: 0xff6a10, emissiveIntensity: 0.5 }); // molten slag in the ladle
+      this.cylinder(group, entity, part.id, 0.4, 0.06, [0, 4.3, 0], 0xffb040, [0, 0, 0], { emissive: 0xff7a1a, emissiveIntensity: 0.6 });
+      // Molten slag in the ladle. Blender +Y exports to -Z, so the ladle authored at y=-0.9 sits at z=+0.9.
+      this.box(group, entity, part.id, [0.5, 0.12, 0.6], [2.1, 0.86, 0.9], 0xffa030, { emissive: 0xff6a10, emissiveIntensity: 0.5 });
     } else if (kind === "railcar") {
       const g = authored("railcar");
       const body = v % 2 === 0 ? 0x6d3b2c : 0x4a5560;
@@ -2799,7 +2804,7 @@ export class WorldRenderer {
         this.box(group, entity, part.id, [4.6, 0.12, 3.0], [0, 0.06, 0], 0x8a8274, rough);
       }
       // Ivy on the north wall and a candle still lit at the altar.
-      this.box(group, entity, part.id, [1.3, 1.2, 0.12], [-1.0, 1.0, 1.66], 0x3f6a2c, { roughness: 1, bevel: 0.4 });
+      this.box(group, entity, part.id, [1.0, 1.1, 0.08], [-1.2, 0.95, 1.62], 0x3f6a2c, { roughness: 1, bevel: 0.4 });
       this.sphere(group, entity, part.id, 0.09, [-1.5, 1.0, 0], 0xffd88a, { emissive: 0xffb040, emissiveIntensity: 0.7, accent: true });
     } else if (kind === "mill") {
       const g = authored("mill");
@@ -2812,15 +2817,16 @@ export class WorldRenderer {
       this.box(group, entity, part.id, [0.5, 0.6, 0.06], [-1.58, 1.5, -0.6], 0xffd28a, { emissive: 0xffa040, emissiveIntensity: 0.5 }); // lit window
     } else if (kind === "hull") {
       const g = authored("hull");
-      if (g) this.box(group, entity, part.id, [5.78, 4.45, 2.81], [0.01, 2.225, 0.245], 0x3f4b55, { geometry: g, roughness: 0.82, metalness: 0.3 });
+      // Drawn a third over its authored size: at 1:1 it read as a launch next to the containers.
+      if (g) this.box(group, entity, part.id, [7.5, 5.8, 3.65], [0.01, 2.9, 0.32], 0x2f3a44, { geometry: g, roughness: 0.82, metalness: 0.3 });
       else {
         this.box(group, entity, part.id, [5.6, 1.9, 2.4], [0, 1.05, 0], 0x3f4b55, { rotation: [0.22, 0, 0], metalness: 0.3 });
         this.box(group, entity, part.id, [1.6, 1.1, 1.5], [-1.5, 2.6, 0], 0x55606a, { rotation: [0.22, 0, 0], metalness: 0.3 });
         this.cylinder(group, entity, part.id, 0.3, 1.1, [-2.3, 2.9, 0], 0x2f3236, [0.22, 0, 0], { metalness: 0.3 });
       }
       // Rust at the waterline and a navigation lamp still burning on the bridge.
-      this.box(group, entity, part.id, [4.2, 0.5, 0.1], [-0.3, 0.75, -1.24], 0x7a4a2c, { roughness: 1 });
-      this.sphere(group, entity, part.id, 0.12, [-1.5, 3.7, -0.3], 0x7fe8ff, { emissive: 0x4fd8ff, emissiveIntensity: 0.8, accent: true });
+      this.box(group, entity, part.id, [5.4, 0.6, 0.1], [-0.4, 0.95, -1.6], 0x7a4a2c, { roughness: 1 });
+      this.sphere(group, entity, part.id, 0.14, [-1.95, 4.8, -0.4], 0x7fe8ff, { emissive: 0x4fd8ff, emissiveIntensity: 0.8, accent: true });
     } else if (kind === "hut") {
       const g = authored("hut");
       const tent = v % 2 === 1;
@@ -2849,8 +2855,8 @@ export class WorldRenderer {
         this.cylinder(group, entity, part.id, 1.7, 0.95, [0, 0.48, 0], 0x8f887a, [0, 0, 0], { radiusBottom: 1.8, roughness: 0.92 });
         this.cylinder(group, entity, part.id, 1.85, 0.14, [0, 0.98, 0], 0x8f887a, [0, 0, 0], { roughness: 0.92 });
       }
-      // The water: a still dark disc a step down inside the rim.
-      this.cylinder(group, entity, part.id, 1.42, 0.03, [0, 0.76, 0], 0x1f3b44, [0, 0, 0], { roughness: 0.2, metalness: 0.1 });
+      // The water: a still dark disc a step down inside the rim (the authored ring is hollow).
+      this.cylinder(group, entity, part.id, 1.46, 0.04, [0, 0.56, 0], 0x1f3b44, [0, 0, 0], { roughness: 0.2, metalness: 0.1 });
     } else if (kind === "gate") {
       const g = authored("gate");
       if (g) this.box(group, entity, part.id, [4.64, 2.55, 1.85], [-0.17, 1.275, 0], 0x8a8478, { geometry: g, roughness: 0.85, metalness: 0.1 });
@@ -5631,7 +5637,7 @@ function makeSkyline(kind: SkylineKind, ground: THREE.Color, fog: THREE.Color, r
     // A range of sharp peaks — taller and narrower than the bluffs, so the basin reads walled in.
     const peak = new THREE.ConeGeometry(1, 1, 4, 1);
     peak.translate(0, 0.5, 0);
-    const material = tone(0.4, 0.78);
+    const material = tone(0.28, 0.62);
     const count = 16;
     group.add(instanced(peak, material, count, (i, d) => {
       const a = (i / count) * Math.PI * 2 + rand() * 0.25;
@@ -5686,7 +5692,7 @@ function makeSkyline(kind: SkylineKind, ground: THREE.Color, fog: THREE.Color, r
     // A wall of conifers in a deep band: one instanced cone, three hundred trees, one draw call.
     const cone = new THREE.ConeGeometry(1, 1, 6, 1);
     cone.translate(0, 0.5, 0);
-    const material = tone(0.38, 0.62);
+    const material = tone(0.2, 0.5);
     const count = 320;
     group.add(instanced(cone, material, count, (i, d) => {
       const a = (i / count) * Math.PI * 2 + rand() * 0.02;

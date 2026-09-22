@@ -365,9 +365,17 @@ def build_colossus(i):
 def build_cistern(i):
     """A ring cistern: a round stone wall, four column stubs, a broken lintel across two of them,
     the water surface sunk a step below the rim. Authored at 3.6 x 3.6 x 1.3."""
-    parts = [_cyl("ring", 1.8, 0.95, location=(0, 0, 0.48), vertices=16, radius_top=1.7)]
-    parts.append(_cyl("coping", 1.85, 0.14, location=(0, 0, 0.98), vertices=16))
-    parts.append(_cyl("water", 1.45, 0.05, location=(0, 0, 0.72), vertices=16))
+    # The ring is HOLLOW — sixteen wall segments and their coping — so the water reads inside it.
+    parts = []
+    for k in range(16):
+        a = k / 16 * math.tau
+        seg = add_box(f"seg{k}", (0.72, 0.36, 0.95), location=(math.cos(a) * 1.62, math.sin(a) * 1.62, 0.48))
+        _rot_apply(seg, (0, 0, a + math.pi / 2))
+        parts.append(seg)
+        cop = add_box(f"cop{k}", (0.78, 0.48, 0.14), location=(math.cos(a) * 1.62, math.sin(a) * 1.62, 1.02))
+        _rot_apply(cop, (0, 0, a + math.pi / 2))
+        parts.append(cop)
+    parts.append(_cyl("water", 1.5, 0.06, location=(0, 0, 0.5), vertices=16))
     parts.append(_cyl("step", 2.05, 0.2, location=(0, 0, 0.1), vertices=16))
     for k in range(4):
         a = k / 4 * math.tau + 0.4

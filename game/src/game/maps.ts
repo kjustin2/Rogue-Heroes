@@ -510,7 +510,7 @@ const RAW_MAPS: readonly MapDef[] = [
     events: [{ kind: "lightning", startTurn: 4, period: 1, power: 46 }],
     scatter: [
       // The orchard: fruit trees planted in rows.
-      { palette: ["tree"], count: 14, spacing: 0.5, rect: { minX: -23, maxX: -8, minZ: -15.5, maxZ: -5 }, grid: { dx: 2.7, dz: 2.7, jitter: 0.25 } },
+      { palette: ["tree"], count: 14, spacing: 0.5, rect: { minX: -23, maxX: -8, minZ: -15.5, maxZ: -5 }, grid: { dx: 3.0, dz: 3.0, jitter: 0.25 } },
       // Chapel green: the yard of stones, stumps and scrub around the ruin.
       { palette: ["rubble", "stump", "bush", "bush", "rock", "log"], count: 5, spacing: 1.2, rect: { minX: -23, maxX: -12, minZ: 3, maxZ: 13 } },
       // Field edge between the orchard and the pass.
@@ -718,7 +718,7 @@ const RAW_MAPS: readonly MapDef[] = [
     hillRadius: 3.8,
     scatter: [
       // The trench line: a run of sandbags from the nest toward the checkpoint.
-      { palette: ["sandbag"], count: 4, spacing: 0.15, rect: { minX: -10.5, maxX: -2.5, minZ: -9.4, maxZ: -8.6 }, grid: { dx: 2.2, dz: 1, jitter: 0.1 }, centerGap: 1.5 },
+      { palette: ["sandbag"], count: 6, spacing: 0.15, rect: { minX: -11, maxX: -2, minZ: -9.4, maxZ: -8.6 }, grid: { dx: 2.2, dz: 1, jitter: 0.1 }, centerGap: 1.5 },
       // The radar station's plant.
       { palette: ["conduit", "ammo", "container", "sandbag", "crate"], count: 4, spacing: 1.0, rect: { minX: -24, maxX: -17, minZ: 4, maxZ: 13.5 } },
       // Scrub in the open ground between the nests and the streams.
