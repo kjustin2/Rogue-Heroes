@@ -35,7 +35,7 @@ symbols fail the build.
 | Start one map headless and print the in-page error | `npm run probe:map <id>` |
 | **Real-GPU frame-time probe** (hidden Electron, diffs compiled programs across resolves) | `npm run soak:gpu [scenario]` |
 | **Real-GPU screenshots** (`-- menu firefight lineup rings abilities direction nowalk maps volley vehicles structures …`; `vehicles` / `structures` = the vehicles-kit review frames, both teams; `maps` = one gameplay frame per battlefield (`volley` = a seven-family firing line mid-resolve: rounds, trails, flashes, blasts on the real GPU); UI screens `deploy settings armory campaign run tutorial pause victory defeat hover hover-deck`; `mapselect` shoots the Skirmish page at 1280×720 / 1600×900 / 2560×1080; `SHOT_PREFIX=before-` for a baseline build) | `npm run shots:gpu` |
-| Walk-up-a-step filmstrip (feet vs talus / plates) | `npm run shots:step` |
+| Locomotion filmstrips (`-- walk` flat-ground stride in profile, `march` scout, `trudge` heavy, `crouch`, `step` = up a terrain step vs talus / plates) | `npm run shots:step` |
 | Build + Electron gameplay smoke | `npm run test:play` |
 | Desktop app (build + Electron) | `npm run standalone` |
 | **One-command shareable .exe** | `npm run dist:exe` (portable, → `release/`) |
@@ -392,7 +392,41 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   groups via `disposeAndClear()`; `userData.shared` geometry is skipped.
 - **The ground detail layer** (`makeGroundDetail`) is one InstancedMesh per element kind (grass fans, pebbles, snow clumps, cinders, weeds), placed only on dry flat ground, bending in `windUniforms` (the same clock the cloud deck and tree sway use). Pebbles are 8-triangle octahedra on purpose — the 36-triangle version was 130k triangles on a large map. Costs are in `perf-baseline.json`; rebase after an intentional change.
 - **Stone takes the map's hue**: rock / rubble / statue props are tinted 0.5 toward `rockTint` (the ground's own hue at a slightly higher value); wood, foliage and hardware only 0.3 toward `propTint`. A tint into an already-saturated albedo only ever darkens it — which is why the Meshy rock had to be greyscaled first, and why it is gone.
-- **Idle liveness is gated** (`smoke:animation`: head scan + body turn over 3s of standing). Whole-body idle lives at group level next to the flinch; per-part breathing in `paintPart`. Both are phased by `hash(entity.id)`.
+- **INFANTRY LOCOMOTION IS DISTANCE-LOCKED** (`src/render/gait.ts`, 2026-09-22). The gait phase
+  advances by `metres moved / stride`, never by wall time, and a planted boot is placed from that
+  phase alone — so while it is on the ground it slides back under the body at exactly the body's
+  speed and its world velocity is ZERO. Foot skate is impossible by construction, not tuned away;
+  `gait.ts` is pure (no three) and `gait.test.ts` proves the contract. Shape of it:
+  - `footAt` gives the ankle target (stance = the stride lock, with a heel-strike → flat → toe-off
+    ROLL about the heel/toe, so the contact point is pinned inside each phase; swing = an arc that
+    starts where toe-off left the ankle and ends where the heel strike puts it).
+  - `hipBob` is an AUTHORED four-key curve per half cycle (contact / mid-stance / toe-off / the peak
+    between steps) and the KNEE is whatever `solveLeg` (two-bone IK, law of cosines) needs to reach
+    the ground under it. The test asserts the curve never rises above `hipCeiling` — a hip authored
+    too high hovers the foot, which is the skate bug wearing a different hat.
+  - The authored one-piece leg mesh is **split at the knee at load** (`legSplit.ts`, Sutherland-
+    Hodgman clip + capped cut, cached per source geometry, `userData.shared`): thigh / shin / boot
+    are three part meshes tagged `userData.segment`, all still part id `legs`, so per-part damage,
+    pooled paint and the kit contract are untouched. `getComponent` (not the raw array) reads the
+    cut vertices — glTF `COLOR_0` is normalised Uint8 and copying raw integers painted the legs as
+    a white-hot ball.
+  - **Speed tiers** (`GAIT_TIERS`, picked by `gaitTier(kind)`): walk (line troops), march
+    (scout/striker: longer stride, more lean, pumping arms), trudge (heavy/mortar/flamer: short
+    stride, long contact, wide stance, roll). `CROUCH_GAIT` is the one walk-length gait — the sim
+    stands a crouched unit up when it moves, so the renderer keeps it low off `order.startedCrouched`.
+  - The free arm counter-swings the opposite thigh; the weapon arm keeps its carry; the torso leans
+    and counter-rotates against the pelvis twist; the head counters half the bob and stays level.
+  - **Evidence**: `npm run shots:step -- walk | march | trudge | crouch | step` (side profile, HUD
+    hidden, one stride per strip) and the skate metric in `smoke:animation` — FAULT-INJECTION
+    PROVEN: locked = p90 0.07 cm/frame and 0.02 m slide per metre travelled, phase driven off wall
+    time instead = 2.00 cm/frame and 1.33 m/m. Thresholds (1 cm, 0.15) sit between those two
+    measured states. The gate reads the renderer's own per-frame boot track (`__rht.trackFeet` /
+    `footTrack`) because a headless sample step is a third of a stride — by the next sample the
+    planted foot is a different one.
+- **Idle liveness is gated** (`smoke:animation`: head scan + body turn over 6s of standing — the
+  scan's cycle is ~10s, so a 3s window legitimately measured 0.13 of a 0.42-rad sweep and failed).
+  Whole-body idle lives at group level next to the flinch; per-part breathing in `paintPart`. Both
+  are phased by `hash(entity.id)`.
 - **Melee**: the pose family follows the ORDER (`meleeTargetByActor`), the blade is carried by the shoulder about a grip pivot (it is a separate part with no authored motion), the group lunges, and the sim emits a `strike` effect (slash arc + flash + shards), never a blast. `__rht.setResolveScale(0.25)` slows the resolve clock for filmstrips.
 - **Jump Trooper** (`jumper`, `UNIT_STATS.jump`): its move is an arc (`canJump` → `jumpLanding` picks a dry, unoccupied landing; the order sets `flying`/`agl` on a sine until it lands). Mid-arc it IS a flyer to targeting. Pack destroyed = walks. Tests find a real cliff by measurement (`jumper.test.ts`).
 - **Gas** (`CoverKind "gas"`): rupture pushes a `gasClouds` entry (grows per turn, chokes infantry at turn start); **every `sim.effect("blast")` calls `igniteGasAt`** — that is the one place that knows about gas, and a cloud's detonation is a blast, so canisters chain. Rides `serialize()`.
