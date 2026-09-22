@@ -383,7 +383,7 @@ const RAW_MAPS: readonly MapDef[] = [
     hillRadius: 4.2,
     scatter: [
       // The river bed: what fell off the convoy.
-      { palette: ["wreck", "crate", "fuel", "ammo", "barricade", "sandbag"], count: 4, spacing: 1.2, rect: { minX: -24, maxX: -7, minZ: -3, maxZ: 3 } },
+      { palette: ["wreck", "crate", "fuel", "ammo", "barricade", "sandbag"], count: 4, spacing: 1.2, rect: { minX: -25, maxX: -16, minZ: -3, maxZ: 3 } },
       // The plateau camp around the derrick.
       { palette: ["tent", "tent", "sandbag", "ammo", "bunker", "crate"], count: 4, spacing: 1.0, rect: { minX: -16.4, maxX: -9.6, minZ: 6.2, maxZ: 11.4 } },
       // Scrub at the canyon mouths and across the open basin.
@@ -393,7 +393,7 @@ const RAW_MAPS: readonly MapDef[] = [
     signature: [
       // The dead convoy, strung along the river bed where it was caught in the open.
       { kind: "convoy", x: -15, z: 0.6, yaw: 0.18, mirror: true },
-      { kind: "convoy", x: -9.5, z: -1.2, yaw: -0.35, mirror: true },
+      { kind: "convoy", x: -8, z: 1.4, yaw: -0.35, mirror: true },
       { kind: "derrick", x: -13, z: 8.6, yaw: 0.4, mirror: true },
       { kind: "rock", x: -6, z: 4, mirror: true, radius: 1.3, height: 1.6 },
       { kind: "sandbag", x: -3.2, z: -2.4, mirror: true },
@@ -444,7 +444,7 @@ const RAW_MAPS: readonly MapDef[] = [
     hillRadius: 3.4,
     scatter: [
       // The rail yard: lines of cars on stub track, a container or two between them.
-      { palette: ["railcar", "railcar", "railcar", "container"], count: 6, spacing: 0.3, rect: { minX: -21, maxX: -5, minZ: -13.5, maxZ: -4.5 }, grid: { dx: 4.6, dz: 4.5, jitter: 0.2 } },
+      { palette: ["railcar", "railcar", "railcar", "container"], count: 5, spacing: 0.3, rect: { minX: -21, maxX: -5, minZ: -13.5, maxZ: -4.5 }, grid: { dx: 4.6, dz: 4.5, jitter: 0.2 } },
       // The foundry floor: plant around the furnace.
       { palette: ["pipe", "conduit", "gas", "gas", "silo", "crate", "fuel"], count: 5, spacing: 1.1, rect: { minX: -21, maxX: -4, minZ: 3, maxZ: 14 } },
       // Odd rubble and pillars along the middle.
@@ -718,7 +718,7 @@ const RAW_MAPS: readonly MapDef[] = [
     hillRadius: 3.8,
     scatter: [
       // The trench line: a run of sandbags from the nest toward the checkpoint.
-      { palette: ["sandbag"], count: 6, spacing: 0.15, rect: { minX: -11, maxX: -2, minZ: -9.4, maxZ: -8.6 }, grid: { dx: 2.2, dz: 1, jitter: 0.1 }, centerGap: 1.5 },
+      { palette: ["sandbag"], count: 3, spacing: 0.15, rect: { minX: -11, maxX: -2, minZ: -9.4, maxZ: -8.6 }, grid: { dx: 2.2, dz: 1, jitter: 0.1 }, centerGap: 1.5 },
       // The radar station's plant.
       { palette: ["conduit", "ammo", "container", "sandbag", "crate"], count: 4, spacing: 1.0, rect: { minX: -24, maxX: -17, minZ: 4, maxZ: 13.5 } },
       // Scrub in the open ground between the nests and the streams.
