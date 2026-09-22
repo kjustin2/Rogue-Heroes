@@ -18,5 +18,5 @@ every row names its proof, nothing is DONE from code alone.
 | 10 | Mechanics/bug/optimisation audit + dead-code refactor | audit agent | TODO (wave 2) | test:full green, perf OK, soak:gpu clean, dead-code list in the commit |
 | 3 | (done) selection ring is a toon band; plates keep clear of base pads | main | DONE | `shots/basering-sheet.png` (all 6 maps) |
 | 12 | Intro cinematic flashes / shakes and wobbles at start — should be the main image then slow movement | main | DONE | `gpu-boot-mission.png` strip: still → glide → home; camera log smooth at 30ms |
-| 13 | Maps: an actual theme per map with main sections, unique flares/monuments, layouts that make sense — not random trees and towers | maps agent | RUNNING | one GPU overview + one close shot per map; per-map landmark list |
+| 13 | Maps: an actual theme per map with main sections, unique flares/monuments, layouts that make sense — not random trees and towers | maps agent | DONE (merged) | `gpu-map-*-wide/-<section>.png` ×24; 12 landmark kinds, per-section scatter, skylines; seats 50% |
 | 11 | Final: gates + portable exe | main | TODO | logs, `release/*.exe` |

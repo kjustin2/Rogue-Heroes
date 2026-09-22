@@ -337,6 +337,45 @@ app.whenReady().then(async () => {
       const bl = blobs(ra, rb, 14);
       console.log("  canopyz-nearplane.png (near 1 | 4 | 12), canopyz-dolly.png (6 frames, 2cm apart)");
     }
+
+    if (probe === "flatoverlay") {
+      // Ground overlays in the pickups/mines/zones block are FLAT discs at the sim height, unlike
+      // the move field / weapon ring which are draped (drapeToTerrain). Count how many sit where a
+      // flat disc cannot lie: within its own radius of a terrain-block edge (a real step).
+      for (const map of ["dustbowl", "ironworks", "verdant", "causeway", "karak", "crossfire"]) {
+        await js("window.__rht.startBattle(" + JSON.stringify(map) + ", \"destroy\", \"normal\"); window.__rht.deselect();");
+        await sleep(3000);
+        console.log(map + " " + await js("(() => { const s = window.__rht.sim; const blocks = s.mapDef.terrain.blocks || [];" +
+          " const nearEdge = (x, z, r) => blocks.some((b) => { const inX = x > b.minX - r && x < b.maxX + r; const inZ = z > b.minZ - r && z < b.maxZ + r;" +
+          "   const deepX = x > b.minX + r && x < b.maxX - r; const deepZ = z > b.minZ + r && z < b.maxZ - r; return inX && inZ && !(deepX && deepZ); });" +
+          " const picks = (s.pickups || []); const mines = (s.mines || []); const zones = (s.environment ? s.environment().zones : []) || [];" +
+          " return JSON.stringify({ pickups: picks.length, pickupsStraddlingAStep: picks.filter((p) => nearEdge(p.x, p.z, 0.74)).length," +
+          "   mines: mines.length, minesStraddling: mines.filter((m) => nearEdge(m.x, m.z, 0.26)).length," +
+          "   zones: zones.length, zonesStraddling: zones.filter((z) => nearEdge(z.x, z.z, z.radius)).length }); })()"));
+      }
+    }
+
+    if (probe === "canopynormal") {
+      // Last suspect for the canopy hatch: the per-part detail NORMAL MAP minified on a facet.
+      await js("window.__rht.startBattle(\"verdant\", \"destroy\", \"normal\"); window.__rht.deselect();");
+      await sleep(3500);
+      const t = JSON.parse(await js("(() => { const s = window.__rht.sim; const x = s.entities.filter(e => e.kind === 'cover' && e.coverKind === 'tree')[0]; return JSON.stringify({ x: x.position.x, z: x.position.z }); })()"));
+      await js("window.__rht.setView({ x: " + t.x + ", z: " + (t.z + 1.5) + ", zoom: 0.62, pitch: 0.45, yaw: 0.3 })");
+      await sleep(1500);
+      const reg = { left: 600, top: 240, width: 340, height: 260 };
+      const crop = async (b) => sharp(b).extract(reg).resize(1020, 780, { kernel: "nearest" }).png().toBuffer();
+      const a = await cap();
+      const n = await js("(() => { let hit = 0; const seen = new Set(); window.__rht.sceneObject().traverse((o) => { if (!o.isMesh || !o.material) return; const ms = Array.isArray(o.material) ? o.material : [o.material]; for (const m of ms) { if (m.normalMap && !seen.has(m.uuid)) { seen.add(m.uuid); m.userData.__nm = m.normalMap; m.normalMap = null; m.needsUpdate = true; hit += 1; } } }); return hit; })()");
+      await sleep(900);
+      const b = await cap();
+      console.log("nulled normalMap on " + n + " materials");
+      const bl = blobs(await raw(a), await raw(b), 10);
+      console.log("  changed " + (+(bl.reduce((x, y) => x + y.n, 0) / 14400).toFixed(2)) + "%");
+      await sharp({ create: { width: 2050, height: 780, channels: 3, background: "#101010" } })
+        .composite([{ input: await crop(a), left: 0, top: 0 }, { input: await crop(b), left: 1030, top: 0 }]).png()
+        .toFile(path.join(outDir, "canopy-normalmap.png"));
+      console.log("  canopy-normalmap.png (left = shipped, right = normalMap nulled)");
+    }
   } catch (e) { console.error("probe failed:", e); process.exitCode = 1; }
   finally { server.close(); app.quit(); }
 });
