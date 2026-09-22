@@ -82,6 +82,7 @@ export function projectileFamily(p: Projectile): ProjectileFamily {
 const LOBBED = new Set<ProjectileFamily>(["mortar", "smoke", "artillery", "siege", "tank", "launcher", "grenade", "bomb"]);
 const SMALL_ARMS = new Set<ProjectileFamily>(["rifle", "carbine", "pistol", "mg", "sniper", "pellet"]);
 export function isSmallArms(family: ProjectileFamily): boolean { return SMALL_ARMS.has(family); }
+export function isLobbed(family: ProjectileFamily): boolean { return LOBBED.has(family); }
 
 /** How many past positions a family's trail wants. Long ribbons for the slow lobbed rounds. */
 export function trailLength(family: ProjectileFamily): number {
@@ -659,15 +660,19 @@ function bombModel(team: number, age: number): THREE.Group {
 
 function flameHead(age: number): THREE.Group {
   const group = new THREE.Group();
-  const core = solid("blob", FIRE[0], 0);
-  const sleeve = new THREE.Mesh(projectileGeometry("blob"), fxSolid(FIRE[1], true));
-  const rim = new THREE.Mesh(projectileGeometry("blob"), fxSolid(FIRE[3], true));
-  sleeve.scale.setScalar(1.45);
-  rim.scale.setScalar(1.8);
+  // A WARM head, not a white-hot ball: the old near-white core inside two fatter hulls was the
+  // biggest bright disc in a volley and was born at full size, so it popped every burst. Yellow core,
+  // orange sleeve, dark-red rim, and it grows in over its first 80ms like every other trail element.
+  const core = solid("blob", FIRE[1], 0);
+  const sleeve = new THREE.Mesh(projectileGeometry("blob"), fxSolid(FIRE[2], true));
+  const rim = new THREE.Mesh(projectileGeometry("blob"), fxSolid(FIRE[4], true));
+  sleeve.scale.setScalar(1.3);
+  rim.scale.setScalar(1.55);
   sleeve.frustumCulled = rim.frustumCulled = false;
   group.add(rim, sleeve, core);
-  const wobble = 1 + Math.sin(age * 28) * 0.12;
-  group.scale.set(wobble * 0.95, 1.05, 0.95 / wobble);
+  const wobble = 1 + Math.sin(age * 28) * 0.1;
+  const grow = smooth(age / 0.08);
+  group.scale.set(wobble * 0.7 * grow, 0.78 * grow, (0.7 / wobble) * grow);
   return group;
 }
 
@@ -881,7 +886,7 @@ export function makeMuzzleFlash(p: Projectile, family: ProjectileFamily): THREE.
       ring.scale.setScalar(0.5 + u * 1.7);
       ring.frustumCulled = false;
       group.add(ring);
-      const ring2 = new THREE.Mesh(projectileGeometry("ring"), projectileMaterial("muzzle-ring", p.color, q(0.8 - u * 0.6)));
+      const ring2 = new THREE.Mesh(projectileGeometry("ring"), projectileMaterial("muzzle-ring", FLASH_RIM, q(0.8 - u * 0.6)));
       ring2.scale.setScalar(0.3 + u * 1.2);
       ring2.frustumCulled = false;
       group.add(ring2);

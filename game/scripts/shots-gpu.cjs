@@ -220,6 +220,7 @@ app.whenReady().then(async () => {
           .composite(tiles.map((input, i) => ({ input, left: (i % 4) * 400, top: Math.floor(i / 4) * 240 }))).png()
           .toFile(path.join(__dirname, "..", "shots", "gpu-temporal.png"));
         // Full-size pair for close inspection.
+        frames.forEach((f, i) => fs.writeFileSync(path.join(__dirname, "..", "shots", `gpu-temporal-f${i}.png`), f));
         fs.writeFileSync(path.join(__dirname, "..", "shots", "gpu-temporal-a.png"), frames[4]);
         fs.writeFileSync(path.join(__dirname, "..", "shots", "gpu-temporal-b.png"), frames[5]);
         console.log("shot: gpu-temporal.png (+ -a/-b full pair)");
@@ -385,6 +386,34 @@ app.whenReady().then(async () => {
         await js(`(() => { const base = window.__rht.sim.entities.find((e) => e.team === "player" && e.kind === "base"); base.unlockedTech = ["assault", "armor", "recon", "breach"]; })()`);
         await openTech();
         await shot("tech-mid");
+        continue;
+      }
+      if (s === "versus") {
+        // Local 2 Players: the set-up page, then the handoff card before Player 1 plans.
+        await toTitle(); await clickMenu('[data-menu="versus"]');
+        await shot("versus-setup");
+        await clickMenu("[data-start]"); await sleep(2500);
+        await shot("versus-handoff");
+        continue;
+      }
+      if (s === "statuses") {
+        // Every long roster status at once, for the "text runs through the health bar" class:
+        // hull down, suppressed, crouched + grenades, deployed artillery, a hurt unit; then the Info panel.
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(1500);
+        await js(`(() => { const sim = window.__rht.sim;
+          const t = sim.debugSpawn("tank", "player", { x: -12, z: 2 }); t.hullDown = true;
+          const h = sim.debugSpawn("heavy", "player", { x: -12, z: -1 }); h.suppressedUntilTurn = sim.turn + 1;
+          const s1 = sim.debugSpawn("soldier", "player", { x: -13, z: 0 }); s1.stance = "crouched";
+          const a = sim.debugSpawn("artillery", "player", { x: -14, z: 3 }); a.deployed = true;
+          const g = sim.debugSpawn("grenadier", "player", { x: -11, z: 1 }); g.parts.forEach((p) => { p.hp = Math.ceil(p.maxHp * 0.3); });
+          sim.debugSpawn("striker", "player", { x: -12, z: 4 });
+          window.__rht.deselect(); })()`);
+        await sleep(1200);
+        await shot("statuses");
+        await js(`(() => { const b = document.querySelector("[data-detail]"); if (b) b.click(); })()`);
+        await sleep(700);
+        await shot("statuses-info");
         continue;
       }
       if (s === "deaths") {

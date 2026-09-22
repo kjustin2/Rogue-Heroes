@@ -562,10 +562,33 @@ Skirmish Run were deleted (`campaign.ts`, `run.ts`, their screens, tests, CSS, `
 `startRun` on the seam, the `campaign` / `run` / `briefing` shot cases). Do NOT reintroduce either,
 or add another mode/ladder, until the owner asks. Banned identifiers (grep to zero): `rht.campaign.v1`,
 `rht.run.v1`, `startCampaignMission`, `startRunBattle`, `showCampaign`, `showRunIntro`, `RUN_LENGTH`,
-`requisition`, `campaign-card`. The main menu is Continue / Play Skirmish, the tutorial link, and
+`requisition`, `campaign-card`. The main menu is Continue / Play Skirmish, Local 2 Players, the tutorial link, and
 Achievements · Armory · Settings · Exit. Elites/bosses (`debugSpawn` options + the top-of-screen boss
 bar) survive only for a future Skirmish set piece. The mission-intro rail now plays at the start of
 every Skirmish battle.
+
+## LOCAL 2 PLAYERS (hotseat, 2026-09-22)
+
+Main menu "Local 2 Players" → the Skirmish set-up page with a Player 2 faction row (no difficulty —
+forced Normal so the enemy-side difficulty modifiers are all 1; no Last Stand, which is AI waves).
+`sim.hotseat` (serialized) stops `endTurn` from queueing AI orders and makes `enemyIntents()` empty.
+Each command phase is planned TWICE: a handoff card ("Player N — your orders"), that player plans,
+End Turn hands to the other seat, the second End Turn resolves. **Who plans first alternates by turn
+parity** (P1 odd, P2 even) because the second planner watched the first on the same screen.
+Player 2 plans through the ordinary UI via `sim.swapSides()` (`flipTeams`: entities, mines,
+treasury, factions, mode scores / hill holders / flag owners). The sim always RESOLVES and SAVES
+unswapped (`serialize` flips back around the write), so victory = Player 1, defeat = Player 2.
+No medals or points from hotseat games. Tests: `hotseat.test.ts`; `npm run smoke:hotseat` (in
+`smoke:core`); `shots:gpu versus`.
+
+## Move orders that go nowhere are REFUSED (2026-09-22)
+
+`queueMoveToDestination` refuses (no CP spent) a move whose blocked stop is within 0.3 of the start,
+leaving the block reason as the newest log line; the "move limited to Nm" line now only appears when
+RANGE was the limit. It used to accept a zero-length order and charge a CP — a tank "ignored" its
+order at the Ironworks ramp. `edgecases.test.ts` walks climbing and order edge cases end to end on the
+real maps (mesa steps, the overpass deck, climb-on/off cover, floating/sunk units after 5 AI turns on
+every map, cancel refunds, dead-before-order, shared destinations, water).
 
 ## UI language: TOON (2026-09-18)
 

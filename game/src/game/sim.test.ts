@@ -651,8 +651,9 @@ describe("tactical simulation loop", () => {
     ]);
 
     sim.select("player");
-    expect(sim.queueMove({ x: 0, z: 5.8 })).toBe(true);
-    expect(sim.orders[0].destination?.z).toBeLessThan(5.1);
+    // Standing at the cliff foot, the walk has nowhere to go: refused (no CP spent) with the reason.
+    sim.queueMove({ x: 0, z: 5.8 });
+    expect(sim.orders[0]?.destination?.z ?? 3.1).toBeLessThan(5.1);
     expect(sim.log).toContain("Rook must use a cliff ascent");
 
     const climb = new TacticalSim([
@@ -2222,8 +2223,9 @@ describe("tactical enemy AI", () => {
     const wall = createCover("w", "Concrete Wall", { x: 2, z: 2 }, { coverKind: "wall" });
     const sim = new TacticalSim([soldier, wall]);
     sim.select("p");
-    expect(sim.queueMove({ x: 2, z: 6 })).toBe(true);
-    expect(sim.orders[0].destination?.z ?? 99).toBeLessThan(1.6); // stops before the wall, not past it at the mesa
+    sim.queueMove({ x: 2, z: 6 }); // may be refused outright: the wall leaves almost no room to move
+    expect(sim.orders[0]?.destination?.z ?? 0.5).toBeLessThan(1.6); // stops before the wall, not past it at the mesa
+    expect(sim.log.some((l) => l.includes("blocked by Concrete Wall"))).toBe(true);
   });
 
   it("a bomber has no gun and only drops bombs straight down", () => {

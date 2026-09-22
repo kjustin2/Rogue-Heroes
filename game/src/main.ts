@@ -179,10 +179,7 @@ window.addEventListener("pagehide", autosaveIfActive);
 
 const hud = new Hud(uiRoot, sim, {
   setIntent: (intent: Intent) => sim.setIntent(intent),
-  endTurn: () => {
-    if (sim.phase === "command") sfx.turn();
-    resolveCam.begin(stage.viewState()); sim.endTurn();
-  },
+  endTurn: () => requestEndTurn(),
   reset: () => {
     sim.reset();
     world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
@@ -462,8 +459,7 @@ window.addEventListener("keydown", (event) => {
   switch (bound) {
     case "endTurn":
       event.preventDefault();
-      if (sim.phase === "command") sfx.turn();
-      resolveCam.begin(stage.viewState()); sim.endTurn();
+      requestEndTurn();
       break;
     case "cycle":
       event.preventDefault();
@@ -509,20 +505,77 @@ function opposingFaction(mapId: string, player: FactionId): FactionId {
   return others[hash % others.length].id;
 }
 
-function startBattle(mapId: string, modeId: ModeId, difficulty: Difficulty = settings.difficulty, faction: FactionId = settings.faction): void {
+function startBattle(mapId: string, modeId: ModeId, difficulty: Difficulty = settings.difficulty, faction: FactionId = settings.faction, player2?: FactionId): void {
   tutorialActive = false;
   renderTutorialPanel(); // a tutorial panel must not survive into the next battle
   closeAllMenus();
   // The enemy's faction is DERIVED, never rolled: same map plus same player faction always gives
   // the same opponent, so a seeded run, a save reload and a replay all agree. Rolling it inside
   // the sim would put hidden nondeterminism in a system the chaos and determinism tests rely on.
-  sim.configure(mapDef(mapId), modeId, difficulty, { player: faction, enemy: opposingFaction(mapId, faction) });
+  sim.configure(mapDef(mapId), modeId, player2 ? "normal" : difficulty, { player: faction, enemy: player2 ?? opposingFaction(mapId, faction) }, Boolean(player2));
   world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
   world.setPlayerAccent(progression.accentColor());
   focusOnPlayerBase();
   lastEndPhase = undefined;
   setInBattle(true);
   hud.update();
+  if (sim.hotseat) beginHotseatTurn();
+}
+
+// ---------------------------------------------------------------------------
+// LOCAL 2-PLAYER (hotseat). Each command phase is planned twice: one player, a handoff screen,
+// the other player, then the turn resolves. WHO PLANS FIRST ALTERNATES every turn (Player 1 on odd
+// turns, Player 2 on even), because the second planner has watched the first plan on the same
+// screen -- alternating spends that advantage evenly. Player 2 plans through the ordinary UI via
+// sim.swapSides(); the sim swaps back before it resolves.
+// ---------------------------------------------------------------------------
+let hotseatSeatsDone = 0;
+const hotseatFirst = (): 1 | 2 => (sim.turn % 2 === 1 ? 1 : 2);
+const hotseatSeat = (): 1 | 2 => (hotseatSeatsDone === 0 ? hotseatFirst() : hotseatFirst() === 1 ? 2 : 1);
+
+function beginHotseatTurn(): void {
+  hotseatSeatsDone = 0;
+  handToHotseatSeat();
+}
+
+function handToHotseatSeat(): void {
+  const seat = hotseatSeat();
+  if (sim.sidesSwapped !== (seat === 2)) sim.swapSides();
+  document.querySelector(".hotseat-handoff")?.remove();
+  const other = seat === 1 ? 2 : 1;
+  const order = hotseatSeatsDone === 0 ? "first" : "second";
+  const screen = mountScreen(
+    `
+    <div class="overlay-card hotseat-card">
+      <div class="hotseat-card__kicker">Turn ${sim.turn} · plans ${order}</div>
+      <h2 class="menu-heading">Player ${seat}</h2>
+      <p class="settings-note">Your orders. Player ${other}, look away until it is your turn.</p>
+      <div class="pause-buttons">
+        <button class="title-start" data-hotseat-ready data-overlay-close type="button">Ready — Player ${seat}</button>
+      </div>
+    </div>
+  `,
+    "pause-overlay hotseat-handoff",
+  );
+  screen.querySelector("[data-hotseat-ready]")?.addEventListener("click", () => {
+    screen.remove();
+    focusOnPlayerBase();
+    hud.update();
+  });
+  hud.update();
+}
+
+/** End Turn from the button or the key. In hotseat the first press passes the turn to the other seat. */
+function requestEndTurn(): void {
+  if (sim.phase !== "command") return;
+  if (sim.hotseat && hotseatSeatsDone === 0) {
+    hotseatSeatsDone = 1;
+    handToHotseatSeat();
+    return;
+  }
+  sfx.turn();
+  resolveCam.begin(stage.viewState());
+  sim.endTurn();
 }
 
 // Mission-intro cinematic: a letterboxed rail flyover — enemy lines, the contested centre, then
@@ -611,7 +664,7 @@ function runMissionIntro(): void {
 // (geometry + materials) synchronously, so without this the click just freezes for a beat.
 // We paint the veil first (two rAFs let it reach the screen), then run the heavy build under
 // it, then fade it once the battle has had a frame to render. Min visible time avoids a flash.
-function deployWithLoadingScreen(mapId: string, modeId: ModeId, difficulty: Difficulty, faction: FactionId): void {
+function deployWithLoadingScreen(mapId: string, modeId: ModeId, difficulty: Difficulty, faction: FactionId, player2?: FactionId): void {
   const veil = document.createElement("div");
   veil.className = "battle-loading";
   veil.innerHTML = `<div class="battle-loading__inner">
@@ -623,11 +676,11 @@ function deployWithLoadingScreen(mapId: string, modeId: ModeId, difficulty: Diff
   const startedAt = performance.now();
   const minVisible = settings.reducedMotion ? 250 : 600;
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    startBattle(mapId, modeId, difficulty, faction);
+    startBattle(mapId, modeId, difficulty, faction, player2);
     // First time the player tries a mode, spell out how it's won (the tutorial only covers Annihilation).
     const mode = modeDef(modeId);
     hintOnce(`mode-${modeId}`, `${mode.name} — ${mode.blurb}`);
-    runMissionIntro();
+    if (!player2) runMissionIntro();
     const hold = Math.max(0, minVisible - (performance.now() - startedAt));
     window.setTimeout(() => {
       veil.classList.add("leaving");
@@ -762,6 +815,7 @@ function showMainMenu(): void {
           ? `<button class="title-start" data-menu="continue" type="button">Continue Battle</button>
              <button class="menu-action" data-menu="play" type="button">New Skirmish</button>`
           : `<button class="title-start" data-menu="play" type="button">Play Skirmish</button>`}
+        <button class="menu-action" data-menu="versus" type="button">Local 2 Players</button>
         <button class="menu-link" data-menu="tutorial" type="button">Play the tutorial</button>
         <div class="menu-utilities">
           <button class="menu-utility" data-menu="achievements" type="button">Achievements</button>
@@ -779,6 +833,7 @@ function showMainMenu(): void {
     const target = event.target as HTMLElement;
     const action = target.closest<HTMLElement>("[data-menu]")?.dataset.menu;
     if (action === "play") showStartScreen();
+    else if (action === "versus") showStartScreen(true);
     else if (action === "continue") loadSavedBattle();
     else if (action === "tutorial") startTutorial();
     else if (action === "achievements") showAchievements();
@@ -788,12 +843,15 @@ function showMainMenu(): void {
   });
 }
 
-function showStartScreen(): void {
+function showStartScreen(versus = false): void {
   closeAllMenus();
   let selectedMap = MAPS[0].id;
   let selectedMode: ModeId = "destroy";
   let selectedDifficulty: Difficulty = settings.difficulty;
   let selectedFaction: FactionId = settings.faction;
+  let selectedFaction2: FactionId = FACTIONS.find((f) => f.id !== selectedFaction)?.id ?? selectedFaction;
+  // Last Stand is waves of AI attackers -- there is no second human in it.
+  const modes = versus ? MODES.filter((m) => m.id !== "survival") : MODES;
 
   const mapList = MAPS.map(
     (m) => `<button class="menu-card map-card ${m.id === selectedMap ? "selected" : ""}" data-map="${m.id}" type="button">
@@ -804,7 +862,7 @@ function showStartScreen(): void {
   // Mode and difficulty are CHIP rows with one blurb line for the picked one: five blurb cards
   // pushed Faction and Difficulty below the fold at 720p, which is how "the faction pick seems
   // hidden behind Deploy" was reported. Every choice on this page fits one screen now.
-  const modeChips = MODES.map(
+  const modeChips = modes.map(
     (mode) => `<button class="menu-chip ${mode.id === selectedMode ? "on" : ""}" data-mode="${mode.id}" type="button">${mode.name}</button>`,
   ).join("");
   // Each card states the faction's IDENTITY and, explicitly, what it gives up. A roster is defined
@@ -825,7 +883,7 @@ function showStartScreen(): void {
     <div class="title-screen__content menu-content">
       <div class="menu-head">
         <button class="menu-back" data-overlay-close data-back type="button">&lsaquo; Back</button>
-        <h2 class="menu-heading">Skirmish</h2>
+        <h2 class="menu-heading">${versus ? "Local 2 Players" : "Skirmish"}</h2>
       </div>
       <div class="start-layout">
         <div class="start-left">
@@ -839,7 +897,7 @@ function showStartScreen(): void {
         </div>
         <div class="start-right">
           <div class="menu-section start-factions">
-            <div class="menu-label">Faction</div>
+            <div class="menu-label">${versus ? "Player 1 faction" : "Faction"}</div>
             <div class="menu-grid faction-grid">${factionCards}</div>
           </div>
           <div class="menu-section">
@@ -847,11 +905,15 @@ function showStartScreen(): void {
             <div class="chip-row">${modeChips}</div>
             <p class="choice-blurb" data-mode-blurb>${escapeHtml(modeDef(selectedMode).blurb)}</p>
           </div>
-          <div class="menu-section">
+          ${versus ? `<div class="menu-section">
+            <div class="menu-label">Player 2 faction</div>
+            <div class="chip-row">${FACTIONS.map((f) => `<button class="menu-chip ${f.id === selectedFaction2 ? "on" : ""}" data-faction2="${f.id}" type="button">${escapeHtml(f.name)}</button>`).join("")}</div>
+            <p class="choice-blurb">One screen, two commanders: you take turns planning, and who plans first swaps every turn.</p>
+          </div>` : `<div class="menu-section">
             <div class="menu-label">Difficulty</div>
             <div class="chip-row">${diffChips}</div>
             <p class="choice-blurb" data-diff-blurb>${escapeHtml(difficultyBlurb(selectedDifficulty))}</p>
-          </div>
+          </div>`}
         </div>
       </div>
       <div class="menu-actions"><button class="title-start" data-start type="button">Deploy to Battle</button></div>
@@ -885,6 +947,12 @@ function showStartScreen(): void {
       }
       return;
     }
+    const faction2Btn = target.closest<HTMLElement>("[data-faction2]");
+    if (faction2Btn) {
+      selectedFaction2 = (faction2Btn.dataset.faction2 as FactionId) ?? selectedFaction2;
+      for (const el of screen.querySelectorAll<HTMLElement>("[data-faction2]")) el.classList.toggle("on", el === faction2Btn);
+      return;
+    }
     const mapBtn = target.closest<HTMLElement>("[data-map]");
     if (mapBtn) {
       selectedMap = mapBtn.dataset.map ?? selectedMap;
@@ -914,7 +982,7 @@ function showStartScreen(): void {
       settings.difficulty = selectedDifficulty;
       settings.save();
       screen.classList.add("is-leaving"); // startBattle's closeAllMenus removes it
-      deployWithLoadingScreen(selectedMap, selectedMode, selectedDifficulty, selectedFaction);
+      deployWithLoadingScreen(selectedMap, selectedMode, selectedDifficulty, selectedFaction, versus ? selectedFaction2 : undefined);
     }
   });
 }
@@ -1355,6 +1423,7 @@ function loadSavedBattle(): void {
   }
   if (sim.restore(raw)) {
     tutorialActive = false;
+    if (sim.hotseat) window.setTimeout(beginHotseatTurn, 0); // after closeAllMenus below
     closeAllMenus();
     world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
     world.setPlayerAccent(progression.accentColor());
@@ -1458,6 +1527,7 @@ function showRoundTransition(turn: number): void {
 }
 
 sim.bus.on("TURN_START", ({ turn }) => {
+  if (sim.hotseat && inBattle && sim.phase === "command") beginHotseatTurn();
   showRoundTransition(turn);
   // Back out to the zoom the player was planning at before the resolve pushed in.
   if (resolveEntryZoom !== undefined) {
@@ -1847,8 +1917,8 @@ function handleEndState(): void {
   const victory = sim.phase === "victory";
   if (victory) sfx.victory();
   else sfx.defeat();
-  // Commander ledger: lifetime stats + medal checks for every real battle.
-  if (!tutorialActive) {
+  // Commander ledger: lifetime stats + medal checks for every real battle (vs the AI).
+  if (!tutorialActive && !sim.hotseat) {
     const killsByKind: Record<string, number> = {};
     for (const [id, count] of sim.killsBy) {
       const kind = sim.entity(id)?.kind ?? "unknown";
@@ -1898,7 +1968,7 @@ function handleEndState(): void {
 // The end-of-battle overlays/toasts, split out so the kill-cam can delay them.
 function concludeEndState(victory: boolean): void {
   clearToasts(); // no lingering start-of-battle notice should overlap the end overlay
-  if (!tutorialActive) {
+  if (!tutorialActive && !sim.hotseat) {
     const reward = battleReward(victory, sim.difficulty, sim.turn);
     progression.award(reward);
     showToast(`+${reward} points earned`);
@@ -2006,7 +2076,7 @@ window.__rht = {
   sim,
   setIntent: (intent) => sim.setIntent(intent),
   setAim: (aim) => sim.setAim(aim),
-  endTurn: () => { resolveCam.begin(stage.viewState()); sim.endTurn(); },
+  endTurn: () => requestEndTurn(),
   reset: () => {
     hud.resetGame();
     lastCommandCameraKey = "";

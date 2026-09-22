@@ -16,7 +16,7 @@ import { kitGeometry, modelsVersion, propGeometry, toonGradient, vehicleGeometry
 import { VEHICLE_LAYOUT } from "./vehiclesLayout";
 import {
   blastAfterlife, GROUND_CHEW_S, isSmallArms, makeBlast, makeBlastAfterlife, makeGroundChew, makeImpact,
-  makeLightning, makeMuzzleFlash, makePing, makeProjectileModel, makeProjectileShadow, makeProjectileTrail,
+  isLobbed, makeLightning, makeMuzzleFlash, makePing, makeProjectileModel, makeProjectileShadow, makeProjectileTrail,
   makeScorchStar, makeStrikeFlash, orientAlongVelocity, prewarmProjectileFx, projectileFamily,
   projectileFxWarmUpMaterials, projectileGeometry, projectileMaterial, pushTrailPoint, setFxViewer,
   type LandingHint, type ProjectileFamily, type TrailPoint,
@@ -4161,7 +4161,9 @@ export class WorldRenderer {
       // and the muzzle event. Nothing here is frustum-culled — a fast/high round near a screen edge
       // would otherwise vanish while its un-culled trail lingers.
       for (const part of makeProjectileTrail(projectile, family, history)) this.projectileRoot.add(part);
-      this.projectileRoot.add(makeProjectileShadow(projectile, family));
+      // Only LOBBED rounds cast a ground shadow -- it is how you read where a shell or grenade will
+      // land. A flat tracer's shadow was a dark disc sliding over the ground unattached to anything.
+      if (isLobbed(family)) this.projectileRoot.add(makeProjectileShadow(projectile, family));
       const flash = makeMuzzleFlash(projectile, family);
       if (flash) this.projectileRoot.add(flash);
       const model = makeProjectileModel(projectile, family);

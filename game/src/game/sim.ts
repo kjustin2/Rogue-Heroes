@@ -644,7 +644,19 @@ export class TacticalSim {
 
   // `factions` is optional and defaults to PRESERVING the current pick, because configure() also
   // runs on reset() -- passing nothing must not silently drop the player back to the default.
-  configure(map: MapDef, mode: ModeId, difficulty: Difficulty = this.difficulty, factions?: Partial<Record<Team, FactionId>>): void {
+  /**
+   * LOCAL 2-PLAYER (hotseat). Both sides are human: the AI never queues orders, and the composition
+   * root hands the command phase to each player in turn, calling `swapSides()` so Player 2 plans
+   * through the ordinary "player" UI. The sim always RESOLVES with sides unswapped (Player 1 =
+   * "player"), so a victory is always Player 1's and a defeat Player 2's. Set by `configure`.
+   */
+  hotseat = false;
+  /** True while Player 2 is planning (sides swapped). Never true during a resolve or a save. */
+  sidesSwapped = false;
+
+  configure(map: MapDef, mode: ModeId, difficulty: Difficulty = this.difficulty, factions?: Partial<Record<Team, FactionId>>, hotseat = false): void {
+    this.hotseat = hotseat;
+    this.sidesSwapped = false;
     if (factions?.player) this.factions.player = factions.player;
     if (factions?.enemy) this.factions.enemy = factions.enemy;
     this.mapDef = map;
@@ -817,13 +829,20 @@ export class TacticalSim {
     const desired = clampToArena(destination);
     const limitedByRange = limitMoveDestination(actor, start, desired);
     const limited = this.blockedMoveDestination(actor, start, limitedByRange, allowedCoverId);
+    // A move that goes nowhere is refused, not charged: the block reason is already in the log, and
+    // spending a command point on a zero-length order read as "the tank ignored me".
+    if (dist(start, limited) < 0.3 && dist(start, desired) > 0.3) {
+      if (this.log[0]?.startsWith(actor.name)) return false; // the reason is already the newest line
+      return this.reject(`${actor.name} can't move that way`);
+    }
     if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
     if (actor.kind === "artillery" && actor.deployed) {
       actor.commandPoints = 0;
       actor.deployed = false;
       this.pushLog(`${actor.name} packs up its outriggers to move`);
     }
-    if (dist(desired, limited) > 0.05) this.pushLog(`${actor.name} move limited to ${moveRange(actor).toFixed(1)}m`);
+    // Say WHICH limit applied: range, or the obstacle already named in the log.
+    if (dist(desired, limitedByRange) > 0.05 && dist(limitedByRange, limited) <= 0.05) this.pushLog(`${actor.name} move limited to ${moveRange(actor).toFixed(1)}m`);
     this.addOrder({
       actorId: actor.id,
       kind: "move",
@@ -1171,7 +1190,7 @@ export class TacticalSim {
    * endTurn is byte-identical to the preview. Cached per turn; empty when nothing is revealed.
    */
   enemyIntents(): EnemyIntent[] {
-    if (!this.revealedOrders || this.phase !== "command") return [];
+    if (!this.revealedOrders || this.phase !== "command" || this.hotseat) return [];
     if (this.enemyIntentCache?.turn === this.turn) return this.enemyIntentCache.list;
     const rngState = this.rng.save();
     const snapshot = this.entities.map((e) => ({ e, cp: e.commandPoints, grenades: e.grenades, yaw: e.yaw }));
@@ -1950,7 +1969,11 @@ export class TacticalSim {
     if (this.phase !== "command") return;
     // Last Stand: reinforcement waves crest every other round before the enemy acts.
     if (this.mode === "survival" && this.turn % 2 === 1 && this.phase === "command") this.spawnSurvivalWave();
-    this.queueEnemyOrders();
+    if (this.hotseat) {
+      if (this.sidesSwapped) this.swapSides(); // always resolve as Player 1 = "player"
+    } else {
+      this.queueEnemyOrders();
+    }
     this.revealedOrders = false; // the pulse covered exactly this one enemy command
     this.enemyIntentCache = undefined;
     // HULL DOWN. A tank with no move/ram order this resolve settles in and takes 30% less damage
@@ -1981,7 +2004,7 @@ export class TacticalSim {
   }
 
   reset(): void {
-    this.configure(this.mapDef, this.mode, this.difficulty);
+    this.configure(this.mapDef, this.mode, this.difficulty, undefined, this.hotseat);
   }
 
   // ---------------------------------------------------------------------------
@@ -2029,21 +2052,40 @@ export class TacticalSim {
    */
   debugCommandAsAi(): void {
     if (this.phase !== "command") return;
-    const flip = (team: Team): Team => (team === "player" ? "enemy" : team === "enemy" ? "player" : team);
-    const swap = (): void => {
-      for (const e of this.entities) e.team = flip(e.team);
-      for (const m of this.mines) m.team = flip(m.team);
-      const player = this.economy.get("player") ?? 0;
-      const enemy = this.economy.get("enemy") ?? 0;
-      this.economy.set("player", enemy);
-      this.economy.set("enemy", player);
-    };
-    swap();
+    this.flipTeams();
     try {
       this.queueEnemyOrders();
     } finally {
-      swap();
+      this.flipTeams();
     }
+  }
+
+  /** Hotseat: hand the "player" seat to the other human (and back). Command phase only. */
+  swapSides(): void {
+    if (this.phase !== "command") return;
+    this.flipTeams();
+    this.sidesSwapped = !this.sidesSwapped;
+    this.selectedId = "";
+  }
+
+  // Everything team-keyed trades places: entities, mines, treasury, faction, and the mode's
+  // scoreboard (scores, hill holders, flag owners), so the other seat sees its own side as "player".
+  private flipTeams(): void {
+    const flip = (team: Team): Team => (team === "player" ? "enemy" : team === "enemy" ? "player" : team);
+    for (const e of this.entities) e.team = flip(e.team);
+    for (const m of this.mines) m.team = flip(m.team);
+    const player = this.economy.get("player") ?? 0;
+    const enemy = this.economy.get("enemy") ?? 0;
+    this.economy.set("player", enemy);
+    this.economy.set("enemy", player);
+    const f = this.factions.player;
+    this.factions.player = this.factions.enemy;
+    this.factions.enemy = f;
+    const s = this.modeState;
+    [s.playerScore, s.enemyScore] = [s.enemyScore, s.playerScore];
+    if (s.hillHolder) s.hillHolder = flip(s.hillHolder);
+    if (s.hillHolders) s.hillHolders = s.hillHolders.map((h) => (h ? flip(h) : h));
+    for (const flag of s.flags) flag.team = flip(flag.team);
   }
 
   debugSpawn(kind: TroopKind, team: Team, position: Vec2, options: { elite?: boolean; bossName?: string } = {}): CombatEntity {
@@ -2133,6 +2175,16 @@ export class TacticalSim {
   // Serialize the live battle for the in-combat Save option. Entities are plain data objects,
   // so a JSON round-trip is sufficient.
   serialize(): string {
+    // A hotseat save taken while Player 2 plans is written with the sides put back, so a restore
+    // (which always resumes unswapped) cannot hand Player 1's army to Player 2.
+    if (this.sidesSwapped) {
+      this.flipTeams();
+      try { return this.serializeState(); } finally { this.flipTeams(); }
+    }
+    return this.serializeState();
+  }
+
+  private serializeState(): string {
     return JSON.stringify({
       map: this.mapDef.id,
       mode: this.mode,
@@ -2155,6 +2207,7 @@ export class TacticalSim {
       gasClouds: this.gasClouds,
       smokeClouds: this.smokeClouds,
       revealedOrders: this.revealedOrders,
+      hotseat: this.hotseat,
       mines: this.mines,
       pickups: this.pickups,
     });
@@ -2173,6 +2226,7 @@ export class TacticalSim {
         gasClouds?: { id: string; x: number; z: number; radius: number; maxRadius: number }[];
         smokeClouds?: { id: string; x: number; z: number; radius: number; turnsLeft: number }[];
         revealedOrders?: boolean;
+        hotseat?: boolean;
         mines?: { id: string; x: number; z: number; team: Team }[];
         pickups?: { id: string; x: number; z: number; amount: number }[];
       };
@@ -2223,6 +2277,8 @@ export class TacticalSim {
       this.gasClouds.splice(0, this.gasClouds.length, ...(data.gasClouds ?? []));
       this.smokeClouds.splice(0, this.smokeClouds.length, ...(data.smokeClouds ?? []));
       this.revealedOrders = data.revealedOrders === true;
+      this.hotseat = data.hotseat === true;
+      this.sidesSwapped = false;
       this.enemyIntentCache = undefined;
       this.mines.splice(0, this.mines.length, ...(data.mines ?? []));
       this.pickups.splice(0, this.pickups.length, ...(data.pickups ?? []));

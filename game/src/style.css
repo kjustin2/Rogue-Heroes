@@ -5766,3 +5766,22 @@ kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
 .research-card.locked { opacity: 0.45; box-shadow: none; cursor: default; }
 .research-card.locked strong { text-decoration: line-through; }
 .research-card[data-disabled="true"] { cursor: default; }
+
+/* ---- Local 2 Players: the handoff card between planners ---- */
+.hotseat-card { max-width: 520px; text-align: center; }
+.hotseat-card .menu-heading { font-size: 2.4rem; margin: 6px 0 4px; }
+.hotseat-card__kicker { font-size: var(--fs-micro); font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--amber); }
+.hotseat-handoff { background: var(--paper-deep); }
+
+/* Roster card sub-line: a long status ("Hull down", "Suppressed") plus pips, grenades and a stance
+   chip squeezed the health bar to a sliver and ran it into the Info button. The row wraps now, and
+   the bar keeps a readable minimum -- when it cannot fit, it drops to its own full-width line. */
+.unit-select .unit-line--sub { flex-wrap: wrap; row-gap: 4px; min-width: 0; }
+.unit-select .unit-line--sub .unit-health { flex: 1 0 64px; min-width: 64px; max-width: none; }
+.unit-select .unit-line--sub .unit-status { white-space: nowrap; }
+
+/* Unit Info panel fixes (2026-09-22): the HP number ("160/160") overflowed its fixed 46px column
+   past the card edge, and the top-centre toast column sat over the panel's Close button. */
+.detail-parts .part-row { grid-template-columns: minmax(80px, 1fr) minmax(56px, 88px) auto; }
+.detail-parts .part-row em { white-space: nowrap; min-width: 46px; text-align: right; }
+body:has(.unit-detail-panel) #toasts { left: calc(50% + clamp(344px, 22vw, 520px) / 2); }

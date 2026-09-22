@@ -458,9 +458,9 @@ const RAW_MAPS: readonly MapDef[] = [
       { kind: "furnace", x: -17, z: 8.5, yaw: -0.5, mirror: true },
       { kind: "wall", x: -2.2, z: 4.5, mirror: true },
       { kind: "wall", x: -4.4, z: -5.5, mirror: true },
-      { kind: "crate", x: -6, z: 0, mirror: true },
+      { kind: "crate", x: -3.6, z: 0, mirror: true }, // cover ON the deck; at x -6 it plugged the top of the ramp and nobody could get onto the span
       { kind: "conduit", x: -9.5, z: 1.5, mirror: true },
-      { kind: "pillar", x: -11, z: -2.2, mirror: true },
+      { kind: "pillar", x: -11.5, z: -4.2, mirror: true }, // clear of the overpass ramp mouth: at z -2.2 it shut the ramp to vehicles
       { kind: "gas", x: -6.5, z: -3.8, mirror: true },
     ],
     // SLAG SPILL: the furnaces vent every third turn, alternating corners -- molten slag floods

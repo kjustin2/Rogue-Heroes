@@ -822,7 +822,7 @@ function unitCard(entity: CombatEntity, selected: boolean, orders: TacticalOrder
   const spent = entity.status.alive && entity.commandPoints <= 0;
   const crouched = entity.stance === "crouched" && entity.status.alive;
   const status = !entity.status.alive ? "Disabled" : spent ? "Orders set" : statusText(entity);
-  const statusBand = !entity.status.alive ? "dead" : spent ? "spent" : status === "Ready" || status === "Hull down" ? "ready" : "warn";
+  const statusBand = !entity.status.alive ? "dead" : spent ? "spent" : status === "Ready" || status === "Hull down" || status === "Deployed" ? "ready" : "warn";
   const order = orders.length ? orders.map((o) => escapeHtml(orderSummary(o, sim).replace("Queued: ", ""))).join(" / ") : "";
   return `
     <div class="unit-card ${selected ? "selected" : ""} ${entity.status.alive ? "" : "dead"} ${spent ? "spent" : ""} ${crouched ? "crouched" : ""}">
@@ -916,14 +916,18 @@ function endScreen(sim: TacticalSim): string {
   const turnWord = turns === 1 ? "turn" : "turns";
   const playerUnits = sim.living("player").filter((e) => isInfantryKind(e.kind) || e.kind === "tank").length;
   const enemyUnits = sim.living("enemy").filter((e) => e.kind !== "cover").length;
-  const sub = win
+  // Hotseat resolves as Player 1 = "player", so a victory is Player 1's and a defeat Player 2's.
+  const title = sim.hotseat ? `PLAYER ${win ? 1 : 2} WINS` : win ? "VICTORY" : "DEFEAT";
+  const sub = sim.hotseat
+    ? `Player ${win ? 1 : 2} takes the field in ${turns} ${turnWord}.`
+    : win
     ? `Enemy forces neutralized in ${turns} ${turnWord}. ${playerUnits} unit${playerUnits === 1 ? "" : "s"} still standing.`
     : `Your command was overrun on turn ${turns}. ${enemyUnits} enemy asset${enemyUnits === 1 ? "" : "s"} remain.`;
   return `
     <div class="endscreen endscreen--${win ? "victory" : "defeat"}">
       <div class="endscreen__card">
         <div class="endscreen__kicker">Battle Over</div>
-        <h2 class="endscreen__title">${win ? "VICTORY" : "DEFEAT"}</h2>
+        <h2 class="endscreen__title">${title}</h2>
         <p class="endscreen__sub">${escapeHtml(sub)}</p>
         <div class="endscreen__actions">
           <button class="endscreen__btn" data-command="reset" type="button">Play Again</button>
@@ -1038,10 +1042,10 @@ function inspectEntity(entity: CombatEntity, titleText: string, activePartId: st
       </div>
       <div class="detail-statline">
         <div data-tip="${escapeAttr(cpTip(entity))}"><span>CP</span><strong>${entity.commandPoints}/${entity.maxCommandPoints}</strong></div>
-        <div><span>Move</span><strong>${entity.status.canMove ? "Online" : "Down"}</strong></div>
-        <div><span>Weapon</span><strong>${entity.status.canShoot ? "Online" : "Down"}</strong></div>
+        <div><span>Move</span><strong>${moveLabel(entity)}</strong></div>
+        <div><span>Weapon</span><strong>${weaponLabel(entity)}</strong></div>
         ${entity.maxGrenades > 0 ? `<div><span>Grenades</span><strong>${entity.grenades}/${entity.maxGrenades}</strong></div>` : ""}
-        <div><span>Posture</span><strong>${entity.stance === "crouched" ? "Crouched" : "Standing"}</strong></div>
+        ${isInfantryKind(entity.kind) ? `<div><span>Posture</span><strong>${entity.stance === "crouched" ? "Crouched" : "Standing"}</strong></div>` : ""}
       </div>
       ${buildingDetail(entity)}
     </div>
@@ -2252,6 +2256,17 @@ function partTip(part: DamagePart): string {
   return "Targetable part.";
 }
 
+// "Move: Down / Weapon: Down" on a healthy Home Base read as broken. A building does not move, and
+// a unit with no weapon part has none -- say that, and keep "Down" for something actually knocked out.
+function moveLabel(entity: CombatEntity): string {
+  if (isBuildingKind(entity.kind) || isDefenseKind(entity.kind) || entity.kind === "cover") return "Fixed";
+  return entity.status.canMove ? "Online" : "Down";
+}
+function weaponLabel(entity: CombatEntity): string {
+  if (!entity.parts.some((p) => p.role === "weapon")) return "None";
+  return entity.status.canShoot ? "Online" : "Down";
+}
+
 function statusText(entity: CombatEntity): string {
   if (!entity.status.alive) return "Disabled";
   if (entity.status.exposedCore) return "Exposed";
@@ -2260,6 +2275,8 @@ function statusText(entity: CombatEntity): string {
   if (entity.status.commandLimited) return "Limited";
   if (entity.suppressedUntilTurn !== undefined) return "Suppressed";
   if (entity.kind === "tank" && entity.hullDown) return "Hull down";
+  // Artillery can only fire once its outriggers are down: the status says which it is.
+  if (entity.kind === "artillery") return entity.deployed ? "Deployed" : "Packed";
   return "Ready";
 }
 
