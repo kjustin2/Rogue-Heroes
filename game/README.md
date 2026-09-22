@@ -1,75 +1,32 @@
-# Rogue Heroes Tactics
+# Rogue Heroes Tactics — game package
 
-Fresh 3D prototype for the new Rogue Heroes direction: a turn-based RTS battle
-loop with blocky units, destructible environments, and component-level damage.
+Setup, run and test instructions live in the [root README](../README.md); the engineering guide
+is [`CLAUDE.md`](../CLAUDE.md). This file is a short tour of how the game plays.
 
-## Run
+## The loop
 
-```powershell
-npm install
-npm run dev
-```
+- **Command phase:** every unit gets command points. Select a trooper, vehicle or aircraft and
+  queue orders — move, shoot (aimed at a specific part), grenade, melee, overwatch, take cover,
+  load/unload transports, and each kind's signature ability. Your Home Base gets one order a turn:
+  deploy a unit (you pick where in its ring), research a doctrine, build a defense, call a support
+  strike, or upgrade income.
+- **Resolve phase:** both sides' orders play out together in a short real-time burst, with a
+  camera that follows the action. Then the next command phase begins.
+- **Per-part damage:** units are bags of parts. Destroy a tank's tread and it can't move, its
+  cannon and it can't shoot; knock a rifle out of a soldier's hands and they are disarmed.
+  Blasts throw what they don't kill (into water, where it drowns).
+- **Tech:** doctrines unlock new troop types; each doctrine then offers two specializations —
+  pick one, and the other is locked out for the battle.
 
-Open `http://localhost:5175`.
+## Skirmish
 
-## Standalone Electron
-
-```powershell
-npm install
-npm run standalone
-```
-
-Use `npm run desktop` to launch Electron against an already-built `dist/`
-folder.
+Six battlefields, each with its own layout, landmarks and hazard: Dust Bowl (sandstorms),
+Ironworks (slag spills), Verdant Pass (lightning), Frozen Causeway (ion storms), Ruins of Karak
+(collapses) and Crossfire Basin (artillery barrages). Five modes (Annihilation, Capture the Flag,
+Hold the Hill, Domination, Last Stand), three factions, three difficulties. Medals and lifetime
+stats are on the Achievements page; cosmetics are in the Armory.
 
 ## Debug / Sandbox mode
 
-Launch the game with a debug flag to unlock a **Debug / Sandbox** section at the
-bottom of the in-game **Settings** menu:
-
-- **Dev/browser:** open the game with `?debug`, e.g. `http://localhost:5175/?debug`.
-- **Packaged Electron:** launch with `--debug` (e.g. `npm run desktop -- --debug`)
-  or set the `RHT_DEBUG=1` environment variable.
-
-The Debug section is hidden entirely unless the flag is present. Toggles (persisted
-like any other setting):
-
-- **Infinite money** — keeps your treasury topped up every command phase.
-- **Free deploy cooldowns** — zeroes deploy cooldowns so you can reinforce instantly.
-
-## Verify
-
-```powershell
-npm run verify
-npm run smoke:browser
-npm run smoke:flow
-npm run smoke:electron
-```
-
-Use `npm run test:full` to run all four checks in sequence.
-
-The foundation mirrors the useful Rogue-Hero-3 habits:
-
-- Vite + TypeScript + Three.js for fast iteration.
-- Pure, testable game rules for the damage model.
-- Deterministic scenario setup and an automation hook at `window.__rht`.
-- Browser smoke tests that capture screenshots into `shots/`.
-
-## Current Slice
-
-- Command phase: select a unit, queue move, shoot, or ram orders.
-- Resolve phase: queued orders play out in a short real-time burst, then the next
-  command phase begins.
-- Tanks have hull, cannon, turret, and tread parts. Destroying a tread stops
-  movement. Destroying the cannon stops shooting. Destroying the turret ring
-  jams the tank even if the cannon is still attached. Stripping front armor
-  exposes the hull to heavier follow-up damage.
-- Soldiers have body, head, and rifle parts. Destroying the rifle disarms them.
-  Destroying the head kills instantly. Destroying the power pack limits command
-  points and shocks nearby friendly orders.
-- Bases have core, turret, comms, and power parts. Individual parts can be shot
-  off before the base is destroyed. Comms loss degrades enemy command capacity,
-  turret loss disarms the base, and the power cell detonates.
-- Cover and fuel cells block lines of fire and can be destroyed.
-- Destroyed parts throw persistent chunks onto the battlefield so the damage
-  state remains readable after the hit.
+Launch with `?debug` (dev URL) or `--debug` / `RHT_DEBUG=1` (desktop app) to reveal a Debug
+section at the bottom of Settings: infinite money and free deploy cooldowns.

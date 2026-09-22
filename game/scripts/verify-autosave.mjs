@@ -1,22 +1,15 @@
 // Verifies a battle in progress is auto-saved when the page is hidden (app/tab close), and
 // that the save persists (saves are never silently dropped — that's the whole point).
 import { spawn } from "node:child_process";
-import { homedir } from "node:os";
 import { join } from "node:path";
-import { readdirSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
+import { findChromium } from "../improve/lib/harness.mjs";
 
 const PORT = 5189;
 const URL = `http://127.0.0.1:${PORT}`;
 const SAVE_KEY = "rht.savedBattle.v1";
 
-function findChromium() {
-  if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
-  const base = join(process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local"), "ms-playwright");
-  for (const dir of readdirSync(base)) if (dir.startsWith("chromium-")) return join(base, dir, "chrome-win", "chrome.exe");
-  throw new Error("No Playwright Chromium found");
-}
 async function ready(u) { try { await fetch(u); return true; } catch { return false; } }
 
 let server = null, browser = null;

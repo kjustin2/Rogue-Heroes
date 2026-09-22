@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
+import { findChromium } from "../improve/lib/harness.mjs";
 
 const PORT = 5177;
 const URL = `http://127.0.0.1:${PORT}`;
@@ -125,18 +125,3 @@ async function isServerReady(url) {
   }
 }
 
-function findChromium() {
-  if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH && existsSync(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH)) {
-    return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
-  }
-  const local = process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local");
-  const root = join(local, "ms-playwright");
-  if (!existsSync(root)) throw new Error(`Missing Playwright browser cache: ${root}`);
-  const matches = readdirSync(root)
-    .filter((name) => name.startsWith("chromium-"))
-    .map((name) => join(root, name, "chrome-win64", "chrome.exe"))
-    .filter((path) => existsSync(path))
-    .sort();
-  if (!matches.length) throw new Error(`No cached Chromium executable under ${root}`);
-  return matches[matches.length - 1];
-}

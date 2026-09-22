@@ -89,7 +89,7 @@ describe("Commander", () => {
     c.reset();
     const base = { turns: 9, losses: 1, killsByKind: {}, toppleHappened: false };
     const fresh = c.recordBattle({ ...base, victory: true, map: "verdant", mode: "ctf", faction: "bastion", difficulty: "hard", baseHealth: 0.2, arms: { infantry: true, vehicle: true, air: true } }).map((m) => m.id);
-    expect(fresh).toEqual(expect.arrayContaining(["iron", "last-stand", "combined-arms"]));
+    expect(fresh).toEqual(expect.arrayContaining(["iron", "clutch", "combined-arms"]));
     c.recordBattle({ ...base, victory: false, map: "karak", mode: "hill" });
     c.recordBattle({ ...base, victory: true, map: "verdant", mode: "ctf" });
     expect(c.stats.mapWins).toEqual(["verdant"]); // a loss and a repeat add nothing

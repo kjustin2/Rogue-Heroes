@@ -124,15 +124,25 @@ export function findChromium() {
   if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH && existsSync(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH)) {
     return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
   }
-  const local = process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local");
-  const root = join(local, "ms-playwright");
-  if (!existsSync(root)) throw new Error(`Missing Playwright browser cache: ${root}`);
-  const matches = readdirSync(root)
+  // `npx playwright install chromium` caches per OS: %LOCALAPPDATA% on Windows, ~/.cache on Linux
+  // (cloud/CI), ~/Library/Caches on macOS -- or wherever PLAYWRIGHT_BROWSERS_PATH points.
+  const roots = [
+    process.env.PLAYWRIGHT_BROWSERS_PATH,
+    join(process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "ms-playwright"),
+    join(homedir(), ".cache", "ms-playwright"),
+    join(homedir(), "Library", "Caches", "ms-playwright"),
+  ].filter((root) => root && existsSync(root));
+  const exes = [
+    ["chrome-win64", "chrome.exe"], ["chrome-win", "chrome.exe"],
+    ["chrome-linux64", "chrome"], ["chrome-linux", "chrome"],
+    ["chrome-mac-arm64", "Chromium.app", "Contents", "MacOS", "Chromium"], ["chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"],
+  ];
+  const matches = roots.flatMap((root) => readdirSync(root)
     .filter((name) => name.startsWith("chromium-"))
-    .map((name) => join(root, name, "chrome-win64", "chrome.exe"))
+    .flatMap((name) => exes.map((parts) => join(root, name, ...parts))))
     .filter((path) => existsSync(path))
     .sort();
-  if (!matches.length) throw new Error(`No cached Chromium executable under ${root}`);
+  if (!matches.length) throw new Error("No Playwright Chromium found: run `npx playwright install chromium` (or set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH)");
   return matches[matches.length - 1];
 }
 

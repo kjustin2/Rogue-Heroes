@@ -1,55 +1,42 @@
-# Where we stopped — 2026-09-22
+# Where we are — 2026-09-22 (evening)
 
-Paused at the owner's request mid-loop-2. Everything below is on `main`, gated
-(typecheck · 432 vitest · smoke:animation/flow/deep/ground/ui-audit/buttons · perf OK) and pushed.
-The loop board is `docs/loop-status.md`; the open glitch list is
-`docs/glitch-sweep-2026-09-21.md`.
+Direction change: **Skirmish is the only mode until it is perfected.** Campaign and Skirmish Run
+were deleted (see "SKIRMISH ONLY" in `CLAUDE.md` for the ban list).
 
-## Landed this round (owner's list of 10 + the two live reports)
+## Landed this round
 
 | Ask | State | Proof |
 |---|---|---|
-| 1a infantry walk unnatural | done | `gait.ts` + `legSplit.ts`: distance-locked stride, two-bone IK knees, heel-toe roll, walk/march/trudge/crouch tiers. Skate 2.00 → 0.08 cm/frame, gate fault-injected in `smoke:animation`. Strips `filmstrip-walk/-march/-trudge/-crouch.png` |
-| 1b turret aims where it fires | done | no idle hunt during resolve + 4 rad/s traverse; `filmstrip-turret.png` |
-| 1c GUI text hard to read | done | `auditUI` small-text + contrast rules (fault-injected), type floors |
-| 2 pick where a unit deploys | done | placement ring + ghost, snap, cancel; `deploy.test.ts`, `gpu-deployflow-*.png` |
-| 3 base circle blends into map | done | selection ring is a toon band + ink rim, draped; plates keep clear of base pads; `basering-sheet.png` |
-| 4 map preview cooler | done | isometric diorama built from real map data (`src/ui/mapPreview.ts`) |
-| 5 infantry more unique | done | per-kind torsos/limbs/extras (34 new parts); `gpu-lineup.png`, silhouette sheet |
-| 6 no Meshy, Blender toon hulls | done | `art/vehicles/author_vehicles.py` → `vehicles-kit.glb` (25 parts); Meshy pipeline deleted; tris 483k → 232k |
-| 7 projectiles pass 2 | done (needs owner's eye) | per-family show, continuous trail easing, no-pop rule; `filmstrip-*`, `gpu-volley-*`, `gpu-temporal.png` |
-| 8 bullets through items | done | wall slab test (oriented box), bystander hulls block over footprint; `shotBlocking.test.ts` |
-| 9 GUIs use available space | done | panels grow with width; four-viewport shots; one-screen gate |
-| 12 intro cinematic wobble | done | eased rail, opening is a still, HUD hidden; `gpu-boot-mission.png` |
-| 13 themed maps | done | 12 landmark kinds, named sections, per-section scatter, per-map skylines; 24 shots; seats 50% |
+| Title screen shakes like an earthquake before the slow pan | fixed at the root: the first frame's `dt` was negative and ran the trauma decay backwards | `npm run probe:intro` (real GPU): camera jitter 1.48 → 0.03 |
+| Glitch sweep #1 weather motes as white squares | soft round clamped points | `gpu-map-causeway.png` |
+| Glitch sweep #2 floating cream brackets on cover | deleted | `gpu-map-verdant.png` |
+| Glitch sweep #5 + owner report: pickup circles bury in the ground | every static ground overlay draped (`drapedDisc`), aim splash disc draped | `gpu-map-causeway.png` |
+| Glitch sweep #7 props sunk into raised ground | props stand on the drawn ground | — |
+| Glitch sweep #6 mid-resolve shader compile | warm-up twins symmetric; the original opaque-variant compile is gone | `soak:gpu`: resolve-1 max 20.8ms, jank 0%, same as resolves 2-3 |
+| Glitch sweep #4/4b canopy hatch | detail normal map removed from part materials | — |
+| Units look blurry | aircraft/flak/fallback hulls wear the ink rim; pale steel/glass toned; white marker pip removed; headlamps no longer bloom | `gpu-air.png`, `gpu-vehicles-close.png` |
+| Cooler death animations | thrown / crumple / spin (infantry), wreck + turret throw (vehicles), spiral + crash (aircraft) | `gpu-deaths*.png` |
+| Projectiles look like laser beams | one ballistic language: warm tracers, marksman vapour trail, no energy darts | `gpu-volley-flight.png` |
+| Remove Campaign + Skirmish Run | deleted everywhere; menu is Continue / Play Skirmish | `gpu-menu.png` |
+| Achievements page on the main menu | 13 medals with progress meters + lifetime stats | `gpu-achievements.png` |
+| Tech tree confusing | rebuilt as a research table: doctrine → unlocks, two specializations with OR | `gpu-tech-fresh.png`, `gpu-tech-mid.png` |
+| Each map unique | Ironworks gets its own SLAG SPILL event (was a copy of Karak's collapse); forecast shows lightning | `storm.test.ts` |
+| Dead code / stale scripts / stale docs | 27 unwired scripts, 8 stale docs, 6 dead exports removed | commits `a034607`, `d64fac2` |
+| Cloud setup docs | root README rewritten; the harness finds Chromium on Linux/macOS too | `README.md` |
 
-## Still to do — pick up here
+## Next — pick up here
 
-1. **Row 10: mechanics / bug / optimisation audit + dead-code refactor.** Never started.
-   Wants: a pass over sim mechanics (climb vs walk-up rules, order edge cases), `test:full`,
-   `soak:gpu`, perf, and a dead-code sweep (unused exports, stale scripts, `improve/` leftovers,
-   the stale `smoke:electron` assertions noted in CLAUDE.md). Dispatch as its own worker.
-2. **Work the glitch list** (`docs/glitch-sweep-2026-09-21.md`, 7 confirmed, measured, with
-   proposed fixes and owning functions):
-   - #1 ambient weather motes draw as hard white SQUARES (most visible)
-   - #2 `interactionGlow()` hangs four unlit cream bars in mid-air on every cover prop
-   - #5 overlays in the pickups/mines/zones block are not draped — they bury in stepped ground
-   - #7 cover props sit sunk/tilted into raised ground
-   - #6 one toon program still compiles mid-resolve (warm-up twin-cloning is one-way)
-   - #4/#4b tree-canopy hatch = per-part detail normal minified (fix: drop the normal at distance)
-   - #3 recorded as NOT a bug (command-phase shimmer is the wind) — do not re-chase
-   The sweep was stopped before the gait leg-seam check and the static per-map pass finished;
-   resume it after the fixes to confirm and to finish those two sections.
-3. **Owner verification of projectiles** — the splotch report was measured fixed on the
-   `temporal` probe, but he should confirm in play.
-4. **Final: `npm run test:full`, `soak:gpu`, perf rebase if needed, `npm run dist:exe`**, hand over
-   `game/release/Rogue Heroes Tactics 0.1.0.exe`.
-
-## Notes for whoever picks this up
-
-- Five worktrees were used this round; all removed. `git worktree list` should show only the repo.
-- `shots:gpu` gained cases: `temporal` (12 consecutive frames — the pop/splotch detector),
-  `overview` (whole map + per-section frames), `baserings`, `deployflow`, `recon`, `direction`,
-  `nowalk`, `vehicles`, `structures`, `viewports`, `boot`.
-- `shots:step` gained `walk|march|trudge|crouch|step` modes (side profile, HUD hidden).
-- Balance self-play is part of `vitest` and takes ~1 min; seats currently 50% of decided games.
+1. **Owner playtest of Skirmish** on the standalone build: deaths, projectiles, the research
+   table, the slag spill. Iterate off what he reports.
+2. **Skirmish depth** (only when asked): elites/bosses survive in code (`debugSpawn` options + the
+   boss bar) for a possible Skirmish set piece.
+3. Known and deferred:
+   - `soak:gpu` still sees ONE toon program compile on the first resolve (key diff field #51,
+     2049 -> 1: a transparent toon material created during the resolve). Not a visible hitch
+     (max frame 20.8ms, same as later resolves). Twin-cloning both vertex-colour states did NOT
+     catch it -- find the material created mid-resolve before trying again.
+   - `smoke:electron` gameplay assertions are stale (pre-placed units) — `smoke:flow` covers it.
+   - A registered worktree `.claude/worktrees/compassionate-mcclintock-ba533c` exists from another
+     session; it was left alone.
+   - Karak and Verdant both use stepped pyramid mesas — distinct palettes and events, but a future
+     map pass could vary the terrain vocabulary.

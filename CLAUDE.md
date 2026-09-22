@@ -33,8 +33,9 @@ symbols fail the build.
 | Rebuild the Blender kits (validated, AO-baked) | `npm run art:kit`, `npm run art:props`, `npm run art:vehicles`, `npm run art:validate:selftest` |
 | A/B two screenshots (hottest region, 3× crop) / inspect a GLB | `npm run shots:diff a.png b.png out.png`, `npm run art:inspect <glb>` |
 | Start one map headless and print the in-page error | `npm run probe:map <id>` |
+| Boot camera steadiness on the real GPU (the title "earthquake" regression) | `npm run probe:intro` |
 | **Real-GPU frame-time probe** (hidden Electron, diffs compiled programs across resolves) | `npm run soak:gpu [scenario]` |
-| **Real-GPU screenshots** (`-- menu firefight lineup rings abilities direction nowalk maps volley vehicles structures …`; `vehicles` / `structures` = the vehicles-kit review frames, both teams; `maps` = one gameplay frame per battlefield (`volley` = a seven-family firing line mid-resolve: rounds, trails, flashes, blasts on the real GPU); UI screens `deploy settings armory achievements tech tutorial pause victory defeat hover hover-deck`; `air` = the four flyers, both teams; `mapselect` shoots the Skirmish page at 1280×720 / 1600×900 / 2560×1080; `SHOT_PREFIX=before-` for a baseline build) | `npm run shots:gpu` |
+| **Real-GPU screenshots** (`-- menu firefight lineup rings abilities direction nowalk maps volley vehicles structures …`; `vehicles` / `structures` = the vehicles-kit review frames, both teams; `maps` = one gameplay frame per battlefield (`volley` = a seven-family firing line mid-resolve: rounds, trails, flashes, blasts on the real GPU); UI screens `deploy settings armory achievements tech tutorial pause victory defeat hover hover-deck`; `air` = the four flyers, both teams; `deaths` = every death family filmed (16 frames); `tech` = the research table fresh + mid-game; `mapselect` shoots the Skirmish page at 1280×720 / 1600×900 / 2560×1080; `SHOT_PREFIX=before-` for a baseline build) | `npm run shots:gpu` |
 | Locomotion filmstrips (`-- walk` flat-ground stride in profile, `march` scout, `trudge` heavy, `crouch`, `step` = up a terrain step vs talus / plates) | `npm run shots:step` |
 | Build + Electron gameplay smoke | `npm run test:play` |
 | Desktop app (build + Electron) | `npm run standalone` |
@@ -115,7 +116,7 @@ the pooled-material system repaints them every frame. A single skinned character
 three away — that is why infantry were procedural, and it is still true. So Blender authors the
 shapes and the game keeps the rig.
 
-**Body parts are authored too** (`body_torso/arm/leg/hips/head` in `author_kinds.py`): the chassis is no longer primitives. Parts export **with UVs** (smart-projected in `finish()`), and every pooled part material carries `partDetailNormal()` (weave + grooves + rivets). **Subsurf sculpting was tried and reverted** — kitbashed shells under subsurf read as beads; keep bevel-only. Gear (`rifle`/`pack` parts) is un-scaled by the build's girth after the rig is built, and long weapons carry muzzle-high (`CARRY_PITCH_LONG`).
+**Body parts are authored too** (`body_torso/arm/leg/hips/head` in `author_kinds.py`): the chassis is no longer primitives. Parts export **with UVs** (smart-projected in `finish()`), and pooled part materials carry **no detail normal map** (2026-09-22: the weave normal under the four-band toon ramp speckled every band edge up close — units read blurry — and minified into a dashed hatch on large facets; glitch sweep 4b). Flat bands + ink are the look; do not bring a tiled normal back onto parts. **Subsurf sculpting was tried and reverted** — kitbashed shells under subsurf read as beads; keep bevel-only. Gear (`rifle`/`pack` parts) is un-scaled by the build's girth after the rig is built, and long weapons carry muzzle-high (`CARRY_PITCH_LONG`).
 
 **Per-kind identity parts** live in `art/infantry/author_kinds.py` (imported by `author_kit.py`):
 one helmet and one weapon per kind, plus a pack where the pack IS the unit (medic case, flamer
@@ -448,7 +449,10 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
 - **Lightning** (`MapEventKind "lightning"`): one strike per turn at `lightningZone(turn)` — a pure function of map seed + turn, so command telegraph == resolve strike == restored save; never within 7 of a base.
 - **Title diorama** (`stageMenuDiorama` in `main.ts`): the main menu sits over a live Verdant scene with `stage.menuDrift`; `body.in-battle` mirrors `inBattle` so CSS hides the HUD outside a battle; `stage.resetView()` restores the tactical camera only when leaving the diorama.
 - **`stage.warmUp()` extras must be visible AND unculled** (parked at y=-5000 in a wrapper): `renderer.compile()` walks `traverseVisible`, and only a composer DRAW compiles the post-chain variant (linear output, tone mapping off) — the lean path's key differs. It was a silent no-op for every GLB until `soak:gpu` diffed programs across a resolve. The warm-up also clones a transparent twin of every opaque standard material (death fades flip the `opaque` program bit). Any mid-resolve hitch report: run `soak:gpu` first; it names the compiling program.
-- **Abilities on entities** (all serialized): `suppressedUntilTurn` (heavy hits; one CP + crouch next turn, applied at turn start), `hullDown` (tank with no move/ram order this resolve, decided in `endTurn`, 0.7x shot damage), slam landing in the jump-landing block. Deaths: the group lingers `DEATH_MS` falling along the last flinch direction (`diedAt`/`deathDir` on the group), then sinks.
+- **Abilities on entities** (all serialized): `suppressedUntilTurn` (heavy hits; one CP + crouch next turn, applied at turn start), `hullDown` (tank with no move/ram order this resolve, decided in `endTurn`, 0.7x shot damage), slam landing in the jump-landing block.
+- **Deaths are per family** (`poseDeath`, renderer-only, seeded by entity id; `deathMs()` per family): infantry killed by a big blow (flinch mag >= 0.6) are THROWN (arc + flip + bounce + dust), otherwise CRUMPLE or SPIN; ground vehicles WRECK (hop, roll, turret thrown clear by `blowOffTurret`, charred + smoking, then sink); aircraft SPIRAL nose-down and explode on impact. Group-level transforms (plus the turret throw after `paintPart`), so pooled paint / per-part damage never know. Evidence: `shots:gpu deaths` (`DEATH_VIEW='{...}'` to reframe; `__rht.debugKill(id, blow)` is the capture seam).
+- **Every procedural machine wears the ink rim** (`defaultInk` in `box()`/`cylinder()`): aircraft, flak and the fallback hulls. The flyers were the one rimless family and read as blurry. Accent lamps stay rimless; infantry and scenery keep their own rules. Pale steel/glass (>~180 luminance) on machines blooms into smears — keep barrels gunmetal.
+- **EVERY ground overlay is DRAPED** on the drawn ground (`drawnGroundAt`). Static rings/discs — pickups, mines, map-event telegraphs, burn/gas/smoke skirts, downed markers, objective rings — come from `drapedDisc()` (cached per map, `userData.shared`, cleared in `applyMap`); the aim splash disc is draped per build. Never add a flat `RingGeometry`/`CircleGeometry` at `terrainHeightAt` again (glitch sweep #5: a pickup ring buried in a plate read as a tan comma). Cover props stand on the drawn ground too.
 - **Ground overlays are DRAPED** (`drapeToTerrain`): the move field / weapon ring are subdivided flat
   meshes whose vertices are pulled to `terrainHeightAt` (re-draped only when selection/position/radius
   change). A flat disc at the actor's elevation sinks into the next mesa and hangs past a ledge — that
@@ -498,10 +502,10 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   `!canShoot` — strikers/bombers/transports never can shoot and used to retreat all game.
 - **Projectile / muzzle / impact FX live in `src/render/projectileFx.ts`** (2026-09-18), in the toon
   language: opaque flat colour + an INVERTED-HULL ink rim (the same pooled geometry drawn again
-  BackSide, slightly larger), layered hulls for a white-hot core inside a team-colour sleeve, and NO
+  BackSide, slightly larger), layered hulls for a white-hot core inside a warm tracer sleeve, and NO
   additive blending anywhere in a shot (the only additive light is the pooled flash light). Fades
   shrink, never dim toward black. `projectileFamily()` maps the sim's four projectile kinds × the
-  firing unit to eighteen visual families; `syncProjectiles` only feeds it a position history.
+  firing unit to fifteen visual families; `syncProjectiles` only feeds it a position history.
   Rules: (1) trails are sampled by WORLD DISTANCE (`pushTrailPoint`/`trailStep`), never per render
   frame — a frame-sampled history is a different length at every refresh rate and resolve speed
   (at quarter speed nine flame blobs stacked in 20cm and read as a balloon); (2) blast shapes scale
@@ -519,10 +523,9 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   on the array index — the history array rolls on every push, so an index-keyed element changes
   identity between two frames and pops. Smoke puffs are born ≤0.3 scale, rise on their OWN age so
   nothing hangs at head height after the round passes, and never exceed ~0.45 of the flame head.
-  A rim-less white ball is banned outright (the flash frame is the POW cut-out star; the bolt burst
-  has its own electric branch). Per-family shows: comet-tipped DASH tracers, a 3-petal flat muzzle
+  A rim-less white ball is banned outright (the flash frame is the POW cut-out star). Per-family shows: comet-tipped DASH tracers, a 3-petal flat muzzle
   flash (a per-round changing fan for the MG, a 7-petal cone for the scattergun), brass casings on
-  every small-arms round, a ripple-ring half-beat then a white lance for the marksman, flat
+  every small-arms round, a ripple-ring half-beat then a long tracer + vapour trail for the marksman, flat
   ink-rimmed cut-out stars facing the camera for every hit, ground chew where a small-arms round
   stopped, POW + debris + multi-ring + dust crown for shells, a sabot streak and a spark-fan cone
   for tank AP, and a smoke-column afterlife on the renderer's own clock (`blastAfterlife`).
@@ -530,7 +533,9 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   temporal`** — twelve CONSECUTIVE real-GPU frames at full resolve speed; read neighbours, and a
   shape absent in frame N and full-size in N+1 is a fail. (`shots:filmstrip artillery` only fires
   because the stage plants the outriggers first — an undeployed piece refuses the order.)
+  (6) **ONE BALLISTIC LANGUAGE** (2026-09-22, owner: "some projectiles look like laser beams"): every round is a physical bullet, tracer or shell in WARM colours. No team-colour tracers, no energy darts, no muzzle-to-target lance tubes, no electric impact stars. The sim's `bolt` rounds (APC/turret/aircraft/flak) draw as the `mg` family; the base relay's as a `tank` shell. The only electric visual left is the lightning map event (`makeLightning`); the orbital-lance support strike is a deliberate sky strike, not a unit's weapon.
 - **Frame loop is guarded** (`frame` → `frameBody` in try/catch, `__rht.frameErrors()`); one bad frame never kills rAF again.
+- **`dt` is floored at 0.** rAF's timestamp is the frame's START and can predate the boot-time `last`, so the first frame's delta was negative — and `trauma - dt*1.7` turned it into a full-strength camera shake on the title screen (the "earthquake before the slow pan"). `npm run probe:intro` (real GPU) measures camera jitter from boot: 1.48 before, 0.03 after; it fails above 0.2.
 - **`window.__rht`** is the entire test/debug surface (sim + `endTurn`/`reset`/
   `scenario(id)`/`perf()`/`diagnostics()`/`describeScene()` …). **Keep it in sync with
   the smokes** when adding sim features they need to drive.

@@ -1,5 +1,10 @@
 # Glitch sweep — real GPU, measured (2026-09-21 / 22)
 
+**STATUS 2026-09-22: findings 1, 2, 4/4b, 5, 6 and 7 are FIXED** (motes are round clamped points; the
+brackets are deleted; the part detail normal is gone; every ground overlay is draped via `drapedDisc`;
+warm-up twins are symmetric; cover stands on the drawn ground). #3 stays NOT A BUG. The sections below
+are the original evidence, kept so a re-report starts from measurements.
+
 Scope: whole game EXCEPT `projectileFx.ts` splotching (already reported), infantry locomotion
 (`worldRenderer.ts`, in a worktree) and `maps.ts` (in a worktree).
 

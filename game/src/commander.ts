@@ -36,7 +36,7 @@ export const MEDALS: readonly MedalDef[] = [
   { id: "warlord", name: "Warlord", blurb: "Win 10 battles.", progress: (s) => [s.wins, 10] },
   { id: "centurion", name: "Centurion", blurb: "Reach 100 lifetime unit kills.", progress: (s) => [s.kills, 100] },
   { id: "iron", name: "Iron Commander", blurb: "Win a battle on Hard." },
-  { id: "last-stand", name: "Last Stand", blurb: "Win with your Home Base under a quarter of its health." },
+  { id: "clutch", name: "Clutch Win", blurb: "Win with your Home Base under a quarter of its health." },
   { id: "combined-arms", name: "Combined Arms", blurb: "Win with infantry, a vehicle and an aircraft all still on the field." },
   { id: "world-tour", name: "World Tour", blurb: "Win on every battlefield.", progress: (s) => [s.mapWins.length, MAPS.length] },
   { id: "rulebook", name: "Every Rule", blurb: "Win in every game mode.", progress: (s) => [s.modeWins.length, MODES.length] },
@@ -135,7 +135,7 @@ export class Commander {
     earn("warlord", s.wins >= 10);
     earn("centurion", s.kills >= 100);
     earn("iron", input.victory && input.difficulty === "hard");
-    earn("last-stand", input.victory && input.baseHealth !== undefined && input.baseHealth < 0.25);
+    earn("clutch", input.victory && input.baseHealth !== undefined && input.baseHealth < 0.25);
     earn("combined-arms", input.victory && Boolean(input.arms?.infantry && input.arms.vehicle && input.arms.air));
     earn("world-tour", s.mapWins.length >= MAPS.length);
     earn("rulebook", s.modeWins.length >= MODES.length);
