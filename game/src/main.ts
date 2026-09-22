@@ -2438,6 +2438,9 @@ declare global {
       diagnostics(): DiagnosticsReport;
       describeScene(): SceneDescription;
       limbPose(entityId: string): { limb: string; rotX: number; rotY: number; posY: number; posZ: number }[];
+      /** Per-render-frame world positions of a trooper's boots (for the foot-skate gate). */
+      trackFeet(entityId: string, on: boolean): void;
+      footTrack(entityId: string): { t: number; x: number; z: number; feet: { side: string; x: number; y: number; z: number }[] }[];
       partColors(entityId: string): { partId: string; color: string; emissive: string; intensity: number }[];
       sceneGraph(): { total: number; topLevel: number };
       // The live Three scene root — QA probes census it (draw-work attribution).
@@ -2548,6 +2551,8 @@ window.__rht = {
   diagnostics: () => runSceneDiagnostics(),
   describeScene: () => buildSceneDescription(),
   limbPose: (entityId: string) => world.limbPose(entityId),
+  trackFeet: (entityId: string, on: boolean) => world.trackFeet(entityId, on),
+  footTrack: (entityId: string) => world.footTrack(entityId),
   partColors: (entityId: string) => world.partColors(entityId),
   sceneGraph: () => ({ total: countSceneObjects(), topLevel: stage.scene.children.length }),
   sceneRoot: () => stage.scene,

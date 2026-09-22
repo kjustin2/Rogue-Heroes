@@ -3,6 +3,8 @@ import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeom
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { ParticleShape, Particles } from "./particles";
 import { hasMotionBank, sampleMotion } from "./infantryMotion";
+import { ANKLE_Y, CROUCH_GAIT, GAIT_TIERS, HIP_Y, HIP_Z, KNEE_Y, bodyAt, footAt, gaitTier, solveLeg, type GaitParams, type LegPose } from "./gait";
+import { splitAtKnee } from "./legSplit";
 import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec2 } from "../core/math";
 import { isBuildingKind, isDefenseKind, isInfantryKind, isVehicleKind, type CombatEntity, type DamagePart, type EntityKind, type PartRole } from "../game/damageModel";
 import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
@@ -309,6 +311,9 @@ export class WorldRenderer {
     this.emitCombatParticles(sim);
     this.computeRecoil(sim.projectiles);
     this.computeAttackPhases(sim);
+    _crouchMovers.clear();
+    for (const order of sim.orders) if (order.startedCrouched) _crouchMovers.add(order.actorId);
+    const crouchMovers = _crouchMovers;
     for (const entity of sim.entities) {
       // A unit carried by an air transport is aboard/hidden — don't draw it (nor make it clickable).
       if (entity.carriedById) {
@@ -319,7 +324,7 @@ export class WorldRenderer {
       const existing = this.groups.get(entity.id);
       if (existing && !existing.visible) existing.visible = true; // reappears when dropped off
       this.resolving = sim.phase === "resolve";
-      this.syncEntity(entity, sim.selectedId, targetId, targetPartId, sim.defending.has(entity.id), this.ghostedEntityIds.has(entity.id));
+      this.syncEntity(entity, sim.selectedId, targetId, targetPartId, sim.defending.has(entity.id), this.ghostedEntityIds.has(entity.id), crouchMovers.has(entity.id));
     }
     this.syncUnitMarkers(sim);
     this.syncSelection(sim);
@@ -764,11 +769,46 @@ export class WorldRenderer {
       // Weapons are not limbs (they do not swing from a joint) but they ARE animated, by the attack
       // choreography, and a stopped attack pose is just as invisible in a still as a stopped walk.
       const partId = node.userData?.partId as string | undefined;
-      const label = limb ?? (partId === "rifle" || partId === "cannon" || partId === "gun" ? "weapon" : partId === "head" ? "head" : undefined);
+      // Leg segments: the thigh keeps the bare limb tag (it is the hip-driven piece the older
+      // assertions read); the shin and boot are suffixed.
+      const segment = node.userData?.segment as string | undefined;
+      const tagged = limb && segment && segment !== "thigh" ? `${limb}:${segment}` : limb;
+      const label = tagged ?? (partId === "rifle" || partId === "cannon" || partId === "gun" ? "weapon" : partId === "head" ? "head" : undefined);
       if (!label) return;
       out.push({ limb: label, rotX: node.rotation.x, rotY: node.rotation.y, posY: node.position.y, posZ: node.position.z });
     });
     return out;
+  }
+
+  /**
+   * FOOT-SKATE GATE SUPPORT. While tracked, every rendered frame records the world position of
+   * each boot mesh alongside the body's, so a smoke can measure the planted foot's ground
+   * velocity directly (a planted foot that moves is skating, whatever the pose looks like).
+   * Sampling from outside the frame loop cannot do this: a headless step can be a third of a
+   * cycle, and the foot that was planted is a different one by the next sample.
+   */
+  private readonly trackedFeet = new Map<string, { t: number; x: number; z: number; feet: { side: string; x: number; y: number; z: number }[] }[]>();
+
+  trackFeet(entityId: string, on: boolean): void {
+    if (on) this.trackedFeet.set(entityId, []);
+    else this.trackedFeet.delete(entityId);
+  }
+
+  footTrack(entityId: string): { t: number; x: number; z: number; feet: { side: string; x: number; y: number; z: number }[] }[] {
+    return this.trackedFeet.get(entityId) ?? [];
+  }
+
+  private recordFeet(entity: CombatEntity, group: THREE.Group): void {
+    const track = this.trackedFeet.get(entity.id);
+    if (!track || track.length > 4000) return;
+    const feet: { side: string; x: number; y: number; z: number }[] = [];
+    group.updateWorldMatrix(true, true);
+    group.traverse((node) => {
+      if (node.userData?.segment !== "foot") return;
+      const w = node.getWorldPosition(_footWorld);
+      feet.push({ side: node.userData.limb as string, x: w.x, y: w.y, z: w.z });
+    });
+    track.push({ t: performance.now(), x: entity.position.x, z: entity.position.z, feet });
   }
 
   /**
@@ -1285,7 +1325,7 @@ export class WorldRenderer {
     }
   }
 
-  private syncEntity(entity: CombatEntity, selectedId: string, targetId: string | undefined, targetPartId: string | undefined, defending: boolean, ghosted: boolean): void {
+  private syncEntity(entity: CombatEntity, selectedId: string, targetId: string | undefined, targetPartId: string | undefined, defending: boolean, ghosted: boolean, crouchMoving: boolean): void {
     let group = this.groups.get(entity.id);
     // Captured structures change team: rebuild so team-colored trim/glow follows the flag.
     if (group && group.userData.team !== entity.team) {
@@ -1352,10 +1392,29 @@ export class WorldRenderer {
         this.spawnSmokeColumn(entity.position, 1, 0x25211d, 0.3, 1.9, entity.elevation + entity.height * 0.45);
       }
     }
-    // Body rises on each footfall (two per stride) for a walking bounce, locked to distance.
-    // Pelvis bob: highest at midstance (a leg planted under the body), lowest at the split — two
-    // rises per stride. The old |sin| peaked at the split, which read as a floaty inverted bounce.
-    const bob = isInfantryKind(entity.kind) ? (0.5 + 0.5 * Math.cos(motionTime * 1.6 * 2)) * 0.05 * walkWeight : 0;
+    // INFANTRY LOCOMOTION (gait.ts). The gait phase advances by metres moved over the tier's
+    // stride -- never by time -- so a planted boot has zero ground velocity by construction. The
+    // start phase is seeded from the id so a squad does not step in lockstep, and from then on
+    // every trooper obeys the same distance rule. The hip curve lowers the whole group (`bob`);
+    // paintPart poses the legs by IK against that, and the torso counters the pelvis twist.
+    let bob = 0;
+    if (isInfantryKind(entity.kind)) {
+      // The sim stands a crouched unit up the moment it moves (its order remembers it started
+      // crouched and slows it); the renderer keeps it low the whole way, on short steps.
+      const crouched = entity.stance === "crouched" || crouchMoving;
+      group.userData.crouched = crouched;
+      const gait = crouched ? CROUCH_GAIT : GAIT_TIERS[gaitTier(entity.kind)];
+      const phase = ((group.userData.gaitPhase as number | undefined) ?? (hash(entity.id) % 97) / 97) + (moving ? moved / gait.stride : 0);
+      const body = bodyAt(gait, phase);
+      group.userData.gaitPhase = phase;
+      group.userData.gait = gait;
+      // A crouch already lowers the hip by CROUCH_DROP on every part; only the residual bobs the group.
+      bob = (body.bob - (crouched ? CROUCH_DROP : 0)) * walkWeight;
+      group.userData.gaitBob = bob;
+      group.userData.gaitLean = body.lean * walkWeight;
+      group.userData.gaitSway = body.sway * walkWeight;
+      group.userData.gaitTwist = body.pelvisYaw * walkWeight;
+    }
     // Ease the rendered ground height so stepping on/off cover or terrain ledges glides
     // instead of snapping.
     // FEET ON THE GROUND. The sim's elevation is the terrain height under the unit's CENTRE, so a
@@ -1381,7 +1440,7 @@ export class WorldRenderer {
     const ease = prevElevation !== undefined && targetElevation > prevElevation ? 0.45 : 0.2;
     const renderElevation = prevElevation === undefined ? targetElevation : prevElevation + (targetElevation - prevElevation) * ease;
     group.userData.renderElevation = renderElevation;
-    group.position.set(entity.position.x, renderElevation + bob, entity.position.z);
+    group.position.set(entity.position.x, renderElevation - bob, entity.position.z);
     // PER-INSTANCE VARIETY on scenery. Every rock, tree and crate was the same mesh at the same
     // size on the same bearing, so a map read as stamped rather than grown — the single most
     // obvious "placeholder" tell left on the board once the shapes themselves were fixed. Cover
@@ -1412,9 +1471,9 @@ export class WorldRenderer {
       group.userData.shownYaw = shownYaw;
     }
     group.rotation.set(
-      (isInfantryKind(entity.kind) ? 0.06 * walkWeight : 0) + sway * 0.45,
+      sway * 0.45,
       shownYaw + (scenery ? ((variety % 360) / 360) * Math.PI * 2 : 0),
-      (entity.kind === "tank" ? Math.sin(motionTime * 4.8) * 0.018 * walkWeight : 0) + sway
+      (entity.kind === "tank" ? Math.sin(motionTime * 4.8) * 0.018 * walkWeight : 0) + sway + ((group.userData.gaitSway as number | undefined) ?? 0)
     );
     if (defending && isInfantryKind(entity.kind) && entity.status.alive) {
       group.scale.set(1.08, 1, 1.08);
@@ -1585,6 +1644,7 @@ export class WorldRenderer {
       this.paintPart(group, mesh, entity, part, entity.id === selectedId, entity.id === targetId, part.id === targetPartId, renderGhosted);
       if (entity.status.alive) this.pickables.push(mesh);
     });
+    if (this.trackedFeet.size) this.recordFeet(entity, group);
   }
 
   private syncDebris(entity: CombatEntity, part: DamagePart): void {
@@ -2215,14 +2275,32 @@ export class WorldRenderer {
       const arm = side < 0 ? kitParts.armL : kitParts.armR;
       this.box(rig, entity, "body", kitParts.armSize, [side * 0.43, 0.68, 0.03], bodyColor, { metalness: 0.18, kit: arm }).userData.limb = tag;
     }
-    // Legs: thigh, a knee plate, and a boot with a raised toe. The knee plate is what breaks the
-    // "two smooth pipes" read, and the toe is what makes a planted foot look planted.
+    // Legs: TWO segments per side -- the authored leg mesh split at the knee at load (legSplit.ts),
+    // thigh and shin each a separate part mesh so the walk cycle can break the knee (a one-piece
+    // pendulum leg is the amateur tell the owner called out). Both halves keep the whole leg's
+    // base transform (the split preserves unit-cube coordinates), and the gait code moves each
+    // about its own pivot: the thigh from the hip, the shin from the knee, the boot from the ankle.
+    // Without the kit the fallback is two boxes at the same pivots.
+    const legGeo = kitGeometry(kitParts.leg);
+    const halves = legGeo ? splitAtKnee(legGeo, LEG_KNEE_CUT, LEG_KNEE_OVERLAP) : undefined;
     for (const side of [-1, 1]) {
       const tag = side < 0 ? "leg-l" : "leg-r";
-      this.box(rig, entity, "legs", kitParts.legSize, [side * 0.18, 0.36, 0.02], 0x162225, { metalness: 0.2, outline: true, kit: kitParts.leg }).userData.limb = tag;
+      const x = side * 0.18;
+      const [w, , d] = kitParts.legSize;
+      const thigh = halves
+        ? this.box(rig, entity, "legs", kitParts.legSize, [x, 0.36, 0.02], 0x162225, { metalness: 0.2, outline: true, geometry: halves.upper })
+        : this.box(rig, entity, "legs", [w, HIP_Y - KNEE_Y + 0.05, d], [x, (HIP_Y + KNEE_Y) / 2, 0.02], 0x162225, { metalness: 0.2, outline: true });
+      thigh.userData.limb = tag;
+      thigh.userData.segment = "thigh";
+      const shin = halves
+        ? this.box(rig, entity, "legs", kitParts.legSize, [x, 0.36, 0.02], 0x162225, { metalness: 0.2, outline: true, geometry: halves.lower })
+        : this.box(rig, entity, "legs", [w * 0.88, KNEE_Y - ANKLE_Y + 0.03, d * 0.88], [x, (KNEE_Y + ANKLE_Y) / 2, 0.02], 0x162225, { metalness: 0.2, outline: true });
+      shin.userData.limb = tag;
+      shin.userData.segment = "shin";
+      const boot = this.box(rig, entity, "legs", [0.22, 0.14, 0.32], [x, 0.07, 0.06], 0x101516, { metalness: 0.14, kit: "boot" });
+      boot.userData.limb = tag;
+      boot.userData.segment = "foot";
     }
-    this.box(rig, entity, "legs", [0.22, 0.14, 0.32], [-0.18, 0.07, 0.06], 0x101516, { metalness: 0.14, kit: "boot" }).userData.limb = "leg-l";
-    this.box(rig, entity, "legs", [0.22, 0.14, 0.32], [0.18, 0.07, 0.06], 0x101516, { metalness: 0.14, kit: "boot" }).userData.limb = "leg-r";
     if (build.girth !== 1) {
       const undo = 1 / build.girth;
       rig.traverse((o) => {
@@ -3099,57 +3177,103 @@ export class WorldRenderer {
         mesh.rotation.y += yaw;
       }
     }
-    if (entity.stance === "crouched" && isInfantryKind(entity.kind) && part.hp > 0) {
-      // A readable crouch: legs fold under, the torso drops and leans forward over the knees,
-      // and the head/weapon tuck down with it rather than just sinking straight into the ground.
-      const drop = 0.42;
-      if (part.role === "mobility") {
-        mesh.scale.y *= 0.58;
-        mesh.position.y = Math.max(0.06, mesh.position.y - 0.02);
-        mesh.position.z += 0.07;
-      } else if (part.role === "head") {
-        mesh.position.y -= drop + 0.06;
-        mesh.position.z += 0.12;
-      } else if (part.role === "core") {
-        mesh.position.y -= drop;
-        mesh.position.z += 0.08;
-        mesh.rotation.x += 0.16;
-      } else {
-        mesh.position.y -= drop;
-        mesh.position.z += 0.05;
-      }
-    }
-
-    // Walk cycle: swing arms and legs from the shoulder/hip while the unit moves, weighted by the
-    // eased walkWeight so it blends in/out. Legs additionally LIFT on their forward (swing) half so
-    // the planted leg reads as ground contact rather than a sweeping pendulum (the anti-skate cue).
+    // POSTURE + LOCOMOTION (infantry only). Everything below reads the gait state syncEntity wrote
+    // on the actor group and poses the rig from pivots: legs by two-bone IK from the hip to a
+    // stride-locked foot target (gait.ts), the free arm counter-swinging the opposite leg, the
+    // upper body leaning from the hip and countering the pelvis twist, the head kept level.
     const limb = mesh.userData.limb as string | undefined;
+    const segment = mesh.userData.segment as "thigh" | "shin" | "foot" | undefined;
     // The ACTOR group, not mesh.parent: infantry parts sit inside a proportion rig, so the
     // immediate parent is not where syncEntity writes the animation state.
     const parent = actor;
     const walkW = (parent.userData.walkWeight as number | undefined) ?? 0;
-    if (limb && part.hp > 0 && entity.status.alive && entity.stance !== "crouched" && walkW > 0.02 && basePosition) {
-      const motionTime = (parent.userData.motionTime as number | undefined) ?? 0;
-      const isLeg = limb.startsWith("leg");
-      const forwardPair = limb === "leg-l" || limb === "arm-r";
-      // motionTime is distance-scaled, so a ~1.6 multiplier yields one stride per ~1.6m walked.
-      const theta = motionTime * 1.6 + (forwardPair ? 0 : Math.PI);
-      const swing = Math.sin(theta) * (isLeg ? 0.62 : 0.42) * walkW;
-      const pivotY = isLeg ? 0.52 : 0.98;
-      const reach = pivotY - basePosition.y;
-      // Foot lift during the forward-swing half (cos(theta) > 0), so one foot steps while the other
-      // stays planted — kills the "hovering/sliding feet" read even with a single-mesh leg.
-      const lift = isLeg ? Math.max(0, Math.cos(theta)) * 0.07 * walkW : 0;
-      mesh.rotation.x = (baseRotation ? baseRotation.x : 0) + swing;
-      mesh.position.z = basePosition.z + reach * Math.sin(swing);
-      mesh.position.y = pivotY - reach * Math.cos(swing) + lift;
+    const crouched = (parent.userData.crouched as boolean | undefined) ?? entity.stance === "crouched";
+    const kneeling = entity.status.alive && isInfantryKind(entity.kind) && entity.parts.some((p) => p.role === "mobility" && p.hp <= 0);
+    if (isInfantryKind(entity.kind) && part.hp > 0 && entity.status.alive && basePosition) {
+      const gait = (parent.userData.gait as GaitParams | undefined) ?? GAIT_TIERS.walk;
+      const phase = (parent.userData.gaitPhase as number | undefined) ?? 0;
+      const bob = (parent.userData.gaitBob as number | undefined) ?? 0;
+      const lean = (parent.userData.gaitLean as number | undefined) ?? 0;
+      const twist = (parent.userData.gaitTwist as number | undefined) ?? 0;
+      // The hip pivot drops with a crouch or a kneel; the ground stays where it is.
+      const drop = kneeling ? KNEEL_DROP : crouched ? CROUCH_DROP : 0;
+      const hipY = HIP_Y - drop;
+      if (limb?.startsWith("leg") && segment) {
+        const side = limb === "leg-l" ? -1 : 1;
+        let pose: LegPose;
+        if (kneeling) {
+          // Left knee on the ground, right leg braced forward. Authored angles, not IK.
+          pose = side < 0 ? kneelPose(0.05, -1.55, -1.1, hipY) : kneelPose(1.45, 0.05, 0, hipY);
+        } else {
+          // Rest: straight legs standing, or a squat when crouched. Walk: the gait's foot target.
+          const rest = crouched
+            ? solveLeg({ y: ANKLE_Y, z: HIP_Z + 0.03 * side, pitch: 0, planted: true }, hipY)
+            : solveLeg({ y: ANKLE_Y, z: HIP_Z, pitch: 0, planted: true }, hipY);
+          pose = copyPose(rest, _restPose);
+          if (walkW > 0.02) {
+            const u = side > 0 ? phase : phase + 0.5;
+            const walk = solveLeg(footAt(gait, u, bob), hipY);
+            blendPose(pose, walk, walkW);
+          }
+        }
+        // Place the segment about its pivot: rest pivot -> posed pivot, offset rotated by the
+        // segment's angle (forward positive, which is a NEGATIVE rotation about x in three).
+        let restPivotY = HIP_Y, restPivotZ = HIP_Z, pivotY = hipY, pivotZ = HIP_Z, angle = pose.thigh;
+        if (segment === "shin") { restPivotY = KNEE_Y; pivotY = pose.kneeY; pivotZ = pose.kneeZ; angle = pose.shin; }
+        else if (segment === "foot") { restPivotY = ANKLE_Y; pivotY = pose.ankleY; pivotZ = pose.ankleZ; angle = pose.foot; }
+        const dy = basePosition.y - restPivotY;
+        const dz = basePosition.z - restPivotZ;
+        const c = Math.cos(angle), s = Math.sin(angle);
+        mesh.position.y = pivotY + dy * c + dz * s;
+        mesh.position.z = pivotZ - dy * s + dz * c;
+        mesh.position.x = basePosition.x + side * gait.width * walkW;
+        mesh.rotation.x = (baseRotation ? baseRotation.x : 0) - angle;
+      } else if (part.role === "mobility" || (part.id === "legs" && !limb)) {
+        // Pelvis (belt, hip-hung gear): follows the hip drop and twists toward the leading leg.
+        mesh.position.y -= drop;
+        if (crouched) mesh.position.z += 0.05;
+        mesh.rotation.y += twist;
+      } else {
+        // Upper body: arms swing from the shoulder first, then everything leans from the hip and
+        // counter-rotates against the pelvis. The head keeps its heading and half of the bob.
+        if (limb === "arm-l" || limb === "arm-r") {
+          const free = limb === "arm-l";
+          const u = free ? phase : phase + 0.5; // the free (left) arm follows the RIGHT leg
+          const swing = walkW > 0.02 ? solveLeg(footAt(gait, u, bob), hipY).thigh * gait.armSwing * (free ? 1 : 0.22) * walkW : 0;
+          const reach = SHOULDER_Y - basePosition.y;
+          mesh.rotation.x = (baseRotation ? baseRotation.x : 0) - swing;
+          mesh.position.y = SHOULDER_Y - reach * Math.cos(swing);
+          mesh.position.z = basePosition.z + reach * Math.sin(swing);
+        }
+        mesh.position.y -= drop;
+        if (crouched) {
+          mesh.position.z += part.role === "head" ? 0.12 : part.role === "core" ? 0.08 : 0.05;
+          if (part.role === "core") mesh.rotation.x += 0.16;
+        }
+        // Lean from the hip.
+        const ly = mesh.position.y - hipY;
+        const lz = mesh.position.z - HIP_Z;
+        mesh.position.y = hipY + ly * Math.cos(lean) - lz * Math.sin(lean);
+        mesh.position.z = HIP_Z + ly * Math.sin(lean) + lz * Math.cos(lean);
+        mesh.rotation.x += lean;
+        // Counter-twist about the spine (the head stays on its heading, and stays level).
+        if (part.role === "head") {
+          mesh.position.y += bob * 0.5;
+        } else {
+          const yaw = -twist;
+          const tx = mesh.position.x;
+          const tz = mesh.position.z - HIP_Z;
+          mesh.position.x = tx * Math.cos(yaw) + tz * Math.sin(yaw);
+          mesh.position.z = HIP_Z - tx * Math.sin(yaw) + tz * Math.cos(yaw);
+          mesh.rotation.y += yaw;
+        }
+      }
     }
 
     // DAMAGED PARTS SHOW IT. damageModel tracks per-part HP and until now the only read of it was
     // a tint. A dead part now changes the SHAPE: a shot-out weapon hangs from the hand, a
     // ruptured pack sags off the shoulder and smoulders, and dead legs put the trooper on one knee
-    // (the unit is immobilised in the sim -- this is what that looks like). Applied to the base
-    // pose so the walk cycle (which a legless unit no longer has) cannot fight it.
+    // (the unit is immobilised in the sim -- this is what that looks like, posed above).
     if (entity.status.alive && isInfantryKind(entity.kind) && basePosition && part.hp <= 0) {
       if (part.id === "rifle" || part.id === "cannon" || part.id === "gun") {
         mesh.rotation.x = (baseRotation ? baseRotation.x : 0) + 1.15;
@@ -3161,15 +3285,6 @@ export class WorldRenderer {
         mesh.position.y = basePosition.y - 0.18;
       }
     }
-    const kneeling = entity.status.alive && isInfantryKind(entity.kind) && entity.parts.some((p) => p.role === "mobility" && p.hp <= 0);
-    if (kneeling && basePosition && limb?.startsWith("leg")) {
-      // Left knee down, right leg braced forward.
-      const down = limb === "leg-l";
-      mesh.rotation.x = (baseRotation ? baseRotation.x : 0) + (down ? -1.3 : 0.75);
-      mesh.position.y = basePosition.y - (down ? 0.3 : 0.1);
-      mesh.position.z = basePosition.z + (down ? -0.18 : 0.22);
-    }
-
     // Attack choreography: wind up, contact, follow through. Applied BEFORE recoil so the recoil
     // punch lands on top of the pose as an accent rather than replacing it.
     const attackPhase = parent.userData.attackPhase as number | undefined;
@@ -3205,7 +3320,7 @@ export class WorldRenderer {
         } else if (limb === "arm-l") {
           mesh.rotation.x -= m.offhandPitch;
         } else if (limb === "leg-l" || limb === "leg-r") {
-          mesh.rotation.x += m.kneeBend * 0.4;
+          if (segment === "thigh") mesh.rotation.x -= m.kneeBend * 0.4; else if (segment === "shin") mesh.rotation.x += m.kneeBend * 0.4;
           mesh.position.y += m.bodyLift * 0.5;
         }
       } else {
@@ -6559,6 +6674,34 @@ function accentValueAt(y: number): number {
 }
 
 /** Idle weapon carry: muzzle lifted and canted in across the chest, pivoting about the grip. */
+// Knee cut of the unit-cube leg: the authored knee sits at world 0.35 on a 0.5-tall mesh centred at
+// 0.36, i.e. -0.02 in unit-cube space; each half overruns the cut by 2.5cm so the bend shows no gap.
+const LEG_KNEE_CUT = (KNEE_Y - 0.36) / 0.5;
+const SHOULDER_Y = 0.98;
+const _footWorld = new THREE.Vector3();
+const _crouchMovers = new Set<string>();
+const _restPose: LegPose = { thigh: 0, shin: 0, knee: 0, foot: 0, kneeY: KNEE_Y, kneeZ: HIP_Z, ankleY: ANKLE_Y, ankleZ: HIP_Z };
+function copyPose(from: LegPose, into: LegPose): LegPose {
+  into.thigh = from.thigh; into.shin = from.shin; into.knee = from.knee; into.foot = from.foot;
+  into.kneeY = from.kneeY; into.kneeZ = from.kneeZ; into.ankleY = from.ankleY; into.ankleZ = from.ankleZ;
+  return into;
+}
+function blendPose(into: LegPose, to: LegPose, t: number): void {
+  into.thigh += (to.thigh - into.thigh) * t; into.shin += (to.shin - into.shin) * t; into.knee += (to.knee - into.knee) * t; into.foot += (to.foot - into.foot) * t;
+  into.kneeY += (to.kneeY - into.kneeY) * t; into.kneeZ += (to.kneeZ - into.kneeZ) * t; into.ankleY += (to.ankleY - into.ankleY) * t; into.ankleZ += (to.ankleZ - into.ankleZ) * t;
+}
+/** Forward kinematics for an authored leg pose (kneel): thigh/shin/foot angles from straight down, forward positive. */
+function kneelPose(thigh: number, shin: number, foot: number, hipY: number): LegPose {
+  const out = _restPose;
+  out.thigh = thigh; out.shin = shin; out.knee = thigh - shin; out.foot = foot;
+  out.kneeY = hipY - (HIP_Y - KNEE_Y) * Math.cos(thigh); out.kneeZ = HIP_Z + (HIP_Y - KNEE_Y) * Math.sin(thigh);
+  out.ankleY = out.kneeY - (KNEE_Y - ANKLE_Y) * Math.cos(shin); out.ankleZ = out.kneeZ + (KNEE_Y - ANKLE_Y) * Math.sin(shin);
+  return out;
+}
+const LEG_KNEE_OVERLAP = 0.05;
+// A crouch lowers the hip by this much (0.58 -> 0.30); the legs fold to meet it by IK.
+const CROUCH_DROP = 0.28;
+const KNEEL_DROP = 0.26;
 const CARRY_PITCH = 0.34;
 const CARRY_PITCH_LONG = 0.95;
 const CARRY_YAW = -0.26;

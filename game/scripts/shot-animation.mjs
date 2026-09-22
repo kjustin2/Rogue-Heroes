@@ -56,11 +56,13 @@ try {
   }, unitId);
   if (!ordered) fail("could not queue a move order");
 
-  await page.evaluate(() => window.__rht.endTurn());
+  // Record every rendered frame's boot positions (the skate gate below), and slow the resolve so
+  // a headless frame is a slice of a stride rather than a third of one.
+  await page.evaluate((id) => { window.__rht.trackFeet(id, true); window.__rht.setResolveScale(0.15); window.__rht.endTurn(); }, unitId);
 
   // Sample the pose across the resolve.
   const samples = [];
-  for (let i = 0; i < 26; i += 1) {
+  for (let i = 0; i < 60; i += 1) {
     const frame = await page.evaluate((id) => {
       const sim = window.__rht.sim;
       const unit = sim.entities.find((e) => e.id === id);
@@ -72,6 +74,7 @@ try {
   }
   await assertLit(page, "walking trooper");
   await page.screenshot({ path: join(OUT, "walk.png") });
+  const track = await page.evaluate((id) => { const t = window.__rht.footTrack(id); window.__rht.trackFeet(id, false); window.__rht.setResolveScale(1); return t; }, unitId);
 
   const withLimbs = samples.filter((s) => s.pose.length > 0);
   if (withLimbs.length < 6) fail(`only ${withLimbs.length} samples had limb meshes — the probe never saw the unit`);
@@ -81,26 +84,73 @@ try {
 
   const legL = withLimbs.map((s) => s.pose.find((p) => p.limb === "leg-l")?.rotX ?? 0);
   const legR = withLimbs.map((s) => s.pose.find((p) => p.limb === "leg-r")?.rotX ?? 0);
+  const shinL = withLimbs.map((s) => s.pose.find((p) => p.limb === "leg-l:shin")?.rotX ?? 0);
+  const armL = withLimbs.map((s) => s.pose.find((p) => p.limb === "arm-l")?.rotX ?? 0);
   const armR = withLimbs.map((s) => s.pose.find((p) => p.limb === "arm-r")?.rotX ?? 0);
+  const head = withLimbs.map((s) => s.pose.find((p) => p.limb === "head")?.posY ?? 0);
 
   // 1. THE regression this exists for: the legs must move at all.
   const legSwing = spread(legL);
   if (legSwing < 0.15) fail(`legs are rigid: total swing ${legSwing.toFixed(3)} rad over ${travelled.toFixed(1)} units walked`);
 
   // 2. The legs must be out of phase. Both legs swinging together is a hop, not a walk, and it
-  //    reads as sliding just as badly as no animation.
-  const opposed = withLimbs.filter((_, i) => Math.sign(legL[i]) !== Math.sign(legR[i])).length;
-  if (opposed < withLimbs.length * 0.4) fail(`legs are in phase (${opposed}/${withLimbs.length} frames opposed) — that is a hop, not a stride`);
+  //    reads as sliding just as badly as no animation. In a run both thighs sit forward of the
+  //    hip for much of the cycle (the swing thigh comes through early), so the test is that the
+  //    LEAD changes hands: left-minus-right swings well past zero in both directions.
+  const lead = withLimbs.map((_, i) => legL[i] - legR[i]);
+  if (Math.min(...lead) > -0.3 || Math.max(...lead) < 0.3) fail(`legs are in phase (lead ${Math.min(...lead).toFixed(2)}..${Math.max(...lead).toFixed(2)} rad) — that is a hop, not a stride`);
 
-  // 3. Arms swing too, and counter to the legs.
-  if (spread(armR) < 0.08) fail(`arms are rigid: swing ${spread(armR).toFixed(3)} rad`);
+  // 3. The FREE arm counter-swings; the weapon arm keeps its carry (a small swing, never rigid).
+  if (spread(armL) < 0.25) fail(`free arm is rigid: swing ${spread(armL).toFixed(3)} rad`);
+  if (spread(armR) < 0.03) fail(`weapon arm is rigid: swing ${spread(armR).toFixed(3)} rad`);
 
-  // 4. Feet must lift. A leg that only rotates without its foot leaving the ground is the
-  //    classic skate; the renderer lifts the foot on the forward half of the stride.
-  const footY = withLimbs.map((s) => s.pose.find((p) => p.limb === "leg-l")?.posY ?? 0);
-  if (spread(footY) < 0.02) fail(`foot never lifts: vertical range ${spread(footY).toFixed(4)}`);
+  // 4. THE KNEE. A one-piece leg pendulums from the hip; the shin must rotate relative to the
+  //    thigh, or the leg is a stick with a boot on it.
+  const kneeBend = Math.max(...withLimbs.map((_, i) => Math.abs(legL[i] - shinL[i])));
+  if (kneeBend < 0.5) fail(`no knee break: thigh-shin angle never exceeds ${kneeBend.toFixed(3)} rad`);
 
-  console.log(`  travelled ${travelled.toFixed(1)}u · leg swing ${legSwing.toFixed(2)} rad · arm swing ${spread(armR).toFixed(2)} rad · foot lift ${spread(footY).toFixed(3)}`);
+  // 5. Feet must lift. A leg that only rotates without its foot leaving the ground is the
+  //    classic skate; the swing foot arcs clear of the ground.
+  const footY = withLimbs.map((s) => s.pose.find((p) => p.limb === "leg-l:foot")?.posY ?? 0);
+  if (spread(footY) < 0.06) fail(`foot never lifts: vertical range ${spread(footY).toFixed(4)}`);
+
+  // 6. The head stays level: its rig-space height moves AGAINST the pelvis bob (half of it), so
+  //    from the tactical camera the helmet rides smoother than the torso. The group's own y is
+  //    no use here (it carries terrain elevation), so this reads the counter directly: a few cm,
+  //    never zero (no counter) and never the whole bob (bobblehead).
+  if (spread(head) < 0.01 || spread(head) > 0.08) fail(`head bob counter out of range: ${spread(head).toFixed(3)} m over the walk (expect ~0.01-0.06)`);
+
+  console.log(`  travelled ${travelled.toFixed(1)}u · leg swing ${legSwing.toFixed(2)} rad · knee ${kneeBend.toFixed(2)} rad · free arm ${spread(armL).toFixed(2)} rad · foot lift ${spread(footY).toFixed(3)}`);
+
+  // 7. THE STRIDE LOCK. Per rendered frame: the boot that is lowest is the planted one; between
+  //    two consecutive frames where the same boot stays planted, its world position must not
+  //    move (the body moved -- that is what makes it a stride and not a slide). Reported as
+  //    centimetres per frame and as slide per metre of body travel, gated on both.
+  const skate = [];
+  for (let i = 1; i < track.length; i += 1) {
+    const a = track[i - 1];
+    const b = track[i];
+    const moved = Math.hypot(b.x - a.x, b.z - a.z);
+    if (moved < 0.002 || a.feet.length < 2 || b.feet.length < 2) continue;
+    const lowA = a.feet.reduce((m, f) => (f.y < m.y ? f : m));
+    const lowB = b.feet.find((f) => f.side === lowA.side);
+    const otherB = b.feet.find((f) => f.side !== lowA.side);
+    if (!lowB || !otherB || lowB.y > otherB.y) continue; // hand-over frame: the planted foot changed
+    skate.push({ slide: Math.hypot(lowB.x - lowA.x, lowB.z - lowA.z), moved, y: lowB.y });
+  }
+  if (skate.length < 8) fail(`stride lock: only ${skate.length} planted frame pairs recorded (track ${track.length} frames)`);
+  // Planted = on the ground: within 3cm of the lowest boot height seen (a boot rolling onto its
+  // toe is still planted; a boot in flight is not).
+  const floor = Math.min(...skate.map((s) => s.y));
+  const planted = skate.filter((s) => s.y < floor + 0.03);
+  if (planted.length < 6) fail(`stride lock: only ${planted.length} frames with a boot on the ground`);
+  const slides = planted.map((s) => s.slide).sort((p, q) => p - q);
+  const p90 = slides[Math.floor(slides.length * 0.9)];
+  const bodyTravel = planted.reduce((s, f) => s + f.moved, 0);
+  const perMetre = planted.reduce((s, f) => s + f.slide, 0) / bodyTravel;
+  console.log(`  stride lock: ${planted.length} planted frames · p90 skate ${(p90 * 100).toFixed(2)} cm/frame · ${perMetre.toFixed(3)} m slide per m travelled (body ${((bodyTravel / planted.length) * 100).toFixed(1)} cm/frame)`);
+  if (p90 > 0.03) fail(`FOOT SKATE: planted boot moves ${(p90 * 100).toFixed(2)} cm/frame (p90) — the stride is not locked to distance`);
+  if (perMetre > 0.15) fail(`FOOT SKATE: ${perMetre.toFixed(3)} m of slide per metre travelled (clean walk ~0.05, broken ~1)`);
 
   // ---- Attack choreography, same idea: a weapon that never moves while firing is a unit that
   // twitches rather than shoots, and it looks identical in every screenshot.
