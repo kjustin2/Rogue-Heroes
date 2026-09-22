@@ -19,6 +19,9 @@ function mulberry32(seed: number): () => number {
 }
 
 const isGround = (e: CombatEntity): boolean => !e.flying && !e.carriedById;
+const isPerched = (unit: CombatEntity, cover: CombatEntity): boolean =>
+  unit.kind !== "cover" && cover.kind === "cover" && cover.height <= 1.22 && cover.coverKind !== "wall" && cover.coverKind !== "ridge" &&
+  Math.hypot(unit.position.x - cover.position.x, unit.position.z - cover.position.z) <= Math.max(0.35, cover.radius * 0.65);
 
 // Return a list of invariant violations for the current sim state (empty = healthy).
 function auditInvariants(sim: TacticalSim, tag: string): string[] {
@@ -47,6 +50,10 @@ function auditInvariants(sim: TacticalSim, tag: string): string[] {
     for (let j = i + 1; j < ground.length; j += 1) {
       const d = Math.hypot(ground[i].position.x - ground[j].position.x, ground[i].position.z - ground[j].position.z);
       const limit = (ground[i].radius + ground[j].radius) * 0.5;
+      // A trooper PERCHED on low cover is a legal stance (the sim's climbable-cover rule: within
+      // max(0.35, 0.65r) of a cover under 1.22 tall), not a walk-through — the scout that chased a
+      // tank onto the exact spot it burned out on was standing on the wreck, not inside it.
+      if (isPerched(ground[i], ground[j]) || isPerched(ground[j], ground[i])) continue;
       if (d < limit) v.push(`${tag}: ${ground[i].id} & ${ground[j].id} overlap (d=${d.toFixed(2)} < ${limit.toFixed(2)})`);
     }
   }

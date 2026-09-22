@@ -27,8 +27,16 @@ export type CoverKind =
   | "depot"
   | "span"
   | "gas"
-  | "stump" | "log" | "bush" | "cactus" | "tent" | "pipe" | "silo" | "statue";
+  | "stump" | "log" | "bush" | "cactus" | "tent" | "pipe" | "silo" | "statue"
+  // Landmarks (2026-09-20): each map's own big authored pieces — the things you point at.
+  | "convoy" | "derrick" | "furnace" | "railcar" | "chapel" | "mill" | "hull" | "hut" | "colossus" | "cistern" | "gate" | "radar";
 export type PartRole = "core" | "head" | "weapon" | "mobility" | "armor" | "utility" | "volatile";
+
+const LANDMARK_KINDS: ReadonlySet<CoverKind> = new Set<CoverKind>(["convoy", "derrick", "furnace", "railcar", "chapel", "mill", "hull", "hut", "colossus", "cistern", "gate", "radar"]);
+/** A map landmark: authored at world scale, placed with an authored yaw, never jittered or re-spun. */
+export function isLandmarkKind(kind: CoverKind | undefined): boolean {
+  return kind !== undefined && LANDMARK_KINDS.has(kind);
+}
 export type AimMode = "center" | "head" | "weapon" | "mobility" | "utility" | "core" | "weakest";
 export type InfantryStance = "standing" | "crouched" | "prone";
 
@@ -824,6 +832,21 @@ export const COVER_PROFILES: Record<CoverKind, CoverProfile> = {
   pipe: { hp: 80, radius: 1.4, height: 0.9, volatile: false, label: "Pipe Run" },
   silo: { hp: 130, radius: 1.1, height: 2.6, volatile: false, label: "Storage Silo" },
   statue: { hp: 110, radius: 0.8, height: 2.4, volatile: false, label: "Broken Statue" },
+  // Landmarks (2026-09-20): one or two per map, placed as signature pieces. Radii cover the whole
+  // footprint (a unit must never park inside a truck); the big ones are tough enough that they
+  // shape the fight for its whole length rather than vanishing to the first mortar round.
+  convoy: { hp: 90, radius: 2.0, height: 1.9, volatile: true, label: "Wrecked Truck" },
+  derrick: { hp: 150, radius: 1.6, height: 4.5, volatile: false, label: "Derrick" },
+  furnace: { hp: 320, radius: 2.6, height: 4.4, volatile: false, label: "Blast Furnace" },
+  railcar: { hp: 130, radius: 1.9, height: 1.8, volatile: false, label: "Rail Car" },
+  chapel: { hp: 300, radius: 2.4, height: 3.65, volatile: false, label: "Chapel Ruin" },
+  mill: { hp: 180, radius: 1.9, height: 3.2, volatile: false, label: "Old Mill" },
+  hull: { hp: 360, radius: 3.6, height: 4.2, volatile: false, label: "Beached Hull" },
+  hut: { hp: 60, radius: 1.1, height: 1.9, volatile: false, label: "Fishing Hut" },
+  colossus: { hp: 340, radius: 2.8, height: 1.7, volatile: false, label: "Fallen Colossus" },
+  cistern: { hp: 200, radius: 2.1, height: 1.8, volatile: false, label: "Cistern" },
+  gate: { hp: 170, radius: 2.3, height: 2.55, volatile: false, label: "Checkpoint Gate" },
+  radar: { hp: 160, radius: 1.5, height: 3.5, volatile: false, label: "Radar Station" },
   ammo: { hp: 34, radius: 0.7, height: 1.2, volatile: true, label: "Ammo Cache" },
   conduit: { hp: 44, radius: 0.7, height: 1.2, volatile: true, label: "Power Conduit" },
   ridge: { hp: 95, radius: 1.2, height: 1.85, volatile: false, label: "High Ground" },

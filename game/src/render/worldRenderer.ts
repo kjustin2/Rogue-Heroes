@@ -6,13 +6,13 @@ import { hasMotionBank, sampleMotion } from "./infantryMotion";
 import { ANKLE_Y, CROUCH_GAIT, GAIT_TIERS, HIP_Y, HIP_Z, KNEE_Y, bodyAt, footAt, gaitTier, solveLeg, type GaitParams, type LegPose } from "./gait";
 import { splitAtKnee } from "./legSplit";
 import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec2 } from "../core/math";
-import { isBuildingKind, isDefenseKind, isInfantryKind, isVehicleKind, type CombatEntity, type DamagePart, type EntityKind, type PartRole } from "../game/damageModel";
+import { isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isVehicleKind, type CombatEntity, type DamagePart, type EntityKind, type PartRole } from "../game/damageModel";
 import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
 import { OVERWATCH_ARC_HALF } from "../game/sim";
-import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec } from "../game/maps";
+import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type SkylineKind } from "../game/maps";
 import type { TroopKind } from "../game/units";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
-import { kitGeometry, modelsVersion, propGeometry, toonGradient, vehicleGeometry, vehiclesKitReady, type KitPart, type VehiclesPart } from "./models";
+import { kitGeometry, modelsVersion, propGeometry, toonGradient, vehicleGeometry, vehiclesKitReady, type KitPart, type PropsKind, type VehiclesPart } from "./models";
 import { VEHICLE_LAYOUT } from "./vehiclesLayout";
 import {
   makeBlast, makeImpact, makeMuzzleFlash, makePing, makeProjectileModel, makeProjectileShadow, makeProjectileTrail,
@@ -1450,7 +1450,9 @@ export class WorldRenderer {
     // what it blocks. Scale is deliberately kept to +/-11% and applied to the visual group only, so
     // the mesh never drifts far enough from its collision radius for a unit to look like it stopped
     // early or walked into thin air.
-    const scenery = entity.kind === "cover";
+    // A landmark is PLACED: authored yaw, true size. Only the small scatter props get the free spin
+    // and the +/-11% jitter that keeps a wood from looking stamped.
+    const scenery = entity.kind === "cover" && !isLandmarkKind(entity.coverKind);
     const variety = scenery ? hash(entity.id) : 0;
     // Trees sway from the root: a slow gust plus a faster flutter, phased by id so a wood never
     // nods in unison. Same wind the ground blades bend to.
@@ -2475,7 +2477,11 @@ export class WorldRenderer {
   private buildCover(group: THREE.Group, entity: CombatEntity): void {
     const part = entity.parts[0];
     const volatile = part.role === "volatile";
-    if (entity.coverKind === "ammo") {
+    // Landmarks first: a wrecked truck is volatile (it burns), and the fuel-drum branch below would
+    // otherwise claim it.
+    if (isLandmarkKind(entity.coverKind)) {
+      this.buildLandmark(group, entity);
+    } else if (entity.coverKind === "ammo") {
       // A pallet of banded shell crates with one round standing proud of the stack, so it reads as
       // "munitions" from above rather than as a generic box.
       this.box(group, entity, part.id, [1.0, 0.12, 0.8], [0, 0.06, 0], 0x4a3f31, { bevel: 0.2 });
@@ -2791,13 +2797,172 @@ export class WorldRenderer {
       this.box(group, entity, part.id, [0.14, 1.12, 0.66], [0.58, 0.7, 0], 0x7a5535);
       for (const x of [-0.34, 0.34]) this.box(group, entity, part.id, [0.1, 1.02, 0.08], [x, 0.7, 0.34], 0xf0c37a, { emissive: 0x6c3a13, emissiveIntensity: 0.16 });
     }
-    const stone = entity.coverKind === "rock" || entity.coverKind === "rubble" || entity.coverKind === "statue";
+    const stone = entity.coverKind === "rock" || entity.coverKind === "rubble" || entity.coverKind === "statue"
+      || entity.coverKind === "chapel" || entity.coverKind === "colossus" || entity.coverKind === "cistern";
+    // A steel landmark keeps its own colour: at the prop tint the furnace and the hull went the
+    // colour of the slag and the ice they stand on.
+    const steel = isLandmarkKind(entity.coverKind) && !stone;
     // Light touch: this tint was a silent no-op for months (it tested for MeshStandardMaterial after
     // the parts went toon) and the prop palette was tuned without it; at 0.7 every trunk and log went
     // the ground colour. Stone leans further into the map (a rock is OF the ground); wood, foliage
     // and hardware keep most of their own hue and only pick up the map's cast.
-    this.tintPropToMap(group, stone ? 0.5 : 0.3, stone ? this.rockTint : this.propTint);
+    this.tintPropToMap(group, stone ? 0.5 : steel ? 0.12 : 0.3, stone ? this.rockTint : this.propTint);
     this.interactionGlow(group, entity, volatile);
+  }
+
+  /**
+   * MAP LANDMARKS (2026-09-20) — the one or two big authored pieces that make each battlefield a
+   * place: the Dust Bowl's dead convoy and derricks, the Ironworks furnace and rail cars, Verdant's
+   * chapel and mill, the hull beached on the Causeway, the colossus and cistern of Karak, the
+   * Crossfire checkpoint and radar. Each is a props-kit part authored at world scale (sizes below
+   * are the authored bounding boxes from art/props/author_landmarks.py — the kit mesh is a unit
+   * cube, so `size` restores it) and a box-built fallback so the game runs with public/models/
+   * empty. The pieces are placed with an authored yaw (never spun or jittered — see the transform
+   * block in syncEntity) and the accents that carry the read (an ember, a beacon, a lamp) are
+   * separate small meshes so the pooled body material stays one flat colour under the toon ramp.
+   */
+  private buildLandmark(group: THREE.Group, entity: CombatEntity): void {
+    const part = entity.parts[0];
+    const v = hash(entity.id);
+    const kind = entity.coverKind;
+    const authored = (k: PropsKind): THREE.BufferGeometry | undefined => propGeometry(k, v);
+    const rough = { roughness: 0.94 };
+    if (kind === "convoy") {
+      const g = authored("convoy");
+      // Olive drab, well below the sand's value: the first cut was the ground colour and vanished.
+      if (g) this.box(group, entity, part.id, [4.51, 1.94, 1.95], [0.16, 0.81, 0], 0x454a36, { geometry: g, ...rough });
+      else {
+        this.box(group, entity, part.id, [2.2, 0.22, 1.6], [-0.55, 0.7, 0], 0x454a36, rough);
+        this.box(group, entity, part.id, [1.15, 1.1, 1.45], [1.1, 1.15, 0], 0x454a36, { ...rough, rotation: [0, 0, -0.16] });
+        this.box(group, entity, part.id, [0.7, 0.7, 0.7], [-0.2, 1.11, 0.25], 0x8a6f3f, rough);
+        for (const [x, z] of [[-1.1, -0.8], [-1.1, 0.8], [0.95, 0.8]] as const) this.cylinder(group, entity, part.id, 0.42, 0.3, [x, 0.42, z], 0x242220, [Math.PI / 2, 0, 0], rough);
+      }
+      // The burn: an ember seam where the engine was, and a scorched patch under the cab.
+      this.box(group, entity, part.id, [0.6, 0.18, 0.9], [1.55, 0.95, 0], 0xff7d26, { emissive: 0xff5a1a, emissiveIntensity: 0.55 });
+      this.cylinder(group, entity, part.id, 1.6, 0.03, [0.9, 0.015, 0], 0x1c1916, [0, 0, 0], { roughness: 1 });
+    } else if (kind === "derrick") {
+      const g = authored("derrick");
+      if (g) this.box(group, entity, part.id, [3.01, 4.5, 1.91], [-0.585, 2.25, 0], 0x4b4742, { geometry: g, roughness: 0.7, metalness: 0.3 });
+      else {
+        for (const sx of [-1, 1]) for (const sz of [-1, 1]) this.box(group, entity, part.id, [0.13, 4.0, 0.13], [sx * 0.55, 2.0, sz * 0.55], 0x4b4742, { rotation: [sz * 0.14, 0, -sx * 0.14], metalness: 0.3 });
+        this.box(group, entity, part.id, [0.9, 0.22, 0.9], [0, 4.05, 0], 0x4b4742, { metalness: 0.3 });
+        this.box(group, entity, part.id, [1.4, 0.16, 1.4], [0, 2.2, 0], 0x4b4742, { metalness: 0.3 });
+      }
+      // Warning lamp on the crown — the thing you see from the far side of the basin.
+      this.sphere(group, entity, part.id, 0.14, [0, 4.55, 0], 0xff4a3a, { emissive: 0xff3a2a, emissiveIntensity: 0.8, accent: true });
+    } else if (kind === "furnace") {
+      const g = authored("furnace");
+      if (g) this.box(group, entity, part.id, [5.13, 4.4, 3.1], [-0.765, 2.2, 0], 0x33353a, { geometry: g, roughness: 0.75, metalness: 0.32 });
+      else {
+        this.box(group, entity, part.id, [3.2, 0.7, 3.0], [0, 0.35, 0], 0x4d4b50, { metalness: 0.3 });
+        this.cylinder(group, entity, part.id, 0.95, 3.0, [0, 2.2, 0], 0x4d4b50, [0, 0, 0], { radiusBottom: 1.35, metalness: 0.32 });
+        this.cylinder(group, entity, part.id, 0.95, 0.5, [0, 4.1, 0], 0x4d4b50, [0, 0, 0], { metalness: 0.32 });
+      }
+      // The tap hole and the throat glow: the furnace is lit from inside, nothing else here is.
+      this.box(group, entity, part.id, [0.7, 0.5, 0.3], [0, 0.95, 1.45], 0xff8a2a, { emissive: 0xff5a10, emissiveIntensity: 0.75 });
+      this.cylinder(group, entity, part.id, 0.4, 0.06, [0, 4.3, 0], 0xffb040, [0, 0, 0], { emissive: 0xff7a1a, emissiveIntensity: 0.6 });
+      // Molten slag in the ladle. Blender +Y exports to -Z, so the ladle authored at y=-0.9 sits at z=+0.9.
+      this.box(group, entity, part.id, [0.5, 0.12, 0.6], [2.1, 0.86, 0.9], 0xffa030, { emissive: 0xff6a10, emissiveIntensity: 0.5 });
+    } else if (kind === "railcar") {
+      const g = authored("railcar");
+      const body = v % 2 === 0 ? 0x6d3b2c : 0x4a5560;
+      if (g) this.box(group, entity, part.id, [3.9, 1.78, 1.6], [0, 0.89, 0], body, { geometry: g, roughness: 0.8, metalness: 0.25 });
+      else {
+        this.box(group, entity, part.id, [3.6, 0.2, 1.2], [0, 0.5, 0], 0x3a3a3c, { metalness: 0.3 });
+        this.box(group, entity, part.id, [3.4, 1.1, 1.4], [0, 1.15, 0], body, { metalness: 0.25 });
+        for (const x of [-1.25, 1.25]) for (const z of [-0.62, 0.62]) this.cylinder(group, entity, part.id, 0.22, 0.12, [x, 0.22, z], 0x2a2a2c, [Math.PI / 2, 0, 0], { metalness: 0.4 });
+      }
+      this.box(group, entity, part.id, [0.5, 0.3, 0.04], [0.9, 1.2, 0.79], 0xd8c27a, { roughness: 0.8 }); // stencilled placard
+    } else if (kind === "chapel") {
+      const g = authored("chapel");
+      if (g) this.box(group, entity, part.id, [4.68, 3.65, 4.1], [0.04, 1.825, 0], 0x9c9484, { geometry: g, ...rough });
+      else {
+        this.box(group, entity, part.id, [0.45, 3.4, 3.0], [-2.1, 1.7, 0], 0x9c9484, rough);
+        for (const z of [-1.4, 1.4]) this.box(group, entity, part.id, [3.0, 1.6, 0.4], [-0.5, 0.8, z], 0x9c9484, rough);
+        this.box(group, entity, part.id, [4.6, 0.12, 3.0], [0, 0.06, 0], 0x8a8274, rough);
+      }
+      // Ivy on the north wall and a candle still lit at the altar.
+      this.box(group, entity, part.id, [1.0, 1.1, 0.08], [-1.2, 0.95, 1.62], 0x3f6a2c, { roughness: 1, bevel: 0.4 });
+      this.sphere(group, entity, part.id, 0.09, [-1.5, 1.0, 0], 0xffd88a, { emissive: 0xffb040, emissiveIntensity: 0.7, accent: true });
+    } else if (kind === "mill") {
+      const g = authored("mill");
+      if (g) this.box(group, entity, part.id, [3.36, 3.22, 2.85], [0.02, 1.43, 0], 0x6b5236, { geometry: g, ...rough });
+      else {
+        this.box(group, entity, part.id, [2.0, 1.7, 2.2], [-0.55, 0.85, 0], 0x6b5236, rough);
+        this.box(group, entity, part.id, [2.3, 1.0, 2.5], [-0.55, 2.2, 0], 0x5a4530, { ...rough, bevel: 0.3 });
+        this.cylinder(group, entity, part.id, 1.2, 0.22, [1.15, 1.25, 0], 0x4f3b28, [0, 0, Math.PI / 2], rough);
+      }
+      this.box(group, entity, part.id, [0.5, 0.6, 0.06], [-1.58, 1.5, -0.6], 0xffd28a, { emissive: 0xffa040, emissiveIntensity: 0.5 }); // lit window
+    } else if (kind === "hull") {
+      const g = authored("hull");
+      // Drawn a third over its authored size: at 1:1 it read as a launch next to the containers.
+      if (g) this.box(group, entity, part.id, [7.5, 5.8, 3.65], [0.01, 2.9, 0.32], 0x2f3a44, { geometry: g, roughness: 0.82, metalness: 0.3 });
+      else {
+        this.box(group, entity, part.id, [5.6, 1.9, 2.4], [0, 1.05, 0], 0x3f4b55, { rotation: [0.22, 0, 0], metalness: 0.3 });
+        this.box(group, entity, part.id, [1.6, 1.1, 1.5], [-1.5, 2.6, 0], 0x55606a, { rotation: [0.22, 0, 0], metalness: 0.3 });
+        this.cylinder(group, entity, part.id, 0.3, 1.1, [-2.3, 2.9, 0], 0x2f3236, [0.22, 0, 0], { metalness: 0.3 });
+      }
+      // Rust at the waterline and a navigation lamp still burning on the bridge.
+      this.box(group, entity, part.id, [5.4, 0.6, 0.1], [-0.4, 0.95, -1.6], 0x7a4a2c, { roughness: 1 });
+      this.sphere(group, entity, part.id, 0.14, [-1.95, 4.8, -0.4], 0x7fe8ff, { emissive: 0x4fd8ff, emissiveIntensity: 0.8, accent: true });
+    } else if (kind === "hut") {
+      const g = authored("hut");
+      const tent = v % 2 === 1;
+      const color = tent ? 0x9a8a72 : 0x7a6244;
+      if (g) this.box(group, entity, part.id, tent ? [2.14, 1.9, 1.75] : [1.7, 1.95, 2.2], [0, tent ? 0.95 : 0.975, 0], color, { geometry: g, ...rough });
+      else {
+        this.box(group, entity, part.id, [1.5, 1.15, 1.6], [0, 0.58, 0], color, rough);
+        this.box(group, entity, part.id, [1.7, 0.55, 1.8], [0, 1.42, 0], 0x5a4530, { ...rough, bevel: 0.35 });
+      }
+      this.box(group, entity, part.id, [0.3, 0.3, 0.05], [0.3, 0.9, tent ? 0.84 : 0.85], 0xffc870, { emissive: 0xff9a30, emissiveIntensity: 0.45 }); // lamp in the window
+    } else if (kind === "colossus") {
+      const g = authored("colossus");
+      if (g) this.box(group, entity, part.id, [5.96, 1.73, 2.2], [0.03, 0.865, 0], 0x9a948a, { geometry: g, roughness: 0.92 });
+      else {
+        this.box(group, entity, part.id, [2.6, 1.3, 1.7], [0.3, 0.65, 0], 0x9a948a, { roughness: 0.92, bevel: 0.35 });
+        this.sphere(group, entity, part.id, 0.7, [-2.05, 0.62, 0.15], 0x9a948a);
+        this.box(group, entity, part.id, [0.7, 0.9, 2.2], [2.6, 0.35, 0], 0x8a8478, { roughness: 0.92 });
+      }
+      // Moss in the seams and the one gilded thing left: the eye.
+      this.box(group, entity, part.id, [1.2, 0.08, 0.9], [0.5, 1.2, 0.3], 0x4a6a34, { roughness: 1, bevel: 0.4 });
+      this.sphere(group, entity, part.id, 0.1, [-2.5, 0.95, 0.35], 0xe0b040, { emissive: 0xa06a10, emissiveIntensity: 0.3, accent: true });
+    } else if (kind === "cistern") {
+      const g = authored("cistern");
+      if (g) this.box(group, entity, part.id, [4.1, 1.76, 4.4], [0, 0.88, -0.15], 0x8f887a, { geometry: g, roughness: 0.92 });
+      else {
+        this.cylinder(group, entity, part.id, 1.7, 0.95, [0, 0.48, 0], 0x8f887a, [0, 0, 0], { radiusBottom: 1.8, roughness: 0.92 });
+        this.cylinder(group, entity, part.id, 1.85, 0.14, [0, 0.98, 0], 0x8f887a, [0, 0, 0], { roughness: 0.92 });
+      }
+      // The water: a still dark disc a step down inside the rim (the authored ring is hollow).
+      this.cylinder(group, entity, part.id, 1.46, 0.04, [0, 0.56, 0], 0x1f3b44, [0, 0, 0], { roughness: 0.2, metalness: 0.1 });
+    } else if (kind === "gate") {
+      const g = authored("gate");
+      if (g) this.box(group, entity, part.id, [4.64, 2.55, 1.85], [-0.17, 1.275, 0], 0x8a8478, { geometry: g, roughness: 0.85, metalness: 0.1 });
+      else {
+        this.box(group, entity, part.id, [1.2, 2.0, 1.3], [-1.4, 1.0, 0], 0x8a8478, { roughness: 0.85 });
+        this.box(group, entity, part.id, [1.7, 0.14, 1.8], [-1.3, 2.08, 0], 0x6a655c, { roughness: 0.85 });
+        this.cylinder(group, entity, part.id, 0.07, 3.2, [1.0, 1.65, 0.2], 0xd8d0c0, [0, 0, -1.2], { roughness: 0.8 });
+      }
+      // Red-white stripes on the boom (a second thin bar along it) and the booth's amber lamp.
+      for (const t of [0.35, 0.65, 0.95] as const) {
+        const x = -0.5 + Math.cos(0.384) * 3.2 * t;
+        const y = 1.05 + Math.sin(0.384) * 3.2 * t;
+        this.box(group, entity, part.id, [0.34, 0.16, 0.16], [x, y, 0.2], 0xd63a2a, { rotation: [0, 0, 0.384], roughness: 0.8 });
+      }
+      this.box(group, entity, part.id, [0.3, 0.16, 0.16], [-1.4, 2.22, 0.5], 0xffb040, { emissive: 0xff8a20, emissiveIntensity: 0.6 });
+      this.box(group, entity, part.id, [0.8, 0.4, 0.05], [0.4, 2.3, -0.79], 0xd8d0c0, { roughness: 0.9 });
+    } else if (kind === "radar") {
+      const g = authored("radar");
+      if (g) this.box(group, entity, part.id, [2.96, 3.51, 2.5], [-0.07, 1.755, 0.05], 0x7f8a90, { geometry: g, roughness: 0.7, metalness: 0.35 });
+      else {
+        this.box(group, entity, part.id, [2.2, 0.7, 1.6], [0, 0.55, 0], 0x7f8a90, { metalness: 0.35 });
+        this.cylinder(group, entity, part.id, 0.32, 1.0, [0, 1.4, 0], 0x7f8a90, [0, 0, 0], { metalness: 0.35 });
+        this.cylinder(group, entity, part.id, 0.5, 0.3, [0, 2.5, 0.25], 0x9aa4aa, [-0.87, 0, 0], { radiusBottom: 1.45, metalness: 0.35 });
+      }
+      // Beacon on the mast and the dish's feed lit: it is still sweeping.
+      this.sphere(group, entity, part.id, 0.12, [1.25, 3.25, 0.5], 0xff4a3a, { emissive: 0xff3a2a, emissiveIntensity: 0.85, accent: true });
+      this.sphere(group, entity, part.id, 0.1, [0, 3.35, 1.25], 0x7fe8ff, { emissive: 0x4fd8ff, emissiveIntensity: 0.6, accent: true });
+    }
   }
 
   // Nudge a prop's structural surfaces toward the active map's palette so it belongs to the
@@ -5547,6 +5712,201 @@ function makeSurroundings(theme: MapTheme, width: number, depth: number): THREE.
       bluff.scale.set(spanX * 1.4, height * 1.35, spanZ * 1.4);
       bluff.rotation.y = rand() * Math.PI;
       group.add(bluff);
+    }
+  }
+  if (theme.skyline) group.add(makeSkyline(theme.skyline, ground, fog, radius, rand));
+  return group;
+}
+
+/**
+ * PER-MAP SKYLINE (2026-09-20). The horizon used to be the same ring of fog-tinted bluffs on every
+ * battlefield, so the distance told no story: a foundry and a frozen sea had the same hills behind
+ * them. Each family is a handful of cheap flat-shaded shapes (instanced where they repeat, so a
+ * 300-tree forest wall is one draw call) placed just inside the first ridge ring, tinted the same
+ * way the ridges are so they recede into the fog rather than compete with the board.
+ */
+function makeSkyline(kind: SkylineKind, ground: THREE.Color, fog: THREE.Color, radius: number, rand: () => number): THREE.Group {
+  const group = new THREE.Group();
+  group.name = `skyline-${kind}`;
+  const tone = (blend: number, value: number, base: THREE.Color = ground): THREE.MeshStandardMaterial =>
+    new THREE.MeshStandardMaterial({ color: base.clone().lerp(fog, blend).multiplyScalar(value), roughness: 1, metalness: 0 });
+  const ring = (t: number): number => radius * t;
+  const place = (mesh: THREE.Object3D, angle: number, distance: number, y = -1.2): void => {
+    mesh.position.set(Math.cos(angle) * distance, y, Math.sin(angle) * distance);
+    group.add(mesh);
+  };
+  const dummy = new THREE.Object3D();
+  const instanced = (geometry: THREE.BufferGeometry, material: THREE.Material, count: number,
+    fill: (i: number, d: THREE.Object3D) => void): THREE.InstancedMesh => {
+    const mesh = new THREE.InstancedMesh(geometry, material, count);
+    for (let i = 0; i < count; i += 1) {
+      dummy.position.set(0, 0, 0); dummy.rotation.set(0, 0, 0); dummy.scale.set(1, 1, 1);
+      fill(i, dummy);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    return mesh;
+  };
+  if (kind === "mountains") {
+    // A range of sharp peaks — taller and narrower than the bluffs, so the basin reads walled in.
+    const peak = new THREE.ConeGeometry(1, 1, 4, 1);
+    peak.translate(0, 0.5, 0);
+    const material = tone(0.28, 0.62);
+    const count = 16;
+    group.add(instanced(peak, material, count, (i, d) => {
+      const a = (i / count) * Math.PI * 2 + rand() * 0.25;
+      const dist = ring(0.98 + rand() * 0.12);
+      d.position.set(Math.cos(a) * dist, -1.2, Math.sin(a) * dist);
+      const h = 16 + rand() * 18;
+      d.scale.set(14 + rand() * 16, h, 12 + rand() * 14);
+      d.rotation.y = rand() * Math.PI;
+    }));
+  } else if (kind === "stacks") {
+    // Foundry clusters: a long shed, two or three chimneys, a cooling tower in half of them; each
+    // chimney tip carries an ember so the skyline is working at night.
+    const shed = tone(0.35, 0.55);
+    const iron = tone(0.3, 0.45);
+    const ember = new THREE.MeshBasicMaterial({ color: 0xff7a2a });
+    const chimney = new THREE.CylinderGeometry(0.85, 1.1, 1, 8, 1);
+    chimney.translate(0, 0.5, 0);
+    const tower = new THREE.CylinderGeometry(0.7, 1, 1, 12, 1);
+    tower.translate(0, 0.5, 0);
+    const box = new THREE.BoxGeometry(1, 1, 1);
+    box.translate(0, 0.5, 0);
+    for (let c = 0; c < 6; c += 1) {
+      const a = (c / 6) * Math.PI * 2 + 0.3 + rand() * 0.3;
+      const dist = ring(0.96 + rand() * 0.08);
+      const cluster = new THREE.Group();
+      const hall = new THREE.Mesh(box, shed);
+      hall.scale.set(22 + rand() * 12, 7 + rand() * 3, 9 + rand() * 4);
+      cluster.add(hall);
+      const n = 2 + Math.floor(rand() * 2);
+      for (let k = 0; k < n; k += 1) {
+        const x = -8 + k * 8 + rand() * 3;
+        const h = 18 + rand() * 12;
+        const stack = new THREE.Mesh(chimney, iron);
+        stack.position.set(x, 0, 4);
+        stack.scale.set(1.6, h, 1.6);
+        cluster.add(stack);
+        const tip = new THREE.Mesh(box, ember);
+        tip.position.set(x, h, 4);
+        tip.scale.set(1.2, 0.5, 1.2);
+        cluster.add(tip);
+      }
+      if (c % 2 === 0) {
+        const cool = new THREE.Mesh(tower, iron);
+        cool.position.set(14, 0, -3);
+        cool.scale.set(7, 14 + rand() * 4, 7);
+        cluster.add(cool);
+      }
+      cluster.rotation.y = -a + Math.PI / 2;
+      place(cluster, a, dist);
+    }
+  } else if (kind === "forest") {
+    // A wall of conifers in a deep band: one instanced cone, three hundred trees, one draw call.
+    const cone = new THREE.ConeGeometry(1, 1, 6, 1);
+    cone.translate(0, 0.5, 0);
+    const material = tone(0.2, 0.5);
+    const count = 320;
+    group.add(instanced(cone, material, count, (i, d) => {
+      const a = (i / count) * Math.PI * 2 + rand() * 0.02;
+      const dist = ring(0.9 + rand() * 0.26);
+      d.position.set(Math.cos(a) * dist, -1.2, Math.sin(a) * dist);
+      const h = 9 + rand() * 9;
+      d.scale.set(h * 0.42, h, h * 0.42);
+    }));
+  } else if (kind === "floes") {
+    // A frozen sea: broken pack ice in flat slabs and a few grounded bergs, paler than the ground.
+    const ice = new THREE.Color(0xd8e4ec);
+    const slabMat = tone(0.45, 0.92, ice);
+    const bergMat = tone(0.35, 0.98, ice);
+    const slab = new THREE.BoxGeometry(1, 1, 1);
+    slab.translate(0, 0.5, 0);
+    const count = 70;
+    group.add(instanced(slab, slabMat, count, (i, d) => {
+      const a = (i / count) * Math.PI * 2 + rand() * 0.1;
+      const dist = ring(0.88 + rand() * 0.3);
+      d.position.set(Math.cos(a) * dist, -1.2, Math.sin(a) * dist);
+      d.scale.set(9 + rand() * 12, 0.6 + rand() * 0.6, 7 + rand() * 10);
+      d.rotation.y = rand() * Math.PI;
+      d.rotation.z = (rand() - 0.5) * 0.08;
+    }));
+    const berg = new THREE.IcosahedronGeometry(1, 0);
+    for (let k = 0; k < 9; k += 1) {
+      const a = (k / 9) * Math.PI * 2 + rand() * 0.4;
+      const b = new THREE.Mesh(berg, bergMat);
+      b.scale.set(7 + rand() * 6, 6 + rand() * 9, 7 + rand() * 6);
+      b.rotation.set(rand() * 0.3, rand() * Math.PI, rand() * 0.3);
+      place(b, a, ring(1.02 + rand() * 0.1), -3);
+    }
+  } else if (kind === "ziggurats") {
+    // The dead city: stepped pyramids and broken colonnades on the horizon.
+    const stone = tone(0.4, 0.7);
+    const box = new THREE.BoxGeometry(1, 1, 1);
+    box.translate(0, 0.5, 0);
+    for (let k = 0; k < 7; k += 1) {
+      const a = (k / 7) * Math.PI * 2 + 0.2 + rand() * 0.4;
+      const zig = new THREE.Group();
+      const w = 22 + rand() * 12;
+      const tiers = 3 + Math.floor(rand() * 2);
+      for (let t = 0; t < tiers; t += 1) {
+        const tier = new THREE.Mesh(box, stone);
+        const f = 1 - t / tiers;
+        tier.position.y = t * 5;
+        tier.scale.set(w * f, 5.2, w * f);
+        zig.add(tier);
+      }
+      zig.rotation.y = rand() * Math.PI;
+      place(zig, a, ring(1.0 + rand() * 0.1));
+    }
+    const column = new THREE.CylinderGeometry(1, 1.1, 1, 7, 1);
+    column.translate(0, 0.5, 0);
+    const count = 22;
+    group.add(instanced(column, stone, count, (i, d) => {
+      const a = (i / count) * Math.PI * 2 + rand() * 0.2;
+      const dist = ring(0.92 + rand() * 0.1);
+      d.position.set(Math.cos(a) * dist, -1.2, Math.sin(a) * dist);
+      d.scale.set(1.3, 6 + rand() * 9, 1.3);
+    }));
+  } else if (kind === "fences") {
+    // The border: a ring of fence posts, watchtowers at intervals, a few long wall runs.
+    const post = new THREE.BoxGeometry(1, 1, 1);
+    post.translate(0, 0.5, 0);
+    const steel = tone(0.35, 0.5);
+    const concrete = tone(0.4, 0.66);
+    const count = 180;
+    group.add(instanced(post, steel, count, (i, d) => {
+      const a = (i / count) * Math.PI * 2;
+      const dist = ring(0.93);
+      d.position.set(Math.cos(a) * dist, -1.2, Math.sin(a) * dist);
+      d.scale.set(0.5, 5.5, 0.5);
+    }));
+    for (let k = 0; k < 6; k += 1) {
+      const a = (k / 6) * Math.PI * 2 + 0.5;
+      const tower = new THREE.Group();
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+        const leg = new THREE.Mesh(post, steel);
+        leg.position.set(sx * 1.6, 0, sz * 1.6);
+        leg.scale.set(0.5, 10, 0.5);
+        tower.add(leg);
+      }
+      const cabin = new THREE.Mesh(post, concrete);
+      cabin.position.y = 10;
+      cabin.scale.set(5, 3.4, 5);
+      tower.add(cabin);
+      const roof = new THREE.Mesh(post, steel);
+      roof.position.y = 13.4;
+      roof.scale.set(6, 0.5, 6);
+      tower.add(roof);
+      place(tower, a, ring(0.95));
+    }
+    for (let k = 0; k < 4; k += 1) {
+      const a = (k / 4) * Math.PI * 2 + 1.1;
+      const wall = new THREE.Mesh(post, concrete);
+      wall.scale.set(28 + rand() * 14, 3.2, 1.6);
+      wall.rotation.y = -a + Math.PI / 2;
+      place(wall, a, ring(1.0));
     }
   }
   return group;

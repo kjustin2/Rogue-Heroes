@@ -18,8 +18,13 @@ export interface AmbientSpec {
  */
 export type GroundSurfaceKind = "cracked" | "grass" | "slag" | "paved" | "ice";
 
+// The horizon silhouette behind the board: cheap flat-shaded shapes in makeSurroundings, one
+// family per map so the distance tells the same story as the ground.
+export type SkylineKind = "mountains" | "stacks" | "forest" | "floes" | "ziggurats" | "fences";
+
 export interface MapTheme {
   ground: number;
+  skyline?: SkylineKind;
   surface?: GroundSurfaceKind;
   groundAccent: number;
   grid: number;
@@ -33,6 +38,11 @@ export interface MapTheme {
 
 // A scatter group authors a cohesive band of objects; positions are generated in the
 // west half and mirrored east, guaranteeing a fair, non-clumped, varied layout.
+//
+// A SECTION is a group with a `rect`: the objects of one named place on the map (an orchard, a
+// rail yard, a fishing village) confined to that place rather than sprinkled across the board.
+// A `grid` lays the section out on a lattice — an orchard is rows of trees, a rail yard is lines
+// of cars — with a little jitter so it reads as planted, not stamped.
 export interface ScatterGroup {
   palette: CoverKind[];
   count: number; // objects per side (mirrored to the other half)
@@ -40,6 +50,10 @@ export interface ScatterGroup {
   minZ?: number;
   maxZ?: number;
   centerGap?: number; // keep this far off the centerline
+  /** Section bounds in authored (west-half) coordinates; the mirror lands on the east. */
+  rect?: TerrainRect;
+  /** Lattice layout: cell size in world units (object size, so it is NOT scaled with the map) + jitter. */
+  grid?: { dx: number; dz: number; jitter?: number };
 }
 
 export interface SignatureObject {
@@ -50,6 +64,8 @@ export interface SignatureObject {
   radius?: number;
   height?: number;
   mirror?: boolean; // also place a mirrored copy across the map center
+  /** Facing in radians (landmarks are placed, not spun); the mirror copy faces the opposite way. */
+  yaw?: number;
 }
 
 // Dynamic battlefield events — opt-in per map, deterministic (seeded), telegraphed a turn ahead.
@@ -145,6 +161,7 @@ function scaleMapDef(def: MapDef): MapDef {
       centerGap: g.centerGap === undefined ? undefined : g.centerGap * f,
       minZ: g.minZ === undefined ? undefined : g.minZ * f,
       maxZ: g.maxZ === undefined ? undefined : g.maxZ * f,
+      rect: g.rect ? scaleRect(g.rect, f) : undefined, // the section grows; its lattice cell does not
     })),
     signature: def.signature?.map((s) => ({ ...s, x: s.x * f, z: s.z * f })), // positions scale, object size fixed
     neutrals: def.neutrals?.map((n) => ({ ...n, x: n.x * f, z: n.z * f })),
@@ -222,45 +239,65 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
   // Signature features first (explicit, optionally mirrored).
   for (const sig of map.signature ?? []) {
     const profile = COVER_PROFILES[sig.kind];
-    const place = (x: number, z: number): void => {
-      objects.push(
-        createCover(`map-${map.id}-sig-${++seq}`, profile.label, { x, z }, {
-          coverKind: sig.kind,
-          hp: sig.hp,
-          radius: sig.radius,
-          height: sig.height,
-        })
-      );
+    const place = (x: number, z: number, yaw: number): void => {
+      const entity = createCover(`map-${map.id}-sig-${++seq}`, profile.label, { x, z }, {
+        coverKind: sig.kind,
+        hp: sig.hp,
+        radius: sig.radius,
+        height: sig.height,
+      });
+      entity.yaw = yaw;
+      objects.push(entity);
       placed.push({ x, z, r: sig.radius ?? profile.radius });
     };
     // An authored spot that lands on a block edge after map scaling is nudged to the nearest flat
     // ground, so the prop never straddles a step (half floating, half buried); the mirror copies
     // the nudged point so the layout stays symmetric.
     const at = nudgeOffEdge({ x: sig.x, z: sig.z }, sig.radius ?? profile.radius, map.terrain.bridges ?? []);
-    place(at.x, at.z);
-    if (sig.mirror && Math.abs(sig.x - center.x) > 0.3) place(2 * center.x - at.x, 2 * center.z - at.z);
+    place(at.x, at.z, sig.yaw ?? 0);
+    if (sig.mirror && Math.abs(sig.x - center.x) > 0.3) place(2 * center.x - at.x, 2 * center.z - at.z, (sig.yaw ?? 0) + Math.PI);
   }
 
-  // Scatter groups, generated in the west half and mirrored east for fairness.
+  // Scatter groups, generated in the west half and mirrored east for fairness. A section (rect)
+  // confines the group to its place; a grid lays it on a lattice, row by row, deterministically.
   for (const group of map.scatter) {
     const gap = group.centerGap ?? 2.5;
-    const minZ = group.minZ ?? bounds.minZ + 2.5;
-    const maxZ = group.maxZ ?? bounds.maxZ - 2.5;
+    const minZ = group.rect?.minZ ?? group.minZ ?? bounds.minZ + 2.5;
+    const maxZ = group.rect?.maxZ ?? group.maxZ ?? bounds.maxZ - 2.5;
+    const minX = group.rect?.minX ?? bounds.minX + 2.5;
+    const maxX = Math.min(group.rect?.maxX ?? center.x - gap, center.x - gap);
     let made = 0;
+    const pick = (): CoverKind => group.palette[Math.floor(rng.range(0, group.palette.length)) % group.palette.length];
+    const tryPlace = (x: number, z: number): boolean => {
+      const kind = pick();
+      const r = COVER_PROFILES[kind].radius + group.spacing;
+      const west = { x, z };
+      const east = { x: 2 * center.x - x, z: 2 * center.z - z };
+      if (blocked(west, r) || blocked(east, r)) return false;
+      add(kind, west);
+      add(kind, east);
+      made += 1;
+      return true;
+    };
+    if (group.grid) {
+      const { dx, dz } = group.grid;
+      const jitter = group.grid.jitter ?? 0;
+      const cols = Math.max(1, Math.floor((maxX - minX) / dx));
+      const rows = Math.max(1, Math.floor((maxZ - minZ) / dz));
+      const x0 = minX + ((maxX - minX) - (cols - 1) * dx) / 2;
+      const z0 = minZ + ((maxZ - minZ) - (rows - 1) * dz) / 2;
+      for (let row = 0; row < rows && made < group.count; row += 1) {
+        for (let col = 0; col < cols && made < group.count; col += 1) {
+          tryPlace(x0 + col * dx + rng.range(-jitter, jitter), z0 + row * dz + rng.range(-jitter, jitter));
+        }
+      }
+      continue;
+    }
     let attempts = 0;
     const cap = group.count * 160; // crowded maps (Ironworks) need the retries now that neutrals are reserved
     while (made < group.count && attempts < cap) {
       attempts += 1;
-      const x = rng.range(bounds.minX + 2.5, center.x - gap);
-      const z = rng.range(minZ, maxZ);
-      const kind = group.palette[Math.floor(rng.range(0, group.palette.length)) % group.palette.length];
-      const r = COVER_PROFILES[kind].radius + group.spacing;
-      const west = { x, z };
-      const east = { x: 2 * center.x - x, z: 2 * center.z - z };
-      if (blocked(west, r) || blocked(east, r)) continue;
-      add(kind, west);
-      add(kind, east);
-      made += 1;
+      tryPlace(rng.range(minX, maxX), rng.range(minZ, maxZ));
     }
   }
 
@@ -295,38 +332,52 @@ function steepHere(p: Vec2): boolean {
 // ---------------------------------------------------------------------------
 
 const RAW_MAPS: readonly MapDef[] = [
+  // DUST BOWL — a dead supply road across a desert basin. Sections: the DRY RIVER BED (the centre
+  // lane, sunk between two low banks, where the convoy died — its wrecked trucks are the landmark
+  // and the only hard cover on the straight shot), the CANYON PASSES (a walled corridor along each
+  // long edge, the flank route: one lane wide, no sightline into the basin, a chokepoint at each
+  // mouth), and the PLATEAU OUTPOSTS (each side's mesa, with a derrick landmark and a tent camp:
+  // the overwatch position over the river bed). The buttes stay as sniper perches. Long armour
+  // lanes down the river, infantry through the canyons, and the mesas decide who sees whom.
   {
     id: "dustbowl",
     name: "Dust Bowl",
-    blurb: "Sun-baked flats walled in by two towering rock ranges.",
-    feel: "Open desert basin between great mountain ranges — long sightlines reward snipers and armor; climb the slopes for overwatch.",
+    blurb: "A dead supply road through a desert basin, walled by canyons.",
+    feel: "Armour down the dry river bed, infantry through the canyon passes; the plateau derricks watch it all.",
     seed: 0x44555354,
-    theme: { ground: 0x7a5530, surface: "cracked", groundAccent: 0xd9a05a, grid: 0xd6ad6d, fog: 0x8fa6b8, fogDensity: 0.009, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x7fa8c9, ambient: { kind: "dust", color: 0xe6c98a, density: 1.1 } },
+    theme: { ground: 0x7a5530, skyline: "mountains", surface: "cracked", groundAccent: 0xd9a05a, grid: 0xd6ad6d, fog: 0x8fa6b8, fogDensity: 0.009, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x7fa8c9, ambient: { kind: "dust", color: 0xe6c98a, density: 1.1 } },
     terrain: {
       bounds: { minX: -35, maxX: 35, minZ: -22, maxZ: 22 }, // LARGE: wide basin, long armor/sniper lanes
       maxHeight: 3.6,
       blocks: [
         { minX: -4.5, maxX: 4.5, minZ: -4.5, maxZ: 4.5, height: 0.7 }, // central rise (the contested hill)
-        { minX: -17, maxX: -9, minZ: 5, maxZ: 12, height: 0.85 },      // west mesa
-        { minX: 9, maxX: 17, minZ: -12, maxZ: -5, height: 0.85 },      // east mesa (mirror)
+        // The dry river bed: low banks either side of the centre lane (a step, not a wall). They
+        // stop short of each base so a gun parked at home still has the whole bed as a firing lane.
+        { minX: -21, maxX: -6.5, minZ: 3.6, maxZ: 5.2, height: 0.5 },   // west bed, north bank
+        { minX: -21, maxX: -6.5, minZ: -5.2, maxZ: -3.6, height: 0.5 }, // west bed, south bank
+        { minX: 6.5, maxX: 21, minZ: 3.6, maxZ: 5.2, height: 0.5 },     // east bed, north bank
+        { minX: 6.5, maxX: 21, minZ: -5.2, maxZ: -3.6, height: 0.5 },   // east bed, south bank
+        // Plateau outposts (climbable mesas that overlook the river bed).
+        { minX: -17, maxX: -9, minZ: 5.5, maxZ: 12, height: 0.85 },    // west plateau
+        { minX: 9, maxX: 17, minZ: -12, maxZ: -5.5, height: 0.85 },    // east plateau (mirror)
         { minX: -22, maxX: -17, minZ: -13, maxZ: -7, height: 0.8 },    // west butte (lower step)
         { minX: -21, maxX: -18, minZ: -12, maxZ: -8, height: 1.6 },    // west butte (stacked = sniper perch)
         { minX: 17, maxX: 22, minZ: 7, maxZ: 13, height: 0.8 },        // east butte (lower step)
         { minX: 18, maxX: 21, minZ: 8, maxZ: 12, height: 1.6 },        // east butte (stacked)
-        // North range — a big stepped massif walling off the basin (climbable 0.85 steps).
-        { minX: -8, maxX: 8, minZ: 12, maxZ: 19, height: 0.85 },       // north range — foothill
-        { minX: -6, maxX: 6, minZ: 13, maxZ: 18, height: 1.7 },        // north range — mid slope
-        { minX: -4, maxX: 4, minZ: 14, maxZ: 17.5, height: 2.55 },     // north range — upper
-        { minX: -2, maxX: 2, minZ: 15, maxZ: 17, height: 3.4 },        // north range — peak
-        // South range — the mirrored massif across the basin.
-        { minX: -8, maxX: 8, minZ: -19, maxZ: -12, height: 0.85 },     // south range — foothill
-        { minX: -6, maxX: 6, minZ: -18, maxZ: -13, height: 1.7 },      // south range — mid slope
-        { minX: -4, maxX: 4, minZ: -17.5, maxZ: -14, height: 2.55 },   // south range — upper
-        { minX: -2, maxX: 2, minZ: -17, maxZ: -15, height: 3.4 },      // south range — peak
-        // Sheer sandstone spires mid-basin — too tall to climb (a wall), set off the central lane
-        // so armor still has its straight shot but flankers must weave around them.
-        { minX: -14, maxX: -12, minZ: -9, maxZ: -3, height: 2.4 },     // west spire wall
-        { minX: 12, maxX: 14, minZ: 3, maxZ: 9, height: 2.4 },         // east spire wall (mirror)
+        // The canyon passes: sheer sandstone walls (unclimbable) with a one-lane corridor between,
+        // open at both ends and through one gap in the inner wall at the middle.
+        // The inner walls are SHORT buttresses, not a second range: a full-length pair sheltered
+        // the whole flank and took the basin's firing lanes with it (balance self-play: the
+        // artillery row halved on this map).
+        { minX: -13, maxX: 13, minZ: 18.5, maxZ: 22, height: 2.4 },    // north canyon, outer wall
+        { minX: -12, maxX: -6.5, minZ: 12.5, maxZ: 15, height: 2.4 },  // north canyon, buttress (west)
+        { minX: 6.5, maxX: 12, minZ: 12.5, maxZ: 15, height: 2.4 },    // north canyon, buttress (east)
+        { minX: -13, maxX: 13, minZ: -22, maxZ: -18.5, height: 2.4 },  // south canyon, outer wall
+        { minX: -12, maxX: -6.5, minZ: -15, maxZ: -12.5, height: 2.4 }, // south canyon, buttress (west)
+        { minX: 6.5, maxX: 12, minZ: -15, maxZ: -12.5, height: 2.4 },  // south canyon, buttress (east)
+        // Spires off the river bed: they break the long straight shot without closing the lane.
+        { minX: -14, maxX: -12, minZ: -10.5, maxZ: -8, height: 2.4 },   // west spire (short: a long one walled the basin)
+        { minX: 12, maxX: 14, minZ: 8, maxZ: 10.5, height: 2.4 },       // east spire (mirror)
       ],
     },
     playerBase: { x: -31, z: 0 },
@@ -335,48 +386,59 @@ const RAW_MAPS: readonly MapDef[] = [
     hill: { x: 0, z: 0 },
     hillRadius: 4.2,
     scatter: [
-      { palette: ["rock", "rock", "sandbag", "barricade", "bunker", "cactus", "cactus", "tent", "wreck", "rubble"], count: 12, spacing: 2.4, centerGap: 3 },
-      { palette: ["fuel", "ammo", "crate"], count: 4, spacing: 3.0, centerGap: 5 },
+      // The river bed: what fell off the convoy.
+      { palette: ["wreck", "crate", "fuel", "ammo", "barricade", "sandbag"], count: 3, spacing: 1.2, rect: { minX: -25, maxX: -16, minZ: -3.2, maxZ: 3.2 } },
+      // The plateau camp around the derrick.
+      { palette: ["tent", "tent", "sandbag", "ammo", "bunker", "crate"], count: 4, spacing: 1.0, rect: { minX: -16.4, maxX: -9.6, minZ: 6.2, maxZ: 11.4 } },
+      // Scrub at the canyon mouths and across the open basin.
+      { palette: ["rock", "cactus", "cactus", "rock", "rubble"], count: 3, spacing: 1.5, rect: { minX: -31, maxX: -14, minZ: 12, maxZ: 20 } },
+      { palette: ["rock", "cactus", "rubble", "cactus", "rock"], count: 3, spacing: 1.5, rect: { minX: -31, maxX: -12, minZ: -12, maxZ: -6 } },
     ],
     signature: [
+      // The dead convoy, strung along the river bed where it was caught in the open.
+      { kind: "convoy", x: -15.5, z: 2.9, yaw: 0.18, mirror: true },
+      { kind: "convoy", x: -6.5, z: -2.9, yaw: -0.35, mirror: true },
+      { kind: "derrick", x: -13, z: 8.6, yaw: 0.4, mirror: true },
       { kind: "rock", x: -6, z: 4, mirror: true, radius: 1.3, height: 1.6 },
       { kind: "sandbag", x: -3.2, z: -2.4, mirror: true },
-      { kind: "fuel", x: -12, z: 3, mirror: true },
-      { kind: "ammo", x: -11.5, z: -3, mirror: true },
-      { kind: "rock", x: -8, z: -10, mirror: true, radius: 1.1 },
-      { kind: "bunker", x: -9, z: 7, mirror: true },
-      { kind: "barricade", x: -2, z: 7, mirror: true },
+      { kind: "bunker", x: -6.5, z: 9.2, mirror: true, yaw: 0.6 },
     ],
     // Recurring sandstorms sweep the open basin — accuracy and visibility drop in waves.
     events: [{ kind: "sandstorm", startTurn: 3, duration: 2, period: 6 }],
-    // Twin supply depots on the flanks: hold them for extra income.
-    neutrals: [{ kind: "depot", x: -13, z: 8, mirror: true }],
+    // Twin supply depots by the spires: hold them for extra income.
+    neutrals: [{ kind: "depot", x: -19, z: -3, mirror: true }],
   },
+  // IRONWORKS — one working foundry, seen from above. Sections: the FOUNDRY FLOOR (the north-west
+  // quarter: a blast-furnace landmark still lit, the catwalk beside it, the slag heap behind it,
+  // pipe runs and gas bottles between), the RAIL YARD (the south-west quarter: two lines of rail
+  // cars and containers on stub track — long parallel cover with lanes between), and the OVERPASS
+  // (the centre: a ramped causeway over the middle lane, the one place that sees both quarters).
+  // Mirrored, so each side owns a furnace and a yard; the fight is over the overpass and the yard
+  // lanes, and the furnaces are the walls at the corners.
   {
     id: "ironworks",
     name: "Ironworks",
-    blurb: "A cramped foundry of steel and shipping crates.",
-    feel: "Tight industrial maze — dense cover and chokepoints favor infantry brawls.",
+    blurb: "A working foundry: furnace, rail yard, and the overpass between.",
+    feel: "Rail-car lanes for infantry, the overpass for whoever holds the middle, a lit furnace at each corner.",
     seed: 0x49524f4e,
-    theme: { ground: 0x272c34, surface: "slag", groundAccent: 0x7d8794, grid: 0x6f7c8c, fog: 0x53412f, fogDensity: 0.014, playerLight: 0x5fd7ff, enemyLight: 0xff6d57, sky: 0x8a5a32, ambient: { kind: "embers", color: 0xff9a4a, density: 0.85 } },
+    theme: { ground: 0x272c34, skyline: "stacks", surface: "slag", groundAccent: 0x7d8794, grid: 0x6f7c8c, fog: 0x53412f, fogDensity: 0.014, playerLight: 0x5fd7ff, enemyLight: 0xff6d57, sky: 0x8a5a32, ambient: { kind: "embers", color: 0xff9a4a, density: 0.85 } },
     terrain: {
       bounds: { minX: -24, maxX: 24, minZ: -15, maxZ: 15 },
       maxHeight: 2.6,
       blocks: [
         { minX: -3.5, maxX: 3.5, minZ: -3.5, maxZ: 3.5, height: 0.6 }, // central gantry platform
-        { minX: -13, maxX: -7, minZ: 4, maxZ: 9, height: 0.7 },        // west catwalk
-        { minX: 7, maxX: 13, minZ: -9, maxZ: -4, height: 0.7 },        // east catwalk (mirror)
+        { minX: -13, maxX: -7, minZ: 3.5, maxZ: 8.5, height: 0.7 },    // foundry catwalk (west)
+        { minX: 7, maxX: 13, minZ: -8.5, maxZ: -3.5, height: 0.7 },    // foundry catwalk (east, mirror)
         // The overpass: an elevated causeway spanning the center lane. Walk up a ramp
         // (each step <= TERRAIN_STEP), hold the span, and shoot down into both lanes.
         { minX: -10, maxX: -8, minZ: -1.3, maxZ: 1.3, height: 0.65 },  // west ramp
         { minX: 8, maxX: 10, minZ: -1.3, maxZ: 1.3, height: 0.65 },    // east ramp
         { minX: -8, maxX: 8, minZ: -1.3, maxZ: 1.3, height: 1.25 },    // causeway deck
-        // Furnace stacks: sheer, unclimbable, and the tallest things on the map. On a small map
-        // vertical is the only way to add interest without adding ground to walk across.
-        { minX: -17, maxX: -14, minZ: -11, maxZ: -8, height: 2.4 },    // west furnace stack
-        { minX: 14, maxX: 17, minZ: 8, maxZ: 11, height: 2.4 },        // east furnace stack (mirror)
-        { minX: -12, maxX: -9.5, minZ: 9, maxZ: 12, height: 1.9 },     // west slag heap
-        { minX: 9.5, maxX: 12, minZ: -12, maxZ: -9, height: 1.9 },     // east slag heap (mirror)
+        // Slag heaps behind each furnace: a climbable skirt and an unclimbable crown.
+        { minX: -14, maxX: -8, minZ: 9.5, maxZ: 13.5, height: 0.8 },   // west slag heap (skirt)
+        { minX: -12, maxX: -9.5, minZ: 10, maxZ: 12.8, height: 1.9 },  // west slag heap (crown)
+        { minX: 8, maxX: 14, minZ: -13.5, maxZ: -9.5, height: 0.8 },   // east slag heap (skirt, mirror)
+        { minX: 9.5, maxX: 12, minZ: -12.8, maxZ: -10, height: 1.9 },  // east slag heap (crown)
       ],
     },
     playerBase: { x: -20, z: 0 },
@@ -385,41 +447,47 @@ const RAW_MAPS: readonly MapDef[] = [
     hill: { x: 0, z: 0 },
     hillRadius: 3.4,
     scatter: [
-      { palette: ["crate", "container", "rubble", "wall", "pipe", "silo"], count: 11, spacing: 1.4, centerGap: 2.2 },
-      { palette: ["pillar", "pillar", "conduit", "fuel", "ammo", "gas", "gas"], count: 9, spacing: 1.8, centerGap: 3 },
+      // The rail yard: lines of cars on stub track, a container or two between them.
+      { palette: ["railcar", "railcar", "railcar", "container"], count: 5, spacing: 0.3, rect: { minX: -21, maxX: -5, minZ: -13.5, maxZ: -4.5 }, grid: { dx: 4.6, dz: 4.5, jitter: 0.2 } },
+      // The foundry floor: plant around the furnace.
+      { palette: ["pipe", "conduit", "gas", "gas", "silo", "crate", "fuel"], count: 5, spacing: 1.1, rect: { minX: -21, maxX: -4, minZ: 3, maxZ: 14 } },
+      // Odd rubble and pillars along the middle.
+      { palette: ["rubble", "crate", "pillar", "wall"], count: 3, spacing: 1.6, minZ: -3.5, maxZ: 3.5, centerGap: 4 },
     ],
     signature: [
+      { kind: "furnace", x: -17, z: 8.5, yaw: -0.5, mirror: true },
       { kind: "wall", x: -2.2, z: 4.5, mirror: true },
-      { kind: "wall", x: -2.2, z: 6.5, mirror: true },
       { kind: "wall", x: -4.4, z: -5.5, mirror: true },
       { kind: "crate", x: -6, z: 0, mirror: true },
-      { kind: "crate", x: -5, z: -2.6, mirror: true },
       { kind: "conduit", x: -9.5, z: 1.5, mirror: true },
       { kind: "pillar", x: -11, z: -2.2, mirror: true },
-      { kind: "container", x: -13.5, z: -2.5, mirror: true },
-      { kind: "fuel", x: -8, z: 11, mirror: true },
       { kind: "gas", x: -6.5, z: -3.8, mirror: true },
     ],
     // Overstressed gantries give way: cover around the central platform crumbles periodically.
     events: [{ kind: "collapse", startTurn: 5, period: 5, zone: { x: 0, z: 0, radius: 7 } }],
-    // Derelict foundry turrets guard the catwalk flanks — first squad to reach one owns it.
-    neutrals: [{ kind: "turret", x: -10, z: -6.5, mirror: true }],
+    // Derelict foundry turrets guard the throat of each rail yard — first squad to reach one owns it.
+    neutrals: [{ kind: "turret", x: -3.5, z: -8, mirror: true }],
   },
+  // VERDANT PASS — a farmed valley between two wooded mountains. Sections: the ORCHARD (the
+  // south-west quarter: rows of fruit trees on a grid, a wood you fight through lane by lane),
+  // CHAPEL GREEN (the north-west quarter: a roofless chapel ruin landmark on open turf with its
+  // yard of stones and stumps), the MILL POND (a pond against the hill's north shoulder with the
+  // old mill landmark on its bank — water the ground lanes must go round) and THE HILL (the
+  // stacked centre). Mirrored: orchard and chapel swap quarters across the map, so each side
+  // has one wood to hide in and one green to be seen on.
   {
     id: "verdant",
     name: "Verdant Pass",
-    blurb: "A green valley walled by forested mountains around a central hill.",
-    feel: "Towering wooded mountain flanks and a true high-ground center — hold the hill, watch the slopes.",
+    blurb: "A farmed valley: orchard rows, a chapel ruin, the mill pond and the hill.",
+    feel: "Fight through the orchard rows or cross the open chapel green; the pond bends every lane toward the hill.",
     seed: 0x56455244,
-    theme: { ground: 0x35502a, surface: "grass", groundAccent: 0x93b04a, grid: 0x86a85f, fog: 0x93b0c4, fogDensity: 0.009, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x86b2d4, ambient: { kind: "pollen", color: 0xd8f0a0, density: 1 } },
+    theme: { ground: 0x35502a, skyline: "forest", surface: "grass", groundAccent: 0x93b04a, grid: 0x86a85f, fog: 0x93b0c4, fogDensity: 0.009, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x86b2d4, ambient: { kind: "pollen", color: 0xd8f0a0, density: 1 } },
     terrain: {
       bounds: { minX: -28, maxX: 28, minZ: -19, maxZ: 19 },
       maxHeight: 3.6,
       blocks: [
         { minX: -5.5, maxX: 5.5, minZ: -5, maxZ: 5, height: 0.8 },     // hill base (climbable lower step)
         { minX: -3.4, maxX: 3.4, minZ: -3.2, maxZ: 3.2, height: 1.6 }, // commanding hilltop (stacked)
-        { minX: -19, maxX: -12, minZ: -13, maxZ: -7, height: 0.7 },    // west wooded knoll
-        { minX: 12, maxX: 19, minZ: 7, maxZ: 13, height: 0.7 },        // east wooded knoll (mirror)
         // North mountain — a tall forested massif closing off the valley (climbable 0.85 steps).
         { minX: -9, maxX: 9, minZ: 11, maxZ: 19, height: 0.85 },       // north mountain — foothill
         { minX: -7, maxX: 7, minZ: 12, maxZ: 18, height: 1.7 },        // north mountain — mid slope
@@ -431,6 +499,11 @@ const RAW_MAPS: readonly MapDef[] = [
         { minX: -5, maxX: 5, minZ: -17.5, maxZ: -13, height: 2.55 },   // south mountain — upper
         { minX: -3, maxX: 3, minZ: -17, maxZ: -14, height: 3.4 },      // south mountain — peak
       ],
+      // The mill ponds: still water on the hill's shoulders; ground units go round, flyers over.
+      water: [
+        { minX: -14, maxX: -9, minZ: 6.5, maxZ: 10.5 },   // west mill pond
+        { minX: 9, maxX: 14, minZ: -10.5, maxZ: -6.5 },   // east mill pond (mirror)
+      ],
     },
     playerBase: { x: -24, z: 0 },
     enemyBase: { x: 24, z: 0 },
@@ -440,25 +513,34 @@ const RAW_MAPS: readonly MapDef[] = [
     // A storm rolls through the valley: from turn 4, lightning strikes one marked point every turn.
     events: [{ kind: "lightning", startTurn: 4, period: 1, power: 46 }],
     scatter: [
-      { palette: ["tree", "tree", "rock", "bush", "bush", "stump", "log", "log"], count: 16, spacing: 1.6, centerGap: 6 },
-      { palette: ["sandbag", "rubble", "tent", "crate"], count: 4, spacing: 2.4, centerGap: 7 },
+      // The orchard: fruit trees planted in rows.
+      { palette: ["tree"], count: 9, spacing: 0.5, rect: { minX: -23, maxX: -10, minZ: -15.5, maxZ: -7 }, grid: { dx: 3.4, dz: 3.4, jitter: 0.25 } },
+      // Chapel green: the yard of stones, stumps and scrub around the ruin.
+      { palette: ["rubble", "stump", "bush", "bush", "rock", "log"], count: 5, spacing: 1.2, rect: { minX: -24, maxX: -16, minZ: -1, maxZ: 9 } },
+      // Field edge between the orchard and the pass.
+      { palette: ["bush", "log", "sandbag", "rock"], count: 3, spacing: 1.6, rect: { minX: -20, maxX: -7, minZ: -4, maxZ: 3 }, centerGap: 6.5 },
     ],
     signature: [
-      { kind: "rock", x: -4.5, z: 4, mirror: true, radius: 1.1 },
-      { kind: "tree", x: -7, z: -3, mirror: true },
-      { kind: "tree", x: -10, z: 6, mirror: true },
-      { kind: "tree", x: -8.5, z: -7.5, mirror: true },
-      { kind: "rock", x: -15, z: -3, mirror: true },
-      { kind: "tree", x: -21, z: 4, mirror: true },
+      { kind: "chapel", x: -21, z: 3.5, yaw: 0.35, mirror: true },
+      { kind: "mill", x: -16.2, z: 8.6, yaw: 0, mirror: true },
+      { kind: "rock", x: -4.5, z: -6.8, mirror: true, radius: 1.1 },
+      { kind: "tree", x: -7.6, z: 3.2, mirror: true },
+      { kind: "tree", x: -11.5, z: 1.6, mirror: true },
     ],
   },
+  // FROZEN CAUSEWAY — a harbour the ice took. Sections: THE CAUSEWAY (the raised land bridge down
+  // the middle, the head-on lane), the FROZEN HARBOUR (the north-west flank: a freighter beached and
+  // listing on the ice — the landmark — with its cargo spilled around it), the FISHING VILLAGE (the
+  // south-west flank: a cluster of ice-fishing huts and tents on a loose grid, low cover in numbers)
+  // and the CHANNELS (frozen water either side of the causeway, crossed by timber bridges). Mirrored:
+  // the far side's harbour is on your south, its village on your north.
   {
     id: "causeway",
     name: "Frozen Causeway",
-    blurb: "A narrow land bridge between frozen basins.",
-    feel: "Linear and funneled — a single icy causeway forces brutal head-on fights.",
+    blurb: "A harbour the ice took: a beached freighter, a fishing village, one land bridge between.",
+    feel: "Head-on down the causeway, or take the bridges out to the harbour and the village on the flanks.",
     seed: 0x46524f5a,
-    theme: { ground: 0x64798f, surface: "ice", groundAccent: 0xe2eef6, grid: 0xbfd6e6, fog: 0xc9b294, fogDensity: 0.011, playerLight: 0x7fd7ff, enemyLight: 0xff8f7f, sky: 0xd8b58a, ambient: { kind: "snow", color: 0xeaf4ff, density: 1.2 } },
+    theme: { ground: 0x64798f, skyline: "floes", surface: "ice", groundAccent: 0xe2eef6, grid: 0xbfd6e6, fog: 0xc9b294, fogDensity: 0.011, playerLight: 0x7fd7ff, enemyLight: 0xff8f7f, sky: 0xd8b58a, ambient: { kind: "snow", color: 0xeaf4ff, density: 1.2 } },
     terrain: {
       bounds: { minX: -37, maxX: 37, minZ: -19, maxZ: 19 }, // LARGE: long land bridge, deep flanks
       maxHeight: 2.8,
@@ -472,9 +554,9 @@ const RAW_MAPS: readonly MapDef[] = [
         { minX: 9, maxX: 16, minZ: 5.2, maxZ: 7, height: 0.8 },     // north bank ridge (east)
         { minX: -16, maxX: -9, minZ: -7, maxZ: -5.2, height: 0.8 }, // south bank ridge (west)
         { minX: 9, maxX: 16, minZ: -7, maxZ: -5.2, height: 0.8 },   // south bank ridge (east)
-        // Grounded bergs out on the flanks: sheer, unclimbable, and tall enough to block a lane.
-        { minX: -25, maxX: -21, minZ: 10, maxZ: 15, height: 2.4 },  // west berg
-        { minX: 21, maxX: 25, minZ: -15, maxZ: -10, height: 2.4 },  // east berg (mirror)
+        // The harbour mole: a grounded berg at the harbour mouth, sheer and unclimbable.
+        { minX: -35, maxX: -31, minZ: 12, maxZ: 17, height: 2.4 },  // west berg
+        { minX: 31, maxX: 35, minZ: -17, maxZ: -12, height: 2.4 },  // east berg (mirror)
       ],
       // Frozen channels flood the flanks: you cross the middle on the land bridge, or take one of
       // the timber bridges out wide. The centre lane is always open, so there's never a soft-lock.
@@ -495,29 +577,38 @@ const RAW_MAPS: readonly MapDef[] = [
     hill: { x: 0, z: 0 },
     hillRadius: 3.6,
     scatter: [
-      // A frozen causeway is a wrecked supply route: dead stumps and boulders in the ice, an abandoned
-      // convoy's hulks and containers, a pillbox, a jersey barrier — not the same four props repeated.
-      { palette: ["rubble", "rock", "rock", "wall", "container", "wreck", "stump", "bunker", "barricade"], count: 8, spacing: 1.6, minZ: -6, maxZ: 6, centerGap: 2.5 },
-      { palette: ["crate", "sandbag", "fuel"], count: 3, spacing: 1.8, minZ: -5, maxZ: 5, centerGap: 3 },
+      // The fishing village: huts and tents on a loose grid, sleds and stumps between.
+      { palette: ["hut", "hut", "hut", "stump", "log"], count: 6, spacing: 0.4, rect: { minX: -33, maxX: -19, minZ: -17, maxZ: -8 }, grid: { dx: 4.2, dz: 4.2, jitter: 0.5 } },
+      // The harbour: the freighter's cargo, spilled and frozen in.
+      { palette: ["container", "container", "crate", "fuel", "wreck", "barricade"], count: 5, spacing: 1.0, rect: { minX: -31, maxX: -17, minZ: 6, maxZ: 17 } },
+      // The causeway: a wrecked supply route's debris.
+      { palette: ["rubble", "rock", "wall", "wreck", "sandbag", "crate"], count: 4, spacing: 1.8, minZ: -6, maxZ: 6, centerGap: 2.5, rect: { minX: -18, maxX: -6, minZ: -6, maxZ: 6 } },
     ],
     signature: [
+      { kind: "hull", x: -24.5, z: 11.5, yaw: 0.55, mirror: true },
       { kind: "wall", x: -3, z: 0, mirror: true },
       { kind: "rubble", x: -7, z: 2.6, mirror: true },
-      { kind: "rubble", x: -7, z: -2.6, mirror: true },
       { kind: "crate", x: -10.5, z: 2.8, mirror: true },
       { kind: "sandbag", x: -12, z: -1, mirror: true },
-      { kind: "rock", x: -15, z: 1.5, mirror: true },
     ],
     // Ion storms rake the exposed causeway, scrambling command links (units lose command points).
     events: [{ kind: "ionstorm", startTurn: 3, duration: 1, period: 4 }],
   },
+  // RUINS OF KARAK — a temple city gone to ruin. Sections: the TEMPLE PRECINCT (the centre: the
+  // dais, a colonnade of standing pillars down each side of it, and the FALLEN COLOSSUS landmark
+  // toppled across the precinct's north edge — a wall of stone you can hold), the CISTERN (each
+  // side's approach: a ring well landmark on the flat between the base and the ravine, cover
+  // that shapes the crossing), the AMPHITHEATRE (the south-west quarter: a stepped stone bowl with
+  // broken statues on its tiers — climbable high ground on the flank), the MESAS (the north-west
+  // stone terraces) and the RAVINES (the burst aqueduct, three spans a side). Mirrored: your
+  // amphitheatre faces their mesa across the ravines.
   {
     id: "karak",
     name: "Ruins of Karak",
-    blurb: "Toppled colonnades over stepped stone mesas.",
-    feel: "Vertical ruins — climb the mesas and fight among broken pillars and cliffs.",
+    blurb: "A temple city in ruin: colonnade, fallen colossus, amphitheatre and cistern.",
+    feel: "Cross the ravines into the precinct, hold the colossus or climb the amphitheatre steps.",
     seed: 0x4b415241,
-    theme: { ground: 0x664d2c, surface: "paved", groundAccent: 0xc79149, grid: 0xc6a567, fog: 0x6a5f86, fogDensity: 0.012, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x6e5f96, ambient: { kind: "ash", color: 0xcbb083, density: 0.9 } },
+    theme: { ground: 0x664d2c, skyline: "ziggurats", surface: "paved", groundAccent: 0xc79149, grid: 0xc6a567, fog: 0x6a5f86, fogDensity: 0.012, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x6e5f96, ambient: { kind: "ash", color: 0xcbb083, density: 0.9 } },
     terrain: {
       bounds: { minX: -26, maxX: 26, minZ: -18, maxZ: 18 },
       maxHeight: 3.6,
@@ -530,10 +621,16 @@ const RAW_MAPS: readonly MapDef[] = [
         { minX: 12, maxX: 22, minZ: -14, maxZ: -6, height: 0.8 },    // SE stone mesa (lower, mirror)
         { minX: 14, maxX: 20, minZ: -13, maxZ: -8, height: 1.6 },    // SE stone mesa (mid)
         { minX: 16, maxX: 19, minZ: -12, maxZ: -9, height: 2.4 },    // SE stone mesa (crown)
-        // Tower stumps: two stacked steps in one jump, so they read as sheer ruin walls rather
-        // than climbable steps. They frame the centre and break the long straight shot.
-        { minX: -9, maxX: -6.5, minZ: -14, maxZ: -10, height: 3.2 }, // west tower stump
-        { minX: 6.5, maxX: 9, minZ: 10, maxZ: 14, height: 3.2 },     // east tower stump (mirror)
+        // The amphitheatre: a stepped bowl, each tier climbable, the top a stage.
+        { minX: -22, maxX: -11, minZ: -17, maxZ: -9, height: 0.8 },  // SW amphitheatre (lowest tier)
+        { minX: -20, maxX: -13, minZ: -17, maxZ: -11.5, height: 1.6 }, // SW amphitheatre (mid tier)
+        { minX: -18, maxX: -15, minZ: -17, maxZ: -14, height: 2.4 }, // SW amphitheatre (stage)
+        { minX: 11, maxX: 22, minZ: 9, maxZ: 17, height: 0.8 },      // NE amphitheatre (lowest, mirror)
+        { minX: 13, maxX: 20, minZ: 11.5, maxZ: 17, height: 1.6 },   // NE amphitheatre (mid)
+        { minX: 15, maxX: 18, minZ: 14, maxZ: 17, height: 2.4 },     // NE amphitheatre (stage)
+        // Tower stumps: sheer ruin walls framing the precinct's south and north corners.
+        { minX: -13, maxX: -10.5, minZ: -16, maxZ: -12.5, height: 3.2 }, // west tower stump
+        { minX: 10.5, maxX: 13, minZ: 12.5, maxZ: 16, height: 3.2 },     // east tower stump (mirror)
       ],
       // The old aqueduct burst: a flooded ravine runs down each side of the centre. Ground units
       // take one of three crossings per side (or go the long way around the ends); flyers overfly.
@@ -556,32 +653,36 @@ const RAW_MAPS: readonly MapDef[] = [
     hill: { x: 0, z: 0 },
     hillRadius: 3.2,
     scatter: [
-      // Overgrown ruins: the fallen city's pillars, statues and rubble, with scrub and dead stumps
-      // reclaiming it, and the odd burnt-out hull from the last army that tried to hold it.
-      { palette: ["pillar", "rubble", "rock", "gas", "statue", "statue", "bush", "stump", "crate"], count: 13, spacing: 1.8, centerGap: 4 },
-      { palette: ["wall", "cliff", "wreck"], count: 4, spacing: 2.6, centerGap: 6 },
+      // The colonnade: standing pillars in a line down each side of the precinct.
+      { palette: ["pillar"], count: 3, spacing: 0.3, rect: { minX: -7.6, maxX: -6.0, minZ: -9, maxZ: 9 }, grid: { dx: 2, dz: 4.6, jitter: 0.15 }, centerGap: 5.5 },
+      // The amphitheatre tiers: broken statues on the steps.
+      { palette: ["statue", "statue", "pillar", "rubble"], count: 3, spacing: 1.0, rect: { minX: -21.5, maxX: -11.5, minZ: -16.5, maxZ: -9.5 } },
+      // The approaches: fallen city between the cistern and the ravine, scrub reclaiming it.
+      { palette: ["rubble", "rock", "bush", "stump", "statue", "wreck", "gas"], count: 5, spacing: 1.6, rect: { minX: -20, maxX: -12, minZ: -8, maxZ: 5 } },
     ],
     signature: [
-      { kind: "pillar", x: -5.5, z: 4.5, mirror: true },
-      { kind: "pillar", x: -5.5, z: -4.5, mirror: true },
-      // Moved off z=0: the flooded ravine added to this map runs through x=-11..-8.5, and its
-      // centre crossing now sits here. A cliff face 0.9 units from a bridge span both overlapped it
-      // and walled off the very chokepoint the crossing exists to create.
+      { kind: "colossus", x: -2.6, z: 9.6, yaw: 0.25, mirror: true },
+      { kind: "cistern", x: -15.5, z: 1.5, mirror: true },
       { kind: "cliff", x: -9.5, z: 4.2, mirror: true },
-      { kind: "rubble", x: -8, z: 7, mirror: true },
-      { kind: "pillar", x: -10.5, z: -8.5, mirror: true },
-      { kind: "rock", x: -16, z: 2.5, mirror: true },
+      { kind: "rubble", x: -12.5, z: 7.5, mirror: true },
     ],
     // The ancient colonnades give way: cover near the central dais collapses every few turns.
     events: [{ kind: "collapse", startTurn: 4, period: 4, zone: { x: 0, z: 0, radius: 9 } }],
   },
+  // CROSSFIRE BASIN — a militarised border. Sections: the CHECKPOINT (the centre lane: each side's
+  // gate landmark — booth, raised boom, sign — facing the other across the knoll, the crossing
+  // itself), the RADAR STATION (the north-west flank: a dish on a trailer landmark inside a
+  // fenced plant of conduits and ammo, beside the nest), the TRENCH LINE (the south flank: a run
+  // of sandbags from the nest toward the centre, ending in a pillbox — cover in a line, so an
+  // advance along it is a fight for each bag), and the FORDS (the streams and their bridges out
+  // wide). Mirrored, so each side has a station to hold and a trench to push down.
   {
     id: "crossfire",
     name: "Crossfire Basin",
-    blurb: "A symmetric bowl built for honest, balanced duels.",
-    feel: "Balanced competitive arena — mirrored cover nests and a sunken central basin.",
+    blurb: "A militarised border: checkpoint gates, a radar station, a trench line.",
+    feel: "Push the trench line, hold the radar station, meet at the checkpoint — mirrored to the bag.",
     seed: 0x43524f53,
-    theme: { ground: 0x414833, surface: "grass", groundAccent: 0x98a15c, grid: 0x97a277, fog: 0x94a3b4, fogDensity: 0.010, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x8fa3ba, ambient: { kind: "pollen", color: 0xc6d8a8, density: 0.7 } },
+    theme: { ground: 0x414833, skyline: "fences", surface: "grass", groundAccent: 0x98a15c, grid: 0x97a277, fog: 0x94a3b4, fogDensity: 0.010, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x8fa3ba, ambient: { kind: "pollen", color: 0xc6d8a8, density: 0.7 } },
     terrain: {
       bounds: { minX: -26, maxX: 26, minZ: -17, maxZ: 17 },
       maxHeight: 3.0,
@@ -620,16 +721,19 @@ const RAW_MAPS: readonly MapDef[] = [
     hill: { x: 0, z: 0 },
     hillRadius: 3.8,
     scatter: [
-      { palette: ["sandbag", "crate", "barricade", "bunker", "bush", "log", "tree", "rock", "stump", "wreck"], count: 11, spacing: 2.0, centerGap: 3 },
-      { palette: ["ammo", "fuel", "gas"], count: 3, spacing: 3.0, centerGap: 5 },
+      // The trench line: a run of sandbags from the nest toward the checkpoint.
+      { palette: ["sandbag"], count: 3, spacing: 0.15, rect: { minX: -13, maxX: -7, minZ: -9.4, maxZ: -8.6 }, grid: { dx: 2.4, dz: 1, jitter: 0.1 }, centerGap: 6 },
+      // The radar station's plant.
+      { palette: ["conduit", "ammo", "container", "sandbag", "crate"], count: 4, spacing: 1.0, rect: { minX: -24, maxX: -17, minZ: 4, maxZ: 13.5 } },
+      // Scrub in the open ground between the nests and the streams.
+      { palette: ["bush", "log", "tree", "rock", "stump"], count: 5, spacing: 1.6, rect: { minX: -23, maxX: -6, minZ: -11.5, maxZ: 11.5 }, centerGap: 6 },
     ],
     signature: [
+      { kind: "gate", x: -8, z: 0, yaw: 0, mirror: true },
+      { kind: "radar", x: -19, z: 9, yaw: 0.8, mirror: true },
+      { kind: "bunker", x: -1.6, z: -9, yaw: 0.2, mirror: true },
       { kind: "sandbag", x: -9, z: 3.5, mirror: true },
-      { kind: "sandbag", x: -9, z: -3.5, mirror: true },
-      { kind: "crate", x: -5, z: 0, mirror: true },
-      { kind: "barricade", x: -7, z: 0, mirror: true },
       { kind: "ammo", x: -12.5, z: 3.5, mirror: true },
-      { kind: "fuel", x: -8.5, z: 8, mirror: true },
     ],
     // Off-map artillery ranges in on the central basin on a steady cadence — don't loiter there.
     events: [{ kind: "barrage", startTurn: 3, period: 4, zone: { x: 0, z: 0, radius: 6 }, power: 34 }],
