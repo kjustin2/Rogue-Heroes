@@ -93,7 +93,20 @@ export function trailLength(family: ProjectileFamily): number {
   }
 }
 
-export interface TrailPoint { x: number; y: number; z: number }
+/** A trail sample. `born` = the round's age when it was pushed (drives ease-in), `seq` = its
+ *  running index in the history (a STABLE phase key — the array index shifts every push, and any
+ *  jitter keyed on it pops when the history rolls). */
+/** A bare world point — what the line helpers take. */
+export interface Point3 { x: number; y: number; z: number }
+export interface TrailPoint extends Point3 { born: number; seq: number }
+
+/** Seconds a fresh trail element takes to scale in. Shorter than a frame at full speed would pop. */
+const EASE_IN = 0.07;
+/** How far behind the head a family's trail reaches before its elements have eased to nothing. */
+export function trailReach(family: ProjectileFamily): number { return trailStep(family) * (trailLength(family) - 1); }
+function smooth(u: number): number { const c = clamp01(u); return c * c * (3 - 2 * c); }
+/** 1 near the head, easing to 0 by `reach`; flat for the first 55% so bodies do not shrink early. */
+function easeOut(behind: number, reach: number): number { return smooth((1 - behind / reach) / 0.45); }
 
 /** World-unit spacing between trail samples. Trails are sampled by DISTANCE, not by render frame:
  *  a frame-sampled history is a different length at every refresh rate and resolve speed (at
@@ -114,18 +127,20 @@ export function trailStep(family: ProjectileFamily): number {
 /** Append the round's current position to its history when it has moved a trail step. */
 export function pushTrailPoint(history: TrailPoint[], p: Projectile, family: ProjectileFamily): void {
   const last = history[history.length - 1];
-  const point = { x: p.position.x, y: p.height, z: p.position.z };
+  const point: TrailPoint = { x: p.position.x, y: p.height, z: p.position.z, born: p.age, seq: last ? last.seq + 1 : 0 };
   if (last) {
     const step = trailStep(family);
     const d = Math.hypot(point.x - last.x, point.y - last.y, point.z - last.z);
     if (d < step) return;
     // A round that jumped several steps in one frame (fast round, slow frame) fills the gap so the
-    // ribbon stays continuous instead of leaving a hole behind the head.
+    // ribbon stays continuous instead of leaving a hole behind the head. Fill samples are given
+    // a birth time between the two real ones so they ease in as a run, not as one block.
     const n = Math.min(4, Math.floor(d / step));
     for (let i = 1; i < n; i += 1) {
       const t = i / n;
-      history.push({ x: last.x + (point.x - last.x) * t, y: last.y + (point.y - last.y) * t, z: last.z + (point.z - last.z) * t });
+      history.push({ x: last.x + (point.x - last.x) * t, y: last.y + (point.y - last.y) * t, z: last.z + (point.z - last.z) * t, born: last.born + (p.age - last.born) * t, seq: last.seq + i });
     }
+    point.seq = last.seq + n;
   }
   history.push(point);
   const max = trailLength(family);
@@ -268,7 +283,6 @@ export function prewarmProjectileFx(): void {
 // Building blocks
 
 const TRAIL_RADII = [0.05, 0.042, 0.034, 0.026, 0.02, 0.015, 0.012, 0.01];
-const TRAIL_OPACITIES = [0.78, 0.6, 0.44, 0.3, 0.2, 0.12, 0.07, 0.04];
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
 const _d = new THREE.Vector3();
@@ -326,7 +340,7 @@ function cutout(geometry: string, color: number, size: number, rimColor = INK, s
 }
 function faceViewer(obj: THREE.Object3D): void { obj.lookAt(viewer); }
 
-function tube(a: TrailPoint, b: TrailPoint, color: number, opacity: number, radius: number): THREE.Object3D | undefined {
+function tube(a: Point3, b: Point3, color: number, opacity: number, radius: number): THREE.Object3D | undefined {
   _a.set(a.x, a.y, a.z);
   _b.set(b.x, b.y, b.z);
   _d.subVectors(_b, _a);
@@ -341,7 +355,7 @@ function tube(a: TrailPoint, b: TrailPoint, color: number, opacity: number, radi
 }
 
 /** An opaque, ink-rimmed line between two points: the sniper's lance, a sabot streak. */
-function solidTube(a: TrailPoint, b: TrailPoint, color: number, radius: number, rimRadius = 0): THREE.Object3D | undefined {
+function solidTube(a: Point3, b: Point3, color: number, radius: number, rimRadius = 0): THREE.Object3D | undefined {
   _a.set(a.x, a.y, a.z);
   _b.set(b.x, b.y, b.z);
   _d.subVectors(_b, _a);
@@ -373,7 +387,7 @@ function bar(a: THREE.Vector3, b: THREE.Vector3, color: number, width: number, r
 }
 
 /** Point the object's +Y along the 3D velocity (so a lobbed round noses over its arc). */
-export function orientAlongVelocity(obj: THREE.Object3D, from: TrailPoint, to: TrailPoint): void {
+export function orientAlongVelocity(obj: THREE.Object3D, from: Point3, to: Point3): void {
   _d.set(to.x - from.x, to.y - from.y, to.z - from.z);
   if (_d.lengthSq() < 0.00001) return;
   obj.quaternion.setFromUnitVectors(UP, _d.normalize());
@@ -702,7 +716,7 @@ function flameHead(age: number): THREE.Group {
   sleeve.frustumCulled = rim.frustumCulled = false;
   group.add(rim, sleeve, core);
   const wobble = 1 + Math.sin(age * 28) * 0.12;
-  group.scale.set(wobble * 1.2, 1.3, 1.2 / wobble);
+  group.scale.set(wobble * 0.95, 1.05, 0.95 / wobble);
   return group;
 }
 
@@ -734,9 +748,9 @@ export const SNIPER_PAUSE = 0.11;
 export function makeProjectileTrail(p: Projectile, family: ProjectileFamily, history: readonly TrailPoint[]): THREE.Object3D[] {
   const out: THREE.Object3D[] = [];
   const n = history.length;
-  const team = p.color;
   const head = { x: p.position.x, y: p.height, z: p.position.z };
   if (family === "sniper") {
+    const team = p.color;
     // THE LANCE: after the half-beat, one bold white line from the muzzle to the round, over a
     // thicker team-colour line, with an ink rim — a graphic "pierce" stroke across the whole
     // distance, not a vapour haze. The pause is what makes the lance read as one event.
@@ -748,43 +762,60 @@ export function makeProjectileTrail(p: Projectile, family: ProjectileFamily, his
     if (over) out.push(over);
     return out;
   }
-  if (n < 2) return out;
+  if (n < 1) return out;
+  // Every element is placed by CONTINUOUS quantities: how long ago its sample was pushed (ease-in)
+  // and how far behind the head it now sits (ease-out, growth, colour). Nothing keys on the array
+  // index — the array rolls every push, and an index-keyed size or phase pops between two frames.
+  const step = trailStep(family);
+  const reach = trailReach(family);
+  const behind: number[] = new Array(n);
+  let acc = 0;
+  let px = head.x, py = head.y, pz = head.z;
+  for (let i = n - 1; i >= 0; i -= 1) {
+    const pt = history[i];
+    acc += Math.hypot(pt.x - px, pt.y - py, pt.z - pz);
+    behind[i] = acc;
+    px = pt.x; py = pt.y; pz = pt.z;
+  }
+  const easeIn = (pt: TrailPoint): number => smooth((p.age - pt.born) / EASE_IN);
+  const team = p.color;
   if (family === "flame") {
     // FIRE STREAM: fat blobs grow out of the nozzle, stretch into tongues that lick upward, then
-    // curl into two grey puffs that shrink away. Growing fire, shrinking smoke (a growing grey ball
-    // read as a balloon towed behind the stream).
-    for (let i = n - 2; i >= 0; i -= 1) {
-      const back = n - 1 - i;
+    // darken and curl into small grey puffs that rise off the line and shrink away. Growth and
+    // colour follow distance behind the head; the puffs rise with their own age, so nothing hangs
+    // at head height after the round has passed, and a puff is never more than ~0.4 of the head.
+    for (let i = n - 1; i >= 0; i -= 1) {
       const pt = history[i];
-      const stage = Math.min(FIRE.length - 1, back);
-      const smoke = back >= 5;
-      const flick = 1 + Math.sin(p.age * 20 + i * 1.9) * 0.12;
-      if (smoke) {
-        const scale = (0.6 - (back - 5) * 0.22) * flick;
-        if (scale < 0.15) continue;
-        const blob = solid("blob", FIRE[stage], 1.2, INK);
-        blob.position.set(pt.x + Math.sin(p.age * 9 + i * 2.3) * 0.1, pt.y + back * 0.1, pt.z + Math.cos(p.age * 7 + i * 1.3) * 0.1);
-        blob.scale.setScalar(scale);
-        blob.rotation.set(i * 1.1, p.age * 2, i * 0.7);
-        out.push(blob);
-        continue;
-      }
-      const scale = (0.7 + back * 0.15) * flick;
-      const blob = solid("blob", FIRE[stage], 1.2, FIRE[Math.min(FIRE.length - 3, stage + 2)]);
-      blob.position.set(pt.x + Math.sin(p.age * 9 + i * 2.3) * 0.1, pt.y + back * 0.06, pt.z + Math.cos(p.age * 7 + i * 1.3) * 0.1);
+      const k = behind[i] / step; // 0 at the head, ~8 at the tail
+      const stage = Math.min(FIRE.length - 1, Math.floor(k));
+      const age = p.age - pt.born;
+      const flick = 1 + Math.sin(p.age * 20 + pt.seq * 1.9) * 0.1;
+      // Grow to k=3, shrink through the dark-red stage to the puff size by k=5, then ease out.
+      const body = k < 3 ? 0.5 + k * 0.23 : k < 5 ? 1.19 - (k - 3) * 0.37 : 0.45;
+      const scale = body * flick * easeIn(pt) * easeOut(behind[i], reach);
+      if (scale < 0.04) continue;
+      const smoke = k >= 5;
+      const rise = smoke ? Math.min(0.9, (k - 5) * 0.2) + age * 0.35 : k * 0.03;
+      const jx = Math.sin(p.age * 9 + pt.seq * 2.3) * 0.08;
+      const jz = Math.cos(p.age * 7 + pt.seq * 1.3) * 0.08;
+      const blob = solid("blob", FIRE[stage], 1.2, smoke ? INK : FIRE[Math.min(FIRE.length - 3, stage + 2)]);
+      blob.position.set(pt.x + jx, pt.y + rise, pt.z + jz);
       blob.scale.setScalar(scale);
-      blob.rotation.set(i * 1.1, p.age * 2, i * 0.7);
+      blob.rotation.set(pt.seq * 1.1, p.age * 2, pt.seq * 0.7);
       out.push(blob);
-      if (back >= 2) {
-        // Tongues: one or two cones licking up and off the blob, the flame's edge curling.
-        const tongues = back === 2 ? 1 : 2;
-        for (let k = 0; k < tongues; k += 1) {
+      if (k >= 1.5 && k < 4.6) {
+        // Tongues: one or two cones licking up and off the blob, the flame's edge curling. They
+        // grow in over the first half step and shrink out before the puff stage.
+        const tongueLife = Math.min(1, (k - 1.5) / 0.5) * Math.min(1, (4.6 - k) / 0.6);
+        const tongues = k < 2.5 ? 1 : 2;
+        for (let c = 0; c < tongues; c += 1) {
           const tongue = solid("tongue", FIRE[Math.max(0, stage - 1)], 1.3, FIRE[Math.min(4, stage + 1)]);
-          const lean = Math.sin(p.age * 16 + i * 2.1 + k * 2.4) * 0.5;
-          _d.set(lean, 1, Math.cos(p.age * 11 + i + k * 1.7) * 0.45).normalize();
+          const lean = Math.sin(p.age * 16 + pt.seq * 2.1 + c * 2.4) * 0.5;
+          _d.set(lean, 1, Math.cos(p.age * 11 + pt.seq + c * 1.7) * 0.45).normalize();
           tongue.quaternion.setFromUnitVectors(UP, _d);
-          tongue.position.set(pt.x + (k ? -0.12 : 0.12), pt.y + back * 0.06 + scale * 0.1, pt.z + (k ? 0.1 : -0.1));
-          tongue.scale.set(scale * 0.8, scale * (0.9 + Math.sin(p.age * 24 + i + k) * 0.25), scale * 0.8);
+          tongue.position.set(pt.x + jx + (c ? -0.12 : 0.12), pt.y + rise + scale * 0.1, pt.z + jz + (c ? 0.1 : -0.1));
+          const ts = scale * tongueLife * (c === 1 ? Math.min(1, (k - 2.5) / 0.5) : 1);
+          tongue.scale.set(ts * 0.8, ts * (0.9 + Math.sin(p.age * 24 + pt.seq + c) * 0.25), ts * 0.8);
           out.push(tongue);
         }
       }
@@ -794,56 +825,70 @@ export function makeProjectileTrail(p: Projectile, family: ProjectileFamily, his
   const tapered = family === "grenade" || family === "launcher" || family === "bomb" ? 0.45 : family === "pistol" || family === "carbine" ? 0.7 : 1;
   const trailColor = family === "mg" ? (seedOf(p.id) % 2 === 0 ? TRACER_ALT : TRACER) : family === "grenade" || family === "mortar" || family === "smoke" || family === "bomb" ? SMOKE_LIGHT : family === "launcher" ? BRASS : family === "tank" ? TRACER : team;
   const lobbed = LOBBED.has(family);
-  // Tapered ribbon: fat and bright at the round, thin and faint at the tail.
-  const segments = lobbed && family !== "tank" ? Math.min(n - 1, 3) : n - 1;
+  // Tapered ribbon from the HEAD back: fat and bright at the round, thin and faint at the tail.
+  // The first segment runs head → newest sample, so it grows continuously instead of the ribbon
+  // lagging a whole step behind the round; width and opacity follow distance, so a sample
+  // rolling off the end is already invisible.
+  const ribbonReach = lobbed && family !== "tank" ? step * 3 : reach;
   const width = family === "tank" || family === "artillery" || family === "siege" ? 2.2 : family === "mg" ? 1.5 : 1;
-  for (let i = n - 1; i > n - 1 - segments && i > 0; i -= 1) {
-    const back = n - 1 - i;
-    const seg = tube(history[i - 1], history[i], trailColor, TRAIL_OPACITIES[Math.min(TRAIL_OPACITIES.length - 1, back)], TRAIL_RADII[Math.min(TRAIL_RADII.length - 1, back)] * tapered * width);
+  let from: Point3 = head;
+  let fromBehind = 0;
+  for (let i = n - 1; i >= 0; i -= 1) {
+    const to = history[i];
+    const mid = (fromBehind + behind[i]) / 2;
+    const u = clamp01(1 - mid / ribbonReach);
+    if (u <= 0.02) break;
+    const seg = tube(from, to, trailColor, q(0.8 * u * u), (0.012 + 0.04 * u * u) * tapered * width);
     if (seg) out.push(seg);
+    from = to;
+    fromBehind = behind[i];
   }
-  if (family === "tank" && n >= 3) {
-    // SABOT STREAK: a hard bright line over the round's last metres — the AP round is the fastest
-    // thing on the board and its trail is a ruled line, not a ribbon.
-    const tail = history[Math.max(0, n - 4)];
+  if (family === "tank" && n >= 2) {
+    // SABOT STREAK: a hard bright line over the round's last metre — the AP round is the fastest
+    // thing on the board and its trail is a ruled line, not a ribbon. Grows from the head.
+    let tail = history[n - 1];
+    for (let i = n - 1; i >= 0 && behind[i] < 1.0; i -= 1) tail = history[i];
     const streak = solidTube(tail, head, HOT, 0.03, 0.055);
     if (streak) out.push(streak);
   }
   if (lobbed && family !== "grenade" && family !== "tank") {
     // Smoke ribbon behind a lobbed round: puffs hang where the round WAS, so they thin out behind
-    // it in space rather than towing along. Fresh puffs are small and light; they swell and drift
-    // upward and sideways as they age, and the two oldest shrink away. Every other sample is
-    // skipped so the ribbon has gaps — a solid chain read as a caterpillar on the arc.
-    const count = family === "launcher" ? 3 : 5;
-    let placed = 0;
-    for (let i = n - 3; i >= 0 && placed < count; i -= 2) {
-      const back = n - 1 - i;
+    // it in space rather than towing along. Every other SAMPLE (by its stable seq) carries a puff,
+    // so the ribbon has gaps — a solid chain read as a caterpillar on the arc. A puff is born
+    // small, swells with distance, rises with its age, and eases away by the reach.
+    const puffScale = family === "artillery" ? 1.35 : family === "launcher" ? 0.7 : family === "bomb" ? 0.8 : 1;
+    for (let i = n - 1; i >= 0; i -= 1) {
       const pt = history[i];
-      const swell = 0.42 + back * 0.09;
-      const scale = placed >= count - 2 ? swell * (placed === count - 1 ? 0.45 : 0.75) : swell;
-      const s = puff(scale * (family === "artillery" ? 1.35 : family === "launcher" ? 0.7 : family === "bomb" ? 0.8 : 1), placed % 2 ? SMOKE : SMOKE_LIGHT);
-      const side = (i % 2 ? 1 : -1) * (0.08 + back * 0.03);
-      s.position.set(pt.x + Math.sin(i * 2.1) * side, pt.y + back * 0.08 + 0.05, pt.z + Math.cos(i * 1.7) * side);
-      s.rotation.set(i * 0.9, i * 0.4, 0);
+      if (pt.seq % 2) continue;
+      const k = behind[i] / step;
+      if (k < 1.2) continue;
+      const age = p.age - pt.born;
+      const swell = (0.28 + Math.min(k, 6) * 0.07) * puffScale * smooth((k - 1.2) / 1.0) * easeOut(behind[i], reach);
+      if (swell < 0.04) continue;
+      const s = puff(swell, (pt.seq >> 1) % 2 ? SMOKE : SMOKE_LIGHT);
+      const side = ((pt.seq >> 1) % 2 ? 1 : -1) * (0.08 + k * 0.03);
+      s.position.set(pt.x + Math.sin(pt.seq * 2.1) * side, pt.y + 0.05 + age * 0.25 + k * 0.03, pt.z + Math.cos(pt.seq * 1.7) * side);
+      s.rotation.set(pt.seq * 0.9, pt.seq * 0.4 + age, 0);
       out.push(s);
-      placed += 1;
     }
   }
   const descending = p.height < p.previousHeight - 0.01;
-  if (descending && (family === "mortar" || family === "artillery" || family === "siege" || family === "bomb" || family === "smoke")) {
+  if (descending && n >= 1 && (family === "mortar" || family === "artillery" || family === "siege" || family === "bomb" || family === "smoke")) {
     // WHISTLE-FALL: two thin white speed lines trailing the round as it noses down, flickering in
-    // length, and the ground shadow (below) swelling under it.
-    const prev = history[n - 2];
+    // length, and the ground shadow (below) swelling under it. They grow with the descent rate so
+    // the top of the arc eases them in.
+    const fall = smooth((p.previousHeight - p.height) / 0.04);
+    const prev = history[n - 1];
     _a.set(prev.x, prev.y, prev.z);
     _b.set(head.x, head.y, head.z);
     _d.subVectors(_b, _a).normalize();
     _side.crossVectors(_d, UP).normalize();
     for (const s of [-1, 1]) {
-      const len = 0.9 + Math.sin(p.age * 30 + s) * 0.35;
+      const len = (0.9 + Math.sin(p.age * 30 + s) * 0.35) * fall;
       const off = 0.22 * (family === "bomb" ? 1.4 : 1);
       _a.copy(_b).addScaledVector(_side, s * off).addScaledVector(_d, -0.3);
       const end = _a.clone().addScaledVector(_d, -len);
-      const line = bar(_a, end, HOT, 0.03);
+      const line = bar(_a, end, HOT, 0.03 * fall + 0.004);
       if (line) out.push(line);
     }
   }
@@ -886,7 +931,7 @@ export function makeMuzzleFlash(p: Projectile, family: ProjectileFamily): THREE.
   const flashing = p.age <= MUZZLE_FLASH_TIME;
   const t = clamp01(p.age / MUZZLE_FLASH_TIME);
   // Pop: full size almost at once, then shrink away — a flash is a single frame of light.
-  const pop = t < 0.25 ? 0.6 + (t / 0.25) * 0.4 : 1 - ((t - 0.25) / 0.75) * 0.85;
+  const pop = t < 0.2 ? 0.25 + (t / 0.2) * 0.75 : 1 - ((t - 0.2) / 0.8) * 0.9;
   if (family === "sniper") {
     // The half-beat: a ripple ring pulsing out of the muzzle while the round waits, then the lance
     // leaves with two long petals. Nothing else on the board pauses before it fires.
@@ -904,7 +949,7 @@ export function makeMuzzleFlash(p: Projectile, family: ProjectileFamily): THREE.
     if (p.age >= SNIPER_PAUSE && p.age < SNIPER_PAUSE + MUZZLE_FLASH_TIME) {
       const u = (p.age - SNIPER_PAUSE) / MUZZLE_FLASH_TIME;
       const f = petals(3, 0.5, 1.5, 0.55, FLASH, FLASH_RIM, 0.9);
-      f.scale.setScalar(0.7 * (u < 0.3 ? 0.7 + u : 1 - (u - 0.3) * 1.2));
+      f.scale.setScalar(0.7 * (u < 0.25 ? 0.2 + u * 3.2 : 1 - (u - 0.25) * 1.25));
       group.add(f);
     }
   } else if (flashing) {
@@ -982,7 +1027,7 @@ export function makeMuzzleFlash(p: Projectile, family: ProjectileFamily): THREE.
     const lift = 0.1 + 2.2 * u - 5.2 * u * u;
     casing.position.set(sideways, -0.35 - u * 0.2, lift);
     casing.rotation.set(u * 18 + seed, u * 7, u * 12);
-    casing.scale.setScalar(family === "pellet" ? 1.6 : family === "mg" || family === "sniper" ? 1.35 : 1.1);
+    casing.scale.setScalar((family === "pellet" ? 1.6 : family === "mg" || family === "sniper" ? 1.35 : 1.1) * Math.min(1, (1 - u) * 5));
     group.add(casing);
   }
   if (group.children.length === 0) return undefined;
@@ -1016,7 +1061,7 @@ export function makeImpact(effect: VisualEvent, t: number, ground: number, hint?
   const cz = effect.to.z;
   const hitY = ground + 0.9;
   // Star pops to full size in the first fifth and shrinks away over the rest.
-  const pop = t < 0.2 ? 0.5 + (t / 0.2) * 0.5 : Math.max(0, 1 - (t - 0.2) / 0.8);
+  const pop = t < 0.14 ? 0.15 + (t / 0.14) * 0.85 : Math.max(0, 1 - (t - 0.14) / 0.86);
   const burn = effect.color === 0xff7a2a || family === "flame";
   if (burn) {
     // THE TARGET CATCHES: three flame tongues flickering up the body and a ring of embers at the
@@ -1112,7 +1157,7 @@ export function makeImpact(effect: VisualEvent, t: number, ground: number, hint?
 export const GROUND_CHEW_S = 0.45;
 export function makeGroundChew(x: number, z: number, t: number, ground: number, seed: number, size = 1): THREE.Object3D[] {
   const out: THREE.Object3D[] = [];
-  const s = size * (t < 0.3 ? 0.5 + t * 1.7 : 1 - (t - 0.3) * 1.3);
+  const s = size * (t < 0.3 ? t * 3.3 : 1 - (t - 0.3) * 1.3);
   if (s > 0.05) {
     const p = puff(s * 0.55, DUST, 1.2);
     p.position.set(x, ground + 0.12 + t * 0.25 * size, z);
@@ -1178,7 +1223,7 @@ export function makeBlast(effect: VisualEvent, t: number, ground: number, hint?:
   //    with no letters in it. Pops to full size at once and shrinks as the fireball takes over.
   if (t < 0.16 && !ap) {
     const u = t / 0.16;
-    const star = cutout("star8", HOT, radius * (0.7 + u * 0.35) * (1 - u * 0.5), FLASH_RIM, seed * 0.5 + u * 0.6);
+    const star = cutout("star8", HOT, radius * (0.7 + u * 0.35) * (1 - u * 0.5) * smooth(u / 0.3), FLASH_RIM, seed * 0.5 + u * 0.6);
     star.position.set(cx, ground + lift * 0.45, cz);
     faceViewer(star);
     out.push(star);
@@ -1186,7 +1231,7 @@ export function makeBlast(effect: VisualEvent, t: number, ground: number, hint?:
   if (ap && hint) {
     // ARMOUR-PIERCING HIT: a sharp cone of light driven on through the hit point along the shot,
     // and a fan of metal sparks thrown back at the gun. Short and hard; the smoke is brief.
-    const pop = t < 0.15 ? 0.5 + (t / 0.15) * 0.5 : Math.max(0, 1 - (t - 0.15) / 0.55);
+    const pop = t < 0.12 ? 0.1 + (t / 0.12) * 0.9 : Math.max(0, 1 - (t - 0.12) / 0.58);
     if (pop > 0.02) {
       const cone = solid("spike", HOT, 1.35, FLASH_RIM);
       _d.set(hint.dirX, -0.15, hint.dirZ).normalize();
@@ -1215,7 +1260,7 @@ export function makeBlast(effect: VisualEvent, t: number, ground: number, hint?:
   if (t < 0.6) {
     const life = t / 0.6;
     const stage = life < 0.3 ? 1 : life < 0.6 ? 2 : 3;
-    const grow = life < 0.45 ? 0.45 + life * 1.2 : 1 - (life - 0.45) * 1.7;
+    const grow = life < 0.45 ? 0.15 + life * 1.85 : 1 - (life - 0.45) * 1.7;
     const blobs = ap ? 4 : 6;
     for (let i = 0; i < blobs; i += 1) {
       const a = seed * 0.7 + i * 1.05;
@@ -1301,7 +1346,7 @@ export function makeBlastAfterlife(effect: VisualEvent, u: number, ground: numbe
     const born = i * 0.16;
     if (u < born) continue;
     const life = (u - born) / (1 - born);
-    const scale = life < 0.35 ? 0.7 + life * 0.9 : Math.max(0, 1 - (life - 0.35) / 0.65);
+    const scale = life < 0.35 ? 0.15 + (life / 0.35) * 0.85 : Math.max(0, 1 - (life - 0.35) / 0.65);
     if (scale <= 0.03) continue;
     const s = puff(R * (0.34 - i * 0.05) * scale, i % 2 ? SMOKE : SMOKE_LIGHT);
     const drift = (i % 2 ? 1 : -1) * radius * 0.12 * life;
