@@ -15,9 +15,11 @@ import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, onTerrainEdge, poin
 import { kitGeometry, modelsVersion, propGeometry, toonGradient, vehicleGeometry, vehiclesKitReady, type KitPart, type PropsKind, type VehiclesPart } from "./models";
 import { VEHICLE_LAYOUT } from "./vehiclesLayout";
 import {
-  makeBlast, makeImpact, makeMuzzleFlash, makePing, makeProjectileModel, makeProjectileShadow, makeProjectileTrail,
-  orientAlongVelocity, prewarmProjectileFx, projectileFamily, projectileFxWarmUpMaterials, projectileGeometry,
-  projectileMaterial, pushTrailPoint,
+  blastAfterlife, GROUND_CHEW_S, isSmallArms, makeBlast, makeBlastAfterlife, makeGroundChew, makeImpact,
+  makeLightning, makeMuzzleFlash, makePing, makeProjectileModel, makeProjectileShadow, makeProjectileTrail,
+  makeScorchStar, makeStrikeFlash, orientAlongVelocity, prewarmProjectileFx, projectileFamily,
+  projectileFxWarmUpMaterials, projectileGeometry, projectileMaterial, pushTrailPoint, setFxViewer,
+  type LandingHint, type ProjectileFamily, type TrailPoint,
 } from "./projectileFx";
 
 // Part materials are toon (see partMaterial); PartMaterial names the shared shape both use.
@@ -130,7 +132,16 @@ export class WorldRenderer {
   private readonly craterRoot = new THREE.Group();
   private readonly scorchedIds = new Set<string>();
   // Recent flight positions per live projectile — drawn as a fading comet tail.
-  private readonly trailHistory = new Map<string, { x: number; y: number; z: number }[]>();
+  private readonly trailHistory = new Map<string, TrailPoint[]>();
+  // What a round was doing when it ended, so an impact/blast can be drawn in its family's shape and
+  // along its line of flight. Keyed by the projectile id; the effect's id carries the same suffix.
+  private readonly landingHints = new Map<string, LandingHint>();
+  private readonly lastSeenProjectile = new Map<string, { family: ProjectileFamily; dirX: number; dirZ: number; x: number; z: number; ground: number }>();
+  // A small-arms round that ended with no sim effect kicked the dirt where it stopped: the renderer
+  // draws the puff + pebble chips on its own clock (the sim has no event for a miss).
+  private readonly groundChews: { x: number; z: number; at: number; seed: number; size: number }[] = [];
+  // A blast's smoke column outlives the sim's effect, so it is drawn from a record of its own.
+  private readonly blastEchoes = new Map<string, { effect: VisualEvent; at: number; life: number; hint?: LandingHint; ground: number }>();
   private debug: WorldRenderDebug = emptyDebug();
 
   // Fixed pool of flash lights (muzzle/blast), pre-added at intensity 0 so the scene's
@@ -345,6 +356,9 @@ export class WorldRenderer {
       this.syncGroundAim(sim, groundAim);
     }
     resetFxLinePool(); // recycle the projectile/effect trail lines instead of reallocating them
+    // Flat cut-outs (the impact star, the POW burst) turn to face the camera; the FX module needs
+    // to know where it is, and it changes once a frame.
+    if (camera) setFxViewer(camera.position);
     this.syncProjectiles(sim.projectiles);
     this.syncEffects(sim.effects);
     this.syncFlashLights();
@@ -4048,6 +4062,7 @@ export class WorldRenderer {
   private syncProjectiles(projectiles: readonly Projectile[]): void {
     this.disposeAndClear(this.projectileRoot);
     const liveIds = new Set<string>();
+    const seen = new Map<string, { family: ProjectileFamily; dirX: number; dirZ: number; x: number; z: number; ground: number }>();
     for (const projectile of projectiles) {
       liveIds.add(projectile.id);
       const family = projectileFamily(projectile);
@@ -4076,8 +4091,42 @@ export class WorldRenderer {
       );
       model.traverse((o) => { o.frustumCulled = false; });
       this.projectileRoot.add(model);
+      // Remember the family and the line of flight: an impact/blast is drawn in the shape of the
+      // gun that fired it, and its sparks fly back along the round's own path.
+      const len = Math.hypot(projectile.direction.x, projectile.direction.z) || 1;
+      seen.set(projectile.id, {
+        family, dirX: projectile.direction.x / len, dirZ: projectile.direction.z / len,
+        x: projectile.position.x, z: projectile.position.z, ground: terrainHeightAt(projectile.position),
+      });
+      this.landingHints.set(projectile.id, { family, dirX: projectile.direction.x / len, dirZ: projectile.direction.z / len });
     }
-    for (const id of this.trailHistory.keys()) if (!liveIds.has(id)) this.trailHistory.delete(id);
+    // A round that vanished this frame: if it was small arms and nothing exploded, it chewed the
+    // ground where it stopped — the cue that says a burst walked across the dirt.
+    for (const id of this.trailHistory.keys()) {
+      if (liveIds.has(id)) continue;
+      const last = this.lastSeenProjectile.get(id);
+      if (last && isSmallArms(last.family) && this.groundChews.length < 14) {
+        this.groundChews.push({ x: last.x, z: last.z, at: performance.now(), seed: hash(id) % 997, size: last.family === "mg" ? 1.15 : last.family === "pellet" ? 0.8 : 1 });
+      }
+      this.trailHistory.delete(id);
+    }
+    this.lastSeenProjectile.clear();
+    for (const [id, rec] of seen) this.lastSeenProjectile.set(id, rec);
+    if (this.landingHints.size > 300) {
+      for (const id of this.landingHints.keys()) { if (!liveIds.has(id)) this.landingHints.delete(id); if (this.landingHints.size <= 150) break; }
+    }
+    this.syncGroundChews();
+  }
+
+  /** The dirt kicked up where small-arms rounds stopped, on the renderer's own clock. */
+  private syncGroundChews(): void {
+    const now = performance.now();
+    for (let i = this.groundChews.length - 1; i >= 0; i -= 1) {
+      const chew = this.groundChews[i];
+      const t = (now - chew.at) / (GROUND_CHEW_S * 1000);
+      if (t >= 1) { this.groundChews.splice(i, 1); continue; }
+      for (const part of makeGroundChew(chew.x, chew.z, t, terrainHeightAt({ x: chew.x, z: chew.z }), chew.seed, chew.size)) this.projectileRoot.add(part);
+    }
   }
 
   /** Claim the stalest pooled light and flash it at a world point (muzzle or blast). */
@@ -4411,32 +4460,24 @@ export class WorldRenderer {
           this.craterRoot.add(scorch);
           if (this.craterRoot.children.length > 40) this.craterRoot.remove(this.craterRoot.children[0]);
         }
-        for (const part of makeBlast(effect, t, terrainHeightAt(effect.to))) this.effectRoot.add(part);
+        const ground = terrainHeightAt(effect.to);
+        const hint = this.hintFor(effect);
+        for (const part of makeBlast(effect, t, ground, hint)) this.effectRoot.add(part);
+        // Register the smoke column that outlives the sim's effect (drawn below on its own clock).
+        const life = blastAfterlife(hint?.family, effect.color === 0xff7a2a);
+        if (life > 0 && !this.blastEchoes.has(effect.id)) this.blastEchoes.set(effect.id, { effect, at: performance.now(), life, hint, ground });
       } else if (effect.type === "bolt") {
-        // LIGHTNING: a thin jagged column from the sky to the point, white-hot core with a pale
-        // halo, three kinks re-rolled from the effect id so each bolt has its own shape, a flash
-        // at the foot. Two-frame life. (It first reused the orbital lance and read as a wall.)
-        const fade = t < 0.15 ? 1 : Math.max(0, 1 - (t - 0.15) / 0.5);
-        const seed = hash(effect.id);
-        const top = 26;
-        const pts: THREE.Vector3[] = [new THREE.Vector3(effect.to.x + ((seed % 7) - 3) * 0.5, top, effect.to.z + (((seed >> 3) % 7) - 3) * 0.5)];
-        for (let k = 1; k <= 4; k += 1) {
-          const y = top - (top - terrainHeightAt(effect.to)) * (k / 4);
-          pts.push(new THREE.Vector3(effect.to.x + (((seed >> (k * 4)) % 9) - 4) * 0.28 * (1 - k / 4), y, effect.to.z + (((seed >> (k * 4 + 2)) % 9) - 4) * 0.28 * (1 - k / 4)));
+        // LIGHTNING: the jagged bolt, its forks, the ground flash and the debris live in the FX
+        // module in the toon language (ink-rimmed white bars, no additive haze). Its shape is
+        // rolled from the effect id, so command telegraph, resolve strike and a restored save all
+        // draw the same bolt. The scorch star it leaves is kept for the battle.
+        const ground = terrainHeightAt(effect.to);
+        for (const part of makeLightning(effect, t, ground)) this.effectRoot.add(part);
+        if (!this.scorchedIds.has(effect.id)) {
+          this.scorchedIds.add(effect.id);
+          this.craterRoot.add(makeScorchStar(effect, ground + (this.craterRoot.children.length % 7) * 0.0015, 1.3));
+          if (this.craterRoot.children.length > 40) this.craterRoot.remove(this.craterRoot.children[0]);
         }
-        pts[pts.length - 1].set(effect.to.x, terrainHeightAt(effect.to) + 0.05, effect.to.z);
-        for (let k = 1; k < pts.length; k += 1) {
-          const a = pts[k - 1];
-          const b = pts[k];
-          this.effectRoot.add(makeTubeLine({ x: a.x, z: a.z }, { x: b.x, z: b.z }, 0xffffff, fade * 0.95, a.y, 0.07, b.y));
-          this.effectRoot.add(makeTubeLine({ x: a.x, z: a.z }, { x: b.x, z: b.z }, effect.color, fade * 0.35, a.y, 0.22, b.y));
-        }
-        const flash = new THREE.Mesh(
-          new THREE.SphereGeometry(0.5 + t * 1.4, 10, 8),
-          new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: fade * 0.7, depthWrite: false, blending: THREE.AdditiveBlending })
-        );
-        flash.position.set(effect.to.x, terrainHeightAt(effect.to) + 0.4, effect.to.z);
-        this.effectRoot.add(flash);
       } else if (effect.type === "land") {
         // A jump trooper touching down: a ring of dust pushed outward, nothing on the body.
         const ring = new THREE.Mesh(
@@ -4466,14 +4507,9 @@ export class WorldRenderer {
         arc.rotation.z = heading - Math.PI / 2 - sweep * 0.55 + sweep * Math.min(1, t * 1.6);
         arc.position.set(effect.from.x, terrainHeightAt(effect.from) + 0.95, effect.from.z);
         this.effectRoot.add(arc);
-        if (t < 0.35) {
-          const flash = new THREE.Mesh(
-            new THREE.SphereGeometry(0.16 + t * 0.5, 8, 6),
-            new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: (1 - t / 0.35) * 0.9, depthWrite: false, blending: THREE.AdditiveBlending })
-          );
-          flash.position.set(effect.to.x, terrainHeightAt(effect.to) + 0.9, effect.to.z);
-          this.effectRoot.add(flash);
-        }
+        // The contact flash is a flat ink-rimmed star facing the camera — the same language as
+        // every other hit in the game, and no additive ball.
+        for (const part of makeStrikeFlash(effect, t, terrainHeightAt(effect.to))) this.effectRoot.add(part);
         const ring = new THREE.Mesh(
           new THREE.RingGeometry(0.3 + t * 0.6, 0.34 + t * 0.6, 24),
           new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: opacity * 0.5, side: THREE.DoubleSide, depthWrite: false })
@@ -4482,11 +4518,38 @@ export class WorldRenderer {
         ring.position.set(effect.to.x, terrainHeightAt(effect.to) + 0.1, effect.to.z);
         this.effectRoot.add(ring);
       } else if (effect.type === "impact") {
-        for (const part of makeImpact(effect, t, terrainHeightAt(effect.to))) this.effectRoot.add(part);
+        for (const part of makeImpact(effect, t, terrainHeightAt(effect.to), this.hintFor(effect))) this.effectRoot.add(part);
       } else {
         for (const part of makePing(effect, t, terrainHeightAt(effect.to))) this.effectRoot.add(part);
       }
     }
+    this.syncBlastEchoes();
+  }
+
+  /** The smoke column and settling dust crown a blast leaves after the sim's effect has ended. */
+  private syncBlastEchoes(): void {
+    const now = performance.now();
+    for (const [id, echo] of this.blastEchoes) {
+      const u = (now - echo.at) / (echo.life * 1000);
+      if (u >= 1) { this.blastEchoes.delete(id); continue; }
+      for (const part of makeBlastAfterlife(echo.effect, u, echo.ground, echo.hint)) this.effectRoot.add(part);
+    }
+    if (this.blastEchoes.size > 60) { const first = this.blastEchoes.keys().next().value; if (first) this.blastEchoes.delete(first); }
+  }
+
+  /** What was flying when this effect fired, if the renderer saw the round. Sim effect ids and
+   *  projectile ids share a suffix; the last round to pass within a metre is the fallback. */
+  private hintFor(effect: VisualEvent): LandingHint | undefined {
+    const direct = this.landingHints.get(effect.id);
+    if (direct) return direct;
+    let best: LandingHint | undefined;
+    let bestD = 2.2;
+    for (const [id, rec] of this.lastSeenProjectile) {
+      void id;
+      const d = Math.hypot(rec.x - effect.to.x, rec.z - effect.to.z);
+      if (d < bestD) { bestD = d; best = { family: rec.family, dirX: rec.dirX, dirZ: rec.dirZ }; }
+    }
+    return best;
   }
 }
 

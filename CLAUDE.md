@@ -512,7 +512,24 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   (4) HIT REACTION is keyed off the visual event, not the damage report: `shoveNear` flinches every
   body within a blast/impact/bolt radius, so a shell bursting beside a trooper, a burn tick or a bomb
   can never land silently (rifle/melee still flinch through the damage report as well).
-  Evidence is `shots:filmstrip -- all` (SwiftShader) + `shots:gpu volley` (real GPU).
+  (5) **NOTHING IN A SHOT APPEARS OR DISAPPEARS AT FULL SIZE** (2026-09-21, from "every frame they
+  appear to splotch out"). A trail element is placed by CONTINUOUS quantities only: `TrailPoint`
+  carries `born` (ease-in over `EASE_IN`) and `seq` (a STABLE phase key), and size/colour follow
+  DISTANCE BEHIND THE HEAD (`easeOut` to zero by `trailReach`). Never key a size, jitter or stage
+  on the array index — the history array rolls on every push, so an index-keyed element changes
+  identity between two frames and pops. Smoke puffs are born ≤0.3 scale, rise on their OWN age so
+  nothing hangs at head height after the round passes, and never exceed ~0.45 of the flame head.
+  A rim-less white ball is banned outright (the flash frame is the POW cut-out star; the bolt burst
+  has its own electric branch). Per-family shows: comet-tipped DASH tracers, a 3-petal flat muzzle
+  flash (a per-round changing fan for the MG, a 7-petal cone for the scattergun), brass casings on
+  every small-arms round, a ripple-ring half-beat then a white lance for the marksman, flat
+  ink-rimmed cut-out stars facing the camera for every hit, ground chew where a small-arms round
+  stopped, POW + debris + multi-ring + dust crown for shells, a sabot streak and a spark-fan cone
+  for tank AP, and a smoke-column afterlife on the renderer's own clock (`blastAfterlife`).
+  Evidence is `shots:filmstrip -- all` (SwiftShader) + `shots:gpu volley` (real GPU) + **`shots:gpu
+  temporal`** — twelve CONSECUTIVE real-GPU frames at full resolve speed; read neighbours, and a
+  shape absent in frame N and full-size in N+1 is a fail. (`shots:filmstrip artillery` only fires
+  because the stage plants the outriggers first — an undeployed piece refuses the order.)
 - **Frame loop is guarded** (`frame` → `frameBody` in try/catch, `__rht.frameErrors()`); one bad frame never kills rAF again.
 - **`window.__rht`** is the entire test/debug surface (sim + `endTurn`/`reset`/
   `scenario(id)`/`perf()`/`diagnostics()`/`describeScene()` …). **Keep it in sync with

@@ -25,7 +25,7 @@ const STAGES = {
   launcher: { actor: "grenadier", target: "soldier", dist: 7.5, order: "shoot", zoom: 0.75, scale: 0.5, span: 4.8 },
   mortar: { actor: "mortar", target: "soldier", dist: 10, order: "shoot", zoom: 0.95, scale: 0.5, span: 6.1 },
   tank: { actor: "tank", target: "soldier", dist: 8.5, order: "shoot", zoom: 0.8, scale: 0.5, span: 4.7 },
-  artillery: { actor: "artillery", target: "soldier", dist: 11, order: "shoot", zoom: 1.0, scale: 0.5, span: 5.7 },
+  artillery: { actor: "artillery", target: "soldier", dist: 11, order: "shoot", zoom: 1.0, scale: 0.5, span: 3.4 },
   apc: { actor: "apc", target: "soldier", dist: 7, order: "shoot", zoom: 0.7, scale: 0.5, span: 3.6 },
   turret: { actor: "turret", target: "soldier", dist: 6.5, order: "shoot", zoom: 0.7, scale: 0.5, span: 3.4, targetZ: 3.5 },
   gunship: { actor: "gunship", target: "gunship", dist: 7, order: "shoot", zoom: 0.75, scale: 0.5, span: 3.3 },
@@ -59,7 +59,7 @@ try {
     await page.click("[data-start]");
     await page.waitForFunction(() => window.__rht?.sim?.phase === "command", null, { timeout: 20000 });
     // The round banner and the first-run hint would otherwise sit over the impact frames.
-    await page.addStyleTag({ content: ".round-transition, .hint, .toast { display: none !important; }" }).catch(() => {});
+    await page.addStyleTag({ content: ".round-transition, .hint, .toast, .build-panel, .command-panel { display: none !important; }" }).catch(() => {});
     const ok = await page.evaluate(({ kind, stage }) => {
       const sim = window.__rht.sim;
       sim.economy.set("player", 9000);
@@ -91,6 +91,9 @@ try {
       target.status.canShoot = false;
       target.status.canMove = false; // ...and must not walk out of frame either
       if (stage.order === "grenade") actor.grenades = Math.max(1, actor.grenades ?? 0);
+      // An artillery piece refuses to fire until its outriggers are down, and deploying costs the
+      // whole turn — so the strip never saw a shell. Plant them before the order is queued.
+      if (stage.actor === "artillery") actor.deployed = true;
       sim.select(actor.id);
       sim.setIntent(stage.order);
       const queued = stage.order === "melee" ? sim.queueMelee(target.id)
