@@ -75,6 +75,9 @@ try {
   await assertLit(page, "walking trooper");
   await page.screenshot({ path: join(OUT, "walk.png") });
   const track = await page.evaluate((id) => { const t = window.__rht.footTrack(id); window.__rht.trackFeet(id, false); window.__rht.setResolveScale(1); return t; }, unitId);
+  // The walk ran on a slowed clock, so the resolve may still be in flight; the shot section below
+  // needs a command phase to queue into.
+  await page.waitForFunction(() => window.__rht.sim.phase === "command", null, { timeout: 30000 });
 
   const withLimbs = samples.filter((s) => s.pose.length > 0);
   if (withLimbs.length < 6) fail(`only ${withLimbs.length} samples had limb meshes — the probe never saw the unit`);
@@ -126,30 +129,34 @@ try {
   //    two consecutive frames where the same boot stays planted, its world position must not
   //    move (the body moved -- that is what makes it a stride and not a slide). Reported as
   //    centimetres per frame and as slide per metre of body travel, gated on both.
-  const skate = [];
+  // Planted = a boot within 3cm of its own sole height above the rendered GROUND in both frames of
+  // the pair. The per-frame ground comes from the renderer (the unit's own elevation), because the
+  // lowest-of-two-boots heuristic calls both boots planted during a run's flight phase.
+  const SOLE = 0.07; // boot centre above the ground when the sole is down
+  const BAND = 0.03;
+  const planted = [];
   for (let i = 1; i < track.length; i += 1) {
     const a = track[i - 1];
     const b = track[i];
     const moved = Math.hypot(b.x - a.x, b.z - a.z);
     if (moved < 0.002 || a.feet.length < 2 || b.feet.length < 2) continue;
-    const lowA = a.feet.reduce((m, f) => (f.y < m.y ? f : m));
-    const lowB = b.feet.find((f) => f.side === lowA.side);
-    const otherB = b.feet.find((f) => f.side !== lowA.side);
-    if (!lowB || !otherB || lowB.y > otherB.y) continue; // hand-over frame: the planted foot changed
-    skate.push({ slide: Math.hypot(lowB.x - lowA.x, lowB.z - lowA.z), moved, y: lowB.y });
+    for (const fa of a.feet) {
+      const fb = b.feet.find((f) => f.side === fa.side);
+      if (!fb) continue;
+      if (fa.y > a.ground + SOLE + BAND || fb.y > b.ground + SOLE + BAND) continue; // in flight in one of the two frames
+      planted.push({ slide: Math.hypot(fb.x - fa.x, fb.z - fa.z), moved });
+    }
   }
-  if (skate.length < 8) fail(`stride lock: only ${skate.length} planted frame pairs recorded (track ${track.length} frames)`);
-  // Planted = on the ground: within 3cm of the lowest boot height seen (a boot rolling onto its
-  // toe is still planted; a boot in flight is not).
-  const floor = Math.min(...skate.map((s) => s.y));
-  const planted = skate.filter((s) => s.y < floor + 0.03);
-  if (planted.length < 6) fail(`stride lock: only ${planted.length} frames with a boot on the ground`);
+  if (planted.length < 8) fail(`stride lock: only ${planted.length} planted frame pairs recorded (track ${track.length} frames)`);
   const slides = planted.map((s) => s.slide).sort((p, q) => p - q);
   const p90 = slides[Math.floor(slides.length * 0.9)];
   const bodyTravel = planted.reduce((s, f) => s + f.moved, 0);
   const perMetre = planted.reduce((s, f) => s + f.slide, 0) / bodyTravel;
   console.log(`  stride lock: ${planted.length} planted frames · p90 skate ${(p90 * 100).toFixed(2)} cm/frame · ${perMetre.toFixed(3)} m slide per m travelled (body ${((bodyTravel / planted.length) * 100).toFixed(1)} cm/frame)`);
-  if (p90 > 0.03) fail(`FOOT SKATE: planted boot moves ${(p90 * 100).toFixed(2)} cm/frame (p90) — the stride is not locked to distance`);
+  // Thresholds are fault-injection measured, not guessed: with the stride lock the p90 is 0.07 cm
+  // and the ratio 0.02; driving the phase off wall time instead (the classic bug) gives 2.0 cm and
+  // 1.33 -- so 1 cm and 0.15 sit between the two states with an order of magnitude of margin each.
+  if (p90 > 0.01) fail(`FOOT SKATE: planted boot moves ${(p90 * 100).toFixed(2)} cm/frame (p90) — the stride is not locked to distance`);
   if (perMetre > 0.15) fail(`FOOT SKATE: ${perMetre.toFixed(3)} m of slide per metre travelled (clean walk ~0.05, broken ~1)`);
 
   // ---- Attack choreography, same idea: a weapon that never moves while firing is a unit that
@@ -209,15 +216,18 @@ try {
   // IDLE LIVENESS. A trooper standing through the command phase — where the player spends nearly
   // all their time — must visibly move: the head scans and the body shifts weight and turns. The
   // per-part breathing is too small to see from the tactical camera, so this measures the two
-  // cues that are: head yaw and whole-body yaw, over three seconds of standing still. Thresholds
-  // sit well under the authored amplitudes (head 0.42 rad, body 0.11) and well over rest (0).
+  // cues that are: head yaw and whole-body yaw. Thresholds sit well under the authored amplitudes
+  // (head 0.42 rad, body 0.11) and well over rest (0). The head sweep is slow on purpose (a ~10s
+  // cycle reads as looking around rather than as a metronome), so the window has to cover half of
+  // THAT or the measured spread depends on where in the sweep the probe happened to land -- at 3s
+  // it can legitimately read 0.13 of a 0.42-rad scan and fail. 6s covers at least half the cycle.
   const idleId = await page.evaluate(() => window.__rht.sim.debugSpawn("soldier", "player", { x: 0, z: 4 }).id);
   await page.waitForTimeout(300);
   const idle = { head: [], body: [] };
-  for (let i = 0; i < 20; i += 1) {
+  for (let i = 0; i < 30; i += 1) {
     const pose = await page.evaluate((id) => window.__rht.limbPose(id), idleId);
     for (const key of ["head", "body"]) { const p = pose.find((e) => e.limb === key); if (p) idle[key].push(p.rotY); }
-    await page.waitForTimeout(150);
+    await page.waitForTimeout(200);
   }
   if (idle.head.length < 10) fail("idle probe: head part not found on a standing soldier");
   const headScan = spread(idle.head);

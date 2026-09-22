@@ -2440,7 +2440,7 @@ declare global {
       limbPose(entityId: string): { limb: string; rotX: number; rotY: number; posY: number; posZ: number }[];
       /** Per-render-frame world positions of a trooper's boots (for the foot-skate gate). */
       trackFeet(entityId: string, on: boolean): void;
-      footTrack(entityId: string): { t: number; x: number; z: number; feet: { side: string; x: number; y: number; z: number }[] }[];
+      footTrack(entityId: string): { t: number; x: number; z: number; ground: number; feet: { side: string; x: number; y: number; z: number }[] }[];
       partColors(entityId: string): { partId: string; color: string; emissive: string; intensity: number }[];
       sceneGraph(): { total: number; topLevel: number };
       // The live Three scene root — QA probes census it (draw-work attribution).

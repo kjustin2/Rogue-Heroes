@@ -787,14 +787,14 @@ export class WorldRenderer {
    * Sampling from outside the frame loop cannot do this: a headless step can be a third of a
    * cycle, and the foot that was planted is a different one by the next sample.
    */
-  private readonly trackedFeet = new Map<string, { t: number; x: number; z: number; feet: { side: string; x: number; y: number; z: number }[] }[]>();
+  private readonly trackedFeet = new Map<string, FootFrame[]>();
 
   trackFeet(entityId: string, on: boolean): void {
     if (on) this.trackedFeet.set(entityId, []);
     else this.trackedFeet.delete(entityId);
   }
 
-  footTrack(entityId: string): { t: number; x: number; z: number; feet: { side: string; x: number; y: number; z: number }[] }[] {
+  footTrack(entityId: string): FootFrame[] {
     return this.trackedFeet.get(entityId) ?? [];
   }
 
@@ -808,7 +808,7 @@ export class WorldRenderer {
       const w = node.getWorldPosition(_footWorld);
       feet.push({ side: node.userData.limb as string, x: w.x, y: w.y, z: w.z });
     });
-    track.push({ t: performance.now(), x: entity.position.x, z: entity.position.z, feet });
+    track.push({ t: performance.now(), x: entity.position.x, z: entity.position.z, ground: (group.userData.renderElevation as number | undefined) ?? 0, feet });
   }
 
   /**
@@ -6680,6 +6680,7 @@ const LEG_KNEE_CUT = (KNEE_Y - 0.36) / 0.5;
 const SHOULDER_Y = 0.98;
 const _footWorld = new THREE.Vector3();
 const _crouchMovers = new Set<string>();
+interface FootFrame { t: number; x: number; z: number; ground: number; feet: { side: string; x: number; y: number; z: number }[] }
 const _restPose: LegPose = { thigh: 0, shin: 0, knee: 0, foot: 0, kneeY: KNEE_Y, kneeZ: HIP_Z, ankleY: ANKLE_Y, ankleZ: HIP_Z };
 function copyPose(from: LegPose, into: LegPose): LegPose {
   into.thigh = from.thigh; into.shin = from.shin; into.knee = from.knee; into.foot = from.foot;
