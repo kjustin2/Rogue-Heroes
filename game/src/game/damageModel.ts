@@ -907,17 +907,6 @@ export function createCover(id: string, name: string, position: Vec2, options: b
   return entity;
 }
 
-export function cloneEntity(entity: CombatEntity): CombatEntity {
-  return {
-    ...entity,
-    position: { ...entity.position },
-    status: { ...entity.status },
-    stance: entity.stance,
-    spawnCooldowns: entity.spawnCooldowns ? { ...entity.spawnCooldowns } : undefined,
-    parts: entity.parts.map((p) => ({ ...p, tags: p.tags ? [...p.tags] : undefined })),
-  };
-}
-
 export function isInfantryKind(kind: EntityKind): boolean {
   return isInfantry(kind);
 }
@@ -935,20 +924,12 @@ export function isAirKind(kind: EntityKind): boolean {
 }
 
 // Infantry that fight in melee rather than with ranged weapons.
-export function isMeleeKind(kind: EntityKind): boolean {
-  return kind === "striker";
-}
-
 export function isPartIntact(part: DamagePart): boolean {
   return part.hp > 0;
 }
 
 export function findPart(entity: CombatEntity, partId: string): DamagePart | undefined {
   return entity.parts.find((p) => p.id === partId);
-}
-
-export function partsByRole(entity: CombatEntity, role: PartRole): DamagePart[] {
-  return entity.parts.filter((p) => p.role === role && isPartIntact(p));
 }
 
 export function preferredPart(entity: CombatEntity, aim: AimMode): DamagePart {

@@ -47,3 +47,26 @@ describe("chain reactions (item 12)", () => {
     expect(sim.burnZones.length).toBe(2);
   });
 });
+
+describe("slag spill (Ironworks' own event)", () => {
+  it("telegraphs a furnace corner, floods it with a burning zone, and alternates corners", () => {
+    const sim = new TacticalSim();
+    sim.configure(mapDef("ironworks"), "destroy", "normal");
+    while (sim.turn < 3) { sim.endTurn(); settle(sim); }
+    const spill = sim.eventZonesForTurn().find((z) => z.kind === "slag");
+    expect(spill).toBeDefined();
+    expect(sim.environment().notice).toMatch(/Slag/);
+    const victim = sim.debugSpawn("heavy", "player", { x: spill!.x, z: spill!.z });
+    for (const p of victim.parts) if (p.role === "mobility") p.hp = 0;
+    victim.status.canMove = false;
+    const v0 = hp(victim);
+    sim.endTurn();
+    settle(sim);
+    expect(hp(victim)).toBeLessThan(v0);
+    expect(sim.burnZones.some((z) => dist(z, spill!) < 0.1)).toBe(true);
+    // The next spill (turn 6) floods the OTHER furnace.
+    const next = sim.eventZonesForTurn(6).find((z) => z.kind === "slag")!;
+    expect(next.x).toBeCloseTo(-spill!.x);
+    expect(next.z).toBeCloseTo(-spill!.z);
+  });
+});

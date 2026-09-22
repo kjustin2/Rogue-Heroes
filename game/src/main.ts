@@ -17,6 +17,7 @@ import { preloadAll as preloadModels, modelsVersion } from "./render/models";
 import { FeelDirector } from "./render/feel";
 import { POI_WEIGHT, ResolveDirector } from "./render/resolveDirector";
 import { Hud } from "./ui/hud";
+import type { MapEventKind } from "./game/maps";
 import {
   TacticalSim,
   MAPS,
@@ -1978,6 +1979,8 @@ declare global {
       programs(): string[];
       /** Frames that threw since load. A smoke should assert 0. */
       frameErrors(): number;
+      /** Capture seam: kill a unit outright; `blow` >= 0.6 plays the "thrown" death, shoved toward +x. */
+      debugKill(id: string, blow?: number): void;
       /** Multiplies the resolve-phase sim clock (filmstrips run at 0.25 to see a swing). */
       setResolveScale(scale: number): void;
       setDebugOverlay(on: boolean): boolean;
@@ -1991,7 +1994,7 @@ declare global {
       setHighContrastTeams(on: boolean): void;
       // Dynamic map events: read current weather/zone state; force one for screenshots/tests.
       environment(): { sandstorm: number; ionstorm: number; notice?: string; zones: Array<{ kind: string; x: number; z: number; radius: number }> };
-      forceEvent(kind: "sandstorm" | "barrage" | "collapse" | "ionstorm"): void;
+      forceEvent(kind: MapEventKind): void;
       save(): boolean;
       // True when audio is silenced (settings mute or running under test automation).
       audioMuted(): boolean;
@@ -2082,6 +2085,12 @@ window.__rht = {
   warmUp: () => { const before = stage.renderer.info.programs?.length ?? 0; stage.warmUp(world.warmUpSamplers()); return { before, after: stage.renderer.info.programs?.length ?? 0 }; },
   programs: () => (stage.renderer.info.programs ?? []).map((p) => String((p as unknown as { cacheKey: string }).cacheKey)),
   frameErrors: () => frameErrors,
+  debugKill: (id, blow = 0) => {
+    const e = sim.entity(id);
+    if (!e) return;
+    world.debugFlinch(id, blow);
+    for (const part of e.parts) sim.debugDamage(id, part.id, 99999);
+  },
   setResolveScale: (scale: number) => { resolveScale = scale; },
   setDebugOverlay: (on) => { debugOverlay.setEnabled(on); return debugOverlay.isEnabled(); },
   silhouette: (on) => { world.setSilhouette(on); stage.setSilhouette(on); },

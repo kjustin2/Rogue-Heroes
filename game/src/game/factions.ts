@@ -31,21 +31,6 @@ export interface FactionDef {
   aiTargetBias?: Partial<Record<EntityKind, number>>;
 }
 
-export const ALL_TROOPS: readonly TroopKind[] = [
-  "soldier", "scout", "sniper", "striker", "heavy", "grenadier", "mortar", "medic", "engineer",
-  "flamer", "droneop", "sapper", "jumper", "tank", "apc", "artillery", "flak", "gunship", "interceptor",
-  "bomber", "transport",
-];
-
-export const ALL_TECH: readonly string[] = [
-  "recon", "assault", "support", "ordnance", "armor", "siege", "airwing",
-  "breach", "bulwark", "plating", "hunter", "triage", "welding", "optics", "ghillie",
-  "thermobarics", "cluster",
-];
-
-export const ALL_DEFENSES: readonly DefenseKind[] = ["wall", "turret", "exturret"];
-export const ALL_SUPPORTS: readonly SupportPowerKind[] = ["airstrike", "cluster", "laser"];
-
 // ROSTER DESIGN.
 //
 // A faction is defined as much by what it CANNOT build as by what it can. Each one is missing a

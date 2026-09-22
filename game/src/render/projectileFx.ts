@@ -53,15 +53,17 @@ const ARC = 0xbfe9ff; // electric
 export type ProjectileFamily =
   | "rifle" | "carbine" | "sniper" | "mg" | "pellet" | "pistol" | "flame"
   | "grenade" | "launcher" | "mortar" | "smoke" | "bomb"
-  | "tank" | "artillery" | "siege"
-  | "bolt" | "heavybolt" | "airgun";
+  | "tank" | "artillery" | "siege";
 
 /** Which visual family a round belongs to. The sim only knows four projectile kinds; the look
  *  comes from who fired it and how. */
 export function projectileFamily(p: Projectile): ProjectileFamily {
   const src: EntityKind | undefined = p.sourceKind;
   if (p.kind === "shell") return src === "artillery" ? "artillery" : src === "exturret" ? "siege" : "tank";
-  if (p.kind === "bolt") return src === "base" ? "heavybolt" : src && isAirKind(src) || src === "flak" ? "airgun" : "bolt";
+  // ONE BALLISTIC LANGUAGE (2026-09-22): the sim's "bolt" rounds used to draw as cyan energy darts
+  // with crackling arc impacts -- "laser beams" next to every other gun in the game. Autoguns,
+  // aircraft cannon and flak fire warm MG tracers now; the base relay throws a real shell.
+  if (p.kind === "bolt") return src === "base" ? "tank" : "mg";
   if (p.kind === "grenade") {
     if (src === "mortar") return p.smoke ? "smoke" : "mortar";
     if (src === "grenadier") return "launcher";
@@ -176,8 +178,6 @@ export function projectileGeometry(key: string): THREE.BufferGeometry {
       case "shell-nose": geometry = new THREE.ConeGeometry(0.15, 0.3, 12); break;
       case "shell-band": geometry = new THREE.TorusGeometry(0.16, 0.022, 6, 16); break;
       case "shell-fin": geometry = new THREE.BoxGeometry(0.05, 0.18, 0.34); break;
-      case "bolt-core": geometry = new THREE.OctahedronGeometry(0.2, 0); break;
-      case "bolt-ring": geometry = new THREE.TorusGeometry(0.26, 0.03, 6, 20); break;
       case "grenade-body": geometry = new THREE.IcosahedronGeometry(0.18, 1); break;
       case "grenade-band": geometry = new THREE.TorusGeometry(0.18, 0.026, 6, 16); break;
       case "launcher-body": geometry = new THREE.CylinderGeometry(0.11, 0.12, 0.26, 10); break;
@@ -272,7 +272,7 @@ export function projectileFxWarmUpMaterials(): THREE.Material[] {
 
 /** Every cached geometry the first resolve will need, built now rather than mid-action. */
 export function prewarmProjectileFx(): void {
-  for (const key of ["tracer", "pellet", "shell-body", "shell-nose", "shell-band", "shell-fin", "bolt-core", "bolt-ring", "grenade-body", "grenade-band", "launcher-body", "launcher-nose", "mortar-body", "blob", "spike", "tongue", "disc", "ring", "crown", "shard", "ember", "bar", "casing", "star8", "star6", "star4"]) projectileGeometry(key);
+  for (const key of ["tracer", "pellet", "shell-body", "shell-nose", "shell-band", "shell-fin", "grenade-body", "grenade-band", "launcher-body", "launcher-nose", "mortar-body", "blob", "spike", "tongue", "disc", "ring", "crown", "shard", "ember", "bar", "casing", "star8", "star6", "star4"]) projectileGeometry(key);
   for (const r of [...TRAIL_RADII, 0.045, 0.075, 0.03, 0.05]) tubeGeometry(r);
   for (const r of [0.18, 0.24, 0.3, 0.36, 0.44]) shadowGeometry(r);
   for (const c of [INK, HOT, TRACER, TRACER_ALT, FLASH, FLASH_RIM, SMOKE, SMOKE_LIGHT, DUST, DUST_DARK, PEBBLE, BRASS, SHOTSHELL, OLIVE, STEEL, SPARK, ARC, ...FIRE]) { fxSolid(c); fxSolid(c, true); }
@@ -354,7 +354,7 @@ function tube(a: Point3, b: Point3, color: number, opacity: number, radius: numb
   return mesh;
 }
 
-/** An opaque, ink-rimmed line between two points: the sniper's lance, a sabot streak. */
+/** An opaque, ink-rimmed line between two points: a sabot streak. */
 function solidTube(a: Point3, b: Point3, color: number, radius: number, rimRadius = 0): THREE.Object3D | undefined {
   _a.set(a.x, a.y, a.z);
   _b.set(b.x, b.y, b.z);
@@ -461,12 +461,13 @@ function chips(count: number, cx: number, cy: number, cz: number, reach: number,
 // ---------------------------------------------------------------------------------------------
 // In-flight models. Local +Y = direction of travel (set by orientAlongVelocity).
 
-function tracerModel(family: ProjectileFamily, team: number, age: number, seed: number): THREE.Group {
+function tracerModel(family: ProjectileFamily, age: number, seed: number): THREE.Group {
   const group = new THREE.Group();
   // COMET: a hot round head leading a short ink-rimmed streak. The streak is three hulls — white
   // core, colour sleeve, ink — so the middle always shows through.
   const alt = family === "mg" && seed % 2 === 0;
-  const sleeveColor = family === "mg" ? (alt ? TRACER_ALT : TRACER) : team;
+  // Warm, never team colour: a cyan comet read as a laser. The team read lives on the unit.
+  const sleeveColor = alt ? TRACER_ALT : TRACER;
   const core = new THREE.Mesh(projectileGeometry("tracer"), fxSolid(HOT));
   const sleeve = new THREE.Mesh(projectileGeometry("tracer"), fxSolid(sleeveColor, true));
   const rim = new THREE.Mesh(projectileGeometry("tracer"), fxSolid(INK, true));
@@ -489,20 +490,11 @@ function tracerModel(family: ProjectileFamily, team: number, age: number, seed: 
     case "mg": group.scale.set(1.05, 1.3, 1.05); break;
     case "carbine": group.scale.set(0.85, 0.9, 0.85); break;
     case "pistol": group.scale.set(0.95, 0.62, 0.95); break;
-    case "airgun": group.scale.set(1.2, 0.85, 1.2); break;
+    case "sniper": group.scale.set(1.1, 2.1, 1.1); break;
     default: group.scale.set(1, 1, 1);
   }
   // A short flicker in the core keeps a stationary-looking tracer alive across frames.
   core.scale.y = 1 + Math.sin(age * 40) * 0.06;
-  return group;
-}
-
-/** The marksman's round while the lance is drawn: a small bright bead at the head of the line. */
-function sniperHead(team: number): THREE.Group {
-  const group = new THREE.Group();
-  const head = solid("ember", HOT, 1.7, team);
-  head.scale.setScalar(2.2);
-  group.add(head);
   return group;
 }
 
@@ -556,48 +548,6 @@ function shellModel(family: ProjectileFamily, team: number, age: number): THREE.
   group.add(body, nose, band, exhaust);
   group.rotation.y = age * (heavy ? 5 : 10); // spin-stabilised
   group.scale.setScalar(0.95 * (heavy ? 1.3 : blunt ? 1.12 : 1));
-  return group;
-}
-
-function boltModel(family: ProjectileFamily, team: number, age: number): THREE.Group {
-  const group = new THREE.Group();
-  const big = family === "heavybolt";
-  const air = family === "airgun";
-  // ENERGY DART: a leading diamond (three hulls) with two trailing chevrons that flicker back
-  // along the line of flight.
-  const core = new THREE.Mesh(projectileGeometry("bolt-core"), fxSolid(HOT));
-  const sleeve = new THREE.Mesh(projectileGeometry("bolt-core"), fxSolid(team, true));
-  const rim = new THREE.Mesh(projectileGeometry("bolt-core"), fxSolid(INK, true));
-  core.frustumCulled = sleeve.frustumCulled = rim.frustumCulled = false;
-  core.scale.set(0.62, 1.5, 0.62);
-  sleeve.scale.set(1.15, 1.75, 1.15);
-  rim.scale.set(1.5, 1.95, 1.5);
-  const pulse = 1 + Math.sin(age * 24) * 0.08;
-  core.scale.multiplyScalar(pulse);
-  group.add(rim, sleeve, core);
-  for (let c = 0; c < 2; c += 1) {
-    const chevron = new THREE.Group();
-    const y = -0.42 - c * 0.3 + Math.sin(age * 30 + c) * 0.03;
-    const w = 0.055 * (1 - c * 0.25);
-    const span = 0.2 * (1 - c * 0.2);
-    for (const s of [-1, 1]) {
-      _a.set(0, y, 0);
-      _b.set(s * span, y + span * 0.9, 0);
-      const arm = bar(_a, _b, team, w, 1.6);
-      if (arm) chevron.add(arm);
-    }
-    chevron.rotation.y = c * 1.2 + age * 6; // each chevron on its own plane so the pair reads 3D
-    group.add(chevron);
-  }
-  if (big) {
-    // The base relay's bolt carries a counter-spinning containment ring.
-    const ring = solid("bolt-ring", team, 1.3);
-    ring.rotation.x = Math.PI / 2;
-    ring.rotation.z = age * 6;
-    group.add(ring);
-  }
-  group.scale.setScalar(air ? 0.7 : big ? 1.3 : 0.9);
-  if (air) group.scale.y *= 1.5; // aircraft cannon: a dash, not a diamond
   return group;
 }
 
@@ -727,22 +677,21 @@ export function makeProjectileModel(p: Projectile, family: ProjectileFamily): TH
   const seed = seedOf(p.id);
   switch (family) {
     case "tank": case "artillery": case "siege": return shellModel(family, team, p.age);
-    case "bolt": case "heavybolt": case "airgun": return boltModel(family, team, p.age);
     case "grenade": return grenadeModel(team, p.age, p.state === "rolling");
     case "launcher": return launcherModel(team, p.age);
     case "mortar": case "smoke": return mortarModel(family, team, p.age);
     case "bomb": return bombModel(team, p.age);
     case "flame": return flameHead(p.age);
     case "pellet": return pelletModel(team, seed);
-    case "sniper": return p.age < SNIPER_PAUSE ? new THREE.Group() : sniperHead(team);
-    default: return tracerModel(family, team, p.age, seed);
+    case "sniper": return p.age < SNIPER_PAUSE ? new THREE.Group() : tracerModel(family, p.age, seed);
+    default: return tracerModel(family, p.age, seed);
   }
 }
 
 // ---------------------------------------------------------------------------------------------
 // Trails
 
-/** The marksman holds a half-beat at the muzzle (ripple ring, no round) before the lance. */
+/** The marksman holds a half-beat at the muzzle (ripple ring, no round) before the round leaves. */
 export const SNIPER_PAUSE = 0.11;
 
 /** Everything a round drags behind it, from its position history (newest last). */
@@ -750,19 +699,9 @@ export function makeProjectileTrail(p: Projectile, family: ProjectileFamily, his
   const out: THREE.Object3D[] = [];
   const n = history.length;
   const head = { x: p.position.x, y: p.height, z: p.position.z };
-  if (family === "sniper") {
-    const team = p.color;
-    // THE LANCE: after the half-beat, one bold white line from the muzzle to the round, over a
-    // thicker team-colour line, with an ink rim — a graphic "pierce" stroke across the whole
-    // distance, not a vapour haze. The pause is what makes the lance read as one event.
-    if (p.age < SNIPER_PAUSE) return out;
-    const origin = { x: p.origin.x, y: p.originHeight, z: p.origin.z };
-    const under = solidTube(origin, head, team, 0.062, 0.1);
-    const over = solidTube(origin, head, HOT, 0.042);
-    if (under) out.push(under);
-    if (over) out.push(over);
-    return out;
-  }
+  // The marksman's round is a long tracer with a pale VAPOUR trail -- the old solid lance from
+  // muzzle to target was a laser beam in a game where every other gun fires bullets.
+  if (family === "sniper" && p.age < SNIPER_PAUSE) return out;
   if (n < 1) return out;
   // Every element is placed by CONTINUOUS quantities: how long ago its sample was pushed (ease-in)
   // and how far behind the head it now sits (ease-out, growth, colour). Nothing keys on the array
@@ -779,7 +718,6 @@ export function makeProjectileTrail(p: Projectile, family: ProjectileFamily, his
     px = pt.x; py = pt.y; pz = pt.z;
   }
   const easeIn = (pt: TrailPoint): number => smooth((p.age - pt.born) / EASE_IN);
-  const team = p.color;
   if (family === "flame") {
     // FIRE STREAM: fat blobs grow out of the nozzle, stretch into tongues that lick upward, then
     // darken and curl into small grey puffs that rise off the line and shrink away. Growth and
@@ -823,7 +761,7 @@ export function makeProjectileTrail(p: Projectile, family: ProjectileFamily, his
     return out;
   }
   const tapered = family === "grenade" || family === "launcher" || family === "bomb" ? 0.45 : family === "pistol" || family === "carbine" ? 0.7 : 1;
-  const trailColor = family === "mg" ? (seedOf(p.id) % 2 === 0 ? TRACER_ALT : TRACER) : family === "grenade" || family === "mortar" || family === "smoke" || family === "bomb" ? SMOKE_LIGHT : family === "launcher" ? BRASS : family === "tank" ? TRACER : team;
+  const trailColor = family === "mg" ? (seedOf(p.id) % 2 === 0 ? TRACER_ALT : TRACER) : family === "grenade" || family === "mortar" || family === "smoke" || family === "bomb" ? SMOKE_LIGHT : family === "launcher" ? BRASS : family === "sniper" ? SMOKE_LIGHT : TRACER;
   const lobbed = LOBBED.has(family);
   // Tapered ribbon from the HEAD back: fat and bright at the round, thin and faint at the tail.
   // The first segment runs head → newest sample, so it grows continuously instead of the ribbon
@@ -902,7 +840,7 @@ export function makeProjectileTrail(p: Projectile, family: ProjectileFamily, his
 export function makeProjectileShadow(p: Projectile, family: ProjectileFamily): THREE.Mesh {
   const groundY = terrainHeightAt(p.position) + 0.028;
   const above = Math.max(0, p.height - groundY);
-  const base = family === "artillery" || family === "bomb" ? 0.44 : family === "tank" || family === "siege" || family === "mortar" || family === "smoke" ? 0.36 : family === "grenade" || family === "launcher" || family === "heavybolt" ? 0.3 : family === "flame" ? 0.3 : family === "pellet" || family === "pistol" ? 0.18 : 0.24;
+  const base = family === "artillery" || family === "bomb" ? 0.44 : family === "tank" || family === "siege" || family === "mortar" || family === "smoke" ? 0.36 : family === "grenade" || family === "launcher" ? 0.3 : family === "flame" ? 0.3 : family === "pellet" || family === "pistol" ? 0.18 : 0.24;
   const radius = [0.18, 0.24, 0.3, 0.36, 0.44].reduce((best, r) => Math.abs(r - base) < Math.abs(best - base) ? r : best, 0.24);
   const descending = LOBBED.has(family) && p.height < p.previousHeight - 0.01 && family !== "tank";
   const shrink = clamp01(1 - above * 0.05);
@@ -935,7 +873,7 @@ export function makeMuzzleFlash(p: Projectile, family: ProjectileFamily): THREE.
   // Pop: full size almost at once, then shrink away — a flash is a single frame of light.
   const pop = t < 0.2 ? 0.25 + (t / 0.2) * 0.75 : 1 - ((t - 0.2) / 0.8) * 0.9;
   if (family === "sniper") {
-    // The half-beat: a ripple ring pulsing out of the muzzle while the round waits, then the lance
+    // The half-beat: a ripple ring pulsing out of the muzzle while the round waits, then the round
     // leaves with two long petals. Nothing else on the board pauses before it fires.
     if (p.age < SNIPER_PAUSE + 0.1) {
       const u = clamp01(p.age / (SNIPER_PAUSE + 0.1));
@@ -1001,20 +939,6 @@ export function makeMuzzleFlash(p: Projectile, family: ProjectileFamily): THREE.
         group.add(s);
         if (family === "launcher") group.add(starburst(4, 0.5, 0.6, FLASH, FLASH_RIM, 0.9, seed));
         group.scale.setScalar(0.85);
-        break;
-      }
-      case "bolt": case "heavybolt": case "airgun": {
-        // Energy weapon: a team-colour disc pulse with a hot centre, no gas.
-        const disc = new THREE.Mesh(projectileGeometry("ring"), projectileMaterial("muzzle-ring", p.color, q(0.95 - t * 0.5)));
-        disc.scale.setScalar(0.7 + t * 1.6);
-        disc.frustumCulled = false;
-        const inner = new THREE.Mesh(projectileGeometry("disc"), projectileMaterial("muzzle-disc", HOT, q(0.9 - t * 0.9)));
-        inner.scale.setScalar(0.5 + t * 0.9);
-        inner.frustumCulled = false;
-        const core = solid("ember", HOT, 1.6, p.color);
-        core.scale.setScalar(3.4 * pop);
-        group.add(disc, inner, core);
-        group.scale.setScalar(family === "heavybolt" ? 1.4 : family === "airgun" ? 0.65 : 0.95);
         break;
       }
     }
@@ -1087,31 +1011,8 @@ export function makeImpact(effect: VisualEvent, t: number, ground: number, hint?
     for (const o of out) o.traverse((c) => { c.frustumCulled = false; });
     return out;
   }
-  const electric = family === "bolt" || family === "heavybolt" || family === "airgun";
   if (pop > 0.02) {
-    if (electric) {
-      // ELECTRIC STAR: a flat four-point star facing the camera with four jagged arcs crawling
-      // out of it, re-rolled from the seed each frame so they crackle.
-      const star = cutout("star4", HOT, size * 0.46 * pop, ARC, seed * 0.3 + t * 2);
-      star.position.set(cx, hitY, cz);
-      faceViewer(star);
-      out.push(star);
-      for (let i = 0; i < 4; i += 1) {
-        const a = seed * 0.5 + i * (Math.PI / 2) + t * 1.5;
-        let x = cx, y = hitY, z = cz;
-        const reach = size * 0.9 * pop;
-        for (let k = 1; k <= 3; k += 1) {
-          const jitter = (unit(seed + Math.floor(t * 12), i * 3 + k) - 0.5) * 0.5;
-          const nx = cx + Math.cos(a + jitter) * reach * (k / 3);
-          const ny = hitY + (unit(seed, i + k) - 0.5) * 0.7 * (k / 3);
-          const nz = cz + Math.sin(a + jitter) * reach * (k / 3);
-          _a.set(x, y, z); _b.set(nx, ny, nz);
-          const seg = bar(_a, _b, k === 1 ? HOT : ARC, 0.075 * (1 - k * 0.18) * pop + 0.012, 1.7);
-          if (seg) out.push(seg);
-          x = nx; y = ny; z = nz;
-        }
-      }
-    } else {
+    {
       // CARTOON STAR BURST: a flat six-point star facing the camera, plus two or three chunky
       // sparks flying back toward the shooter.
       const punch = family === "sniper";
@@ -1135,16 +1036,21 @@ export function makeImpact(effect: VisualEvent, t: number, ground: number, hint?
         out.push(spark);
       }
       if (punch && hint) {
-        // PUNCH-THROUGH: the lance keeps going out the far side for a moment.
-        const from = { x: cx, y: hitY, z: cz };
-        const to = { x: cx + hint.dirX * size * 2.2 * pop, y: hitY - 0.15, z: cz + hint.dirZ * size * 2.2 * pop };
-        const lance = solidTube(from, to, HOT, 0.035, 0.065);
-        if (lance) out.push(lance);
+        // PUNCH-THROUGH: two sparks blown out of the far side -- the round kept going.
+        const fly = Math.min(1, t * 1.6);
+        for (const off of [-0.25, 0.25]) {
+          const spark = solid("spike", FLASH, 1.5, FLASH_RIM);
+          _d.set(hint.dirX + off * hint.dirZ, 0.2, hint.dirZ - off * hint.dirX).normalize();
+          spark.quaternion.setFromUnitVectors(UP, _d);
+          spark.position.set(cx + _d.x * size * 1.4 * fly, hitY, cz + _d.z * size * 1.4 * fly);
+          spark.scale.set(0.9, 1.1 * (1 - fly * 0.5), 0.9);
+          out.push(spark);
+        }
       }
     }
   }
   // A thin ground ring pushed out from the feet.
-  const ring = new THREE.Mesh(projectileGeometry("ring"), projectileMaterial("impact-ring", electric ? ARC : effect.color, q((1 - t) * 0.5)));
+  const ring = new THREE.Mesh(projectileGeometry("ring"), projectileMaterial("impact-ring", effect.color, q((1 - t) * 0.5)));
   ring.rotation.x = -Math.PI / 2;
   ring.position.set(cx, ground + 0.06, cz);
   ring.scale.setScalar(size * (0.6 + t * 1.4));
@@ -1217,40 +1123,6 @@ export function makeBlast(effect: VisualEvent, t: number, ground: number, hint?:
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(cx, ground + 0.07, cz);
     ring.scale.setScalar(radius * (0.4 + t * 2.0));
-    out.push(ring);
-    for (const o of out) o.traverse((c) => { c.frustumCulled = false; });
-    return out;
-  }
-  const electric = family === "bolt" || family === "heavybolt" || family === "airgun";
-  if (electric) {
-    // AN ENERGY BURST IS NOT AN EXPLOSION: a white four-point star with arcs crawling out of it,
-    // a cyan ring and a few dark chips. No fireball, no smoke — and above all no white ball.
-    const pop = t < 0.14 ? 0.15 + (t / 0.14) * 0.85 : Math.max(0, 1 - (t - 0.14) / 0.86);
-    if (pop > 0.02) {
-      const star = cutout("star4", HOT, radius * 0.5 * pop, ARC, seed * 0.4 + t * 2.2);
-      star.position.set(cx, ground + 0.8, cz);
-      faceViewer(star);
-      out.push(star);
-      for (let i = 0; i < 4; i += 1) {
-        const a = seed * 0.5 + i * (Math.PI / 2) + t * 1.5;
-        let x = cx, y = ground + 0.8, z = cz;
-        for (let k = 1; k <= 3; k += 1) {
-          const jitter = (unit(seed + Math.floor(t * 12), i * 3 + k) - 0.5) * 0.5;
-          const nx = cx + Math.cos(a + jitter) * radius * pop * (k / 3);
-          const ny = ground + 0.8 + (unit(seed, i + k) - 0.5) * 0.8 * (k / 3);
-          const nz = cz + Math.sin(a + jitter) * radius * pop * (k / 3);
-          _a.set(x, y, z); _b.set(nx, ny, nz);
-          const seg = bar(_a, _b, k === 1 ? HOT : ARC, 0.08 * (1 - k * 0.18) * pop + 0.012, 1.7);
-          if (seg) out.push(seg);
-          x = nx; y = ny; z = nz;
-        }
-      }
-    }
-    out.push(...chips(3, cx, ground + 0.2, cz, radius * 0.8, t, 0x4a4038, seed + 3, radius * 0.85, lift));
-    const ring = new THREE.Mesh(projectileGeometry("ring"), projectileMaterial("blast-ring", ARC, q((1 - t) * 0.8)));
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.set(cx, ground + 0.07, cz);
-    ring.scale.setScalar(radius * (0.4 + t * 2.4));
     out.push(ring);
     for (const o of out) o.traverse((c) => { c.frustumCulled = false; });
     return out;

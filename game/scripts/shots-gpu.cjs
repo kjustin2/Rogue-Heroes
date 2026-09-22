@@ -387,6 +387,32 @@ app.whenReady().then(async () => {
         await shot("tech-mid");
         continue;
       }
+      if (s === "deaths") {
+        // Every death family at wall-clock speed on the real GPU: thrown (big blow), crumple, spin,
+        // a tank wreck (turret thrown) and a gunship spiral. 16 frames at ~260ms = ~4.2s.
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(1500);
+        await js(`(() => { const sim = window.__rht.sim; window.__deaths = [];
+          const put = (k, x, z) => { const u = sim.debugSpawn(k, "enemy", { x, z }); u.yaw = -1.2; window.__deaths.push(u.id); return u; };
+          put("soldier", -6, 1); put("heavy", -3.5, 1); put("striker", -1, 1); put("tank", 3, 1.5); put("gunship", 8, 0);
+          window.__rht.deselect(); })()`);
+        await sleep(2000);
+        await js(`window.__rht.setView(${process.env.DEATH_VIEW || "{ x: 1, z: -0.5, zoom: 0.5, pitch: 0.55, yaw: 0.2 }"})`);
+        await sleep(500);
+        await js(`window.__deaths.forEach((id, i) => window.__rht.debugKill(id, i === 0 ? 1 : 0))`);
+        const sharp = require("sharp");
+        const tiles = [];
+        const t0 = Date.now(); const stamps = [];
+        for (let i = 0; i < 16; i += 1) { tiles.push((await win.webContents.capturePage({ x: 250, y: 120, width: 1100, height: 619 })).toPNG()); stamps.push(Date.now() - t0); await sleep(60); }
+        console.log("frame ms:", stamps.join(" "));
+        const small = await Promise.all(tiles.map((b) => sharp(b).resize(400, 225).png().toBuffer()));
+        await sharp({ create: { width: 1600, height: 900, channels: 3, background: "#000" } })
+          .composite(small.map((input, i) => ({ input, left: (i % 4) * 400, top: Math.floor(i / 4) * 225 }))).png()
+          .toFile(path.join(__dirname, "..", "shots", "gpu-deaths.png"));
+        [2, 5, 8].forEach((i) => fs.writeFileSync(path.join(__dirname, "..", "shots", `gpu-deaths-f${i}.png`), tiles[i]));
+        console.log("shot: gpu-deaths.png");
+        continue;
+      }
       if (s === "air") {
         // The four flyers, both teams, low over the field with a trooper for scale.
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);

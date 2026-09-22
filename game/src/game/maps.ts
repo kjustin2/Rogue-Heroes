@@ -73,7 +73,7 @@ export interface SignatureObject {
 //  • barrage: off-map artillery shells a zone during the turn's resolve (hits both sides).
 //  • collapse: cover inside a zone crumbles during the turn's resolve.
 // "lightning": a storm that strikes ONE telegraphed point per turn, somewhere new each turn.
-export type MapEventKind = "sandstorm" | "barrage" | "collapse" | "ionstorm" | "lightning";
+export type MapEventKind = "sandstorm" | "barrage" | "collapse" | "ionstorm" | "lightning" | "slag";
 
 export interface MapEventConfig {
   kind: MapEventKind;
@@ -421,7 +421,7 @@ const RAW_MAPS: readonly MapDef[] = [
     blurb: "A working foundry: furnace, rail yard, and the overpass between.",
     feel: "Rail-car lanes for infantry, the overpass for whoever holds the middle, a lit furnace at each corner.",
     seed: 0x49524f4e,
-    theme: { ground: 0x272c34, skyline: "stacks", surface: "slag", groundAccent: 0x7d8794, grid: 0x6f7c8c, fog: 0x53412f, fogDensity: 0.014, playerLight: 0x5fd7ff, enemyLight: 0xff6d57, sky: 0x8a5a32, ambient: { kind: "embers", color: 0xff9a4a, density: 0.85 } },
+    theme: { ground: 0x333a44, skyline: "stacks", surface: "slag", groundAccent: 0x7d8794, grid: 0x6f7c8c, fog: 0x5a4632, fogDensity: 0.011, playerLight: 0x5fd7ff, enemyLight: 0xff6d57, sky: 0x8a5a32, ambient: { kind: "embers", color: 0xff9a4a, density: 0.85 } },
     terrain: {
       bounds: { minX: -24, maxX: 24, minZ: -15, maxZ: 15 },
       maxHeight: 2.6,
@@ -463,8 +463,10 @@ const RAW_MAPS: readonly MapDef[] = [
       { kind: "pillar", x: -11, z: -2.2, mirror: true },
       { kind: "gas", x: -6.5, z: -3.8, mirror: true },
     ],
-    // Overstressed gantries give way: cover around the central platform crumbles periodically.
-    events: [{ kind: "collapse", startTurn: 5, period: 5, zone: { x: 0, z: 0, radius: 7 } }],
+    // SLAG SPILL: the furnaces vent every third turn, alternating corners -- molten slag floods
+    // the marked foundry floor (a hit on the spill, then burning ground for two turns). Ironworks'
+    // own hazard; Karak keeps the collapse.
+    events: [{ kind: "slag", startTurn: 3, period: 3, zone: { x: -12, z: 6.5, radius: 3.4 }, power: 18 }],
     // Derelict foundry turrets guard the throat of each rail yard — first squad to reach one owns it.
     neutrals: [{ kind: "turret", x: -3.5, z: -8, mirror: true }],
   },

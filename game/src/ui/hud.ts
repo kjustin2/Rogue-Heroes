@@ -983,6 +983,8 @@ const EVENT_GLYPHS: Record<string, { glyph: string; label: string }> = {
   ionstorm: { glyph: "⌁", label: "Ion storm — units limited to 1 CP" },
   barrage: { glyph: "☄", label: "Artillery barrage on the marked zone" },
   collapse: { glyph: "▽", label: "Structural collapse in the marked zone" },
+  lightning: { glyph: "ϟ", label: "Lightning strikes the marked point" },
+  slag: { glyph: "♨", label: "Slag spill — the marked zone floods and burns" },
 };
 
 // Environmental forecast: icons for events hitting NOW / next turn / the turn after,

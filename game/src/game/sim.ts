@@ -170,7 +170,7 @@ const SLAM_LANDING_DAMAGE = 15;
 // Metres a piercing round carries on past a body it went through.
 const PIERCE_CARRY = 7;
 
-type StrikeKind = "barrage" | "collapse" | "airstrike" | "cluster" | "laser" | "lightning";
+type StrikeKind = "barrage" | "collapse" | "airstrike" | "cluster" | "laser" | "lightning" | "slag";
 const LIGHTNING_RADIUS = 2.0;
 
 // Gas clouds (see runGasTick / igniteGasAt).
@@ -5081,9 +5081,18 @@ export class TacticalSim {
   // Barrage/collapse danger zones that fire during the given turn's resolve (for renderer rings).
   eventZonesForTurn(turn: number = this.turn): { kind: MapEventKind; x: number; z: number; radius: number }[] {
     const fromMap = this.mapEvents()
-      .filter((e) => (e.kind === "barrage" || e.kind === "collapse" || e.kind === "lightning") && eventOccursWindow(e, turn))
-      .map((e) => ({ kind: e.kind, ...(e.kind === "lightning" ? this.lightningZone(turn) : this.eventZone(e)) }));
+      .filter((e) => (e.kind === "barrage" || e.kind === "collapse" || e.kind === "lightning" || e.kind === "slag") && eventOccursWindow(e, turn))
+      .map((e) => ({ kind: e.kind, ...(e.kind === "lightning" ? this.lightningZone(turn) : e.kind === "slag" ? this.slagZone(e, turn) : this.eventZone(e)) }));
     return [...fromMap, ...this.forcedZones];
+  }
+
+  // The slag spill alternates furnaces: every other occurrence floods the mirrored corner, so
+  // neither side's foundry floor is permanently safe. Pure function of the turn (telegraph ==
+  // strike == restored save).
+  private slagZone(e: MapEventConfig, turn: number): { x: number; z: number; radius: number } {
+    const zone = this.eventZone(e);
+    const occurrence = Math.floor((turn - e.startTurn) / Math.max(1, e.period ?? 1));
+    return occurrence % 2 ? { x: -zone.x, z: -zone.z, radius: zone.radius } : zone;
   }
 
   // Where the storm strikes this turn: somewhere new every turn, but a pure function of the map
@@ -5139,6 +5148,10 @@ export class TacticalSim {
       this.pushLog("Structures in the marked zone are about to collapse.");
       notice = notice ?? "⚠ Cover in the marked zone collapses this turn.";
     }
+    if (zones.some((z) => z.kind === "slag")) {
+      this.pushLog("The furnaces are venting — molten slag will flood the marked zone this turn.");
+      notice = notice ?? "⚠ Slag spill — the marked zone floods and burns this turn.";
+    }
     if (zones.some((z) => z.kind === "lightning")) {
       this.pushLog("The storm is building — lightning will strike the marked point this turn.");
       notice = notice ?? "⚠ Lightning strikes the marked point this turn — stay clear of it.";
@@ -5163,6 +5176,9 @@ export class TacticalSim {
           const point = clampToArena({ x: zone.x + Math.sin(angle) * r, z: zone.z + Math.cos(angle) * r });
           this.pendingStrikes.push({ at: 0.25 + i * 0.26, point, radius: 2.6, damage: 34, kind: "barrage" });
         }
+      } else if (zone.kind === "slag") {
+        const power = this.mapEvents().find((e) => e.kind === "slag")?.power ?? 18;
+        this.pendingStrikes.push({ at: 0.45, point: { x: zone.x, z: zone.z }, radius: zone.radius, damage: power, kind: "slag" });
       } else if (zone.kind === "lightning") {
         const power = this.mapEvents().find((e) => e.kind === "lightning")?.power ?? 46;
         this.pendingStrikes.push({ at: 0.6, point: { x: zone.x, z: zone.z }, radius: zone.radius, damage: power, kind: "lightning" });
@@ -5202,7 +5218,13 @@ export class TacticalSim {
       this.effect("bolt", strike.point, strike.point, 0xd8ecff, 0.45, 0.4);
       this.burnZones.push({ id: `burn-${++this.effectSeq}`, x: strike.point.x, z: strike.point.z, radius: 1.2, turnsLeft: 1 });
     }
+    if (strike.kind === "slag") {
+      // The spill leaves the floor burning for two turns (the flamer's burn zone, so the tick,
+      // the render and the AI's fear of fire all come for free).
+      this.burnZones.push({ id: `burn-${++this.effectSeq}`, x: strike.point.x, z: strike.point.z, radius: strike.radius * 0.85, turnsLeft: 2 });
+    }
     const color = strike.kind === "lightning" ? 0xd8ecff
+      : strike.kind === "slag" ? 0xff7a2a
       : strike.kind === "barrage" ? 0xffac5a
       : strike.kind === "collapse" ? 0xb59a72
       : strike.kind === "laser" ? 0xff5a4d
@@ -5235,6 +5257,7 @@ export class TacticalSim {
     if (strike.kind === "barrage") this.pushLog("Shells hammer the marked zone.");
     else if (strike.kind === "collapse") this.pushLog("Cover collapses in the marked zone.");
     else if (strike.kind === "lightning") this.pushLog("Lightning strikes the marked point!");
+    else if (strike.kind === "slag") this.pushLog("Molten slag floods the foundry floor!");
   }
 
   // Debug/test hook: force an environmental event onto the current turn (for screenshots/tests).

@@ -6,7 +6,7 @@ import { hasMotionBank, sampleMotion } from "./infantryMotion";
 import { ANKLE_Y, CROUCH_GAIT, GAIT_TIERS, HIP_Y, HIP_Z, KNEE_Y, bodyAt, footAt, gaitTier, solveLeg, type GaitParams, type LegPose } from "./gait";
 import { splitAtKnee } from "./legSplit";
 import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec2 } from "../core/math";
-import { isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isVehicleKind, type CombatEntity, type DamagePart, type EntityKind, type PartRole } from "../game/damageModel";
+import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isVehicleKind, type CombatEntity, type DamagePart, type EntityKind, type PartRole } from "../game/damageModel";
 import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
 import { OVERWATCH_ARC_HALF } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type SkylineKind } from "../game/maps";
@@ -1348,16 +1348,18 @@ export class WorldRenderer {
       this.entityRoot.add(group);
     }
     group.userData.ghosted = ghosted;
-    // DEATH. A unit used to vanish on the frame it died. Now: the group stays for DEATH_MS,
-    // falling in the direction of the killing shot (the last flinch record) -- infantry topple
-    // forward or back, a vehicle just settles -- and sinks out of sight at the end.
+    // DEATH. A unit used to vanish on the frame it died. Now it stays for deathMs() and plays its
+    // family's death (poseDeath: thrown / crumple / spin / wreck / spiral) before sinking.
     if (!entity.status.alive && group.userData.diedAt === undefined && entity.kind !== "cover") {
       group.userData.diedAt = performance.now();
       const last = this.flinchByEntity.get(entity.id);
       group.userData.deathDir = last ? { dx: last.dx, dz: last.dz } : { dx: Math.sin(entity.yaw), dz: Math.cos(entity.yaw) };
+      group.userData.deathStyle = deathStyle(entity, last?.mag ?? 0);
+      group.userData.deathBeats = 0;
+      this.deathBurst(entity, group, "start");
     }
     if (entity.status.alive) group.userData.diedAt = undefined;
-    const dying = !entity.status.alive && group.userData.diedAt !== undefined && performance.now() - (group.userData.diedAt as number) < DEATH_MS;
+    const dying = !entity.status.alive && group.userData.diedAt !== undefined && performance.now() - (group.userData.diedAt as number) < deathMs(entity);
     group.visible = entity.status.alive || dying;
     const previousPosition = group.userData.previousPosition as Vec2 | undefined;
     const moved = previousPosition ? dist(previousPosition, entity.position) : 0;
@@ -1615,25 +1617,7 @@ export class WorldRenderer {
       group.rotation.x += 1.35 + Math.sin(performance.now() * 0.0025) * 0.03;
       group.position.y -= 0.08;
     }
-    if (dying) {
-      const t = Math.min(1, (performance.now() - (group.userData.diedAt as number)) / DEATH_MS);
-      const dir = group.userData.deathDir as { dx: number; dz: number };
-      // Fall: fast at first, then settle (ease-out), then sink over the last third.
-      const fall = 1 - Math.pow(1 - Math.min(1, t * 1.6), 2.2);
-      const sink = Math.max(0, (t - 0.66) / 0.34);
-      if (isInfantryKind(entity.kind)) {
-        // Rotate about the feet toward the shove direction, expressed in the group's own yaw frame.
-        const local = Math.atan2(dir.dx, dir.dz) - entity.yaw;
-        group.rotation.x += Math.cos(local) * 1.35 * fall;
-        group.rotation.z -= Math.sin(local) * 1.35 * fall;
-        group.position.y -= 0.08 * fall;
-      } else {
-        group.position.y -= 0.14 * fall;
-        group.rotation.z += dir.dx * 0.06 * fall;
-        group.rotation.x += dir.dz * 0.06 * fall;
-      }
-      group.position.y -= sink * 1.6;
-    }
+    if (dying) this.poseDeath(group, entity);
     // Hit flinch: the struck unit lurches away from the shooter with a quick pitch + roll
     // shudder and a brief downward absorb, so a landed hit reads as a physical reaction.
     const flinch = entity.status.alive && entity.kind !== "cover" ? this.entityFlinch(entity.id) : undefined;
@@ -1661,8 +1645,114 @@ export class WorldRenderer {
       this.syncDebris(entity, part);
       this.paintPart(group, mesh, entity, part, entity.id === selectedId, entity.id === targetId, part.id === targetPartId, renderGhosted);
       if (entity.status.alive) this.pickables.push(mesh);
+      if (dying && (part.id === "turret" || part.id === "cannon") && isVehicleKind(entity.kind) && !isAirKind(entity.kind)) this.blowOffTurret(mesh, group);
     });
     if (this.trackedFeet.size) this.recordFeet(entity, group);
+  }
+
+  /**
+   * DEATHS (2026-09-22). One generic topple read as a unit falling asleep. Now each family dies
+   * its own way, all on the renderer's clock and seeded from the entity (the sim is untouched):
+   *   thrown  -- infantry killed by a big hit: launched back along the killing blow with a flip,
+   *              lands flat, bounces once, kicks up dust.
+   *   crumple -- knees give, then the body folds forward onto the ground.
+   *   spin    -- twists round and drops sideways.
+   *   wreck   -- a ground vehicle hops on its internal blast, rolls, throws its turret, then sits
+   *              charred and smoking before it sinks.
+   *   spiral  -- an aircraft spins nose-down to the ground and explodes on impact.
+   * Group-level transforms only (plus the turret throw), so the pooled part paint, per-part
+   * damage and the rig contract never know a death is playing.
+   */
+  private poseDeath(group: THREE.Group, entity: CombatEntity): void {
+    const t = Math.min(1, (performance.now() - (group.userData.diedAt as number)) / deathMs(entity));
+    const dir = group.userData.deathDir as { dx: number; dz: number };
+    const style = group.userData.deathStyle as DeathStyle;
+    const local = Math.atan2(dir.dx, dir.dz) - entity.yaw; // shove direction in the group's own frame
+    const easeOut = (x: number): number => 1 - Math.pow(1 - clamp01(x), 2.4);
+    const tilt = (angle: number): void => {
+      group.rotation.x += Math.cos(local) * angle;
+      group.rotation.z -= Math.sin(local) * angle;
+    };
+    const sinkFrom = style === "wreck" || style === "spiral" ? 0.8 : 0.72;
+    const sink = Math.max(0, (t - sinkFrom) / (1 - sinkFrom));
+    const hash01 = (hash(entity.id) % 1000) / 1000;
+    const beat = (bit: number, at: number, fire: () => void): void => {
+      const beats = group.userData.deathBeats as number;
+      if (t >= at && (beats & bit) === 0) {
+        group.userData.deathBeats = beats | bit;
+        fire();
+      }
+    };
+    if (style === "thrown") {
+      const a = clamp01(t / 0.3); // airborne for the first ~0.8s
+      const land = clamp01((t - 0.3) / 0.12);
+      group.position.x += dir.dx * 1.35 * easeOut(a);
+      group.position.z += dir.dz * 1.35 * easeOut(a);
+      group.position.y += 4 * 0.6 * a * (1 - a) + (land > 0 && land < 1 ? Math.sin(land * Math.PI) * 0.1 : 0);
+      tilt(-1.5 * easeOut(a * 1.15)); // flips onto its back, away from the blow
+      group.rotation.y += (hash01 - 0.5) * 1.4 * easeOut(a);
+      beat(1, 0.3, () => this.deathBurst(entity, group, "land"));
+    } else if (style === "crumple") {
+      const knees = easeOut(t / 0.22);
+      const fold = easeOut((t - 0.18) / 0.34);
+      group.scale.y *= 1 - 0.18 * knees * (1 - fold);
+      group.position.y -= 0.16 * knees;
+      tilt(1.48 * fold * (hash01 > 0.5 ? 1 : 0.85));
+      beat(1, 0.5, () => this.deathBurst(entity, group, "land"));
+    } else if (style === "spin") {
+      const f = easeOut(t / 0.45);
+      group.rotation.y += (hash01 > 0.5 ? 1 : -1) * 1.9 * f;
+      group.rotation.z += (hash01 > 0.5 ? -1 : 1) * 1.45 * f;
+      group.position.y -= 0.06 * f;
+      beat(1, 0.42, () => this.deathBurst(entity, group, "land"));
+    } else if (style === "wreck") {
+      const hop = clamp01(t / 0.1);
+      group.position.y += Math.sin(hop * Math.PI) * 0.5 - 0.16 * easeOut(t / 0.2);
+      tilt(0.14 * Math.sin(hop * Math.PI) + 0.07 * easeOut(t / 0.2));
+      group.rotation.y += (hash01 - 0.5) * 0.3 * easeOut(t / 0.2);
+      beat(1, 0.34, () => this.deathBurst(entity, group, "land"));
+    } else {
+      // spiral: fall the full altitude with a quickening spin, nose down, then burn on the ground.
+      const agl = entity.agl ?? 6;
+      const fall = clamp01(t / 0.42);
+      group.position.y -= agl * fall * fall;
+      group.rotation.y += (hash01 > 0.5 ? 1 : -1) * 7 * fall * fall;
+      // On impact the airframe slaps down onto its belly (it stood on its nose otherwise).
+      const settle = clamp01((t - 0.42) / 0.08);
+      group.rotation.x += 0.75 * fall - 0.62 * settle;
+      group.rotation.z += 0.5 * fall - 0.28 * settle;
+      group.position.y += 0.35 * settle;
+      group.position.x += dir.dx * 2.2 * fall;
+      group.position.z += dir.dz * 2.2 * fall;
+      beat(1, 0.42, () => this.deathBurst(entity, group, "impact"));
+    }
+    group.position.y -= sink * (isVehicleKind(entity.kind) ? 2.4 : 1.6);
+  }
+
+  /** A vehicle's turret/gun thrown clear by the blast: up, over, and down onto the deck beside it. */
+  private blowOffTurret(mesh: THREE.Mesh, group: THREE.Group): void {
+    const t = Math.min(1, (performance.now() - (group.userData.diedAt as number)) / 4200);
+    const u = clamp01(t / 0.34);
+    const side = hash(String(group.userData.entityId)) % 2 ? 1 : -1;
+    mesh.position.y += 4 * 1.9 * u * (1 - u) - 0.45 * u;
+    mesh.position.x += side * 1.3 * u;
+    mesh.rotation.x += 2.6 * u;
+    mesh.rotation.z += side * 1.1 * u;
+  }
+
+  /** The one-shot bursts a death fires: the moment of death, a body landing, an aircraft hitting. */
+  private deathBurst(entity: CombatEntity, group: THREE.Group, beat: "start" | "land" | "impact"): void {
+    const p = { x: group.position.x, z: group.position.z };
+    const ground = drawnGroundAt(p);
+    if (beat === "impact" || (beat === "start" && isVehicleKind(entity.kind) && !isAirKind(entity.kind))) {
+      this.flashLight(p, 0xff8a3a, 7, 320, 1.6);
+      this.spawnSmokeColumn(p, 5, 0x2a2521, 0.42, 2.6, ground + 0.4);
+      this.spawnSmokeColumn(p, 3, 0xff9a3c, 0.55, 0.7, ground + 0.3); // the fire ball inside it
+    } else if (beat === "start" && isAirKind(entity.kind)) {
+      this.flashLight(p, 0xffb05a, 4, 200, (entity.agl ?? 6) + 1);
+    } else if (beat === "land") {
+      this.spawnSmokeColumn(p, isVehicleKind(entity.kind) ? 3 : 2, this.propTint.getHex(), 0.34, 0.9, ground + 0.05);
+    }
   }
 
   private syncDebris(entity: CombatEntity, part: DamagePart): void {
@@ -4122,6 +4212,11 @@ export class WorldRenderer {
   }
 
   /** Claim the stalest pooled light and flash it at a world point (muzzle or blast). */
+  /** Capture seam (__rht.debugKill): record a killing blow of `mag` shoving toward +x. */
+  debugFlinch(entityId: string, mag: number): void {
+    this.flinchByEntity.set(entityId, { at: performance.now(), mag, dx: 1, dz: 0 });
+  }
+
   flashLight(position: Vec2, color: number, strength: number, durationMs = 150, height = 1.3): void {
     let stalest = this.flashLights[0];
     for (const record of this.flashLights) if (record.until < stalest.until) stalest = record;
@@ -4177,7 +4272,7 @@ export class WorldRenderer {
       });
       // BRASS. Small guns kick a casing out sideways and up; it tumbles, catches the light and
       // bounces once. Almost free, and it is the cue that says "gun" rather than "laser".
-      if (!heavy && projectile.kind !== "bolt") {
+      if (!heavy) {
         fx.directionalBurst({
           x: projectile.origin.x - projectile.direction.x * 0.35,
           y: projectile.originHeight - 0.05,
@@ -4787,7 +4882,17 @@ const DAMAGE_FLASH_MS = 320;
 // How long a whole-body hit flinch lasts (ms). Short + snappy — a strike, not a stumble.
 const FLINCH_MS = 300;
 // A dead unit stays on the board this long: the fall, a beat, then it sinks away.
-const DEATH_MS = 2600;
+type DeathStyle = "thrown" | "crumple" | "spin" | "wreck" | "spiral";
+/** How long a dead unit stays on the board, per family (wrecks and crashes need time to read). */
+function deathMs(entity: CombatEntity): number {
+  return isAirKind(entity.kind) ? 3800 : isVehicleKind(entity.kind) ? 4200 : 2600;
+}
+function deathStyle(entity: CombatEntity, killingBlow: number): DeathStyle {
+  if (isAirKind(entity.kind)) return "spiral";
+  if (!isInfantryKind(entity.kind)) return "wreck";
+  if (killingBlow >= 0.6) return "thrown";
+  return hash(entity.id) % 2 ? "crumple" : "spin";
+}
 const MAX_FLOATING_NUMBERS = 24;
 
 // Ceiling height (world units) the ambient particle bed drifts within.

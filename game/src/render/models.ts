@@ -173,10 +173,6 @@ export function propGeometry(kind: PropsKind, seed: number): THREE.BufferGeometr
 }
 
 /** True once the props kit has loaded (or failed) — used to decide when a rebuild is worth it. */
-export function propsKitReady(): boolean {
-  return propsState === "ready";
-}
-
 function loadPropsKit(): void {
   propsState = "loading";
   loadKit("models/props-kit.glb", props, (ok) => { propsState = ok ? "ready" : "failed"; });
