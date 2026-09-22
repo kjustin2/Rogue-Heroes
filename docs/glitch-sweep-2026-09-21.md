@@ -294,3 +294,26 @@ Finding 4's remaining suspect is now confirmed by bisection.
   resolve 1 (that is already the gate this tool exists for).
 - Perf context from the same run (advisory, not a gate): command p50 7.1ms / p95 20.8ms;
   resolve 1 p50 13.9ms / max 27.8ms / jank 0%; resolve 2 max 34.8ms / jank 1%; frame errors 0.
+
+---
+
+## 7. CLIPPING — cover props sit sunk and tilted into raised ground
+
+**Rank: 4. Seen on crossfire and karak at gameplay zoom.**
+
+- Evidence: `game/shots/glitch/read-crossfire-sunkcrate.png` (7x) — a stack of crates leaning
+  ~20 degrees with its lower crates cut off flat by the hillside, i.e. buried in the drawn ground
+  rather than standing on it. Its ink rim is ragged where the ground cuts it, and one
+  `interactionGlow` bar (finding 2) pokes out through the crate's side.
+- Likely owner (hypothesis, NOT yet bisected): props are placed on the SIM ground while the
+  ground is DRAWN higher. `game/src/render/worldRenderer.ts` computes a unit's rendered elevation
+  from `visualGroundAt()` + `plateLiftAt()` (lines 1429-1437) — "Units stand on the ground as
+  DRAWN, not as simulated" — but the cover/prop build path does not appear to use the same
+  footprint-sampled elevation. A prop standing where a render-only ground PLATE lifts the surface
+  would then sink by exactly the plate lift.
+- Suggested next probe (cheap): log, per cover entity, `terrainHeightAt(p)` vs
+  `visualGroundAt(p) + plateLiftAt(p, ...)` and list the props with a non-zero delta; then hide
+  the ground plates and re-capture the same frame — if the crate stops being cut, the plate lift
+  is the owner.
+- Note: `scatter.test.ts` already audits "no prop straddling a step" against SIM terrain, which is
+  why this survives the existing gate — the lift that buries it is render-only.
