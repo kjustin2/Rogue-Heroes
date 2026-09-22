@@ -330,7 +330,7 @@ function cutout(geometry: string, color: number, size: number, rimColor = INK, s
   const face = new THREE.Mesh(projectileGeometry(geometry), fxFlat(color));
   const backA = new THREE.Mesh(projectileGeometry(geometry), fxFlat(rimColor));
   const backB = new THREE.Mesh(projectileGeometry(geometry), fxFlat(rimColor));
-  backA.scale.setScalar(1.22); backB.scale.setScalar(1.22);
+  backA.scale.setScalar(1.14); backB.scale.setScalar(1.14);
   backA.position.z = -0.012; backB.position.z = 0.012;
   face.frustumCulled = backA.frustumCulled = backB.frustumCulled = false;
   group.add(backA, face, backB);
@@ -471,21 +471,22 @@ function tracerModel(family: ProjectileFamily, team: number, age: number, seed: 
   const sleeve = new THREE.Mesh(projectileGeometry("tracer"), fxSolid(sleeveColor, true));
   const rim = new THREE.Mesh(projectileGeometry("tracer"), fxSolid(INK, true));
   core.frustumCulled = sleeve.frustumCulled = rim.frustumCulled = false;
-  sleeve.scale.set(1.9, 1.05, 1.9);
-  rim.scale.set(2.7, 1.12, 2.7);
+  sleeve.scale.set(1.8, 1.04, 1.8);
+  rim.scale.set(2.5, 1.1, 2.5);
   const streak = new THREE.Group();
   streak.add(rim, sleeve, core);
-  streak.position.y = -0.12; // the streak trails the head
-  const head = solid("ember", HOT, 1.9, sleeveColor);
-  head.scale.setScalar(1.9);
-  head.position.y = 0.12;
+  streak.scale.y = 1.5; // a dash, not a bead: the streak carries the read, the head only tips it
+  streak.position.y = -0.16;
+  const head = solid("ember", HOT, 1.7, sleeveColor);
+  head.scale.setScalar(1.05);
+  head.position.y = 0.2;
   const headRim = new THREE.Mesh(projectileGeometry("ember"), fxSolid(INK, true));
-  headRim.scale.setScalar(2.5);
+  headRim.scale.setScalar(2.3);
   headRim.frustumCulled = false;
   head.add(headRim);
   group.add(streak, head);
   switch (family) {
-    case "mg": group.scale.set(1.3, 1.45, 1.3); break;
+    case "mg": group.scale.set(1.05, 1.3, 1.05); break;
     case "carbine": group.scale.set(0.85, 0.9, 0.85); break;
     case "pistol": group.scale.set(0.95, 0.62, 0.95); break;
     case "airgun": group.scale.set(1.2, 0.85, 1.2); break;
@@ -512,7 +513,7 @@ function pelletModel(team: number, seed: number): THREE.Group {
   rim.scale.setScalar(2.2);
   rim.frustumCulled = false;
   p.add(rim);
-  p.scale.setScalar(1.35);
+  p.scale.setScalar(1.05);
   // A smaller satellite pellet riding beside each round, offset by the round's own seed, so five
   // sim pellets read as a fan of ten and the fan has depth.
   const sat = solid("pellet", HOT, 1.6, team);
@@ -520,7 +521,7 @@ function pelletModel(team: number, seed: number): THREE.Group {
   satRim.scale.setScalar(2.2);
   satRim.frustumCulled = false;
   sat.add(satRim);
-  sat.scale.setScalar(0.85);
+  sat.scale.setScalar(0.7);
   const a = unit(seed, 2) * Math.PI * 2;
   sat.position.set(Math.cos(a) * 0.16, -0.14 - unit(seed, 5) * 0.12, Math.sin(a) * 0.16);
   group.add(p, sat);
@@ -756,8 +757,8 @@ export function makeProjectileTrail(p: Projectile, family: ProjectileFamily, his
     // distance, not a vapour haze. The pause is what makes the lance read as one event.
     if (p.age < SNIPER_PAUSE) return out;
     const origin = { x: p.origin.x, y: p.originHeight, z: p.origin.z };
-    const under = solidTube(origin, head, team, 0.05, 0.085);
-    const over = solidTube(origin, head, HOT, 0.026);
+    const under = solidTube(origin, head, team, 0.062, 0.1);
+    const over = solidTube(origin, head, HOT, 0.042);
     if (under) out.push(under);
     if (over) out.push(over);
     return out;
@@ -1090,7 +1091,7 @@ export function makeImpact(effect: VisualEvent, t: number, ground: number, hint?
     if (electric) {
       // ELECTRIC STAR: a flat four-point star facing the camera with four jagged arcs crawling
       // out of it, re-rolled from the seed each frame so they crackle.
-      const star = cutout("star4", HOT, size * 0.7 * pop, ARC, seed * 0.3 + t * 2);
+      const star = cutout("star4", HOT, size * 0.46 * pop, ARC, seed * 0.3 + t * 2);
       star.position.set(cx, hitY, cz);
       faceViewer(star);
       out.push(star);
@@ -1104,7 +1105,7 @@ export function makeImpact(effect: VisualEvent, t: number, ground: number, hint?
           const ny = hitY + (unit(seed, i + k) - 0.5) * 0.7 * (k / 3);
           const nz = cz + Math.sin(a + jitter) * reach * (k / 3);
           _a.set(x, y, z); _b.set(nx, ny, nz);
-          const seg = bar(_a, _b, k === 1 ? HOT : ARC, 0.045 * (1 - k * 0.2) * pop + 0.01, 1.7);
+          const seg = bar(_a, _b, k === 1 ? HOT : ARC, 0.075 * (1 - k * 0.18) * pop + 0.012, 1.7);
           if (seg) out.push(seg);
           x = nx; y = ny; z = nz;
         }
@@ -1113,7 +1114,7 @@ export function makeImpact(effect: VisualEvent, t: number, ground: number, hint?
       // CARTOON STAR BURST: a flat six-point star facing the camera, plus two or three chunky
       // sparks flying back toward the shooter.
       const punch = family === "sniper";
-      const star = cutout(punch ? "star4" : "star6", HOT, size * (punch ? 0.95 : 0.72) * pop, effect.color === 0xffd166 ? FLASH_RIM : INK, seed * 0.4);
+      const star = cutout(punch ? "star4" : "star6", HOT, size * (punch ? 0.7 : 0.5) * pop, effect.color === 0xffd166 ? FLASH_RIM : INK, seed * 0.4);
       star.position.set(cx, hitY, cz);
       faceViewer(star);
       out.push(star);
@@ -1219,27 +1220,62 @@ export function makeBlast(effect: VisualEvent, t: number, ground: number, hint?:
     for (const o of out) o.traverse((c) => { c.frustumCulled = false; });
     return out;
   }
+  const electric = family === "bolt" || family === "heavybolt" || family === "airgun";
+  if (electric) {
+    // AN ENERGY BURST IS NOT AN EXPLOSION: a white four-point star with arcs crawling out of it,
+    // a cyan ring and a few dark chips. No fireball, no smoke — and above all no white ball.
+    const pop = t < 0.14 ? 0.15 + (t / 0.14) * 0.85 : Math.max(0, 1 - (t - 0.14) / 0.86);
+    if (pop > 0.02) {
+      const star = cutout("star4", HOT, radius * 0.5 * pop, ARC, seed * 0.4 + t * 2.2);
+      star.position.set(cx, ground + 0.8, cz);
+      faceViewer(star);
+      out.push(star);
+      for (let i = 0; i < 4; i += 1) {
+        const a = seed * 0.5 + i * (Math.PI / 2) + t * 1.5;
+        let x = cx, y = ground + 0.8, z = cz;
+        for (let k = 1; k <= 3; k += 1) {
+          const jitter = (unit(seed + Math.floor(t * 12), i * 3 + k) - 0.5) * 0.5;
+          const nx = cx + Math.cos(a + jitter) * radius * pop * (k / 3);
+          const ny = ground + 0.8 + (unit(seed, i + k) - 0.5) * 0.8 * (k / 3);
+          const nz = cz + Math.sin(a + jitter) * radius * pop * (k / 3);
+          _a.set(x, y, z); _b.set(nx, ny, nz);
+          const seg = bar(_a, _b, k === 1 ? HOT : ARC, 0.08 * (1 - k * 0.18) * pop + 0.012, 1.7);
+          if (seg) out.push(seg);
+          x = nx; y = ny; z = nz;
+        }
+      }
+    }
+    out.push(...chips(4, cx, ground + 0.2, cz, radius * 0.8, t, 0x4a4038, seed + 3, radius * 0.7, lift));
+    const ring = new THREE.Mesh(projectileGeometry("ring"), projectileMaterial("blast-ring", ARC, q((1 - t) * 0.8)));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(cx, ground + 0.07, cz);
+    ring.scale.setScalar(radius * (0.4 + t * 2.4));
+    out.push(ring);
+    for (const o of out) o.traverse((c) => { c.frustumCulled = false; });
+    return out;
+  }
   // 1. POW: a flat eight-point star facing the camera for the first frames — the cartoon "bang"
-  //    with no letters in it. Pops to full size at once and shrinks as the fireball takes over.
-  if (t < 0.16 && !ap) {
-    const u = t / 0.16;
-    const star = cutout("star8", HOT, radius * (0.7 + u * 0.35) * (1 - u * 0.5) * smooth(u / 0.3), FLASH_RIM, seed * 0.5 + u * 0.6);
-    star.position.set(cx, ground + lift * 0.45, cz);
+  //    with no letters in it. It IS the flash frame (a rim-less white ball popped to full size in
+  //    one frame and read as a splotch).
+  if (t < 0.2 && !ap) {
+    const u = t / 0.2;
+    const star = cutout("star8", HOT, radius * (0.5 + u * 0.28) * (1 - u * 0.45) * smooth(u / 0.25), FLASH_RIM, seed * 0.5 + u * 0.6);
+    star.position.set(cx, ground + lift * 0.55, cz);
     faceViewer(star);
     out.push(star);
   }
   if (ap && hint) {
     // ARMOUR-PIERCING HIT: a sharp cone of light driven on through the hit point along the shot,
     // and a fan of metal sparks thrown back at the gun. Short and hard; the smoke is brief.
-    const pop = t < 0.12 ? 0.1 + (t / 0.12) * 0.9 : Math.max(0, 1 - (t - 0.12) / 0.58);
+    const pop = t < 0.1 ? 0.1 + (t / 0.1) * 0.9 : Math.max(0, 1 - (t - 0.1) / 0.8);
     if (pop > 0.02) {
       const cone = solid("spike", HOT, 1.35, FLASH_RIM);
       _d.set(hint.dirX, -0.15, hint.dirZ).normalize();
       cone.quaternion.setFromUnitVectors(UP, _d);
       cone.position.set(cx - hint.dirX * 0.2, ground + 0.8, cz - hint.dirZ * 0.2);
-      cone.scale.set(radius * 1.6 * pop, radius * 2.6 * pop, radius * 1.6 * pop);
+      cone.scale.set(radius * 2.3 * pop, radius * 3.8 * pop, radius * 2.3 * pop);
       out.push(cone);
-      const fan = 5;
+      const fan = 7;
       for (let i = 0; i < fan; i += 1) {
         const spread = (i / (fan - 1) - 0.5) * 1.6;
         const dx = -hint.dirX * Math.cos(spread) + hint.dirZ * Math.sin(spread);
@@ -1250,7 +1286,7 @@ export function makeBlast(effect: VisualEvent, t: number, ground: number, hint?:
         _d.set(dx, 0.7 - fly * 1.6, dz).normalize();
         spark.quaternion.setFromUnitVectors(UP, _d);
         spark.position.set(cx + dx * r, ground + 0.8 + 0.6 * Math.sin(fly * Math.PI), cz + dz * r);
-        spark.scale.set(0.9, 1.2 * (1 - fly * 0.4), 0.9);
+        spark.scale.set(1.2, 1.8 * (1 - fly * 0.4), 1.2);
         out.push(spark);
       }
     }
