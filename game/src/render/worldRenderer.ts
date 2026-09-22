@@ -4105,7 +4105,7 @@ export class WorldRenderer {
     for (const id of this.trailHistory.keys()) {
       if (liveIds.has(id)) continue;
       const last = this.lastSeenProjectile.get(id);
-      if (last && isSmallArms(last.family) && this.groundChews.length < 40) {
+      if (last && isSmallArms(last.family) && this.groundChews.length < 14) {
         this.groundChews.push({ x: last.x, z: last.z, at: performance.now(), seed: hash(id) % 997, size: last.family === "mg" ? 1.15 : last.family === "pellet" ? 0.8 : 1 });
       }
       this.trailHistory.delete(id);

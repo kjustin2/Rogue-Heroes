@@ -804,18 +804,17 @@ export function makeProjectileTrail(p: Projectile, family: ProjectileFamily, his
       blob.scale.setScalar(scale);
       blob.rotation.set(pt.seq * 1.1, p.age * 2, pt.seq * 0.7);
       out.push(blob);
-      if (k >= 1.5 && k < 4.6) {
-        // Tongues: one or two cones licking up and off the blob, the flame's edge curling. They
-        // grow in over the first half step and shrink out before the puff stage.
+      if (k >= 1.5 && k < 4.6 && pt.seq % 2 === 0) {
+        // Tongues: a cone licking up and off the blob, the flame's edge curling. One per OTHER
+        // sample — two on every sample cost four times the draw calls and read identically.
         const tongueLife = Math.min(1, (k - 1.5) / 0.5) * Math.min(1, (4.6 - k) / 0.6);
-        const tongues = k < 2.5 ? 1 : 2;
-        for (let c = 0; c < tongues; c += 1) {
+        for (let c = 0; c < 1; c += 1) {
           const tongue = solid("tongue", FIRE[Math.max(0, stage - 1)], 1.3, FIRE[Math.min(4, stage + 1)]);
           const lean = Math.sin(p.age * 16 + pt.seq * 2.1 + c * 2.4) * 0.5;
           _d.set(lean, 1, Math.cos(p.age * 11 + pt.seq + c * 1.7) * 0.45).normalize();
           tongue.quaternion.setFromUnitVectors(UP, _d);
           tongue.position.set(pt.x + jx + (c ? -0.12 : 0.12), pt.y + rise + scale * 0.1, pt.z + jz + (c ? 0.1 : -0.1));
-          const ts = scale * tongueLife * (c === 1 ? Math.min(1, (k - 2.5) / 0.5) : 1);
+          const ts = scale * tongueLife;
           tongue.scale.set(ts * 0.8, ts * (0.9 + Math.sin(p.age * 24 + pt.seq + c) * 0.25), ts * 0.8);
           out.push(tongue);
         }
@@ -834,7 +833,9 @@ export function makeProjectileTrail(p: Projectile, family: ProjectileFamily, his
   const width = family === "tank" || family === "artillery" || family === "siege" ? 2.2 : family === "mg" ? 1.5 : 1;
   let from: Point3 = head;
   let fromBehind = 0;
-  for (let i = n - 1; i >= 0; i -= 1) {
+  let segments = 0;
+  for (let i = n - 1; i >= 0 && segments < 5; i -= 1) {
+    segments += 1;
     const to = history[i];
     const mid = (fromBehind + behind[i]) / 2;
     const u = clamp01(1 - mid / ribbonReach);
@@ -1165,7 +1166,7 @@ export function makeGroundChew(x: number, z: number, t: number, ground: number, 
     p.rotation.set(seed, t * 2, seed * 0.3);
     out.push(p);
   }
-  out.push(...chips(3, x, ground + 0.05, z, 0.55 * size, t, PEBBLE, seed, 0.7, 0.7));
+  out.push(...chips(2, x, ground + 0.05, z, 0.55 * size, t, PEBBLE, seed, 0.8, 0.7));
   for (const o of out) o.traverse((c) => { c.frustumCulled = false; });
   return out;
 }
@@ -1245,7 +1246,7 @@ export function makeBlast(effect: VisualEvent, t: number, ground: number, hint?:
         }
       }
     }
-    out.push(...chips(4, cx, ground + 0.2, cz, radius * 0.8, t, 0x4a4038, seed + 3, radius * 0.7, lift));
+    out.push(...chips(3, cx, ground + 0.2, cz, radius * 0.8, t, 0x4a4038, seed + 3, radius * 0.85, lift));
     const ring = new THREE.Mesh(projectileGeometry("ring"), projectileMaterial("blast-ring", ARC, q((1 - t) * 0.8)));
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(cx, ground + 0.07, cz);
@@ -1297,7 +1298,7 @@ export function makeBlast(effect: VisualEvent, t: number, ground: number, hint?:
     const life = t / 0.6;
     const stage = life < 0.3 ? 1 : life < 0.6 ? 2 : 3;
     const grow = life < 0.45 ? 0.15 + life * 1.85 : 1 - (life - 0.45) * 1.7;
-    const blobs = ap ? 4 : 6;
+    const blobs = ap ? 3 : 5;
     for (let i = 0; i < blobs; i += 1) {
       const a = seed * 0.7 + i * 1.05;
       const r = radius * 0.36 * (i === 0 ? 0 : 1) * (0.5 + life);
@@ -1309,20 +1310,20 @@ export function makeBlast(effect: VisualEvent, t: number, ground: number, hint?:
     }
     if (t < 0.28) {
       // Spike geometry is 0.34 long, so length is in spike-scale units: ~1.7x the radius.
-      const star = starburst(shell ? 9 : 7, R * 0.6, R * 0.16, FIRE[0], FIRE[2], 0, seed * 0.5, 0.35);
+      const star = starburst(shell ? 7 : 5, R * 0.68, R * 0.18, FIRE[0], FIRE[2], 0, seed * 0.5, 0.35);
       star.scale.setScalar(0.5 + (t / 0.28) * 0.6);
       star.position.set(cx, ground + lift * 0.35, cz);
       out.push(star);
     }
   }
   // 3. Debris: chunky chips thrown out on parabolas and landing around the crater.
-  out.push(...chips(shell ? 8 : ap ? 3 : 6, cx, ground + 0.2, cz, radius * (shell ? 1.3 : 1.0), t, shell ? DUST_DARK : 0x4a4038, seed + 3, radius * 0.9, lift * 1.3));
+  out.push(...chips(shell ? 6 : ap ? 3 : 4, cx, ground + 0.2, cz, radius * (shell ? 1.3 : 1.0), t, shell ? DUST_DARK : 0x4a4038, seed + 3, radius * 1.05, lift * 1.3));
   // 4. Smoke: solid grey puffs rising off the fireball, largest mid-life, shrinking away.
   if (t > 0.22) {
     const life = (t - 0.22) / 0.78;
     const scale = life < 0.45 ? 0.55 + life : 1 - (life - 0.45) * 1.7;
     if (scale > 0.03) {
-      for (let i = 0; i < (ap ? 3 : 5); i += 1) {
+      for (let i = 0; i < (ap ? 2 : 4); i += 1) {
         const a = seed * 0.9 + i * 1.26 + 0.4;
         const r = radius * 0.34 * (0.4 + life);
         const s = puff(R * (i % 2 ? 0.3 : 0.4) * scale, i % 2 ? SMOKE : SMOKE_LIGHT);
@@ -1377,7 +1378,7 @@ export function makeBlastAfterlife(effect: VisualEvent, u: number, ground: numbe
   const family = hint?.family;
   const shell = family === "mortar" || family === "artillery" || family === "siege" || family === "bomb";
   // The column: three blobs stacked, each born a beat after the last, drifting up and shrinking.
-  const stack = family === "tank" ? 2 : 3;
+  const stack = shell ? 3 : 2;
   for (let i = 0; i < stack; i += 1) {
     const born = i * 0.16;
     if (u < born) continue;
@@ -1461,7 +1462,7 @@ export function makeLightning(effect: VisualEvent, t: number, ground: number): T
   ring.position.set(cx, ground + 0.08, cz);
   ring.scale.setScalar(1.2 + t * 4.5);
   out.push(ring);
-  out.push(...chips(6, cx, ground + 0.1, cz, 1.6, t, 0x3a3128, seed, 1.1, 1.6));
+  out.push(...chips(4, cx, ground + 0.1, cz, 1.6, t, 0x3a3128, seed, 1.3, 1.6));
   for (const o of out) o.traverse((c) => { c.frustumCulled = false; });
   return out;
 }
