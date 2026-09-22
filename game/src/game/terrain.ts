@@ -76,6 +76,17 @@ export function setActiveTerrain(spec: TerrainSpec): void {
   activeBridges = (spec.bridges ?? []).map((r) => ({ ...r }));
 }
 
+/** A snapshot of the live terrain, so a caller that swaps it for one synchronous call can put it back. */
+export function activeTerrainSpec(): TerrainSpec {
+  return {
+    bounds: { ...ARENA_BOUNDS },
+    blocks: activeBlocks.map((b) => ({ ...b })),
+    maxHeight: activeMax,
+    water: activeWater.map((r) => ({ ...r })),
+    bridges: activeBridges.map((r) => ({ ...r })),
+  };
+}
+
 const inRect = (p: Vec2, r: TerrainRect): boolean => p.x >= r.minX && p.x <= r.maxX && p.z >= r.minZ && p.z <= r.maxZ;
 
 export function terrainWater(): readonly TerrainRect[] {

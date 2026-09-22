@@ -5662,3 +5662,340 @@ body { background: var(--paper-deep); }
 .choice-blurb { min-height: 1.3em; margin-top: 6px; font-size: 0.8rem; }
 .map-list { max-height: clamp(150px, calc(94vh - 440px), 420px); }
 .map-preview-svg { max-height: clamp(110px, 20vh, 240px); }
+
+/* ===========================================================================
+   READABILITY LAYER (2026-09-20)
+   ---------------------------------------------------------------------------
+   "Some of the words in the GUI can be hard to read." Measured, not guessed:
+   `auditUI()` now flags any visible text under 12px (13px for body copy) and
+   any text under 4.5:1 against the surface it actually sits on; the first run
+   found 1001 findings / 69 distinct offenders — every HUD chip, the roster
+   status, the Info buttons, the log line, the treasury label, panel titles,
+   tooltips and the Skirmish blurbs were all 9-12px. This layer is the fix:
+
+     * ROOT scales with the screen height (16px at 720p-1080p, up to 21px at
+       1440p+) so a 4K/1440p player is not reading 1080p-sized labels.
+     * ONE type scale (--fs-*) with floors: micro 12px (kickers/mono chips,
+       always with letter-spacing), small 13px (HUD labels), body 14px (card
+       copy), name 15px (order/action labels), title 17px.
+     * Every explicit sub-floor size in the older layers is overridden here by
+       class — the older rules are left in place (deleting 190 declarations
+       across nine layers is a bigger diff than a floor).
+     * Text that floats over the 3D board gets an inked PLATE, never bare ink
+       (the audit's `no-owned-surface` rule).
+     * Line-height tightened to 1.15-1.25 on labels so the bigger type does not
+       eat the 720p budget.
+   =========================================================================== */
+
+:root {
+  font-size: clamp(16px, 1.48vh, 21px);
+  line-height: 1.3;
+  --fs-micro: 0.75rem;   /* 12px */
+  --fs-small: 0.8125rem; /* 13px */
+  --fs-body: 0.875rem;   /* 14px */
+  --fs-name: 0.9375rem;  /* 15px */
+  --fs-title: 1.0625rem; /* 17px */
+  --text-muted: #c1ccd6; /* lifted: the old #b3bfca sat at 4.3:1 on the hover plate */
+}
+
+/* ---- HUD labels ≥ 13px. Chips keep their caps + tracking, at a size you can read. ---- */
+.panel-title { font-size: var(--fs-small); letter-spacing: 0.12em; line-height: 1.2; }
+.panel-title.small { font-size: var(--fs-micro); }
+.unit-status,
+.stance-chip,
+.supply-chip,
+.cp-badge,
+.turn-chip,
+.turn-chip em,
+.mode-chip,
+.phase-chip,
+.all-orders-chip,
+.money-bar__label,
+.money-bar__icon,
+.log.compact-log strong,
+.log-line,
+.log.compact-log,
+.log.compact-log.expanded,
+.log-lines span,
+.vitals-pct,
+.unit-line--sub,
+.queued-order,
+.target-chip .target-chip__detail,
+.target-chip.neutral .target-chip__name,
+.tech-sub,
+.tech-unlocks,
+.tl,
+.forecast-cell em,
+.compact-top .end-turn span,
+.compact-top .menu-btn span,
+.compact-top .menu-btn,
+.endscreen__kicker,
+.campaign-end__kicker,
+.faction-roster,
+.menu-label,
+.armory-category-title,
+.settings-row--head label,
+.map-size-badge,
+.new-badge,
+.medal,
+.status-pill,
+.team-badge,
+.role-badge,
+.detail-statline span,
+.detail-statline small,
+.base-summary,
+.tech-legend,
+.tech-more,
+.classified-name {
+  font-size: var(--fs-small);
+  line-height: 1.2;
+}
+.supply-chip, .map-size-badge, .vpart, .forecast-cell em, .tl, .tech-unlocks, .new-badge, .menu-label, .stance-chip, .phase-chip, .all-orders-chip {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+}
+.menu-label { letter-spacing: 0.18em; }
+.vpart { padding: 2px 7px; }
+.tool.action kbd,
+.part-choice kbd,
+.controls-row kbd,
+kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
+.log-toggle-icon { font-size: var(--fs-name); line-height: 1; }
+.mini-action { font-size: var(--fs-small); padding: 4px 9px; letter-spacing: 0.04em; }
+.unit-line .unit-name { font-size: var(--fs-name); }
+.target-chip .target-chip__name { font-size: var(--fs-body); }
+.hud-tooltip { font-size: var(--fs-body); line-height: 1.3; max-width: min(420px, calc(100vw - 24px)); }
+.toast { font-size: var(--fs-body); }
+.money-bar__value { font-size: 1.05rem; }
+.money-bar__icon { width: 22px; height: 22px; line-height: 20px; }
+
+/* ---- Card body copy ≥ 14px. ---- */
+.order-hint,
+.order-note,
+.choice-blurb,
+.settings-note,
+.menu-card span,
+.menu-mode span,
+.faction-card span,
+.map-list .menu-card span,
+.campaign-card span,
+.armory-card span,
+.tutorial-panel p,
+.target-summary span,
+.single-target-card span,
+.damage-card span,
+.turn-report,
+.turn-notes,
+.briefing-objective,
+.settings-row label,
+.controls-row span,
+.detail-statline strong,
+.base-summary strong {
+  font-size: var(--fs-body);
+  line-height: 1.3;
+}
+.menu-utility { font-size: var(--fs-body); padding: 7px 16px; }
+.menu-link { font-size: var(--fs-body); }
+.chip-row .menu-chip { font-size: var(--fs-name); }
+
+/* ---- Order / action labels ≥ 15px: the words you act on outrank the words you read. ---- */
+.tool.action strong,
+.part-choice strong,
+.btn.confirm,
+.btn.confirm strong,
+.target-summary strong,
+.single-target-card strong,
+.unit-card strong,
+.tech-node strong,
+[data-spawn] strong,
+[data-base-upgrade] strong,
+.base-tab,
+.order-head h2,
+.inspect-head h2 {
+  font-size: var(--fs-name);
+  line-height: 1.2;
+}
+.tool.action span,
+.part-choice span,
+.part-choice em,
+.confirm span,
+.btn.confirm span,
+.btn.confirm em,
+.btn.confirm small,
+[data-spawn] span,
+[data-spawn] em,
+[data-base-upgrade] span,
+[data-base-upgrade] em,
+.tech-node span,
+.tech-node em { font-size: var(--fs-small); line-height: 1.2; }
+.order-head h2, .inspect-head h2 { font-size: var(--fs-title); }
+.part-choice { grid-template-columns: minmax(0, 1fr) 84px; }
+
+/* ---- Contrast: colour-on-plate pairs the audit measured under 4.5:1. ---- */
+.map-size-badge.size-large { color: #ffa27a; background: var(--paper-lo); border-color: var(--ink); }
+.map-size-badge.size-small, .map-size-badge.size-medium { background: var(--paper-lo); border-color: var(--ink); }
+.faction-roster { color: var(--text-muted); opacity: 1; }
+.menu-mode span, .menu-card span { color: var(--text-muted); }
+.turn-chip em, .forecast-cell em, .endscreen__kicker, .money-bar__label { color: var(--text-muted); }
+.log-toggle-icon { color: var(--cream); }
+.compact-top .menu-btn span { color: var(--text-muted); }
+
+/* ---- Text over the board gets a plate. The tutorial link floated bare on the diorama. ---- */
+.menu-link {
+  border: var(--ink-w) solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--amber);
+  padding: 6px 16px;
+  box-shadow: var(--drop-sm);
+  text-decoration: none;
+}
+.menu-link:hover { background: var(--paper-hi); color: #ffd77a; }
+.placement-bar { border: var(--ink-w-panel) solid var(--ink); background: var(--paper); box-shadow: var(--drop); }
+.boss-bar__name { font-size: var(--fs-name); }
+
+/* ---- Room for the bigger type. The left rail (roster / treasury / log) and the roster's
+        action column were sized for 9px labels; "Info" and the log line ellipsised at 13px. ---- */
+:root { --rail-w: 252px; --rail-x: 16px; }
+.roster, .log.compact-log, .money-bar { width: var(--rail-w); }
+.commandbar, #ui:has(.unit-detail-panel) .commandbar, .unit-detail-panel { left: calc(var(--rail-x) + var(--rail-w) + 8px); }
+.commandbar { width: min(960px, calc(100vw - var(--rail-w) - 56px)); }
+.log.compact-log.expanded { left: calc(var(--rail-x) + var(--rail-w) + 8px); }
+.unit-actions { width: 62px; padding: 5px 6px 5px 0; }
+.mini-action { padding: 4px 6px; }
+.faction-card .faction-roster { font-size: var(--fs-micro); letter-spacing: 0.04em; }
+.unit-card { grid-template-columns: minmax(0, 1fr) 62px; }
+
+/* ---- Second sweep: the deck, tech tree, Info panel, Armory and Campaign screens joined the
+        audit and turned up 31 more offenders. ---- */
+.tech-node .tech-sub, .tech-node .tech-unlocks { font-size: var(--fs-small); }
+.tech-node .tech-unlocks { letter-spacing: 0.02em; }
+.tech-more { font-size: var(--fs-micro); color: var(--text-muted); }
+.tech-node.classified .classified-name,
+.btn.confirm.classified .classified-name { color: #d8b05a; letter-spacing: 0.16em; }
+.btn.confirm.classified span:last-child { color: var(--text-muted); font-size: var(--fs-small); }
+.close-btn strong, .icon-btn strong { font-size: var(--fs-small); }
+.detail-nameplate span, .detail-nameplate em { font-size: var(--fs-small); }
+.commander-profile__stats span, .campaign-card__branch, .campaign-card__no { font-size: var(--fs-micro); letter-spacing: 0.06em; }
+.commander-profile__stats strong { font-size: var(--fs-name); }
+
+/* ===========================================================================
+   SPACE LAYER (2026-09-20)
+   ---------------------------------------------------------------------------
+   "Display options with proper space if there's space." Every panel used to
+   be a fixed pixel width sized for 1280x720 — at 2560x1080 the command bar
+   was a 960px strip on the left, the Skirmish card a 900px island, and the
+   roster / Info panel the same 226/344px they are on a laptop. Panels now
+   GROW into free width with clamp(): the floor is the 720p figure that the
+   ui-audit already gates, the ceiling keeps line lengths readable.
+   `shots:gpu viewports` is the evidence at 1280 / 1600 / 1920 / 2560.
+   =========================================================================== */
+:root {
+  --rail-w: clamp(252px, 14.5vw, 340px);          /* roster / treasury / log */
+  --hud-side: clamp(284px, 16vw, 400px);          /* target drawer */
+  --bar-max: clamp(960px, 58vw, 1500px);          /* order bar / command deck */
+  --menu-w: clamp(900px, 62vw, 1360px);           /* full-screen menu cards */
+}
+.target-panel { width: var(--hud-side); }
+#ui:has(.target-panel) .commandbar { right: calc(var(--hud-side) + 32px); }
+.commandbar { width: min(calc(100vw - var(--rail-w) - 56px), var(--bar-max)); }
+.unit-detail-panel { width: clamp(344px, 22vw, 520px); max-height: min(60vh, calc(100vh - 30px)); }
+.log.compact-log.expanded { right: calc(var(--hud-side) + 32px); }
+.menu-content { max-width: var(--menu-w); width: min(94vw, var(--menu-w)); }
+.armory-screen, .campaign-screen, .briefing-screen { max-width: var(--menu-w); }
+.pause-card { max-width: min(680px, 92vw); }
+
+/* Wider bars get MORE columns, not wider cards: every card grid is auto-fit on a floor. */
+.part-options { grid-template-columns: repeat(auto-fit, minmax(clamp(132px, 9vw, 170px), 1fr)); }
+.action-grid { grid-template-columns: repeat(auto-fit, minmax(clamp(118px, 8vw, 160px), 1fr)); }
+/* The tech tree lays its doctrine branches side by side once there is room for two. */
+.tech-tree { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 10px 18px; align-items: start; }
+.tech-node .tech-unlocks { display: inline-block; }
+.base-tab-body { max-height: clamp(44vh, calc(100vh - 420px), 60vh); }
+
+/* Skirmish page: three columns once the card is wide enough (map list | preview | choices), so
+   the map blurbs stop clamping at two lines and the preview gets a real frame. */
+@media (min-width: 1600px) {
+  .start-layout { grid-template-columns: minmax(300px, 0.9fr) minmax(300px, 1.1fr); gap: 12px 30px; }
+  .map-list .menu-card span, .faction-card span { -webkit-line-clamp: 3; }
+  .faction-card span { -webkit-line-clamp: 2; }
+  .map-list { max-height: clamp(150px, calc(94vh - 440px), 560px); }
+  .map-preview-svg, .map-preview-canvas { max-height: clamp(160px, 30vh, 420px); }
+  .settings-row { padding: 14px 6px; }
+  .menu-screen > .menu-content:not(.main-menu__content) { padding: 30px 38px; }
+  .menu-actions { margin: 12px -38px 0; padding: 12px 38px 18px; }
+}
+/* Faction card: name + roster count share the first row when the CARD is wide enough (a
+   container query — the card is ~400px on a 1280 laptop and ~320px inside a 2560 layout's
+   narrower column, so the viewport is the wrong thing to ask). Narrow cards drop the count to
+   its own row instead of running "Vanguard" into "14 troops". */
+.faction-grid { container-type: inline-size; }
+.faction-card { grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; }
+.faction-card strong { white-space: nowrap; overflow: hidden; text-overflow: clip; }
+.faction-card .faction-roster { text-align: right; }
+@container (max-width: 560px) {
+  .faction-card { grid-template-columns: minmax(0, 1fr); }
+  .faction-card .faction-roster { grid-column: 1; grid-row: 3; text-align: left; margin-top: 2px; }
+  .faction-card span { grid-row: 2; }
+}
+/* 720p budget with the bigger type: the Skirmish page must still put Map, Faction, Mode,
+   Difficulty and Deploy on one screen (smoke:ui-audit asserts the card body does not scroll). */
+@media (max-height: 800px) {
+  .start-layout .menu-section { margin: 0 0 6px; }
+  .start-layout .menu-label { margin-bottom: 4px; }
+  .faction-card { padding: 5px 12px; }
+  .faction-grid { gap: 5px; }
+  .chip-row .menu-chip { padding: 4px 10px; }
+  .choice-blurb { min-height: 0; margin-top: 4px; }
+  .menu-head { padding-bottom: 6px; margin-bottom: 8px; }
+  .menu-screen > .menu-content:not(.main-menu__content) { padding-top: 18px; }
+  .map-list { max-height: clamp(140px, calc(94vh - 430px), 420px); }
+  .map-preview-svg, .map-preview-canvas { max-height: clamp(110px, 21vh, 240px); }
+}
+.action-grid .action > strong { font-size: var(--fs-name); }
+.action-grid .action > span { font-size: var(--fs-small); }
+
+/* ---- ILLUSTRATED MAP PREVIEW (2026-09-20): an isometric canvas plate with the name / size /
+        feel caption under it. Same ink + hard drop as every other toon plate. ---- */
+.map-preview--illustrated {
+  display: grid;
+  gap: 6px;
+  padding: 6px 6px 8px;
+  background: var(--paper-lo);
+  border: var(--ink-w) solid var(--ink);
+  border-radius: var(--toon-r);
+  box-shadow: var(--drop);
+  overflow: hidden;
+}
+.map-preview-canvas {
+  display: block;
+  width: 100%;
+  margin: 0 auto;
+  border: var(--ink-w) solid var(--ink);
+  border-radius: var(--toon-r-sm);
+  background: var(--paper-deep);
+  max-height: clamp(130px, 26vh, 360px);
+}
+.map-preview-caption {
+  display: grid;
+  gap: 2px;
+  padding: 0 4px;
+  text-align: left;
+}
+.map-preview-caption strong { font-family: var(--font-display); font-size: var(--fs-name); color: var(--cream); letter-spacing: 0.02em; }
+.map-preview-caption span { font-size: var(--fs-small); color: var(--text-muted); line-height: 1.3; }
+.briefing-map.map-preview--illustrated { padding: 6px; }
+@media (max-height: 800px) {
+  .map-preview-canvas { max-height: clamp(110px, 22vh, 240px); }
+  .map-preview-caption span { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+}
+
+/* The Skirmish left column is a grid: the map list takes whatever height the preview leaves
+   (the list used to be capped by a vh formula that knew nothing about the preview, so at
+   1600x900 the caption scrolled off the card's foot). */
+.menu-screen > .menu-content:not(.main-menu__content):has(> .menu-actions) > .start-layout { align-items: stretch; }
+.start-left { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: clamp(380px, 60vh, 760px); }
+.start-left > .menu-section:first-child { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; margin-bottom: 10px; }
+.map-list, .start-layout .map-list { max-height: none; min-height: 0; height: 100%; }
+.start-left > .menu-section:last-child { margin: 0; }
+@media (max-height: 800px) { .start-left { min-height: 0; } .start-layout .map-list { max-height: none; } }

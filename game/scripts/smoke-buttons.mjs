@@ -54,11 +54,24 @@ try {
 
   // 4) Deploy screen — every map preview renders, mode + difficulty selectable.
   await page.click('[data-menu="play"]');
-  await page.waitForSelector(".map-preview-svg");
+  await page.waitForSelector(".map-preview-canvas");
   const mapIds = await page.$$eval("[data-map]", (els) => els.map((e) => e.dataset.map));
   for (const id of mapIds) {
     await page.click(`[data-map="${id}"]`);
-    await page.waitForSelector(".map-preview-svg");
+    // The illustrated preview must actually PAINT the picked map: a non-trivial spread of colours
+    // on the canvas (a blank or single-tone canvas fails) and a caption naming the map.
+    const painted = await page.evaluate((mapId) => {
+      const c = document.querySelector(".map-preview-canvas");
+      const ctx = c && c.getContext("2d");
+      if (!ctx) return { ok: false, why: "no canvas" };
+      const { data } = ctx.getImageData(0, 0, c.width, c.height);
+      const tones = new Set();
+      for (let i = 0; i < data.length; i += 4 * 97) tones.add((data[i] >> 4) * 4096 + (data[i + 1] >> 4) * 256 + (data[i + 2] >> 4));
+      const name = document.querySelector(".map-preview-caption strong")?.textContent || "";
+      const card = document.querySelector(`[data-map="${mapId}"] strong`)?.textContent || "";
+      return { ok: tones.size >= 12 && name.startsWith(card.replace(/(small|medium|large)$/i, "").trim()), tones: tones.size, name, card };
+    }, id);
+    if (!painted.ok) throw new Error(`map preview for ${id} not painted/captioned: ${JSON.stringify(painted)}`);
   }
   await page.click('[data-mode="hill"]');
   await page.click('[data-diff="normal"]');

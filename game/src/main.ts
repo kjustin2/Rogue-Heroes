@@ -31,7 +31,6 @@ import {
   type TroopKind,
   type DefenseKind,
   type Difficulty,
-  type MapDef,
   type SupportPowerKind,
   FACTIONS,
   type FactionId,
@@ -52,6 +51,7 @@ import { applyScenario, scenarioInfo } from "./game/scenarios";
 import { ARENA_BOUNDS } from "./game/terrain";
 import { PerfMonitor, type PerfSnapshot, type RenderInfo } from "./render/perfMonitor";
 import { auditUI, type UiFinding } from "./debug/uiAudit";
+import { mountMapPreview } from "./ui/mapPreview";
 import { DebugOverlay } from "./debug/debugOverlay";
 import {
   runDiagnostics,
@@ -860,31 +860,6 @@ function mountScreen(html: string, className: string): HTMLDivElement {
   return screen;
 }
 
-// A scaled top-down SVG preview of a battlefield: terrain blocks, bases, the central zone.
-function mapPreviewSvg(map: MapDef): string {
-  const b = map.terrain.bounds;
-  const w = b.maxX - b.minX;
-  const d = b.maxZ - b.minZ;
-  const W = 360;
-  const H = Math.round((W * d) / w);
-  const sx = (x: number): number => ((x - b.minX) / w) * W;
-  const sy = (z: number): number => ((z - b.minZ) / d) * H;
-  const hex = (n: number): string => `#${n.toString(16).padStart(6, "0")}`;
-  const blocks = (map.terrain.blocks ?? [])
-    .map((blk) => {
-      const op = Math.min(0.85, 0.28 + blk.height * 0.32);
-      return `<rect x="${sx(blk.minX).toFixed(1)}" y="${sy(blk.minZ).toFixed(1)}" width="${(sx(blk.maxX) - sx(blk.minX)).toFixed(1)}" height="${(sy(blk.maxZ) - sy(blk.minZ)).toFixed(1)}" rx="3" fill="${hex(map.theme.groundAccent)}" opacity="${op.toFixed(2)}" stroke="rgba(0,0,0,0.35)" stroke-width="1"/>`;
-    })
-    .join("");
-  const hill = `<circle cx="${sx(map.hill.x).toFixed(1)}" cy="${sy(map.hill.z).toFixed(1)}" r="${((map.hillRadius / w) * W).toFixed(1)}" fill="none" stroke="#ffe08a" stroke-width="2" stroke-dasharray="5 4" opacity="0.8"/>`;
-  const player = `<g><circle cx="${sx(map.playerBase.x).toFixed(1)}" cy="${sy(map.playerBase.z).toFixed(1)}" r="9" fill="#6fd7ff"/><text x="${sx(map.playerBase.x).toFixed(1)}" y="${(sy(map.playerBase.z) + 4).toFixed(1)}" text-anchor="middle" font-size="10" fill="#03121a" font-weight="700">P</text></g>`;
-  const enemy = `<g><circle cx="${sx(map.enemyBase.x).toFixed(1)}" cy="${sy(map.enemyBase.z).toFixed(1)}" r="9" fill="#ff7c5e"/><text x="${sx(map.enemyBase.x).toFixed(1)}" y="${(sy(map.enemyBase.z) + 4).toFixed(1)}" text-anchor="middle" font-size="10" fill="#1a0603" font-weight="700">E</text></g>`;
-  return `<svg class="map-preview-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapeAttr(map.name)} preview">
-    <rect x="0" y="0" width="${W}" height="${H}" rx="8" fill="${hex(map.theme.ground)}"/>
-    ${blocks}${hill}${player}${enemy}
-  </svg>`;
-}
-
 function pointsBadge(): string {
   return `<div class="menu-points" data-tip="Earned by playing battles. Spend them in the Armory on cosmetics."><span>★</span> ${progression.points} pts</div>`;
 }
@@ -982,7 +957,6 @@ function showStartScreen(): void {
             <div class="map-list">${mapList}</div>
           </div>
           <div class="menu-section">
-            <div class="menu-label">Preview</div>
             <div class="map-preview" data-preview></div>
           </div>
         </div>
@@ -1009,11 +983,14 @@ function showStartScreen(): void {
     "menu-screen title-screen",
   );
 
+  // The illustrated isometric preview (canvas, deterministic): the real terrain, water, bridges,
+  // scatter and bases in the theme palette, with the picked mode's markers. Redrawn on every map
+  // or mode pick; hover tilts it.
   const previewHost = screen.querySelector<HTMLElement>("[data-preview]");
+  const preview = previewHost ? mountMapPreview(previewHost, mapDef(selectedMap), selectedMode) : null;
   const renderPreview = (): void => {
-    if (previewHost) previewHost.innerHTML = mapPreviewSvg(mapDef(selectedMap));
+    preview?.update(mapDef(selectedMap), selectedMode);
   };
-  renderPreview();
 
   screen.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
@@ -1044,6 +1021,7 @@ function showStartScreen(): void {
       for (const el of screen.querySelectorAll("[data-mode]")) el.classList.toggle("on", el === modeBtn);
       const blurb = screen.querySelector("[data-mode-blurb]");
       if (blurb) blurb.textContent = modeDef(selectedMode).blurb;
+      renderPreview();
       return;
     }
     const diffBtn = target.closest<HTMLElement>("[data-diff]");
@@ -1393,13 +1371,15 @@ function showBriefing(mission: CampaignMission): void {
           ${paras}
           <div class="briefing-objective"><span>Objective</span> ${escapeHtml(mission.objective)}</div>
         </div>
-        <div class="briefing-map">${mapPreviewSvg(map)}</div>
+        <div class="briefing-map map-preview" data-briefing-preview></div>
       </div>
       <div class="menu-actions"><button class="title-start" data-deploy type="button">Deploy to Battle</button></div>
     </div>
   `,
     "menu-screen",
   );
+  const briefingHost = screen.querySelector<HTMLElement>("[data-briefing-preview]");
+  if (briefingHost) mountMapPreview(briefingHost, map, mission.mode, { caption: false });
   screen.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
     if (target.closest("[data-back]")) {

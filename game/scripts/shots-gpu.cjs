@@ -20,6 +20,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const scenarios = process.argv.slice(2).filter((a) => !a.startsWith("-"));
 if (!scenarios.length) scenarios.push("menu", "firefight", "high-ground", "siege", "base-defense", "lineup");
 // UI cases (all real-GPU, full FX): menu deploy settings armory campaign run tutorial pause victory defeat hover
+// viewports = battle + deck + tech + mapselect + settings at 1280x720 / 1600x900 / 1920x1080 / 2560x1080
 
 app.whenReady().then(async () => {
   const { server, port } = await serve();
@@ -45,8 +46,34 @@ app.whenReady().then(async () => {
           win.setSize(w, h); await sleep(500);
           await toTitle(); await clickMenu('[data-menu="play"]');
           await shot(`mapselect-${w}x${h}`);
-          await js(`(() => { const c = document.querySelectorAll("[data-map]")[2]; if (c) c.click(); })()`); await sleep(500);
+          await js(`(() => { const c = document.querySelectorAll("[data-map]")[${Number(process.env.MAP_PICK || 2)}]; if (c) c.click(); })()`); await sleep(500);
           await shot(`mapselect-${w}x${h}-picked`);
+        }
+        win.setSize(1600, 900); await sleep(500);
+        continue;
+      }
+      if (s === "viewports") {
+        // Does the UI GROW into free space? Battle HUD, base command deck and the Skirmish page
+        // at the four widths the owner plays at; the HUD must not be a strip in the middle at 2560.
+        for (const [w, h] of [[1280, 720], [1600, 900], [1920, 1080], [2560, 1080]]) {
+          win.setSize(w, h); await sleep(600);
+          await js(`window.__rht.scenario("firefight"); window.__rht.deselect();`);
+          await sleep(1500);
+          await js(`(() => { const sim = window.__rht.sim; const u = sim.entities.find((e) => e.team === "player" && e.kind !== "base"); if (u) { sim.select(u.id); window.__rht.setIntent("shoot"); } })()`);
+          await sleep(700);
+          await shot(`vp-${w}x${h}-battle`);
+          await js(`(() => { const sim = window.__rht.sim; sim.economy.set("player", 9000); const base = sim.entities.find((e) => e.team === "player" && e.kind === "base"); if (base) sim.select(base.id); })()`);
+          await sleep(500);
+          await js(`(() => { const b = document.querySelector('[data-base-tab="deploy"]'); if (b) b.click(); })()`);
+          await sleep(500);
+          await shot(`vp-${w}x${h}-deck`);
+          await js(`(() => { const b = document.querySelector('[data-base-tab="tech"]'); if (b) b.click(); })()`);
+          await sleep(500);
+          await shot(`vp-${w}x${h}-tech`);
+          await toTitle(); await clickMenu('[data-menu="play"]');
+          await shot(`vp-${w}x${h}-mapselect`);
+          await toTitle(); await clickMenu('[data-menu="settings"]');
+          await shot(`vp-${w}x${h}-settings`);
         }
         win.setSize(1600, 900); await sleep(500);
         continue;
@@ -54,6 +81,7 @@ app.whenReady().then(async () => {
       if (s === "deploy") { await toTitle(); await clickMenu('[data-menu="play"]'); await shot("deploy"); continue; }
       if (s === "settings") { await toTitle(); await clickMenu('[data-menu="settings"]'); await shot("settings"); continue; }
       if (s === "armory") { await toTitle(); await clickMenu('[data-menu="armory"]'); await shot("armory"); continue; }
+      if (s === "briefing") { await toTitle(); await clickMenu('[data-menu="campaign"]'); await clickMenu('[data-mission]'); await shot("briefing"); continue; }
       if (s === "campaign") { await toTitle(); await clickMenu('[data-menu="campaign"]'); await shot("campaign"); continue; }
       if (s === "run") { await toTitle(); await clickMenu('[data-menu="run"]'); await shot("run"); continue; }
       if (s === "pause") {

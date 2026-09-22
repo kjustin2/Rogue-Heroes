@@ -14,7 +14,7 @@
 
 export interface UiFinding {
   /** Which check failed. */
-  rule: "truncated" | "overlap" | "offscreen" | "clipped" | "occluded";
+  rule: "truncated" | "overlap" | "offscreen" | "clipped" | "occluded" | "small-text" | "contrast" | "no-owned-surface";
   /** A CSS-ish path to the offending element, for the failure message. */
   sel: string;
   detail: string;
@@ -52,8 +52,14 @@ function textLeaves(root: Element): Element[] {
     if (el.closest("[inert]")) continue; // the HUD under a modal: covered on purpose, unreachable
     if (!visible(el)) continue;
     // A leaf for this purpose is an element whose own text is not further wrapped.
-    const hasElementChild = Array.from(el.children).some((c) => visible(c));
-    if (hasElementChild) continue;
+    // "Wrapped" means a laid-out child, whatever its opacity: a toast mid fade-in must not turn
+    // its container into a leaf that then reads as bare text over the board.
+    const hasElementChild = Array.from(el.children).some((c) => getComputedStyle(c).display !== "none");
+    // An element that paints its OWN text beside a child (a faction name next to its colour pip)
+    // is a leaf too — the first sheet missed "Vanguard" running into "14 troops" because the
+    // <strong> holding the name had a child and so was never compared with its sibling.
+    const ownText = Array.from(el.childNodes).some((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim());
+    if (hasElementChild && !ownText) continue;
     if (!(el.textContent ?? "").trim()) continue;
     out.push(el);
   }
@@ -96,6 +102,105 @@ function scrollableAncestor(el: Element, root: Element): Element | null {
     parent = parent.parentElement;
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+//  Readability: size + contrast. Both are measurements, not taste.
+//  * small-text: computed font-size under 12px (13px for body copy — a <p> or a run of prose).
+//  * contrast: the text colour against the surface it actually sits on, found by walking up
+//    to the nearest ancestor whose composited background is opaque enough to own the pixels
+//    (alpha-blending translucent layers on the way), WCAG 4.5:1 (3:1 for large text).
+//  * no-owned-surface: text with NO opaque ancestor is text over the live 3D canvas, whose
+//    lighting is uncontrolled — it must carry a halo (text-shadow / text-stroke) or a plate.
+// ---------------------------------------------------------------------------
+
+export const MIN_TEXT_PX = 12;
+export const MIN_BODY_PX = 13;
+export const MIN_CONTRAST = 4.5;
+export const MIN_CONTRAST_LARGE = 3;
+/** An ancestor whose composited background alpha reaches this owns the pixels behind the text. */
+const OPAQUE_ALPHA = 0.85;
+
+type Rgba = [number, number, number, number];
+
+function parseColor(s: string): Rgba | null {
+  const m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+%?))?\s*\)/.exec(s);
+  if (!m) return null;
+  let a = m[4] === undefined ? 1 : parseFloat(m[4]);
+  if (m[4]?.endsWith("%")) a /= 100;
+  return [Number(m[1]), Number(m[2]), Number(m[3]), a];
+}
+
+/** Composite `top` over `under` (both premultiplied by their own alpha on the way). */
+function over(top: Rgba, under: Rgba): Rgba {
+  const a = top[3] + under[3] * (1 - top[3]);
+  if (a <= 0) return [0, 0, 0, 0];
+  const mix = (i: number) => (top[i] * top[3] + under[i] * under[3] * (1 - top[3])) / a;
+  return [mix(0), mix(1), mix(2), a];
+}
+
+function luminance([r, g, b]: Rgba): number {
+  const lin = (c: number) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+export function contrastRatio(fg: Rgba, bg: Rgba): number {
+  const l1 = luminance(fg);
+  const l2 = luminance(bg);
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+}
+
+/** Does this text paint its own halo (shadow or stroke) so it survives any backdrop? */
+function hasHalo(style: CSSStyleDeclaration): boolean {
+  if (style.textShadow && style.textShadow !== "none") return true;
+  const stroke = parseFloat(style.webkitTextStrokeWidth || "0");
+  return stroke > 0;
+}
+
+/**
+ * The surface behind an element: its ancestors' background colours composited bottom-up until
+ * the stack is opaque enough to own the pixels, plus the product of opacities on the way (an
+ * element inside a 0.6-opacity disabled card is 0.6 as visible as its colour says).
+ * Returns null when nothing opaque is found before the root — that is text over the canvas.
+ */
+function surfaceBehind(el: Element): { bg: Rgba; opacity: number } | null {
+  const layers: Rgba[] = [];
+  let opacity = 1;
+  let node: Element | null = el;
+  // The walk stops short of <body>: the page background is under the canvas, not over it.
+  while (node && node !== document.body && node !== document.documentElement) {
+    const style = getComputedStyle(node);
+    // The element's OWN fill counts (a cyan badge is the surface behind its ink). A
+    // background-image (the dot-screen tone on overlays, a striped classified node) is drawn
+    // on top of the colour; it can only darken a dark tone, so the colour stands in for it.
+    const c = parseColor(style.backgroundColor);
+    if (c && c[3] > 0) layers.push(c);
+    let acc: Rgba = [0, 0, 0, 0];
+    for (let i = layers.length - 1; i >= 0; i -= 1) acc = over(layers[i], acc);
+    if (acc[3] >= OPAQUE_ALPHA) return { bg: acc, opacity };
+    const op = Number(style.opacity);
+    if (Number.isFinite(op)) opacity *= op;
+    node = node.parentElement;
+  }
+  // The page's own background closes the stack only when no live canvas is painted under the
+  // DOM — with the 3D view up, whatever is behind the text is the scene, not the page colour.
+  const canvas = document.querySelector("canvas");
+  if (canvas && visible(canvas)) return null;
+  const pageBg = parseColor(getComputedStyle(document.body).backgroundColor) ?? parseColor(getComputedStyle(document.documentElement).backgroundColor);
+  if (pageBg && pageBg[3] >= OPAQUE_ALPHA) {
+    let acc: Rgba = pageBg;
+    for (let i = layers.length - 1; i >= 0; i -= 1) acc = over(layers[i], acc);
+    return { bg: acc, opacity };
+  }
+  return null;
+}
+
+function isBodyCopy(el: Element): boolean {
+  if (el.tagName === "P") return true;
+  return (el.textContent ?? "").trim().length >= 60;
 }
 
 function intersects(a: ReturnType<typeof boxOf>, b: ReturnType<typeof boxOf>, inset = 1): number {
@@ -178,6 +283,39 @@ export function auditUI(root: Element = document.body): UiFinding[] {
         detail: `overlaps ${describe(b.el)} by ${Math.round(area)}px²`,
         rect: a.box,
       });
+    }
+  }
+
+  // --- small-text / contrast / no-owned-surface: can the words be read? ---
+  for (const el of leaves) {
+    if (el.closest("[data-audit-ignore-text]")) continue;
+    const style = getComputedStyle(el);
+    const px = parseFloat(style.fontSize);
+    const body = isBodyCopy(el);
+    const floor = body ? MIN_BODY_PX : MIN_TEXT_PX;
+    const sample = `"${(el.textContent ?? "").trim().slice(0, 32)}"`;
+    if (px < floor - 0.05) {
+      findings.push({ rule: "small-text", sel: describe(el), detail: `${px.toFixed(1)}px ${body ? "body copy" : "text"} (floor ${floor}px): ${sample}`, rect: boxOf(el) });
+    }
+    const fill = parseColor(style.webkitTextFillColor || style.color) ?? parseColor(style.color);
+    if (!fill) continue;
+    const surface = surfaceBehind(el);
+    if (!surface) {
+      if (!hasHalo(style)) {
+        findings.push({ rule: "no-owned-surface", sel: describe(el), detail: `text over the canvas with no plate, shadow or stroke: ${sample}`, rect: boxOf(el) });
+      }
+      continue;
+    }
+    // Opacity on the way up (a 0.6 disabled card) fades the ink toward the surface.
+    const alpha = Math.min(1, fill[3] * surface.opacity);
+    const effective = over([fill[0], fill[1], fill[2], alpha], surface.bg);
+    const weight = parseInt(style.fontWeight, 10) || 400;
+    const large = px >= 24 || (px >= 18.66 && weight >= 700);
+    const need = large ? MIN_CONTRAST_LARGE : MIN_CONTRAST;
+    const ratio = contrastRatio(effective, surface.bg);
+    if (ratio < need - 0.01) {
+      const hex = (c: Rgba) => "#" + [c[0], c[1], c[2]].map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
+      findings.push({ rule: "contrast", sel: describe(el), detail: `${ratio.toFixed(2)}:1 (${hex(effective)} on ${hex(surface.bg)}, need ${need}:1 at ${px.toFixed(0)}px): ${sample}`, rect: boxOf(el) });
     }
   }
 
