@@ -376,6 +376,57 @@ app.whenReady().then(async () => {
         .toFile(path.join(outDir, "canopy-normalmap.png"));
       console.log("  canopy-normalmap.png (left = shipped, right = normalMap nulled)");
     }
+
+    if (probe === "gait") {
+      // LEG SEAMS, deterministically. __rht.silhouette(true) draws every unit as flat BLACK on
+      // WHITE and hides everything that is not a unit, so a gap between thigh / shin / boot is a
+      // WHITE island fully enclosed by black. Any white connected component that does not touch
+      // the image border is a HOLE in a trooper -- a seam, measured, not judged by eye.
+      await js("window.__rht.startBattle(\"dustbowl\", \"destroy\", \"normal\"); window.__rht.deselect();");
+      await sleep(3000);
+      const u = JSON.parse(await js("(() => { const s = window.__rht.sim; s.economy.set('player', 9000);" +
+        " const a = s.debugSpawn('soldier', 'player', { x: -6, z: 0 }); a.yaw = 0.4;" +
+        " return JSON.stringify({ id: a.id, x: a.position.x, z: a.position.z }); })()"));
+      await sleep(1200);
+      await js("window.__rht.silhouette(true)"); await sleep(600);
+      await js("window.__rht.setView({ x: " + (u.x + 2) + ", z: " + (u.z + 0.6) + ", zoom: 0.18, pitch: 0.28, yaw: 0.9 })");
+      await sleep(900);
+      await js("(() => { const s = window.__rht.sim; s.select('" + u.id + "'); s.setIntent('move'); s.queueMove({ x: " + (u.x + 7) + ", z: " + u.z + " }); window.__rht.deselect(); window.__rht.setResolveScale(0.25); window.__rht.endTurn(); })()");
+      await sleep(600);
+      const frames = [];
+      for (let i = 0; i < 16; i += 1) { await js("window.__rht.setView({ x: " + (u.x + 2) + ", z: " + (u.z + 0.6) + ", zoom: 0.18, pitch: 0.28, yaw: 0.9 })"); frames.push(await cap()); await sleep(110); }
+      await js("window.__rht.setResolveScale(1); window.__rht.silhouette(false);");
+      let worst = { holes: 0, area: 0, idx: 0 };
+      for (let i = 0; i < frames.length; i += 1) {
+        const { data, w, h, ch } = await raw(frames[i]);
+        // white mask = background; flood from the border; anything white left over is a HOLE.
+        const white = new Uint8Array(w * h);
+        for (let k = 0, p2 = 0; k < w * h; k += 1, p2 += ch) white[k] = (data[p2] > 200 && data[p2 + 1] > 200 && data[p2 + 2] > 200) ? 1 : 0;
+        const seen = new Uint8Array(w * h); const st = [];
+        for (let x = 0; x < w; x += 1) { for (const y of [0, h - 1]) { const k = y * w + x; if (white[k] && !seen[k]) { seen[k] = 1; st.push(k); } } }
+        for (let y = 0; y < h; y += 1) { for (const x of [0, w - 1]) { const k = y * w + x; if (white[k] && !seen[k]) { seen[k] = 1; st.push(k); } } }
+        while (st.length) { const j = st.pop(); const x = j % w, y = (j / w) | 0;
+          for (const k of [x > 0 ? j - 1 : -1, x < w - 1 ? j + 1 : -1, y > 0 ? j - w : -1, y < h - 1 ? j + w : -1]) if (k >= 0 && white[k] && !seen[k]) { seen[k] = 1; st.push(k); } }
+        let holes = 0, area = 0;
+        const hseen = new Uint8Array(w * h);
+        for (let k = 0; k < w * h; k += 1) {
+          if (!white[k] || seen[k] || hseen[k]) continue;
+          let n = 0; st.length = 0; st.push(k); hseen[k] = 1;
+          while (st.length) { const j = st.pop(); n += 1; const x = j % w, y = (j / w) | 0;
+            for (const k2 of [x > 0 ? j - 1 : -1, x < w - 1 ? j + 1 : -1, y > 0 ? j - w : -1, y < h - 1 ? j + w : -1]) if (k2 >= 0 && white[k2] && !seen[k2] && !hseen[k2]) { hseen[k2] = 1; st.push(k2); } }
+          if (n >= 6) { holes += 1; area += n; }
+        }
+        console.log("  frame " + i + ": enclosed white holes " + holes + ", total hole area " + area + " px");
+        if (area > worst.area) worst = { holes, area, idx: i };
+      }
+      console.log("worst frame " + worst.idx + ": " + worst.holes + " holes / " + worst.area + " px");
+      fs.writeFileSync(path.join(outDir, "gait-worst.png"), frames[worst.idx]);
+      const tiles = []; for (const f of frames.slice(0, 8)) tiles.push(await sharp(f).extract({ left: 560, top: 180, width: 480, height: 560 }).resize(480, 560).png().toBuffer());
+      await sharp({ create: { width: 480 * 4, height: 560 * 2, channels: 3, background: "#888" } })
+        .composite(tiles.map((input, i) => ({ input, left: (i % 4) * 480, top: Math.floor(i / 4) * 560 }))).png()
+        .toFile(path.join(outDir, "gait-silhouette-strip.png"));
+      console.log("  gait-silhouette-strip.png, gait-worst.png");
+    }
   } catch (e) { console.error("probe failed:", e); process.exitCode = 1; }
   finally { server.close(); app.quit(); }
 });
