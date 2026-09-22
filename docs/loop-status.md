@@ -7,14 +7,14 @@ every row names its proof, nothing is DONE from code alone.
 |---|---|---|---|---|
 | 1a | Infantry walk looks weird/unnatural | motion agent | RUNNING | `shots:step` + `shots:filmstrip -- walk` read by eye; smoke:animation gate |
 | 1b | Gun turret does not aim where it fires | main | DONE | `filmstrip-turret.png` (no idle hunt in resolve, 4 rad/s traverse) |
-| 1c | GUI text hard to read — larger/easier where applicable | gui agent | RUNNING | contrast + min font-size audit in auditUI; gpu shots of HUD/menus |
+| 1c | GUI text hard to read — larger/easier where applicable | gui agent | DONE (merged) | auditUI small-text + contrast rules (fault-injected), type floors; `gpu-firefight.png` |
 | 2 | Deploy from base: pick WHERE in the circle the unit lands | deploy agent | DONE (merged) | `gpu-deployflow-ring/-placed.png`, deploy.test.ts (6), smokes deploy via a point |
-| 4 | Skirmish map preview could look way cooler | gui agent | RUNNING | `gpu-mapselect-*.png` |
+| 4 | Skirmish map preview could look way cooler | gui agent | DONE (merged) | `gpu-mapselect-1600x900-picked.png` — isometric diorama (mapPreview.ts) |
 | 5 | Infantry still basic — more exciting and unique per unit | infantry agent | DONE (merged) | `gpu-lineup.png`, `shots/silhouette/*`, 34 new kit parts, per-kind body/limb/extras |
 | 6 | Replace every Meshy hull with Blender toon models (consistent look) | vehicles agent | DONE (merged) | `gpu-siege.png`, `gpu-direction.png`; vehicles-kit.glb 25 parts, Meshy pipeline deleted, perf 483k→232k tris |
 | 7 | Projectiles pass 2 — more fun to watch, on-theme | projectile agent | RUNNING | filmstrips per family + `gpu-volley` |
 | 8 | Bullets going through items | main | DONE | shotBlocking.test.ts (wall slab), `filmstrip-through-*.png` ×6; bystander hulls block over footprint |
-| 9 | GUIs use available space — more room to read | gui agent | RUNNING | gpu shots at 1280×720 / 1600×900 / 2560×1080 |
+| 9 | GUIs use available space — more room to read | gui agent | DONE (merged) | panels grow with width; `gpu-viewports-*.png` at 4 widths; one-screen gate |
 | 10 | Mechanics/bug/optimisation audit + dead-code refactor | audit agent | TODO (wave 2) | test:full green, perf OK, soak:gpu clean, dead-code list in the commit |
 | 3 | (done) selection ring is a toon band; plates keep clear of base pads | main | DONE | `shots/basering-sheet.png` (all 6 maps) |
 | 12 | Intro cinematic flashes / shakes and wobbles at start — should be the main image then slow movement | main | DONE | `gpu-boot-mission.png` strip: still → glide → home; camera log smooth at 30ms |
