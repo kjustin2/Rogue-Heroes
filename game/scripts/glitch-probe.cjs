@@ -197,6 +197,146 @@ app.whenReady().then(async () => {
         await sleep(200);
       }
     }
+
+    if (probe === "whitebars") {
+      // Long thin NEAR-WHITE meshes float through logs and tree trunks on verdant. Enumerate every
+      // visible mesh whose material colour is near-white and report its world size + owner.
+      const map = arg || "verdant";
+      await js("window.__rht.startBattle(" + JSON.stringify(map) + ", \"destroy\", \"normal\"); window.__rht.deselect();");
+      await sleep(3500);
+      await js("window.__rht.setView({ x: 0, z: 0, zoom: 0.8, pitch: 0.6, yaw: 0.2 })"); await sleep(1200);
+      const out = await js("(() => { const acc = {}; const rows = []; window.__rht.sceneObject().traverse((o) => {" +
+        " if (!o.isMesh || !o.visible || !o.material || !o.material.color) return;" +
+        " const c = o.material.color; const lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;" +
+        " if (lum < 0.72) return;" +
+        " o.geometry.computeBoundingBox(); const bb = o.geometry.boundingBox; const sz = bb.max.clone().sub(bb.min).multiply(o.scale);" +
+        " const wp = o.getWorldPosition(o.position.clone());" +
+        " const key = (o.parent && (o.parent.name || o.parent.userData.entityId || o.parent.type)) + '|' + o.geometry.type + '|' + c.getHexString() + '|' + o.material.type + '|' + (o.userData.part || '');" +
+        " acc[key] = (acc[key] || 0) + 1;" +
+        " if (rows.length < 14) rows.push({ key, size: [+sz.x.toFixed(2), +sz.y.toFixed(2), +sz.z.toFixed(2)], at: [+wp.x.toFixed(1), +wp.y.toFixed(2), +wp.z.toFixed(1)], inst: o.isInstancedMesh ? o.count : 1, ud: JSON.stringify(o.userData).slice(0, 120) });" +
+        " }); return JSON.stringify({ acc, rows }); })()");
+      const parsed = JSON.parse(out);
+      console.log("near-white mesh groups (count by parent|geo|color|mat|part):");
+      for (const [k, v] of Object.entries(parsed.acc).sort((a, b) => b[1] - a[1])) console.log("  " + v + " x " + k);
+      console.log("samples:"); for (const r of parsed.rows) console.log("  " + JSON.stringify(r));
+    }
+
+    if (probe === "decor") {
+      // interactionGlow() hangs a 4-bar unlit bracket on every cover prop. Count them, and capture
+      // the bisection pair (all userData.decor meshes hidden) on every map.
+      for (const map of (arg ? [arg] : ["dustbowl", "ironworks", "verdant", "causeway", "karak", "crossfire"])) {
+        await js("window.__rht.startBattle(" + JSON.stringify(map) + ", \"destroy\", \"normal\"); window.__rht.deselect();");
+        await sleep(3500);
+        await js("window.__rht.setView({ x: 0, z: 0, zoom: 0.8, pitch: 0.6, yaw: 0.2 })"); await sleep(1200);
+        const stats = await js("(() => { let bars = 0, onScreen = 0, floating = 0; const cam = window.__rht.cameraObject();" +
+          " window.__rht.sceneObject().traverse((o) => { if (!o.isMesh || !o.userData || !o.userData.decor || o.geometry.type !== 'BoxGeometry') return; bars += 1;" +
+          " const wp = o.getWorldPosition(o.position.clone()); if (wp.y > 0.9) floating += 1;" +
+          " const pr = wp.clone().project(cam); if (Math.abs(pr.x) < 1 && Math.abs(pr.y) < 1 && pr.z < 1) onScreen += 1; });" +
+          " return JSON.stringify({ bars, brackets: bars / 4, onScreen, floatingAbove0m9: floating }); })()");
+        const a = await cap();
+        await js("window.__rht.sceneObject().traverse((o) => { if (o.isMesh && o.userData && o.userData.decor && o.geometry.type === 'BoxGeometry') o.visible = false; })");
+        await sleep(400);
+        const b = await cap();
+        const bl = blobs(await raw(a), await raw(b), 16);
+        console.log(map + " " + stats + " -> vanished blobs " + bl.length + ", changed px " + (+(bl.reduce((t, x) => t + x.n, 0) / 14400).toFixed(2)) + "%");
+        await sharp({ create: { width: 1600, height: 1808, channels: 3, background: "#101010" } })
+          .composite([{ input: a, left: 0, top: 0 }, { input: b, left: 0, top: 908 }]).png()
+          .toFile(path.join(outDir, "decor-" + map + ".png"));
+      }
+      console.log("  decor-<map>.png written (top = shipped, bottom = brackets hidden)");
+    }
+
+    if (probe === "shimmerbisect") {
+      // Which layer owns the frame-to-frame change in a STATIC command phase? Toggle one layer at
+      // a time and re-measure the median neighbouring-pair changed-pixel count over 8 frames.
+      const pairPct = async (frames) => {
+        const raws = []; for (const f of frames) raws.push(await raw(f));
+        const vals = []; for (let i = 0; i + 1 < raws.length; i += 1) { const d = blobs(raws[i], raws[i + 1], 14); vals.push(d.reduce((t, x) => t + x.n, 0)); }
+        vals.sort((a, b) => a - b);
+        return +(vals[Math.floor(vals.length / 2)] / 14400).toFixed(3);
+      };
+      const burst = async (n) => { const f = []; for (let i = 0; i < n; i += 1) f.push(await cap()); return f; };
+      const layers = [
+        ["baseline (everything on)", "1"],
+        ["ambient PointsMaterial bed OFF", "window.__rht.sceneObject().traverse((o) => { if (o.isPoints && o.material.type === 'PointsMaterial') o.visible = false; })"],
+        ["cover interactionGlow brackets OFF", "window.__rht.sceneObject().traverse((o) => { if (o.isMesh && o.userData && o.userData.decor && o.geometry.type === 'BoxGeometry') o.visible = false; })"],
+        ["ground-detail InstancedMesh OFF", "window.__rht.sceneObject().traverse((o) => { if (o.isInstancedMesh) o.visible = false; })"],
+        ["key-light shadows OFF", "window.__rht.sceneObject().traverse((o) => { if (o.isDirectionalLight) o.castShadow = false; })"],
+      ];
+      for (const map of (arg ? [arg] : ["verdant", "crossfire", "dustbowl"])) {
+        console.log(map + ":");
+        for (const [label, code] of layers) {
+          await js("window.__rht.startBattle(" + JSON.stringify(map) + ", \"destroy\", \"normal\"); window.__rht.deselect();");
+          await sleep(3500);
+          await js("window.__rht.setView({ x: 0, z: 0, zoom: 0.8, pitch: 0.6, yaw: 0.2 })");
+          await sleep(1500);
+          await js(code); await sleep(600);
+          await js("window.__rht.setView({ x: 0, z: 0, zoom: 0.8, pitch: 0.6, yaw: 0.2 })"); await sleep(300);
+          console.log("  " + (await pairPct(await burst(8))) + "%  <- " + label);
+        }
+      }
+    }
+
+    if (probe === "canopy") {
+      // A regular dashed hatching band sits on tree-canopy facets. Ledger rule: turn the key
+      // light's castShadow OFF FIRST. If it survives, it is not a shadow.
+      await js("window.__rht.startBattle(\"verdant\", \"destroy\", \"normal\"); window.__rht.deselect();");
+      await sleep(3500);
+      const at = await js("(() => { const s = window.__rht.sim; const t = s.entities.filter(e => e.kind === 'cover' && e.coverKind === 'tree')[0]; return t ? JSON.stringify({ x: t.position.x, z: t.position.z }) : ''; })()");
+      if (!at) { console.log("no tree"); } else {
+        const t = JSON.parse(at);
+        await js("window.__rht.setView({ x: " + t.x + ", z: " + (t.z + 1.5) + ", zoom: 0.62, pitch: 0.45, yaw: 0.3 })");
+        await sleep(1500);
+        const a = await cap(); fs.writeFileSync(path.join(outDir, "canopy-shadow-on.png"), a);
+        await js("window.__rht.sceneObject().traverse((o) => { if (o.isDirectionalLight) o.castShadow = false; })");
+        await sleep(700);
+        const b = await cap(); fs.writeFileSync(path.join(outDir, "canopy-shadow-off.png"), b);
+        const bl = blobs(await raw(a), await raw(b), 10);
+        console.log("canopy: shadows on-vs-off changed " + (+(bl.reduce((x, y) => x + y.n, 0) / 14400).toFixed(2)) + "%, blobs " + bl.length);
+        const reg = { left: 560, top: 250, width: 480, height: 400 };
+        const ca = await sharp(a).extract(reg).resize(960, 800, { kernel: "nearest" }).png().toBuffer();
+        const cb = await sharp(b).extract(reg).resize(960, 800, { kernel: "nearest" }).png().toBuffer();
+        await sharp({ create: { width: 1930, height: 800, channels: 3, background: "#101010" } })
+          .composite([{ input: ca, left: 0, top: 0 }, { input: cb, left: 970, top: 0 }]).png()
+          .toFile(path.join(outDir, "canopy-bisect.png"));
+        console.log("  canopy-bisect.png (left = shadows ON, right = OFF)");
+      }
+    }
+
+    if (probe === "canopyz") {
+      // The canopy hatch survived the shadow bisection, so it is a MAIN-PASS artefact. Two tests:
+      // (1) widen the camera near plane (more depth precision) -- a z-fight changes or clears;
+      // (2) micro-dolly the camera -- a z-fight SWIMS frame to frame, a texture does not.
+      await js("window.__rht.startBattle(\"verdant\", \"destroy\", \"normal\"); window.__rht.deselect();");
+      await sleep(3500);
+      const at = JSON.parse(await js("(() => { const s = window.__rht.sim; const t = s.entities.filter(e => e.kind === 'cover' && e.coverKind === 'tree')[0]; return JSON.stringify({ x: t.position.x, z: t.position.z }); })()"));
+      const view = (dx) => "window.__rht.setView({ x: " + (at.x + dx) + ", z: " + (at.z + 1.5) + ", zoom: 0.62, pitch: 0.45, yaw: 0.3 })";
+      await js(view(0)); await sleep(1500);
+      const reg = { left: 600, top: 240, width: 340, height: 260 };
+      const crop = async (b, z) => sharp(b).extract(reg).resize(340 * z, 260 * z, { kernel: "nearest" }).png().toBuffer();
+      console.log("near plane sweep:");
+      const nears = [];
+      for (const n of [1, 4, 12]) {
+        await js("(() => { const c = window.__rht.cameraObject(); c.near = " + n + "; c.updateProjectionMatrix(); })()");
+        await sleep(600); const b = await cap(); nears.push(await crop(b, 3));
+        console.log("  near=" + n + " captured");
+      }
+      await sharp({ create: { width: 340 * 3 * 3 + 20, height: 260 * 3, channels: 3, background: "#101010" } })
+        .composite(nears.map((input, i) => ({ input, left: i * (340 * 3 + 10), top: 0 }))).png()
+        .toFile(path.join(outDir, "canopyz-nearplane.png"));
+      await js("(() => { const c = window.__rht.cameraObject(); c.near = 1; c.updateProjectionMatrix(); })()");
+      await sleep(500);
+      console.log("micro-dolly (0.02 world units per frame):");
+      const frames = [];
+      for (let i = 0; i < 6; i += 1) { await js(view(i * 0.02)); await sleep(200); frames.push(await cap()); }
+      const tiles = []; for (const f of frames) tiles.push(await crop(f, 3));
+      await sharp({ create: { width: (340 * 3 + 10) * 3, height: (260 * 3 + 10) * 2, channels: 3, background: "#101010" } })
+        .composite(tiles.map((input, i) => ({ input, left: (i % 3) * (340 * 3 + 10), top: Math.floor(i / 3) * (260 * 3 + 10) }))).png()
+        .toFile(path.join(outDir, "canopyz-dolly.png"));
+      const ra = await raw(frames[0]), rb = await raw(frames[1]);
+      const bl = blobs(ra, rb, 14);
+      console.log("  canopyz-nearplane.png (near 1 | 4 | 12), canopyz-dolly.png (6 frames, 2cm apart)");
+    }
   } catch (e) { console.error("probe failed:", e); process.exitCode = 1; }
   finally { server.close(); app.quit(); }
 });
