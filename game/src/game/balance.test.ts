@@ -17,9 +17,13 @@ import { Rng } from "../core/rng";
 //      decided games), i.e. spawn side / turn order does not carry a side. A game still running
 //      at the turn cap is decided on remaining army value when one side has clearly more.
 // Everything is seeded (roster draw + sim.rng.reseed per game), so a printed seed reproduces it.
-// Six seeds: with four, 24 games and ~half of them draws, the seat rate moved by 15 points on a
-// physically-right hit-test change (hulls block bystander rounds over their footprint).
-const SEEDS = [11, 23, 37, 59, 71, 97];
+// Twenty-four seeds. With four, the seat rate moved by 15 points on a physically-right hit-test
+// change (hulls block bystander rounds over their footprint). With six (~17 decided games, one
+// game ~6 points) it still did: the faction-identity merge read 24% on these six seeds while the
+// same code read 42% over 24, and main itself sat at 40% on the six and 45% over the 24 -- the
+// gate was a coin flip on any change that reshuffles AI purchases. 24 seeds is ~70 decided
+// games, so the ±15 band below is about 2.5 standard errors instead of about one.
+const SEEDS = [11, 23, 37, 59, 71, 97, 101, 113, 131, 149, 151, 163, 173, 181, 193, 211, 223, 239, 251, 263, 277, 281, 293, 307];
 const MAX_TURNS = 16;
 const ROSTER_SIZE = 8;
 const START_CASH = 300;
@@ -171,7 +175,7 @@ describe("balance — the same AI on both sides", () => {
     const outOfBand = gated.filter((r) => r.perCost < median * BAND_LOW || r.perCost > median * BAND_HIGH);
     expect(outOfBand.map((r) => `${r.kind} ${(r.perCost / median).toFixed(2)}x`)).toEqual([]);
     expect(decided).toBeGreaterThanOrEqual(10);
-    // 36 games, roughly half decided: one game is ~5 points, so the band is ±15 around even.
+    // 144 games, roughly half decided: one game is ~1.4 points, so ±15 around even is well clear of noise.
     expect(playerRate).toBeGreaterThanOrEqual(0.35);
     expect(playerRate).toBeLessThanOrEqual(0.65);
   });

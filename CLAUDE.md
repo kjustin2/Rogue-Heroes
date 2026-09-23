@@ -540,9 +540,9 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   yaw, each released where it falls (`launchGrenadeAtPoint(…, airDropAt)` puts the origin at the drop
   point so a bomb never flies through a flyer between the nose and the spot); a straight-down drop
   keeps the aircraft's heading. One bomb load per run.
-- **Balance self-play** (`balance.test.ts`, ~1 min): `sim.debugCommandAsAi()` hotseats the enemy AI
+- **Balance self-play** (`balance.test.ts`, 24 seeds, ~5 min — six seeds made the seat gate a coin flip): `sim.debugCommandAsAi()` hotseats the enemy AI
   onto the player's army (swaps entity teams, economy, mines; runs `queueEnemyOrders`; swaps back).
-  6 maps x 4 seeds, same 8-kind seeded roster both seats, prints a per-kind damage-per-$ table and
+  6 maps x 24 seeds, same 8-kind seeded roster both seats, prints a per-kind damage-per-$ table and
   gates combat kinds to 0.5x-2.5x of the median (`UNGATED` lists the exceptions and why) and the
   player seat to 40-60% of decided games. The AI's "crippled" retreat reads `status.disarmed`, not
   `!canShoot` — strikers/bombers/transports never can shoot and used to retreat all game.
