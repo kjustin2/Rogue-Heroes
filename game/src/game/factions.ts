@@ -9,6 +9,24 @@ import type { DefenseKind, EntityKind, SupportPowerKind, TroopKind } from "./uni
 
 export type FactionId = "vanguard" | "syndicate" | "bastion";
 
+/**
+ * A faction's DOCTRINE: the one rule that changes how it plays, always on. Each field is read by
+ * exactly one place in sim.ts, so a doctrine is data here and a single clause there.
+ */
+export interface FactionDoctrine {
+  name: string;
+  /** One line for the set-up card and the base panel. */
+  text: string;
+  /** Vanguard: every troop and support cooldown is this many turns shorter (a troop never drops below 1). */
+  cooldownCut?: number;
+  /** Vanguard: extra metres on the deploy ring around the Home Base. */
+  deployReach?: number;
+  /** Syndicate: fraction of a destroyed enemy unit's cost paid to the side that destroyed it. */
+  bounty?: number;
+  /** Bastion: damage multiplier for a ground unit that held position through the last resolve. */
+  digIn?: number;
+}
+
 export interface FactionDef {
   id: FactionId;
   name: string;
@@ -21,11 +39,10 @@ export interface FactionDef {
   /** Which tech node ids it may research. Filters TECH_TREE. */
   tech: readonly string[];
   defenses: readonly DefenseKind[];
+  /** Its signature off-map strike. Exactly one per faction, and no two factions share one. */
   supports: readonly SupportPowerKind[];
   /** Team colour accent, also used for the UI chrome. */
   accent: number;
-  /** models.ts skin key, so hulls read differently per faction. */
-  skin: string;
   /** Tail of the AI's build wishlist, after its reactive counter-picks. */
   aiPreference: readonly TroopKind[];
   /**
@@ -34,71 +51,91 @@ export interface FactionDef {
    * three factions played identically against the AI (2026-09-22 faction audit).
    */
   aiTechPath: readonly string[];
-  /** A built-in modifier, always on (same shape as a specialization's effect), and its one-liner. */
+  doctrine: FactionDoctrine;
+  /** Faction names for the SHARED units, so a Recruit is a Trooper / Raider / Guardsman. */
+  labels?: Partial<Record<TroopKind, string>>;
+  /** A built-in combat modifier, always on (same shape as a specialization's effect). */
   passive?: TechEffect;
-  passiveText?: string;
   /** Per-faction target priority overrides on top of UNIT_STATS.aiValue. */
   aiTargetBias?: Partial<Record<EntityKind, number>>;
 }
 
-// ROSTER DESIGN.
+// ROSTER DESIGN (2026-09-23, owner: "the factions still feel too similar in look and gameplay").
 //
-// A faction is defined as much by what it CANNOT build as by what it can. Each one is missing a
-// whole answer to something, so the matchup asks a real question:
-//   Vanguard  has no indirect fire at all -- it cannot shell a dug-in position, it has to go take it.
-//   Syndicate has no tank and no artillery -- it cannot win a slugging match, only a faster one.
-//   Bastion   has no scout, no striker and no interceptor -- it cannot chase anything down.
-// Every faction keeps the tech-free Recruit, an engineer or medic, and at least one answer to air,
-// so none of them has an unanswerable hole. `tech` lists what a faction may RESEARCH, which is
-// wider than its roster wherever a node is only a prerequisite: Syndicate researches Armor Bay to
-// reach the Air Wing behind it, and still only fields the APC from it.
+// The first faction pass filtered ONE shared roster, and every faction kept most of it -- three
+// decks of fourteen with ten cards in common, all calling the same Airstrike. They now share only
+// a CORE (the rifleman, the heavy gunner, the medic, the marksman and the flak track, so each keeps
+// an answer to air; the two regular armies also share the tank)
+// and each owns a block of units nobody else fields:
+//   Vanguard  -- air cavalry: Scout, Jump Trooper, Gunship, Interceptor, Transport. No indirect fire.
+//   Syndicate -- raiders: Striker, Grenadier, Flamer, Sapper, Drone Operator, the APC. No tank.
+//   Bastion   -- fortress: Mortar, Engineer, Artillery, Bomber, Mortar Turret. Nothing fast.
+// The Heavy Gunner is CORE: whoever lacked it lost AI-vs-AI games outright (Bastion-only, Bastion
+// beat Vanguard 22-3; with Vanguard and Bastion only, the Syndicate won 10 of 96).
+// Each also has one doctrine rule (see FactionDoctrine) and one signature strike. Every faction
+// keeps a tech-free opener, an answer to armour and an answer to air -- factions.test.ts asserts
+// all three. `tech` lists what a faction may RESEARCH, which is wider than its roster wherever a
+// node is only a prerequisite.
 export const FACTIONS: readonly FactionDef[] = [
   {
     id: "vanguard",
     name: "Vanguard",
-    blurb: "Armour and a full air wing, but no indirect fire.",
-    detail: "Combined-arms regulars: the honest baseline. Tanks, APCs, flak and the whole air wing, with no glaring weakness — except that it fields no mortar, grenadier or artillery at all. A dug-in enemy has to be taken, not shelled.",
-    roster: ["soldier", "scout", "sniper", "striker", "heavy", "jumper", "medic", "engineer", "tank", "apc", "flak", "gunship", "interceptor", "transport"],
+    blurb: "Air cavalry: the whole air wing, no indirect fire.",
+    detail: "Air-mobile regulars. Scouts, jump troopers and the only gunships, interceptors and transports, backed by tanks and machine guns. No mortar, grenadier or artillery, and no engineer: a dug-in enemy has to be taken, not shelled.",
+    roster: ["soldier", "scout", "sniper", "jumper", "heavy", "medic", "tank", "flak", "gunship", "interceptor", "transport"],
     tech: ["recon", "assault", "support", "armor", "airwing", "breach", "bulwark", "plating", "hunter", "triage", "welding", "optics", "ghillie"],
     defenses: ["wall", "turret"],
     supports: ["airstrike"],
     accent: 0x8cefff,
-    skin: "standard",
-    aiPreference: ["tank", "apc", "heavy", "sniper", "soldier"],
-    aiTechPath: ["assault", "armor", "plating"],
-    passiveText: "Combined arms: the fullest roster, tanks to air wing.",
+    aiPreference: ["tank", "gunship", "heavy", "jumper", "sniper", "scout"],
+    aiTechPath: ["assault", "armor", "airwing"],
+    doctrine: {
+      name: "Rapid Response",
+      text: "Every troop and strike cooldown is a turn shorter, and the deploy ring reaches 4m further.",
+      cooldownCut: 1,
+      deployReach: 4,
+    },
+    labels: { soldier: "Trooper", medic: "Corpsman", flak: "Skyguard" },
   },
   {
     id: "syndicate",
     name: "Syndicate",
-    blurb: "Cheap and fast — burn, mines and area denial, but no tank.",
-    detail: "Fast, cheap and attritional. Flamers, sappers, mortars and cluster munitions deny ground, and scouts and strikers take it early. No tank and no siege gun, so it cannot win a slugging match — only a quicker one.",
-    roster: ["soldier", "scout", "sniper", "striker", "jumper", "grenadier", "mortar", "medic", "flamer", "droneop", "sapper", "apc", "gunship"],
-    tech: ["recon", "assault", "support", "ordnance", "armor", "airwing", "breach", "bulwark", "thermobarics", "cluster", "triage", "welding", "optics", "ghillie"],
+    blurb: "Raiders: fire, blades and traps. Every kill pays.",
+    detail: "Fast, cheap and attritional. Strikers, flamers, sappers and grenadiers, carried in by the only APCs, with drone spotters behind them. No tank and no siege gun, so it cannot win a slugging match -- only a quicker one.",
+    roster: ["soldier", "sniper", "heavy", "striker", "grenadier", "flamer", "sapper", "droneop", "medic", "apc", "flak"],
+    tech: ["recon", "assault", "support", "ordnance", "armor", "breach", "bulwark", "thermobarics", "cluster", "triage", "welding", "optics", "ghillie"],
     defenses: ["wall", "turret"],
-    supports: ["airstrike", "cluster"],
+    supports: ["cluster"],
     accent: 0xffca6b,
-    skin: "standard",
-    aiPreference: ["flamer", "striker", "sapper", "grenadier", "mortar", "scout", "jumper"],
-    aiTechPath: ["assault", "ordnance", "recon"],
+    aiPreference: ["flamer", "striker", "grenadier", "sapper", "apc", "droneop"],
+    aiTechPath: ["assault", "ordnance", "armor"],
+    doctrine: {
+      name: "Scavengers",
+      text: "Every enemy unit it destroys pays back 30% of that unit's cost, and its blasts reach 15% wider.",
+      bounty: 0.3,
+    },
+    // Kept from the first faction pass: the Syndicate's wider splash is its answer to dug-in lines.
     passive: { splashRadius: 1.15 },
-    passiveText: "Area denial: every blast covers 15% more ground.",
+    labels: { soldier: "Raider", medic: "Patcher", sniper: "Longshot", flak: "Flak Technical" },
   },
   {
     id: "bastion",
     name: "Bastion",
-    blurb: "Siege and fortification — longest guns, but nothing fast.",
-    detail: "Siege and fortification. Artillery, mortars, the heavy bomber and the only Mortar Turret, plus an Orbital Lance. No scout, no striker, no interceptor: nothing it fails to kill will be caught.",
-    roster: ["soldier", "sniper", "heavy", "grenadier", "mortar", "medic", "engineer", "sapper", "tank", "artillery", "flak", "bomber", "transport"],
+    blurb: "Fortress: siege guns and troops that dig in.",
+    detail: "Siege and fortification. Mortars, artillery, engineers, the heavy bomber and the only Mortar Turret, behind tanks and machine guns. No scout, no striker, no fighter: nothing it fails to kill will be caught.",
+    roster: ["soldier", "sniper", "heavy", "mortar", "medic", "engineer", "tank", "artillery", "flak", "bomber"],
     tech: ["recon", "assault", "support", "ordnance", "armor", "siege", "airwing", "bulwark", "plating", "thermobarics", "cluster", "triage", "welding", "optics", "ghillie"],
     defenses: ["wall", "turret", "exturret"],
-    supports: ["airstrike", "laser"],
+    supports: ["laser"],
     accent: 0x9ef0b8,
-    skin: "standard",
-    aiPreference: ["tank", "artillery", "heavy", "mortar", "grenadier", "engineer"],
+    aiPreference: ["tank", "heavy", "artillery", "mortar", "engineer"],
     aiTechPath: ["assault", "armor", "siege"],
-    passive: { infantryHp: 1.1, vehicleHp: 1.1 },
-    passiveText: "Fortified: infantry and vehicles deploy with 10% more HP.",
+    doctrine: {
+      name: "Dig In",
+      text: "A ground unit that holds its ground for a full turn digs in: 20% less damage until it moves.",
+      digIn: 0.8,
+    },
+    labels: { soldier: "Guardsman", medic: "Surgeon", sniper: "Sentinel" },
   },
 ];
 
@@ -106,4 +143,15 @@ export const DEFAULT_FACTION: FactionId = "vanguard";
 
 export function factionDef(id: FactionId): FactionDef {
   return FACTIONS.find((faction) => faction.id === id) ?? FACTIONS[0];
+}
+
+/** What this faction calls a troop: its own name for a shared unit, else the catalog label. */
+export function factionTroopLabel(id: FactionId, kind: TroopKind, catalogLabel: string): string {
+  return factionDef(id).labels?.[kind] ?? catalogLabel;
+}
+
+/** The units only this faction fields -- its signature block, derived so it can never drift. */
+export function signatureUnits(id: FactionId): TroopKind[] {
+  const others = FACTIONS.filter((f) => f.id !== id);
+  return factionDef(id).roster.filter((kind) => !others.some((f) => f.roster.includes(kind)));
 }

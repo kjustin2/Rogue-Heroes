@@ -540,9 +540,9 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   yaw, each released where it falls (`launchGrenadeAtPoint(…, airDropAt)` puts the origin at the drop
   point so a bomb never flies through a flyer between the nose and the spot); a straight-down drop
   keeps the aircraft's heading. One bomb load per run.
-- **Balance self-play** (`balance.test.ts`, ~1 min): `sim.debugCommandAsAi()` hotseats the enemy AI
+- **Balance self-play** (`balance.test.ts`, 24 seeds, ~5 min — six seeds made the seat gate a coin flip): `sim.debugCommandAsAi()` hotseats the enemy AI
   onto the player's army (swaps entity teams, economy, mines; runs `queueEnemyOrders`; swaps back).
-  6 maps x 4 seeds, same 8-kind seeded roster both seats, prints a per-kind damage-per-$ table and
+  6 maps x 24 seeds, same 8-kind seeded roster both seats, prints a per-kind damage-per-$ table and
   gates combat kinds to 0.5x-2.5x of the median (`UNGATED` lists the exceptions and why) and the
   player seat to 40-60% of decided games. The AI's "crippled" retreat reads `status.disarmed`, not
   `!canShoot` — strikers/bombers/transports never can shoot and used to retreat all game.
@@ -616,21 +616,41 @@ every Skirmish battle.
 ## FACTIONS play, look and fight differently (2026-09-22)
 
 - **Look**: `FACTION_CAMO` (worldRenderer) blends each faction's camo into every hull (0.5), base
-  and uniform (0.28) under the team read — Vanguard slate blue-grey, Syndicate tan/rust, Bastion
+  and uniform (0.42 since 2026-09-23) under the team read — Vanguard slate blue-grey, Syndicate tan/rust, Bastion
   olive concrete — and `factionInfantryDress` / `factionVehicleDress` / `factionBaseDress` add
   silhouette geometry on existing part ids (Vanguard radio whip + helipad + radar dish + stowage;
   Syndicate scarf/bandolier + slat cages, jerrycans, spare wheel + tarp tents and a pennant mast;
   Bastion chest/shoulder plates + track skirts and armour bricks + bunker walls and a roof dome).
   Groups rebuild when `team:faction` changes. Evidence: `npm run shots:gpu -- factions`.
-- **Play**: rosters differ (the existing hole per faction), plus a built-in `passive` folded into
-  `aggregateTechEffect` (Syndicate +15% splash radius, Bastion +10% infantry/vehicle HP;
-  Vanguard = baseline, fullest roster), shown on the set-up card's hover.
+- **Identity pass (2026-09-23, owner: "still too similar in look and gameplay")**. Rosters share
+  only a CORE (rifleman, heavy gunner, marksman, medic, flak; tank on two) and each faction OWNS a
+  block (`signatureUnits(id)`, derived): Vanguard = scout, jumper, gunship, interceptor, transport;
+  Syndicate = striker, grenadier, flamer, sapper, drone op, APC; Bastion = mortar, engineer,
+  artillery, bomber (+ Mortar Turret). The heavy gunner is core because the AI leans on it: any
+  faction without it lost AI-vs-AI games outright (`npm run balance:factions`). ONE strike each (airstrike / cluster / laser, never shared). The flat
+  stat passives were replaced by a `doctrine` rule, each read by one clause in sim.ts:
+  **Rapid Response** (Vanguard: `troopCooldownFor`/`supportCooldownFor` a turn shorter, min 1;
+  deploy ring +4m), **Scavengers** (Syndicate: `recordDamage` pays 30% of a destroyed enemy troop's
+  cost; it also keeps the old +15% splash `passive`), **Dig In** (Bastion: in `endTurn` a ground
+  troop with no `MOVING_ORDERS` order is `digging` for that resolve and `dugIn = 0.8` from the next
+  one it holds -- same-turn dig-in won Bastion 33 of 52 AI games; tanks excepted, they have
+  hull-down; `applyDamage` scales ALL damage by it and the shot preview shows it; a knockback throw
+  or boarding clears both; renderer shows a sandbag arc, HUD says "Digging in" / "Dug in").
+  Shared units carry faction NAMES via `labels` / `sim.troopLabel(team, kind)` (Recruit = Trooper /
+  Raider / Guardsman) -- use it, not `troopSpec(kind).label`, anywhere a player sees a unit name.
+  Normal/Hard bots call their strike (`enemyStrikeAct`: 3+ weight of hostiles within 3m, no own unit
+  within 6.5m). Tests: `doctrines.test.ts`. Look: faction HELMET colour (`FACTION_HELMET`, 0.55
+  over the kind's), infantry camo 0.42, Syndicate hood, Bastion gorget + hazard chevrons, Vanguard
+  tank smoke launchers + deck chevron, Syndicate ram plough, Bastion dozer blade. Evidence:
+  `npm run shots:factions` (SwiftShader-safe sheet: shared units + signature units + a vehicle).
 - **The bot plays its faction**: `aiTechPath` is its signature research arc (Vanguard armour →
-  plating, Syndicate ordnance → recon, Bastion armour → siege). With two or more units out it
+  air wing, Syndicate ordnance → armour for the APC, Bastion armour → siege). With two or more units out it
   SAVES for the next doctrine and for its most-wanted unlocked unit. Before this it never
   researched past the free doctrine — a Vanguard bot fielded ten Recruits — so every faction played
-  the same against the AI. Measured (one-off AI-vs-AI, 6 maps × 2 seeds × both seats per pairing):
-  Vanguard 25 / Syndicate 21 / Bastion 24 wins. Not a gate; rerun it if you touch the AI economy.
+  the same against the AI. Measured by `npm run balance:factions` (AI-vs-AI, 6 maps × 4 seeds
+  × both seats per pairing, 2026-09-23): Vanguard 32 / Syndicate 30 / Bastion 25 wins, 57 draws.
+  Not a gate; rerun it if you touch a roster, a doctrine or the AI economy. Known: the bots still
+  field mostly riflemen and heavy gunners, so signature units show up more in a player's army.
 - **Artillery and the mortar battery LOB** (`projectileArcHeight(..., source)`): they inherited the
   tank's 0.28 arc and fired flat. `projectiles.test.ts` asserts every family's flight (flat vs lobbed,
   never stalls, passes near its target, gone after the resolve) and gunship behaviour end to end.

@@ -23,6 +23,11 @@ measured readability gates, and a whole-game glitch sweep whose findings were al
 
 ## Next — in priority order
 
+0. **Faction identity (2026-09-23)** landed on `claude/faction-identity-7pi5tb`: each faction owns
+   its own units, one strike and one doctrine rule (Rapid Response / Scavengers / Dig In), plus
+   helmet colours and vehicle add-ons. Playtest all three against the bot; the numbers most likely
+   to want tuning are the 30% bounty, the 0.75 dig-in multiplier and `enemyStrikeAct`'s threshold.
+   Details in `CLAUDE.md` ("FACTIONS play, look and fight differently").
 1. **Owner playtest of Skirmish on the standalone build**, then iterate off what he reports.
    Build it with `cd game && npm run standalone` (or `npm run dist:exe` on Windows). Areas that
    changed most and have had the least human play: deaths, projectiles, the research table, the

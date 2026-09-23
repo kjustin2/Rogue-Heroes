@@ -39,7 +39,8 @@ import {
 import type { AimMode, Team } from "./game/damageModel";
 import { isAirKind, isInfantryKind, isVehicleKind } from "./game/damageModel";
 import { TECH_TREE, troopsUnlockedBy } from "./game/tech";
-import { troopSpec, unitStats } from "./game/units";
+import { supportPowerSpec, troopSpec, unitStats } from "./game/units";
+import { factionTroopLabel, signatureUnits } from "./game/factions";
 import { sfx } from "./audio";
 import { music } from "./music";
 import { progression, COSMETICS, COSMETIC_CATEGORIES, type Cosmetic } from "./progression";
@@ -955,9 +956,17 @@ function showStartScreen(versus = false, keep?: { map: string; mode: ModeId }): 
   ).join("");
   // Each card states the faction's IDENTITY and, explicitly, what it gives up. BOTH sides pick from
   // the same full-size cards (Player 2 used to get a row of small chips beside Player 1's cards).
+  // The doctrine NAME sits beside the faction name; the rule itself, the signature units and the
+  // trade-off live in the tooltip (the 720p budget allows two lines per card).
+  const factionTip = (f: (typeof FACTIONS)[number]): string => {
+    const own = signatureUnits(f.id).map((kind) => factionTroopLabel(f.id, kind, troopSpec(kind).label));
+    const strike = f.supports.map((k) => supportPowerSpec(k).label).join(", ");
+    return `${f.doctrine.name}: ${f.doctrine.text} Only ${f.name}: ${own.join(", ")}. Strike: ${strike}.`;
+  };
   const factionCard = (f: (typeof FACTIONS)[number], attr: string, on: boolean): string =>
-    `<button class="menu-card faction-card ${on ? "selected" : ""}" ${attr}="${f.id}" data-tip="${escapeAttr(`${f.detail}${f.passiveText ? ` ${f.passiveText}` : ""}`)}" type="button">
+    `<button class="menu-card faction-card ${on ? "selected" : ""}" ${attr}="${f.id}" data-tip="${escapeAttr(factionTip(f))}" type="button">
       <strong><span class="faction-pip" style="background:#${f.accent.toString(16).padStart(6, "0")}"></span>${escapeAttr(f.name)}</strong>
+      <em class="faction-roster">${escapeAttr(f.doctrine.name)}</em>
       <span>${escapeAttr(f.blurb)}</span>
     </button>`;
   const factionCards = FACTIONS.map((f) => factionCard(f, "data-faction", f.id === selectedFaction)).join("");
@@ -1586,7 +1595,10 @@ function startTutorial(): void {
 function renderTutorialPanel(): void {
   document.querySelector(".tutorial-panel")?.remove();
   if (!tutorialActive) return;
-  const step = TUTORIAL_STEPS[tutorialStep];
+  // The rifleman carries its faction's name (Trooper / Raider / Guardsman), so the copy does too.
+  const rifle = sim.troopLabel("player", "soldier");
+  const raw = TUTORIAL_STEPS[tutorialStep];
+  const step = { title: raw.title.replaceAll("Recruit", rifle), body: raw.body.replaceAll("Recruit", rifle) };
   const panel = document.createElement("div");
   panel.className = "tutorial-panel";
   panel.innerHTML = `
