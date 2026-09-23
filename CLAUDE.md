@@ -594,6 +594,28 @@ every Skirmish battle.
 - Locked troops in the Deploy tab are NAMED, grouped by the doctrine that unlocks them ("Scout ·
   Marksman / 🔒 Recon Doctrine") — never a "▮▮▮ ×2" count.
 
+## THREE AI BRAINS (2026-09-22) — difficulty is intelligence first, stats second
+
+`aiProfile()` in sim.ts. Before this, Normal and Hard ran the SAME brain and differed only in stats.
+- **Easy**: nearest-target fire, no cover, no retreat, random purchases, and ~30% of its units
+  hesitate each turn (`easyBrain` skip) — the bot a new player learns on.
+- **Normal**: focus fire, cover-biased advances, crippled units retreat, reactive economy (wishlist
+  ranked by cost × position so counters at the head win; saves only for research once it has 4+ units
+  and is not out-built, and for a wanted unit only if affordable next turn).
+- **Hard** (`tactical`): Normal plus — dodges this turn's telegraphed strikes / burn zones / gas
+  (`aiDangerAt`, `aiEscapePoint`, never ends a move in one), finishes what it can kill this turn
+  (measured against the CORE, not summed part HP), aims at the part that kills or disarms
+  (`aiBestPart`), kites fragile ranged units, pulls defenders onto intruders near its base, throws
+  grenades at clusters / dug-in targets, and runs a deterministic income-first economy.
+- Stat mods on Hard were cut (HP 1.3→1.15, damage 1.28→1.12, income 1.45→1.25): the brain carries it.
+- Measured by one-off self-play at EQUAL stats (`brainOverride` + `debugCommandAsAi(brain)`, 6 maps ×
+  2 seeds × both seats): Hard beat Normal 19-2, Normal beat Easy 18-5, Hard beat Easy 20-3.
+  `debugAiTraits` toggles single traits — that is how the old "smart economy" was caught LOSING to the
+  greedy one 2-10. Rerun that comparison after any AI change; it is not a gate (≈3 min).
+- RNG discipline: every roll stays exactly where it was drawn for easy/normal (short-circuit order
+  preserved), so their replays and seeded tests do not shift when Hard changes.
+- `aiBrains.test.ts`: Hard dodges a barrage and finishes a killable target.
+
 ## LOCAL 2 PLAYERS (hotseat, 2026-09-22)
 
 Main menu "Local 2 Players" → the Skirmish set-up page with a Player 2 faction row (no difficulty —

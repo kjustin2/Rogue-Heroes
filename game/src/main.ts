@@ -994,9 +994,9 @@ function showStartScreen(versus = false): void {
 }
 
 function difficultyBlurb(d: Difficulty): string {
-  if (d === "easy") return "Weaker enemy. Learn the ropes.";
-  if (d === "hard") return "Tougher enemy that hits harder and earns faster.";
-  return "An even fight.";
+  if (d === "easy") return "A hesitant, careless enemy. Learn the ropes.";
+  if (d === "hard") return "A sharp enemy: dodges strikes, finishes kills, defends its base.";
+  return "A solid enemy that focuses fire and uses cover.";
 }
 
 function toggleFullscreen(): void {

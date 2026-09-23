@@ -121,7 +121,7 @@ interface DifficultyMods {
 const DIFFICULTY_MODS: Record<Difficulty, DifficultyMods> = {
   easy: { label: "Easy", enemyHp: 0.8, enemyDamage: 0.82, enemyIncome: 0.85 },
   normal: { label: "Normal", enemyHp: 1, enemyDamage: 1, enemyIncome: 1 },
-  hard: { label: "Hard", enemyHp: 1.3, enemyDamage: 1.28, enemyIncome: 1.45 },
+  hard: { label: "Hard", enemyHp: 1.15, enemyDamage: 1.12, enemyIncome: 1.25 }, // the hard BRAIN carries most of it now
 };
 // Reaction fire is snap fire: the spread multiplier applied to an overwatch shot.
 // Resolve-phase budgets, in simulated seconds. SETTLE is the graceful escape once nothing is
@@ -2050,12 +2050,15 @@ export class TacticalSim {
    * army were its own (base purchases included), and everything is swapped back. This is how
    * balance.test.ts plays the one AI against itself. Test/debug surface only.
    */
-  debugCommandAsAi(): void {
+  debugCommandAsAi(brain?: Difficulty): void {
     if (this.phase !== "command") return;
     this.flipTeams();
+    const saved = this.brainOverride;
+    if (brain) this.brainOverride = brain;
     try {
       this.queueEnemyOrders();
     } finally {
+      this.brainOverride = saved;
       this.flipTeams();
     }
   }
@@ -4538,9 +4541,50 @@ export class TacticalSim {
   // greedy bot (nearest target, no focus-fire/cover/retreat). Normal and Hard share the smart
   // brain — the difference between them is the stat padding applied elsewhere, not the tactics,
   // so Normal is a *fair* test of skill rather than a dumb bot with a health bar.
-  private aiProfile(): { focusFire: boolean; useCover: boolean; retreat: boolean; smartEconomy: boolean } {
-    if (this.difficulty === "easy") return { focusFire: false, useCover: false, retreat: false, smartEconomy: false };
-    return { focusFire: true, useCover: true, retreat: true, smartEconomy: true };
+  /**
+   * THREE BRAINS (2026-09-22). Difficulty used to change only the bot's STATS between Normal and
+   * Hard; both ran the same brain. Now:
+   *   easy   -- shoots whatever is nearest, walks straight at you, ignores cover, spends greedily.
+   *   normal -- focus fire, cover-biased advances, retreats the crippled, reactive economy.
+   *   hard   -- all of that plus TACTICS: dodges telegraphed strikes / fire / gas, takes the shot
+   *             that KILLS this turn and aims at the part that finishes or disarms, kites its
+   *             fragile ranged units, pulls back to defend its base, throws grenades at clusters
+   *             and dug-in targets, and runs a deterministic, income-first economy.
+   * `brainOverride` lets self-play pit one brain against another at equal stats.
+   */
+  brainOverride?: Difficulty;
+  /** Self-play knob: force individual brain traits on/off to measure what each one is worth. */
+  debugAiTraits?: Partial<{ focusFire: boolean; useCover: boolean; retreat: boolean; smartEconomy: boolean; tactical: boolean }>;
+  private aiProfile(): { focusFire: boolean; useCover: boolean; retreat: boolean; smartEconomy: boolean; tactical: boolean } {
+    const brain = this.brainOverride ?? this.difficulty;
+    const base = brain === "easy"
+      ? { focusFire: false, useCover: false, retreat: false, smartEconomy: false, tactical: false }
+      : { focusFire: true, useCover: true, retreat: true, smartEconomy: true, tactical: brain === "hard" };
+    return this.debugAiTraits ? { ...base, ...this.debugAiTraits } : base;
+  }
+
+  /** Hard brain: is `pos` somewhere that gets hurt THIS turn -- a telegraphed strike, fire, gas? */
+  private aiDangerAt(pos: Vec2, margin = 0.8): boolean {
+    for (const z of this.eventZonesForTurn(this.turn)) if (dist(pos, z) <= z.radius + margin) return true;
+    for (const z of this.burnZones) if (dist(pos, z) <= z.radius + margin) return true;
+    for (const z of this.gasClouds) if (dist(pos, z) <= z.radius + margin) return true;
+    return false;
+  }
+
+  /** Hard brain: the part of `target` whose hit does the most -- a kill first, then a disarm. */
+  private aiBestPart(shooter: CombatEntity, target: CombatEntity): DamagePart {
+    let best = preferredPart(target, "center");
+    let bestScore = -Infinity;
+    for (const part of target.parts) {
+      if (part.hp <= 0) continue;
+      const aim = aimForPart(part);
+      const dmg = this.estimateShotDamage(shooter, target, part, aim, false);
+      const lethal = (part.role === "core" || part.role === "head") && dmg >= part.hp;
+      const disables = dmg >= part.hp && (part.role === "weapon" || part.role === "mobility");
+      const score = (lethal ? 1000 : 0) + (disables ? (part.role === "weapon" ? 120 : 60) : 0) + dmg + (part.role === "core" ? 5 : 0);
+      if (score > bestScore) { bestScore = score; best = part; }
+    }
+    return best;
   }
 
   // `dryRun` (recon preview): decide unit orders only — no repairs, no comms clamp, no base
@@ -4575,12 +4619,22 @@ export class TacticalSim {
     // Running tally of damage already committed to each player unit this turn. Focus-fire reads
     // it so shooters pile onto one target until it's predicted dead, then spill to the next.
     const committed = new Map<string, number>();
+    const easyBrain = (this.brainOverride ?? this.difficulty) === "easy";
     for (const enemy of this.living("enemy")) {
       if (isBuildingKind(enemy.kind) || enemy.carriedById) continue; // carried units can't act
+      // EASY hesitates: about a third of its units sit a turn out. It is the bot a new player
+      // learns on, and at full activity it out-raced the "smart" brains in self-play.
+      if (easyBrain && !dryRun && this.rng.chance(0.3)) continue;
       const target = nearest(enemy, players.length ? players : allPlayers);
       const range = projectileRange(enemy);
       const separation = target ? dist(enemy.position, target.position) : Infinity;
-      if (target && enemy.kind === "soldier" && enemy.grenades > 0 && enemy.commandPoints > 0 && this.rng.chance(0.35) && !this.grenadeFailureReason(enemy, target)) {
+      // The hard brain throws on PURPOSE (a cluster, or a target dug in behind cover); the others
+      // roll for it. The roll is drawn exactly where it always was, so easy/normal replays are unchanged.
+      const canNade = Boolean(target) && enemy.kind === "soldier" && enemy.grenades > 0 && enemy.commandPoints > 0;
+      const worthGrenade = canNade && (profile.tactical
+        ? players.filter((p) => !p.flying && dist(p.position, target!.position) <= 2.4).length >= 2 || this.isShelteredAt(target!.position, enemy.position)
+        : this.rng.chance(0.35));
+      if (target && worthGrenade && !this.grenadeFailureReason(enemy, target)) {
         this.queueGrenadeFor(enemy, target, "center");
         continue;
       }
@@ -4633,6 +4687,7 @@ export class TacticalSim {
           if (block.terrain || block.blocker?.team === enemy.team) fireTarget = undefined; // can't breach — reposition
           else if (block.blocker) { fireTarget = block.blocker; fireAim = "center"; } // shoot through the blocker
         }
+        if (profile.tactical && fireTarget === shootTarget && !block) fireAim = aimForPart(this.aiBestPart(enemy, shootTarget));
         if (fireTarget && this.queueShootFor(enemy, fireTarget, fireAim)) {
           fired = true;
           const burst = enemy.kind === "heavy" ? 3 : 1;
@@ -4665,8 +4720,24 @@ export class TacticalSim {
         const wantsTarget = Boolean(target) && (isMelee || separation > Math.min(range * 0.8, 6));
         let goal: Vec2 | undefined;
         let advancing = false;
-        if (carrying && homeGoal) {
+        // HARD: an intruder near our base pulls the nearby defenders back onto it.
+        const intruder = profile.tactical && home && !carrying
+          ? (players.length ? players : allPlayers).find((p) => dist(p.position, home) < 11)
+          : undefined;
+        // HARD: fragile ranged units keep their distance instead of walking into melee range.
+        const kites = profile.tactical && !carrying && target && (enemy.kind === "sniper" || enemy.kind === "mortar" || enemy.kind === "grenadier" || enemy.kind === "droneop" || enemy.kind === "medic")
+          && separation < Math.max(4, range * 0.4);
+        if (profile.tactical && !carrying && this.aiDangerAt(enemy.position)) {
+          // Standing in a strike zone, fire or gas: step out first, whatever else is going on.
+          goal = this.aiEscapePoint(enemy);
+        } else if (carrying && homeGoal) {
           goal = homeGoal;
+        } else if (intruder && dist(enemy.position, home!) < 18 && !isAirKind(enemy.kind)) {
+          goal = intruder.position;
+          advancing = true;
+        } else if (kites && target) {
+          const away = normalize({ x: enemy.position.x - target.position.x, z: enemy.position.z - target.position.z });
+          goal = clampToArena({ x: enemy.position.x + away.x * moveRange(enemy), z: enemy.position.z + away.z * moveRange(enemy) });
         } else if (fire) {
           const away = dist(enemy.position, fire) > 0.05
             ? normalize({ x: enemy.position.x - fire.x, z: enemy.position.z - fire.z })
@@ -4697,9 +4768,17 @@ export class TacticalSim {
         if (goal) {
           const step = isVehicleKind(enemy.kind) ? Math.max(3.2, moveRange(enemy)) : moveRange(enemy);
           // When pushing toward a threat, prefer a tile that ends sheltered behind cover.
-          const destination = profile.useCover && advancing && target
+          let destination = profile.useCover && advancing && target
             ? this.coverBiasedDestination(enemy, goal, target, step)
             : this.navigateToward(enemy, goal, step);
+          // HARD: never END a move inside this turn's strike zone, fire or gas -- stop short instead.
+          if (profile.tactical && this.aiDangerAt(destination) && !this.aiDangerAt(enemy.position)) {
+            for (const f of [0.66, 0.33]) {
+              const shorter = { x: enemy.position.x + (destination.x - enemy.position.x) * f, z: enemy.position.z + (destination.z - enemy.position.z) * f };
+              if (!this.aiDangerAt(shorter)) { destination = shorter; break; }
+            }
+            if (this.aiDangerAt(destination)) destination = enemy.position; // hold rather than walk in
+          }
           if (dist(enemy.position, destination) > 0.2) {
             spendCommandPoint(enemy);
             this.addOrder({
@@ -4713,6 +4792,22 @@ export class TacticalSim {
         }
       }
     }
+  }
+
+  /** Hard brain: the reachable point that gets furthest out of every danger this turn. */
+  private aiEscapePoint(actor: CombatEntity): Vec2 {
+    const step = moveRange(actor);
+    let best = actor.position;
+    let bestScore = -Infinity;
+    for (let i = 0; i < 8; i += 1) {
+      const a = (i / 8) * Math.PI * 2;
+      const want = clampToArena({ x: actor.position.x + Math.sin(a) * step, z: actor.position.z + Math.cos(a) * step });
+      const c = this.blockedMoveDestination(actor, actor.position, want, undefined, true);
+      const home = this.enemyHomePosition();
+      const score = (this.aiDangerAt(c) ? -100 : 0) + (home ? -dist(c, home) * 0.05 : 0) + dist(actor.position, c) * 0.1;
+      if (score > bestScore) { bestScore = score; best = c; }
+    }
+    return best;
   }
 
   /** The closest burning ground within `radius` of a point, if any. */
@@ -4764,11 +4859,15 @@ export class TacticalSim {
           ineffective: t.flying && perShot < remainingHp(t) * 0.15 ? 1 : 0,
           saturated: com >= hp ? 1 : 0, // already getting enough fire to die — deprioritize
           engaged: com > 0 ? 0 : 1, // pile onto a unit we've already started on
+          // HARD: a target this shot (plus fire already committed) finishes, first of all.
+          // (Killing the CORE kills the unit, so "finishable" is measured against the core, not the
+          // sum of every part.)
+          finish: this.aiProfile().tactical && com + perShot >= Math.min(hp, t.parts.find((p) => p.role === "core" && p.hp > 0)?.hp ?? hp) ? 0 : 1,
           value: aiTargetValue(t.kind),
           hp,
         };
       })
-      .sort((a, b) => a.ineffective - b.ineffective || a.saturated - b.saturated || a.engaged - b.engaged || b.value - a.value || a.hp - b.hp);
+      .sort((a, b) => a.ineffective - b.ineffective || a.saturated - b.saturated || a.finish - b.finish || a.engaged - b.engaged || b.value - a.value || a.hp - b.hp);
     return ranked[0]?.t;
   }
 
@@ -4885,8 +4984,12 @@ export class TacticalSim {
     // SIGNATURE ARC: a smart bot works down its faction's research path, and SAVES for the next step
     // once it has a few units out -- otherwise it spent every turn's money on Recruits and never
     // researched anything, so every faction's bot played the same.
-    // Never while defenceless: with fewer than two units out, the base deploys first.
-    if (smart && this.fieldUnitCount(base.team) >= 2) {
+    // Only once it has an army worth the name and is not being out-built: saving for research
+    // while outnumbered starved the army, and self-play measured the "smart" economy LOSING to the
+    // greedy one 2-10 before this gate.
+    const mine = this.fieldUnitCount(base.team);
+    const theirs = this.fieldUnitCount(base.team === "enemy" ? "player" : "enemy");
+    if (smart && mine >= 4 && mine >= theirs) {
       const path = this.factionOf(base.team).aiTechPath;
       // Next step on the path that is actually open (only money may stand in the way).
       const next = path.find((id) => {
@@ -4898,25 +5001,38 @@ export class TacticalSim {
         if (this.fieldUnitCount(base.team) >= 3) return; // save for it
       }
     }
-    if (researchPick && money >= researchPick.cost + 200 && this.rng.chance(0.45) && this.researchTechFor(base, researchPick.id)) return;
+    const hard = this.aiProfile().tactical;
     const incomeCost = incomeUpgradeCost(base);
-    if (incomeCost !== undefined && money >= incomeCost + 340 && this.rng.chance(0.3) && this.upgradeIncomeFor(base)) return;
+    // HARD: bank the first income upgrades early -- compounding money is the whole economy game --
+    // and never leaves research or income to a coin flip. (Rolls stay where they were for the others.)
+    if (hard && incomeCost !== undefined && this.turn <= 8 && money >= incomeCost + 120 && this.upgradeIncomeFor(base)) return;
+    if (researchPick && money >= researchPick.cost + 200 && (hard || this.rng.chance(0.45)) && this.researchTechFor(base, researchPick.id)) return;
+    if (incomeCost !== undefined && money >= incomeCost + 340 && (hard || this.rng.chance(0.3)) && this.upgradeIncomeFor(base)) return;
     if (this.fieldUnitCount(base.team) >= POP_CAP) return;
     // Save for the most-wanted unit it has unlocked rather than buying the cheapest thing on the
     // list every turn (a Syndicate bot fielded nine Scouts and never a flamer; Vanguard never a tank).
-    if (smart && desired && this.fieldUnitCount(base.team) >= 3) {
+    // Save for the most-wanted unlocked unit only when it is affordable NEXT turn; otherwise spend.
+    if (smart && desired && mine >= 3) {
       const want = desired.find((kind) => {
         const why = this.spawnFailureReason(base, kind);
         return !why || why.startsWith("Not enough money");
       });
-      if (want && this.spawnFailureReason(base, want)?.startsWith("Not enough money")) return;
+      if (want && this.spawnFailureReason(base, want)?.startsWith("Not enough money") && money + baseIncome(base) >= troopSpec(want).cost) return;
     }
     const affordable = TROOP_CATALOG.filter((spec) => !this.spawnFailureReason(base, spec.kind));
     if (!affordable.length) return;
     // Build the most-wanted affordable troop; fall back to the strongest the bot can field.
-    const pick =
-      (desired?.find((kind) => affordable.some((spec) => spec.kind === kind))) ??
-      [...affordable].sort((a, b) => b.cost - a.cost)[0].kind;
+    // The priciest affordable unit ON the wishlist (the wishlist says WHAT, the budget says how much
+    // of it); fall back to the priciest thing it can field. Buying the first cheap match every turn
+    // was what lost the smart economy to the greedy one.
+    // Rank by cost AND wishlist position: the reactive counters at the head of the list (splash vs a
+    // crowd, AT vs armour) win unless something much better is affordable further down.
+    const rank = (kind: TroopKind): number => Math.max(0.2, 1 - 0.2 * (desired?.indexOf(kind) ?? 0));
+    const wanted = affordable.filter((spec) => desired?.includes(spec.kind)).sort((a, b) => b.cost * rank(b.kind) - a.cost * rank(a.kind));
+    // Easy buys whatever it lands on; the others buy the best they can.
+    const pick = (this.brainOverride ?? this.difficulty) === "easy"
+      ? affordable[Math.floor(this.rng.next() * affordable.length)].kind
+      : (wanted[0] ?? [...affordable].sort((a, b) => b.cost - a.cost)[0]).kind;
     this.spawnTroopFor(base, pick);
   }
 
