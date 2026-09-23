@@ -9,7 +9,7 @@ import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec
 import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isVehicleKind, type CombatEntity, type CoverKind, type DamagePart, type Team, type EntityKind, type PartRole } from "../game/damageModel";
 import type { FactionId } from "../game/factions";
 import type { OrderKind, Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
-import { OVERWATCH_ARC_HALF } from "../game/sim";
+import { OVERWATCH_ARC_HALF, carpetDropPoints } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type SkylineKind } from "../game/maps";
 import type { TroopKind } from "../game/units";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
@@ -20,8 +20,7 @@ import {
   isLobbed, makeLightning, makeMuzzleFlash, makePing, makeProjectileModel, makeProjectileShadow, makeProjectileTrail,
   makeScorchStar, makeStrikeFlash, orientAlongVelocity, prewarmProjectileFx, projectileFamily,
   projectileFxWarmUpMaterials, projectileGeometry, projectileMaterial, pushTrailPoint, setFxViewer,
-  type LandingHint, type ProjectileFamily, type TrailPoint,
-  makeGunRun,
+  carpetFallU, makeCarpetFall, makeGunRun, type LandingHint, type ProjectileFamily, type TrailPoint,
 } from "./projectileFx";
 
 // Cover kinds built by buildBiomeProp (the per-map furniture added 2026-09-23).
@@ -371,6 +370,7 @@ export class WorldRenderer {
     // to know where it is, and it changes once a frame.
     if (camera) setFxViewer(camera.position);
     this.syncProjectiles(sim.projectiles);
+    this.syncCarpetFalls(sim);
     this.syncEffects(sim.effects);
     this.syncFlashLights();
     this.syncDamageNumbers(sim);
@@ -4460,6 +4460,21 @@ export class WorldRenderer {
     } else {
       this.previewRoot.add(makeTubeLine(from, to, color, opacity, fromHeight, radius, toHeight));
       this.previewRoot.add(makeLine(from, to, color, Math.min(0.98, opacity + 0.34), fromHeight, toHeight));
+    }
+  }
+
+  /** Bombers mid-carpet: draw the fall the sim resolves in a single tick (makeCarpetFall). Runs
+   *  after syncProjectiles, which clears the root this adds to. */
+  private syncCarpetFalls(sim: TacticalSim): void {
+    if (sim.phase !== "resolve") return;
+    for (const order of sim.orders) {
+      if (order.done || order.fired || order.kind !== "grenade") continue;
+      const actor = sim.entity(order.actorId);
+      if (!actor || actor.kind !== "bomber" || !actor.status.alive) continue;
+      const u = carpetFallU(order.elapsed);
+      if (u <= 0) continue;
+      const top = actor.elevation - 0.6; // the bay, under the fuselage
+      for (const part of makeCarpetFall(carpetDropPoints(actor), u, top, actor.team === "player" ? 0x75d8ff : 0xff765f)) this.projectileRoot.add(part);
     }
   }
 

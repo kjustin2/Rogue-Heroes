@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TacticalSim, type Projectile, type TroopKind, type VisualEvent } from "../game/sim";
+import { CARPET_BOMBS, TacticalSim, carpetDropPoints, type Projectile, type TroopKind, type VisualEvent } from "../game/sim";
 import { TROOP_CATALOG, SUPPORT_POWERS } from "../game/units";
 import {
   createApc, createArtillery, createBomber, createDroneOp, createEngineer, createExTurret, createFlak,
@@ -7,7 +7,7 @@ import {
   createSapper, createScout, createSniper, createSoldier, createStriker, createTank, createTransport, createTurret,
   type CombatEntity,
 } from "../game/damageModel";
-import { makeProjectileModel, projectileFamily, SNIPER_PAUSE, type ProjectileFamily } from "./projectileFx";
+import { carpetFallU, makeCarpetFall, makeProjectileModel, projectileFamily, SNIPER_PAUSE, type ProjectileFamily } from "./projectileFx";
 import { attackFamilyForOrder, attackPose, WEAPON_FAMILIES } from "./worldRenderer";
 import { hasMotionBank, sampleMotion } from "./infantryMotion";
 
@@ -267,18 +267,45 @@ describe("every non-gun attack has an animation", () => {
     }
   });
 
-  it("bombs: a gunship drops one straight down, a bomber carpets three, all drawn as bombs", () => {
-    for (const [make, count] of [[createGunship, 1], [createBomber, 3]] as const) {
-      const plane = make("b", "B", "player", { x: -2, z: 0 });
-      const sim = new TacticalSim([plane, pinned(createSoldier("v", "V", "enemy", { x: -2, z: 0.3 }))]);
-      sim.select("b");
-      expect(sim.queueBombDrop(), sim.log[0]).toBe(true);
-      const trace = resolve(sim, [sim.entity("v")!]);
-      expect(trace.rounds.length).toBe(count);
-      expect([...trace.families]).toEqual(["bomb"]);
-      for (const round of trace.rounds) expect(drawsSomething(round)).toBe(true);
-      expect(trace.effects.has("blast")).toBe(true);
+  it("bombs: a gunship's bomb falls as a round; a bomber's carpet of three is drawn falling onto its blasts", () => {
+    const gunship = createGunship("b", "B", "player", { x: -2, z: 0 });
+    let sim = new TacticalSim([gunship, pinned(createSoldier("v", "V", "enemy", { x: -2, z: 0.3 }))]);
+    sim.select("b");
+    expect(sim.queueBombDrop(), sim.log[0]).toBe(true);
+    const trace = resolve(sim, [sim.entity("v")!]);
+    expect(trace.rounds.length).toBe(1);
+    expect([...trace.families]).toEqual(["bomb"]);
+    expect(drawsSomething(trace.rounds[0])).toBe(true);
+    expect(trace.effects.has("blast")).toBe(true);
+
+    // The carpet lands on the tick it is released, so the sim never has a bomb in flight; the
+    // renderer draws the fall off the order's clock (makeCarpetFall) onto carpetDropPoints. That
+    // fall must be drawn for a good stretch of frames, reach the ground, and end where the blasts are.
+    const bomber = createBomber("b", "B", "player", { x: -2, z: 0 });
+    sim = new TacticalSim([bomber, pinned(createSoldier("v", "V", "enemy", { x: -2, z: 0.3 }))]);
+    sim.select("b");
+    expect(sim.queueBombDrop(), sim.log[0]).toBe(true);
+    const drawn: number[] = [];
+    let points = carpetDropPoints(bomber);
+    const blasts: { x: number; z: number }[] = [];
+    const seen = new Set<string>();
+    sim.endTurn();
+    for (let t = 0; t < 30 && sim.phase === "resolve"; t += 0.02) {
+      const order = sim.orders.find((o) => o.actorId === "b" && o.kind === "grenade" && !o.done && !o.fired);
+      if (order && carpetFallU(order.elapsed) > 0) {
+        points = carpetDropPoints(bomber);
+        let meshes = 0;
+        for (const o of makeCarpetFall(points, carpetFallU(order.elapsed), bomber.elevation - 0.6, 0xffffff)) o.traverse((c) => { if ((c as { isMesh?: boolean }).isMesh) meshes += 1; });
+        expect(meshes, "three bombs and their shadows").toBeGreaterThan(CARPET_BOMBS * 2);
+        drawn.push(carpetFallU(order.elapsed));
+      }
+      sim.update(0.02);
+      for (const e of sim.effects) if (e.type === "blast" && !seen.has(e.id)) { seen.add(e.id); blasts.push({ ...e.to }); }
     }
+    expect(drawn.length, "the carpet's fall is on screen for a good stretch of frames").toBeGreaterThan(10);
+    expect(Math.max(...drawn), "the drawn fall reaches the ground").toBeGreaterThan(0.9);
+    expect(blasts.length).toBeGreaterThanOrEqual(CARPET_BOMBS);
+    for (const p of points) expect(Math.min(...blasts.map((b) => Math.hypot(b.x - p.x, b.z - p.z))), "a blast where each drawn bomb lands").toBeLessThan(0.05);
   });
 
   it("mines: a planted mine bursts under the unit that steps on it", () => {

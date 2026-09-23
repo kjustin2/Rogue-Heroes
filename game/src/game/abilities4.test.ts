@@ -248,7 +248,7 @@ describe("bomber carpet", () => {
       expect(sim.queueBombDrop()).toBe(true);
       expect(plane.grenades).toBe(1); // one load per run, however many bombs it is
       sim.endTurn();
-      // Count the blasts the bombs leave where they land.
+      // Bombs fall straight down and land within a tick, so count the blasts they leave.
       const seen = new Set<string>();
       const points: { x: number; z: number }[] = [];
       for (let t = 0; t < 80 && sim.phase === "resolve"; t += 0.05) {

@@ -28,7 +28,7 @@
 import * as THREE from "three";
 import { clamp01 } from "../core/math";
 import { isAirKind, type EntityKind } from "../game/damageModel";
-import type { Projectile, VisualEvent } from "../game/sim";
+import { ATTACK_FIRE_AT, type Projectile, type VisualEvent } from "../game/sim";
 import { terrainHeightAt } from "../game/terrain";
 
 export const INK = 0x1c1712;
@@ -1367,6 +1367,35 @@ export function makeStrikeFlash(effect: VisualEvent, t: number, ground: number):
     faceViewer(star);
     out.push(star);
   }
+  for (const o of out) o.traverse((c) => { c.frustumCulled = false; });
+  return out;
+}
+
+/** A bomber's CARPET, falling. The sim releases each carpet bomb over its own drop point and it
+ *  lands on the tick it is released, so there is never a round in flight to draw -- the ground
+ *  just exploded. The fall is drawn from the ORDER's clock instead (`u` 0..1 over the last
+ *  CARPET_FALL_S before the sim's release), ending on the ground exactly where and when the blast
+ *  takes over. Gravity-eased, grows in from the bay (no pop), with the swelling ground shadow that
+ *  says where it will land. Visual only: the balance-tested sim timing is untouched. */
+export const CARPET_FALL_S = 0.42;
+/** How far through its drawn fall a carpet is, from its order's elapsed time (<= 0: not yet). */
+export function carpetFallU(elapsed: number): number {
+  return 1 - (ATTACK_FIRE_AT - elapsed) / CARPET_FALL_S;
+}
+export function makeCarpetFall(points: readonly { x: number; z: number }[], u: number, top: number, team: number): THREE.Object3D[] {
+  const out: THREE.Object3D[] = [];
+  const k = clamp01(u);
+  points.forEach((point, i) => {
+    const ground = terrainHeightAt(point) + 0.14;
+    const height = top - (top - ground) * k * k;
+    const bomb = bombModel(team, k * CARPET_FALL_S + i * 0.7);
+    bomb.position.set(point.x, height, point.z);
+    orientAlongVelocity(bomb, { x: point.x, y: height + 0.1, z: point.z }, { x: point.x, y: height, z: point.z });
+    bomb.scale.multiplyScalar(smooth(k / 0.12));
+    out.push(bomb);
+    const falling = { position: point, height, previousHeight: height + 0.05, state: "flying" } as unknown as Projectile;
+    out.push(makeProjectileShadow(falling, "bomb"));
+  });
   for (const o of out) o.traverse((c) => { c.frustumCulled = false; });
   return out;
 }

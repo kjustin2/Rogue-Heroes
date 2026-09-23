@@ -165,9 +165,9 @@ const STRAFE_DAMAGE_SHARE = 0.75;
 // CARPET (bomber): three bombs in a line along the heading, this far apart.
 export const CARPET_BOMBS = 3;
 const CARPET_SPACING = 2.2;
-// Metres short of its drop point a carpet bomb is released: ~0.4s of fall at bomb speed, steep
-// enough (inside the bomb's -1.5 rad pitch clamp from bomber altitude) to read as straight down.
-const CARPET_RUN_IN = 0.9;
+// Seconds into a shoot / grenade / smoke order at which the round leaves (the attack pose's
+// contact point is authored against this; the renderer's carpet-bomb fall ends on it).
+export const ATTACK_FIRE_AT = 0.58;
 // A jump trooper landing next to an enemy: damage before difficulty scaling.
 const SLAM_LANDING_DAMAGE = 15;
 
@@ -2686,17 +2686,12 @@ export class TacticalSim {
         }
         // A straight-down bomb drop keeps the aircraft's heading (the carpet is laid along it).
         if (dist(order.destination, actor.position) > 0.05) actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
-        if (order.elapsed >= 0.58) {
+        if (order.elapsed >= ATTACK_FIRE_AT) {
           order.fired = true;
           if (order.kind === "grenade" && actor.kind === "bomber") {
             // CARPET: a bomber lays its load in a line along its heading — one bomb short of the
             // aircraft, one beneath it, one past it — instead of a single drop.
-            const heading = { x: Math.sin(actor.yaw), z: Math.cos(actor.yaw) };
-            for (let i = 0; i < CARPET_BOMBS; i += 1) {
-              const along = (i - (CARPET_BOMBS - 1) / 2) * CARPET_SPACING;
-              const point = clampToArena({ x: actor.position.x + heading.x * along, z: actor.position.z + heading.z * along });
-              order.projectileId = this.launchGrenadeAtPoint(order, actor, point, point);
-            }
+            for (const point of carpetDropPoints(actor)) order.projectileId = this.launchGrenadeAtPoint(order, actor, point, point);
             this.pushLog(`${actor.name} carpets the line beneath it with ${CARPET_BOMBS} bombs`);
           } else {
             order.projectileId = order.kind === "grenade"
@@ -2720,7 +2715,7 @@ export class TacticalSim {
         : preferredPart(target, order.aim);
       const aimPoint = aimPointFor(target, targetPart);
       actor.yaw = Math.atan2(aimPoint.x - actor.position.x, aimPoint.z - actor.position.z);
-      if (order.elapsed >= 0.58) {
+      if (order.elapsed >= ATTACK_FIRE_AT) {
         order.fired = true;
         order.projectileId = this.launchProjectile(order, actor, target);
       }
@@ -3231,14 +3226,11 @@ export class TacticalSim {
     // stagger its bombs along the heading.
     const airDrop = isAirBomber(actor);
     const dropPoint = airDrop ? (airDropAt ?? { x: actor.position.x, z: actor.position.z }) : point;
-    // A carpet bomb is released just short of where it falls (as the plane passes over), never
-    // lobbed forward from the nose — a lobbed one would fly through anything airborne in between.
-    // The short run-in along the heading is what gives it a FALL: flight is parameterised by
-    // horizontal travel, and a bomb released exactly over its own drop point detonated on the tick
-    // it was born, so the carpet's three bombs were never on screen (the ground just exploded).
-    const origin = airDrop && airDropAt
-      ? { x: airDropAt.x - Math.sin(actor.yaw) * CARPET_RUN_IN, z: airDropAt.z - Math.cos(actor.yaw) * CARPET_RUN_IN }
-      : muzzlePoint(actor, "grenade");
+    // A carpet bomb is released where it falls (as the plane passes over), never lobbed forward
+    // from the nose — a lobbed one would fly through anything airborne in between. (It therefore
+    // lands on the tick it is released; the renderer draws its fall BEFORE release, ending on
+    // ATTACK_FIRE_AT — see carpetDropPoints.)
+    const origin = airDrop && airDropAt ? { ...airDropAt } : muzzlePoint(actor, "grenade");
     const originHeight = muzzleHeight(actor, "grenade");
     const intendedPoint = { ...dropPoint };
     const intendedHeight = terrainHeightAt(dropPoint) + 0.14;
@@ -6097,6 +6089,17 @@ function impactRadius(entity: CombatEntity, part: DamagePart): number {
   if (part.role === "weapon") return 0.34;
   if (part.role === "mobility") return 0.42;
   return Math.max(0.32, Math.min(entity.radius * 0.55, 0.68));
+}
+
+/** Where a bomber's CARPET lands: CARPET_BOMBS points CARPET_SPACING apart along its heading,
+ *  centred beneath it. The sim drops on these and the renderer draws the fall onto them, so the
+ *  two can never disagree. */
+export function carpetDropPoints(actor: CombatEntity): Vec2[] {
+  const heading = { x: Math.sin(actor.yaw), z: Math.cos(actor.yaw) };
+  return Array.from({ length: CARPET_BOMBS }, (_, i) => {
+    const along = (i - (CARPET_BOMBS - 1) / 2) * CARPET_SPACING;
+    return clampToArena({ x: actor.position.x + heading.x * along, z: actor.position.z + heading.z * along });
+  });
 }
 
 function projectileKind(entity: CombatEntity, attackMode: AttackMode = "weapon"): ProjectileKind {

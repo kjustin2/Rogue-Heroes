@@ -468,7 +468,9 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   orders animate their actor and how; `computeAttackPhases` and `attackCoverage.test.ts` both read
   it): shoot/smoke = the unit's weapon family, melee = `melee`, an infantry hand grenade = `throw`
   (a procedural overhand windmill of the FREE arm, `throwArmAngle`, released at the sim's 0.58s),
-  an aircraft bomb = nothing (a bay, not a gun). **Arms are meshes of the `"body"` part (role core)**,
+  an aircraft bomb = nothing (a bay, not a gun). A bomber's CARPET lands on the tick it is
+  released (sim unchanged — its timing is balance-tested); the renderer draws the fall before
+  release off the order's clock (`makeCarpetFall` onto `carpetDropPoints`, ending on `ATTACK_FIRE_AT`). **Arms are meshes of the `"body"` part (role core)**,
   so in the pose code any `limb === "arm-*"` test placed AFTER the `part.role === "core"` branch
   never runs — the throw branch sits before it for that reason (see next-steps for the Blender
   banks' arm channels, which are still behind it).
