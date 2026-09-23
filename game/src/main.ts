@@ -815,7 +815,6 @@ function showMainMenu(): void {
           ? `<button class="title-start" data-menu="continue" type="button">Continue Battle</button>
              <button class="menu-action" data-menu="play" type="button">New Skirmish</button>`
           : `<button class="title-start" data-menu="play" type="button">Play Skirmish</button>`}
-        <button class="menu-action" data-menu="versus" type="button">Local 2 Players</button>
         <button class="menu-link" data-menu="tutorial" type="button">Play the tutorial</button>
         <div class="menu-utilities">
           <button class="menu-utility" data-menu="achievements" type="button">Achievements</button>
@@ -833,7 +832,6 @@ function showMainMenu(): void {
     const target = event.target as HTMLElement;
     const action = target.closest<HTMLElement>("[data-menu]")?.dataset.menu;
     if (action === "play") showStartScreen();
-    else if (action === "versus") showStartScreen(true);
     else if (action === "continue") loadSavedBattle();
     else if (action === "tutorial") startTutorial();
     else if (action === "achievements") showAchievements();
@@ -843,10 +841,12 @@ function showMainMenu(): void {
   });
 }
 
-function showStartScreen(versus = false): void {
+// The Skirmish set-up page. `versus` = Local 2 Players, picked by the Opponent row at the top of the
+// page (it used to be its own main-menu button); switching re-renders with the other picks kept.
+function showStartScreen(versus = false, keep?: { map: string; mode: ModeId }): void {
   closeAllMenus();
-  let selectedMap = MAPS[0].id;
-  let selectedMode: ModeId = "destroy";
+  let selectedMap = keep?.map ?? MAPS[0].id;
+  let selectedMode: ModeId = keep?.mode ?? "destroy";
   let selectedDifficulty: Difficulty = settings.difficulty;
   let selectedFaction: FactionId = settings.faction;
   // The OTHER side: Player 2 in a local game, the bot otherwise -- where "random" is also allowed.
@@ -899,6 +899,13 @@ function showStartScreen(versus = false): void {
           </div>
         </div>
         <div class="start-right">
+          <div class="menu-section">
+            <div class="menu-label">Opponent</div>
+            <div class="chip-row">
+              <button class="menu-chip ${versus ? "" : "on"}" data-opponent="bot" type="button" data-tip="Fight the computer. Pick its faction and difficulty below.">vs Bot</button>
+              <button class="menu-chip ${versus ? "on" : ""}" data-opponent="local" type="button" data-tip="Two players on one screen: you take turns planning, and who plans first swaps every turn.">Local 2 Players</button>
+            </div>
+          </div>
           <div class="menu-section start-factions">
             <div class="menu-label">${versus ? "Player 1 faction" : "Your faction"}</div>
             <div class="menu-grid faction-grid">${factionCards}</div>
@@ -938,6 +945,15 @@ function showStartScreen(versus = false): void {
     const target = event.target as HTMLElement;
     if (target.closest("[data-back]")) {
       showMainMenu();
+      return;
+    }
+    const opponentBtn = target.closest<HTMLElement>("[data-opponent]");
+    if (opponentBtn) {
+      const local = opponentBtn.dataset.opponent === "local";
+      if (local !== versus) {
+        skipNextMenuEntrance = true; // swap in place, no fade
+        showStartScreen(local, { map: selectedMap, mode: selectedMode });
+      }
       return;
     }
     const factionBtn = target.closest<HTMLElement>("[data-faction]");

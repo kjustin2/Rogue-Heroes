@@ -562,7 +562,7 @@ Skirmish Run were deleted (`campaign.ts`, `run.ts`, their screens, tests, CSS, `
 `startRun` on the seam, the `campaign` / `run` / `briefing` shot cases). Do NOT reintroduce either,
 or add another mode/ladder, until the owner asks. Banned identifiers (grep to zero): `rht.campaign.v1`,
 `rht.run.v1`, `startCampaignMission`, `startRunBattle`, `showCampaign`, `showRunIntro`, `RUN_LENGTH`,
-`requisition`, `campaign-card`. The main menu is Continue / Play Skirmish, Local 2 Players, the tutorial link, and
+`requisition`, `campaign-card`. The main menu is Continue / Play Skirmish, the tutorial link, and
 Achievements · Armory · Settings · Exit. Elites/bosses (`debugSpawn` options + the top-of-screen boss
 bar) survive only for a future Skirmish set piece. The mission-intro rail now plays at the start of
 every Skirmish battle.
@@ -618,7 +618,7 @@ every Skirmish battle.
 
 ## LOCAL 2 PLAYERS (hotseat, 2026-09-22)
 
-Main menu "Local 2 Players" → the Skirmish set-up page with a Player 2 faction row (no difficulty —
+The Skirmish set-up page's **Opponent** row (vs Bot / Local 2 Players — not a main-menu button, owner 2026-09-22) switches to a Player 2 faction row (no difficulty —
 forced Normal so the enemy-side difficulty modifiers are all 1).
 `sim.hotseat` (serialized) stops `endTurn` from queueing AI orders and makes `enemyIntents()` empty.
 Each command phase is planned TWICE: a handoff card ("Player N — your orders"), that player plans,

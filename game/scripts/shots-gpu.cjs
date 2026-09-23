@@ -414,7 +414,7 @@ app.whenReady().then(async () => {
       }
       if (s === "versus") {
         // Local 2 Players: the set-up page, then the handoff card before Player 1 plans.
-        await toTitle(); await clickMenu('[data-menu="versus"]');
+        await toTitle(); await clickMenu('[data-menu="play"]'); await clickMenu('[data-opponent="local"]');
         await shot("versus-setup");
         await clickMenu("[data-start]"); await sleep(2500);
         await shot("versus-handoff");
