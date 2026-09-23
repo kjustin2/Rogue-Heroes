@@ -31,10 +31,23 @@ measured readability gates, and a whole-game glitch sweep whose findings were al
 2. **Balance pass from play**, not from self-play alone. `balance.test.ts` gates the extremes
    (per-kind damage per $ within 0.5x–2.5x of the median; seats 35–65%) but the striker and tank
    sit near the top of the band. Tune `src/game/units.ts` only with the self-play table in hand.
-3. **Map terrain vocabulary.** Karak and Verdant both use stepped pyramid mesas; distinct palettes
-   and events, but a map pass could give each map its own landform (canyons, terraces, craters,
-   dunes). Constraints: impassable = step > `TERRAIN_STEP` or water; `scatter.test.ts` must stay
-   green; rerun balance self-play (it moved 15 points on one layout change before).
+3. **Map terrain vocabulary.** Verdant Pass is DONE (2026-09-23): its two stepped pyramid
+   mountains are now farmed TERRACES, three shelves per valley side climbing to the map edge in
+   0.8 risers with jogged lips, hedges and stumps on the lower shelf. Karak is the one map still
+   built on stepped pyramid mesas (NW/SE); a canyon, crater ring or dune field would give it its
+   own landform. Constraints: impassable = step > `TERRAIN_STEP` or water; shelves must be deep
+   enough to stop on (`spawnClearance`: 1.4m infantry, ~2.6m tank); `scatter.test.ts` must stay
+   green; rerun balance self-play (the Verdant change moved Verdant from 4 draws to 2 and pushed
+   the bomber row under the floor, see the next item).
+   **Bomber AI (found on the Verdant pass).** The bot only bombs a foe that is already beneath
+   it at the START of a turn; flying toward one spends the turn, so 34 self-play bombers averaged
+   ~27 damage a game and the row sits at the band floor on noise alone. Tried in the Verdant
+   branch and reverted (too big a balance swing for a map change): a bombing run (move over the
+   nearest ground foe in reach, release on arrival — an actor's orders run in sequence) took the
+   bomber to 1.8x the median; requiring a group of two took it to 2.3x and sank the APC to 0.38x.
+   So the aircraft is fine and the AI is what is weak. The fix is that run plus a bomber retune
+   (fewer loads or a smaller carpet) in one change, then take `bomber` back out of `UNGATED`
+   in `balance.test.ts`.
 4. **Remaining unit-identity ideas** (only if the owner wants more depth):
    - Engineer: deployable bridge span or sandbag line (reuse the Defenses placement flow).
    - Flak: a one-turn tracer wall that reveals and blocks air movement through it (needs a new
@@ -45,11 +58,11 @@ measured readability gates, and a whole-game glitch sweep whose findings were al
 
 ## Known and deliberately deferred (do not re-chase without new evidence)
 
-- **Balance self-play seat split sits at the gate's edge** after the 2026-09-23 map-props pass:
-  player seat 35% of decided games (7 / 13, 16 draws) vs 58% (11 / 8) on the commit before. Maps
-  are point-mirrored, so a layout cannot favour a seat by itself; at ~20 decided games this is
-  inside the noise, but the next layout change may tip `balance.test.ts` red. If it does, widen the
-  seed set before tuning anything.
+- **Balance self-play seat split moved toward the gate's low edge** with the 2026-09-23 map-props
+  pass: player seat 40% of decided games (8 / 12, 16 draws) on top of the Verdant terraces, vs
+  58% (11 / 8) before either change (35% with the props alone). Maps are point-mirrored, so a layout
+  cannot favour a seat by itself; at ~20 decided games this is inside the noise, but a later
+  layout change may tip `balance.test.ts` red. If it does, widen the seed set before tuning.
 
 - `soak:gpu` sees ONE toon program compile on the first resolve (a transparent toon material
   created mid-resolve; key diff field #51). Not a visible hitch — max frame 20.8 ms, same as later
@@ -59,6 +72,9 @@ measured readability gates, and a whole-game glitch sweep whose findings were al
 - The real-GPU tools (`soak:gpu`, `shots:gpu`, `probe:intro`) only mean something on a machine
   with a GPU. In a cloud container they run under `xvfb-run` on SwiftShader: use them to check that
   a scene renders and to read layouts, not to judge frame times or subtle shading.
+  There a resolve takes ~40s of wall time (the clock runs on rendered frames), which is why
+  `smoke:flow` now waits up to 120s for a turn; under `?lowfx=1` SwiftShader also drops the big
+  ground plane in wide views (sky shows through), on `main` as much as anywhere.
 
 ## How to work (the rules that kept this repo sane)
 

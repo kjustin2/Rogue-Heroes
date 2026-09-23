@@ -499,6 +499,9 @@ export class TacticalSim {
   // during the following command phase enemyIntents() can show what each enemy unit will do.
   // Cleared once that command is actually issued. Rides serialize().
   revealedOrders = false;
+  // Which side the pulse was flown for. Only the player ever recons against the bot, but in hotseat
+  // either seat can, and the reveal belongs to whoever flew it (flips with the seats).
+  revealedTeam: Team = "player";
   private enemyIntentCache?: { turn: number; list: EnemyIntent[] };
   // True while enemyIntents() dry-runs the enemy AI: addOrder stays silent (no log, no bus event).
   private previewingEnemy = false;
@@ -512,6 +515,11 @@ export class TacticalSim {
   playerLosses = 0;
   private readonly countedDead = new Set<string>();
   readonly log: string[] = [];
+  // Hotseat: how many lines have ever been logged, and the count when the current seat started
+  // planning. swapSides() drops the outgoing seat's planning chatter so the next seat cannot read
+  // the other human's orders off the log.
+  private logSeq = 0;
+  private seatLogMark = 0;
   readonly turnReports: TurnReport[] = [];
   readonly economy = new Map<Team, number>([["player", START_MONEY_PLAYER], ["enemy", START_MONEY_ENEMY], ["neutral", 0]]);
 
@@ -686,6 +694,7 @@ export class TacticalSim {
     this.gasClouds.splice(0);
     this.smokeClouds.splice(0);
     this.revealedOrders = false;
+    this.revealedTeam = "player";
     this.enemyIntentCache = undefined;
     this.mines.splice(0);
     this.placePickups();
@@ -708,7 +717,8 @@ export class TacticalSim {
     this.resolveClock = 0;
     this.rng.reseed(0x726f6775);
     this.economy.set("player", START_MONEY_PLAYER);
-    this.economy.set("enemy", START_MONEY_ENEMY);
+    // The bot's smaller purse is a handicap for the human; two humans start even.
+    this.economy.set("enemy", hotseat ? START_MONEY_PLAYER : START_MONEY_ENEMY);
     this.economy.set("neutral", 0);
     this.pendingBuild = undefined;
     this.pendingDeploy = undefined;
@@ -725,6 +735,7 @@ export class TacticalSim {
     this.pushLog(`${modeDef(mode).name} — ${map.name}`);
     this.pushLog("Turn 1 command phase");
     this.refreshEventNotice();
+    this.seatLogMark = this.logSeq;
   }
 
   private buildModeState(): ModeState {
@@ -1169,7 +1180,7 @@ export class TacticalSim {
     if (!actor.parts.some((p) => p.role === "utility" && p.hp > 0)) return `${actor.name}'s drone is destroyed`;
     if (actor.commandPoints <= 0) return `${actor.name} has no command points`;
     if (actor.commandPoints < actor.maxCommandPoints || this.orders.some((o) => o.actorId === actor.id)) return `${actor.name} needs its whole turn for a recon pulse`;
-    if (this.revealedOrders) return "The enemy's orders are already revealed";
+    if (this.revealedOrders && (!this.hotseat || this.revealedTeam === actor.team)) return "The enemy's orders are already revealed";
     return undefined;
   }
 
@@ -1193,7 +1204,15 @@ export class TacticalSim {
    * endTurn is byte-identical to the preview. Cached per turn; empty when nothing is revealed.
    */
   enemyIntents(): EnemyIntent[] {
-    if (!this.revealedOrders || this.phase !== "command" || this.hotseat) return [];
+    if (!this.revealedOrders || this.phase !== "command") return [];
+    // HOTSEAT: the other seat is a human, so there is no AI to dry-run. The seat that flew the pulse
+    // plans SECOND the next turn (main.ts) and sees the other human's real, already-queued orders.
+    if (this.hotseat) {
+      if (this.revealedTeam !== "player") return [];
+      return this.orders
+        .filter((o) => !o.done && this.entity(o.actorId)?.team === "enemy")
+        .map((o) => ({ actorId: o.actorId, kind: o.kind, destination: o.destination ? { ...o.destination } : undefined, targetId: o.targetId }));
+    }
     if (this.enemyIntentCache?.turn === this.turn) return this.enemyIntentCache.list;
     const rngState = this.rng.save();
     const snapshot = this.entities.map((e) => ({ e, cp: e.commandPoints, grenades: e.grenades, yaw: e.yaw }));
@@ -2007,6 +2026,8 @@ export class TacticalSim {
   }
 
   reset(): void {
+    // A hotseat restart from Player 2's planning seat must not hand Player 2's faction to Player 1.
+    if (this.sidesSwapped) this.flipTeams();
     this.configure(this.mapDef, this.mode, this.difficulty, undefined, this.hotseat);
   }
 
@@ -2069,9 +2090,37 @@ export class TacticalSim {
   /** Hotseat: hand the "player" seat to the other human (and back). Command phase only. */
   swapSides(): void {
     if (this.phase !== "command") return;
+    // The outgoing seat's planning lines ("Recruit 3 queued move", "sets overwatch ...") would tell
+    // the other human exactly what was ordered. They are dropped, not deferred: the resolve reports
+    // what actually happened.
+    this.log.splice(0, Math.min(this.logSeq - this.seatLogMark, this.log.length));
     this.flipTeams();
     this.sidesSwapped = !this.sidesSwapped;
-    this.selectedId = "";
+    this.seatLogMark = this.logSeq;
+    // A seat with no troops out yet (turn 1) starts on its Home Base, as configure() does for
+    // Player 1; otherwise nothing is selected, so no deck covers the board at the handoff.
+    const own = this.entities.filter((e) => e.team === "player" && e.status.alive && e.kind !== "cover");
+    this.selectedId = own.some((e) => !isBuildingKind(e.kind) && !isDefenseKind(e.kind)) ? "" : own.find((e) => isBuildingKind(e.kind))?.id ?? "";
+    // Half-finished input belongs to the player who left the seat.
+    this.intent = "select";
+    this.pendingBuild = undefined;
+    this.pendingDeploy = undefined;
+    this.pendingSupport = undefined;
+  }
+
+  /** Hotseat: which human (1 or 2) owns a side in the CURRENT frame (it flips while Player 2 plans). */
+  seatOf(team: Team): 1 | 2 {
+    return (team === "player") !== this.sidesSwapped ? 1 : 2;
+  }
+
+  /** Hotseat: the seat that flew a recon pulse last resolve (it plans second this turn), if any. */
+  revealedSeat(): 1 | 2 | undefined {
+    return this.hotseat && this.revealedOrders ? this.seatOf(this.revealedTeam) : undefined;
+  }
+
+  /** How the log names a side: "You" / "Enemy" against the bot, "Player 1" / "Player 2" in hotseat. */
+  private sideName(team: Team, vsBot: string): string {
+    return this.hotseat && (team === "player" || team === "enemy") ? `Player ${this.seatOf(team)}` : vsBot;
   }
 
   // Everything team-keyed trades places: entities, mines, treasury, faction, and the mode's
@@ -2092,6 +2141,7 @@ export class TacticalSim {
     if (s.hillHolder) s.hillHolder = flip(s.hillHolder);
     if (s.hillHolders) s.hillHolders = s.hillHolders.map((h) => (h ? flip(h) : h));
     for (const flag of s.flags) flag.team = flip(flag.team);
+    this.revealedTeam = flip(this.revealedTeam);
   }
 
   debugSpawn(kind: TroopKind, team: Team, position: Vec2, options: { elite?: boolean; bossName?: string; clearTerrain?: boolean } = {}): CombatEntity {
@@ -2216,6 +2266,8 @@ export class TacticalSim {
       gasClouds: this.gasClouds,
       smokeClouds: this.smokeClouds,
       revealedOrders: this.revealedOrders,
+      revealedTeam: this.revealedTeam,
+      queuedSupport: this.queuedSupport,
       hotseat: this.hotseat,
       mines: this.mines,
       pickups: this.pickups,
@@ -2235,6 +2287,8 @@ export class TacticalSim {
         gasClouds?: { id: string; x: number; z: number; radius: number; maxRadius: number }[];
         smokeClouds?: { id: string; x: number; z: number; radius: number; turnsLeft: number }[];
         revealedOrders?: boolean;
+        revealedTeam?: Team;
+        queuedSupport?: { kind: SupportPowerKind; point: Vec2; dir: Vec2 }[];
         hotseat?: boolean;
         mines?: { id: string; x: number; z: number; team: Team }[];
         pickups?: { id: string; x: number; z: number; amount: number }[];
@@ -2286,6 +2340,7 @@ export class TacticalSim {
       this.gasClouds.splice(0, this.gasClouds.length, ...(data.gasClouds ?? []));
       this.smokeClouds.splice(0, this.smokeClouds.length, ...(data.smokeClouds ?? []));
       this.revealedOrders = data.revealedOrders === true;
+      this.revealedTeam = data.revealedTeam === "enemy" ? "enemy" : "player";
       this.hotseat = data.hotseat === true;
       this.sidesSwapped = false;
       this.enemyIntentCache = undefined;
@@ -2300,7 +2355,9 @@ export class TacticalSim {
       this.pendingBuild = undefined;
       this.pendingDeploy = undefined;
       this.pendingSupport = undefined;
-      this.queuedSupport = [];
+      // A support call is paid for (money, command point, cooldown) when it is queued; dropping it
+      // on a save/load would take all three and deliver nothing.
+      this.queuedSupport = (data.queuedSupport ?? []).map((c) => ({ kind: c.kind, point: { ...c.point }, dir: { ...c.dir } }));
       this.pendingFx = [];
       this.resolveClock = 0;
       this.selectedId = this.entities.find((e) => e.team === "player" && isBuildingKind(e.kind))?.id ?? this.entities[0]?.id ?? "";
@@ -2312,6 +2369,7 @@ export class TacticalSim {
       this.pendingStrikes = [];
       this.refreshEventNotice();
       this.pushLog(`Battle restored — Turn ${this.turn}`);
+      this.seatLogMark = this.logSeq;
       return true;
     } catch {
       return false;
@@ -2537,6 +2595,7 @@ export class TacticalSim {
       if (!order.fired && order.elapsed >= 0.6) {
         order.fired = true;
         this.revealedOrders = true;
+        this.revealedTeam = actor.team;
         this.enemyIntentCache = undefined;
         this.pushLog(`${actor.name}'s drone maps the enemy's plans — their next orders are revealed`);
         this.effect("ping", actor.position, actor.position, 0x8de4ff, 0.9, 6);
@@ -4050,7 +4109,7 @@ export class TacticalSim {
       structure.team = team;
       if (structure.kind === "turret") structure.commandPoints = 0; // comes online next turn
       this.effect("ping", { ...structure.position }, { ...structure.position }, team === "player" ? 0x75d8ff : 0xff765f, 0.9, structure.radius + 0.8);
-      this.pushLog(`${team === "player" ? "You" : "The enemy"} captured ${structure.name}${structure.coverKind === "depot" ? ` (+$${DEPOT_INCOME}/turn)` : ""}`);
+      this.pushLog(`${this.sideName(team, team === "player" ? "You" : "The enemy")} captured ${structure.name}${structure.coverKind === "depot" ? ` (+$${DEPOT_INCOME}/turn)` : ""}`);
     }
   }
 
@@ -4113,7 +4172,7 @@ export class TacticalSim {
       this.effect("ping", target.position, target.position, 0x9dfcff, 0.7, 2.6);
     }
     if (messages.some((m) => m.includes("comms are down"))) {
-      this.pushLog(`${target.team === "enemy" ? "Enemy" : "Player"} command network degraded`);
+      this.pushLog(`${this.sideName(target.team, target.team === "enemy" ? "Enemy" : "Player")} command network degraded`);
       this.effect("blast", target.position, target.position, 0xb9f6ff, 0.58, 3.1);
     }
     if (messages.some((m) => m.includes("turret ring is jammed"))) {
@@ -5197,6 +5256,7 @@ export class TacticalSim {
     this.refreshEventNotice();
     this.applyIonStormClamp(); // scramble command points if an ion storm is raking the field
     this.pushLog(`Turn ${this.turn} command phase`);
+    this.seatLogMark = this.logSeq;
     this.bus.emit("TURN_START", { turn: this.turn });
   }
 
@@ -5510,21 +5570,21 @@ export class TacticalSim {
     if (playerHeld > 0 && enemyHeld === 0) {
       s.playerScore += 1;
       s.hillHolder = "player";
-      this.pushLog(`You hold the hill (${s.playerScore}/${s.target})`);
+      this.pushLog(`${this.sideName("player", "You")} hold${this.hotseat ? "s" : ""} the hill (${s.playerScore}/${s.target})`);
     } else if (enemyHeld > 0 && playerHeld === 0) {
       s.enemyScore += 1;
       s.hillHolder = "enemy";
-      this.pushLog(`Enemy holds the hill (${s.enemyScore}/${s.target})`);
+      this.pushLog(`${this.sideName("enemy", "Enemy")} holds the hill (${s.enemyScore}/${s.target})`);
     } else {
       s.hillHolder = playerHeld > 0 && enemyHeld > 0 ? undefined : s.hillHolder;
       if (playerHeld === 0 && enemyHeld === 0) s.hillHolder = undefined;
     }
     if (s.playerScore >= s.target) {
       this.phase = "victory";
-      this.pushLog("Hill secured — victory!");
+      this.pushLog(this.hotseat ? "Player 1 secures the hill and wins" : "Hill secured — victory!");
     } else if (s.enemyScore >= s.target) {
       this.phase = "defeat";
-      this.pushLog("Enemy held the hill — defeat.");
+      this.pushLog(this.hotseat ? "Player 2 secures the hill and wins" : "Enemy held the hill — defeat.");
     }
   }
 
@@ -5556,7 +5616,7 @@ export class TacticalSim {
       if (returner || flag.droppedTurns >= 4) {
         flag.pos = { ...flag.home };
         flag.droppedTurns = 0;
-        this.pushLog(`${flag.team === "player" ? "Your" : "Enemy"} flag is returned home`);
+        this.pushLog(`${this.hotseat ? `Player ${this.seatOf(flag.team)}'s` : flag.team === "player" ? "Your" : "Enemy"} flag is returned home`);
       }
     }
     // The opposing team grabs an unguarded flag.
@@ -5567,7 +5627,7 @@ export class TacticalSim {
       if (grabber) {
         flag.carrierId = grabber.id;
         flag.pos = { ...grabber.position };
-        this.pushLog(`${grabber.name} steals the ${flag.team === "player" ? "allied" : "enemy"} flag!`);
+        this.pushLog(`${grabber.name} steals the ${this.hotseat ? `Player ${this.seatOf(flag.team)}` : flag.team === "player" ? "allied" : "enemy"} flag!`);
       }
     }
     const playerFlag = s.flags.find((f) => f.team === "player")!;
@@ -5576,10 +5636,10 @@ export class TacticalSim {
     this.tryCapture(playerFlag, enemyFlag, "enemy");
     if (s.playerScore >= s.target) {
       this.phase = "victory";
-      this.pushLog("Flag captured — victory!");
+      this.pushLog(this.hotseat ? "Player 1 wins on flag captures" : "Flag captured — victory!");
     } else if (s.enemyScore >= s.target) {
       this.phase = "defeat";
-      this.pushLog("Enemy captured your flag — defeat.");
+      this.pushLog(this.hotseat ? "Player 2 wins on flag captures" : "Enemy captured your flag — defeat.");
     }
   }
 
@@ -5595,7 +5655,7 @@ export class TacticalSim {
       carried.carrierId = undefined;
       carried.pos = { ...carried.home };
       const score = scorer === "player" ? this.modeState.playerScore : this.modeState.enemyScore;
-      this.pushLog(`${scorer === "player" ? "You capture" : "Enemy captures"} the flag (${score}/${this.modeState.target})`);
+      this.pushLog(`${this.hotseat ? `Player ${this.seatOf(scorer)} captures` : scorer === "player" ? "You capture" : "Enemy captures"} the flag (${score}/${this.modeState.target})`);
     }
   }
 
@@ -5673,10 +5733,10 @@ export class TacticalSim {
     // Last Stand has no enemy base: clearing a wave is breathing room, not victory.
     if (this.mode !== "survival" && !factionLiving(this.entities, "enemy").length) {
       this.phase = "victory";
-      this.pushLog("Enemy force disabled");
+      this.pushLog(this.hotseat ? "Player 2's force is disabled — Player 1 wins" : "Enemy force disabled");
     } else if (!factionLiving(this.entities, "player").length) {
       this.phase = "defeat";
-      this.pushLog("Player force disabled");
+      this.pushLog(this.hotseat ? "Player 1's force is disabled — Player 2 wins" : "Player force disabled");
     }
   }
 
@@ -5703,6 +5763,7 @@ export class TacticalSim {
   }
 
   private pushLog(text: string): void {
+    this.logSeq += 1;
     this.log.unshift(text);
     if (this.activeTurnReport && this.phase === "resolve") {
       this.activeTurnReport.notes.unshift(text);

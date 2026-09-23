@@ -649,10 +649,23 @@ every Skirmish battle.
 
 The Skirmish set-up page's **Opponent** row (vs Bot / Local 2 Players — not a main-menu button, owner 2026-09-22) switches to a Player 2 faction row (no difficulty —
 forced Normal so the enemy-side difficulty modifiers are all 1).
-`sim.hotseat` (serialized) stops `endTurn` from queueing AI orders and makes `enemyIntents()` empty.
+`sim.hotseat` (serialized) stops `endTurn` from queueing AI orders. Both players start with
+`START_MONEY_PLAYER` (the bot's smaller purse is a handicap for the human, not for Player 2).
 Each command phase is planned TWICE: a handoff card ("Player N — your orders"), that player plans,
-End Turn hands to the other seat, the second End Turn resolves. **Who plans first alternates by turn
-parity** (P1 odd, P2 even) because the second planner watched the first on the same screen.
+End Turn ("Pass to P2") hands to the other seat, the second End Turn resolves. **Who plans first
+alternates by turn parity** (P1 odd, P2 even) because the second planner watched the first on the
+same screen — except after a recon pulse: `revealedTeam` records whose drone flew, that seat plans
+SECOND and `enemyIntents()` returns the other human's real queued orders (no AI dry-run).
+**The second planner must not see the first one's plan** (2026-09-23 audit; `smoke:hotseat`
+asserts it through `__rht.overlayCounts()` and is fault-injection proven): `syncOrders` draws only
+`"player"`-side orders, overwatch wedges show only the planning side's in the command phase, and
+`swapSides()` drops the outgoing seat's log lines (`logSeq` / `seatLogMark`) and its armed
+intent / pending deploy / build / support. What a player builds or deploys is physically on the
+board and stays visible; alternation is what keeps that fair. The HUD's turn chip names the seat
+("Turn 3 Player 2"), the vs-bot INTEL toast is off (the handoff card lists the other side's tech as
+of the turn start instead), each seat keeps its own camera (Player 2's first view is turned half
+round), and `reset()` / Play Again flip the seats back before reconfiguring and reopen on Player 1.
+Log lines and battle-log sections name "Player 1" / "Player 2", never "You" / "Enemy".
 Player 2 plans through the ordinary UI via `sim.swapSides()` (`flipTeams`: entities, mines,
 treasury, factions, mode scores / hill holders / flag owners). The sim always RESOLVES and SAVES
 unswapped (`serialize` flips back around the write), so victory = Player 1, defeat = Player 2.
