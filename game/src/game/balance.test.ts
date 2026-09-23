@@ -34,7 +34,12 @@ const BAND_HIGH = 2.5;
 // flyers; the flamer's burning-ground ticks are unattributed (no actor on a burn zone); the
 // scout is eyes + capture + dash, and as the fastest unit the AI runs it in first and alone, so
 // its damage row is 0-or-a-little depending on which two games draw it (see the seat table).
-const UNGATED: readonly TroopKind[] = ["medic", "engineer", "droneop", "transport", "interceptor", "flamer", "scout"];
+// The bomber's row measures the AI, not the aircraft: the bot only bombs a foe that is already
+// beneath it at the START of a turn (flying toward one spends the turn), so 34 bombers averaged
+// ~27 damage a game and the row swung 0.42x-0.56x on a map layout change alone. Given a bombing
+// run (move over a group, release on arrival) the same aircraft measured 1.8x-2.3x -- see
+// docs/next-steps.md. Re-gate it when the AI flies real bombing runs.
+const UNGATED: readonly TroopKind[] = ["medic", "engineer", "droneop", "transport", "interceptor", "flamer", "scout", "bomber"];
 
 interface Tally { damage: number; spent: number; fielded: number }
 

@@ -470,18 +470,20 @@ const RAW_MAPS: readonly MapDef[] = [
     // Derelict foundry turrets guard the throat of each rail yard — first squad to reach one owns it.
     neutrals: [{ kind: "turret", x: -3.5, z: -8, mirror: true }],
   },
-  // VERDANT PASS — a farmed valley between two wooded mountains. Sections: the ORCHARD (the
-  // south-west quarter: rows of fruit trees on a grid, a wood you fight through lane by lane),
+  // VERDANT PASS — a farmed valley cut into terraces. Sections: the TERRACES (both valley sides
+  // are farmed shelves that climb to the map edge in long contour steps — a lane along every shelf,
+  // high ground that runs the length of the valley instead of piling into one peak), the ORCHARD
+  // (the south-west quarter: rows of fruit trees on a grid, a wood you fight through lane by lane),
   // CHAPEL GREEN (the north-west quarter: a roofless chapel ruin landmark on open turf with its
-  // yard of stones and stumps), the MILL POND (a pond against the hill's north shoulder with the
-  // old mill landmark on its bank — water the ground lanes must go round) and THE HILL (the
-  // stacked centre). Mirrored: orchard and chapel swap quarters across the map, so each side
-  // has one wood to hide in and one green to be seen on.
+  // yard of stones and stumps), the MILL POND (a pond at the foot of the terraces with the old mill
+  // landmark on its bank — water the ground lanes must go round) and THE HILL (the stacked centre).
+  // Mirrored: orchard and chapel swap quarters across the map, so each side has one wood to hide
+  // in and one green to be seen on, and each side's terrace flight starts nearer its own base.
   {
     id: "verdant",
     name: "Verdant Pass",
-    blurb: "A farmed valley: orchard rows, a chapel ruin, the mill pond and the hill.",
-    feel: "Fight through the orchard rows or cross the open chapel green; the pond bends every lane toward the hill.",
+    blurb: "A farmed valley: terraced slopes, orchard rows, a chapel ruin and the mill pond.",
+    feel: "Climb the terraces for a long view down the valley, fight through the orchard rows, or cross the open chapel green.",
     seed: 0x56455244,
     theme: { ground: 0x35502a, skyline: "forest", surface: "grass", groundAccent: 0x93b04a, grid: 0x86a85f, fog: 0x93b0c4, fogDensity: 0.009, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x86b2d4, ambient: { kind: "pollen", color: 0xd8f0a0, density: 1 } },
     terrain: {
@@ -490,18 +492,27 @@ const RAW_MAPS: readonly MapDef[] = [
       blocks: [
         { minX: -5.5, maxX: 5.5, minZ: -5, maxZ: 5, height: 0.8 },     // hill base (climbable lower step)
         { minX: -3.4, maxX: 3.4, minZ: -3.2, maxZ: 3.2, height: 1.6 }, // commanding hilltop (stacked)
-        // North mountain — a tall forested massif closing off the valley (climbable 0.85 steps).
-        { minX: -9, maxX: 9, minZ: 11, maxZ: 19, height: 0.85 },       // north mountain — foothill
-        { minX: -7, maxX: 7, minZ: 12, maxZ: 18, height: 1.7 },        // north mountain — mid slope
-        { minX: -5, maxX: 5, minZ: 13, maxZ: 17.5, height: 2.55 },     // north mountain — upper
-        { minX: -3, maxX: 3, minZ: 14, maxZ: 17, height: 3.4 },        // north mountain — peak
-        // South mountain — the mirrored massif closing the far side of the valley.
-        { minX: -9, maxX: 9, minZ: -19, maxZ: -11, height: 0.85 },     // south mountain — foothill
-        { minX: -7, maxX: 7, minZ: -18, maxZ: -12, height: 1.7 },      // south mountain — mid slope
-        { minX: -5, maxX: 5, minZ: -17.5, maxZ: -13, height: 2.55 },   // south mountain — upper
-        { minX: -3, maxX: 3, minZ: -17, maxZ: -14, height: 3.4 },      // south mountain — peak
+        // THE TERRACES. Each valley side is three farmed shelves climbing to the map edge, every
+        // riser 0.8 (one climbable step), so the whole flight walks. Each shelf is two segments and
+        // every lip jogs back at the same x, so the flight bends like a contour following the
+        // hillside rather than running as one long box, and every shelf is >= 2.5 deep (3m+ scaled):
+        // infantry can stop on one clear of the riser behind it (spawnClearance 1.4). The lower
+        // shelf reaches further into the valley on the side nearer each army's own base.
+        { minX: -20, maxX: -2, minZ: 11, maxZ: 19, height: 0.8 },      // north terraces — lower shelf (west)
+        { minX: -2, maxX: 16, minZ: 12.5, maxZ: 19, height: 0.8 },     // north terraces — lower shelf (east)
+        { minX: -16, maxX: -2, minZ: 14, maxZ: 19, height: 1.6 },      // north terraces — middle shelf (west)
+        { minX: -2, maxX: 12, minZ: 15, maxZ: 19, height: 1.6 },       // north terraces — middle shelf (east)
+        { minX: -11, maxX: -2, minZ: 16.5, maxZ: 19, height: 2.4 },    // north terraces — top shelf (west, the long view)
+        { minX: -2, maxX: 4, minZ: 17.5, maxZ: 19, height: 2.4 },      // north terraces — top shelf (east)
+        // South terraces: the point mirror of the north flight.
+        { minX: 2, maxX: 20, minZ: -19, maxZ: -11, height: 0.8 },      // south terraces — lower shelf (east)
+        { minX: -16, maxX: 2, minZ: -19, maxZ: -12.5, height: 0.8 },   // south terraces — lower shelf (west)
+        { minX: 2, maxX: 16, minZ: -19, maxZ: -14, height: 1.6 },      // south terraces — middle shelf (east)
+        { minX: -12, maxX: 2, minZ: -19, maxZ: -15, height: 1.6 },     // south terraces — middle shelf (west)
+        { minX: 2, maxX: 11, minZ: -19, maxZ: -16.5, height: 2.4 },    // south terraces — top shelf (east)
+        { minX: -4, maxX: 2, minZ: -19, maxZ: -17.5, height: 2.4 },    // south terraces — top shelf (west)
       ],
-      // The mill ponds: still water on the hill's shoulders; ground units go round, flyers over.
+      // The mill ponds: still water at the foot of the terraces; ground units go round, flyers over.
       water: [
         { minX: -14, maxX: -9, minZ: 6.5, maxZ: 10.5 },   // west mill pond
         { minX: 9, maxX: 14, minZ: -10.5, maxZ: -6.5 },   // east mill pond (mirror)
@@ -519,6 +530,9 @@ const RAW_MAPS: readonly MapDef[] = [
       { palette: ["tree"], count: 9, spacing: 0.5, rect: { minX: -23, maxX: -10, minZ: -15.5, maxZ: -7 }, grid: { dx: 3.4, dz: 3.4, jitter: 0.25 } },
       // Chapel green: the yard of stones, stumps and scrub around the ruin.
       { palette: ["rubble", "stump", "bush", "bush", "rock", "log"], count: 5, spacing: 1.2, rect: { minX: -24, maxX: -16, minZ: -1, maxZ: 9 } },
+      // The terraces: hedges, stumps and field stones on the lower shelves -- low cover along a lane
+      // that is otherwise all exposure (scatter keeps off the risers and the upper shelves).
+      { palette: ["bush", "bush", "stump", "rock", "log"], count: 6, spacing: 1.0, rect: { minX: -20, maxX: -3, minZ: 11.5, maxZ: 18 } },
       // Field edge between the orchard and the pass.
       { palette: ["bush", "log", "sandbag", "rock"], count: 3, spacing: 1.6, rect: { minX: -20, maxX: -7, minZ: -4, maxZ: 3 }, centerGap: 6.5 },
     ],
