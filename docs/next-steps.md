@@ -45,6 +45,12 @@ measured readability gates, and a whole-game glitch sweep whose findings were al
 
 ## Known and deliberately deferred (do not re-chase without new evidence)
 
+- **Balance self-play seat split sits at the gate's edge** after the 2026-09-23 map-props pass:
+  player seat 35% of decided games (7 / 13, 16 draws) vs 58% (11 / 8) on the commit before. Maps
+  are point-mirrored, so a layout cannot favour a seat by itself; at ~20 decided games this is
+  inside the noise, but the next layout change may tip `balance.test.ts` red. If it does, widen the
+  seed set before tuning anything.
+
 - `soak:gpu` sees ONE toon program compile on the first resolve (a transparent toon material
   created mid-resolve; key diff field #51). Not a visible hitch — max frame 20.8 ms, same as later
   resolves. Twin-cloning both vertex-colour states did not catch it; find the material created

@@ -75,6 +75,9 @@ export async function launchGame({ port, viewport = { width: 1600, height: 900 }
   });
   if (init) await context.addInitScript(init); // seed localStorage etc. before the app boots
   const page = await context.newPage();
+  // A cloud container renders on SwiftShader and boots to the title in ~33s, past Playwright's 30s
+  // default; SMOKE_TIMEOUT_MS raises every wait without touching the smokes (default unchanged).
+  if (process.env.SMOKE_TIMEOUT_MS) page.setDefaultTimeout(Number(process.env.SMOKE_TIMEOUT_MS));
   const errors = [];
   page.on("console", (msg) => {
     if (msg.type() === "error") errors.push(msg.text());

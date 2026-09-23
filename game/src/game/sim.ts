@@ -44,6 +44,7 @@ import {
   factionLiving,
   isBuildingKind,
   isDefenseKind,
+  isToppleKind,
   isAirKind,
   isInfantryKind,
   isPartIntact,
@@ -186,6 +187,8 @@ const BURN_RADIUS = 1.6;
 // whole point of shooting one, and it has to outlast the turn it happened on to deny ground.
 const FUEL_FIRE_RADIUS = 2.4;
 const FUEL_FIRE_TURNS = 3;
+// The falling column's colour: foliage, rusted steel, weathered timber; stone is the default.
+const TOPPLE_COLOR: Partial<Record<CoverKind, number>> = { tree: 0x4f7a3a, girder: 0x6b5446, tower: 0x6a4a2c };
 // An ammo cache scatters instead of detonating once.
 const AMMO_COOKOFF_COUNT = 5;
 const AMMO_COOKOFF_SPREAD = 2.2;
@@ -3941,12 +3944,12 @@ export class TacticalSim {
     this.applyPartImplications(actor, target, messages);
     const volatileDestroyed = target.parts.some((p) => p.role === "volatile" && p.hp === 0);
     if (volatileDestroyed) this.resolveExplosion(actor, target);
-    // Tall rigid cover (pillars, trees) topples away from the killing blow and crushes
+    // Tall rigid cover (pillars, trees, girders, obelisks, towers) topples away from the killing blow and crushes
     // whatever it lands on — positioning next to them is a readable risk/reward.
     if (
       target.kind === "cover" &&
       !target.status.alive &&
-      (target.coverKind === "pillar" || target.coverKind === "tree") &&
+      isToppleKind(target.coverKind) &&
       !this.toppled.has(target.id)
     ) {
       this.toppled.add(target.id);
@@ -4088,7 +4091,7 @@ export class TacticalSim {
     const dir = len > 0.01 ? { x: dx / len, z: dz / len } : { x: 1, z: 0 };
     const reach = Math.max(1.6, cover.height * 1.1);
     const end = clampToArena({ x: cover.position.x + dir.x * reach, z: cover.position.z + dir.z * reach });
-    this.effect("topple", { ...cover.position }, end, cover.coverKind === "tree" ? 0x4f7a3a : 0xc8bca0, 1.0, cover.radius);
+    this.effect("topple", { ...cover.position }, end, TOPPLE_COLOR[cover.coverKind ?? "pillar"] ?? 0xc8bca0, 1.0, cover.radius);
     this.pushLog(`${cover.name} topples!`);
     for (const e of this.entities) {
       if (!e.status.alive || e.downed || e.id === cover.id || e.kind === "base") continue;
@@ -4506,7 +4509,7 @@ export class TacticalSim {
       const result = applyDamage(entity, part.id, Math.round(42 * (1 - d / 4) * (volatileNeighbour ? 3 : 1)));
       this.afterDamage(actor, entity, result, `${source.name} explosion`);
     }
-    if (kind === "fuel") {
+    if (kind === "fuel" || kind === "brazier") {
       this.burnZones.push({
         id: `burn-${++this.effectSeq}`,
         x: source.position.x,
