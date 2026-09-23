@@ -29,6 +29,13 @@ const STAGES = {
   apc: { actor: "apc", target: "soldier", dist: 7, order: "shoot", zoom: 0.7, scale: 0.5, span: 3.6 },
   turret: { actor: "turret", target: "soldier", dist: 6.5, order: "shoot", zoom: 0.7, scale: 0.5, span: 3.4, targetZ: 3.5 },
   gunship: { actor: "gunship", target: "gunship", dist: 7, order: "shoot", zoom: 0.75, scale: 0.5, span: 3.3 },
+  // The four attacks the 2026-09-23 audit fixed: mortar smoke (the tube must hoist), the gunship's
+  // gun run (tracers from the aircraft, not a line on the ground), the bomber's carpet (three bombs
+  // must be SEEN falling) and the hand-grenade THROW (the free arm windmills; `grenade` films it too).
+  smoke: { actor: "mortar", target: "soldier", dist: 10, order: "smoke", zoom: 0.95, scale: 0.5, span: 6.1 },
+  strafe: { actor: "gunship", target: "soldier", dist: 5, order: "strafe", zoom: 0.8, scale: 0.35, span: 2.4 },
+  carpet: { actor: "bomber", target: "soldier", dist: 0.4, order: "bomb", zoom: 0.8, scale: 0.35, span: 1.6 },
+  throw: { actor: "soldier", target: "soldier", dist: 6.5, order: "grenade", zoom: 0.45, scale: 0.35, span: 1.3 },
   // "through": the target stands just behind a prop on the line of fire. The rounds must stop AT
   // the prop (chip effect) or clearly clear it — never pass through the mesh.
   "through-crate": { actor: "soldier", target: "soldier", dist: 6.4, order: "shoot", zoom: 0.55, scale: 0.4, span: 3.2, cover: "crate", coverAt: 0.55 },
@@ -38,7 +45,10 @@ const STAGES = {
   "through-wall": { actor: "soldier", target: "soldier", dist: 7, order: "shoot", zoom: 0.6, scale: 0.4, span: 3.4, wall: true, coverAt: 0.5 },
   "through-tree": { actor: "soldier", target: "soldier", dist: 7, order: "shoot", zoom: 0.6, scale: 0.4, span: 3.4, cover: "tree", coverAt: 0.5 },
 };
-const PROJECTILE_STAGES = ["through-crate", "through-sandbag", "through-rock", "through-tree", "shoot", "heavy", "sniper", "sapper", "pistol", "flame", "grenade", "launcher", "mortar", "tank", "artillery", "apc", "turret", "gunship"];
+const PROJECTILE_STAGES = ["through-crate", "through-sandbag", "through-rock", "through-tree", "shoot", "heavy", "sniper", "sapper", "pistol", "flame", "grenade", "launcher", "mortar", "tank", "artillery", "apc", "turret", "gunship", "smoke", "carpet"];
+// A software GPU (a cloud container) runs a few fps and the frame loop clamps dt at 50ms, so the
+// sim runs slower than the wall clock the gaps below assume. FILM_SLOW=<n> stretches every gap.
+const SLOW = Number(process.env.FILM_SLOW ?? 1) || 1;
 
 const FRAME_COST = 180;
 const arg = process.argv[2] ?? "melee";
@@ -90,7 +100,8 @@ try {
       for (const part of target.parts) if (part.role === "weapon" || part.role === "mobility") part.hp = 0;
       target.status.canShoot = false;
       target.status.canMove = false; // ...and must not walk out of frame either
-      if (stage.order === "grenade") actor.grenades = Math.max(1, actor.grenades ?? 0);
+      if (stage.order === "grenade" || stage.order === "bomb") actor.grenades = Math.max(1, actor.grenades ?? 0);
+      actor.yaw = Math.PI / 2; // face +x, down the line (a carpet is laid along the heading)
       // An artillery piece refuses to fire until its outriggers are down, and deploying costs the
       // whole turn — so the strip never saw a shell. Plant them before the order is queued.
       if (stage.actor === "artillery") actor.deployed = true;
@@ -98,6 +109,9 @@ try {
       sim.setIntent(stage.order);
       const queued = stage.order === "melee" ? sim.queueMelee(target.id)
         : stage.order === "grenade" ? sim.queueGrenade(target.id)
+        : stage.order === "smoke" ? sim.queueSmokeAt({ ...target.position })
+        : stage.order === "bomb" ? sim.queueBombDrop()
+        : stage.order === "strafe" ? sim.queueMove({ x: target.position.x + 4, z: 0 })
         : sim.queueShoot(target.id);
       if (kind === "kill") { const o = sim.orders[sim.orders.length - 1]; if (o) o.aim = "center"; }
       const why = queued ? "" : sim.log.slice(0, 2);
@@ -121,7 +135,7 @@ try {
       if (KIND !== "jump") await page.evaluate((s) => window.__rht.setView({ x: (s.dist - 1.4) / 2, z: 0, zoom: s.zoom, pitch: 0.5, yaw: 0.9 }), stage);
       frames.push(await page.screenshot({ clip: { x: 300, y: 120, width: 600, height: 420 } }));
       // A screenshot + camera pin costs ~FRAME_COST ms of wall clock; the gap fills out the span.
-      await delay(KIND === "jump" ? 40 : stage.span ? Math.max(0, (stage.span * 1000) / (12 * stage.scale) - FRAME_COST) : stage.gap);
+      await delay(SLOW * (KIND === "jump" ? 40 : stage.span ? Math.max(0, (stage.span * 1000) / (12 * stage.scale) - FRAME_COST) : stage.gap));
     }
     const tiles = await Promise.all(frames.map((b) => sharp(b).resize(400, 280).png().toBuffer()));
     await sharp({ create: { width: 1600, height: 840, channels: 3, background: "#000" } })

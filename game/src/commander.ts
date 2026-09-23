@@ -32,7 +32,7 @@ export const MEDALS: readonly MedalDef[] = [
   { id: "first-victory", name: "First Blood", blurb: "Win your first battle." },
   { id: "flawless", name: "Flawless Command", blurb: "Win a battle without losing a single unit." },
   { id: "blitz", name: "Blitz", blurb: "Win a battle in 5 turns or fewer." },
-  { id: "demolitionist", name: "Demolitionist", blurb: "Topple a pillar or tree during a winning battle." },
+  { id: "demolitionist", name: "Demolitionist", blurb: "Topple a pillar, obelisk, girder, tower or tree during a winning battle." },
   { id: "warlord", name: "Warlord", blurb: "Win 10 battles.", progress: (s) => [s.wins, 10] },
   { id: "centurion", name: "Centurion", blurb: "Reach 100 lifetime unit kills.", progress: (s) => [s.kills, 100] },
   { id: "iron", name: "Iron Commander", blurb: "Win a battle on Hard." },

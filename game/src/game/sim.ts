@@ -44,6 +44,7 @@ import {
   factionLiving,
   isBuildingKind,
   isDefenseKind,
+  isToppleKind,
   isAirKind,
   isInfantryKind,
   isPartIntact,
@@ -169,6 +170,9 @@ const STRAFE_DAMAGE_SHARE = 0.75;
 // CARPET (bomber): three bombs in a line along the heading, this far apart.
 export const CARPET_BOMBS = 3;
 const CARPET_SPACING = 2.2;
+// Seconds into a shoot / grenade / smoke order at which the round leaves (the attack pose's
+// contact point is authored against this; the renderer's carpet-bomb fall ends on it).
+export const ATTACK_FIRE_AT = 0.58;
 // A jump trooper landing next to an enemy: damage before difficulty scaling.
 const SLAM_LANDING_DAMAGE = 15;
 
@@ -191,6 +195,8 @@ const BURN_RADIUS = 1.6;
 // whole point of shooting one, and it has to outlast the turn it happened on to deny ground.
 const FUEL_FIRE_RADIUS = 2.4;
 const FUEL_FIRE_TURNS = 3;
+// The falling column's colour: foliage, rusted steel, weathered timber; stone is the default.
+const TOPPLE_COLOR: Partial<Record<CoverKind, number>> = { tree: 0x4f7a3a, girder: 0x6b5446, tower: 0x6a4a2c };
 // An ammo cache scatters instead of detonating once.
 const AMMO_COOKOFF_COUNT = 5;
 const AMMO_COOKOFF_SPREAD = 2.2;
@@ -294,6 +300,8 @@ export interface VisualEvent {
   // line; "topple" = a tall cover column falling from `from` toward `to`.
   // "strike" = a melee blow landing at `to`, swung from `from`.
   // "bolt" = lightning striking `to` from the sky; "land" = a jump trooper touching down at `to`.
+  // "shot" = a gun-run burst (gunship strafe): tracers from the aircraft's gun at `fromHeight`
+  // down into `to`. It is resolved as direct damage, so it carries no Projectile of its own.
   type: "shot" | "impact" | "blast" | "ping" | "jet" | "beam" | "topple" | "strike" | "bolt" | "land";
   from: Vec2;
   to: Vec2;
@@ -301,6 +309,8 @@ export interface VisualEvent {
   age: number;
   duration: number;
   radius?: number;
+  /** World height the effect starts at, when that is not the ground under `from`. */
+  fromHeight?: number;
 }
 
 export interface ShotPreview {
@@ -2721,17 +2731,12 @@ export class TacticalSim {
         }
         // A straight-down bomb drop keeps the aircraft's heading (the carpet is laid along it).
         if (dist(order.destination, actor.position) > 0.05) actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
-        if (order.elapsed >= 0.58) {
+        if (order.elapsed >= ATTACK_FIRE_AT) {
           order.fired = true;
           if (order.kind === "grenade" && actor.kind === "bomber") {
             // CARPET: a bomber lays its load in a line along its heading — one bomb short of the
             // aircraft, one beneath it, one past it — instead of a single drop.
-            const heading = { x: Math.sin(actor.yaw), z: Math.cos(actor.yaw) };
-            for (let i = 0; i < CARPET_BOMBS; i += 1) {
-              const along = (i - (CARPET_BOMBS - 1) / 2) * CARPET_SPACING;
-              const point = clampToArena({ x: actor.position.x + heading.x * along, z: actor.position.z + heading.z * along });
-              order.projectileId = this.launchGrenadeAtPoint(order, actor, point, point);
-            }
+            for (const point of carpetDropPoints(actor)) order.projectileId = this.launchGrenadeAtPoint(order, actor, point, point);
             this.pushLog(`${actor.name} carpets the line beneath it with ${CARPET_BOMBS} bombs`);
           } else {
             order.projectileId = order.kind === "grenade"
@@ -2755,7 +2760,7 @@ export class TacticalSim {
         : preferredPart(target, order.aim);
       const aimPoint = aimPointFor(target, targetPart);
       actor.yaw = Math.atan2(aimPoint.x - actor.position.x, aimPoint.z - actor.position.z);
-      if (order.elapsed >= 0.58) {
+      if (order.elapsed >= ATTACK_FIRE_AT) {
         order.fired = true;
         order.projectileId = this.launchProjectile(order, actor, target);
       }
@@ -2862,7 +2867,8 @@ export class TacticalSim {
       const amount = Math.max(1, Math.round(this.estimateShotDamage(actor, target, part, "center", false) * STRAFE_DAMAGE_SHARE));
       const result = applyDamage(target, part.id, amount);
       this.pushLog(`${actor.name} strafes ${target.name}`);
-      this.effect("shot", actor.position, target.position, actor.team === "player" ? 0x75d8ff : 0xff765f, 0.3);
+      // Warm MG tracers from the gun under the nose (ONE BALLISTIC LANGUAGE: no team-colour lines).
+      this.effect("shot", actor.position, target.position, 0xffc070, 0.36, undefined, actor.elevation - 0.35);
       this.effect("impact", target.position, target.position, result.destroyed ? 0xffd166 : 0xffffff, 0.42, target.radius);
       this.afterDamage(actor, target, result, "Strafe");
     }
@@ -3268,7 +3274,9 @@ export class TacticalSim {
     const airDrop = isAirBomber(actor);
     const dropPoint = airDrop ? (airDropAt ?? { x: actor.position.x, z: actor.position.z }) : point;
     // A carpet bomb is released where it falls (as the plane passes over), never lobbed forward
-    // from the nose — a lobbed one would fly through anything airborne in between.
+    // from the nose — a lobbed one would fly through anything airborne in between. (It therefore
+    // lands on the tick it is released; the renderer draws its fall BEFORE release, ending on
+    // ATTACK_FIRE_AT — see carpetDropPoints.)
     const origin = airDrop && airDropAt ? { ...airDropAt } : muzzlePoint(actor, "grenade");
     const originHeight = muzzleHeight(actor, "grenade");
     const intendedPoint = { ...dropPoint };
@@ -4049,12 +4057,12 @@ export class TacticalSim {
     this.applyPartImplications(actor, target, messages);
     const volatileDestroyed = target.parts.some((p) => p.role === "volatile" && p.hp === 0);
     if (volatileDestroyed) this.resolveExplosion(actor, target);
-    // Tall rigid cover (pillars, trees) topples away from the killing blow and crushes
+    // Tall rigid cover (pillars, trees, girders, obelisks, towers) topples away from the killing blow and crushes
     // whatever it lands on — positioning next to them is a readable risk/reward.
     if (
       target.kind === "cover" &&
       !target.status.alive &&
-      (target.coverKind === "pillar" || target.coverKind === "tree") &&
+      isToppleKind(target.coverKind) &&
       !this.toppled.has(target.id)
     ) {
       this.toppled.add(target.id);
@@ -4196,7 +4204,7 @@ export class TacticalSim {
     const dir = len > 0.01 ? { x: dx / len, z: dz / len } : { x: 1, z: 0 };
     const reach = Math.max(1.6, cover.height * 1.1);
     const end = clampToArena({ x: cover.position.x + dir.x * reach, z: cover.position.z + dir.z * reach });
-    this.effect("topple", { ...cover.position }, end, cover.coverKind === "tree" ? 0x4f7a3a : 0xc8bca0, 1.0, cover.radius);
+    this.effect("topple", { ...cover.position }, end, TOPPLE_COLOR[cover.coverKind ?? "pillar"] ?? 0xc8bca0, 1.0, cover.radius);
     this.pushLog(`${cover.name} topples!`);
     for (const e of this.entities) {
       if (!e.status.alive || e.downed || e.id === cover.id || e.kind === "base") continue;
@@ -4614,7 +4622,7 @@ export class TacticalSim {
       const result = applyDamage(entity, part.id, Math.round(42 * (1 - d / 4) * (volatileNeighbour ? 3 : 1)));
       this.afterDamage(actor, entity, result, `${source.name} explosion`);
     }
-    if (kind === "fuel") {
+    if (kind === "fuel" || kind === "brazier") {
       this.burnZones.push({
         id: `burn-${++this.effectSeq}`,
         x: source.position.x,
@@ -5895,7 +5903,7 @@ export class TacticalSim {
     this.activeTurnReport = undefined;
   }
 
-  private effect(type: VisualEvent["type"], from: Vec2, to: Vec2, color: number, duration: number, radius?: number): void {
+  private effect(type: VisualEvent["type"], from: Vec2, to: Vec2, color: number, duration: number, radius?: number, fromHeight?: number): void {
     // A blast is a spark. Every explosion in the game goes through here, so this is the one place
     // that has to know about gas; the cloud's own detonation is a blast too, which is how one
     // canister sets off the next.
@@ -5909,6 +5917,7 @@ export class TacticalSim {
       duration,
       radius,
       age: 0,
+      ...(fromHeight !== undefined ? { fromHeight } : {}),
     });
   }
 }
@@ -6161,6 +6170,17 @@ function impactRadius(entity: CombatEntity, part: DamagePart): number {
   if (part.role === "weapon") return 0.34;
   if (part.role === "mobility") return 0.42;
   return Math.max(0.32, Math.min(entity.radius * 0.55, 0.68));
+}
+
+/** Where a bomber's CARPET lands: CARPET_BOMBS points CARPET_SPACING apart along its heading,
+ *  centred beneath it. The sim drops on these and the renderer draws the fall onto them, so the
+ *  two can never disagree. */
+export function carpetDropPoints(actor: CombatEntity): Vec2[] {
+  const heading = { x: Math.sin(actor.yaw), z: Math.cos(actor.yaw) };
+  return Array.from({ length: CARPET_BOMBS }, (_, i) => {
+    const along = (i - (CARPET_BOMBS - 1) / 2) * CARPET_SPACING;
+    return clampToArena({ x: actor.position.x + heading.x * along, z: actor.position.z + heading.z * along });
+  });
 }
 
 function projectileKind(entity: CombatEntity, attackMode: AttackMode = "weapon"): ProjectileKind {

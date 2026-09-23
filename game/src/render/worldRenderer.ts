@@ -6,10 +6,10 @@ import { hasMotionBank, sampleMotion } from "./infantryMotion";
 import { ANKLE_Y, CROUCH_GAIT, GAIT_TIERS, HIP_Y, HIP_Z, KNEE_Y, bodyAt, footAt, gaitTier, solveLeg, type GaitParams, type LegPose } from "./gait";
 import { splitAtKnee } from "./legSplit";
 import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec2 } from "../core/math";
-import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isVehicleKind, type CombatEntity, type DamagePart, type Team, type EntityKind, type PartRole } from "../game/damageModel";
+import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isVehicleKind, type CombatEntity, type CoverKind, type DamagePart, type Team, type EntityKind, type PartRole } from "../game/damageModel";
 import { factionDef, type FactionId } from "../game/factions";
-import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
-import { OVERWATCH_ARC_HALF } from "../game/sim";
+import type { OrderKind, Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
+import { OVERWATCH_ARC_HALF, carpetDropPoints } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type SkylineKind } from "../game/maps";
 import type { TroopKind } from "../game/units";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
@@ -20,8 +20,14 @@ import {
   isLobbed, makeLightning, makeMuzzleFlash, makePing, makeProjectileModel, makeProjectileShadow, makeProjectileTrail,
   makeScorchStar, makeStrikeFlash, orientAlongVelocity, prewarmProjectileFx, projectileFamily,
   projectileFxWarmUpMaterials, projectileGeometry, projectileMaterial, pushTrailPoint, setFxViewer,
-  type LandingHint, type ProjectileFamily, type TrailPoint,
+  carpetFallU, makeCarpetFall, makeGunRun, type LandingHint, type ProjectileFamily, type TrailPoint,
 } from "./projectileFx";
+
+// Cover kinds built by buildBiomeProp (the per-map furniture added 2026-09-23).
+const BIOME_PROPS: ReadonlySet<CoverKind> = new Set<CoverKind>([
+  "girder", "coil", "ingot", "haybale", "fence", "grave", "boat", "rack", "iceblock",
+  "obelisk", "urn", "brazier", "hedgehog", "tower", "bones",
+]);
 
 // Part materials are toon (see partMaterial); PartMaterial names the shared shape both use.
 type PartMaterial = THREE.MeshToonMaterial;
@@ -81,6 +87,7 @@ export class WorldRenderer {
   // unit's weapon kicks back (and its body rocks) the instant it shoots.
   private readonly recoilByActor = new Map<string, number>();
   private readonly attackPhaseByActor = new Map<string, number>();
+  private readonly attackFamilyByActor = new Map<string, WeaponFamily>();
   /** Melee targets by actor, for the lunge; only set while a strike order is live. */
   private readonly meleeTargetByActor = new Map<string, Vec2>();
   /**
@@ -363,6 +370,7 @@ export class WorldRenderer {
     // to know where it is, and it changes once a frame.
     if (camera) setFxViewer(camera.position);
     this.syncProjectiles(sim.projectiles);
+    this.syncCarpetFalls(sim);
     this.syncEffects(sim.effects);
     this.syncFlashLights();
     this.syncDamageNumbers(sim);
@@ -759,6 +767,14 @@ export class WorldRenderer {
       inkMaterial(),
     ]) for (const g of geos) out.push(new THREE.Mesh(g, m));
     return out;
+  }
+
+  /** What the projectile and effect roots are drawing THIS frame (the smoke:attacks seam): object
+   *  counts, and how many effect objects hang well above the ground (a gun run's tracers). */
+  fxCounts(): { projectiles: number; effects: number; airborneEffects: number } {
+    let airborneEffects = 0;
+    for (const child of this.effectRoot.children) if (child.position.y > 2.5) airborneEffects += 1;
+    return { projectiles: this.projectileRoot.children.length, effects: this.effectRoot.children.length, airborneEffects };
   }
 
   limbPose(entityId: string): { limb: string; rotX: number; rotY: number; posY: number; posZ: number }[] {
@@ -1318,14 +1334,18 @@ export class WorldRenderer {
   // never drift out of step with the shot it belongs to.
   private computeAttackPhases(sim: TacticalSim): void {
     this.attackPhaseByActor.clear();
+    this.attackFamilyByActor.clear();
     this.meleeTargetByActor.clear();
     if (sim.phase !== "resolve") return;
     for (const order of sim.orders) {
       if (order.done) continue;
-      if (order.kind !== "shoot" && order.kind !== "melee" && order.kind !== "grenade") continue;
+      const actor = sim.entity(order.actorId);
+      const family = actor && attackFamilyForOrder(actor.kind, order.kind);
+      if (!family) continue;
       const duration = order.duration > 0 ? order.duration : 1;
       const phase = Math.max(0, Math.min(1, order.elapsed / duration));
       this.attackPhaseByActor.set(order.actorId, phase);
+      this.attackFamilyByActor.set(order.actorId, family);
       if (order.kind === "melee" && order.targetId) {
         const target = sim.entity(order.targetId);
         if (target) this.meleeTargetByActor.set(order.actorId, target.position);
@@ -1391,7 +1411,7 @@ export class WorldRenderer {
     group.userData.recoil = this.recoilByActor.get(entity.id) ?? 0;
     group.userData.attackPhase = this.attackPhaseByActor.get(entity.id);
     const meleeTarget = this.meleeTargetByActor.get(entity.id);
-    group.userData.weaponFamily = meleeTarget ? "melee" : weaponFamily(entity.kind);
+    group.userData.weaponFamily = this.attackFamilyByActor.get(entity.id) ?? weaponFamily(entity.kind);
     group.userData.meleeTarget = meleeTarget;
     // Rolling vehicles kick up a dust wake behind their tracks.
     if (moving && isVehicleKind(entity.kind)) {
@@ -2778,6 +2798,9 @@ export class WorldRenderer {
       for (const side of [-1, 1]) {
         this.box(group, entity, part.id, [0.5, 0.05, 0.05], [side * 0.36, 1.3, 0], 0x181d21, { bevel: 0.4, rotation: [0, 0, side * 0.22] });
       }
+    } else if (entity.coverKind && BIOME_PROPS.has(entity.coverKind)) {
+      // Before the fuel drum: the brazier is volatile too.
+      this.buildBiomeProp(group, entity);
     } else if (volatile) {
       // Fuel: a ribbed drum in a low cradle with a valve head and a hazard band. Dark body, warm
       // band -- the previous version was a saturated orange blob that read as a pickup, not a hazard.
@@ -3046,14 +3069,19 @@ export class WorldRenderer {
         this.box(group, entity, part.id, [1.9, 0.08, 0.1], [rx, 0.66, rz], 0x7c5a36, { rotation: [0, along, 0] });
       }
     } else {
-      this.box(group, entity, part.id, [1.82, 1.25, 0.56], [0, 0.63, 0], 0xb98b5b);
-      this.box(group, entity, part.id, [1.66, 0.22, 0.62], [0, 1.37, 0], 0xe0b673);
-      this.box(group, entity, part.id, [0.14, 1.12, 0.66], [-0.58, 0.7, 0], 0x7a5535);
-      this.box(group, entity, part.id, [0.14, 1.12, 0.66], [0.58, 0.7, 0], 0x7a5535);
-      for (const x of [-0.34, 0.34]) this.box(group, entity, part.id, [0.1, 1.02, 0.08], [x, 0.7, 0.34], 0xf0c37a, { emissive: 0x6c3a13, emissiveIntensity: 0.16 });
+      // WALL BLOCK: a precast concrete blast wall (T-wall) on its foot — the harbour mole and the
+      // foundry both pour them. It used to be a tan plank box with two glowing strips, which read as
+      // a crate and belonged to no map at all.
+      this.box(group, entity, part.id, [2.0, 0.3, 1.0], [0, 0.15, 0], 0x6f6c65, { bevel: 0.2, roughness: 0.95 });
+      this.box(group, entity, part.id, [1.9, 1.3, 0.36], [0, 0.95, 0], 0x86827a, { bevel: 0.12, roughness: 0.95 });
+      this.box(group, entity, part.id, [1.94, 0.12, 0.42], [0, 1.55, 0], 0x77736b, { bevel: 0.3, roughness: 0.95 });
+      // One painted hazard band and the two lifting eyes: the small accents, not the slab.
+      this.box(group, entity, part.id, [1.92, 0.12, 0.38], [0, 0.5, 0], 0xc89a3a, { bevel: 0.3, roughness: 0.9 });
+      for (const x of [-0.6, 0.6]) this.box(group, entity, part.id, [0.12, 0.12, 0.08], [x, 1.66, 0], 0x2f3236, { bevel: 0.3, metalness: 0.4 });
     }
     const stone = entity.coverKind === "rock" || entity.coverKind === "rubble" || entity.coverKind === "statue"
-      || entity.coverKind === "chapel" || entity.coverKind === "colossus" || entity.coverKind === "cistern";
+      || entity.coverKind === "chapel" || entity.coverKind === "colossus" || entity.coverKind === "cistern"
+      || entity.coverKind === "grave" || entity.coverKind === "obelisk";
     // A steel landmark keeps its own colour: at the prop tint the furnace and the hull went the
     // colour of the slag and the ice they stand on.
     const steel = isLandmarkKind(entity.coverKind) && !stone;
@@ -3062,6 +3090,184 @@ export class WorldRenderer {
     // the ground colour. Stone leans further into the map (a rock is OF the ground); wood, foliage
     // and hardware keep most of their own hue and only pick up the map's cast.
     this.tintPropToMap(group, stone ? 0.5 : steel ? 0.12 : 0.3, stone ? this.rockTint : this.propTint);
+  }
+
+  /**
+   * BIOME PROPS (2026-09-23): the furniture that says which map this is — a foundry's steel, a
+   * farm's hay and fences, an ice harbour's boats and racks, a temple's obelisks, jars and braziers,
+   * a border's tank traps and watchtower, a desert carcass. Box-built in the same flat toon parts
+   * as the tent, pipe and silo (every mesh a pooled part, so per-part damage and paint never know),
+   * and each built round ONE read from the tactical camera: the silhouette, then a single small
+   * accent. The group is spun per entity in syncEntity, so none of these picks its own yaw.
+   */
+  private buildBiomeProp(group: THREE.Group, entity: CombatEntity): void {
+    const id = entity.parts[0].id;
+    const v = hash(entity.id);
+    switch (entity.coverKind) {
+      case "girder": {
+        // A rusted I-beam gantry leg on its base plate, a torn-off brace stub, a hazard-striped foot.
+        this.box(group, entity, id, [1.0, 0.12, 1.0], [0, 0.06, 0], 0x3a3a3c, { metalness: 0.4, bevel: 0.25 });
+        for (const z of [-0.2, 0.2]) this.box(group, entity, id, [0.52, 2.4, 0.1], [0, 1.3, z], 0x7a4a34, { metalness: 0.4, bevel: 0.3 });
+        this.box(group, entity, id, [0.1, 2.4, 0.32], [0, 1.3, 0], 0x6a4030, { metalness: 0.4, bevel: 0.3 });
+        this.box(group, entity, id, [0.64, 0.1, 0.56], [0, 2.54, 0], 0x4a4a4e, { metalness: 0.45, bevel: 0.3 });
+        this.box(group, entity, id, [0.12, 1.0, 0.12], [0.36, 2.0, 0], 0x6a4030, { metalness: 0.4, rotation: [0, 0, -0.62] });
+        this.box(group, entity, id, [0.56, 0.16, 0.46], [0, 0.34, 0], 0xd8a53a, { accent: true, bevel: 0.3 });
+        break;
+      }
+      case "coil": {
+        // A coil of strip steel on its side in a timber cradle, strapped, the dark eye showing.
+        for (const x of [-0.42, 0.42]) this.box(group, entity, id, [0.22, 0.24, 1.2], [x, 0.12, 0], 0x5a4630, { bevel: 0.25, roughness: 0.95 });
+        this.cylinder(group, entity, id, 0.52, 0.96, [0, 0.62, 0], 0x8a9096, [Math.PI / 2, 0, 0], { metalness: 0.5, roughness: 0.5 });
+        this.cylinder(group, entity, id, 0.2, 0.98, [0, 0.62, 0], 0x23272b, [Math.PI / 2, 0, 0], { metalness: 0.3 });
+        for (const z of [-0.26, 0.26]) this.cylinder(group, entity, id, 0.535, 0.06, [0, 0.62, z], 0x3d4248, [Math.PI / 2, 0, 0], { metalness: 0.5 });
+        break;
+      }
+      case "ingot": {
+        // Square steel billets stacked crosswise, three courses, the top bar still glowing from the mill.
+        for (const z of [-0.38, 0, 0.38]) this.box(group, entity, id, [1.5, 0.22, 0.3], [0, 0.11, z], 0x62676e, { metalness: 0.5, bevel: 0.25 });
+        for (const x of [-0.38, 0, 0.38]) this.box(group, entity, id, [0.3, 0.22, 1.5], [x, 0.33, 0], 0x6e737a, { metalness: 0.5, bevel: 0.25 });
+        this.box(group, entity, id, [1.5, 0.22, 0.3], [0, 0.55, -0.2], 0x7a8087, { metalness: 0.5, bevel: 0.25 });
+        this.box(group, entity, id, [1.4, 0.2, 0.28], [0, 0.55, 0.2], 0xff8a3a, { accent: true, emissive: 0xff5a1a, emissiveIntensity: 0.55, bevel: 0.25 });
+        break;
+      }
+      case "haybale": {
+        // Round bales: one stood on its end (the wound face is the read from above), one on its
+        // flank beside it, apart enough that the pair never reads as one bent tube.
+        this.cylinder(group, entity, id, 0.42, 0.84, [-0.48, 0.42, 0.05], 0xc9a24a, [0, 0, 0], { roughness: 0.98 });
+        this.cylinder(group, entity, id, 0.28, 0.03, [-0.48, 0.85, 0.05], 0xa9842f, [0, 0, 0], { roughness: 0.98 });
+        this.cylinder(group, entity, id, 0.12, 0.04, [-0.48, 0.86, 0.05], 0x8a6a24, [0, 0, 0], { roughness: 0.98 });
+        this.cylinder(group, entity, id, 0.38, 0.76, [0.42, 0.38, -0.05], 0xbf9842, [Math.PI / 2, 0, 0], { roughness: 0.98 });
+        this.cylinder(group, entity, id, 0.4, 0.07, [0.42, 0.38, -0.05], 0x7a5a2a, [Math.PI / 2, 0, 0], { roughness: 0.98 }); // twine band
+        break;
+      }
+      case "fence": {
+        // A split-rail field fence: three posts, two rails, one rail sagged off its post.
+        for (const x of [-1.05, 0, 1.05]) this.box(group, entity, id, [0.14, 0.92, 0.14], [x, 0.46, 0], 0x5a4128, { bevel: 0.3, roughness: 0.96 });
+        this.box(group, entity, id, [2.3, 0.1, 0.08], [0, 0.72, 0], 0x7a5a36, { bevel: 0.35, roughness: 0.96 });
+        this.box(group, entity, id, [2.3, 0.1, 0.08], [0.04, 0.36, 0.02], 0x6f5131, { bevel: 0.35, roughness: 0.96, rotation: [0, 0, (v % 2 ? 1 : -1) * 0.12] });
+        break;
+      }
+      case "grave": {
+        // Churchyard headstones: a round-topped slab, a cross, a sunk ledger, all leaning with age.
+        const lean = ((v % 5) - 2) * 0.05;
+        this.box(group, entity, id, [0.5, 0.72, 0.14], [-0.3, 0.34, 0.12], 0x8f8a80, { bevel: 0.35, roughness: 0.94, rotation: [lean, 0.15, lean * 0.6] });
+        this.sphere(group, entity, id, 0.25, [-0.3, 0.68, 0.12], 0x8f8a80, { scaleY: 0.5 });
+        this.box(group, entity, id, [0.12, 0.84, 0.12], [0.38, 0.42, -0.1], 0x7d786e, { bevel: 0.3, roughness: 0.94, rotation: [-lean, -0.2, 0.08] });
+        this.box(group, entity, id, [0.46, 0.11, 0.12], [0.38, 0.6, -0.1], 0x7d786e, { bevel: 0.3, roughness: 0.94, rotation: [-lean, -0.2, 0.08] });
+        this.box(group, entity, id, [0.46, 0.08, 0.76], [0.02, 0.04, -0.46], 0x6f6a60, { bevel: 0.3, roughness: 0.96 });
+        break;
+      }
+      case "boat": {
+        // A rowboat hauled out for the winter, keel up on its chocks: a broad, flat hull with a square
+        // transom and a wedge bow, a pale painted strake round the gunwale, the oars stowed beside it.
+        for (const x of [-0.6, 0.5]) this.box(group, entity, id, [0.2, 0.18, 1.2], [x, 0.09, 0], 0x5a4630, { bevel: 0.3 });
+        this.box(group, entity, id, [1.7, 0.2, 1.1], [-0.2, 0.26, 0], 0xd8cbb0, { bevel: 0.15, roughness: 0.9 });
+        this.box(group, entity, id, [1.7, 0.34, 1.02], [-0.2, 0.52, 0], 0x8a3a2a, { bevel: 0.15, roughness: 0.9 });
+        this.box(group, entity, id, [0.78, 0.52, 0.78], [0.66, 0.44, 0], 0x8a3a2a, { bevel: 0.15, roughness: 0.9, rotation: [0, Math.PI / 4, 0] });
+        this.box(group, entity, id, [2.3, 0.08, 0.1], [0.1, 0.72, 0], 0x4a2f1c, { bevel: 0.3 });
+        this.box(group, entity, id, [1.7, 0.05, 0.1], [-0.1, 0.05, 0.78], 0x9a7a52, { bevel: 0.3, rotation: [0, 0.12, 0] });
+        break;
+      }
+      case "rack": {
+        // A fish-drying rack: two A-frames, a ridge pole, the catch hung in a row beneath it.
+        for (const x of [-0.9, 0.9]) {
+          for (const side of [-1, 1]) this.box(group, entity, id, [0.08, 1.72, 0.08], [x, 0.8, side * 0.22], 0x5a4128, { bevel: 0.3, rotation: [side * 0.26, 0, 0] });
+        }
+        this.cylinder(group, entity, id, 0.045, 2.1, [0, 1.56, 0], 0x6f5131, [0, 0, Math.PI / 2], { roughness: 0.95 });
+        this.cylinder(group, entity, id, 0.035, 1.9, [0, 0.72, 0], 0x6f5131, [0, 0, Math.PI / 2], { roughness: 0.95 });
+        for (let i = 0; i < 6; i += 1) {
+          const x = -0.62 + i * 0.25;
+          this.box(group, entity, id, [0.1, 0.44, 0.05], [x, 1.26, 0], i % 2 ? 0x9aa4a6 : 0xb3ad98, { bevel: 0.4, rotation: [0, 0, ((v >> i) % 3 - 1) * 0.08] });
+        }
+        break;
+      }
+      case "iceblock": {
+        // Pressure ice: slabs the freeze heaved up and tipped, pale faces catching the low sun.
+        const tip = (n: number): number => (((v >> (n * 3)) % 9) - 4) * 0.09;
+        this.box(group, entity, id, [1.5, 0.5, 1.2], [0, 0.2, 0], 0xa9c8dc, { bevel: 0.2, roughness: 0.4, rotation: [tip(0), tip(1) * 4, tip(2)] });
+        this.box(group, entity, id, [1.1, 1.2, 0.34], [0.1, 0.7, -0.1], 0xcfe3ef, { bevel: 0.25, roughness: 0.35, rotation: [0.35 + tip(3), tip(4) * 4, tip(5)] });
+        this.box(group, entity, id, [0.8, 0.9, 0.3], [-0.42, 0.5, 0.34], 0xbcd7e8, { bevel: 0.25, roughness: 0.35, rotation: [-0.4 + tip(6), tip(7) * 4, 0.3] });
+        this.box(group, entity, id, [0.5, 0.36, 0.44], [0.5, 0.16, 0.42], 0x96b8cf, { bevel: 0.3, roughness: 0.4, rotation: [0, tip(2) * 4, 0] });
+        break;
+      }
+      case "obelisk": {
+        // A sandstone obelisk on its plinth, one carved band, a gilded cap.
+        this.box(group, entity, id, [1.12, 0.32, 1.12], [0, 0.16, 0], 0x8a7a60, { bevel: 0.25, roughness: 0.94 });
+        this.box(group, entity, id, [0.64, 1.1, 0.64], [0, 0.86, 0], 0xb49a72, { bevel: 0.12, roughness: 0.92 });
+        this.box(group, entity, id, [0.7, 0.14, 0.7], [0, 1.47, 0], 0x8f7a58, { bevel: 0.25, roughness: 0.92 });
+        this.box(group, entity, id, [0.54, 1.0, 0.54], [0, 2.04, 0], 0xb49a72, { bevel: 0.12, roughness: 0.92 });
+        this.box(group, entity, id, [0.44, 0.34, 0.44], [0, 2.7, 0], 0xa88e66, { bevel: 0.14, roughness: 0.92 });
+        this.box(group, entity, id, [0.3, 0.3, 0.3], [0, 2.9, 0], 0xd8b45a, { accent: true, metalness: 0.5, bevel: 0.2, rotation: [Math.PI / 4, Math.PI / 4, 0] });
+        break;
+      }
+      case "urn": {
+        // Store jars: two amphorae standing, one fallen on its side and cracked.
+        const jar = (x: number, z: number, r: number): void => {
+          this.sphere(group, entity, id, r, [x, r * 1.3, z], 0xa4552e, { scaleY: 1.3 });
+          this.cylinder(group, entity, id, r * 0.32, r * 0.8, [x, r * 2.7, z], 0x96492a, [0, 0, 0], { radiusBottom: r * 0.4, roughness: 0.9 });
+          this.cylinder(group, entity, id, r * 0.44, r * 0.14, [x, r * 3.1, z], 0x7e3d22, [0, 0, 0], { roughness: 0.9 });
+          this.cylinder(group, entity, id, r * 1.01, r * 0.18, [x, r * 1.4, z], 0x3a2a1e, [0, 0, 0], { accent: true, roughness: 0.9 });
+        };
+        jar(-0.14, -0.1, 0.3);
+        jar(0.38, 0.22, 0.24);
+        this.sphere(group, entity, id, 0.24, [-0.3, 0.2, 0.42], 0xa4552e, { scaleY: 0.85 });
+        this.box(group, entity, id, [0.2, 0.06, 0.16], [-0.62, 0.03, 0.56], 0x96492a, { bevel: 0.3, rotation: [0, 0.6, 0.2] });
+        break;
+      }
+      case "brazier": {
+        // A temple oil brazier: bronze bowl on a tripod, oil jar at its foot, the fire the one light.
+        for (let i = 0; i < 3; i += 1) {
+          const a = (i / 3) * Math.PI * 2;
+          this.box(group, entity, id, [0.07, 0.92, 0.07], [Math.cos(a) * 0.2, 0.44, Math.sin(a) * 0.2], 0x4a3a24, { metalness: 0.45, rotation: [Math.sin(a) * 0.3, 0, -Math.cos(a) * 0.3] });
+        }
+        this.cylinder(group, entity, id, 0.44, 0.28, [0, 0.96, 0], 0x8a6a3a, [0, 0, 0], { radiusBottom: 0.24, metalness: 0.5, roughness: 0.5 });
+        this.cylinder(group, entity, id, 0.46, 0.06, [0, 1.1, 0], 0x6a5028, [0, 0, 0], { metalness: 0.5 });
+        // The fire: three canted tongues, orange round a yellow core — a flame, never a ball.
+        for (let i = 0; i < 3; i += 1) {
+          const a = (i / 3) * Math.PI * 2 + (v % 7) * 0.3;
+          this.cylinder(group, entity, id, 0.01, 0.42, [Math.cos(a) * 0.12, 1.3, Math.sin(a) * 0.12], 0xff8a2a, [Math.sin(a) * 0.3, 0, -Math.cos(a) * 0.3], { radiusBottom: 0.17, accent: true, emissive: 0xff5a14, emissiveIntensity: 0.75 });
+        }
+        this.cylinder(group, entity, id, 0.01, 0.5, [0, 1.34, 0], 0xffc85a, [0, 0, 0], { radiusBottom: 0.14, accent: true, emissive: 0xff9a2a, emissiveIntensity: 0.85 });
+        this.cylinder(group, entity, id, 0.16, 0.36, [0.46, 0.18, 0.28], 0xa4552e, [0, 0, 0], { radiusBottom: 0.12, roughness: 0.9 });
+        break;
+      }
+      case "hedgehog": {
+        // A Czech hedgehog: three rusted steel angles welded through one another, standing on their ends.
+        for (let i = 0; i < 3; i += 1) {
+          this.box(group, entity, id, [0.2, 1.6, 0.2], [0, 0.52, 0], 0x5a4a40, { metalness: 0.45, bevel: 0.25, rotation: [0, (i / 3) * Math.PI * 2, 0.86] });
+        }
+        this.box(group, entity, id, [0.34, 0.34, 0.34], [0, 0.52, 0], 0x3d3430, { metalness: 0.45, bevel: 0.3 });
+        break;
+      }
+      case "tower": {
+        // A border watchtower: four timber legs, cross-braces, a railed platform, a tin roof and one lamp.
+        for (const x of [-0.62, 0.62]) {
+          for (const z of [-0.62, 0.62]) this.box(group, entity, id, [0.14, 2.62, 0.14], [x, 1.31, z], 0x5a4128, { bevel: 0.3, rotation: [z * -0.05, 0, x * 0.05] });
+        }
+        for (const z of [-0.64, 0.64]) this.box(group, entity, id, [0.08, 1.7, 0.08], [0, 1.1, z], 0x6f5131, { rotation: [0, 0, 0.72] });
+        for (const x of [-0.64, 0.64]) this.box(group, entity, id, [0.08, 1.7, 0.08], [x, 1.1, 0], 0x6f5131, { rotation: [0.72, 0, 0] });
+        this.box(group, entity, id, [1.66, 0.12, 1.66], [0, 2.62, 0], 0x6a4a2c, { bevel: 0.3 });
+        for (const z of [-0.8, 0.8]) this.box(group, entity, id, [1.66, 0.42, 0.06], [0, 2.9, z], 0x7c5a36, { bevel: 0.35 });
+        for (const x of [-0.8, 0.8]) this.box(group, entity, id, [0.06, 0.42, 1.66], [x, 2.9, 0], 0x7c5a36, { bevel: 0.35 });
+        this.box(group, entity, id, [1.9, 0.1, 1.9], [0, 3.36, 0], 0x565c62, { metalness: 0.35, bevel: 0.3, rotation: [0.12, 0, 0] });
+        this.cylinder(group, entity, id, 0.12, 0.2, [0.62, 3.06, 0.62], 0xffe6a8, [0.5, 0, 0], { accent: true, emissive: 0xffc46a, emissiveIntensity: 0.6 });
+        break;
+      }
+      case "bones": {
+        // A carcass the basin picked clean: spine, a tall cage of ribs, the pelvis, and the horned
+        // skull turned away — sized to its footprint so it reads as a beast, not a fishbone.
+        this.box(group, entity, id, [1.5, 0.12, 0.12], [-0.15, 0.07, 0], 0xb8ab8c, { bevel: 0.4, roughness: 0.9 });
+        for (let i = 0; i < 5; i += 1) {
+          const x = -0.62 + i * 0.26;
+          const h = 0.78 - Math.abs(i - 1.5) * 0.1;
+          for (const side of [-1, 1]) this.box(group, entity, id, [0.09, h, 0.08], [x, h * 0.44, side * 0.26], 0xc2b596, { bevel: 0.4, rotation: [side * -0.5, 0, 0] });
+        }
+        this.box(group, entity, id, [0.36, 0.2, 0.5], [-0.98, 0.12, 0], 0xb8ab8c, { bevel: 0.4, roughness: 0.9, rotation: [0, 0, 0.2] });
+        this.box(group, entity, id, [0.5, 0.3, 0.36], [0.9, 0.17, 0.14], 0xc2b596, { bevel: 0.4, rotation: [0, 0.4, 0.15] });
+        for (const side of [-1, 1]) this.cylinder(group, entity, id, 0.035, 0.6, [0.96 + side * 0.08, 0.34, 0.14 + side * 0.34], 0x9a8c6c, [side * 1.1, 0.4, 0.3], { radiusBottom: 0.08 });
+        break;
+      }
+    }
   }
 
   /**
@@ -3738,6 +3944,15 @@ export class WorldRenderer {
         if (part.id === "rifle" || part.id === "cannon" || part.id === "gun") {
           mesh.position.z -= pose.draw;
           mesh.rotation.x -= pose.lift;
+        } else if (family === "throw" && limb === "arm-l" && basePosition) {
+          // BEFORE the core branch: arms are meshes of the "body" part (role core), so a limb test
+          // placed after it never runs. The free arm windmills about the SHOULDER (the mesh pivots
+          // at its own centre, so the centre is carried round the shoulder as the walk swing does).
+          const a = throwArmAngle(attackPhase);
+          const reach = SHOULDER_Y - basePosition.y;
+          mesh.rotation.x -= a;
+          mesh.position.y += reach * (1 - Math.cos(a));
+          mesh.position.z += reach * Math.sin(a);
         } else if (part.role === "core") {
           mesh.rotation.x += pose.brace * 0.5;
         } else if (limb === "arm-l" || limb === "arm-r") {
@@ -4297,6 +4512,21 @@ export class WorldRenderer {
     }
   }
 
+  /** Bombers mid-carpet: draw the fall the sim resolves in a single tick (makeCarpetFall). Runs
+   *  after syncProjectiles, which clears the root this adds to. */
+  private syncCarpetFalls(sim: TacticalSim): void {
+    if (sim.phase !== "resolve") return;
+    for (const order of sim.orders) {
+      if (order.done || order.fired || order.kind !== "grenade") continue;
+      const actor = sim.entity(order.actorId);
+      if (!actor || actor.kind !== "bomber" || !actor.status.alive) continue;
+      const u = carpetFallU(order.elapsed);
+      if (u <= 0) continue;
+      const top = actor.elevation - 0.6; // the bay, under the fuselage
+      for (const part of makeCarpetFall(carpetDropPoints(actor), u, top, actor.team === "player" ? 0x75d8ff : 0xff765f)) this.projectileRoot.add(part);
+    }
+  }
+
   private syncProjectiles(projectiles: readonly Projectile[]): void {
     this.disposeAndClear(this.projectileRoot);
     const liveIds = new Set<string>();
@@ -4632,7 +4862,7 @@ export class WorldRenderer {
       const t = clamp01(effect.age / effect.duration);
       const opacity = 1 - t;
       if (effect.type === "shot") {
-        this.effectRoot.add(makeBeam(effect.from, effect.to, effect.color, opacity));
+        for (const part of makeGunRun(effect, t, terrainHeightAt(effect.to), terrainHeightAt(effect.from))) this.effectRoot.add(part);
       } else if (effect.type === "jet") {
         // A strike aircraft crossing the field: dark delta silhouette + engine glow +
         // contrail, plus a racing ground shadow so the flyby reads at tactics zoom.
@@ -5436,13 +5666,6 @@ function trajectoryPoints(
   return points;
 }
 
-function makeBeam(from: { x: number; z: number }, to: { x: number; z: number }, color: number, opacity: number): THREE.Group {
-  const group = new THREE.Group();
-  group.add(makeLine(from, to, color, opacity));
-  group.add(makeLine({ x: from.x, z: from.z + 0.04 }, { x: to.x, z: to.z + 0.04 }, 0xffffff, opacity * 0.45));
-  return group;
-}
-
 interface InfantryBuild {
   /** Torso and limb width (x/z). The "how broad is this soldier" axis. */
   girth: number;
@@ -5525,7 +5748,9 @@ const INFANTRY_KIT_PARTS: Partial<Record<EntityKind, InfantryKitParts>> = {
 // The phase is driven by the ORDER's own elapsed/duration, never by a clock of its own. Combat owns
 // durations; animation owns pose. That means an attack animation can never desync from the shot it
 // belongs to, and slowing the action pace slows the choreography with it for free.
-export type WeaponFamily = "rifle" | "burst" | "marksman" | "cannon" | "launcher" | "flamer" | "melee" | "shotgun" | "pistol";
+export type WeaponFamily = "rifle" | "burst" | "marksman" | "cannon" | "launcher" | "flamer" | "melee" | "shotgun" | "pistol" | "throw";
+/** Every attack family, for the tests that must cover them all (a hand-kept list skipped two). */
+export const WEAPON_FAMILIES: readonly WeaponFamily[] = ["rifle", "burst", "marksman", "cannon", "launcher", "flamer", "melee", "shotgun", "pistol", "throw"];
 
 export function weaponFamily(kind: EntityKind): WeaponFamily {
   if (kind === "striker") return "melee";
@@ -5537,6 +5762,24 @@ export function weaponFamily(kind: EntityKind): WeaponFamily {
   if (kind === "medic" || kind === "droneop") return "pistol";
   if (kind === "tank" || kind === "artillery" || kind === "exturret") return "cannon";
   return "rifle";
+}
+
+/**
+ * Which choreography an ORDER plays on its actor, or undefined when the order is not an attack the
+ * body animates. The one place that decides it: `computeAttackPhases` and the attack-coverage test
+ * both read it, so an order kind can no longer be left out of the renderer's attack filter (the
+ * mortar's smoke round fired from a motionless tube that way).
+ */
+export function attackFamilyForOrder(kind: EntityKind, orderKind: OrderKind): WeaponFamily | undefined {
+  if (orderKind === "melee") return "melee";
+  if (orderKind === "shoot" || orderKind === "smoke") return weaponFamily(kind);
+  if (orderKind === "grenade") {
+    // A hand grenade is THROWN: before this a Recruit raised its rifle and "fired" the grenade.
+    // Aircraft bombs fall from a bay -- no gun to swing.
+    if (isInfantryKind(kind)) return "throw";
+    return isAirKind(kind) ? undefined : weaponFamily(kind);
+  }
+  return undefined;
 }
 
 /** Where in its swing/wind-up a family is at `phase` (0..1 across the order). */
@@ -5562,7 +5805,36 @@ const FAMILY_SHAPE: Record<WeaponFamily, { contact: number; draw: number; lift: 
   melee: { contact: 0.5, draw: 0.34, lift: 0.5, brace: 0.3 },
   shotgun: { contact: 0.36, draw: 0.12, lift: 0.24, brace: 0.1 },
   pistol: { contact: 0.4, draw: 0.05, lift: 0.18, brace: 0.03 },
+  // The rifle is lowered out of the way while the free arm throws (see throwArmAngle); the body
+  // leans hard into the release. Contact = the sim's release (0.58s of a 1.15s order).
+  throw: { contact: 0.5, draw: 0.08, lift: -0.22, brace: 0.3 },
 };
+
+/**
+ * The THROWING arm's forward swing (radians about the shoulder, positive = hand forward/up) at
+ * `phase`. One overhand windmill: the arm drops back and up behind the head, whips over the top
+ * to release in front at head height (contact), follows through low, and comes round to hang at
+ * rest again -- a full turn, so the end pose IS the rest pose (the angle ends at -2π).
+ */
+const THROW_KEYS: readonly [number, number][] = [[0, 0], [0.22, -0.9], [0.42, -2.5], [0.5, -3.95], [0.62, -4.95], [0.82, -5.9], [1, -Math.PI * 2]];
+export function throwArmAngle(phase: number): number {
+  const t = Math.max(0, Math.min(1, phase));
+  for (let i = 1; i < THROW_KEYS.length; i += 1) {
+    const [t1, a1] = THROW_KEYS[i];
+    if (t > t1) continue;
+    const [t0, a0] = THROW_KEYS[i - 1];
+    // Catmull-Rom through the keys: continuous velocity, so the whip accelerates into the release
+    // instead of changing speed at every key.
+    const [tp, ap] = THROW_KEYS[Math.max(0, i - 2)];
+    const [tn, an] = THROW_KEYS[Math.min(THROW_KEYS.length - 1, i + 1)];
+    const u = (t - t0) / Math.max(1e-6, t1 - t0);
+    const m0 = ((a1 - ap) / Math.max(1e-6, t1 - tp)) * (t1 - t0);
+    const m1 = ((an - a0) / Math.max(1e-6, tn - t0)) * (t1 - t0);
+    const u2 = u * u, u3 = u2 * u;
+    return (2 * u3 - 3 * u2 + 1) * a0 + (u3 - 2 * u2 + u) * m0 + (-2 * u3 + 3 * u2) * a1 + (u3 - u2) * m1;
+  }
+  return -Math.PI * 2;
+}
 
 export function attackPose(family: WeaponFamily, phase: number): AttackPose {
   const shape = FAMILY_SHAPE[family];

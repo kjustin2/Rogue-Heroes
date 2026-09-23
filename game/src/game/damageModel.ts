@@ -28,6 +28,14 @@ export type CoverKind =
   | "span"
   | "gas"
   | "stump" | "log" | "bush" | "cactus" | "tent" | "pipe" | "silo" | "statue"
+  // Biome props (2026-09-23): the furniture that says WHICH map this is, so no kind is shared by
+  // accident (a Roman column in a foundry, a sandbag wall in a hay field).
+  | "girder" | "coil" | "ingot" // Ironworks: steel column, coil on a cradle, billet stack
+  | "haybale" | "fence" | "grave" // Verdant: round bales, split-rail fence, chapel-yard headstones
+  | "boat" | "rack" | "iceblock" // Frozen Causeway: upturned boat, fish-drying rack, heaved ice
+  | "obelisk" | "urn" | "brazier" // Karak: obelisk, amphorae, temple oil brazier (volatile)
+  | "hedgehog" | "tower" // Crossfire: anti-tank hedgehog, border watchtower
+  | "bones" // Dust Bowl: a bleached carcass
   // Landmarks (2026-09-20): each map's own big authored pieces — the things you point at.
   | "convoy" | "derrick" | "furnace" | "railcar" | "chapel" | "mill" | "hull" | "hut" | "colossus" | "cistern" | "gate" | "radar";
 export type PartRole = "core" | "head" | "weapon" | "mobility" | "armor" | "utility" | "volatile";
@@ -36,6 +44,11 @@ const LANDMARK_KINDS: ReadonlySet<CoverKind> = new Set<CoverKind>(["convoy", "de
 /** A map landmark: authored at world scale, placed with an authored yaw, never jittered or re-spun. */
 export function isLandmarkKind(kind: CoverKind | undefined): boolean {
   return kind !== undefined && LANDMARK_KINDS.has(kind);
+}
+/** Tall rigid cover that falls away from the killing blow and crushes what it lands on. */
+const TOPPLE_KINDS: ReadonlySet<CoverKind> = new Set<CoverKind>(["pillar", "tree", "girder", "obelisk", "tower"]);
+export function isToppleKind(kind: CoverKind | undefined): boolean {
+  return kind !== undefined && TOPPLE_KINDS.has(kind);
 }
 export type AimMode = "center" | "head" | "weapon" | "mobility" | "utility" | "core" | "weakest";
 export type InfantryStance = "standing" | "crouched" | "prone";
@@ -839,6 +852,23 @@ export const COVER_PROFILES: Record<CoverKind, CoverProfile> = {
   pipe: { hp: 80, radius: 1.4, height: 0.9, volatile: false, label: "Pipe Run" },
   silo: { hp: 130, radius: 1.1, height: 2.6, volatile: false, label: "Storage Silo" },
   statue: { hp: 110, radius: 0.8, height: 2.4, volatile: false, label: "Broken Statue" },
+  // Biome props (2026-09-23). A tall one (girder, obelisk, tower) topples like a pillar; the brazier
+  // is a fuel drum in temple dress: it bursts and leaves the ground burning.
+  girder: { hp: 120, radius: 0.7, height: 2.6, volatile: false, label: "Steel Girder" },
+  coil: { hp: 90, radius: 0.85, height: 1.1, volatile: false, label: "Steel Coil" },
+  ingot: { hp: 80, radius: 0.9, height: 0.8, volatile: false, label: "Billet Stack" },
+  haybale: { hp: 30, radius: 0.85, height: 1.0, volatile: false, label: "Hay Bales" },
+  fence: { hp: 24, radius: 1.2, height: 0.9, volatile: false, label: "Field Fence" },
+  grave: { hp: 50, radius: 0.75, height: 0.9, volatile: false, label: "Gravestones" },
+  boat: { hp: 40, radius: 1.2, height: 0.8, volatile: false, label: "Upturned Boat" },
+  rack: { hp: 28, radius: 1.0, height: 1.6, volatile: false, label: "Drying Rack" },
+  iceblock: { hp: 70, radius: 0.95, height: 1.3, volatile: false, label: "Pressure Ice" },
+  obelisk: { hp: 130, radius: 0.7, height: 3.0, volatile: false, label: "Obelisk" },
+  urn: { hp: 30, radius: 0.7, height: 1.0, volatile: false, label: "Amphorae" },
+  brazier: { hp: 30, radius: 0.6, height: 1.2, volatile: true, label: "Oil Brazier" },
+  hedgehog: { hp: 110, radius: 0.8, height: 0.95, volatile: false, label: "Tank Trap" },
+  tower: { hp: 90, radius: 1.0, height: 3.4, volatile: false, label: "Watchtower" },
+  bones: { hp: 40, radius: 1.0, height: 0.8, volatile: false, label: "Bleached Bones" },
   // Landmarks (2026-09-20): one or two per map, placed as signature pieces. Radii cover the whole
   // footprint (a unit must never park inside a truck); the big ones are tough enough that they
   // shape the fight for its whole length rather than vanishing to the first mortar round.

@@ -32,7 +32,8 @@ symbols fail the build.
 | Scenario screenshot gallery | `npm run improve:gallery` |
 | Review contact sheet → `shots/` | `npm run screens` |
 | Quick gameplay-zoom look per scenario (`-- firefight siege`, `:select`/`:shoot`/`:base` HUD states) | `npm run shots:look` |
-| 12-frame attack filmstrip at half/quarter speed (`-- melee`, `kill`, `jump`, or a projectile family: `shoot heavy sniper sapper pistol flame grenade launcher mortar tank artillery apc turret gunship`, `all` for every family) — judge motion here, not in stills | `npm run shots:filmstrip` |
+| Per-map prop census + HUD-less close frame of every map section (`-- karak verdant`; `SHOT_PREFIX=before-` for a baseline) | `npm run shots:props` |
+| 12-frame attack filmstrip at half/quarter speed (`-- melee`, `kill`, `jump`, or a projectile family: `shoot heavy sniper sapper pistol flame grenade launcher mortar tank artillery apc turret gunship`, the audit stages `smoke carpet strafe throw`, `all` for every family; `FILM_SLOW=<n>` stretches the gaps on a software GPU) — judge motion here, not in stills | `npm run shots:filmstrip` |
 | Depth-fight repro (hide plates / kill shadows / lift plates / old near plane) | `npm run probe:depth <scenario>` |
 | Infantry lineup, near + far, for kit/proportion review | `npm run shots:lineup` |
 | Rebuild the Blender kits (validated, AO-baked) | `npm run art:kit`, `npm run art:props`, `npm run art:vehicles`, `npm run art:validate:selftest` |
@@ -62,7 +63,7 @@ is the black-frame guard; `endTurnAndSettle`/`waitForCommand` step the sim. The 
 `smoke:deep` use it; the legacy `shot-*.mjs` still re-inline theirs (migrate on touch).
 
 Each smoke owns a dedicated `--strictPort` (a sibling project squats 5175): flow `5179`, economy
-`5176`, buttons `5191`, deep `5206`, screenshots `5177`/`5178`, perf `5182`, vision `5183`. They
+`5176`, buttons `5191`, deep `5206`, attacks `5212`, screenshots `5177`/`5178`, perf `5182`, vision `5183`. They
 drive headless Chromium via `window.__rht`.
 
 - `npm run smoke:flow` — menu → deploy → multi-turn battle → reset
@@ -70,6 +71,13 @@ drive headless Chromium via `window.__rht`.
 - `npm run smoke:deep` — consolidated regression net for the air/transport features through the
   full sim→render→HUD path: air fleet render, air-to-air, transport load/carry/unload, straight-down
   bomb, serialize round-trip, victory screen. Wired into `test:full`.
+- `npm run smoke:attacks` (in `smoke:core`; `-- <case>...` for a subset) stages EVERY attack — 21
+  guns, grenade throw, mortar smoke, melee, both bomb drops, the gunship gun run, the tank ram — in a
+  live battle and watches each frame: the attacker's weapon (the free arm for a throw) must leave
+  rest, a round must be drawn where one flies (`__rht.fxCounts()`), the landing must be drawn, no
+  frame error. Its sim-side twin is `src/render/attackCoverage.test.ts` (keyed on `TroopKind`, so a
+  new troop without an attack case is a compile error). Below 20 fps (a software GPU) it runs the
+  resolve clock x2; there it takes ~10 min, on a real GPU ~2.
 - `npm run smoke:electron` (wrapped by `test:play`) boots the BUILT app in Electron: menu, GLB MIME,
   menu-driven battle start, a resolve round-trip. It sat "hanging" for weeks because the script
   itself had a regex syntax error — an Electron main-process error raises a MODAL DIALOG instead of
@@ -409,6 +417,17 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   kinds or the menu↔battle flip stalls on a shader relink. Tear down per-frame/per-swap
   groups via `disposeAndClear()`; `userData.shared` geometry is skipped.
 - **The ground detail layer** (`makeGroundDetail`) is one InstancedMesh per element kind (grass fans, pebbles, snow clumps, cinders, weeds), placed only on dry flat ground, bending in `windUniforms` (the same clock the cloud deck and tree sway use). Pebbles are 8-triangle octahedra on purpose — the 36-triangle version was 130k triangles on a large map. Costs are in `perf-baseline.json`; rebase after an intentional change.
+- **EVERY MAP'S FURNITURE BELONGS TO ITS BIOME** (2026-09-23, owner: "no Roman pillars in a forest"). `props.test.ts` pins it: a
+  `HOME` table names the kinds that say WHICH map this is (cactus / bones = Dust Bowl; girder / coil / ingot / gas / railcar =
+  Ironworks; haybale / fence / grave = Verdant; hut / boat / rack / iceblock = Causeway; pillar / statue / obelisk / urn / brazier =
+  Karak; hedgehog / tower = Crossfire; trees only where things grow) and no map may carry another's; every kind a map's palettes
+  or signatures list must actually be placed; and every map fields at least ten kinds besides its landmarks. Scatter deals each
+  palette like a DECK and a kind that misses keeps its turn (`deal` / `MISSES_PER_KIND` in `buildMapObjects`): drawing a fresh
+  kind per placement ATTEMPT was rejection sampling that favoured the smallest prop, so the foundry floor came out as twelve gas
+  bottles and half of every palette never appeared (fault-injection proven: restore per-attempt draws and five maps fail). A prop
+  that cannot win room in a crowded section is placed as a `signature` instead (the Dust Bowl's oil tank + pipe run, Verdant's
+  fence line, Karak's obelisk). The fifteen biome props are box-built in `buildBiomeProp`; `wall` is a concrete blast wall.
+  Tall ones (girder, obelisk, tower) topple (`isToppleKind`); the brazier is volatile and burns like fuel. Evidence: `npm run shots:props`.
 - **Stone takes the map's hue**: rock / rubble / statue props are tinted 0.5 toward `rockTint` (the ground's own hue at a slightly higher value); wood, foliage and hardware only 0.3 toward `propTint`. A tint into an already-saturated albedo only ever darkens it — which is why the Meshy rock had to be greyscaled first, and why it is gone.
 - **INFANTRY LOCOMOTION IS DISTANCE-LOCKED** (`src/render/gait.ts`, 2026-09-22). The gait phase
   advances by `metres moved / stride`, never by wall time, and a planted boot is placed from that
@@ -445,6 +464,16 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   scan's cycle is ~10s, so a 3s window legitimately measured 0.13 of a 0.42-rad sweep and failed).
   Whole-body idle lives at group level next to the flinch; per-part breathing in `paintPart`. Both
   are phased by `hash(entity.id)`.
+- **Attack choreography follows the ORDER** (`attackFamilyForOrder` — the ONE place that says which
+  orders animate their actor and how; `computeAttackPhases` and `attackCoverage.test.ts` both read
+  it): shoot/smoke = the unit's weapon family, melee = `melee`, an infantry hand grenade = `throw`
+  (a procedural overhand windmill of the FREE arm, `throwArmAngle`, released at the sim's 0.58s),
+  an aircraft bomb = nothing (a bay, not a gun). A bomber's CARPET lands on the tick it is
+  released (sim unchanged — its timing is balance-tested); the renderer draws the fall before
+  release off the order's clock (`makeCarpetFall` onto `carpetDropPoints`, ending on `ATTACK_FIRE_AT`). **Arms are meshes of the `"body"` part (role core)**,
+  so in the pose code any `limb === "arm-*"` test placed AFTER the `part.role === "core"` branch
+  never runs — the throw branch sits before it for that reason (see next-steps for the Blender
+  banks' arm channels, which are still behind it).
 - **Melee**: the pose family follows the ORDER (`meleeTargetByActor`), the blade is carried by the shoulder about a grip pivot (it is a separate part with no authored motion), the group lunges, and the sim emits a `strike` effect (slash arc + flash + shards), never a blast. `__rht.setResolveScale(0.25)` slows the resolve clock for filmstrips.
 - **Jump Trooper** (`jumper`, `UNIT_STATS.jump`): its move is an arc (`canJump` → `jumpLanding` picks a dry, unoccupied landing; the order sets `flying`/`agl` on a sine until it lands). Mid-arc it IS a flyer to targeting. Pack destroyed = walks. Tests find a real cliff by measurement (`jumper.test.ts`).
 - **Gas** (`CoverKind "gas"`): rupture pushes a `gasClouds` entry (grows per turn, chokes infantry at turn start); **every `sim.effect("blast")` calls `igniteGasAt`** — that is the one place that knows about gas, and a cloud's detonation is a blast, so canisters chain. Rides `serialize()`.

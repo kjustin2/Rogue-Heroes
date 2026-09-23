@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { attackPose, weaponFamily, type WeaponFamily } from "./worldRenderer";
+import { attackPose, throwArmAngle, weaponFamily, WEAPON_FAMILIES, type WeaponFamily } from "./worldRenderer";
 
 // Attack choreography is pure maths over a phase, so it can be checked without a renderer at all.
 // That matters because the alternative is judging it by eye on a moving target, which is how the
 // walk cycle stayed broken for two commits.
-const FAMILIES: WeaponFamily[] = ["rifle", "burst", "marksman", "cannon", "launcher", "flamer", "melee"];
+// Every family, from the renderer's own list (a hand-kept copy here skipped shotgun and pistol).
+const FAMILIES: readonly WeaponFamily[] = WEAPON_FAMILIES;
 
 const sample = (family: WeaponFamily, steps = 60) =>
   Array.from({ length: steps + 1 }, (_, i) => ({ t: i / steps, pose: attackPose(family, i / steps) }));
@@ -85,5 +86,22 @@ describe("attack choreography", () => {
     const reach = (f: WeaponFamily) => Math.max(...sample(f).map((s) => Math.abs(s.pose.draw) + Math.abs(s.pose.lift)));
     expect(reach("melee")).toBeGreaterThan(reach("marksman") * 4);
     expect(reach("launcher")).toBeGreaterThan(reach("rifle"));
+  });
+
+  it("throws a hand grenade with one overhand windmill of the free arm", () => {
+    // The arm starts and ends hanging at rest (a full turn is the same pose), passes up behind the
+    // head during the wind-up, and releases forward ABOVE the shoulder at contact (the sim spawns
+    // the grenade at 0.58s of a 1.15s order), never jumping between frames.
+    const rest = (a: number) => Math.hypot(Math.cos(a) - 1, Math.sin(a));
+    expect(rest(throwArmAngle(0))).toBeLessThan(1e-6);
+    expect(rest(throwArmAngle(1))).toBeLessThan(1e-6);
+    const windUp = throwArmAngle(0.42);
+    expect(Math.sin(windUp), "wound up BEHIND the body (hand z < shoulder)").toBeLessThan(0);
+    const release = throwArmAngle(0.5);
+    expect(-Math.cos(release), "released with the hand above the shoulder").toBeGreaterThan(0.5);
+    expect(Math.sin(release), "released IN FRONT of the body").toBeGreaterThan(0);
+    for (let i = 1; i <= 400; i += 1) {
+      expect(Math.abs(throwArmAngle(i / 400) - throwArmAngle((i - 1) / 400)), `pop at ${i / 400}`).toBeLessThan(0.08);
+    }
   });
 });

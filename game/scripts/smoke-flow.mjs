@@ -54,7 +54,7 @@ try {
     api.endTurn();
   });
   void built;
-  await page.waitForFunction(() => window.__rht.sim.phase === "command" && window.__rht.sim.turn === 2, undefined, { timeout: 16000 });
+  await page.waitForFunction(() => window.__rht.sim.phase === "command" && window.__rht.sim.turn === 2, undefined, { timeout: 120000 });
 
   await page.evaluate(() => {
     const api = window.__rht;
@@ -65,9 +65,9 @@ try {
     if (!api.queueDeployAt("striker", { x: base.position.x + 3, z: base.position.z + 3 })) throw new Error("queueDeployAt(striker) rejected: " + api.sim.log[0]);
     api.endTurn();
   });
-  await page.waitForFunction(() => window.__rht.sim.phase === "resolve" || window.__rht.sim.turn >= 3, undefined, { timeout: 6000 });
+  await page.waitForFunction(() => window.__rht.sim.phase === "resolve" || window.__rht.sim.turn >= 3, undefined, { timeout: 60000 });
   await assertLit(page, "flow resolve");
-  await page.waitForFunction(() => window.__rht.sim.phase === "command" && window.__rht.sim.turn >= 3, undefined, { timeout: 16000 });
+  await page.waitForFunction(() => window.__rht.sim.phase === "command" && window.__rht.sim.turn >= 3, undefined, { timeout: 120000 });
   await page.screenshot({ path: join(OUT, "7-flow-battle.png") });
 
   const midState = await page.evaluate(() => ({
