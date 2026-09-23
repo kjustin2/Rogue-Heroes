@@ -8,8 +8,8 @@ import { splitAtKnee } from "./legSplit";
 import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec2 } from "../core/math";
 import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isVehicleKind, type CombatEntity, type CoverKind, type DamagePart, type Team, type EntityKind, type PartRole } from "../game/damageModel";
 import type { FactionId } from "../game/factions";
-import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
-import { OVERWATCH_ARC_HALF } from "../game/sim";
+import type { OrderKind, Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
+import { OVERWATCH_ARC_HALF, carpetDropPoints } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type SkylineKind } from "../game/maps";
 import type { TroopKind } from "../game/units";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
@@ -20,7 +20,7 @@ import {
   isLobbed, makeLightning, makeMuzzleFlash, makePing, makeProjectileModel, makeProjectileShadow, makeProjectileTrail,
   makeScorchStar, makeStrikeFlash, orientAlongVelocity, prewarmProjectileFx, projectileFamily,
   projectileFxWarmUpMaterials, projectileGeometry, projectileMaterial, pushTrailPoint, setFxViewer,
-  type LandingHint, type ProjectileFamily, type TrailPoint,
+  carpetFallU, makeCarpetFall, makeGunRun, type LandingHint, type ProjectileFamily, type TrailPoint,
 } from "./projectileFx";
 
 // Cover kinds built by buildBiomeProp (the per-map furniture added 2026-09-23).
@@ -87,6 +87,7 @@ export class WorldRenderer {
   // unit's weapon kicks back (and its body rocks) the instant it shoots.
   private readonly recoilByActor = new Map<string, number>();
   private readonly attackPhaseByActor = new Map<string, number>();
+  private readonly attackFamilyByActor = new Map<string, WeaponFamily>();
   /** Melee targets by actor, for the lunge; only set while a strike order is live. */
   private readonly meleeTargetByActor = new Map<string, Vec2>();
   /**
@@ -369,6 +370,7 @@ export class WorldRenderer {
     // to know where it is, and it changes once a frame.
     if (camera) setFxViewer(camera.position);
     this.syncProjectiles(sim.projectiles);
+    this.syncCarpetFalls(sim);
     this.syncEffects(sim.effects);
     this.syncFlashLights();
     this.syncDamageNumbers(sim);
@@ -765,6 +767,14 @@ export class WorldRenderer {
       inkMaterial(),
     ]) for (const g of geos) out.push(new THREE.Mesh(g, m));
     return out;
+  }
+
+  /** What the projectile and effect roots are drawing THIS frame (the smoke:attacks seam): object
+   *  counts, and how many effect objects hang well above the ground (a gun run's tracers). */
+  fxCounts(): { projectiles: number; effects: number; airborneEffects: number } {
+    let airborneEffects = 0;
+    for (const child of this.effectRoot.children) if (child.position.y > 2.5) airborneEffects += 1;
+    return { projectiles: this.projectileRoot.children.length, effects: this.effectRoot.children.length, airborneEffects };
   }
 
   limbPose(entityId: string): { limb: string; rotX: number; rotY: number; posY: number; posZ: number }[] {
@@ -1324,14 +1334,18 @@ export class WorldRenderer {
   // never drift out of step with the shot it belongs to.
   private computeAttackPhases(sim: TacticalSim): void {
     this.attackPhaseByActor.clear();
+    this.attackFamilyByActor.clear();
     this.meleeTargetByActor.clear();
     if (sim.phase !== "resolve") return;
     for (const order of sim.orders) {
       if (order.done) continue;
-      if (order.kind !== "shoot" && order.kind !== "melee" && order.kind !== "grenade") continue;
+      const actor = sim.entity(order.actorId);
+      const family = actor && attackFamilyForOrder(actor.kind, order.kind);
+      if (!family) continue;
       const duration = order.duration > 0 ? order.duration : 1;
       const phase = Math.max(0, Math.min(1, order.elapsed / duration));
       this.attackPhaseByActor.set(order.actorId, phase);
+      this.attackFamilyByActor.set(order.actorId, family);
       if (order.kind === "melee" && order.targetId) {
         const target = sim.entity(order.targetId);
         if (target) this.meleeTargetByActor.set(order.actorId, target.position);
@@ -1395,7 +1409,7 @@ export class WorldRenderer {
     group.userData.recoil = this.recoilByActor.get(entity.id) ?? 0;
     group.userData.attackPhase = this.attackPhaseByActor.get(entity.id);
     const meleeTarget = this.meleeTargetByActor.get(entity.id);
-    group.userData.weaponFamily = meleeTarget ? "melee" : weaponFamily(entity.kind);
+    group.userData.weaponFamily = this.attackFamilyByActor.get(entity.id) ?? weaponFamily(entity.kind);
     group.userData.meleeTarget = meleeTarget;
     // Rolling vehicles kick up a dust wake behind their tracks.
     if (moving && isVehicleKind(entity.kind)) {
@@ -3881,6 +3895,15 @@ export class WorldRenderer {
         if (part.id === "rifle" || part.id === "cannon" || part.id === "gun") {
           mesh.position.z -= pose.draw;
           mesh.rotation.x -= pose.lift;
+        } else if (family === "throw" && limb === "arm-l" && basePosition) {
+          // BEFORE the core branch: arms are meshes of the "body" part (role core), so a limb test
+          // placed after it never runs. The free arm windmills about the SHOULDER (the mesh pivots
+          // at its own centre, so the centre is carried round the shoulder as the walk swing does).
+          const a = throwArmAngle(attackPhase);
+          const reach = SHOULDER_Y - basePosition.y;
+          mesh.rotation.x -= a;
+          mesh.position.y += reach * (1 - Math.cos(a));
+          mesh.position.z += reach * Math.sin(a);
         } else if (part.role === "core") {
           mesh.rotation.x += pose.brace * 0.5;
         } else if (limb === "arm-l" || limb === "arm-r") {
@@ -4440,6 +4463,21 @@ export class WorldRenderer {
     }
   }
 
+  /** Bombers mid-carpet: draw the fall the sim resolves in a single tick (makeCarpetFall). Runs
+   *  after syncProjectiles, which clears the root this adds to. */
+  private syncCarpetFalls(sim: TacticalSim): void {
+    if (sim.phase !== "resolve") return;
+    for (const order of sim.orders) {
+      if (order.done || order.fired || order.kind !== "grenade") continue;
+      const actor = sim.entity(order.actorId);
+      if (!actor || actor.kind !== "bomber" || !actor.status.alive) continue;
+      const u = carpetFallU(order.elapsed);
+      if (u <= 0) continue;
+      const top = actor.elevation - 0.6; // the bay, under the fuselage
+      for (const part of makeCarpetFall(carpetDropPoints(actor), u, top, actor.team === "player" ? 0x75d8ff : 0xff765f)) this.projectileRoot.add(part);
+    }
+  }
+
   private syncProjectiles(projectiles: readonly Projectile[]): void {
     this.disposeAndClear(this.projectileRoot);
     const liveIds = new Set<string>();
@@ -4775,7 +4813,7 @@ export class WorldRenderer {
       const t = clamp01(effect.age / effect.duration);
       const opacity = 1 - t;
       if (effect.type === "shot") {
-        this.effectRoot.add(makeBeam(effect.from, effect.to, effect.color, opacity));
+        for (const part of makeGunRun(effect, t, terrainHeightAt(effect.to), terrainHeightAt(effect.from))) this.effectRoot.add(part);
       } else if (effect.type === "jet") {
         // A strike aircraft crossing the field: dark delta silhouette + engine glow +
         // contrail, plus a racing ground shadow so the flyby reads at tactics zoom.
@@ -5575,13 +5613,6 @@ function trajectoryPoints(
   return points;
 }
 
-function makeBeam(from: { x: number; z: number }, to: { x: number; z: number }, color: number, opacity: number): THREE.Group {
-  const group = new THREE.Group();
-  group.add(makeLine(from, to, color, opacity));
-  group.add(makeLine({ x: from.x, z: from.z + 0.04 }, { x: to.x, z: to.z + 0.04 }, 0xffffff, opacity * 0.45));
-  return group;
-}
-
 interface InfantryBuild {
   /** Torso and limb width (x/z). The "how broad is this soldier" axis. */
   girth: number;
@@ -5664,7 +5695,9 @@ const INFANTRY_KIT_PARTS: Partial<Record<EntityKind, InfantryKitParts>> = {
 // The phase is driven by the ORDER's own elapsed/duration, never by a clock of its own. Combat owns
 // durations; animation owns pose. That means an attack animation can never desync from the shot it
 // belongs to, and slowing the action pace slows the choreography with it for free.
-export type WeaponFamily = "rifle" | "burst" | "marksman" | "cannon" | "launcher" | "flamer" | "melee" | "shotgun" | "pistol";
+export type WeaponFamily = "rifle" | "burst" | "marksman" | "cannon" | "launcher" | "flamer" | "melee" | "shotgun" | "pistol" | "throw";
+/** Every attack family, for the tests that must cover them all (a hand-kept list skipped two). */
+export const WEAPON_FAMILIES: readonly WeaponFamily[] = ["rifle", "burst", "marksman", "cannon", "launcher", "flamer", "melee", "shotgun", "pistol", "throw"];
 
 export function weaponFamily(kind: EntityKind): WeaponFamily {
   if (kind === "striker") return "melee";
@@ -5676,6 +5709,24 @@ export function weaponFamily(kind: EntityKind): WeaponFamily {
   if (kind === "medic" || kind === "droneop") return "pistol";
   if (kind === "tank" || kind === "artillery" || kind === "exturret") return "cannon";
   return "rifle";
+}
+
+/**
+ * Which choreography an ORDER plays on its actor, or undefined when the order is not an attack the
+ * body animates. The one place that decides it: `computeAttackPhases` and the attack-coverage test
+ * both read it, so an order kind can no longer be left out of the renderer's attack filter (the
+ * mortar's smoke round fired from a motionless tube that way).
+ */
+export function attackFamilyForOrder(kind: EntityKind, orderKind: OrderKind): WeaponFamily | undefined {
+  if (orderKind === "melee") return "melee";
+  if (orderKind === "shoot" || orderKind === "smoke") return weaponFamily(kind);
+  if (orderKind === "grenade") {
+    // A hand grenade is THROWN: before this a Recruit raised its rifle and "fired" the grenade.
+    // Aircraft bombs fall from a bay -- no gun to swing.
+    if (isInfantryKind(kind)) return "throw";
+    return isAirKind(kind) ? undefined : weaponFamily(kind);
+  }
+  return undefined;
 }
 
 /** Where in its swing/wind-up a family is at `phase` (0..1 across the order). */
@@ -5701,7 +5752,36 @@ const FAMILY_SHAPE: Record<WeaponFamily, { contact: number; draw: number; lift: 
   melee: { contact: 0.5, draw: 0.34, lift: 0.5, brace: 0.3 },
   shotgun: { contact: 0.36, draw: 0.12, lift: 0.24, brace: 0.1 },
   pistol: { contact: 0.4, draw: 0.05, lift: 0.18, brace: 0.03 },
+  // The rifle is lowered out of the way while the free arm throws (see throwArmAngle); the body
+  // leans hard into the release. Contact = the sim's release (0.58s of a 1.15s order).
+  throw: { contact: 0.5, draw: 0.08, lift: -0.22, brace: 0.3 },
 };
+
+/**
+ * The THROWING arm's forward swing (radians about the shoulder, positive = hand forward/up) at
+ * `phase`. One overhand windmill: the arm drops back and up behind the head, whips over the top
+ * to release in front at head height (contact), follows through low, and comes round to hang at
+ * rest again -- a full turn, so the end pose IS the rest pose (the angle ends at -2π).
+ */
+const THROW_KEYS: readonly [number, number][] = [[0, 0], [0.22, -0.9], [0.42, -2.5], [0.5, -3.95], [0.62, -4.95], [0.82, -5.9], [1, -Math.PI * 2]];
+export function throwArmAngle(phase: number): number {
+  const t = Math.max(0, Math.min(1, phase));
+  for (let i = 1; i < THROW_KEYS.length; i += 1) {
+    const [t1, a1] = THROW_KEYS[i];
+    if (t > t1) continue;
+    const [t0, a0] = THROW_KEYS[i - 1];
+    // Catmull-Rom through the keys: continuous velocity, so the whip accelerates into the release
+    // instead of changing speed at every key.
+    const [tp, ap] = THROW_KEYS[Math.max(0, i - 2)];
+    const [tn, an] = THROW_KEYS[Math.min(THROW_KEYS.length - 1, i + 1)];
+    const u = (t - t0) / Math.max(1e-6, t1 - t0);
+    const m0 = ((a1 - ap) / Math.max(1e-6, t1 - tp)) * (t1 - t0);
+    const m1 = ((an - a0) / Math.max(1e-6, tn - t0)) * (t1 - t0);
+    const u2 = u * u, u3 = u2 * u;
+    return (2 * u3 - 3 * u2 + 1) * a0 + (u3 - 2 * u2 + u) * m0 + (-2 * u3 + 3 * u2) * a1 + (u3 - u2) * m1;
+  }
+  return -Math.PI * 2;
+}
 
 export function attackPose(family: WeaponFamily, phase: number): AttackPose {
   const shape = FAMILY_SHAPE[family];

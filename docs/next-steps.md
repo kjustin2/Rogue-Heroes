@@ -53,6 +53,14 @@ measured readability gates, and a whole-game glitch sweep whose findings were al
    - Flak: a one-turn tracer wall that reveals and blocks air movement through it (needs a new
      persistent, serialized, rendered line object — that is why it was skipped).
    - Hit reactions per body part: head snaps back, leg buckles, pack spins (today one shove).
+   - **Attack arms (found by the 2026-09-23 attack audit, not fixed):** the Blender motion banks'
+     `shoulderPitch` / `shoulderYaw` / `offhandPitch` channels never reach an arm, because arms
+     are `"body"`-part meshes and the pose code's `part.role === "core"` branch catches them first
+     (they get the torso's pitch instead). Every attack still animates (weapon, torso, recoil,
+     rounds), but the arms hold still. Before moving the limb branches up, settle the SIGN on a
+     filmstrip: the pistol and launcher clips raise the arm with NEGATIVE shoulderPitch, while the
+     melee blade (which is live) is swung with `rotation.x -= shoulderPitch` — the two readings
+     disagree, and the arm has to follow the blade. Films: `shots:filmstrip -- pistol launcher melee`.
 5. **Elites / bosses** survive in code (`debugSpawn` options + the top-of-screen boss bar) for a
    possible Skirmish set piece — only when asked.
 

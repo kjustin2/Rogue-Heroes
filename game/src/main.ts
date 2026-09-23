@@ -2149,6 +2149,8 @@ declare global {
       describeScene(): SceneDescription;
       overlayCounts(): { orders: number; overwatch: number };
       limbPose(entityId: string): { limb: string; rotX: number; rotY: number; posY: number; posZ: number }[];
+      /** Objects the projectile/effect roots draw this frame (smoke:attacks). */
+      fxCounts(): { projectiles: number; effects: number; airborneEffects: number };
       /** Per-render-frame world positions of a trooper's boots (for the foot-skate gate). */
       trackFeet(entityId: string, on: boolean): void;
       footTrack(entityId: string): { t: number; x: number; z: number; ground: number; feet: { side: string; x: number; y: number; z: number }[] }[];
@@ -2265,6 +2267,7 @@ window.__rht = {
   describeScene: () => buildSceneDescription(),
   overlayCounts: () => world.overlayCounts(),
   limbPose: (entityId: string) => world.limbPose(entityId),
+  fxCounts: () => world.fxCounts(),
   trackFeet: (entityId: string, on: boolean) => world.trackFeet(entityId, on),
   auditTerrainClip: (tolerance?: number) => world.auditTerrainClip(tolerance),
   footTrack: (entityId: string) => world.footTrack(entityId),
