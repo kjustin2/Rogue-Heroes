@@ -350,7 +350,7 @@ export class WorldRenderer {
     // Rebuilding their geometry every frame while the player is just looking around churns the
     // GC (the source of the "random pauses" while planning), so skip when nothing changed.
     const overlaySig = sim.phase === "command"
-      ? `${sim.selectedId}|${targetId ?? ""}|${targetPartId ?? ""}|${sim.intent}|${sim.orders.map((o) => `${o.kind}:${o.actorId}:${o.targetId ?? ""}:${o.destination ? `${o.destination.x.toFixed(1)},${o.destination.z.toFixed(1)}` : ""}`).join(",")}|${groundAim ? `${groundAim.x.toFixed(1)},${groundAim.z.toFixed(1)}` : ""}`
+      ? `${sim.sidesSwapped ? "p2" : "p1"}|${sim.selectedId}|${targetId ?? ""}|${targetPartId ?? ""}|${sim.intent}|${sim.orders.map((o) => `${o.kind}:${o.actorId}:${o.targetId ?? ""}:${o.destination ? `${o.destination.x.toFixed(1)},${o.destination.z.toFixed(1)}` : ""}`).join(",")}|${groundAim ? `${groundAim.x.toFixed(1)},${groundAim.z.toFixed(1)}` : ""}`
       : `~resolve${sim.projectiles.length}`;
     if (sim.phase !== "command" || overlaySig !== this.lastOverlaySig) {
       this.lastOverlaySig = overlaySig;
@@ -695,6 +695,14 @@ export class WorldRenderer {
    * first resolve of a session paid a 70-300ms shader compile in the middle of the action
    * (measured on the real GPU by soak:gpu, which diffs the program list across a resolve).
    */
+  /** Test seam: how many order overlays and overwatch watchers are drawn right now (smoke:hotseat). */
+  overlayCounts(): { orders: number; overwatch: number } {
+    return {
+      orders: this.orderRoot.children.length,
+      overwatch: this.auraRoot.children.filter((c) => c.userData.overwatchOf !== undefined).length,
+    };
+  }
+
   warmUpSamplers(): THREE.Object3D[] {
     // A program key is material x GEOMETRY attributes, so every material is sampled on three
     // geometries: RGB vertex colour + uv (the procedural parts), RGBA vertex colour + uv (every
@@ -3928,7 +3936,7 @@ export class WorldRenderer {
     let sig = `${sim.phase}|${Math.floor(performance.now() / 66)}`;
     for (const [id] of sim.overwatching) {
       const w = sim.entity(id);
-      if (w?.status.alive) sig += `|ow:${id}:${w.position.x.toFixed(1)},${w.position.z.toFixed(1)}:${(sim.overwatchFacing.get(id) ?? -9).toFixed(2)}`;
+      if (w?.status.alive) sig += `|ow:${id}:${w.team}:${w.position.x.toFixed(1)},${w.position.z.toFixed(1)}:${(sim.overwatchFacing.get(id) ?? -9).toFixed(2)}`;
     }
     if (sim.phase === "command") {
       for (const e of sim.entities) {
@@ -3954,6 +3962,9 @@ export class WorldRenderer {
     for (const [watcherId] of sim.overwatching) {
       const watcher = sim.entity(watcherId);
       if (!watcher || !watcher.status.alive) continue;
+      // While planning, a wedge is only shown to its own side: in hotseat the other human's
+      // overwatch is armed in the same command phase and is theirs to spring.
+      if (sim.phase === "command" && watcher.team !== "player") continue;
       const radius = sim.overwatchRadius(watcher);
       const y = watcher.elevation + 0.06;
       const facing = sim.overwatchFacing.get(watcherId);
@@ -3973,6 +3984,7 @@ export class WorldRenderer {
       );
       eye.rotation.x = -Math.PI / 2;
       eye.position.set(watcher.position.x, watcher.elevation + watcher.height + 0.5, watcher.position.z);
+      eye.userData.overwatchOf = watcherId; // one per drawn watcher: what overlayCounts() tallies
       this.auraRoot.add(eye);
     }
     if (sim.phase !== "command") return;
@@ -4030,7 +4042,10 @@ export class WorldRenderer {
     const projectedPositions = new Map<string, { x: number; z: number }>();
     for (const order of sim.orders) {
       const actor = sim.entity(order.actorId);
-      if (!actor) continue;
+      // Only the planning side's own orders. Against the bot nothing else is queued in the command
+      // phase; in hotseat the other human's plan is sitting in this list and must stay hidden
+      // (a recon pulse reveals it below, as enemy intents).
+      if (!actor || actor.team !== "player") continue;
       const from = projectedPositions.get(actor.id) ?? actor.position;
       if (order.kind === "defend") {
         this.orderRoot.add(makeEndpoint(from, 0x8de4ff, actor.radius + 0.45));
