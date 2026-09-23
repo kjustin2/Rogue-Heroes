@@ -32,6 +32,7 @@ symbols fail the build.
 | Scenario screenshot gallery | `npm run improve:gallery` |
 | Review contact sheet → `shots/` | `npm run screens` |
 | Quick gameplay-zoom look per scenario (`-- firefight siege`, `:select`/`:shoot`/`:base` HUD states) | `npm run shots:look` |
+| Per-map prop census + HUD-less close frame of every map section (`-- karak verdant`; `SHOT_PREFIX=before-` for a baseline) | `npm run shots:props` |
 | 12-frame attack filmstrip at half/quarter speed (`-- melee`, `kill`, `jump`, or a projectile family: `shoot heavy sniper sapper pistol flame grenade launcher mortar tank artillery apc turret gunship`, the audit stages `smoke carpet strafe throw`, `all` for every family; `FILM_SLOW=<n>` stretches the gaps on a software GPU) — judge motion here, not in stills | `npm run shots:filmstrip` |
 | Depth-fight repro (hide plates / kill shadows / lift plates / old near plane) | `npm run probe:depth <scenario>` |
 | Infantry lineup, near + far, for kit/proportion review | `npm run shots:lineup` |
@@ -416,6 +417,17 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   kinds or the menu↔battle flip stalls on a shader relink. Tear down per-frame/per-swap
   groups via `disposeAndClear()`; `userData.shared` geometry is skipped.
 - **The ground detail layer** (`makeGroundDetail`) is one InstancedMesh per element kind (grass fans, pebbles, snow clumps, cinders, weeds), placed only on dry flat ground, bending in `windUniforms` (the same clock the cloud deck and tree sway use). Pebbles are 8-triangle octahedra on purpose — the 36-triangle version was 130k triangles on a large map. Costs are in `perf-baseline.json`; rebase after an intentional change.
+- **EVERY MAP'S FURNITURE BELONGS TO ITS BIOME** (2026-09-23, owner: "no Roman pillars in a forest"). `props.test.ts` pins it: a
+  `HOME` table names the kinds that say WHICH map this is (cactus / bones = Dust Bowl; girder / coil / ingot / gas / railcar =
+  Ironworks; haybale / fence / grave = Verdant; hut / boat / rack / iceblock = Causeway; pillar / statue / obelisk / urn / brazier =
+  Karak; hedgehog / tower = Crossfire; trees only where things grow) and no map may carry another's; every kind a map's palettes
+  or signatures list must actually be placed; and every map fields at least ten kinds besides its landmarks. Scatter deals each
+  palette like a DECK and a kind that misses keeps its turn (`deal` / `MISSES_PER_KIND` in `buildMapObjects`): drawing a fresh
+  kind per placement ATTEMPT was rejection sampling that favoured the smallest prop, so the foundry floor came out as twelve gas
+  bottles and half of every palette never appeared (fault-injection proven: restore per-attempt draws and five maps fail). A prop
+  that cannot win room in a crowded section is placed as a `signature` instead (the Dust Bowl's oil tank + pipe run, Verdant's
+  fence line, Karak's obelisk). The fifteen biome props are box-built in `buildBiomeProp`; `wall` is a concrete blast wall.
+  Tall ones (girder, obelisk, tower) topple (`isToppleKind`); the brazier is volatile and burns like fuel. Evidence: `npm run shots:props`.
 - **Stone takes the map's hue**: rock / rubble / statue props are tinted 0.5 toward `rockTint` (the ground's own hue at a slightly higher value); wood, foliage and hardware only 0.3 toward `propTint`. A tint into an already-saturated albedo only ever darkens it — which is why the Meshy rock had to be greyscaled first, and why it is gone.
 - **INFANTRY LOCOMOTION IS DISTANCE-LOCKED** (`src/render/gait.ts`, 2026-09-22). The gait phase
   advances by `metres moved / stride`, never by wall time, and a planted boot is placed from that
@@ -652,10 +664,23 @@ every Skirmish battle.
 
 The Skirmish set-up page's **Opponent** row (vs Bot / Local 2 Players — not a main-menu button, owner 2026-09-22) switches to a Player 2 faction row (no difficulty —
 forced Normal so the enemy-side difficulty modifiers are all 1).
-`sim.hotseat` (serialized) stops `endTurn` from queueing AI orders and makes `enemyIntents()` empty.
+`sim.hotseat` (serialized) stops `endTurn` from queueing AI orders. Both players start with
+`START_MONEY_PLAYER` (the bot's smaller purse is a handicap for the human, not for Player 2).
 Each command phase is planned TWICE: a handoff card ("Player N — your orders"), that player plans,
-End Turn hands to the other seat, the second End Turn resolves. **Who plans first alternates by turn
-parity** (P1 odd, P2 even) because the second planner watched the first on the same screen.
+End Turn ("Pass to P2") hands to the other seat, the second End Turn resolves. **Who plans first
+alternates by turn parity** (P1 odd, P2 even) because the second planner watched the first on the
+same screen — except after a recon pulse: `revealedTeam` records whose drone flew, that seat plans
+SECOND and `enemyIntents()` returns the other human's real queued orders (no AI dry-run).
+**The second planner must not see the first one's plan** (2026-09-23 audit; `smoke:hotseat`
+asserts it through `__rht.overlayCounts()` and is fault-injection proven): `syncOrders` draws only
+`"player"`-side orders, overwatch wedges show only the planning side's in the command phase, and
+`swapSides()` drops the outgoing seat's log lines (`logSeq` / `seatLogMark`) and its armed
+intent / pending deploy / build / support. What a player builds or deploys is physically on the
+board and stays visible; alternation is what keeps that fair. The HUD's turn chip names the seat
+("Turn 3 Player 2"), the vs-bot INTEL toast is off (the handoff card lists the other side's tech as
+of the turn start instead), each seat keeps its own camera (Player 2's first view is turned half
+round), and `reset()` / Play Again flip the seats back before reconfiguring and reopen on Player 1.
+Log lines and battle-log sections name "Player 1" / "Player 2", never "You" / "Enemy".
 Player 2 plans through the ordinary UI via `sim.swapSides()` (`flipTeams`: entities, mines,
 treasury, factions, mode scores / hill holders / flag owners). The sim always RESOLVES and SAVES
 unswapped (`serialize` flips back around the write), so victory = Player 1, defeat = Player 2.

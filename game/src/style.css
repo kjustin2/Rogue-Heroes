@@ -5772,6 +5772,10 @@ kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
 .hotseat-card .menu-heading { font-size: 2.4rem; margin: 6px 0 4px; }
 .hotseat-card__kicker { font-size: var(--fs-micro); font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--amber); }
 .hotseat-handoff { background: var(--paper-deep); }
+.hotseat-card__notes { margin: 10px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 0.9rem; color: var(--cream); text-align: left; }
+.hotseat-card__notes li::before { content: "▸ "; color: var(--cyan); }
+/* The planning seat's name in the turn chip: cyan, because the planning side is always drawn as "yours". */
+.turn-chip.seat-1 em, .turn-chip.seat-2 em { color: var(--cyan); font-weight: 800; }
 
 /* Roster card sub-line: a long status ("Hull down", "Suppressed") plus pips, grenades and a stance
    chip squeezed the health bar to a sliver and ran it into the Info button. The row wraps now, and

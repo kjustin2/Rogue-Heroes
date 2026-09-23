@@ -36,6 +36,7 @@
     "verify:persist": "electron scripts/verify-persist.cjs write && electron scripts/verify-persist.cjs read",
     "verify:autosave": "node scripts/verify-autosave.mjs",
     "shots:look": "node scripts/shot-look.mjs",
+    "shots:props": "node scripts/shot-props.mjs",
     "shots:filmstrip": "node scripts/shot-filmstrip.mjs",
     "shots:gas": "node scripts/shot-gas.mjs",
     "shots:damage": "node scripts/shot-damage.mjs",

@@ -147,6 +147,8 @@ export interface HudCallbacks {
   openMenu(): void;
   returnToMainMenu(): void;
   editUnit(id: string): void;
+  /** Local 2 Players: who is planning, and whether End Turn passes to the other seat (vs resolving). */
+  hotseatTurn?(): { seat: 1 | 2; passes: boolean } | undefined;
 }
 
 export class Hud {
@@ -300,13 +302,19 @@ export class Hud {
   }
 
   resetGame(): void {
+    this.clearInteraction();
+    this.callbacks.reset();
+    this.update();
+  }
+
+  /** Drop every half-finished pick (armed action, target, open drawers) — a hotseat handoff. */
+  clearInteraction(): void {
     this.action = "select";
     this.targetId = undefined;
     this.targetPartId = undefined;
     this.friendlyDetailsId = undefined;
     this.hoverEntityId = undefined;
-    this.callbacks.reset();
-    this.update();
+    this.logExpanded = false;
   }
 
   chooseGround(destination: Vec2): void {
@@ -419,14 +427,19 @@ export class Hud {
       playerOrders.set(order.actorId, orders);
     }
 
+    const seatTurn = this.sim.hotseat ? this.callbacks.hotseatTurn?.() : undefined;
+    const endLabel = seatTurn?.passes ? `Pass to P${seatTurn.seat === 1 ? 2 : 1}` : "End Turn";
+    const endTip = seatTurn?.passes
+      ? `Lock in Player ${seatTurn.seat}'s orders and hand the screen to Player ${seatTurn.seat === 1 ? 2 : 1}. Hotkey: Space.`
+      : "Resolve every queued order. Hotkey: Space.";
     const nextHtml = `
       <div class="topbar compact-top">
-        <button class="btn primary end-turn" data-command="end" ${this.sim.phase !== "command" ? "disabled" : ""} data-tip="Resolve every queued order. Hotkey: Space.">
-          End Turn
+        <button class="btn primary end-turn" data-command="end" ${this.sim.phase !== "command" ? "disabled" : ""} data-tip="${escapeAttr(endTip)}">
+          ${endLabel}
           <span>Space</span>
         </button>
         <button class="btn ghost menu-btn" data-command="open-menu" data-tip="Open the in-battle menu: save, controls, or return to the main menu. Hotkey: Esc.">Menu <span>Esc</span></button>
-        ${turnChip(this.sim)}
+        ${turnChip(this.sim, seatTurn?.seat)}
         ${modeChip(this.sim)}
         ${eventChip(this.sim)}
         ${forecastChip(this.sim)}
@@ -940,7 +953,18 @@ function endScreen(sim: TacticalSim): string {
 
 // A persistent turn + phase indicator so players always know which round it is and whether
 // orders are being planned or resolved.
-function turnChip(sim: TacticalSim): string {
+function turnChip(sim: TacticalSim, seat?: 1 | 2): string {
+  if (sim.hotseat) {
+    // Local 2 Players: the chip names the human at the controls, in their seat colour. The planning
+    // seat's units are always drawn as "yours" (cyan), so the resolve reminds who is who.
+    const label = sim.phase === "command" && seat ? `Player ${seat}`
+      : sim.phase === "resolve" ? "Resolving"
+      : sim.gameOver ? `P${sim.phase === "victory" ? 1 : 2} wins` : "Command";
+    const tip = sim.phase === "command" && seat
+      ? `Player ${seat} is planning. Your units are shown in cyan while you plan.`
+      : "Resolving both players' orders. Cyan is Player 1, red is Player 2.";
+    return `<span class="turn-chip ${sim.phase}${seat && sim.phase === "command" ? ` seat-${seat}` : ""}" data-tip="${escapeAttr(tip)}">Turn ${sim.turn} <em>${label}</em></span>`;
+  }
   const phaseLabel = sim.phase === "command" ? "Command" : sim.phase === "resolve" ? "Resolving" : sim.phase === "victory" ? "Victory" : "Defeat";
   return `<span class="turn-chip ${sim.phase}" data-tip="Current turn and phase.">Turn ${sim.turn} <em>${phaseLabel}</em></span>`;
 }
@@ -1881,7 +1905,12 @@ function queuedOrdersState(orders: TacticalOrder[], sim: TacticalSim): string {
   `;
 }
 
+// Turn reports are recorded while the resolve runs unswapped, so in hotseat "player" is always
+// Player 1 -- whichever seat is reading the log. Set by battleLogPanel for the labels below.
+let reportSeats = false;
+
 function battleLogPanel(sim: TacticalSim): string {
+  reportSeats = sim.hotseat;
   const reports = [sim.currentTurnReport, ...sim.turnReports].filter(Boolean) as TurnReport[];
   return `
     <div class="battle-log-panel">
@@ -2013,18 +2042,21 @@ function teamOrder(team: TurnDamageEntry["targetTeam"]): number {
 }
 
 function teamLabel(team: TurnDamageEntry["targetTeam"]): string {
+  if (reportSeats && team !== "neutral") return `Player ${team === "player" ? 1 : 2} Unit`;
   if (team === "player") return "Your Unit";
   if (team === "enemy") return "Enemy Unit";
   return "Neutral Object";
 }
 
 function teamSectionLabel(team: TurnDamageEntry["targetTeam"]): string {
+  if (reportSeats && team !== "neutral") return `Player ${team === "player" ? 1 : 2} Hit`;
   if (team === "player") return "Your Squad Hit";
   if (team === "enemy") return "Enemy Force Hit";
   return "Neutral Objects Hit";
 }
 
 function teamSectionHint(team: TurnDamageEntry["targetTeam"]): string {
+  if (reportSeats && team !== "neutral") return `damage to Player ${team === "player" ? 1 : 2}'s units`;
   if (team === "player") return "damage to your units";
   if (team === "enemy") return "damage to enemies";
   return "cover and map objects";

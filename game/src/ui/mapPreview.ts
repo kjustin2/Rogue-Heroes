@@ -109,6 +109,9 @@ const GLYPH: Partial<Record<CoverKind, Glyph>> = {
   crate: "box", container: "box", sandbag: "bar", barricade: "bar", wall: "bar", bunker: "box",
   tent: "box", wreck: "box", fuel: "tank", gas: "tank", ammo: "box", silo: "tank", pipe: "bar", conduit: "bar",
   depot: "box", span: "bar",
+  girder: "post", coil: "tank", ingot: "box", haybale: "bush", fence: "bar", grave: "post",
+  boat: "bar", rack: "bar", iceblock: "stone", obelisk: "post", urn: "tank", brazier: "tank",
+  hedgehog: "box", tower: "post", bones: "stone",
 };
 
 function drawGlyph(ctx: CanvasRenderingContext2D, kind: Glyph, x: number, y: number, s: number, tint: { foliage: Rgb; stone: Rgb; wood: Rgb; metal: Rgb }): void {

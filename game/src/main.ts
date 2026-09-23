@@ -185,7 +185,14 @@ const hud = new Hud(uiRoot, sim, {
     world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
     focusOnPlayerBase();
     lastEndPhase = undefined;
+    // Play Again / Restart in Local 2 Players: turn 1 opens on Player 1's handoff again. Without
+    // this the seat counter kept its last value and the first End Turn resolved Player 2's turn away.
+    if (sim.hotseat) {
+      resetHotseatMemory();
+      beginHotseatTurn();
+    }
   },
+  hotseatTurn: () => (sim.hotseat && sim.phase === "command" ? { seat: hotseatSeat(), passes: hotseatSeatsDone === 0 } : undefined),
   select: (id: string) => {
     sim.select(id);
     const entity = sim.entity(id);
@@ -519,7 +526,10 @@ function startBattle(mapId: string, modeId: ModeId, difficulty: Difficulty = set
   lastEndPhase = undefined;
   setInBattle(true);
   hud.update();
-  if (sim.hotseat) beginHotseatTurn();
+  if (sim.hotseat) {
+    resetHotseatMemory();
+    beginHotseatTurn();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -530,26 +540,70 @@ function startBattle(mapId: string, modeId: ModeId, difficulty: Difficulty = set
 // sim.swapSides(); the sim swaps back before it resolves.
 // ---------------------------------------------------------------------------
 let hotseatSeatsDone = 0;
-const hotseatFirst = (): 1 | 2 => (sim.turn % 2 === 1 ? 1 : 2);
+// A recon pulse flown last resolve buys its seat the SECOND plan this turn, with the other human's
+// orders drawn on the board -- that is what the pulse promises against the bot, too.
+const hotseatFirst = (): 1 | 2 => {
+  const revealed = sim.revealedSeat();
+  if (revealed) return revealed === 1 ? 2 : 1;
+  return sim.turn % 2 === 1 ? 1 : 2;
+};
 const hotseatSeat = (): 1 | 2 => (hotseatSeatsDone === 0 ? hotseatFirst() : hotseatFirst() === 1 ? 2 : 1);
+// Where each human left the camera, so a handoff puts them back on their own front instead of
+// wherever the other player was looking. Reset per battle. A seat's first view is its own base
+// seen from behind its own lines: Player 2 looks at the board turned half round, so both players
+// see their army facing up the screen.
+let hotseatViews: Partial<Record<1 | 2, { x: number; z: number; yaw: number }>> = {};
+// Enemy tech each seat has already been told about (the vs-bot INTEL toast would re-fire on every
+// seat swap, and would leak research the first planner did a moment ago).
+let hotseatToldTech: Record<1 | 2, Set<string>> = { 1: new Set(), 2: new Set() };
+// Each base's research as the command phase opened -- all a seat may learn of the other's tech.
+let hotseatTechAtTurnStart = new Map<string, string[]>();
+
+function resetHotseatMemory(): void {
+  hotseatViews = {};
+  hotseatToldTech = { 1: new Set(), 2: new Set() };
+}
 
 function beginHotseatTurn(): void {
+  hotseatTechAtTurnStart = new Map(
+    sim.entities.filter((e) => e.kind === "base").map((e) => [e.id, [...(e.unlockedTech ?? [])]]),
+  );
   hotseatSeatsDone = 0;
   handToHotseatSeat();
 }
 
 function handToHotseatSeat(): void {
   const seat = hotseatSeat();
+  const leaving = seat === 1 ? 2 : 1;
+  if (hotseatSeatsDone === 1) {
+    const view = stage.viewState();
+    hotseatViews[leaving] = { x: view.x, z: view.z, yaw: view.yaw };
+  }
   if (sim.sidesSwapped !== (seat === 2)) sim.swapSides();
+  hud.clearInteraction();
   document.querySelector(".hotseat-handoff")?.remove();
-  const other = seat === 1 ? 2 : 1;
+  const other = leaving;
   const order = hotseatSeatsDone === 0 ? "first" : "second";
+  const notes: string[] = [];
+  if (sim.revealedSeat() === seat && hotseatSeatsDone === 1) {
+    notes.push(`Your recon drone mapped Player ${other}'s plan: their orders are drawn in red.`);
+  }
+  // Research the other side finished before this turn, and this seat has not been told about yet.
+  const theirBase = sim.entities.find((e) => e.kind === "base" && e.team === "enemy");
+  for (const id of (theirBase && hotseatTechAtTurnStart.get(theirBase.id)) ?? []) {
+    if (hotseatToldTech[seat].has(id)) continue;
+    hotseatToldTech[seat].add(id);
+    const node = sim.turn > 1 ? TECH_TREE.find((n) => n.id === id) : undefined;
+    if (node) notes.push(`Intel: Player ${other} has ${node.name}.`);
+  }
+  if (sim.turn === 1 && hotseatSeatsDone === 0) notes.push("Your units are cyan while you plan; the other player's are red.");
   const screen = mountScreen(
     `
     <div class="overlay-card hotseat-card">
       <div class="hotseat-card__kicker">Turn ${sim.turn} · plans ${order}</div>
       <h2 class="menu-heading">Player ${seat}</h2>
-      <p class="settings-note">Your orders. Player ${other}, look away until it is your turn.</p>
+      <p class="settings-note">${escapeHtml(sim.factionOf("player").name)} · your orders. Player ${other}, look away until it is your turn.</p>
+      ${notes.length ? `<ul class="hotseat-card__notes">${notes.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul>` : ""}
       <div class="pause-buttons">
         <button class="title-start" data-hotseat-ready data-overlay-close type="button">Ready — Player ${seat}</button>
       </div>
@@ -559,7 +613,13 @@ function handToHotseatSeat(): void {
   );
   screen.querySelector("[data-hotseat-ready]")?.addEventListener("click", () => {
     screen.remove();
-    focusOnPlayerBase();
+    const view = hotseatViews[seat];
+    if (view) {
+      stage.debugSetView(view);
+    } else {
+      focusOnPlayerBase();
+      stage.debugSetView({ yaw: seat === 2 ? Math.PI : 0 });
+    }
     hud.update();
   });
   hud.update();
@@ -568,10 +628,16 @@ function handToHotseatSeat(): void {
 /** End Turn from the button or the key. In hotseat the first press passes the turn to the other seat. */
 function requestEndTurn(): void {
   if (sim.phase !== "command") return;
+  // Never behind the handoff card: the next player has not seen the board yet.
+  if (document.querySelector(".hotseat-handoff")) return;
   if (sim.hotseat && hotseatSeatsDone === 0) {
     hotseatSeatsDone = 1;
     handToHotseatSeat();
     return;
+  }
+  if (sim.hotseat) {
+    const view = stage.viewState();
+    hotseatViews[hotseatSeat()] = { x: view.x, z: view.z, yaw: view.yaw };
   }
   sfx.turn();
   resolveCam.begin(stage.viewState());
@@ -1467,7 +1533,10 @@ function loadSavedBattle(): void {
   }
   if (sim.restore(raw)) {
     tutorialActive = false;
-    if (sim.hotseat) window.setTimeout(beginHotseatTurn, 0); // after closeAllMenus below
+    if (sim.hotseat) {
+      resetHotseatMemory();
+      window.setTimeout(beginHotseatTurn, 0); // after closeAllMenus below
+    }
     closeAllMenus();
     world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
     world.setPlayerAccent(progression.accentColor());
@@ -1587,6 +1656,7 @@ let resolveEntryZoom: number | undefined;
 // readable escalation beat you can race ("their Armor Bay is online; rush or dig in").
 let seenEnemyTech = new Set<string>();
 function watchEnemyIntel(): void {
+  if (sim.hotseat) return; // the handoff card carries the other human's tech (handToHotseatSeat)
   const enemyBase = sim.entities.find((e) => e.kind === "base" && e.team === "enemy");
   if (!enemyBase) return;
   const owned = enemyBase.unlockedTech ?? [];
@@ -1668,6 +1738,7 @@ let lastHintAt = -Infinity;
 const HINT_GAP_MS = 5000;
 function hintOnce(id: string, text: string): boolean {
   if (tutorialActive || introActive || seenHints.has(id)) return false;
+  if (document.querySelector(".hotseat-handoff")) return false; // nobody is looking at the board yet
   if (performance.now() - lastHintAt < HINT_GAP_MS) return false;
   lastHintAt = performance.now();
   seenHints.add(id);
@@ -1959,7 +2030,8 @@ function handleEndState(): void {
   if (lastEndPhase === sim.phase) return;
   lastEndPhase = sim.phase;
   const victory = sim.phase === "victory";
-  if (victory) sfx.victory();
+  // Local 2 Players: somebody at the screen always won.
+  if (victory || sim.hotseat) sfx.victory();
   else sfx.defeat();
   // Commander ledger: lifetime stats + medal checks for every real battle (vs the AI).
   if (!tutorialActive && !sim.hotseat) {
@@ -2075,6 +2147,7 @@ declare global {
       perfReset(): void;
       diagnostics(): DiagnosticsReport;
       describeScene(): SceneDescription;
+      overlayCounts(): { orders: number; overwatch: number };
       limbPose(entityId: string): { limb: string; rotX: number; rotY: number; posY: number; posZ: number }[];
       /** Objects the projectile/effect roots draw this frame (smoke:attacks). */
       fxCounts(): { projectiles: number; effects: number; airborneEffects: number };
@@ -2192,6 +2265,7 @@ window.__rht = {
   perfReset: () => perfMon.reset(),
   diagnostics: () => runSceneDiagnostics(),
   describeScene: () => buildSceneDescription(),
+  overlayCounts: () => world.overlayCounts(),
   limbPose: (entityId: string) => world.limbPose(entityId),
   fxCounts: () => world.fxCounts(),
   trackFeet: (entityId: string, on: boolean) => world.trackFeet(entityId, on),
