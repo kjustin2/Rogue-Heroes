@@ -5800,3 +5800,7 @@ body:has(.unit-detail-panel) #toasts { left: calc(50% + clamp(344px, 22vw, 520px
 .btn.locked-troop { opacity: 0.72; border-style: dashed; }
 .btn.locked-troop span { white-space: normal; line-height: 1.15; font-size: var(--fs-micro); }
 .btn.locked-troop--group { grid-column: span 2; }
+
+/* Continue Battle names the battle it resumes: one small line under the label. */
+.title-start--continue { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.title-start--continue small { font-size: var(--fs-micro); font-weight: 700; letter-spacing: 0.04em; text-transform: none; opacity: 0.85; }

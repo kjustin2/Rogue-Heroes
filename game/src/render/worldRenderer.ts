@@ -1349,6 +1349,7 @@ export class WorldRenderer {
     if (!group) {
       group = this.buildEntity(entity);
       group.userData.team = teamKey;
+      group.userData.entitySnapshot = entity; // live reference, read by auditTerrainClip
       this.groups.set(entity.id, group);
       this.entityRoot.add(group);
     }
@@ -1967,7 +1968,8 @@ export class WorldRenderer {
       // A tent is a square prism turned 45deg about its length: the top half is the ridged roof,
       // the bottom half sits under the ground.
       for (const [x, z] of [[-2.1, 1.3], [2.0, -1.7]] as const) {
-        this.box(group, entity, "core", [1.4, 0.95, 0.95], [x, 0.02, z], 0x8f5a34, { accent: true, rotation: [Math.PI / 4, 0, 0], roughness: 0.95, bevel: 0.08 });
+        const tent = this.box(group, entity, "core", [1.4, 0.95, 0.95], [x, 0.02, z], 0x8f5a34, { accent: true, rotation: [Math.PI / 4, 0, 0], roughness: 0.95, bevel: 0.08 });
+        tent.userData.sunk = true; // half below ground on purpose; the terrain-clip audit skips it
       }
       this.cylinder(group, entity, "comms", 0.06, 4.2, [-1.7, 2.1, -1.3], 0x3a2f24, [0, 0, 0.05], { metalness: 0.3 });
       this.box(group, entity, "comms", [0.05, 0.4, 0.8], [-1.7, 3.95, -0.9], 0xb8502a, { accent: true, roughness: 0.9 });
@@ -4305,6 +4307,38 @@ export class WorldRenderer {
 
   /** Claim the stalest pooled light and flash it at a world point (muzzle or blast). */
   /** Capture seam (__rht.debugKill): record a killing blow of `mag` shoving toward +x. */
+  /**
+   * TERRAIN-CLIP AUDIT (2026-09-22, owner: a unit's weapon stuck into the map on the title screen).
+   * For every living ground unit, every part mesh's world bounding box is sampled at its corners
+   * and centre; a sample that sits more than `tolerance` BELOW the drawn ground at its x/z is inside
+   * the terrain. Boots may touch the ground (the tolerance); a rifle, pack or hull inside a mesa may not.
+   */
+  auditTerrainClip(tolerance = 0.12): { id: string; name: string; kind: string; part: string; depth: number; x: number; z: number }[] {
+    const out: { id: string; name: string; kind: string; part: string; depth: number; x: number; z: number }[] = [];
+    const box = new THREE.Box3();
+    for (const [id, group] of this.groups) {
+      if (!group.visible || group.userData.diedAt !== undefined) continue;
+      const ent = group.userData.entitySnapshot as { name: string; kind: string; flying?: boolean } | undefined;
+      if (!ent || ent.kind === "cover" || ent.flying) continue;
+      group.updateMatrixWorld(true);
+      let worst: { part: string; depth: number; x: number; z: number } | undefined;
+      group.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh || !m.visible || !m.userData.partId || m.userData.ink || m.userData.decor || m.userData.sunk) return;
+        box.setFromObject(m);
+        if (box.isEmpty()) return;
+        const xs = [box.min.x, (box.min.x + box.max.x) / 2, box.max.x];
+        const zs = [box.min.z, (box.min.z + box.max.z) / 2, box.max.z];
+        for (const x of xs) for (const z of zs) {
+          const depth = drawnGroundAt({ x, z }) - box.min.y;
+          if (depth > tolerance && (!worst || depth > worst.depth)) worst = { part: String(m.userData.partId), depth, x, z };
+        }
+      });
+      if (worst) out.push({ id, name: ent.name, kind: ent.kind, ...worst });
+    }
+    return out.sort((a, b) => b.depth - a.depth);
+  }
+
   debugFlinch(entityId: string, mag: number): void {
     this.flinchByEntity.set(entityId, { at: performance.now(), mag, dx: 1, dz: 0 });
   }

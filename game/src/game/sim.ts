@@ -1503,7 +1503,7 @@ export class TacticalSim {
   private deploySpotBlocked(base: CombatEntity, point: Vec2, unitRadius: number, flying: boolean): boolean {
     if (dist(point, base.position) < base.radius + unitRadius + 0.3) return true;
     if (this.entities.some((e) => e.id !== base.id && e.status.alive && !e.carriedById && dist(e.position, point) < e.radius + unitRadius + 0.3)) return true;
-    if (onTerrainEdge(point, unitRadius * 0.8)) return true;
+    if (onTerrainEdge(point, spawnClearance(unitRadius))) return true;
     if (!flying && pointInWater(point)) return true;
     return false;
   }
@@ -1536,7 +1536,7 @@ export class TacticalSim {
     }
     if (best) return { point: best, snapped: true };
     const spec = troopSpec(kind);
-    const why = !flying && pointInWater(clicked) ? "in the water" : onTerrainEdge(clicked, radius * 0.8) ? "on a cliff edge" : "blocked";
+    const why = !flying && pointInWater(clicked) ? "in the water" : onTerrainEdge(clicked, spawnClearance(radius)) ? "on a cliff edge" : "blocked";
     return { point: clicked, snapped: false, reason: `No room for ${spec.label} there (${why})` };
   }
 
@@ -1861,7 +1861,7 @@ export class TacticalSim {
           z: base.position.z + Math.cos(angle) * radius,
         });
         const blocked = this.entities.some((e) => e.id !== base.id && e.status.alive && !e.carriedById && dist(e.position, point) < e.radius + unitRadius + 0.3)
-          || onTerrainEdge(point, unitRadius * 0.8);
+          || onTerrainEdge(point, spawnClearance(unitRadius));
         if (!blocked) return point;
       }
     }
@@ -2091,7 +2091,7 @@ export class TacticalSim {
     for (const flag of s.flags) flag.team = flip(flag.team);
   }
 
-  debugSpawn(kind: TroopKind, team: Team, position: Vec2, options: { elite?: boolean; bossName?: string } = {}): CombatEntity {
+  debugSpawn(kind: TroopKind, team: Team, position: Vec2, options: { elite?: boolean; bossName?: string; clearTerrain?: boolean } = {}): CombatEntity {
     const id = `${team === "player" ? "p" : "e"}-dbg-${++this.troopSeq}`;
     const unit = makeTroop(kind, id, options.bossName ?? `${troopSpec(kind).label} ${this.troopSeq}`, team, clampToArena(position));
     // Placement bypasses the movement rules, so a ground unit could otherwise be dropped into a
@@ -2109,6 +2109,9 @@ export class TacticalSim {
     // Scenario staging drops units at literal offsets; push them out of whatever prop or body is
     // already there so a staged column never starts inside a crate.
     this.separateFromUnits(unit);
+    // Opt-in (the title diorama): step off any terrain edge so the model is not inside a rise. Tests
+    // and scenarios stage units at literal spots and must land exactly there.
+    if (options.clearTerrain && !unit.flying) unit.position = clearOfTerrainEdge(unit.position, spawnClearance(unit.radius));
     this.syncEntityElevation(unit);
     return unit;
   }
@@ -2859,6 +2862,11 @@ export class TacticalSim {
   }
 
   private blockedMoveDestination(actor: CombatEntity, start: Vec2, destination: Vec2, allowedCoverId?: string, silent = false): Vec2 {
+    const stop = this.blockedMoveStop(actor, start, destination, allowedCoverId, silent);
+    return actor.flying || canJump(actor) ? stop : settleClearOfRises(start, stop, spawnClearance(actor.radius));
+  }
+
+  private blockedMoveStop(actor: CombatEntity, start: Vec2, destination: Vec2, allowedCoverId?: string, silent = false): Vec2 {
     const pathLength = dist(start, destination);
     if (pathLength < 0.05) return destination;
     // A JUMP arcs over everything on the way. Only the landing matters: dry ground, not inside a
@@ -2929,6 +2937,23 @@ export class TacticalSim {
     // A unit can step up onto a ledge no taller than TERRAIN_STEP, and can always drop down.
     // The first place the terrain rises by more than one step is a wall/cliff face: stop there.
     let footing = terrainHeightAt(start);
+    // FOOTPRINT, not a point (2026-09-22 terrain audit). Only the centre line used to be checked and
+    // the stop sat 0.34m short of the face whatever the unit's size, so a tank parked with its hull
+    // inside a mesa and a trooper's rifle went into the wall beside him. The unit's clearance
+    // (weapon reach for infantry, most of the hull for vehicles) is sampled ahead and to both sides.
+    const clearance = spawnClearance(actor.radius);
+    const dirLen = Math.max(0.0001, dist(start, destination));
+    const fwd = { x: (destination.x - start.x) / dirLen, z: (destination.z - start.z) / dirLen };
+    const offsets = [0, 0.7, -0.7, 1.4, -1.4].map((a) => ({
+      x: (fwd.x * Math.cos(a) - fwd.z * Math.sin(a)) * clearance,
+      z: (fwd.x * Math.sin(a) + fwd.z * Math.cos(a)) * clearance,
+    }));
+    const footprintRise = (point: Vec2, ground: number): boolean =>
+      offsets.some((o) => terrainHeightAt({ x: point.x + o.x, z: point.z + o.z }) - ground > TERRAIN_STEP);
+    // Already touching a face (spawned there, or thrown there)? Fall back to the centre line so the
+    // unit can always walk away from it.
+    const useFootprint = !footprintRise(start, footing);
+    let lastClear = start;
 
     for (let i = 1; i <= samples; i += 1) {
       const t = i / samples;
@@ -2950,6 +2975,10 @@ export class TacticalSim {
         return stopped;
       }
 
+      if (useFootprint && height - footing <= TERRAIN_STEP && footprintRise(point, Math.max(footing, height))) {
+        if (!silent) this.pushLog(`${actor.name} must use a cliff ascent`);
+        return lastClear;
+      }
       if (height - footing > TERRAIN_STEP) {
         const back = Math.min(0.34 / pathLength, t);
         const stopT = clamp(t - back, 0, 1);
@@ -2958,10 +2987,11 @@ export class TacticalSim {
           z: start.z + (destination.z - start.z) * stopT,
         });
         if (!silent) this.pushLog(`${actor.name} must use a cliff ascent`);
-        return stopped;
+        return useFootprint ? lastClear : stopped;
       }
 
       footing = height;
+      lastClear = point;
     }
 
     return undefined;
@@ -6016,6 +6046,53 @@ function projectileRange(entity: CombatEntity, attackMode: AttackMode = "weapon"
 
 function projectileMaxAge(maxTravel: number, speed: number): number {
   return maxTravel / Math.max(0.1, speed) + 2.2;
+}
+
+/**
+ * How far a unit must stand from a terrain step so its model (a trooper's weapon, a tank's hull)
+ * stays out of the face -- the same clearance the move footprint uses.
+ */
+function spawnClearance(unitRadius: number): number {
+  // Infantry (radius < 1): up to 1.3m of weapon reach (the heavy's gun, the striker's blade) plus a
+  // little of the drawn talus that flares past a block. Vehicles: most of the hull plus the talus.
+  return unitRadius < 1 ? 1.4 : unitRadius * 0.95 + 0.3;
+}
+
+/**
+ * A move must not END pressed against a rise (any step taller than a knee, walkable or not): the
+ * unit's weapon or hull would sit inside it. Back the stop off along the path until the unit's
+ * clearance is free of rises; if the whole path is tight, keep the original stop.
+ */
+function risesNear(point: Vec2, margin: number): boolean {
+  const here = terrainHeightAt(point);
+  for (let i = 0; i < 8; i += 1) {
+    const a = (i / 8) * Math.PI * 2;
+    if (terrainHeightAt({ x: point.x + Math.sin(a) * margin, z: point.z + Math.cos(a) * margin }) - here > 0.3) return true;
+  }
+  return false;
+}
+function settleClearOfRises(start: Vec2, stop: Vec2, margin: number): Vec2 {
+  if (!risesNear(stop, margin)) return stop;
+  const length = dist(start, stop);
+  for (let back = 0.15; back < length; back += 0.15) {
+    const t = (length - back) / length;
+    const c = { x: start.x + (stop.x - start.x) * t, z: start.z + (stop.z - start.z) * t };
+    if (!risesNear(c, margin)) return c;
+  }
+  return stop;
+}
+
+/** The nearest dry point within 4m that is clear of every terrain step by `margin` (or `point`). */
+function clearOfTerrainEdge(point: Vec2, margin: number): Vec2 {
+  if (!onTerrainEdge(point, margin)) return point;
+  for (let r = 0.5; r <= 4; r += 0.5) {
+    for (let i = 0; i < 12; i += 1) {
+      const a = (i / 12) * Math.PI * 2;
+      const c = clampToArena({ x: point.x + Math.sin(a) * r, z: point.z + Math.cos(a) * r });
+      if (!onTerrainEdge(c, margin) && !pointInWater(c)) return c;
+    }
+  }
+  return point;
 }
 
 function projectileArcHeight(kind: ProjectileKind, distanceToTarget: number, source?: EntityKind): number {

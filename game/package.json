@@ -30,6 +30,7 @@
     "probe:shadow": "node scripts/probe-shadow.mjs",
     "probe:ground": "node scripts/probe-ground.mjs",
     "probe:depth": "node scripts/probe-depth.mjs",
+    "probe:terrain": "node scripts/probe-terrain.mjs",
     "probe:intro": "npm run build && electron scripts/probe-intro.cjs",
     "glitch:sweep": "electron scripts/glitch-sweep.cjs",
     "glitch:probe": "electron scripts/glitch-probe.cjs",

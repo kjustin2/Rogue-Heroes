@@ -34,6 +34,7 @@ symbols fail the build.
 | A/B two screenshots (hottest region, 3× crop) / inspect a GLB | `npm run shots:diff a.png b.png out.png`, `npm run art:inspect <glb>` |
 | Start one map headless and print the in-page error | `npm run probe:map <id>` |
 | Boot camera steadiness on the real GPU (the title "earthquake" regression) | `npm run probe:intro` |
+| Units inside the terrain (title diorama + 5 AI turns on every map, ~3 min) | `npm run probe:terrain [map]` |
 | **Real-GPU frame-time probe** (hidden Electron, diffs compiled programs across resolves) | `npm run soak:gpu [scenario]` |
 | **Real-GPU screenshots** (`-- menu firefight lineup rings abilities direction nowalk maps volley vehicles structures …`; `vehicles` / `structures` = the vehicles-kit review frames, both teams; `maps` = one gameplay frame per battlefield (`volley` = a seven-family firing line mid-resolve: rounds, trails, flashes, blasts on the real GPU); UI screens `deploy settings armory achievements tech tutorial pause victory defeat hover hover-deck`; `air` = the four flyers, both teams; `deaths` = every death family filmed (16 frames); `tech` = the research table fresh + mid-game; `mapselect` shoots the Skirmish page at 1280×720 / 1600×900 / 2560×1080; `SHOT_PREFIX=before-` for a baseline build) | `npm run shots:gpu` |
 | Locomotion filmstrips (`-- walk` flat-ground stride in profile, `march` scout, `trudge` heavy, `crouch`, `step` = up a terrain step vs talus / plates) | `npm run shots:step` |
@@ -629,6 +630,23 @@ treasury, factions, mode scores / hill holders / flag owners). The sim always RE
 unswapped (`serialize` flips back around the write), so victory = Player 1, defeat = Player 2.
 No medals or points from hotseat games. Tests: `hotseat.test.ts`; `npm run smoke:hotseat` (in
 `smoke:core`); `shots:gpu versus`.
+
+## Units never stand INSIDE the terrain (2026-09-22)
+
+Owner report: a striker's blade stuck into a step on the title screen. `npm run probe:terrain` runs
+`__rht.auditTerrainClip()` (every living ground unit's part boxes sampled against `drawnGroundAt`)
+on the title diorama and after five AI-vs-AI turns on every map; it found the title units, tanks
+parked with hull / cannon in mesas, and zero after the fix. The rules it proved:
+- **Clearance** `spawnClearance(radius)` in sim.ts: infantry 1.4m (weapon reach up to ~1.3m + talus),
+  vehicles 0.95×radius + 0.3 (hull + barrel + talus). Used by deploy spots, `freeSpawnNear`, the
+  move FOOTPRINT, and the settle.
+- **Move footprint**: `blockedBySteepTerrain` samples the clearance ahead and to both sides, not just
+  the centre line (a unit already touching a face falls back to the centre line so it can leave).
+- **Settle**: every ordered move (`blockedMoveDestination`) backs off along its path until no rise
+  taller than 0.3m (walkable OR cliff) is inside the clearance — a weapon must not end in a step.
+- `debugSpawn(..., { clearTerrain: true })` for staged scenes (the title diorama); tests and scenarios
+  keep literal positions.
+- Intentionally sunk dressing (Syndicate tents) is `userData.sunk` and skipped by the audit.
 
 ## Move orders that go nowhere are REFUSED (2026-09-22)
 

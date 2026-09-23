@@ -761,12 +761,12 @@ function stageMenuDiorama(): void {
   sim.configure(mapDef("verdant"), "destroy", "normal");
   const squad: [TroopKind, number, number][] = [["soldier", -3.2, 1.4], ["heavy", -4.4, -0.6], ["striker", -5.6, 2.2], ["jumper", -2.4, -1.6], ["tank", -7.2, 0.4]];
   for (const [kind, x, z] of squad) {
-    const u = sim.debugSpawn(kind, "player", { x, z });
+    const u = sim.debugSpawn(kind, "player", { x, z }, { clearTerrain: true });
     u.yaw = Math.PI * 0.5 + (x + z) * 0.05;
   }
   const patrol: [TroopKind, number, number][] = [["striker", 7.5, -1.2], ["soldier", 8.8, 1.6], ["apc", 11, 0]];
   for (const [kind, x, z] of patrol) {
-    const u = sim.debugSpawn(kind, "enemy", { x, z });
+    const u = sim.debugSpawn(kind, "enemy", { x, z }, { clearTerrain: true });
     u.yaw = -Math.PI * 0.5;
   }
   sim.select("");
@@ -798,12 +798,34 @@ function pointsBadge(): string {
   return `<div class="menu-points" data-tip="Earned by playing battles. Spend them in the Armory on cosmetics."><span>★</span> ${progression.points} pts</div>`;
 }
 
+/**
+ * One line under Continue Battle saying WHICH battle it is: map, mode, turn, the matchup, and the
+ * difficulty or "2 players". Read straight from the save; an unreadable save just says "Saved battle".
+ */
+function savedBattleNote(raw: string | null | undefined): string {
+  try {
+    const data = JSON.parse(raw ?? "") as { map?: string; mode?: ModeId; turn?: number; difficulty?: Difficulty; factions?: Partial<Record<"player" | "enemy", FactionId>>; hotseat?: boolean };
+    const faction = (id?: FactionId): string => FACTIONS.find((f) => f.id === id)?.name ?? "?";
+    const parts = [
+      data.map ? mapDef(data.map).name : undefined,
+      data.mode ? modeDef(data.mode).name : undefined,
+      data.turn ? `Turn ${data.turn}` : undefined,
+      data.factions ? `${faction(data.factions.player)} vs ${faction(data.factions.enemy)}` : undefined,
+      data.hotseat ? "2 players" : data.difficulty ? difficultyLabel(data.difficulty) : undefined,
+    ].filter(Boolean);
+    return parts.length ? parts.join(" · ") : "Saved battle";
+  } catch {
+    return "Saved battle";
+  }
+}
+
 function showMainMenu(): void {
   autosaveIfActive(); // quitting a battle to the menu preserves it for Continue
   setInBattle(false);
   closeAllMenus();
   stageMenuDiorama();
-  const hasSave = Boolean(safeStorageGet(SAVE_KEY));
+  const saved = safeStorageGet(SAVE_KEY);
+  const hasSave = Boolean(saved);
   const screen = mountScreen(
     `
     <div class="title-screen__content menu-content main-menu__content">
@@ -812,7 +834,7 @@ function showMainMenu(): void {
            now: Campaign and Skirmish Run were cut (2026-09-22) until Skirmish is perfected. -->
       <div class="main-menu__buttons" data-allow-overlap>
         ${hasSave
-          ? `<button class="title-start" data-menu="continue" type="button">Continue Battle</button>
+          ? `<button class="title-start title-start--continue" data-menu="continue" type="button">Continue Battle<small>${escapeHtml(savedBattleNote(saved))}</small></button>
              <button class="menu-action" data-menu="play" type="button">New Skirmish</button>`
           : `<button class="title-start" data-menu="play" type="button">Play Skirmish</button>`}
         <button class="menu-link" data-menu="tutorial" type="button">Play the tutorial</button>
@@ -2073,6 +2095,8 @@ declare global {
       frameErrors(): number;
       /** Capture seam: kill a unit outright; `blow` >= 0.6 plays the "thrown" death, shoved toward +x. */
       debugKill(id: string, blow?: number): void;
+      /** Units whose model sits inside the drawn terrain (see WorldRenderer.auditTerrainClip). */
+      auditTerrainClip(tolerance?: number): { id: string; name: string; kind: string; part: string; depth: number; x: number; z: number }[];
       /** Multiplies the resolve-phase sim clock (filmstrips run at 0.25 to see a swing). */
       setResolveScale(scale: number): void;
       setDebugOverlay(on: boolean): boolean;
@@ -2168,6 +2192,7 @@ window.__rht = {
   describeScene: () => buildSceneDescription(),
   limbPose: (entityId: string) => world.limbPose(entityId),
   trackFeet: (entityId: string, on: boolean) => world.trackFeet(entityId, on),
+  auditTerrainClip: (tolerance?: number) => world.auditTerrainClip(tolerance),
   footTrack: (entityId: string) => world.footTrack(entityId),
   partColors: (entityId: string) => world.partColors(entityId),
   sceneGraph: () => ({ total: countSceneObjects(), topLevel: stage.scene.children.length }),
