@@ -5796,6 +5796,12 @@ body:has(.unit-detail-panel) #toasts { left: calc(50% + clamp(344px, 22vw, 520px
 .start-factions .faction-grid--four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .start-factions .faction-card { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 7px 9px; min-width: 0; }
 .start-factions .faction-card strong { display: flex; align-items: center; gap: 6px; }
+/* The doctrine name (2026-09-23) under the faction name: these cards are a quarter of a column
+   wide, so it wraps inside the card instead of running into the next one. */
+.start-factions .faction-card .faction-roster { white-space: normal; text-align: left; line-height: 1.15; }
+/* ...except on a short screen: at 1280x720 the extra line scrolled the Skirmish page by 30px
+   (smoke:ui-audit ONE-SCREEN). There the doctrine rides the card's tooltip only. */
+@media (max-height: 800px) { .start-factions .faction-card .faction-roster { display: none; } }
 .start-factions .faction-card span:not(.faction-pip) { font-size: var(--fs-small, 0.74rem); line-height: 1.25; -webkit-line-clamp: 3; }
 .faction-pip--random { display: inline-grid; place-items: center; width: 12px; height: 12px; border-radius: 50%; background: var(--paper-hi); color: var(--cream); font-size: 0.6rem; font-weight: 900; }
 
