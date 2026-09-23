@@ -493,22 +493,24 @@ const RAW_MAPS: readonly MapDef[] = [
         { minX: -5.5, maxX: 5.5, minZ: -5, maxZ: 5, height: 0.8 },     // hill base (climbable lower step)
         { minX: -3.4, maxX: 3.4, minZ: -3.2, maxZ: 3.2, height: 1.6 }, // commanding hilltop (stacked)
         // THE TERRACES. Each valley side is three farmed shelves climbing to the map edge, every
-        // riser 0.8 (one climbable step), so the whole flight walks. A shelf is two segments whose
-        // lips jog where they meet: that is what reads as a contour following the hillside rather
-        // than one long box. Shelves are >= 2.5 deep (3m+ scaled) so
-        // infantry can stop on one clear of the riser behind it (spawnClearance 1.4). The flight
-        // starts lower on the side nearer its own base, so each army has a home climb.
+        // riser 0.8 (one climbable step), so the whole flight walks. Each shelf is two segments and
+        // every lip jogs back at the same x, so the flight bends like a contour following the
+        // hillside rather than running as one long box, and every shelf is >= 2.5 deep (3m+ scaled):
+        // infantry can stop on one clear of the riser behind it (spawnClearance 1.4). The lower
+        // shelf reaches further into the valley on the side nearer each army's own base.
         { minX: -20, maxX: -2, minZ: 11, maxZ: 19, height: 0.8 },      // north terraces — lower shelf (west)
         { minX: -2, maxX: 16, minZ: 12.5, maxZ: 19, height: 0.8 },     // north terraces — lower shelf (east)
-        { minX: -16, maxX: 1, minZ: 14, maxZ: 19, height: 1.6 },       // north terraces — middle shelf (west)
-        { minX: 1, maxX: 12, minZ: 15, maxZ: 19, height: 1.6 },        // north terraces — middle shelf (east)
-        { minX: -11, maxX: 4, minZ: 16.5, maxZ: 19, height: 2.4 },     // north terraces — top shelf (the long view)
+        { minX: -16, maxX: -2, minZ: 14, maxZ: 19, height: 1.6 },      // north terraces — middle shelf (west)
+        { minX: -2, maxX: 12, minZ: 15, maxZ: 19, height: 1.6 },       // north terraces — middle shelf (east)
+        { minX: -11, maxX: -2, minZ: 16.5, maxZ: 19, height: 2.4 },    // north terraces — top shelf (west, the long view)
+        { minX: -2, maxX: 4, minZ: 17.5, maxZ: 19, height: 2.4 },      // north terraces — top shelf (east)
         // South terraces: the point mirror of the north flight.
         { minX: 2, maxX: 20, minZ: -19, maxZ: -11, height: 0.8 },      // south terraces — lower shelf (east)
         { minX: -16, maxX: 2, minZ: -19, maxZ: -12.5, height: 0.8 },   // south terraces — lower shelf (west)
-        { minX: -1, maxX: 16, minZ: -19, maxZ: -14, height: 1.6 },     // south terraces — middle shelf (east)
-        { minX: -12, maxX: -1, minZ: -19, maxZ: -15, height: 1.6 },    // south terraces — middle shelf (west)
-        { minX: -4, maxX: 11, minZ: -19, maxZ: -16.5, height: 2.4 },   // south terraces — top shelf
+        { minX: 2, maxX: 16, minZ: -19, maxZ: -14, height: 1.6 },      // south terraces — middle shelf (east)
+        { minX: -12, maxX: 2, minZ: -19, maxZ: -15, height: 1.6 },     // south terraces — middle shelf (west)
+        { minX: 2, maxX: 11, minZ: -19, maxZ: -16.5, height: 2.4 },    // south terraces — top shelf (east)
+        { minX: -4, maxX: 2, minZ: -19, maxZ: -17.5, height: 2.4 },    // south terraces — top shelf (west)
       ],
       // The mill ponds: still water at the foot of the terraces; ground units go round, flyers over.
       water: [
