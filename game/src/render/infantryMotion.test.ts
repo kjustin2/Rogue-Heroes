@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { INFANTRY_MOTION, MOTION_CHANNELS } from "../game/infantryMotionData";
 import { hasMotionBank, motionContact, sampleMotion } from "./infantryMotion";
-import type { WeaponFamily } from "./worldRenderer";
+import { WEAPON_FAMILIES, type WeaponFamily } from "./worldRenderer";
 
 // The Blender bank is GENERATED, so these guard the pipeline rather than the numbers: that the
 // export produced well-formed data, that the sampler reads it correctly, and that the properties
 // the animation depends on actually hold. A broken export would otherwise show up as units posing
 // strangely in play, which is the hardest kind of bug to notice.
-const FAMILIES: WeaponFamily[] = ["rifle", "burst", "marksman", "cannon", "launcher", "flamer", "melee"];
+// Every family with a Blender bank: all of them except the throw, which is a procedural windmill of
+// the free arm (throwArmAngle) that no rifle clip describes.
+const FAMILIES: readonly WeaponFamily[] = WEAPON_FAMILIES.filter((f) => f !== "throw");
 
 describe("infantry motion banks", () => {
   it("exported every clip at a uniform length and width", () => {

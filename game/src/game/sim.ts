@@ -164,6 +164,9 @@ const STRAFE_DAMAGE_SHARE = 0.75;
 // CARPET (bomber): three bombs in a line along the heading, this far apart.
 export const CARPET_BOMBS = 3;
 const CARPET_SPACING = 2.2;
+// Metres short of its drop point a carpet bomb is released: ~0.4s of fall at bomb speed, steep
+// enough (inside the bomb's -1.5 rad pitch clamp from bomber altitude) to read as straight down.
+const CARPET_RUN_IN = 0.9;
 // A jump trooper landing next to an enemy: damage before difficulty scaling.
 const SLAM_LANDING_DAMAGE = 15;
 
@@ -289,6 +292,8 @@ export interface VisualEvent {
   // line; "topple" = a tall cover column falling from `from` toward `to`.
   // "strike" = a melee blow landing at `to`, swung from `from`.
   // "bolt" = lightning striking `to` from the sky; "land" = a jump trooper touching down at `to`.
+  // "shot" = a gun-run burst (gunship strafe): tracers from the aircraft's gun at `fromHeight`
+  // down into `to`. It is resolved as direct damage, so it carries no Projectile of its own.
   type: "shot" | "impact" | "blast" | "ping" | "jet" | "beam" | "topple" | "strike" | "bolt" | "land";
   from: Vec2;
   to: Vec2;
@@ -296,6 +301,8 @@ export interface VisualEvent {
   age: number;
   duration: number;
   radius?: number;
+  /** World height the effect starts at, when that is not the ground under `from`. */
+  fromHeight?: number;
 }
 
 export interface ShotPreview {
@@ -2756,7 +2763,8 @@ export class TacticalSim {
       const amount = Math.max(1, Math.round(this.estimateShotDamage(actor, target, part, "center", false) * STRAFE_DAMAGE_SHARE));
       const result = applyDamage(target, part.id, amount);
       this.pushLog(`${actor.name} strafes ${target.name}`);
-      this.effect("shot", actor.position, target.position, actor.team === "player" ? 0x75d8ff : 0xff765f, 0.3);
+      // Warm MG tracers from the gun under the nose (ONE BALLISTIC LANGUAGE: no team-colour lines).
+      this.effect("shot", actor.position, target.position, 0xffc070, 0.36, undefined, actor.elevation - 0.35);
       this.effect("impact", target.position, target.position, result.destroyed ? 0xffd166 : 0xffffff, 0.42, target.radius);
       this.afterDamage(actor, target, result, "Strafe");
     }
@@ -3161,9 +3169,14 @@ export class TacticalSim {
     // stagger its bombs along the heading.
     const airDrop = isAirBomber(actor);
     const dropPoint = airDrop ? (airDropAt ?? { x: actor.position.x, z: actor.position.z }) : point;
-    // A carpet bomb is released where it falls (as the plane passes over), never lobbed forward
-    // from the nose — a lobbed one would fly through anything airborne in between.
-    const origin = airDrop && airDropAt ? { ...airDropAt } : muzzlePoint(actor, "grenade");
+    // A carpet bomb is released just short of where it falls (as the plane passes over), never
+    // lobbed forward from the nose — a lobbed one would fly through anything airborne in between.
+    // The short run-in along the heading is what gives it a FALL: flight is parameterised by
+    // horizontal travel, and a bomb released exactly over its own drop point detonated on the tick
+    // it was born, so the carpet's three bombs were never on screen (the ground just exploded).
+    const origin = airDrop && airDropAt
+      ? { x: airDropAt.x - Math.sin(actor.yaw) * CARPET_RUN_IN, z: airDropAt.z - Math.cos(actor.yaw) * CARPET_RUN_IN }
+      : muzzlePoint(actor, "grenade");
     const originHeight = muzzleHeight(actor, "grenade");
     const intendedPoint = { ...dropPoint };
     const intendedHeight = terrainHeightAt(dropPoint) + 0.14;
@@ -5753,7 +5766,7 @@ export class TacticalSim {
     this.activeTurnReport = undefined;
   }
 
-  private effect(type: VisualEvent["type"], from: Vec2, to: Vec2, color: number, duration: number, radius?: number): void {
+  private effect(type: VisualEvent["type"], from: Vec2, to: Vec2, color: number, duration: number, radius?: number, fromHeight?: number): void {
     // A blast is a spark. Every explosion in the game goes through here, so this is the one place
     // that has to know about gas; the cloud's own detonation is a blast too, which is how one
     // canister sets off the next.
@@ -5767,6 +5780,7 @@ export class TacticalSim {
       duration,
       radius,
       age: 0,
+      ...(fromHeight !== undefined ? { fromHeight } : {}),
     });
   }
 }

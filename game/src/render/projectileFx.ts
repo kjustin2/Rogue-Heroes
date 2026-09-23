@@ -1371,6 +1371,30 @@ export function makeStrikeFlash(effect: VisualEvent, t: number, ground: number):
   return out;
 }
 
+/** A gunship's GUN RUN (the sim's "shot" effect): a short burst of warm MG tracers from the gun
+ *  under the aircraft's nose (`fromHeight`) down into the target at chest height. The strafe is
+ *  resolved as direct damage, so there is no Projectile to draw -- this used to be a flat two-pixel
+ *  team-colour line along the ground, the last laser beam in the game. Each round grows in over its
+ *  first tenth of flight (the no-pop rule) and is gone when it reaches the target. */
+export const GUN_RUN_ROUNDS = 3;
+export function makeGunRun(effect: VisualEvent, t: number, ground: number, groundAtFrom: number): THREE.Object3D[] {
+  const out: THREE.Object3D[] = [];
+  const from = { x: effect.from.x, y: effect.fromHeight ?? groundAtFrom + 0.9, z: effect.from.z };
+  const to = { x: effect.to.x, y: ground + 0.9, z: effect.to.z };
+  const seed = seedOf(effect.id);
+  for (let i = 0; i < GUN_RUN_ROUNDS; i += 1) {
+    const u = (t - i * 0.2) / 0.45; // each round's own flight, staggered through the burst
+    if (u <= 0 || u >= 1) continue;
+    const round = tracerModel("mg", t + i, seed + i);
+    round.position.set(from.x + (to.x - from.x) * u, from.y + (to.y - from.y) * u, from.z + (to.z - from.z) * u);
+    orientAlongVelocity(round, from, to);
+    round.scale.multiplyScalar(smooth(u / 0.1));
+    out.push(round);
+  }
+  for (const o of out) o.traverse((c) => { c.frustumCulled = false; });
+  return out;
+}
+
 /** A generic marker pulse (overwatch, pickups, marks, captures): a flat ring plus a soft disc that
  *  pops and shrinks. Never a glowing ball — the old additive sphere read as a hit on anything. */
 export function makePing(effect: VisualEvent, t: number, ground: number): THREE.Object3D[] {
