@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { STRIKER_CHARGE, TacticalSim, mapDef } from "./sim";
 
-// Unit identity abilities, round three (docs/unit-identity-ideas.md picks 1, 3, 11):
+// Unit identity abilities, round three (unit-identity picks 1, 3, 11):
 // scout DASH, striker CHARGE, sapper BREACH.
 const settle = (sim: TacticalSim): void => {
   for (let t = 0; t < 80 && sim.phase === "resolve"; t += 0.05) sim.update(0.05);

@@ -22,8 +22,8 @@ is [`CLAUDE.md`](../CLAUDE.md). This file is a short tour of how the game plays.
 
 Six battlefields, each with its own layout, landmarks and hazard: Dust Bowl (sandstorms),
 Ironworks (slag spills), Verdant Pass (lightning), Frozen Causeway (ion storms), Ruins of Karak
-(collapses) and Crossfire Basin (artillery barrages). Five modes (Annihilation, Capture the Flag,
-Hold the Hill, Domination, Last Stand), three factions, three difficulties. Medals and lifetime
+(collapses) and Crossfire Basin (artillery barrages). Three modes (Annihilation, Capture the Flag,
+Hold the Hill), three factions, three AI difficulties, or Local 2 Players (hotseat). Medals and lifetime
 stats are on the Achievements page; cosmetics are in the Armory.
 
 ## Debug / Sandbox mode

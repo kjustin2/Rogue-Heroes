@@ -9,7 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "verify": "npm run typecheck && npm test && npm run build",
+    "verify": "npm run typecheck && npm run check:scripts && npm test && npm run build",
     "preview": "vite preview",
     "smoke:flow": "node scripts/smoke-flow.mjs",
     "smoke:economy": "node scripts/smoke-economy.mjs",
@@ -19,9 +19,6 @@
     "smoke:hotseat": "node scripts/smoke-hotseat.mjs",
     "smoke:ground": "node scripts/smoke-ground.mjs",
     "screens": "node scripts/polish-screens.mjs",
-    "improve:capture": "node improve/capture-flow.mjs",
-    "improve:check": "node improve/check-goals.mjs",
-    "improve:cycle": "node improve/run-cycle.mjs",
     "improve:gallery": "node improve/scenario-gallery.mjs",
     "perf": "node improve/perf-bench.mjs",
     "perf:profile": "node scripts/perf-profile.mjs",
@@ -67,7 +64,8 @@
     "standalone": "npm run build && electron .",
     "dist:exe": "npm run build && electron-builder --win portable",
     "shots:step": "node scripts/shot-step.mjs",
-    "art:vehicles": "node scripts/blender.mjs art/vehicles/author_vehicles.py"
+    "art:vehicles": "node scripts/blender.mjs art/vehicles/author_vehicles.py",
+    "check:scripts": "node scripts/check-scripts.mjs"
   },
   "author": "Rogue Heroes",
   "build": {

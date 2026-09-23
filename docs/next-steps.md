@@ -1,42 +1,64 @@
-# Where we are — 2026-09-22 (evening)
+# Next steps — the roadmap (updated 2026-09-23)
 
-Direction change: **Skirmish is the only mode until it is perfected.** Campaign and Skirmish Run
-were deleted (see "SKIRMISH ONLY" in `CLAUDE.md` for the ban list).
+This is the ONE live planning doc. Read it at the start of every session; update it at the end.
+Setup for a fresh clone: root `README.md`. Engineering rules: `CLAUDE.md`.
 
-## Landed this round
+## Where the game is
 
-| Ask | State | Proof |
-|---|---|---|
-| Title screen shakes like an earthquake before the slow pan | fixed at the root: the first frame's `dt` was negative and ran the trauma decay backwards | `npm run probe:intro` (real GPU): camera jitter 1.48 → 0.03 |
-| Glitch sweep #1 weather motes as white squares | soft round clamped points | `gpu-map-causeway.png` |
-| Glitch sweep #2 floating cream brackets on cover | deleted | `gpu-map-verdant.png` |
-| Glitch sweep #5 + owner report: pickup circles bury in the ground | every static ground overlay draped (`drapedDisc`), aim splash disc draped | `gpu-map-causeway.png` |
-| Glitch sweep #7 props sunk into raised ground | props stand on the drawn ground | — |
-| Glitch sweep #6 mid-resolve shader compile | warm-up twins symmetric; the original opaque-variant compile is gone | `soak:gpu`: resolve-1 max 20.8ms, jank 0%, same as resolves 2-3 |
-| Glitch sweep #4/4b canopy hatch | detail normal map removed from part materials | — |
-| Units look blurry | aircraft/flak/fallback hulls wear the ink rim; pale steel/glass toned; white marker pip removed; headlamps no longer bloom | `gpu-air.png`, `gpu-vehicles-close.png` |
-| Cooler death animations | thrown / crumple / spin (infantry), wreck + turret throw (vehicles), spiral + crash (aircraft) | `gpu-deaths*.png` |
-| Projectiles look like laser beams | one ballistic language: warm tracers, marksman vapour trail, no energy darts | `gpu-volley-flight.png` |
-| Remove Campaign + Skirmish Run | deleted everywhere; menu is Continue / Play Skirmish | `gpu-menu.png` |
-| Achievements page on the main menu | 13 medals with progress meters + lifetime stats | `gpu-achievements.png` |
-| Tech tree confusing | rebuilt as a research table: doctrine → unlocks, two specializations with OR | `gpu-tech-fresh.png`, `gpu-tech-mid.png` |
-| Each map unique | Ironworks gets its own SLAG SPILL event (was a copy of Karak's collapse); forecast shows lightning | `storm.test.ts` |
-| Dead code / stale scripts / stale docs | 27 unwired scripts, 8 stale docs, 6 dead exports removed | commits `a034607`, `d64fac2` |
-| Cloud setup docs | root README rewritten; the harness finds Chromium on Linux/macOS too | `README.md` |
+**Skirmish is the whole game until it is perfected** (owner's rule — Campaign and Skirmish Run were
+deleted on purpose; see "SKIRMISH ONLY" in `CLAUDE.md` for the ban list). A Skirmish is: six themed
+maps, each with its own sections, landmarks and hazard event; three modes (Annihilation, Capture the
+Flag, Hold the Hill); three factions that look, play and research differently; three AI brains
+(Easy / Normal / Hard differ in intelligence, not just stats); or Local 2 Players hotseat.
 
-## Next — pick up here
+State of the checkout: `npm run verify` green (typecheck, script syntax, 430+ vitest incl. chaos +
+balance self-play, build); `npm run smoke:core` green; `npm run perf` OK against the baseline;
+`npm run smoke:electron` green. Everything is committed on `main`.
 
-1. **Owner playtest of Skirmish** on the standalone build: deaths, projectiles, the research
-   table, the slag spill. Iterate off what he reports.
-2. **Skirmish depth** (only when asked): elites/bosses survive in code (`debugSpawn` options + the
-   boss bar) for a possible Skirmish set piece.
-3. Known and deferred:
-   - `soak:gpu` still sees ONE toon program compile on the first resolve (key diff field #51,
-     2049 -> 1: a transparent toon material created during the resolve). Not a visible hitch
-     (max frame 20.8ms, same as later resolves). Twin-cloning both vertex-colour states did NOT
-     catch it -- find the material created mid-resolve before trying again.
-   - `smoke:electron` gameplay assertions are stale (pre-placed units) — `smoke:flow` covers it.
-   - A registered worktree `.claude/worktrees/compassionate-mcclintock-ba533c` exists from another
-     session; it was left alone.
-   - Karak and Verdant both use stepped pyramid mesas — distinct palettes and events, but a future
-     map pass could vary the terrain vocabulary.
+What was built in the last stretch (for context, not to redo): one toon art direction end to end
+(Blender kits for infantry, props, vehicles — no Meshy anywhere), distance-locked infantry gait with
+IK knees, per-family death animations, ballistic projectile FX with a no-pop rule, deploy-anywhere
+placement, draped ground overlays, themed maps, the research table, achievements, the toon UI with
+measured readability gates, and a whole-game glitch sweep whose findings were all fixed.
+
+## Next — in priority order
+
+1. **Owner playtest of Skirmish on the standalone build**, then iterate off what he reports.
+   Build it with `cd game && npm run standalone` (or `npm run dist:exe` on Windows). Areas that
+   changed most and have had the least human play: deaths, projectiles, the research table, the
+   Ironworks slag spill, the three AI brains, hotseat, themed map layouts. Every report becomes a
+   measured repro (a `shots:gpu` case, a filmstrip, or a test) BEFORE a fix — see "How to work".
+2. **Balance pass from play**, not from self-play alone. `balance.test.ts` gates the extremes
+   (per-kind damage per $ within 0.5x–2.5x of the median; seats 35–65%) but the striker and tank
+   sit near the top of the band. Tune `src/game/units.ts` only with the self-play table in hand.
+3. **Map terrain vocabulary.** Karak and Verdant both use stepped pyramid mesas; distinct palettes
+   and events, but a map pass could give each map its own landform (canyons, terraces, craters,
+   dunes). Constraints: impassable = step > `TERRAIN_STEP` or water; `scatter.test.ts` must stay
+   green; rerun balance self-play (it moved 15 points on one layout change before).
+4. **Remaining unit-identity ideas** (only if the owner wants more depth):
+   - Engineer: deployable bridge span or sandbag line (reuse the Defenses placement flow).
+   - Flak: a one-turn tracer wall that reveals and blocks air movement through it (needs a new
+     persistent, serialized, rendered line object — that is why it was skipped).
+   - Hit reactions per body part: head snaps back, leg buckles, pack spins (today one shove).
+5. **Elites / bosses** survive in code (`debugSpawn` options + the top-of-screen boss bar) for a
+   possible Skirmish set piece — only when asked.
+
+## Known and deliberately deferred (do not re-chase without new evidence)
+
+- `soak:gpu` sees ONE toon program compile on the first resolve (a transparent toon material
+  created mid-resolve; key diff field #51). Not a visible hitch — max frame 20.8 ms, same as later
+  resolves. Twin-cloning both vertex-colour states did not catch it; find the material created
+  mid-resolve before trying again.
+- Command-phase shimmer on grass and trees is the WIND (ground detail + tree sway), not a glitch.
+- The real-GPU tools (`soak:gpu`, `shots:gpu`, `probe:intro`) only mean something on a machine
+  with a GPU. In a cloud container they run under `xvfb-run` on SwiftShader: use them to check that
+  a scene renders and to read layouts, not to judge frame times or subtle shading.
+
+## How to work (the rules that kept this repo sane)
+
+- **Gate every commit with `npm run verify`**; run `npm run test:full` before handing a build over.
+- **Never claim a visual change from code.** Screenshot it (`npm run shots:gpu -- <case>`), judge
+  motion on filmstrips (`shots:filmstrip`, `shots:step`), and READ the images.
+- **Bisect before you tune** any rendering artefact (see the hatching ledger in `CLAUDE.md`).
+- One test script at a time (they share the GPU); never leave a dev server running.
+- The owner tests on the standalone build, not the dev server. Hand him a build, not a report.

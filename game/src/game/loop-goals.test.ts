@@ -1,10 +1,6 @@
-// Logic-test counterpart to the self-improvement loop's objective goals
-// (improve/goals.mjs). These assert the in-game VALUES and STATE transitions the
-// goals depend on, in-process and deterministically — the "logical" half of the
-// two-signal verification (the "visual" half is the captured screenshots).
-//
-// Keep the `describe("loop goals")` title: improve/check-goals.mjs treats it as
-// the required green suite for the loop to trust a cycle.
+// Sim-level checks for the core loop's VALUES and STATE transitions (menu-independent): costs,
+// deploy/upgrade effects, scenario staging. Originally the logic half of a screenshot-goal loop
+// that has since been retired; the assertions stand on their own.
 
 import { describe, expect, it } from "vitest";
 import { applyDamage, createCover, createScout, createSoldier, createStriker, createTank } from "./damageModel";

@@ -130,7 +130,7 @@ async function run() {
 
     // The Blender kits must be served with a real model MIME.
     const glb = await js(`fetch('/models/vehicles-kit.glb').then(r => ({ ok: r.ok, type: r.headers.get('content-type') }))`);
-    if (!glb.ok || !/model\\/gltf-binary/.test(glb.type || "")) {
+    if (!glb.ok || !/model\/gltf-binary/.test(glb.type || "")) {
       throw new Error(`GLB serving broken: ${JSON.stringify(glb)}`);
     }
 
@@ -138,7 +138,9 @@ async function run() {
     await clickRequired('[data-menu="play"]', "play button");
     await clickRequired('[data-map="dustbowl"]', "map card");
     await clickRequired("[data-start]", "start button");
-    await waitFor(() => js("window.__rht.sim.phase === 'command'"), "command phase", 15000);
+    // The menu deploy is deferred behind a loading veil and the sim reads "command" the whole time,
+    // so wait for the map we picked to actually be configured before spawning into it.
+    await waitFor(() => js("window.__rht.sim.mapDef.id === 'dustbowl' && window.__rht.sim.phase === 'command'"), "command phase", 15000);
     await assertCanvasPainted(js, "electron command");
     await shot(win, "command");
 

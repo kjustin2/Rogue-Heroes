@@ -2,6 +2,11 @@
 
 Guidance for Claude Code in this repository.
 
+**Start of every session: read `docs/next-steps.md`** — it is the live roadmap (what is done,
+what is next, what is deliberately deferred). Setup for a fresh clone is in the root `README.md`.
+Other docs: `docs/blender-ai-pipeline.md` (research digest behind the Blender kit rules below) and
+`docs/visual-fx-learnings.md` (particle / animation / GUI lessons with sources).
+
 ## Layout
 
 Everything lives in **`game/`** — run all commands from there (`cd game` first). The repo
@@ -20,7 +25,7 @@ symbols fail the build.
 | Typecheck | `npm run typecheck` |
 | Unit tests (vitest) | `npm test` (single file: `npx vitest run src/game/sim.test.ts`) |
 | Build | `npm run build` (tsc + vite build) |
-| **Gate before commit** | `npm run verify` (typecheck → test → build) |
+| **Gate before commit** | `npm run verify` (typecheck → script syntax check → test → build) |
 | Full gate + smokes | `npm run test:full` |
 | Perf bench + leak probe | `npm run perf` (`-- --update-baseline` to rebase) |
 | AI vision inspector | `npm run vision` (`-- <scenario>` or `-- all`) |
@@ -65,10 +70,20 @@ drive headless Chromium via `window.__rht`.
 - `npm run smoke:deep` — consolidated regression net for the air/transport features through the
   full sim→render→HUD path: air fleet render, air-to-air, transport load/carry/unload, straight-down
   bomb, serialize round-trip, victory screen. Wired into `test:full`.
-- **`smoke:electron` gameplay assertions are stale** (assumes pre-placed units that no
-  longer exist); use `smoke:flow` until fixed. `test:play` wraps it, so it inherits this.
-- Gameplay smokes must navigate the menu (`[data-menu="play"]` → `[data-map]` →
+- `npm run smoke:electron` (wrapped by `test:play`) boots the BUILT app in Electron: menu, GLB MIME,
+  menu-driven battle start, a resolve round-trip. It sat "hanging" for weeks because the script
+  itself had a regex syntax error — an Electron main-process error raises a MODAL DIALOG instead of
+  exiting, so the run just stalls. `npm run check:scripts` (inside `verify`) now `node --check`s
+  every harness script so that can never ship again.
+- Gameplay smokes that test the MENU navigate it (`[data-menu="play"]` → `[data-map]` →
   `[data-start]`) and usually grant cash via `sim.economy.set("player", N)`.
+- **`[data-start]` deploys are DEFERRED** (loading veil + two rAFs), and the sim sits in phase
+  `command` with a full default scenario from page load — so waiting on `phase === "command"`
+  after the click proves nothing, and `configure()` then splices the entity list. Anything spawned
+  in that window vanishes and the next order is rejected (the intermittent "could not queue a move
+  order" in `smoke:animation`). A smoke that seeds state right after deploying uses
+  `deployBattle(page, {map, mode})` from the harness (calls `__rht.startBattle()` synchronously and
+  pins the map), or waits on `sim.mapDef.id === <map>` as well as the phase.
 - **`?lowfx=1`** forces the composer-free render path — functional smokes and perf use it
   (SwiftShader stalls on the bloom chain); `vision`/gallery run full-FX.
 - **Audio is auto-muted under automation** (`navigator.webdriver`/`?mute` gate in `main.ts`, mirrored
@@ -247,10 +262,11 @@ texture path in `models.ts`. Every hull now comes from **`art/vehicles/author_ve
 - Evidence: `npm run shots:gpu -- vehicles structures direction` (both teams, close passes),
   `shots:silhouette`. Review those after any kit change.
 
-## Perf / vision / improve loop
+## Perf / vision / gallery
 
-Machinery is documented in **`game/improve/README.md`** — read that. Commands:
-`npm run perf`, `npm run vision`, `npm run improve:cycle`, `npm run improve:gallery`.
+Documented in **`game/improve/README.md`**. Commands: `npm run perf`, `npm run vision`,
+`npm run improve:gallery`. (The old screenshot-goal loop `improve:cycle` was retired 2026-09-23 —
+its goals targeted a UI that no longer exists; smokes + `auditUI()` + `shots:gpu` do that job.)
 Repo gotchas:
 
 - **FPS is advisory only** — the hard perf gate is deterministic draw-work signals

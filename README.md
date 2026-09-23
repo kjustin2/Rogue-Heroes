@@ -22,7 +22,7 @@ build, test and run the game in a browser.
 git clone https://github.com/kjustin2/Rogue-Heroes.git
 cd Rogue-Heroes/game
 npm ci                               # or `npm install`; pulls three, vite, vitest, electron, ...
-npm run verify                       # typecheck -> 420+ unit tests (~1.5 min) -> production build
+npm run verify                       # typecheck -> script syntax -> 430+ unit tests (~2 min) -> build
 ```
 
 If `npm run verify` passes, the checkout is healthy.
@@ -81,7 +81,7 @@ game/
   improve/       perf bench + baseline, scenario gallery, the shared test harness
   art/           Blender scripts that author the infantry / props / vehicles kits
   public/models/ the committed GLB kits (the game also runs with this folder empty)
-docs/            design notes, the glitch ledger, research digests
+docs/            next-steps.md (the roadmap — start here), research digests
 CLAUDE.md        the detailed engineering guide: architecture, rules, hard-won lessons — read it
                  before changing rendering, terrain or the test harness
 ```

@@ -14,7 +14,7 @@
 // Out: shots/animation/*.png
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { assertLit, launchGame } from "../improve/lib/harness.mjs";
+import { assertLit, deployBattle, launchGame } from "../improve/lib/harness.mjs";
 import { guard } from "./lib/guard.cjs";
 
 guard({ name: "shot-animation" });
@@ -33,12 +33,11 @@ const { page, errors, close } = await launchGame({
 });
 
 try {
-  await page.waitForSelector(".main-menu");
-  await page.click('[data-menu="play"]');
-  await page.waitForSelector("[data-map]");
-  await page.click("[data-map]");
-  await page.click("[data-start]");
-  await page.waitForFunction(() => window.__rht?.sim?.phase === "command", null, { timeout: 20000 });
+  // Deploy through the seam, not the menu: the menu defers startBattle() behind a loading veil,
+  // and the sim reads phase "command" the whole time, so a spawn can land before configure() and
+  // get spliced away. Pinning the map also pins where the scenario puts everything the walk below
+  // has to path around.
+  await deployBattle(page, { map: "dustbowl", mode: "destroy" });
 
   // Put a single trooper on the field and walk it a long way.
   const unitId = await page.evaluate(() => {
@@ -52,9 +51,11 @@ try {
   const ordered = await page.evaluate((id) => {
     const sim = window.__rht.sim;
     sim.select(id);
-    return sim.queueMove({ x: 6, z: 0 });
+    // Report WHO ended up selected: a rejected order is almost always a selection that never
+    // landed on the spawned trooper, and "could not queue a move" alone doesn't say that.
+    return { ok: sim.queueMove({ x: 6, z: 0 }), selected: sim.selectedId, phase: sim.phase, log: sim.log.slice(-2) };
   }, unitId);
-  if (!ordered) fail("could not queue a move order");
+  if (!ordered.ok) fail(`could not queue a move order for ${unitId}: ${JSON.stringify(ordered)}`);
 
   // Record every rendered frame's boot positions (the skate gate below), and slow the resolve so
   // a headless frame is a slice of a stride rather than a third of one.

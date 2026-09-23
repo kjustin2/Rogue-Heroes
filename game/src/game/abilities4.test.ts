@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CARPET_BOMBS, STRAFE_RADIUS, TacticalSim, mapDef } from "./sim";
 
-// Unit identity abilities, round four (docs/unit-identity-ideas.md picks 5, 9, 10, 14, 15, 17, 18):
+// Unit identity abilities, round four (unit-identity picks 5, 9, 10, 14, 15, 17, 18):
 // grenadier AIRBURST, flamer FEAR, drone op RECON, APC CARRY, artillery DEPLOY, gunship STRAFE,
 // bomber CARPET.
 const settle = (sim: TacticalSim): void => {

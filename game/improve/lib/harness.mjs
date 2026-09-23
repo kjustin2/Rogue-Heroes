@@ -285,3 +285,25 @@ export function gradeImageStats(stats, label = "frame") {
 }
 
 export { delay };
+
+// Deploy straight into a battle through the debug seam instead of clicking through the menu.
+//
+// The menu path is a RACE. `[data-start]` paints a loading veil and defers startBattle() by two
+// rAFs, while the sim has ALREADY been in phase "command" with a full default scenario since page
+// load -- so `waitForFunction(phase === "command")` after the click can pass before the battle is
+// configured. configure() then splices the entity list and resets the selection to the player base,
+// so anything a smoke spawned in that window is erased and the next queueMove() rejects ("base
+// cannot move"). That is the intermittent "could not queue a move order" in smoke:animation.
+//
+// __rht.startBattle() runs configure() synchronously, so once this resolves the battle on screen is
+// the battle the smoke asked for, on the map it asked for. Menu-driven deploys stay covered by
+// smoke:flow and smoke:buttons.
+export async function deployBattle(page, { map = "dustbowl", mode = "destroy", difficulty } = {}) {
+  await page.waitForFunction(() => Boolean(window.__rht), undefined, { timeout: 20000 });
+  await page.evaluate(([m, md, d]) => window.__rht.startBattle(m, md, d), [map, mode, difficulty]);
+  await page.waitForFunction(
+    (m) => window.__rht.sim.mapDef.id === m && window.__rht.sim.phase === "command",
+    map,
+    { timeout: 20000 },
+  );
+}

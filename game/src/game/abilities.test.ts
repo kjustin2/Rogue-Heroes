@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TacticalSim, mapDef } from "./sim";
 
-// Unit identity abilities (docs/unit-identity-ideas.md picks 4, 12, 13).
+// Unit identity abilities (unit-identity picks 4, 12, 13).
 const settle = (sim: TacticalSim): void => {
   for (let t = 0; t < 80 && sim.phase === "resolve"; t += 0.05) sim.update(0.05);
 };
