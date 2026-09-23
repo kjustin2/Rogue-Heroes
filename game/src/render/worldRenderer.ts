@@ -6,7 +6,8 @@ import { hasMotionBank, sampleMotion } from "./infantryMotion";
 import { ANKLE_Y, CROUCH_GAIT, GAIT_TIERS, HIP_Y, HIP_Z, KNEE_Y, bodyAt, footAt, gaitTier, solveLeg, type GaitParams, type LegPose } from "./gait";
 import { splitAtKnee } from "./legSplit";
 import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec2 } from "../core/math";
-import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isVehicleKind, type CombatEntity, type DamagePart, type EntityKind, type PartRole } from "../game/damageModel";
+import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isVehicleKind, type CombatEntity, type DamagePart, type Team, type EntityKind, type PartRole } from "../game/damageModel";
+import type { FactionId } from "../game/factions";
 import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
 import { OVERWATCH_ARC_HALF } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type SkylineKind } from "../game/maps";
@@ -311,6 +312,8 @@ export class WorldRenderer {
     // places that (re)build the battlefield, and a faction tint applied at only some of them is a
     // bug that shows up as "the army is the wrong colour after loading a save".
     this.setFactionTints(sim.factionOf("player").accent, sim.factionOf("enemy").accent);
+    FACTION_OF_TEAM.player = sim.factionIdOf("player");
+    FACTION_OF_TEAM.enemy = sim.factionIdOf("enemy");
     if (!this.particles) this.particles = new Particles(this.scene);
     // Particles run on real time, independent of the sim's paced clock: smoke should not billow
     // faster because the player set the action pace to fast.
@@ -1334,8 +1337,10 @@ export class WorldRenderer {
 
   private syncEntity(entity: CombatEntity, selectedId: string, targetId: string | undefined, targetPartId: string | undefined, defending: boolean, ghosted: boolean, crouchMoving: boolean): void {
     let group = this.groups.get(entity.id);
-    // Captured structures change team: rebuild so team-colored trim/glow follows the flag.
-    if (group && group.userData.team !== entity.team) {
+    // Captured structures change team: rebuild so team-colored trim/glow follows the flag -- and a
+    // faction change (new battle, a hotseat swap) rebuilds too, because the faction DRESS is geometry.
+    const teamKey = `${entity.team}:${factionOfEntity(entity) ?? ""}`;
+    if (group && group.userData.team !== teamKey) {
       disposeSubtree(group);
       this.entityRoot.remove(group);
       this.groups.delete(entity.id);
@@ -1343,7 +1348,7 @@ export class WorldRenderer {
     }
     if (!group) {
       group = this.buildEntity(entity);
-      group.userData.team = entity.team;
+      group.userData.team = teamKey;
       this.groups.set(entity.id, group);
       this.entityRoot.add(group);
     }
@@ -1845,6 +1850,7 @@ export class WorldRenderer {
       this.box(group, entity, "hull", [1.0, 0.1, 0.06], [0, 1.24, -1.47], 0x3a5563, stripe); // ramp stripe
       this.cylinder(group, entity, "turret", 0.025, 0.7, [0.82, 2.3, -0.62], 0xdfeaf2, [0, 0, 0], { accent: true, emissive: glow, emissiveIntensity: 0.16 });
       this.box(group, entity, "turret", [0.08, 0.08, 0.08], [0.82, 2.66, -0.62], 0x9dfcff, { accent: true, emissive: glow, emissiveIntensity: 0.85 });
+      this.factionVehicleDress(group, entity);
       return;
     }
     if (entity.kind === "artillery") {
@@ -1858,6 +1864,7 @@ export class WorldRenderer {
       for (const x of [-0.5, 0.5]) this.box(group, entity, "front-plate", [0.3, 0.12, 0.1], [x, 1.16, 1.42], 0xd8b870, lamp);
       for (const x of [-0.58, 0.58]) this.box(group, entity, "turret", [0.06, 0.1, 0.6], [x, 1.7, -0.3], 0xdaf7ff, stripe);
       this.box(group, entity, "hull", [0.3, 0.06, 0.3], [0.92, 0.78, 0.4], 0xffd9a0, { accent: true, emissive: 0xffa04a, emissiveIntensity: 0.25, bevel: 0.3 });
+      this.factionVehicleDress(group, entity);
       return;
     }
     // Tank: tracked hull, sloped glacis, big rounded turret, long gun.
@@ -1871,6 +1878,7 @@ export class WorldRenderer {
     for (const x of [-0.8, 0.8]) this.box(group, entity, "turret", [0.06, 0.12, 0.9], [x, 1.42, 0.05], 0xdaf7ff, stripe);
     this.box(group, entity, "turret", [0.12, 0.1, 0.12], [0.34, 1.8, -0.12], 0x8df0ff, { accent: true, emissive: glow, emissiveIntensity: 0.85, bevel: 0.3 });
     for (const x of [-0.7, 0.7]) this.box(group, entity, "hull", [0.14, 0.14, 0.06], [x, 1.1, -1.72], 0x151b1d, { emissive: 0xff7d26, emissiveIntensity: 0.18, bevel: 0.3 });
+    this.factionVehicleDress(group, entity);
   }
 
   private buildBaseKit(group: THREE.Group, entity: CombatEntity): void {
@@ -1891,6 +1899,87 @@ export class WorldRenderer {
     this.box(group, entity, "comms", [0.1, 0.1, 0.1], [-0.92, 3.58, -0.2], 0xffb08a, { emissive: 0xff6a4a, emissiveIntensity: 0.6, bevel: 0.4 });
     this.box(group, entity, "power", [0.5, 0.16, 0.06], [1.0, 0.68, -0.34], 0xffb347, { emissive: 0xff8c1a, emissiveIntensity: 0.55, bevel: 0.35 });
     for (const x of [-0.5, 0, 0.5]) this.box(group, entity, "gate", [0.26, 0.06, 0.06], [x, 1.02, 1.4], 0xffd9a0, { emissive: 0xffa04a, emissiveIntensity: 0.4, bevel: 0.4 });
+    this.factionBaseDress(group, entity);
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // FACTION DRESS: extra geometry that changes a SILHOUETTE per faction, hung on existing part ids
+  // so it rides the rig, takes damage paint and is pooled like any part. Accent colours stay put.
+  // ---------------------------------------------------------------------------------------------
+  private factionInfantryDress(rig: THREE.Group, entity: CombatEntity): void {
+    const f = factionOfEntity(entity);
+    if (f === "syndicate") {
+      // Irregulars: a rust neck scarf with a tail blowing off the back, and a bandolier.
+      this.cylinder(rig, entity, "body", 0.19, 0.12, [0, 1.19, 0.01], 0xa8472a, [0, 0, 0], { accent: true, metalness: 0.02, roughness: 0.95 });
+      this.box(rig, entity, "body", [0.12, 0.3, 0.04], [0.07, 1.04, -0.2], 0xa8472a, { accent: true, rotation: [0.35, 0, 0.15], roughness: 0.95 });
+      this.box(rig, entity, "body", [0.07, 0.62, 0.36], [0, 0.93, 0.02], 0x3b2a1c, { rotation: [0, 0, 0.75], metalness: 0.05, roughness: 0.9 });
+    } else if (f === "bastion") {
+      // Fortress troops: a heavy chest plate and broad square shoulder plates -- a boxier outline.
+      this.box(rig, entity, "body", [0.4, 0.3, 0.07], [0, 0.95, 0.21], 0x4c5240, { metalness: 0.3, bevel: 0.25 });
+      for (const side of [-1, 1]) this.box(rig, entity, "body", [0.26, 0.08, 0.36], [side * 0.34, 1.17, 0.01], 0x4c5240, { metalness: 0.32, rotation: [0, 0, side * -0.18], bevel: 0.3 });
+    } else if (f === "vanguard") {
+      // Regulars: a back-mounted radio with a tall whip antenna -- the one thing that sticks up.
+      this.box(rig, entity, "body", [0.2, 0.24, 0.1], [-0.08, 1.02, -0.24], 0x2c3a44, { metalness: 0.25 });
+      this.cylinder(rig, entity, "body", 0.012, 0.62, [-0.14, 1.42, -0.26], 0x1a2226, [0, 0, 0.08], { metalness: 0.4 });
+    }
+  }
+
+  private factionVehicleDress(group: THREE.Group, entity: CombatEntity): void {
+    const f = factionOfEntity(entity);
+    const hullPart = entity.kind === "apc" ? "apc-hull" : entity.kind === "artillery" ? "arty-hull" : "tank-hull";
+    const { size, center } = VEHICLE_LAYOUT[hullPart];
+    const halfW = size[0] / 2;
+    const halfL = size[2] / 2;
+    const deck = center[1] + size[1] / 2;
+    if (f === "syndicate") {
+      // Scrap-built: slat-cage armour bolted along both sides, jerrycans and a spare wheel on the back.
+      for (const side of [-1, 1]) {
+        this.box(group, entity, "hull", [0.06, 0.08, size[2] * 0.92], [side * (halfW + 0.16), deck - 0.1, center[2]], 0x3a2f24, { metalness: 0.3 });
+        for (let i = 0; i < 6; i += 1) {
+          const z = center[2] - halfL * 0.85 + (i / 5) * halfL * 1.7;
+          this.box(group, entity, "hull", [0.05, size[1] * 0.75, 0.05], [side * (halfW + 0.16), deck - size[1] * 0.42, z], 0x3a2f24, { metalness: 0.3 });
+        }
+      }
+      for (const x of [-0.45, 0, 0.45]) this.box(group, entity, "hull", [0.34, 0.44, 0.22], [x, deck - 0.2, center[2] - halfL - 0.12], 0x6e3a22, { accent: true, roughness: 0.8 });
+      this.cylinder(group, entity, "hull", 0.34, 0.2, [halfW * 0.6, deck + 0.14, center[2] - halfL * 0.6], 0x1c1c1c, [Math.PI / 2, 0, 0], { roughness: 0.95 });
+    } else if (f === "bastion") {
+      // Fortress armour: thick skirts hung over the running gear and a row of armour bricks.
+      for (const side of [-1, 1]) this.box(group, entity, "hull", [0.14, size[1] * 0.62, size[2] * 0.96], [side * (halfW + 0.1), deck - size[1] * 0.4, center[2]], 0x5a6048, { metalness: 0.28, bevel: 0.2 });
+      for (let i = 0; i < 4; i += 1) this.box(group, entity, "front-plate", [size[0] * 0.2, 0.18, 0.2], [-size[0] * 0.33 + i * size[0] * 0.22, deck - 0.02, center[2] + halfL - 0.1], 0x4c5240, { metalness: 0.3, bevel: 0.2 });
+    } else if (f === "vanguard") {
+      // Issued kit: a stowage bin on the back deck and two whip antennas.
+      this.box(group, entity, "hull", [size[0] * 0.7, 0.28, 0.42], [0, deck + 0.14, center[2] - halfL * 0.72], 0x3a4f5e, { metalness: 0.2, bevel: 0.2 });
+      for (const x of [-halfW * 0.7, halfW * 0.7]) this.cylinder(group, entity, "hull", 0.02, 1.3, [x, deck + 0.65, center[2] - halfL * 0.5], 0x1a2226, [0, 0, 0], { metalness: 0.4 });
+    }
+  }
+
+  private factionBaseDress(group: THREE.Group, entity: CombatEntity): void {
+    const f = factionOfEntity(entity);
+    if (f === "vanguard") {
+      // Radar dish on a lattice mast, and a helipad slab with its H.
+      this.cylinder(group, entity, "comms", 0.07, 2.2, [1.6, 1.1, 1.2], 0x33424c, [0, 0, 0], { metalness: 0.4 });
+      this.cylinder(group, entity, "comms", 0.62, 0.1, [1.6, 2.3, 1.2], 0x8a9aa4, [Math.PI / 2.6, 0, 0.2], { metalness: 0.45 });
+      this.box(group, entity, "core", [1.8, 0.1, 1.8], [-1.8, 0.05, 1.5], 0x39454d, { roughness: 0.9 });
+      for (const x of [-0.35, 0.35]) this.box(group, entity, "core", [0.12, 0.02, 0.9], [-1.8 + x, 0.11, 1.5], 0xe8e2d0, { accent: true });
+      this.box(group, entity, "core", [0.6, 0.02, 0.12], [-1.8, 0.11, 1.5], 0xe8e2d0, { accent: true });
+    } else if (f === "syndicate") {
+      // A camp: two tarp tents and a tall scrap mast flying a rust pennant.
+      // A tent is a square prism turned 45deg about its length: the top half is the ridged roof,
+      // the bottom half sits under the ground.
+      for (const [x, z] of [[-2.1, 1.3], [2.0, -1.7]] as const) {
+        this.box(group, entity, "core", [1.4, 0.95, 0.95], [x, 0.02, z], 0x8f5a34, { accent: true, rotation: [Math.PI / 4, 0, 0], roughness: 0.95, bevel: 0.08 });
+      }
+      this.cylinder(group, entity, "comms", 0.06, 4.2, [-1.7, 2.1, -1.3], 0x3a2f24, [0, 0, 0.05], { metalness: 0.3 });
+      this.box(group, entity, "comms", [0.05, 0.4, 0.8], [-1.7, 3.95, -0.9], 0xb8502a, { accent: true, roughness: 0.9 });
+      for (const [x, z] of [[1.9, 1.4], [2.2, 1.0]] as const) this.cylinder(group, entity, "power", 0.2, 0.5, [x, 0.25, z], 0x5a3a22, [0, 0, 0], { roughness: 0.85 });
+    } else if (f === "bastion") {
+      // A bunker: concrete revetment walls round three sides and a squat armoured dome on the roof.
+      for (const [x, z, yaw, len] of [[0, -1.95, 0, 3.8], [-2.05, 0, Math.PI / 2, 3.2], [2.05, 0.2, Math.PI / 2, 2.8]] as const) {
+        this.box(group, entity, "core", [len, 0.9, 0.42], [x, 0.45, z], 0x6a6e5c, { rotation: [0, yaw, 0], roughness: 0.95, bevel: 0.15 });
+      }
+      this.cylinder(group, entity, "core", 0.8, 0.5, [0.3, 2.78, -0.4], 0x4c5240, [0, 0, 0], { metalness: 0.3, radiusBottom: 0.95 });
+      this.box(group, entity, "core", [0.9, 0.08, 0.14], [0.3, 2.9, 0.42], 0x1d2a2e, { emissive: 0xffa04a, emissiveIntensity: 0.3 });
+    }
   }
 
   // Authored plinth + traverse ring, dug in behind a sandbag berm on three sides (an emplacement
@@ -2409,6 +2498,7 @@ export class WorldRenderer {
       boot.userData.limb = tag;
       boot.userData.segment = "foot";
     }
+    this.factionInfantryDress(rig, entity);
     if (build.girth !== 1) {
       const undo = 1 / build.girth;
       rig.traverse((o) => {
@@ -5064,7 +5154,29 @@ const DEBRIS_SINK_FOR = 4;
 // it out. (Picking a faction overwrites all three at runtime.)
 export const FACTION_TINT = { player: 0x5bc6e5, playerCore: 0x6fc4dd, enemy: 0x8f3524 };
 
+/**
+ * FACTION LOOK (2026-09-22, owner: "each faction ... looks different"). Which faction each team
+ * fields, read from the sim every frame, and the CAMO each faction paints its hulls, bases and
+ * uniforms. The team read (red vs blue marker, trim and glow) is layered on top in roleColor, so two
+ * armies of the same faction still tell apart; two different factions now also look different.
+ *   Vanguard  -- slate blue-grey: clean, issued, regular army.
+ *   Syndicate -- desert tan / rust: scrappy irregulars.
+ *   Bastion   -- olive-grey concrete: heavy, fortified.
+ */
+const FACTION_OF_TEAM: Partial<Record<Team, FactionId>> = {};
+const FACTION_CAMO: Record<FactionId, number> = { vanguard: 0x4f6d86, syndicate: 0x9d7046, bastion: 0x676e4c };
+function factionOfEntity(entity: CombatEntity): FactionId | undefined {
+  return entity.kind === "cover" || entity.team === "neutral" ? undefined : FACTION_OF_TEAM[entity.team];
+}
+
 function roleColor(entity: CombatEntity, role: PartRole, fallback: number): number {
+  const faction = factionOfEntity(entity);
+  if (faction && role !== "weapon" && role !== "head") {
+    // Machines and buildings wear the faction camo strongly; troopers keep most of their kind's
+    // own hue (scout green, medic red...) so the roster still reads, with the camo under it.
+    const machine = !isInfantryKind(entity.kind);
+    fallback = blendHex(fallback, FACTION_CAMO[faction], machine ? 0.5 : 0.28);
+  }
   if (entity.team === "enemy" && entity.kind !== "cover") {
     if (role === "weapon") return blendHex(fallback, 0xff9c7a, 0.2);
     if (role === "mobility") return blendHex(fallback, 0x211a1b, 0.6);

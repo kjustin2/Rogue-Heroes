@@ -567,10 +567,37 @@ Achievements · Armory · Settings · Exit. Elites/bosses (`debugSpawn` options 
 bar) survive only for a future Skirmish set piece. The mission-intro rail now plays at the start of
 every Skirmish battle.
 
+## FACTIONS play, look and fight differently (2026-09-22)
+
+- **Look**: `FACTION_CAMO` (worldRenderer) blends each faction's camo into every hull (0.5), base
+  and uniform (0.28) under the team read — Vanguard slate blue-grey, Syndicate tan/rust, Bastion
+  olive concrete — and `factionInfantryDress` / `factionVehicleDress` / `factionBaseDress` add
+  silhouette geometry on existing part ids (Vanguard radio whip + helipad + radar dish + stowage;
+  Syndicate scarf/bandolier + slat cages, jerrycans, spare wheel + tarp tents and a pennant mast;
+  Bastion chest/shoulder plates + track skirts and armour bricks + bunker walls and a roof dome).
+  Groups rebuild when `team:faction` changes. Evidence: `npm run shots:gpu -- factions`.
+- **Play**: rosters differ (the existing hole per faction), plus a built-in `passive` folded into
+  `aggregateTechEffect` (Syndicate +15% splash radius, Bastion +10% infantry/vehicle HP;
+  Vanguard = baseline, fullest roster), shown on the set-up card's hover.
+- **The bot plays its faction**: `aiTechPath` is its signature research arc (Vanguard armour →
+  plating, Syndicate ordnance → recon, Bastion armour → siege). With two or more units out it
+  SAVES for the next doctrine and for its most-wanted unlocked unit. Before this it never
+  researched past the free doctrine — a Vanguard bot fielded ten Recruits — so every faction played
+  the same against the AI. Measured (one-off AI-vs-AI, 6 maps × 2 seeds × both seats per pairing):
+  Vanguard 25 / Syndicate 21 / Bastion 24 wins. Not a gate; rerun it if you touch the AI economy.
+- **Artillery and the mortar battery LOB** (`projectileArcHeight(..., source)`): they inherited the
+  tank's 0.28 arc and fired flat. `projectiles.test.ts` asserts every family's flight (flat vs lobbed,
+  never stalls, passes near its target, gone after the resolve) and gunship behaviour end to end.
+- Set-up page: "Your faction" and "Enemy faction" (with Random, rolled in the app, not the sim) are
+  equal card rows; in Local 2 Players the second row is Player 2. Modes offered: `PLAYABLE_MODES` —
+  Annihilation, Capture the Flag, Hold the Hill (Domination and Last Stand stay in the sim, unoffered).
+- Locked troops in the Deploy tab are NAMED, grouped by the doctrine that unlocks them ("Scout ·
+  Marksman / 🔒 Recon Doctrine") — never a "▮▮▮ ×2" count.
+
 ## LOCAL 2 PLAYERS (hotseat, 2026-09-22)
 
 Main menu "Local 2 Players" → the Skirmish set-up page with a Player 2 faction row (no difficulty —
-forced Normal so the enemy-side difficulty modifiers are all 1; no Last Stand, which is AI waves).
+forced Normal so the enemy-side difficulty modifiers are all 1).
 `sim.hotseat` (serialized) stops `endTurn` from queueing AI orders and makes `enemyIntents()` empty.
 Each command phase is planned TWICE: a handoff card ("Player N — your orders"), that player plans,
 End Turn hands to the other seat, the second End Turn resolves. **Who plans first alternates by turn

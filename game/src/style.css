@@ -5785,3 +5785,18 @@ kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
 .detail-parts .part-row { grid-template-columns: minmax(80px, 1fr) minmax(56px, 88px) auto; }
 .detail-parts .part-row em { white-space: nowrap; min-width: 46px; text-align: right; }
 body:has(.unit-detail-panel) #toasts { left: calc(50% + clamp(344px, 22vw, 520px) / 2); }
+
+/* Set-up page: YOUR faction and the OTHER side (Player 2 / the bot) are two equal rows of cards,
+   side by side -- Player 2 used to get a row of small chips under Player 1's big cards. */
+.start-factions .faction-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.start-factions .faction-grid--four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.start-factions .faction-card { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 7px 9px; min-width: 0; }
+.start-factions .faction-card strong { display: flex; align-items: center; gap: 6px; }
+.start-factions .faction-card span:not(.faction-pip) { font-size: var(--fs-small, 0.74rem); line-height: 1.25; -webkit-line-clamp: 3; }
+.faction-pip--random { display: inline-grid; place-items: center; width: 12px; height: 12px; border-radius: 50%; background: var(--paper-hi); color: var(--cream); font-size: 0.6rem; font-weight: 900; }
+
+/* Locked troop / support cards: the unit is NAMED, with the doctrine that unlocks it underneath.
+   The doctrine line may wrap at narrow widths rather than truncate. */
+.btn.locked-troop { opacity: 0.72; border-style: dashed; }
+.btn.locked-troop span { white-space: normal; line-height: 1.15; font-size: var(--fs-micro); }
+.btn.locked-troop--group { grid-column: span 2; }

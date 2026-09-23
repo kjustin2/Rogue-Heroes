@@ -21,7 +21,7 @@ import type { MapEventKind } from "./game/maps";
 import {
   TacticalSim,
   MAPS,
-  MODES,
+  PLAYABLE_MODES,
   DIFFICULTIES,
   mapDef,
   mapSize,
@@ -505,14 +505,14 @@ function opposingFaction(mapId: string, player: FactionId): FactionId {
   return others[hash % others.length].id;
 }
 
-function startBattle(mapId: string, modeId: ModeId, difficulty: Difficulty = settings.difficulty, faction: FactionId = settings.faction, player2?: FactionId): void {
+function startBattle(mapId: string, modeId: ModeId, difficulty: Difficulty = settings.difficulty, faction: FactionId = settings.faction, player2?: FactionId, botFaction?: FactionId): void {
   tutorialActive = false;
   renderTutorialPanel(); // a tutorial panel must not survive into the next battle
   closeAllMenus();
   // The enemy's faction is DERIVED, never rolled: same map plus same player faction always gives
   // the same opponent, so a seeded run, a save reload and a replay all agree. Rolling it inside
   // the sim would put hidden nondeterminism in a system the chaos and determinism tests rely on.
-  sim.configure(mapDef(mapId), modeId, player2 ? "normal" : difficulty, { player: faction, enemy: player2 ?? opposingFaction(mapId, faction) }, Boolean(player2));
+  sim.configure(mapDef(mapId), modeId, player2 ? "normal" : difficulty, { player: faction, enemy: player2 ?? botFaction ?? opposingFaction(mapId, faction) }, Boolean(player2));
   world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
   world.setPlayerAccent(progression.accentColor());
   focusOnPlayerBase();
@@ -664,7 +664,7 @@ function runMissionIntro(): void {
 // (geometry + materials) synchronously, so without this the click just freezes for a beat.
 // We paint the veil first (two rAFs let it reach the screen), then run the heavy build under
 // it, then fade it once the battle has had a frame to render. Min visible time avoids a flash.
-function deployWithLoadingScreen(mapId: string, modeId: ModeId, difficulty: Difficulty, faction: FactionId, player2?: FactionId): void {
+function deployWithLoadingScreen(mapId: string, modeId: ModeId, difficulty: Difficulty, faction: FactionId, player2?: FactionId, botFaction?: FactionId): void {
   const veil = document.createElement("div");
   veil.className = "battle-loading";
   veil.innerHTML = `<div class="battle-loading__inner">
@@ -676,7 +676,7 @@ function deployWithLoadingScreen(mapId: string, modeId: ModeId, difficulty: Diff
   const startedAt = performance.now();
   const minVisible = settings.reducedMotion ? 250 : 600;
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    startBattle(mapId, modeId, difficulty, faction, player2);
+    startBattle(mapId, modeId, difficulty, faction, player2, botFaction);
     // First time the player tries a mode, spell out how it's won (the tutorial only covers Annihilation).
     const mode = modeDef(modeId);
     hintOnce(`mode-${modeId}`, `${mode.name} — ${mode.blurb}`);
@@ -849,9 +849,9 @@ function showStartScreen(versus = false): void {
   let selectedMode: ModeId = "destroy";
   let selectedDifficulty: Difficulty = settings.difficulty;
   let selectedFaction: FactionId = settings.faction;
-  let selectedFaction2: FactionId = FACTIONS.find((f) => f.id !== selectedFaction)?.id ?? selectedFaction;
-  // Last Stand is waves of AI attackers -- there is no second human in it.
-  const modes = versus ? MODES.filter((m) => m.id !== "survival") : MODES;
+  // The OTHER side: Player 2 in a local game, the bot otherwise -- where "random" is also allowed.
+  let selectedFaction2: FactionId | "random" = versus ? (FACTIONS.find((f) => f.id !== selectedFaction)?.id ?? selectedFaction) : "random";
+  const modes = PLAYABLE_MODES;
 
   const mapList = MAPS.map(
     (m) => `<button class="menu-card map-card ${m.id === selectedMap ? "selected" : ""}" data-map="${m.id}" type="button">
@@ -865,15 +865,18 @@ function showStartScreen(versus = false): void {
   const modeChips = modes.map(
     (mode) => `<button class="menu-chip ${mode.id === selectedMode ? "on" : ""}" data-mode="${mode.id}" type="button">${mode.name}</button>`,
   ).join("");
-  // Each card states the faction's IDENTITY and, explicitly, what it gives up. A roster is defined
-  // as much by its hole as by its depth, and a player choosing blind cannot see the hole.
-  const factionCards = FACTIONS.map(
-    (f) => `<button class="menu-card faction-card ${f.id === selectedFaction ? "selected" : ""}" data-faction="${f.id}" data-tip="${escapeAttr(f.detail)}" type="button">
+  // Each card states the faction's IDENTITY and, explicitly, what it gives up. BOTH sides pick from
+  // the same full-size cards (Player 2 used to get a row of small chips beside Player 1's cards).
+  const factionCard = (f: (typeof FACTIONS)[number], attr: string, on: boolean): string =>
+    `<button class="menu-card faction-card ${on ? "selected" : ""}" ${attr}="${f.id}" data-tip="${escapeAttr(`${f.detail}${f.passiveText ? ` ${f.passiveText}` : ""}`)}" type="button">
       <strong><span class="faction-pip" style="background:#${f.accent.toString(16).padStart(6, "0")}"></span>${escapeAttr(f.name)}</strong>
       <span>${escapeAttr(f.blurb)}</span>
-      <em class="faction-roster">${f.roster.length} troops &middot; ${f.defenses.length} defenses &middot; ${f.supports.length} support strikes</em>
-    </button>`,
-  ).join("");
+    </button>`;
+  const factionCards = FACTIONS.map((f) => factionCard(f, "data-faction", f.id === selectedFaction)).join("");
+  const otherCards = (versus ? "" : `<button class="menu-card faction-card ${selectedFaction2 === "random" ? "selected" : ""}" data-faction2="random" data-tip="The bot rolls one of the three when the battle starts." type="button">
+      <strong><span class="faction-pip faction-pip--random">?</span>Random</strong>
+      <span>Surprise matchup.</span>
+    </button>`) + FACTIONS.map((f) => factionCard(f, "data-faction2", f.id === selectedFaction2)).join("");
   const diffChips = DIFFICULTIES.map(
     (d) => `<button class="menu-chip ${d === selectedDifficulty ? "on" : ""}" data-diff="${d}" type="button">${difficultyLabel(d)}</button>`,
   ).join("");
@@ -897,19 +900,19 @@ function showStartScreen(versus = false): void {
         </div>
         <div class="start-right">
           <div class="menu-section start-factions">
-            <div class="menu-label">${versus ? "Player 1 faction" : "Faction"}</div>
+            <div class="menu-label">${versus ? "Player 1 faction" : "Your faction"}</div>
             <div class="menu-grid faction-grid">${factionCards}</div>
+          </div>
+          <div class="menu-section start-factions">
+            <div class="menu-label">${versus ? "Player 2 faction" : "Enemy faction"}</div>
+            <div class="menu-grid faction-grid ${versus ? "" : "faction-grid--four"}">${otherCards}</div>
           </div>
           <div class="menu-section">
             <div class="menu-label">Mode</div>
             <div class="chip-row">${modeChips}</div>
             <p class="choice-blurb" data-mode-blurb>${escapeHtml(modeDef(selectedMode).blurb)}</p>
           </div>
-          ${versus ? `<div class="menu-section">
-            <div class="menu-label">Player 2 faction</div>
-            <div class="chip-row">${FACTIONS.map((f) => `<button class="menu-chip ${f.id === selectedFaction2 ? "on" : ""}" data-faction2="${f.id}" type="button">${escapeHtml(f.name)}</button>`).join("")}</div>
-            <p class="choice-blurb">One screen, two commanders: you take turns planning, and who plans first swaps every turn.</p>
-          </div>` : `<div class="menu-section">
+          ${versus ? "" : `<div class="menu-section">
             <div class="menu-label">Difficulty</div>
             <div class="chip-row">${diffChips}</div>
             <p class="choice-blurb" data-diff-blurb>${escapeHtml(difficultyBlurb(selectedDifficulty))}</p>
@@ -949,8 +952,8 @@ function showStartScreen(versus = false): void {
     }
     const faction2Btn = target.closest<HTMLElement>("[data-faction2]");
     if (faction2Btn) {
-      selectedFaction2 = (faction2Btn.dataset.faction2 as FactionId) ?? selectedFaction2;
-      for (const el of screen.querySelectorAll<HTMLElement>("[data-faction2]")) el.classList.toggle("on", el === faction2Btn);
+      selectedFaction2 = (faction2Btn.dataset.faction2 as FactionId | "random") ?? selectedFaction2;
+      for (const el of screen.querySelectorAll<HTMLElement>("[data-faction2]")) el.classList.toggle("selected", el === faction2Btn);
       return;
     }
     const mapBtn = target.closest<HTMLElement>("[data-map]");
@@ -982,7 +985,10 @@ function showStartScreen(versus = false): void {
       settings.difficulty = selectedDifficulty;
       settings.save();
       screen.classList.add("is-leaving"); // startBattle's closeAllMenus removes it
-      deployWithLoadingScreen(selectedMap, selectedMode, selectedDifficulty, selectedFaction, versus ? selectedFaction2 : undefined);
+      // "Random" is rolled here, in the app (a real clock is fine outside the sim), so the battle
+      // itself stays deterministic and a save/replay agrees with what was rolled.
+      const other = selectedFaction2 === "random" ? FACTIONS[Math.floor(Math.random() * FACTIONS.length)].id : selectedFaction2;
+      deployWithLoadingScreen(selectedMap, selectedMode, selectedDifficulty, selectedFaction, versus ? other : undefined, versus ? undefined : other);
     }
   });
 }
@@ -2016,7 +2022,7 @@ declare global {
       upgradeBaseIncome(): boolean;
       upgradeBaseCommand(): boolean;
       researchTech(nodeId: string): boolean;
-      startBattle(mapId: string, modeId: ModeId, difficulty?: Difficulty): void;
+      startBattle(mapId: string, modeId: ModeId, difficulty?: Difficulty, faction?: FactionId, enemyFaction?: FactionId): void;
       inspectPickup(id: string): void;
       money(team: Team): number;
       cancelOrder(id: string): void;
@@ -2117,7 +2123,7 @@ window.__rht = {
   upgradeBaseIncome: () => sim.upgradeBaseIncome(),
   upgradeBaseCommand: () => sim.upgradeBaseCommand(),
   researchTech: (nodeId) => sim.researchTech(nodeId),
-  startBattle: (mapId, modeId, difficulty) => startBattle(mapId, modeId, difficulty),
+  startBattle: (mapId, modeId, difficulty, faction, enemyFaction) => startBattle(mapId, modeId, difficulty, faction, undefined, enemyFaction),
   inspectPickup: (id: string) => inspectPickup(id),
   money: (team) => sim.money(team),
   cancelOrder: (id) => sim.cancelOrder(id),

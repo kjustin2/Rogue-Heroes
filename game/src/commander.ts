@@ -4,7 +4,7 @@
 
 import { FACTIONS } from "./game/factions";
 import { MAPS } from "./game/maps";
-import { MODES } from "./game/modes";
+import { PLAYABLE_MODES } from "./game/modes";
 
 export interface CommanderStats {
   battles: number;
@@ -39,7 +39,7 @@ export const MEDALS: readonly MedalDef[] = [
   { id: "clutch", name: "Clutch Win", blurb: "Win with your Home Base under a quarter of its health." },
   { id: "combined-arms", name: "Combined Arms", blurb: "Win with infantry, a vehicle and an aircraft all still on the field." },
   { id: "world-tour", name: "World Tour", blurb: "Win on every battlefield.", progress: (s) => [s.mapWins.length, MAPS.length] },
-  { id: "rulebook", name: "Every Rule", blurb: "Win in every game mode.", progress: (s) => [s.modeWins.length, MODES.length] },
+  { id: "rulebook", name: "Every Rule", blurb: "Win in every game mode.", progress: (s) => [s.modeWins.filter((m) => PLAYABLE_MODES.some((p) => p.id === m)).length, PLAYABLE_MODES.length] },
   { id: "banners", name: "Every Banner", blurb: "Win with every faction.", progress: (s) => [s.factionWins.length, FACTIONS.length] },
   { id: "veteran", name: "Old Soldier", blurb: "Fight 25 battles.", progress: (s) => [s.battles, 25] },
 ];
@@ -138,7 +138,7 @@ export class Commander {
     earn("clutch", input.victory && input.baseHealth !== undefined && input.baseHealth < 0.25);
     earn("combined-arms", input.victory && Boolean(input.arms?.infantry && input.arms.vehicle && input.arms.air));
     earn("world-tour", s.mapWins.length >= MAPS.length);
-    earn("rulebook", s.modeWins.length >= MODES.length);
+    earn("rulebook", PLAYABLE_MODES.every((m) => s.modeWins.includes(m.id)));
     earn("banners", s.factionWins.length >= FACTIONS.length);
     earn("veteran", s.battles >= 25);
     this.save();

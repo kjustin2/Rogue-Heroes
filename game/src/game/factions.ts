@@ -4,6 +4,7 @@
 // SUPPORT_POWERS, never a parallel copy of them. That keeps one place to tune a unit and preserves
 // tech.ts's "every doctrine unlocks at least one troop" invariant for free.
 
+import type { TechEffect } from "./tech";
 import type { DefenseKind, EntityKind, SupportPowerKind, TroopKind } from "./units";
 
 export type FactionId = "vanguard" | "syndicate" | "bastion";
@@ -27,6 +28,15 @@ export interface FactionDef {
   skin: string;
   /** Tail of the AI's build wishlist, after its reactive counter-picks. */
   aiPreference: readonly TroopKind[];
+  /**
+   * The doctrines the bot researches, in order -- its signature arc. Without one the bot never
+   * saved up for research at all and a Vanguard bot fielded ten Recruits and nothing else, so the
+   * three factions played identically against the AI (2026-09-22 faction audit).
+   */
+  aiTechPath: readonly string[];
+  /** A built-in modifier, always on (same shape as a specialization's effect), and its one-liner. */
+  passive?: TechEffect;
+  passiveText?: string;
   /** Per-faction target priority overrides on top of UNIT_STATS.aiValue. */
   aiTargetBias?: Partial<Record<EntityKind, number>>;
 }
@@ -54,7 +64,9 @@ export const FACTIONS: readonly FactionDef[] = [
     supports: ["airstrike"],
     accent: 0x8cefff,
     skin: "standard",
-    aiPreference: ["soldier", "heavy", "tank", "apc", "sniper"],
+    aiPreference: ["tank", "apc", "heavy", "sniper", "soldier"],
+    aiTechPath: ["assault", "armor", "plating"],
+    passiveText: "Combined arms: the fullest roster, tanks to air wing.",
   },
   {
     id: "syndicate",
@@ -67,7 +79,10 @@ export const FACTIONS: readonly FactionDef[] = [
     supports: ["airstrike", "cluster"],
     accent: 0xffca6b,
     skin: "standard",
-    aiPreference: ["scout", "striker", "sapper", "flamer", "grenadier"],
+    aiPreference: ["flamer", "striker", "sapper", "grenadier", "mortar", "scout", "jumper"],
+    aiTechPath: ["assault", "ordnance", "recon"],
+    passive: { splashRadius: 1.15 },
+    passiveText: "Area denial: every blast covers 15% more ground.",
   },
   {
     id: "bastion",
@@ -80,7 +95,10 @@ export const FACTIONS: readonly FactionDef[] = [
     supports: ["airstrike", "laser"],
     accent: 0x9ef0b8,
     skin: "standard",
-    aiPreference: ["heavy", "mortar", "artillery", "flak", "engineer"],
+    aiPreference: ["tank", "artillery", "heavy", "mortar", "grenadier", "engineer"],
+    aiTechPath: ["assault", "armor", "siege"],
+    passive: { infantryHp: 1.1, vehicleHp: 1.1 },
+    passiveText: "Fortified: infantry and vehicles deploy with 10% more HP.",
   },
 ];
 

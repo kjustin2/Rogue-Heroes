@@ -388,6 +388,30 @@ app.whenReady().then(async () => {
         await shot("tech-mid");
         continue;
       }
+      if (s === "factions") {
+        // One frame per faction: its HQ, a tank or APC, and a squad, player side, same framing, so
+        // the three can be compared side by side (gpu-factions.png is the sheet).
+        const sharp = require("sharp");
+        const frames = [];
+        for (const f of ["vanguard", "syndicate", "bastion"]) {
+          await js(`window.__rht.startBattle("dustbowl", "destroy", "normal", "${f}", "${f === "vanguard" ? "bastion" : "vanguard"}")`);
+          await sleep(1800);
+          await js(`(() => { const sim = window.__rht.sim; const base = sim.entities.find((e) => e.team === "player" && e.kind === "base");
+            const at = (dx, dz) => ({ x: base.position.x + dx, z: base.position.z + dz });
+            const v = sim.debugSpawn("${f}" === "syndicate" ? "apc" : "tank", "player", at(6, -3)); v.yaw = 1.2;
+            ["soldier", "heavy", "sniper"].forEach((k, i) => { const u = sim.debugSpawn(k, "player", at(4.5 + i * 1.2, 2.6)); u.yaw = 1.3; });
+            window.__rht.deselect(); window.__rht.setView({ x: base.position.x + 3.6, z: base.position.z, zoom: 0.52, pitch: 0.5, yaw: 0.45 }); })()`);
+          await sleep(1500);
+          frames.push((await win.webContents.capturePage({ x: 280, y: 120, width: 1040, height: 600 })).toPNG());
+          fs.writeFileSync(path.join(__dirname, "..", "shots", `gpu-faction-${f}.png`), frames[frames.length - 1]);
+        }
+        const tiles = await Promise.all(frames.map((b) => sharp(b).resize(780, 450).png().toBuffer()));
+        await sharp({ create: { width: 780, height: 1350, channels: 3, background: "#000" } })
+          .composite(tiles.map((input, i) => ({ input, left: 0, top: i * 450 }))).png()
+          .toFile(path.join(__dirname, "..", "shots", "gpu-factions.png"));
+        console.log("shot: gpu-factions.png");
+        continue;
+      }
       if (s === "versus") {
         // Local 2 Players: the set-up page, then the handoff card before Player 1 plans.
         await toTitle(); await clickMenu('[data-menu="versus"]');

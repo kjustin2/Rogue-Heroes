@@ -42,6 +42,12 @@ export const MODES: readonly ModeDef[] = [
   },
 ];
 
+/**
+ * The modes offered on the set-up page: three tight ones (owner, 2026-09-22 — "just 3 tight good
+ * ones for now"). Domination and Last Stand stay in the sim and its tests, unoffered, until asked.
+ */
+export const PLAYABLE_MODES: readonly ModeDef[] = MODES.filter((m) => m.id === "destroy" || m.id === "ctf" || m.id === "hill");
+
 export function modeDef(id: ModeId): ModeDef {
   return MODES.find((mode) => mode.id === id) ?? MODES[0];
 }

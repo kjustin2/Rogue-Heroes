@@ -72,7 +72,7 @@ import { MAPS, mapDef, mapCenter, flagPositions, type MapDef, type MapEventConfi
 
 export { TROOP_CATALOG, troopSpec, DEFENSE_CATALOG, defenseSpec, SUPPORT_POWERS, supportPowerSpec, UNIT_STATS, unitStats, type TroopKind, type TroopSpec, type DefenseKind, type DefenseSpec, type SupportPowerKind, type SupportPowerSpec, type ProjectileKind, type UnitStats } from "./units";
 export { TECH_TREE, techNode, troopsUnlockedBy, type TechNode } from "./tech";
-export { MODES, modeDef, type ModeId, type ModeDef } from "./modes";
+export { MODES, PLAYABLE_MODES, modeDef, type ModeId, type ModeDef } from "./modes";
 export { FACTIONS, factionDef, DEFAULT_FACTION, type FactionId, type FactionDef } from "./factions";
 export { MAPS, mapDef, flagPositions, mapCenter, mapSize, type MapDef, type MapTheme, type MapSize } from "./maps";
 
@@ -1278,7 +1278,7 @@ export class TacticalSim {
     const horizontal = dist(from, to);
     const reachable = airDrop || horizontal <= (grenade ? grenadeThrowRange(actor) : projectileRange(actor, "weapon"));
     const toHeight = terrainHeightAt(to) + 0.14;
-    const arcHeight = airDrop ? 0 : grenade ? projectileArcHeight("grenade", horizontal) : Math.max(projectileArcHeight(kind, horizontal), 0.6);
+    const arcHeight = airDrop ? 0 : grenade ? projectileArcHeight("grenade", horizontal) : Math.max(projectileArcHeight(kind, horizontal, actor.kind), 0.6);
     const radius = explosiveBlast(kind).radius;
     const ground = firstGroundBetweenShot(from, to, fromHeight, toHeight, arcHeight);
     const obstacle = ground ? undefined : this.firstEntityBetweenShot(from, to, fromHeight, toHeight, actor.id, "", arcHeight);
@@ -1922,7 +1922,7 @@ export class TacticalSim {
     const fromHeight = muzzleHeight(actor, attackMode);
     const accuracy = this.accuracyForShot(actor, intendedTarget, intendedPart, this.actorHasQueuedMove(actor.id), attackMode);
     const kind = projectileKind(actor, attackMode);
-    const arcHeight = projectileArcHeight(kind, dist(from, aimPoint));
+    const arcHeight = projectileArcHeight(kind, dist(from, aimPoint), actor.kind);
     const ground = firstGroundBetweenShot(from, aimPoint, fromHeight, aimHeight, arcHeight);
     const warning = ground ? undefined : this.firstEntityBetweenShot(from, aimPoint, fromHeight, aimHeight, actor.id, intendedTarget.id, arcHeight);
     // A shot at a FLYING target sails up over ground cover (flyers forfeit terrain defense), so no
@@ -3046,7 +3046,7 @@ export class TacticalSim {
       spreadRadians: accuracy.spreadRadians,
       yawErrorRadians: yawError,
       pitchErrorRadians: pitchError,
-      arcHeight: projectileArcHeight(kind, horizontalDistance),
+      arcHeight: projectileArcHeight(kind, horizontalDistance, actor.kind),
       arcDistance: horizontalDistance,
       attackMode,
       state: "flying",
@@ -3074,7 +3074,7 @@ export class TacticalSim {
     const basePitch = Math.atan2(intendedHeight - originHeight, horizontalDistance);
     const direction = normalize({ x: Math.sin(baseYaw), z: Math.cos(baseYaw) });
     const kind = projectileKind(actor, "weapon");
-    const arcHeight = Math.max(projectileArcHeight(kind, horizontalDistance), 0.6);
+    const arcHeight = Math.max(projectileArcHeight(kind, horizontalDistance, actor.kind), 0.6);
     const maxTravel = horizontalDistance + 0.2;
     const speed = projectileSpeed(actor, "weapon");
     const projectile: Projectile = {
@@ -3688,7 +3688,7 @@ export class TacticalSim {
   // Aggregate combat modifiers from a team's Home Base specializations (1×/+0 if none).
   private teamTech(team: Team): Required<TechEffect> {
     const base = this.entities.find((e) => e.team === team && e.kind === "base");
-    return aggregateTechEffect(base?.unlockedTech ?? []);
+    return aggregateTechEffect(base?.unlockedTech ?? [], this.factionOf(team).passive);
   }
 
   private supportDamageMultiplier(actor: CombatEntity): number {
@@ -4882,10 +4882,35 @@ export class TacticalSim {
     const researchPick = (smart && desired
       ? research.find((node) => desired.some((kind) => troopSpec(kind).tech === node.id))
       : undefined) ?? research[0];
+    // SIGNATURE ARC: a smart bot works down its faction's research path, and SAVES for the next step
+    // once it has a few units out -- otherwise it spent every turn's money on Recruits and never
+    // researched anything, so every faction's bot played the same.
+    // Never while defenceless: with fewer than two units out, the base deploys first.
+    if (smart && this.fieldUnitCount(base.team) >= 2) {
+      const path = this.factionOf(base.team).aiTechPath;
+      // Next step on the path that is actually open (only money may stand in the way).
+      const next = path.find((id) => {
+        const why = this.researchFailureReason(base, id);
+        return !why || why.startsWith("Not enough money");
+      });
+      if (next) {
+        if (!this.researchFailureReason(base, next) && this.researchTechFor(base, next)) return;
+        if (this.fieldUnitCount(base.team) >= 3) return; // save for it
+      }
+    }
     if (researchPick && money >= researchPick.cost + 200 && this.rng.chance(0.45) && this.researchTechFor(base, researchPick.id)) return;
     const incomeCost = incomeUpgradeCost(base);
     if (incomeCost !== undefined && money >= incomeCost + 340 && this.rng.chance(0.3) && this.upgradeIncomeFor(base)) return;
     if (this.fieldUnitCount(base.team) >= POP_CAP) return;
+    // Save for the most-wanted unit it has unlocked rather than buying the cheapest thing on the
+    // list every turn (a Syndicate bot fielded nine Scouts and never a flamer; Vanguard never a tank).
+    if (smart && desired && this.fieldUnitCount(base.team) >= 3) {
+      const want = desired.find((kind) => {
+        const why = this.spawnFailureReason(base, kind);
+        return !why || why.startsWith("Not enough money");
+      });
+      if (want && this.spawnFailureReason(base, want)?.startsWith("Not enough money")) return;
+    }
     const affordable = TROOP_CATALOG.filter((spec) => !this.spawnFailureReason(base, spec.kind));
     if (!affordable.length) return;
     // Build the most-wanted affordable troop; fall back to the strongest the bot can field.
@@ -5877,7 +5902,11 @@ function projectileMaxAge(maxTravel: number, speed: number): number {
   return maxTravel / Math.max(0.1, speed) + 2.2;
 }
 
-function projectileArcHeight(kind: ProjectileKind, distanceToTarget: number): number {
+function projectileArcHeight(kind: ProjectileKind, distanceToTarget: number, source?: EntityKind): number {
+  // SIEGE GUNS LOB. Artillery and the mortar battery fire "shells" like the tank, and inherited the
+  // tank's near-flat 0.28 arc: the howitzer was drawn at 24 degrees and fired along the ground, and
+  // it could not reach over the cover that indirect fire exists to reach over (2026-09-22 audit).
+  if (kind === "shell" && (source === "artillery" || source === "exturret")) return clamp(2 + distanceToTarget * 0.2, 2.4, 5);
   if (kind === "grenade") return clamp(1.5 + distanceToTarget * 0.18, 1.8, 3.6);
   if (kind === "shell") return 0.28;
   return 0;

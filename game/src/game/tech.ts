@@ -69,13 +69,14 @@ export function troopsUnlockedBy(id: string): TroopKind[] {
 }
 
 // Combine every specialization a base has researched into one set of modifiers.
-export function aggregateTechEffect(ids: readonly string[]): Required<TechEffect> {
+/** `passive` is a faction's built-in modifier, folded in like one more researched effect. */
+export function aggregateTechEffect(ids: readonly string[], passive?: TechEffect): Required<TechEffect> {
   const acc: Required<TechEffect> = {
     infantryDamage: 1, vsVehicleDamage: 1, infantryHp: 1, vehicleHp: 1, healBonus: 0, repairBonus: 0,
     splashDamage: 1, splashRadius: 1, evasion: 1, spotterBoost: 0,
   };
-  for (const id of ids) {
-    const eff = techNode(id)?.effect;
+  const effects = ids.map((id) => techNode(id)?.effect).concat(passive ? [passive] : []);
+  for (const eff of effects) {
     if (!eff) continue;
     if (eff.infantryDamage) acc.infantryDamage *= eff.infantryDamage;
     if (eff.vsVehicleDamage) acc.vsVehicleDamage *= eff.vsVehicleDamage;

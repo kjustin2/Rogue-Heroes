@@ -833,7 +833,7 @@ function unitCard(entity: CombatEntity, selected: boolean, orders: TacticalOrder
         <span class="unit-line unit-line--sub">
           <span class="unit-status unit-status--${statusBand}">${status}</span>
           ${cpPips(entity)}
-          ${entity.maxGrenades > 0 ? `<span class="supply-chip" data-tip="Grenades remaining">G${entity.grenades}</span>` : ""}
+          ${entity.maxGrenades > 0 ? `<span class="supply-chip" data-tip="Grenades left this battle">${entity.grenades} nade${entity.grenades === 1 ? "" : "s"}</span>` : ""}
           ${crouched ? `<span class="stance-chip">Crouched</span>` : ""}
           ${healthStrip(entity)}
         </span>
@@ -982,13 +982,13 @@ function eventChip(sim: TacticalSim): string {
   return `<span class="mode-chip event-chip" data-tip="Dynamic battlefield event">${escapeHtml(notice)}</span>`;
 }
 
-const EVENT_GLYPHS: Record<string, { glyph: string; label: string }> = {
-  sandstorm: { glyph: "≋", label: "Sandstorm — accuracy drops" },
-  ionstorm: { glyph: "⌁", label: "Ion storm — units limited to 1 CP" },
-  barrage: { glyph: "☄", label: "Artillery barrage on the marked zone" },
-  collapse: { glyph: "▽", label: "Structural collapse in the marked zone" },
-  lightning: { glyph: "ϟ", label: "Lightning strikes the marked point" },
-  slag: { glyph: "♨", label: "Slag spill — the marked zone floods and burns" },
+const EVENT_GLYPHS: Record<string, { glyph: string; name: string; label: string }> = {
+  sandstorm: { glyph: "≋", name: "Sandstorm", label: "Sandstorm — accuracy drops" },
+  ionstorm: { glyph: "⌁", name: "Ion storm", label: "Ion storm — units limited to 1 CP" },
+  barrage: { glyph: "☄", name: "Barrage", label: "Artillery barrage on the marked zone" },
+  collapse: { glyph: "▽", name: "Collapse", label: "Structural collapse in the marked zone" },
+  lightning: { glyph: "ϟ", name: "Lightning", label: "Lightning strikes the marked point" },
+  slag: { glyph: "♨", name: "Slag spill", label: "Slag spill — the marked zone floods and burns" },
 };
 
 // Environmental forecast: icons for events hitting NOW / next turn / the turn after,
@@ -998,11 +998,11 @@ function forecastChip(sim: TacticalSim): string {
   if (!entries.length) return "";
   const cells = entries.map((cell) => {
     const offset = cell.turn - sim.turn;
-    const when = offset === 0 ? "NOW" : `T+${offset}`;
+    const when = offset === 0 ? "Now" : offset === 1 ? "Next turn" : `In ${offset} turns`;
     const glyphs = cell.kinds.map((kind) => {
-      const info = EVENT_GLYPHS[kind] ?? { glyph: "?", label: kind };
+      const info = EVENT_GLYPHS[kind] ?? { glyph: "!", name: kind, label: kind };
       const timing = offset === 0 ? "this turn" : `in ${offset} turn${offset > 1 ? "s" : ""}`;
-      return `<i data-tip="${escapeAttr(`${info.label} (${timing}).`)}">${info.glyph}</i>`;
+      return `<i data-tip="${escapeAttr(`${info.label} (${timing}).`)}">${info.glyph} ${escapeHtml(info.name)}</i>`;
     }).join("");
     return `<span class="forecast-cell ${offset === 0 ? "now" : ""}"><em>${when}</em>${glyphs}</span>`;
   }).join("");
@@ -1015,8 +1015,8 @@ function buildingDetail(entity: CombatEntity): string {
   const researched = (entity.unlockedTech ?? []).length;
   return `<div class="detail-statline building-statline">
       <div data-tip="Money paid to your treasury each turn. Falls as the Reactor Core takes damage and stops if it is destroyed."><span>Income</span><strong>$${baseIncome(entity)}/turn</strong></div>
-      <div><span>Reactor</span><strong>${Math.round(eff * 100)}%</strong></div>
-      <div data-tip="Doctrines researched on the tech tree, unlocking new troop types."><span>Tech</span><strong>${researched}/${TECH_TREE.length}</strong></div>
+      <div data-tip="Power Reactor health. Income falls with it, and the base stops earning if it is destroyed."><span>Reactor</span><strong>${Math.round(eff * 100)}%</strong></div>
+      <div data-tip="Doctrines researched on the tech tree, unlocking new troop types."><span>Tech</span><strong>${researched} researched</strong></div>
     </div>`;
 }
 
@@ -1042,8 +1042,8 @@ function inspectEntity(entity: CombatEntity, titleText: string, activePartId: st
       </div>
       <div class="detail-statline">
         <div data-tip="${escapeAttr(cpTip(entity))}"><span>CP</span><strong>${entity.commandPoints}/${entity.maxCommandPoints}</strong></div>
-        <div><span>Move</span><strong>${moveLabel(entity)}</strong></div>
-        <div><span>Weapon</span><strong>${weaponLabel(entity)}</strong></div>
+        <div data-tip="Down = its mobility part is destroyed and it cannot move. Fixed = a building."><span>Move</span><strong>${moveLabel(entity)}</strong></div>
+        <div data-tip="Down = its weapon part is destroyed and it cannot shoot. None = it carries no weapon."><span>Weapon</span><strong>${weaponLabel(entity)}</strong></div>
         ${entity.maxGrenades > 0 ? `<div><span>Grenades</span><strong>${entity.grenades}/${entity.maxGrenades}</strong></div>` : ""}
         ${isInfantryKind(entity.kind) ? `<div><span>Posture</span><strong>${entity.stance === "crouched" ? "Crouched" : "Standing"}</strong></div>` : ""}
       </div>
@@ -1616,7 +1616,7 @@ function baseSummary(base: CombatEntity, sim: TacticalSim): string {
   return `
     <div class="detail-statline building-statline base-summary">
       <div data-tip="Money paid each turn, scaled by reactor health. Upgrade income to raise it."><span>Income</span><strong>$${baseIncome(base)}/turn</strong></div>
-      <div data-tip="Doctrines researched on the tech tree, unlocking new troop types."><span>Tech</span><strong>${researched}/${TECH_TREE.length}</strong></div>
+      <div data-tip="Doctrines researched on the tech tree, unlocking new troop types."><span>Tech</span><strong>${researched} researched</strong></div>
       <div data-tip="Combat units you have on the field. Hard cap of ${POP_CAP}."><span>Troops</span><strong>${field}/${POP_CAP}</strong></div>
     </div>
   `;
@@ -1671,17 +1671,17 @@ function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
   const roster = sim.factionOf(base.team).roster;
   const specs = TROOP_CATALOG.filter((spec) => roster.includes(spec.kind));
   const isLocked = (spec: (typeof specs)[number]): boolean => Boolean(spec.tech) && !isTechUnlocked(base, spec.tech as string);
-  // Discovery pacing: a locked troop is a CLASSIFIED asset — no name, role, or price. The only
-  // intel is which doctrine declassifies it, so buying a doctrine is a reveal moment. ONE card per
-  // doctrine, not one per troop: at the start of a battle twelve of thirteen cards were locked,
-  // and a wall of hatched placeholders is the opposite of a tab that says "deploy".
-  const lockedByTech = new Map<string, number>();
-  for (const spec of specs) if (isLocked(spec)) lockedByTech.set(spec.tech as string, (lockedByTech.get(spec.tech as string) ?? 0) + 1);
-  const classified = [...lockedByTech.entries()].map(([tech, count]) => {
+  // Locked troops, grouped by the doctrine that unlocks them and NAMED ("Scout · Marksman /
+  // Recon Doctrine"). The old "classified" cards ("▮▮▮ ×2") hid the names behind a count nobody
+  // could read; one card per unit instead grew the deck into three rows over the Info panel.
+  // Clicking one still jumps to the Tech tab.
+  const lockedByTech = new Map<string, string[]>();
+  for (const spec of specs) if (isLocked(spec)) lockedByTech.set(spec.tech as string, [...(lockedByTech.get(spec.tech as string) ?? []), spec.label]);
+  const locked = [...lockedByTech.entries()].map(([tech, names]) => {
     const techName = TECH_TREE.find((n) => n.id === tech)?.name ?? "a doctrine";
-    return `<button class="btn confirm disabled classified" data-base-tab="tech" data-tip="${escapeAttr(`${count} classified asset${count > 1 ? "s" : ""}. Research ${techName} to reveal ${count > 1 ? "them" : "it"}.`)}">
-      <span class="classified-name">▮▮▮ ×${count}</span>
-      <span>${escapeHtml(techName)}</span>
+    return `<button class="btn confirm disabled locked-troop locked-troop--group" data-base-tab="tech" data-tip="${escapeAttr(`Research ${techName} on the Tech tab to deploy ${names.length > 1 ? "these" : "it"}.`)}">
+      ${escapeHtml(names.join(" · "))}
+      <span>🔒 ${escapeHtml(techName)}</span>
     </button>`;
   }).join("");
   return specs.filter((spec) => !isLocked(spec)).map((spec) => {
@@ -1700,7 +1700,7 @@ function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
       ${escapeHtml(spec.label)}${isNew ? `<em class="new-badge">NEW</em>` : ""}
       <span>${active ? "Placing…" : sub}</span>
     </button>`;
-  }).join("") + classified;
+  }).join("") + locked;
 }
 
 // The slim placing line above the troop deck while a deploy is armed — same copy as the build
@@ -1741,9 +1741,9 @@ function supportDeckHtml(base: CombatEntity, sim: TacticalSim): string {
     const techLocked = Boolean(spec.tech) && !isTechUnlocked(base, spec.tech as string);
     if (techLocked) {
       const techName = TECH_TREE.find((n) => n.id === spec.tech)?.name ?? "a doctrine";
-      return `<button class="btn confirm disabled classified" data-support="${spec.kind}" data-disabled="true" data-tip="${escapeAttr(`Classified support asset. Research ${techName} to reveal it.`)}">
-        <span class="classified-name">▮▮▮▮▮▮</span>
-        <span>${escapeHtml(techName)}</span>
+      return `<button class="btn confirm disabled locked-troop" data-support="${spec.kind}" data-disabled="true" data-tip="${escapeAttr(`Research ${techName} on the Tech tab to call it in.`)}">
+        ${escapeHtml(spec.label)}
+        <span>🔒 ${escapeHtml(techName)}</span>
       </button>`;
     }
     const reason = sim.supportFailureReason(base, spec.kind);
