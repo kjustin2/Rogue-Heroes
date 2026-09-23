@@ -32,6 +32,7 @@ symbols fail the build.
 | Scenario screenshot gallery | `npm run improve:gallery` |
 | Review contact sheet → `shots/` | `npm run screens` |
 | Quick gameplay-zoom look per scenario (`-- firefight siege`, `:select`/`:shoot`/`:base` HUD states) | `npm run shots:look` |
+| Per-map prop census + HUD-less close frame of every map section (`-- karak verdant`; `SHOT_PREFIX=before-` for a baseline) | `npm run shots:props` |
 | 12-frame attack filmstrip at half/quarter speed (`-- melee`, `kill`, `jump`, or a projectile family: `shoot heavy sniper sapper pistol flame grenade launcher mortar tank artillery apc turret gunship`, `all` for every family) — judge motion here, not in stills | `npm run shots:filmstrip` |
 | Depth-fight repro (hide plates / kill shadows / lift plates / old near plane) | `npm run probe:depth <scenario>` |
 | Infantry lineup, near + far, for kit/proportion review | `npm run shots:lineup` |
@@ -409,6 +410,17 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   kinds or the menu↔battle flip stalls on a shader relink. Tear down per-frame/per-swap
   groups via `disposeAndClear()`; `userData.shared` geometry is skipped.
 - **The ground detail layer** (`makeGroundDetail`) is one InstancedMesh per element kind (grass fans, pebbles, snow clumps, cinders, weeds), placed only on dry flat ground, bending in `windUniforms` (the same clock the cloud deck and tree sway use). Pebbles are 8-triangle octahedra on purpose — the 36-triangle version was 130k triangles on a large map. Costs are in `perf-baseline.json`; rebase after an intentional change.
+- **EVERY MAP'S FURNITURE BELONGS TO ITS BIOME** (2026-09-23, owner: "no Roman pillars in a forest"). `props.test.ts` pins it: a
+  `HOME` table names the kinds that say WHICH map this is (cactus / bones = Dust Bowl; girder / coil / ingot / gas / railcar =
+  Ironworks; haybale / fence / grave = Verdant; hut / boat / rack / iceblock = Causeway; pillar / statue / obelisk / urn / brazier =
+  Karak; hedgehog / tower = Crossfire; trees only where things grow) and no map may carry another's; every kind a map's palettes
+  or signatures list must actually be placed; and every map fields at least ten kinds besides its landmarks. Scatter deals each
+  palette like a DECK and a kind that misses keeps its turn (`deal` / `MISSES_PER_KIND` in `buildMapObjects`): drawing a fresh
+  kind per placement ATTEMPT was rejection sampling that favoured the smallest prop, so the foundry floor came out as twelve gas
+  bottles and half of every palette never appeared (fault-injection proven: restore per-attempt draws and five maps fail). A prop
+  that cannot win room in a crowded section is placed as a `signature` instead (the Dust Bowl's oil tank + pipe run, Verdant's
+  fence line, Karak's obelisk). The fifteen biome props are box-built in `buildBiomeProp`; `wall` is a concrete blast wall.
+  Tall ones (girder, obelisk, tower) topple (`isToppleKind`); the brazier is volatile and burns like fuel. Evidence: `npm run shots:props`.
 - **Stone takes the map's hue**: rock / rubble / statue props are tinted 0.5 toward `rockTint` (the ground's own hue at a slightly higher value); wood, foliage and hardware only 0.3 toward `propTint`. A tint into an already-saturated albedo only ever darkens it — which is why the Meshy rock had to be greyscaled first, and why it is gone.
 - **INFANTRY LOCOMOTION IS DISTANCE-LOCKED** (`src/render/gait.ts`, 2026-09-22). The gait phase
   advances by `metres moved / stride`, never by wall time, and a planted boot is placed from that

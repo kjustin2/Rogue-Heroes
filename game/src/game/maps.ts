@@ -267,16 +267,40 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
     const minX = group.rect?.minX ?? bounds.minX + 2.5;
     const maxX = Math.min(group.rect?.maxX ?? center.x - gap, center.x - gap);
     let made = 0;
-    const pick = (): CoverKind => group.palette[Math.floor(rng.range(0, group.palette.length)) % group.palette.length];
+    // The palette is dealt like a DECK (shuffled, every entry once, then reshuffled) and a kind
+    // that does not fit KEEPS its turn for the next spot, rather than a fresh kind being drawn per
+    // attempt. Per-attempt draws were rejection sampling that favoured whatever was smallest: the
+    // Ironworks foundry floor listed pipes, silos, fuel and crates and came out as twelve gas
+    // bottles, and half of every palette never appeared on its map at all.
+    let deck: CoverKind[] = [];
+    const deal = (): CoverKind => {
+      if (!deck.length) {
+        deck = [...group.palette];
+        for (let i = deck.length - 1; i > 0; i -= 1) {
+          const j = Math.floor(rng.range(0, i + 1)) % (i + 1);
+          [deck[i], deck[j]] = [deck[j], deck[i]];
+        }
+      }
+      return deck.pop() as CoverKind;
+    };
+    let kind = deal();
+    let misses = 0;
     const tryPlace = (x: number, z: number): boolean => {
-      const kind = pick();
       const r = COVER_PROFILES[kind].radius + group.spacing;
       const west = { x, z };
       const east = { x: 2 * center.x - x, z: 2 * center.z - z };
-      if (blocked(west, r) || blocked(east, r)) return false;
+      if (blocked(west, r) || blocked(east, r)) {
+        // A kind that has had a fair chance and still does not fit (a silo in a crowded yard)
+        // yields to the next card, so one big prop can never starve the rest of the section.
+        misses += 1;
+        if (misses > MISSES_PER_KIND) { kind = deal(); misses = 0; }
+        return false;
+      }
       add(kind, west);
       add(kind, east);
       made += 1;
+      kind = deal();
+      misses = 0;
       return true;
     };
     if (group.grid) {
@@ -303,6 +327,9 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
 
   return objects;
 }
+
+// How many spots a dealt kind may try before it yields its turn (see `deal` in buildMapObjects).
+const MISSES_PER_KIND = 48;
 
 // Slide a point to the nearest spot whose footprint sits on one level (spiral search, 0.5m rings).
 function nudgeOffEdge(p: Vec2, r: number, bridges: TerrainRect[] = []): Vec2 {
@@ -389,16 +416,21 @@ const RAW_MAPS: readonly MapDef[] = [
       // The river bed: what fell off the convoy.
       { palette: ["wreck", "crate", "fuel", "ammo", "barricade", "sandbag"], count: 3, spacing: 1.2, rect: { minX: -25, maxX: -16, minZ: -3.2, maxZ: 3.2 } },
       // The plateau camp around the derrick.
-      { palette: ["tent", "tent", "sandbag", "ammo", "bunker", "crate"], count: 4, spacing: 1.0, rect: { minX: -16.4, maxX: -9.6, minZ: 6.2, maxZ: 11.4 } },
-      // Scrub at the canyon mouths and across the open basin.
-      { palette: ["rock", "cactus", "cactus", "rock", "rubble"], count: 3, spacing: 1.5, rect: { minX: -31, maxX: -14, minZ: 12, maxZ: 20 } },
-      { palette: ["rock", "cactus", "rubble", "cactus", "rock"], count: 3, spacing: 1.5, rect: { minX: -31, maxX: -12, minZ: -12, maxZ: -6 } },
+      // The derrick's crew camp: tents, a guard post, stores.
+      { palette: ["tent", "tent", "sandbag", "ammo", "crate"], count: 4, spacing: 1.0, rect: { minX: -16.4, maxX: -9.6, minZ: 6.2, maxZ: 11.4 } },
+      // Scrub at the canyon mouths and across the open basin: saguaro, boulders, a bleached carcass.
+      { palette: ["rock", "cactus", "cactus", "bones", "rubble"], count: 3, spacing: 1.5, rect: { minX: -31, maxX: -14, minZ: 12, maxZ: 20 } },
+      { palette: ["rock", "cactus", "bones", "cactus", "rock"], count: 3, spacing: 1.5, rect: { minX: -31, maxX: -12, minZ: -12, maxZ: -6 } },
     ],
     signature: [
       // The dead convoy, strung along the river bed where it was caught in the open.
       { kind: "convoy", x: -15.5, z: 2.9, yaw: 0.18, mirror: true },
       { kind: "convoy", x: -6.5, z: -2.9, yaw: -0.35, mirror: true },
       { kind: "derrick", x: -13, z: 8.6, yaw: 0.4, mirror: true },
+      // The oil camp: the derrick's storage tank and the pipe run that fed it, placed before the
+      // camp scatter so the tents fill in round them (scattered, they never found room).
+      { kind: "silo", x: -10.3, z: 10.8, mirror: true },
+      { kind: "pipe", x: -15.6, z: 11.0, mirror: true },
       { kind: "rock", x: -6, z: 4, mirror: true, radius: 1.3, height: 1.6 },
       { kind: "sandbag", x: -3.2, z: -2.4, mirror: true },
       { kind: "bunker", x: -6.5, z: 9.2, mirror: true, yaw: 0.6 },
@@ -450,9 +482,9 @@ const RAW_MAPS: readonly MapDef[] = [
       // The rail yard: lines of cars on stub track, a container or two between them.
       { palette: ["railcar", "railcar", "railcar", "container"], count: 5, spacing: 0.3, rect: { minX: -21, maxX: -5, minZ: -13.5, maxZ: -4.5 }, grid: { dx: 4.6, dz: 4.5, jitter: 0.2 } },
       // The foundry floor: plant around the furnace.
-      { palette: ["pipe", "conduit", "gas", "gas", "silo", "crate", "fuel"], count: 5, spacing: 1.1, rect: { minX: -21, maxX: -4, minZ: 3, maxZ: 14 } },
-      // Odd rubble and pillars along the middle.
-      { palette: ["rubble", "crate", "pillar", "wall"], count: 3, spacing: 1.6, minZ: -3.5, maxZ: 3.5, centerGap: 4 },
+      { palette: ["pipe", "conduit", "gas", "silo", "coil", "crate", "fuel"], count: 5, spacing: 1.1, rect: { minX: -21, maxX: -4, minZ: 3, maxZ: 14 } },
+      // The shop floor along the middle: finished steel waiting to ship, and the gantry's legs.
+      { palette: ["ingot", "coil", "girder", "wall"], count: 3, spacing: 1.6, minZ: -3.5, maxZ: 3.5, centerGap: 4 },
     ],
     signature: [
       { kind: "furnace", x: -17, z: 8.5, yaw: -0.5, mirror: true },
@@ -460,7 +492,7 @@ const RAW_MAPS: readonly MapDef[] = [
       { kind: "wall", x: -4.4, z: -5.5, mirror: true },
       { kind: "crate", x: -3.6, z: 0, mirror: true }, // cover ON the deck; at x -6 it plugged the top of the ramp and nobody could get onto the span
       { kind: "conduit", x: -9.5, z: 1.5, mirror: true },
-      { kind: "pillar", x: -11.5, z: -4.2, mirror: true }, // clear of the overpass ramp mouth: at z -2.2 it shut the ramp to vehicles
+      { kind: "girder", x: -11.5, z: -4.2, mirror: true }, // clear of the overpass ramp mouth: at z -2.2 it shut the ramp to vehicles
       { kind: "gas", x: -6.5, z: -3.8, mirror: true },
     ],
     // SLAG SPILL: the furnaces vent every third turn, alternating corners -- molten slag floods
@@ -528,16 +560,20 @@ const RAW_MAPS: readonly MapDef[] = [
     scatter: [
       // The orchard: fruit trees planted in rows.
       { palette: ["tree"], count: 9, spacing: 0.5, rect: { minX: -23, maxX: -10, minZ: -15.5, maxZ: -7 }, grid: { dx: 3.4, dz: 3.4, jitter: 0.25 } },
-      // Chapel green: the yard of stones, stumps and scrub around the ruin.
-      { palette: ["rubble", "stump", "bush", "bush", "rock", "log"], count: 5, spacing: 1.2, rect: { minX: -24, maxX: -16, minZ: -1, maxZ: 9 } },
-      // The terraces: hedges, stumps and field stones on the lower shelves -- low cover along a lane
-      // that is otherwise all exposure (scatter keeps off the risers and the upper shelves).
-      { palette: ["bush", "bush", "stump", "rock", "log"], count: 6, spacing: 1.0, rect: { minX: -20, maxX: -3, minZ: 11.5, maxZ: 18 } },
-      // Field edge between the orchard and the pass.
-      { palette: ["bush", "log", "sandbag", "rock"], count: 3, spacing: 1.6, rect: { minX: -20, maxX: -7, minZ: -4, maxZ: 3 }, centerGap: 6.5 },
+      // Chapel green: the churchyard's headstones, fallen masonry, stumps and scrub around the ruin.
+      { palette: ["grave", "grave", "rubble", "stump", "bush"], count: 5, spacing: 1.2, rect: { minX: -24, maxX: -16, minZ: -1, maxZ: 9 } },
+      // The terraces: farmed shelves above the mill -- hay bales, a fence run, hedges, the woodpile and
+      // field stones on the lower shelves; low cover along a lane that is otherwise all exposure
+      // (scatter keeps off the risers and the upper shelves).
+      { palette: ["haybale", "fence", "bush", "log", "haybale", "rock", "stump"], count: 6, spacing: 1.0, rect: { minX: -20, maxX: -3, minZ: 11.5, maxZ: 18 } },
+      // Field edge between the orchard and the pass: bales left out, harvest crates, a hedge.
+      { palette: ["haybale", "crate", "bush", "rock"], count: 3, spacing: 1.6, rect: { minX: -20, maxX: -7, minZ: -4, maxZ: 3 }, centerGap: 6.5 },
     ],
     signature: [
       { kind: "chapel", x: -21, z: 3.5, yaw: 0.35, mirror: true },
+      // The orchard's fence line, between the rows and the open field.
+      { kind: "fence", x: -18.2, z: -5.6, mirror: true },
+      { kind: "fence", x: -14.8, z: -5.6, mirror: true },
       { kind: "mill", x: -16.2, z: 8.6, yaw: 0, mirror: true },
       { kind: "rock", x: -4.5, z: -6.8, mirror: true, radius: 1.1 },
       { kind: "tree", x: -7.6, z: 3.2, mirror: true },
@@ -593,12 +629,13 @@ const RAW_MAPS: readonly MapDef[] = [
     hill: { x: 0, z: 0 },
     hillRadius: 3.6,
     scatter: [
-      // The fishing village: huts and tents on a loose grid, sleds and stumps between.
-      { palette: ["hut", "hut", "hut", "stump", "log"], count: 6, spacing: 0.4, rect: { minX: -33, maxX: -19, minZ: -17, maxZ: -8 }, grid: { dx: 4.2, dz: 4.2, jitter: 0.5 } },
-      // The harbour: the freighter's cargo, spilled and frozen in.
-      { palette: ["container", "container", "crate", "fuel", "wreck", "barricade"], count: 5, spacing: 1.0, rect: { minX: -31, maxX: -17, minZ: 6, maxZ: 17 } },
-      // The causeway: a wrecked supply route's debris.
-      { palette: ["rubble", "rock", "wall", "wreck", "sandbag", "crate"], count: 4, spacing: 1.8, minZ: -6, maxZ: 6, centerGap: 2.5, rect: { minX: -18, maxX: -6, minZ: -6, maxZ: 6 } },
+      // The fishing village: huts on a loose grid, the catch on drying racks, boats hauled up for
+      // the winter and the woodpile between.
+      { palette: ["hut", "hut", "rack", "boat", "hut", "log"], count: 6, spacing: 0.4, rect: { minX: -33, maxX: -19, minZ: -17, maxZ: -8 }, grid: { dx: 4.2, dz: 4.2, jitter: 0.5 } },
+      // The harbour: the freighter's cargo, spilled and frozen in, and the ice it heaved up.
+      { palette: ["container", "container", "crate", "fuel", "iceblock", "barricade"], count: 5, spacing: 1.0, rect: { minX: -31, maxX: -17, minZ: 6, maxZ: 17 } },
+      // The causeway: a wrecked supply route's debris among the pressure ice.
+      { palette: ["iceblock", "rubble", "wall", "wreck", "sandbag", "crate"], count: 4, spacing: 1.8, minZ: -6, maxZ: 6, centerGap: 2.5, rect: { minX: -18, maxX: -6, minZ: -6, maxZ: 6 } },
     ],
     signature: [
       { kind: "hull", x: -24.5, z: 11.5, yaw: 0.55, mirror: true },
@@ -672,13 +709,19 @@ const RAW_MAPS: readonly MapDef[] = [
       // The colonnade: standing pillars in a line down each side of the precinct.
       { palette: ["pillar"], count: 3, spacing: 0.3, rect: { minX: -7.6, maxX: -6.0, minZ: -9, maxZ: 9 }, grid: { dx: 2, dz: 4.6, jitter: 0.15 }, centerGap: 5.5 },
       // The amphitheatre tiers: broken statues on the steps.
-      { palette: ["statue", "statue", "pillar", "rubble"], count: 3, spacing: 1.0, rect: { minX: -21.5, maxX: -11.5, minZ: -16.5, maxZ: -9.5 } },
-      // The approaches: fallen city between the cistern and the ravine, scrub reclaiming it.
-      { palette: ["rubble", "rock", "bush", "stump", "statue", "wreck", "gas"], count: 5, spacing: 1.6, rect: { minX: -20, maxX: -12, minZ: -8, maxZ: 5 } },
+      { palette: ["statue", "statue", "obelisk", "urn", "rubble"], count: 3, spacing: 1.0, rect: { minX: -21.5, maxX: -11.5, minZ: -16.5, maxZ: -9.5 } },
+      // The approaches: fallen city between the cistern and the ravine — a toppled obelisk's twin
+      // still standing, the temple's oil braziers and store jars, scrub reclaiming it all.
+      { palette: ["rubble", "urn", "brazier", "statue", "rubble"], count: 5, spacing: 1.6, rect: { minX: -20, maxX: -12, minZ: -8, maxZ: 5 } },
+      // The temple garden north of the ravine, gone wild: scrub, stumps and boulders round the
+      // store jars.
+      { palette: ["bush", "stump", "rock", "urn"], count: 3, spacing: 1.4, rect: { minX: -12, maxX: -5, minZ: 10.5, maxZ: 16.5 } },
     ],
     signature: [
       { kind: "colossus", x: -2.6, z: 9.6, yaw: 0.25, mirror: true },
       { kind: "cistern", x: -15.5, z: 1.5, mirror: true },
+      // An obelisk at the colonnade's south end, the precinct's gatepost.
+      { kind: "obelisk", x: -6.8, z: -11, mirror: true },
       { kind: "cliff", x: -9.5, z: 4.2, mirror: true },
       { kind: "rubble", x: -12.5, z: 7.5, mirror: true },
     ],
@@ -740,9 +783,10 @@ const RAW_MAPS: readonly MapDef[] = [
       // The trench line: a run of sandbags from the nest toward the checkpoint.
       { palette: ["sandbag"], count: 3, spacing: 0.15, rect: { minX: -13, maxX: -7, minZ: -9.4, maxZ: -8.6 }, grid: { dx: 2.4, dz: 1, jitter: 0.1 }, centerGap: 6 },
       // The radar station's plant.
-      { palette: ["conduit", "ammo", "container", "sandbag", "crate"], count: 4, spacing: 1.0, rect: { minX: -24, maxX: -17, minZ: 4, maxZ: 13.5 } },
-      // Scrub in the open ground between the nests and the streams.
-      { palette: ["bush", "log", "tree", "rock", "stump"], count: 5, spacing: 1.6, rect: { minX: -23, maxX: -6, minZ: -11.5, maxZ: 11.5 }, centerGap: 6 },
+      { palette: ["conduit", "ammo", "container", "tower", "crate"], count: 4, spacing: 1.0, rect: { minX: -24, maxX: -17, minZ: 4, maxZ: 13.5 } },
+      // No-man's-land between the nests and the streams: scrub, and the tank traps the border
+      // guards sowed across the approaches.
+      { palette: ["bush", "hedgehog", "tree", "rock", "hedgehog", "stump"], count: 5, spacing: 1.6, rect: { minX: -23, maxX: -6, minZ: -11.5, maxZ: 11.5 }, centerGap: 6 },
     ],
     signature: [
       { kind: "gate", x: -8, z: 0, yaw: 0, mirror: true },
