@@ -1281,6 +1281,7 @@ describe("base economy and troop deployment", () => {
     const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 });
     const sim = new TacticalSim([base]);
     sim.economy.set("player", 600); // enough to research and still field a troop next turn
+    sim.setFaction("player", "syndicate"); // the Striker is a Syndicate unit
     sim.select("p-base-1");
 
     // The Striker needs the Assault doctrine, not yet researched.
@@ -1653,16 +1654,16 @@ describe("tactical enemy AI", () => {
         createSoldier("p2", "B", "player", { x: 1.4, z: 0 }),
         createSoldier("p3", "C", "player", { x: 2.8, z: 0 }),
       ]);
-      // Bastion fields BOTH candidate answers (grenadier and tank). The default faction has no
-      // indirect fire by design, so its roster would refuse the grenadier and this test would be
-      // measuring the faction gate instead of the economy decision it is written to measure.
+      // Bastion fields BOTH candidate answers (a splash mortar and a tank). The default faction has
+      // no indirect fire by design, so its roster would refuse the splash pick and this test would
+      // be measuring the faction gate instead of the economy decision it is written to measure.
       sim.setFaction("enemy", "bastion");
       sim.difficulty = difficulty;
       sim.economy.set("enemy", troopSpec("tank").cost); // affords a tank, grenadier (250), etc.
       sim.endTurn();
       return sim.entities.find((e) => e.team === "enemy" && e.id.startsWith("e-spawn-"))?.kind;
     };
-    expect(spawnedKind("normal")).toBe("grenadier"); // splash to counter 3 infantry
+    expect(spawnedKind("normal")).toBe("mortar"); // splash to counter 3 infantry (Bastion's is the mortar)
     expect(spawnedKind("easy")).toBe("tank"); // greedy = strongest affordable
   });
 
@@ -1677,7 +1678,7 @@ describe("tactical enemy AI", () => {
     sim.setPendingSupport("airstrike");
     expect(sim.queueSupportAt({ x: 4, z: 0 })).toBe(true);
     expect(sim.money("player")).toBe(1000 - 320);
-    expect(sim.supportCooldown(base, "airstrike")).toBe(3);
+    expect(sim.supportCooldown(base, "airstrike")).toBe(2); // 3, less a turn for Vanguard's Rapid Response
     // On cooldown + no CP: a second call is rejected.
     sim.setPendingSupport("airstrike");
     expect(sim.queueSupportAt({ x: 4, z: 0 })).toBe(false);

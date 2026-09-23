@@ -121,6 +121,12 @@ export interface CombatEntity {
   suppressedUntilTurn?: number;
   // HULL DOWN: a tank that did not move this resolve takes 30% less damage until it moves.
   hullDown?: boolean;
+  // DUG IN (Bastion doctrine): a ground unit that held position through the last resolve takes
+  // `dugIn` x damage from every source until it moves or is thrown. The multiplier itself, so
+  // applyDamage needs no faction lookup and a restored save carries it.
+  dugIn?: number;
+  // DIGGING: held position through one resolve; if it holds through the next too it is dug in.
+  digging?: boolean;
   // DEPLOYED (artillery): outriggers down. The gun only fires deployed; deploying costs a turn
   // (an explicit order, or automatically when it does not move), and moving undeploys it.
   deployed?: boolean;
@@ -966,6 +972,7 @@ export function vulnerabilityMultiplier(entity: CombatEntity, part: DamagePart):
 
 export function applyDamage(entity: CombatEntity, partId: string, amount: number): DamageResult {
   const target = findPart(entity, partId) ?? preferredPart(entity, "center");
+  if (entity.dugIn && amount > 0) amount = Math.max(1, Math.round(amount * entity.dugIn));
   const beforeHp = target.hp;
   target.hp = Math.max(0, target.hp - Math.max(0, amount));
   const destroyed = beforeHp > 0 && target.hp === 0;

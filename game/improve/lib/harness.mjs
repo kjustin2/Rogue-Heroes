@@ -75,6 +75,10 @@ export async function launchGame({ port, viewport = { width: 1600, height: 900 }
   });
   if (init) await context.addInitScript(init); // seed localStorage etc. before the app boots
   const page = await context.newPage();
+  // A slow host (a cloud container on SwiftShader takes 25-35s to reach the menu) can raise every
+  // Playwright wait at once; unset, the 30s default stands.
+  const slow = Number(process.env.SMOKE_TIMEOUT_MS || 0);
+  if (slow > 0) page.setDefaultTimeout(slow);
   const errors = [];
   page.on("console", (msg) => {
     if (msg.type() === "error") errors.push(msg.text());

@@ -7,7 +7,7 @@ import { ANKLE_Y, CROUCH_GAIT, GAIT_TIERS, HIP_Y, HIP_Z, KNEE_Y, bodyAt, footAt,
 import { splitAtKnee } from "./legSplit";
 import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec2 } from "../core/math";
 import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isVehicleKind, type CombatEntity, type DamagePart, type Team, type EntityKind, type PartRole } from "../game/damageModel";
-import type { FactionId } from "../game/factions";
+import { factionDef, type FactionId } from "../game/factions";
 import type { Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
 import { OVERWATCH_ARC_HALF } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type SkylineKind } from "../game/maps";
@@ -1354,6 +1354,8 @@ export class WorldRenderer {
       this.entityRoot.add(group);
     }
     group.userData.ghosted = ghosted;
+    const digRing = group.userData.digInRing as THREE.Group | undefined;
+    if (digRing) digRing.visible = Boolean(entity.dugIn) && entity.status.alive && !entity.carriedById;
     // DEATH. A unit used to vanish on the frame it died. Now it stays for deathMs() and plays its
     // family's death (poseDeath: thrown / crumple / spin / wreck / spiral) before sinking.
     if (!entity.status.alive && group.userData.diedAt === undefined && entity.kind !== "cover") {
@@ -1790,6 +1792,7 @@ export class WorldRenderer {
     if (isDefenseKind(entity.kind)) { if (kit && entity.kind === "turret") this.buildTurretKit(group, entity); else this.buildDefense(group, entity); }
     if (entity.kind === "cover") this.buildCover(group, entity);
     if (entity.kind === "artillery") group.add(makeOutriggers());
+    this.buildDigInRing(group, entity);
     // Flyers add their own ground shadow (dropped to terrain level) in buildGunship; everyone else
     // gets a contact shadow at their feet.
     if (entity.kind !== "cover" && !entity.flying) group.add(makeContactShadow(entity.radius));
@@ -1909,20 +1912,50 @@ export class WorldRenderer {
   // ---------------------------------------------------------------------------------------------
   private factionInfantryDress(rig: THREE.Group, entity: CombatEntity): void {
     const f = factionOfEntity(entity);
+    // 2026-09-23 ("the factions still feel too similar"): each faction also carries ONE saturated
+    // secondary read -- Vanguard pale-steel helmets, Syndicate rust hoods, Bastion gorgets with
+    // hazard-yellow chevrons -- so a rank reads as its faction before its kinds are told apart.
     if (f === "syndicate") {
-      // Irregulars: a rust neck scarf with a tail blowing off the back, and a bandolier.
+      // Irregulars: a rust neck scarf with a tail blowing off the back, a bandolier, and a rust
+      // cloth HOOD draped over the back of the helmet down onto the shoulders -- a hunched outline.
       this.cylinder(rig, entity, "body", 0.19, 0.12, [0, 1.19, 0.01], 0xa8472a, [0, 0, 0], { accent: true, metalness: 0.02, roughness: 0.95 });
       this.box(rig, entity, "body", [0.12, 0.3, 0.04], [0.07, 1.04, -0.2], 0xa8472a, { accent: true, rotation: [0.35, 0, 0.15], roughness: 0.95 });
       this.box(rig, entity, "body", [0.07, 0.62, 0.36], [0, 0.93, 0.02], 0x3b2a1c, { rotation: [0, 0, 0.75], metalness: 0.05, roughness: 0.9 });
+      this.box(rig, entity, "body", [0.4, 0.34, 0.12], [0, 1.24, -0.2], 0x9a3f22, { accent: true, rotation: [-0.22, 0, 0], roughness: 0.95, bevel: 0.2 });
+      for (const side of [-1, 1]) this.box(rig, entity, "body", [0.12, 0.22, 0.26], [side * 0.22, 1.2, -0.08], 0x9a3f22, { accent: true, rotation: [0, 0, side * 0.3], roughness: 0.95, bevel: 0.2 });
     } else if (f === "bastion") {
-      // Fortress troops: a heavy chest plate and broad square shoulder plates -- a boxier outline.
+      // Fortress troops: a heavy chest plate, broad square shoulder plates, and a raised armoured
+      // GORGET the helmet sinks into -- a boxier, neckless outline. Hazard-yellow chevrons on the plate.
       this.box(rig, entity, "body", [0.4, 0.3, 0.07], [0, 0.95, 0.21], 0x4c5240, { metalness: 0.3, bevel: 0.25 });
       for (const side of [-1, 1]) this.box(rig, entity, "body", [0.26, 0.08, 0.36], [side * 0.34, 1.17, 0.01], 0x4c5240, { metalness: 0.32, rotation: [0, 0, side * -0.18], bevel: 0.3 });
+      this.box(rig, entity, "body", [0.46, 0.16, 0.4], [0, 1.2, -0.01], 0x4c5240, { metalness: 0.32, bevel: 0.3 });
+      for (const side of [-1, 1]) this.box(rig, entity, "body", [0.16, 0.05, 0.02], [side * 0.07, 0.99, 0.25], 0xe0b12a, { accent: true, rotation: [0, 0, side * 0.6] });
     } else if (f === "vanguard") {
-      // Regulars: a back-mounted radio with a tall whip antenna -- the one thing that sticks up.
+      // Regulars: a back-mounted radio with a tall whip antenna -- the one thing that sticks up --
+      // under a pale-steel helmet (FACTION_HELMET).
       this.box(rig, entity, "body", [0.2, 0.24, 0.1], [-0.08, 1.02, -0.24], 0x2c3a44, { metalness: 0.25 });
       this.cylinder(rig, entity, "body", 0.012, 0.62, [-0.14, 1.42, -0.26], 0x1a2226, [0, 0, 0.08], { metalness: 0.4 });
     }
+  }
+
+  // DIG IN (Bastion doctrine): a low arc of sandbags across a dug-in unit's front, shown only while
+  // the sim says it is dug in. Its part id names no damage part, so paintPart leaves it alone and it
+  // is never picked; the terrain-clip audit skips it (it sits in the ground on purpose).
+  private buildDigInRing(group: THREE.Group, entity: CombatEntity): void {
+    const f = factionOfEntity(entity);
+    if (!f || !factionDef(f).doctrine.digIn || entity.flying || entity.kind === "tank" || !(isInfantryKind(entity.kind) || isVehicleKind(entity.kind))) return;
+    const ring = new THREE.Group();
+    ring.userData.digInRing = true;
+    const r = entity.radius + (isInfantryKind(entity.kind) ? 0.35 : 0.5);
+    const bags = isInfantryKind(entity.kind) ? 5 : 7;
+    for (let i = 0; i < bags; i += 1) {
+      const a = -1.25 + (2.5 * i) / (bags - 1);
+      const bag = this.box(ring, entity, "dug-in", [0.46, 0.2, 0.26], [Math.sin(a) * r, 0.08, Math.cos(a) * r], 0x8a7f66, { accent: true, rotation: [0, a, 0], roughness: 0.95, bevel: 0.45 });
+      bag.userData.sunk = true;
+    }
+    ring.visible = false;
+    group.userData.digInRing = ring;
+    group.add(ring);
   }
 
   private factionVehicleDress(group: THREE.Group, entity: CombatEntity): void {
@@ -1943,14 +1976,26 @@ export class WorldRenderer {
       }
       for (const x of [-0.45, 0, 0.45]) this.box(group, entity, "hull", [0.34, 0.44, 0.22], [x, deck - 0.2, center[2] - halfL - 0.12], 0x6e3a22, { accent: true, roughness: 0.8 });
       this.cylinder(group, entity, "hull", 0.34, 0.2, [halfW * 0.6, deck + 0.14, center[2] - halfL * 0.6], 0x1c1c1c, [Math.PI / 2, 0, 0], { roughness: 0.95 });
+      // A welded RAM PLOUGH: a raked wedge of scrap on the nose with three rust-tipped spikes.
+      this.box(group, entity, "front-plate", [size[0] * 0.95, size[1] * 0.55, 0.14], [0, deck - size[1] * 0.62, center[2] + halfL + 0.2], 0x4a3a2a, { metalness: 0.35, rotation: [0.55, 0, 0] });
+      for (const x of [-0.5, 0, 0.5]) this.box(group, entity, "front-plate", [0.1, 0.1, 0.42], [x * size[0] * 0.7, deck - size[1] * 0.62, center[2] + halfL + 0.4], 0xa8472a, { accent: true, metalness: 0.3 });
     } else if (f === "bastion") {
       // Fortress armour: thick skirts hung over the running gear and a row of armour bricks.
       for (const side of [-1, 1]) this.box(group, entity, "hull", [0.14, size[1] * 0.62, size[2] * 0.96], [side * (halfW + 0.1), deck - size[1] * 0.4, center[2]], 0x5a6048, { metalness: 0.28, bevel: 0.2 });
       for (let i = 0; i < 4; i += 1) this.box(group, entity, "front-plate", [size[0] * 0.2, 0.18, 0.2], [-size[0] * 0.33 + i * size[0] * 0.22, deck - 0.02, center[2] + halfL - 0.1], 0x4c5240, { metalness: 0.3, bevel: 0.2 });
+      // A DOZER BLADE across the nose, striped in hazard chevrons -- siege engineering you can read.
+      const bladeZ = center[2] + halfL + 0.28;
+      this.box(group, entity, "front-plate", [size[0] * 1.08, size[1] * 0.62, 0.14], [0, deck - size[1] * 0.66, bladeZ], 0x585e46, { metalness: 0.32, rotation: [-0.18, 0, 0], bevel: 0.2 });
+      for (let i = 0; i < 4; i += 1) this.box(group, entity, "front-plate", [0.16, size[1] * 0.4, 0.04], [-size[0] * 0.36 + i * size[0] * 0.24, deck - size[1] * 0.64, bladeZ + 0.1], 0xe0b12a, { accent: true, rotation: [-0.18, 0, 0.6] });
     } else if (f === "vanguard") {
       // Issued kit: a stowage bin on the back deck and two whip antennas.
       this.box(group, entity, "hull", [size[0] * 0.7, 0.28, 0.42], [0, deck + 0.14, center[2] - halfL * 0.72], 0x3a4f5e, { metalness: 0.2, bevel: 0.2 });
       for (const x of [-halfW * 0.7, halfW * 0.7]) this.cylinder(group, entity, "hull", 0.02, 1.3, [x, deck + 0.65, center[2] - halfL * 0.5], 0x1a2226, [0, 0, 0], { metalness: 0.4 });
+      // SMOKE-LAUNCHER racks on both front corners and a bone-white chevron across the deck.
+      for (const side of [-1, 1]) {
+        for (let i = 0; i < 3; i += 1) this.cylinder(group, entity, "hull", 0.07, 0.3, [side * (halfW - 0.2), deck + 0.12, center[2] + halfL * 0.62 - i * 0.16], 0x2c3a44, [-0.9, 0, side * 0.5], { metalness: 0.35 });
+        this.box(group, entity, "hull", [size[0] * 0.4, 0.03, 0.14], [side * size[0] * 0.17, deck + 0.02, center[2] + halfL * 0.2], 0xe6e2d4, { accent: true, rotation: [0, side * 0.55, 0] });
+      }
     }
   }
 
@@ -2192,7 +2237,11 @@ export class WorldRenderer {
     // Authored helmets are the biggest single surface on a trooper now, so they carry the kind's
     // hue at a readable value: the old per-kit literals were dark olive/brown and read as black
     // bowling balls once the helmet stopped being a thin cap.
-    const helmetColor = blendHex(bodyColor, 0xd8d0c0, 0.3);
+    // ...and, since 2026-09-23, the FACTION's helmet colour over half of it: pale steel Vanguard,
+    // rust Syndicate, dark olive Bastion. The helmet is the one surface every kind has and the
+    // camera always sees, so it is where a rank reads as its faction first.
+    const factionId = factionOfEntity(entity);
+    const helmetColor = blendHex(blendHex(bodyColor, 0xd8d0c0, 0.3), factionId ? FACTION_HELMET[factionId] : 0xd8d0c0, factionId ? 0.55 : 0);
     const rig = new THREE.Group();
     const build = infantryBuild(entity.kind);
     rig.scale.set(build.girth, build.stature, build.girth);
@@ -5199,6 +5248,8 @@ export const FACTION_TINT = { player: 0x5bc6e5, playerCore: 0x6fc4dd, enemy: 0x8
  */
 const FACTION_OF_TEAM: Partial<Record<Team, FactionId>> = {};
 const FACTION_CAMO: Record<FactionId, number> = { vanguard: 0x4f6d86, syndicate: 0x9d7046, bastion: 0x676e4c };
+/** Each faction's helmet: the one-glance read on a rank (kept under ~180 luminance, see audit:unit). */
+const FACTION_HELMET: Record<FactionId, number> = { vanguard: 0xa9b6bc, syndicate: 0x9a4a2c, bastion: 0x5d6548 };
 function factionOfEntity(entity: CombatEntity): FactionId | undefined {
   return entity.kind === "cover" || entity.team === "neutral" ? undefined : FACTION_OF_TEAM[entity.team];
 }
@@ -5209,7 +5260,9 @@ function roleColor(entity: CombatEntity, role: PartRole, fallback: number): numb
     // Machines and buildings wear the faction camo strongly; troopers keep most of their kind's
     // own hue (scout green, medic red...) so the roster still reads, with the camo under it.
     const machine = !isInfantryKind(entity.kind);
-    fallback = blendHex(fallback, FACTION_CAMO[faction], machine ? 0.5 : 0.28);
+    // Infantry went 0.28 -> 0.42 (2026-09-23): at 0.28 the kind's own hue won outright and two
+    // factions' riflemen were the same green man. The kind still carries its accent and outline.
+    fallback = blendHex(fallback, FACTION_CAMO[faction], machine ? 0.5 : 0.42);
   }
   if (entity.team === "enemy" && entity.kind !== "cover") {
     if (role === "weapon") return blendHex(fallback, 0xff9c7a, 0.2);

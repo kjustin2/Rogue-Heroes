@@ -8,7 +8,6 @@ import {
   SUPPORT_POWERS,
   supportPowerSpec,
   troopsUnlockedBy,
-  troopSpec,
   DEPOT_INCOME,
   INCOME_BY_LEVEL,
   generatorEfficiency,
@@ -1613,11 +1612,13 @@ function baseCommandPanel(base: CombatEntity, sim: TacticalSim): string {
 function baseSummary(base: CombatEntity, sim: TacticalSim): string {
   const field = sim.fieldUnitCount(base.team);
   const researched = (base.unlockedTech ?? []).length;
+  const doctrine = sim.factionOf(base.team).doctrine;
   return `
     <div class="detail-statline building-statline base-summary">
       <div data-tip="Money paid each turn, scaled by reactor health. Upgrade income to raise it."><span>Income</span><strong>$${baseIncome(base)}/turn</strong></div>
       <div data-tip="Doctrines researched on the tech tree, unlocking new troop types."><span>Tech</span><strong>${researched} researched</strong></div>
       <div data-tip="Combat units you have on the field. Hard cap of ${POP_CAP}."><span>Troops</span><strong>${field}/${POP_CAP}</strong></div>
+      <div data-tip="${escapeAttr(`${doctrine.name}: ${doctrine.text}`)}"><span>Doctrine</span><strong>${escapeHtml(doctrine.name)}</strong></div>
     </div>
   `;
 }
@@ -1669,7 +1670,8 @@ function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
 
 function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
   const roster = sim.factionOf(base.team).roster;
-  const specs = TROOP_CATALOG.filter((spec) => roster.includes(spec.kind));
+  // Faction names for the shared units (a Recruit is a Trooper / Raider / Guardsman).
+  const specs = TROOP_CATALOG.filter((spec) => roster.includes(spec.kind)).map((spec) => ({ ...spec, label: sim.troopLabel(base.team, spec.kind) }));
   const isLocked = (spec: (typeof specs)[number]): boolean => Boolean(spec.tech) && !isTechUnlocked(base, spec.tech as string);
   // Locked troops, grouped by the doctrine that unlocks them and NAMED ("Scout · Marksman /
   // Recon Doctrine"). The old "classified" cards ("▮▮▮ ×2") hid the names behind a count nobody
@@ -1687,6 +1689,7 @@ function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
   return specs.filter((spec) => !isLocked(spec)).map((spec) => {
     const reason = sim.spawnFailureReason(base, spec.kind);
     const cooldown = sim.troopCooldown(base, spec.kind);
+    const cooldownTurns = sim.troopCooldownFor(base.team, spec.kind);
     const ready = !reason;
     const isNew = isRecentlyRevealed(revealTracker.revealedTroopAt.get(spec.kind));
     const sub = cooldown > 0 ? `${cooldown} turn${cooldown === 1 ? "" : "s"}` : `$${spec.cost}`;
@@ -1695,7 +1698,7 @@ function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
       ? `${withoutLabel(reason, spec.label)}.`
       : active
         ? "Click a spot inside the green ring near your base, or click again to deploy beside the base."
-        : `${spec.role}. ${spec.tip} 1 CP · $${spec.cost} · ${spec.cooldown}-turn cooldown. Then click a spot inside the green ring near your base.`;
+        : `${spec.role}. ${spec.tip} 1 CP · $${spec.cost} · ${cooldownTurns}-turn cooldown. Then click a spot inside the green ring near your base.`;
     return `<button class="btn confirm ${active ? "active" : ready ? "" : "disabled"} ${isNew ? "just-revealed" : ""}" data-spawn="${spec.kind}" data-disabled="${!ready}" data-tip="${escapeAttr(tip)}">
       ${escapeHtml(spec.label)}${isNew ? `<em class="new-badge">NEW</em>` : ""}
       <span>${active ? "Placing…" : sub}</span>
@@ -1707,7 +1710,7 @@ function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
 // flow's placement bar, plus the quick-deploy fallback and Cancel (Escape / right-click also cancel).
 function deployNoteHtml(sim: TacticalSim): string {
   if (!sim.pendingDeploy) return "";
-  const label = troopSpec(sim.pendingDeploy).label;
+  const label = sim.troopLabel("player", sim.pendingDeploy);
   return `<div class="order-note order-note--progress placing-note">Placing ${escapeHtml(label)} — click a spot inside the green ring near your Home Base.
     <button class="icon-btn" data-spawn="${sim.pendingDeploy}" data-spawn-quick="1" data-tip="Deploy at the base's own spot, no aiming.">Beside base</button>
     <button class="icon-btn" data-deploy-cancel="1" data-tip="Cancel placement.">Cancel</button></div>`;
@@ -1753,7 +1756,7 @@ function supportDeckHtml(base: CombatEntity, sim: TacticalSim): string {
     const sub = active ? "Targeting…" : cooldown > 0 ? `${cooldown} turn${cooldown === 1 ? "" : "s"}` : `$${spec.cost}`;
     const tip = reason && !active
       ? `${withoutLabel(reason, spec.label)}.`
-      : `${spec.role}. ${spec.tip} 1 CP · $${spec.cost} · ${spec.cooldown}-turn cooldown. Then click the target point.`;
+      : `${spec.role}. ${spec.tip} 1 CP · $${spec.cost} · ${sim.supportCooldownFor(base.team, spec.kind)}-turn cooldown. Then click the target point.`;
     return `<button class="btn confirm ${active ? "active" : ready ? "" : "disabled"}" data-support="${spec.kind}" data-disabled="${!ready && !active}" data-tip="${escapeAttr(tip)}">
       ${escapeHtml(spec.label)}
       <span>${sub}</span>
@@ -1832,7 +1835,10 @@ function researchCard(node: TechNode, base: CombatEntity, sim: TacticalSim): str
   const reason = unlocked ? undefined : sim.researchFailureReason(base, node.id);
   const lockedOut = Boolean(reason && /locked out/i.test(reason));
   const needs = node.requires.find((id) => !isTechUnlocked(base, id));
-  const troops = troopsUnlockedBy(node.id).map((kind) => troopSpec(kind).label);
+  // Only what THIS faction fields from the node, by its own names (Armor Bay unlocks the APC for
+  // the Syndicate and the Tank for Bastion).
+  const roster = sim.factionOf(base.team).roster;
+  const troops = troopsUnlockedBy(node.id).filter((kind) => roster.includes(kind)).map((kind) => sim.troopLabel(base.team, kind));
   // A specialization's blurb ends "Locks out X." -- the OR between the pair already says that.
   const what = troops.length ? `Unlocks ${troops.join(", ")}` : node.blurb.replace(/\s*Locks out [^.]*\.?\s*$/, "");
   const state = unlocked ? "done" : lockedOut ? "locked" : !reason ? "ready" : "blocked";
@@ -2275,6 +2281,8 @@ function statusText(entity: CombatEntity): string {
   if (entity.status.commandLimited) return "Limited";
   if (entity.suppressedUntilTurn !== undefined) return "Suppressed";
   if (entity.kind === "tank" && entity.hullDown) return "Hull down";
+  if (entity.dugIn) return "Dug in";
+  if (entity.digging) return "Digging in";
   // Artillery can only fire once its outriggers are down: the status says which it is.
   if (entity.kind === "artillery") return entity.deployed ? "Deployed" : "Packed";
   return "Ready";

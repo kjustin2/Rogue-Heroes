@@ -64,10 +64,10 @@ import {
 } from "./damageModel";
 import { createScenario } from "./scenario";
 import { DEFAULT_TERRAIN, TERRAIN_STEP, ARENA_BOUNDS, clampToArena, nearestDryPoint, onTerrainEdge, setActiveTerrain, terrainHeightAt, pointInWater } from "./terrain";
-import { TROOP_CATALOG, troopSpec, defenseSpec, supportPowerSpec, unitStats, type TroopKind, type DefenseKind, type SupportPowerKind, type ProjectileKind } from "./units";
+import { TROOP_CATALOG, TROOP_KINDS, troopSpec, defenseSpec, supportPowerSpec, unitStats, type TroopKind, type DefenseKind, type SupportPowerKind, type ProjectileKind } from "./units";
 import { TECH_TREE, techNode, aggregateTechEffect, type TechNode, type TechEffect } from "./tech";
 import { modeDef, type ModeId } from "./modes";
-import { DEFAULT_FACTION, factionDef, type FactionDef, type FactionId } from "./factions";
+import { DEFAULT_FACTION, factionDef, factionTroopLabel, type FactionDef, type FactionId } from "./factions";
 import { MAPS, mapDef, mapCenter, flagPositions, type MapDef, type MapEventConfig, type MapEventKind } from "./maps";
 
 export { TROOP_CATALOG, troopSpec, DEFENSE_CATALOG, defenseSpec, SUPPORT_POWERS, supportPowerSpec, UNIT_STATS, unitStats, type TroopKind, type TroopSpec, type DefenseKind, type DefenseSpec, type SupportPowerKind, type SupportPowerSpec, type ProjectileKind, type UnitStats } from "./units";
@@ -83,6 +83,11 @@ export const DEPLOY_SNAP = 1.5;
 
 export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "overwatch" | "mine" | "interact" | "inspect" | "inspect-detail" | "build" | "support" | "load" | "unload" | "smoke" | "recon" | "deploy";
 export type OrderKind = "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "load" | "unload" | "smoke" | "recon" | "deploy";
+
+// Orders that carry a unit off its spot this resolve -- anything else leaves it dug in.
+const MOVING_ORDERS: ReadonlySet<OrderKind> = new Set<OrderKind>(["move", "ram", "melee", "load", "unload"]);
+const TROOP_KIND_SET: ReadonlySet<string> = new Set(TROOP_KINDS);
+const isTroopKind = (kind: EntityKind): boolean => TROOP_KIND_SET.has(kind);
 
 // Hard cap on how many combat units one side can field at once.
 export const POP_CAP = 10;
@@ -580,6 +585,11 @@ export class TacticalSim {
   /** The faction definition a side is fielding. */
   factionOf(team: Team): FactionDef {
     return factionDef(this.factions[team]);
+  }
+
+  /** What `team`'s faction calls this troop (a Recruit is a Trooper / Raider / Guardsman). */
+  troopLabel(team: Team, kind: TroopKind): string {
+    return factionTroopLabel(this.factions[team], kind, troopSpec(kind).label);
   }
 
   factionIdOf(team: Team): FactionId {
@@ -1443,7 +1453,7 @@ export class TacticalSim {
     if (!base || base.kind !== "base") return "Select your Home Base to deploy troops";
     if (!base.status.alive) return `${base.name} is disabled`;
     if (!base.status.canProduce) return `${base.name} cannot deploy troops`;
-    const spec = troopSpec(kind);
+    const spec = { ...troopSpec(kind), label: this.troopLabel(base.team, kind) };
     const faction = this.factionOf(base.team);
     if (!faction.roster.includes(kind)) return `${spec.label} is not in the ${faction.name} roster`;
     if (spec.tech && !isTechUnlocked(base, spec.tech)) {
@@ -1472,7 +1482,18 @@ export class TacticalSim {
 
   // How far from its base a troop can be fielded (radius around the base centre).
   deployPlacementRadius(base: CombatEntity): number {
-    return base.radius + 6;
+    // RAPID RESPONSE (Vanguard doctrine) reaches further out from the base.
+    return base.radius + 6 + (this.factionOf(base.team).doctrine.deployReach ?? 0);
+  }
+
+  /** A troop's deploy cooldown for this side, after its doctrine (Rapid Response cuts a turn). */
+  troopCooldownFor(team: Team, kind: TroopKind): number {
+    return Math.max(1, troopSpec(kind).cooldown - (this.factionOf(team).doctrine.cooldownCut ?? 0));
+  }
+
+  /** A support power's cooldown for this side, after its doctrine. */
+  supportCooldownFor(team: Team, kind: SupportPowerKind): number {
+    return Math.max(1, supportPowerSpec(kind).cooldown - (this.factionOf(team).doctrine.cooldownCut ?? 0));
   }
 
   // The placement footprint for the armed deploy, or undefined if not placing a troop.
@@ -1535,7 +1556,7 @@ export class TacticalSim {
       if (best) break;
     }
     if (best) return { point: best, snapped: true };
-    const spec = troopSpec(kind);
+    const spec = { label: this.troopLabel(base.team, kind) };
     const why = !flying && pointInWater(clicked) ? "in the water" : onTerrainEdge(clicked, spawnClearance(radius)) ? "on a cliff edge" : "blocked";
     return { point: clicked, snapped: false, reason: `No room for ${spec.label} there (${why})` };
   }
@@ -1565,16 +1586,15 @@ export class TacticalSim {
     this.syncEntityElevation(unit);
     // The deployed troop holds position until the next turn.
     unit.commandPoints = 0;
-    base.spawnCooldowns = { ...(base.spawnCooldowns ?? {}), [kind]: spec.cooldown };
+    base.spawnCooldowns = { ...(base.spawnCooldowns ?? {}), [kind]: this.troopCooldownFor(base.team, kind) };
     this.pushLog(`${base.name} deploys ${unit.name}`);
     return true;
   }
 
   private createTroop(kind: TroopKind, base: CombatEntity, at?: Vec2): CombatEntity {
-    const spec = troopSpec(kind);
     const prefix = base.team === "player" ? "p" : "e";
     const id = `${prefix}-spawn-${++this.troopSeq}`;
-    const name = `${spec.label} ${this.troopSeq}`;
+    const name = `${this.troopLabel(base.team, kind)} ${this.troopSeq}`;
     const spawnAt = makeTroop(kind, id, name, base.team, base.position);
     // Clearance is sized to THIS unit: a tank fielded with an infantry-sized gap sat inside the
     // nearest crate or wall. A placed deploy (`at`) was validated by deployPointPreview.
@@ -1690,6 +1710,11 @@ export class TacticalSim {
     if (!base) return false;
     const kind = this.pendingSupport;
     if (!kind) return this.reject("Choose a support power first");
+    return this.queueSupportFor(base, kind, point);
+  }
+
+  // The one path a strike is committed through, for the player's targeting flow and the bot alike.
+  private queueSupportFor(base: CombatEntity, kind: SupportPowerKind, point: Vec2): boolean {
     const failure = this.supportFailureReason(base, kind);
     if (failure) return this.reject(failure);
     const spec = supportPowerSpec(kind);
@@ -1700,10 +1725,12 @@ export class TacticalSim {
     const dir = len > 0.01 ? { x: dx / len, z: dz / len } : { x: 1, z: 0 };
     spendCommandPoint(base);
     this.addMoney(base.team, -spec.cost);
-    base.supportCooldowns = { ...(base.supportCooldowns ?? {}), [kind]: spec.cooldown };
+    base.supportCooldowns = { ...(base.supportCooldowns ?? {}), [kind]: this.supportCooldownFor(base.team, kind) };
     this.queuedSupport.push({ kind, point: target, dir });
-    this.pendingSupport = undefined;
-    this.intent = "select";
+    if (base.team === "player") {
+      this.pendingSupport = undefined;
+      this.intent = "select";
+    }
     this.pushLog(
       kind === "airstrike" ? `${base.name} tasks a strike wing — bombs on the next resolve`
       : kind === "cluster" ? `${base.name} authorizes a cluster strike — saturation on the next resolve`
@@ -1949,7 +1976,8 @@ export class TacticalSim {
       fromHeight,
       aimHeight,
       impactHeight,
-      amount: ground || smoke ? 0 : this.estimateShotDamage(actor, impactTarget, impactPart, aim, Boolean(cover), attackMode) * (attackMode === "weapon" ? burstCount(actor) : 1),
+      // A dug-in target (Bastion) takes its multiplier inside applyDamage; the preview shows it too.
+      amount: ground || smoke ? 0 : Math.round(this.estimateShotDamage(actor, impactTarget, impactPart, aim, Boolean(cover), attackMode) * (attackMode === "weapon" ? burstCount(actor) : 1) * (impactTarget.dugIn ?? 1)),
       accuracy: accuracy.rating,
       accuracyLabel: accuracy.label,
       hitChance: accuracy.hitChance,
@@ -1980,6 +2008,23 @@ export class TacticalSim {
     // until it moves. Decided here so the enemy AI's tanks get it on the same terms.
     // DEPLOY. Artillery that does not move this resolve plants its outriggers (it can fire from
     // next turn); artillery that moves packs them up. Same terms for both sides.
+    // DIG IN (Bastion doctrine). A ground unit of a digging faction that holds position (no order
+    // that moves it) spends that resolve DIGGING, and from the next resolve it holds it is DUG IN;
+    // any move climbs it out and it starts over. Digging takes a turn on purpose: dug in the same
+    // turn it stopped, every Bastion unit that stood and fired was armoured, and AI-vs-AI games had
+    // Bastion winning 33 of 52. Tanks have hull-down instead (the two never stack), and a thrown
+    // body is dug out in applyKnockback.
+    for (const e of this.entities) {
+      if (!e.status.alive || e.flying || e.carriedById || e.kind === "tank" || !isTroopKind(e.kind)) continue;
+      const digIn = this.factionOf(e.team).doctrine.digIn;
+      const moving = this.orders.some((o) => o.actorId === e.id && !o.done && MOVING_ORDERS.has(o.kind));
+      if (!digIn || moving) { e.dugIn = undefined; e.digging = undefined; continue; }
+      if (e.digging && !e.dugIn) {
+        e.dugIn = digIn;
+        this.pushLog(`${e.name} digs in`);
+      }
+      e.digging = true;
+    }
     for (const e of this.entities) {
       if (!e.status.alive || (e.kind !== "tank" && e.kind !== "artillery")) continue;
       const moving = this.orders.some((o) => o.actorId === e.id && !o.done && (o.kind === "move" || o.kind === "ram"));
@@ -2093,7 +2138,7 @@ export class TacticalSim {
 
   debugSpawn(kind: TroopKind, team: Team, position: Vec2, options: { elite?: boolean; bossName?: string; clearTerrain?: boolean } = {}): CombatEntity {
     const id = `${team === "player" ? "p" : "e"}-dbg-${++this.troopSeq}`;
-    const unit = makeTroop(kind, id, options.bossName ?? `${troopSpec(kind).label} ${this.troopSeq}`, team, clampToArena(position));
+    const unit = makeTroop(kind, id, options.bossName ?? `${this.troopLabel(team, kind)} ${this.troopSeq}`, team, clampToArena(position));
     // Placement bypasses the movement rules, so a ground unit could otherwise be dropped into a
     // water channel that movement would never have let it enter.
     if (!unit.flying) unit.position = nearestDryPoint(unit.position);
@@ -2669,6 +2714,8 @@ export class TacticalSim {
       if (dist(actor.position, passenger.position) <= actor.radius + passenger.radius + 0.7) {
         (actor.passengerIds ??= []).push(passenger.id);
         passenger.carriedById = actor.id;
+        passenger.dugIn = undefined;
+        passenger.digging = undefined;
         passenger.position = { ...actor.position };
         this.syncEntityElevation(passenger);
         this.pushLog(actor.kind === "apc" ? `${passenger.name} boards ${actor.name}` : `${actor.name} airlifts ${passenger.name} aboard`);
@@ -3841,6 +3888,8 @@ export class TacticalSim {
 
     if (landed.x === entity.position.x && landed.z === entity.position.z && !drowned && !slammedInto) return;
     entity.position = landed;
+    entity.dugIn = undefined; // thrown out of its foxhole
+    entity.digging = undefined;
     entity.elevation = terrainHeightAt(landed);
     this.effect("impact", landed, landed, 0xffd9a0, 0.3, entity.radius * 0.9);
     if (!drowned) {
@@ -5011,6 +5060,10 @@ export class TacticalSim {
     const researchPick = (smart && desired
       ? research.find((node) => desired.some((kind) => troopSpec(kind).tech === node.id))
       : undefined) ?? research[0];
+    // SIGNATURE STRIKE: a smart bot calls its faction's strike (Airstrike / Cluster / Lance) on a
+    // clump of hostiles when it can spare the money, so the three factions also FEEL different from
+    // the other side of the board. Never onto its own troops: strikes hit both teams.
+    if (smart && this.fieldUnitCount(base.team) >= 2 && this.enemyStrikeAct(base)) return;
     // SIGNATURE ARC: a smart bot works down its faction's research path, and SAVES for the next step
     // once it has a few units out -- otherwise it spent every turn's money on Recruits and never
     // researched anything, so every faction's bot played the same.
@@ -5064,6 +5117,24 @@ export class TacticalSim {
       ? affordable[Math.floor(this.rng.next() * affordable.length)].kind
       : (wanted[0] ?? [...affordable].sort((a, b) => b.cost - a.cost)[0]).kind;
     this.spawnTroopFor(base, pick);
+  }
+
+  private enemyStrikeAct(base: CombatEntity): boolean {
+    const foe: Team = base.team === "enemy" ? "player" : "enemy";
+    const kind = this.factionOf(base.team).supports.find((k) => !this.supportFailureReason(base, k));
+    if (!kind || this.money(base.team) < supportPowerSpec(kind).cost + 150) return false;
+    const hostiles = this.fieldUnits(foe).filter((e) => !e.flying && !e.carriedById && !e.downed);
+    const friends = this.entities.filter((e) => e.team === base.team && e.status.alive && !e.flying && e.kind !== "base");
+    let best: Vec2 | undefined;
+    let bestScore = 0;
+    for (const h of hostiles) {
+      if (friends.some((f) => dist(f.position, h.position) < 6.5)) continue;
+      // Worth: hostiles caught around this one, armour counting double.
+      const score = hostiles.reduce((sum, o) => sum + (dist(o.position, h.position) <= 3 ? (isVehicleKind(o.kind) ? 2 : 1) : 0), 0);
+      if (score > bestScore) { bestScore = score; best = h.position; }
+    }
+    if (!best || bestScore < 3) return false;
+    return this.queueSupportFor(base, kind, best);
   }
 
   // Does this unit answer armour? Asked of its STATS, not a hardcoded kind list, so a faction whose
@@ -5248,7 +5319,7 @@ export class TacticalSim {
     for (let i = 0; i < count; i += 1) {
       const kind = pool[Math.floor(this.rng.range(0, pool.length)) % pool.length];
       const z = this.rng.range(bounds.minZ + 3, bounds.maxZ - 3);
-      const unit = makeTroop(kind, `e-wave-${++this.troopSeq}`, `${troopSpec(kind).label} ${this.troopSeq}`, "enemy", clampToArena({ x: bounds.maxX - 2.5, z }));
+      const unit = makeTroop(kind, `e-wave-${++this.troopSeq}`, `${this.troopLabel("enemy", kind)} ${this.troopSeq}`, "enemy", clampToArena({ x: bounds.maxX - 2.5, z }));
       scaleEntityHp(unit, DIFFICULTY_MODS[this.difficulty].enemyHp);
       unit.commandPoints = 0; // arrives braced; acts next turn
       this.entities.push(unit);
@@ -5713,6 +5784,16 @@ export class TacticalSim {
     // Veterancy: credit player units with enemy unit kills (structures/cover excluded).
     if (result.killed && actor.team === "player" && target.team === "enemy" && target.kind !== "cover" && !isBuildingKind(target.kind)) {
       this.killsBy.set(actor.id, (this.killsBy.get(actor.id) ?? 0) + 1);
+    }
+    // SCAVENGERS (Syndicate doctrine): a destroyed enemy troop pays a share of its cost back.
+    if (result.killed && isTroopKind(target.kind) && actor.team !== target.team && actor.team !== "neutral" && target.team !== "neutral") {
+      const bounty = this.factionOf(actor.team).doctrine.bounty;
+      if (bounty) {
+        const paid = Math.round(troopSpec(target.kind as TroopKind).cost * bounty);
+        this.addMoney(actor.team, paid);
+        this.pushLog(`Scavenged $${paid} from ${target.name}`);
+        this.effect("ping", target.position, target.position, 0xffd24a, 1.4, target.radius + 0.9);
+      }
     }
     if (
       target.team === "player" && !target.status.alive && target.kind !== "cover" &&
