@@ -13,31 +13,31 @@ export const MODES: readonly ModeDef[] = [
   {
     id: "destroy",
     name: "Annihilation",
-    blurb: "Wipe out the enemy: destroy their Home Base and every unit they field.",
+    blurb: "Destroy their base and every unit.",
     scoreTarget: 0,
   },
   {
     id: "ctf",
     name: "Capture the Flag",
-    blurb: "Carry the enemy flag back to your base. First side to 2 captures wins.",
+    blurb: "Bring their flag home twice.",
     scoreTarget: 2,
   },
   {
     id: "hill",
     name: "Hold the Hill",
-    blurb: "Hold the central zone. Bank 8 turns of uncontested control to win.",
+    blurb: "Hold the centre for 8 turns.",
     scoreTarget: 8,
   },
   {
     id: "domination",
     name: "Domination",
-    blurb: "Three marked sectors score every turn you hold them. First to 12 points wins.",
+    blurb: "Hold sectors. First to 12 points.",
     scoreTarget: 12,
   },
   {
     id: "survival",
     name: "Last Stand",
-    blurb: "No enemy base — just escalating assault waves. Keep your Home Base alive through turn 12 to win.",
+    blurb: "Survive the waves to turn 12.",
     scoreTarget: 12,
   },
 ];

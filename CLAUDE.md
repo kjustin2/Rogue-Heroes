@@ -828,6 +828,11 @@ tokens are remapped there so the older layers inherit it. Rules that fall out of
 - **The action currency is AP (action points)** in everything a player reads (owner 2026-09-24: "CP can be
   confusing as an acronym for gamers"). Code keeps `commandPoints` / `maxCommandPoints` internally; never put
   "CP" or "command point" in a string, tooltip, log line or doc the player can see.
+- **FEWEST WORDS** (owner 2026-09-24: "minimal UIs and less words is more clear"). On-screen text is a label, a
+  number or a 2-5 word state ("Place in the green ring.", "Resolving…", "Done. Space ends the turn."); anything
+  that EXPLAINS a rule lives in a hover `data-tip` or the tutorial, never in an always-visible paragraph. Cards
+  and overlays carry no instructions players learn by playing (the hotseat handoff is Turn / Player / faction /
+  Ready, plus recon/research news only). Never repeat what a header or the board already shows.
 - **Menus = title + buttons.** The cosmetic callsign line was removed from the title screen; it is
   still equipped in the Armory. Difficulty is Easy / Normal / Hard (Recruit / Veteran / Elite
   collided with the veteran ranks and the Recruit unit). The vocabulary is **turn**, never round.

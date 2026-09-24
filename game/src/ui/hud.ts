@@ -951,10 +951,10 @@ function endScreen(sim: TacticalSim): string {
   // Hotseat resolves as Player 1 = "player", so a victory is Player 1's and a defeat Player 2's.
   const title = sim.hotseat ? `PLAYER ${win ? 1 : 2} WINS` : win ? "VICTORY" : "DEFEAT";
   const sub = sim.hotseat
-    ? `Player ${win ? 1 : 2} takes the field in ${turns} ${turnWord}.`
+    ? `Player ${win ? 1 : 2} · ${turns} ${turnWord}`
     : win
-    ? `Enemy forces neutralized in ${turns} ${turnWord}. ${playerUnits} unit${playerUnits === 1 ? "" : "s"} still standing.`
-    : `Your command was overrun on turn ${turns}. ${enemyUnits} enemy asset${enemyUnits === 1 ? "" : "s"} remain.`;
+    ? `${turns} ${turnWord} · ${playerUnits} unit${playerUnits === 1 ? "" : "s"} standing`
+    : `Turn ${turns} · ${enemyUnits} enemy unit${enemyUnits === 1 ? "" : "s"} left`;
   return `
     <div class="endscreen endscreen--${win ? "victory" : "defeat"}">
       <div class="endscreen__card">
@@ -1200,13 +1200,13 @@ function orderPlanner(
 // the resolve phase. While an order is armed the order body carries its own instruction.
 function orderHint(actor: CombatEntity | undefined, focusedAction: boolean, sim: TacticalSim): string {
   const text = !actor
-    ? "Click a trooper in the world, or a card in the squad list."
+    ? "" // the header already says "No unit selected"
     : sim.phase !== "command"
-      ? "Orders are resolving — the next turn opens when the action ends."
+      ? "Resolving…"
       : !actor.status.alive
-        ? `${actor.name} is out of action — pick another unit.`
+        ? "Out of action."
         : actor.commandPoints <= 0 && !focusedAction
-          ? "Orders set — pick another unit, or press Space to end the turn."
+          ? "Done. Space ends the turn."
           : "";
   return text ? `<p class="order-hint">${escapeHtml(text)}</p>` : "";
 }
@@ -1276,8 +1276,8 @@ function shootState(
   if (!actor) return `<div class="order-note">Click a trooper first.</div>`;
   if (!target) {
     return sim.selectedCanGroundTarget()
-      ? `<div class="order-note">Click an enemy or cover, or open ground to shell that spot.</div>`
-      : `<div class="order-note">Click an enemy on the map or a card in the Target list.</div>`;
+      ? `<div class="order-note">Pick a target or a spot.</div>`
+      : `<div class="order-note">Pick a target.</div>`;
   }
   if (target.team === "player") {
     return `
@@ -1351,7 +1351,7 @@ function grenadeState(
     const note = !actor.status.alive ? `${actor.name} is disabled`
       : actor.grenades <= 0 ? "Out of bombs"
       : actor.commandPoints <= 0 ? "No action points"
-      : "Bomb drops straight down beneath the aircraft — fly over the target. Blast radius shown below.";
+      : "Drops straight down.";
     return `
       <div class="order-note">${escapeHtml(note)}</div>
       <button class="btn confirm ${canDrop ? "" : "disabled"}" data-confirm="bomb" data-disabled="${!canDrop}" data-tip="Drop a bomb straight down beneath the aircraft. Cannot hit aircraft.">
@@ -1360,7 +1360,7 @@ function grenadeState(
       </button>
     `;
   }
-  if (!target) return `<div class="order-note">Click ground to throw there, or an enemy on the map.</div>`;
+  if (!target) return `<div class="order-note">Pick a target or a spot.</div>`;
   if (target.team === "player") {
     return `
       <div class="target-summary blocked">
@@ -1509,7 +1509,7 @@ function coverInteractionState(actor: CombatEntity | undefined, target: CombatEn
 }
 
 function inspectTargetState(actor: CombatEntity | undefined, target: CombatEntity | undefined, expanded: boolean, sim: TacticalSim): string {
-  if (!target) return `<div class="order-note">Click an enemy on the map or a card in the Target list.</div>`;
+  if (!target) return `<div class="order-note">Pick a target.</div>`;
   const parts = sim.targetableParts(target);
   // A derelict turret is kind "turret", not "cover", so it lands here rather than in the cover
   // panel — it needs the same what-is-this line and capture button, or it reads as inert.
@@ -1620,7 +1620,7 @@ function baseCommandPanel(base: CombatEntity, sim: TacticalSim): string {
     return `
       <div class="placement-bar">
         <strong>Placing ${escapeHtml(pendingLabel)}</strong>
-        <span>Click a spot inside the green ring near your Home Base.</span>
+        <span>Place in the green ring.</span>
         ${sim.pendingBuild === "wall" ? `<button class="btn ghost" data-rotate-placement="1" type="button" data-tip="Turn it 45 degrees. Hotkey: T.">Rotate ⟳ <kbd>T</kbd></button>` : ""}
         <button class="btn ghost" data-build-cancel="1" type="button" data-tip="Cancel placement.">Cancel</button>
       </div>
@@ -1639,7 +1639,7 @@ function baseCommandPanel(base: CombatEntity, sim: TacticalSim): string {
     <div class="command-layout single-detail">
       <div class="command-section detail-deck">
         <div class="order-body">
-          ${commanding ? baseCommandBody(base, sim) : `<div class="order-note">Orders are resolving — the base acts again next turn.</div>${baseSummary(base, sim)}`}
+          ${commanding ? baseCommandBody(base, sim) : `<div class="order-note">Resolving…</div>${baseSummary(base, sim)}`}
         </div>
       </div>
     </div>
@@ -1664,14 +1664,14 @@ function baseSummary(base: CombatEntity, sim: TacticalSim): string {
 // buttons. A tab bar switches between Deploy / Tech / Defenses / Support / Base; only the active
 // section renders. activeBaseTab is module state (there is one HUD).
 function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
-  if (!base.status.alive) return `<div class="order-note">${escapeHtml(base.name)} is out of action — it cannot deploy or research.</div>`;
+  if (!base.status.alive) return `<div class="order-note">Out of action.</div>`;
   const hasCp = base.commandPoints > 0;
   // Same voice as the order bar's "what now" line: the next click, then the rule it obeys.
   const note = sim.pendingDeploy
-    ? "Click a spot inside the green ring near your Home Base."
+    ? "Place in the green ring."
     : hasCp
-      ? "Pick a tab, then click a card — the base gets one order a turn."
-      : "Base order used — command your troops, or press Space to end the turn.";
+      ? "One base order a turn."
+      : "Base order used.";
   syncRevealTracking(base);
 
   // An armed support strike snaps to its tab so the targeting note stays visible. (A pending
@@ -1748,7 +1748,7 @@ function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
 function deployNoteHtml(sim: TacticalSim): string {
   if (!sim.pendingDeploy) return "";
   const label = sim.troopLabel("player", sim.pendingDeploy);
-  return `<div class="order-note order-note--progress placing-note">Placing ${escapeHtml(label)} — click a spot inside the green ring near your Home Base.
+  return `<div class="order-note order-note--progress placing-note">Place ${escapeHtml(label)} in the green ring.
     <button class="icon-btn" data-spawn="${sim.pendingDeploy}" data-spawn-quick="1" data-tip="Deploy at the base's own spot, no aiming.">Beside base</button>
     <button class="icon-btn" data-deploy-cancel="1" data-tip="Cancel placement.">Cancel</button></div>`;
 }
@@ -1768,7 +1768,7 @@ function defenseDeckHtml(base: CombatEntity, sim: TacticalSim): string {
   }).join("");
   const pendingLabel = sim.pendingBuild ? DEFENSE_CATALOG.find((d) => d.kind === sim.pendingBuild)?.label ?? "defense" : "";
   const buildNote = sim.pendingBuild
-    ? `<div class="order-note order-note--progress">Placing ${escapeHtml(pendingLabel)} — click a spot inside the green ring near your base. <button class="icon-btn" data-build-cancel="1" data-tip="Cancel placement.">Cancel</button></div>`
+    ? `<div class="order-note order-note--progress">Place ${escapeHtml(pendingLabel)} in the green ring. <button class="icon-btn" data-build-cancel="1" data-tip="Cancel placement.">Cancel</button></div>`
     : "";
   return `${buildNote}<div class="defense-options part-options">${buttons}</div>`;
 }
@@ -1800,7 +1800,7 @@ function supportDeckHtml(base: CombatEntity, sim: TacticalSim): string {
     </button>`;
   }).join("");
   const supportNote = sim.pendingSupport
-    ? `<div class="order-note order-note--progress">Targeting ${escapeHtml(supportPowerSpec(sim.pendingSupport).label)} — click the strike point anywhere on the field. ${sim.pendingSupport === "airstrike" || sim.pendingSupport === "laser" ? `<button class="icon-btn" data-rotate-placement="1" data-tip="Turn the strike line 45 degrees. Hotkey: T.">Rotate ⟳ (T)</button>` : ""} <button class="icon-btn" data-support-cancel="1" data-tip="Cancel the strike call.">Cancel</button></div>`
+    ? `<div class="order-note order-note--progress">${escapeHtml(supportPowerSpec(sim.pendingSupport).label)}: pick a spot. ${sim.pendingSupport === "airstrike" || sim.pendingSupport === "laser" ? `<button class="icon-btn" data-rotate-placement="1" data-tip="Turn the strike line 45 degrees. Hotkey: T.">Rotate ⟳ (T)</button>` : ""} <button class="icon-btn" data-support-cancel="1" data-tip="Cancel the strike call.">Cancel</button></div>`
     : "";
   return `${supportNote}<div class="support-options part-options">${buttons}</div>`;
 }

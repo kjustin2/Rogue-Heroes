@@ -600,10 +600,9 @@ function handToHotseatSeat(): void {
   hud.clearInteraction();
   document.querySelector(".hotseat-handoff")?.remove();
   const other = leaving;
-  const first = hotseatSeatsDone === 0;
   const notes: string[] = [];
   if (sim.revealedSeat() === seat && hotseatSeatsDone === 1) {
-    notes.push(`Your recon drone mapped Player ${other}'s plan. Their orders are drawn in red.`);
+    notes.push(`Recon: Player ${other}'s orders shown in red`);
   }
   // Research the other side finished before this turn, and this seat has not been told about yet.
   const theirBase = sim.entities.find((e) => e.kind === "base" && e.team === "enemy");
@@ -611,21 +610,19 @@ function handToHotseatSeat(): void {
     if (hotseatToldTech[seat].has(id)) continue;
     hotseatToldTech[seat].add(id);
     const node = sim.turn > 1 ? TECH_TREE.find((n) => n.id === id) : undefined;
-    if (node) notes.push(`Player ${other} researched ${node.name}.`);
+    if (node) notes.push(`Player ${other} researched ${node.name}`);
   }
-  // A handoff card reads like a web page, top to bottom: whose turn, what to do, what changed, go.
-  // One instruction paragraph; intel in its own boxed list (never a stray bullet under centred text).
+  // A handoff card is who, then what changed, then go. No instructions: players learn the rest by playing
+  // (owner 2026-09-24: "less words is more clear").
   const screen = mountScreen(
     `
     <div class="overlay-card hotseat-card">
-      <div class="hotseat-card__kicker">Turn ${sim.turn} — ${first ? "first to plan" : "second to plan"}</div>
+      <div class="hotseat-card__kicker">Turn ${sim.turn}</div>
       <h2 class="menu-heading">Player ${seat}</h2>
       <div class="hotseat-card__faction">${escapeHtml(sim.factionOf("player").name)}</div>
-      <p class="hotseat-card__lead">Pass the screen to <strong>Player ${seat}</strong>. Player ${other}, look away while they give orders.</p>
-      ${sim.turn === 1 && first ? `<p class="hotseat-card__hint">While you plan, your units are cyan and Player ${other}'s are red.</p>` : ""}
-      ${notes.length ? `<section class="hotseat-card__intel"><h3>Since your last turn</h3><ul>${notes.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul></section>` : ""}
+      ${notes.length ? `<section class="hotseat-card__intel"><ul>${notes.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul></section>` : ""}
       <div class="pause-buttons">
-        <button class="title-start" data-hotseat-ready data-overlay-close type="button">Start Player ${seat}'s turn</button>
+        <button class="title-start" data-hotseat-ready data-overlay-close type="button">Ready</button>
       </div>
     </div>
   `,
@@ -680,14 +677,12 @@ function showApWarning(idle: { name: string; commandPoints: number }[]): void {
   const screen = mountScreen(
     `
     <div class="overlay-card ap-warning-card">
-      <div class="hotseat-card__kicker">Before you end the turn</div>
-      <h2 class="menu-heading">${total} action point${total === 1 ? "" : "s"} unused</h2>
-      <p class="ap-warning__lead">Every unit gets its action points back each turn — unspent ones are lost. Each order (move, shoot, strike…) costs 1 AP.</p>
+      <h2 class="menu-heading">${total} AP unused</h2>
       <ul class="ap-warning__list">${list}${more}</ul>
-      <label class="ap-warning__never"><input type="checkbox" data-ap-never /> Don't show this again <span>(turn it back on in Settings → Gameplay)</span></label>
+      <label class="ap-warning__never" data-tip="Turn it back on in Settings → Gameplay."><input type="checkbox" data-ap-never /> Don't show again</label>
       <div class="pause-buttons">
         <button class="menu-action" data-ap="plan" type="button">Keep planning</button>
-        <button class="title-start" data-ap="end" type="button">End turn anyway</button>
+        <button class="title-start" data-ap="end" type="button">End turn</button>
       </div>
     </div>
   `,
@@ -1232,9 +1227,9 @@ function showStartScreen(versus = false, keep?: { map: string; mode: ModeId; ste
 }
 
 function difficultyBlurb(d: Difficulty): string {
-  if (d === "easy") return "A hesitant, careless enemy. Learn the ropes.";
-  if (d === "hard") return "A sharp enemy: dodges strikes, finishes kills, defends its base.";
-  return "A solid enemy that focuses fire and uses cover.";
+  if (d === "easy") return "Hesitant and careless.";
+  if (d === "hard") return "Dodges strikes, finishes kills.";
+  return "Focuses fire, uses cover.";
 }
 
 function toggleFullscreen(): void {
@@ -1327,7 +1322,6 @@ function showSettings(): void {
           <button class="menu-toggle bind-key" data-rebind="${action}" type="button" data-tip="Click, then press the new key.">${escapeHtml(keyDisplay(settings.keybinds[action]))}</button>
         </div>`).join("")}
       </section>
-      <p class="settings-note">Settings save automatically.</p>
     </div>
   `,
     "menu-screen",
@@ -1514,7 +1508,6 @@ function showArmory(): void {
         <h2 class="menu-heading">Armory</h2>
         ${pointsBadge()}
       </div>
-      <p class="settings-note">Earn points in battle. Spend them here on unit accents, callsigns, and emblems.</p>
       ${sections}
     </div>
   `,
@@ -1650,7 +1643,6 @@ function openEditOverlay(id: string): void {
           return `<button class="edit-accent ${current ? "on" : ""}" data-accent="${c.accent}" style="--swatch:${hex}" title="${escapeAttr(c.name)}" type="button"></button>`;
         }).join("")}
       </div>
-      <p class="settings-note">Unlock more accents in the Armory with points earned in battle.</p>
       <button class="title-start edit-apply" data-apply type="button">Apply</button>
     </div>
   `,
@@ -1935,9 +1927,9 @@ function hintKey(action: BindableAction): string {
 // They cover the gap the tutorial leaves: what to do once the base and the troops are on the field.
 const HINT_IDS = ["base", "controls", "in-range", "cover", "unspent", "unit-jumper", "unit-mortar", "unit-sniper"] as const;
 const UNIT_HINTS: Partial<Record<TroopKind, (name: string) => string>> = {
-  jumper: (name) => `${name} jumps instead of walking — press ${hintKey("move")} and click across cliffs, water or walls, or beside an enemy to slam it.`,
-  mortar: (name) => `${name} fires in a high arc — press ${hintKey("shoot")} and click an enemy or a spot behind walls and ridges.`,
-  sniper: (name) => `${name} shoots through bodies — press ${hintKey("shoot")} and line enemies up so one round hits them all.`,
+  jumper: (name) => `${name} jumps: ${hintKey("move")} over cliffs and water, or onto an enemy.`,
+  mortar: (name) => `${name} lobs over walls: ${hintKey("shoot")}.`,
+  sniper: (name) => `${name} shoots through bodies — line them up.`,
 };
 function updateOnboardingHints(): void {
   if (!inBattle || tutorialActive || sim.phase !== "command") return;
@@ -1947,11 +1939,11 @@ function updateOnboardingHints(): void {
 
   // 1. Nothing on the field yet: the only move is the base.
   if (squad.length === 0 && base && base.commandPoints > 0) {
-    hintOnce("base", "Click your Home Base, then Deploy a troop — the base gets one order a turn.");
+    hintOnce("base", "Click your Home Base to deploy.");
     return;
   }
   // 2. Troops exist: how to give one an order.
-  if (squad.length > 0 && hintOnce("controls", `Troops deployed — click one, then press ${hintKey("move")} to move or ${hintKey("shoot")} to shoot.`)) return;
+  if (squad.length > 0 && hintOnce("controls", `Select a unit: ${hintKey("move")} move · ${hintKey("shoot")} shoot.`)) return;
 
   // 3. A unit that is special the first time it is fielded: one line on what makes it so.
   for (const unit of squad) {
@@ -1970,7 +1962,7 @@ function updateOnboardingHints(): void {
         const part = sim.targetableParts(enemy)[0];
         const preview = part ? sim.previewShot(actor.id, enemy.id, part.id) : undefined;
         if (!preview || preview.blockedById || preview.blockedByGround) continue;
-        hintOnce("in-range", `${actor.name} can hit ${enemy.name} — press ${hintKey("shoot")}, click it, then Confirm.`);
+        hintOnce("in-range", `${actor.name} can hit ${enemy.name}: ${hintKey("shoot")}.`);
         return;
       }
     }
@@ -1980,13 +1972,13 @@ function updateOnboardingHints(): void {
   const selected = sim.entity(sim.selectedId);
   if (selected && selected.team === "player" && isInfantryKind(selected.kind) && !sim.defending.has(selected.id) && selected.commandPoints > 0) {
     const nearCover = sim.entities.some((e) => e.kind === "cover" && e.status.alive && e.height >= 1 && dist(e.position, selected.position) <= 3.6);
-    if (nearCover && hintOnce("cover", `Cover is beside ${selected.name} — press ${hintKey("crouch")} to crouch behind it and take less fire.`)) return;
+    if (nearCover && hintOnce("cover", `Cover nearby: ${hintKey("crouch")} to crouch.`)) return;
   }
 
   // 6. Some units are done and others still have points: don't end the turn yet.
   const spent = squad.some((u) => u.commandPoints <= 0);
   const idle = squad.find((u) => u.commandPoints > 0 && (u.status.canMove || u.status.canShoot));
-  if (spent && idle) hintOnce("unspent", `${idle.name} still has action points — give every unit an order before pressing ${hintKey("endTurn")}.`);
+  if (spent && idle) hintOnce("unspent", `${idle.name} has AP left.`);
 }
 
 if (settings.reducedMotion) document.body.classList.add("reduced-motion");
