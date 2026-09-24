@@ -43,17 +43,32 @@ Seat split in balance self-play is 35% (gate 35–65): at the edge; widen seeds 
 
 ## Owner's batch 3 (2026-09-24) — the next rounds, in this order
 
-1. **Unit value scaling**: every unit's HP / damage worth its cost (the tank must be worth its price).
-   Measure with the self-play dmg/$ table plus an HP/$ column before touching numbers.
+1. ~~Unit value scaling~~ DONE: tank shell 55→78 (one-shots a trooper), armour ×1.3→×1.6, $450→$600
+   (self-play 2.45x median, in band); Deploy tooltips show HP + damage a shot (`troopSheet`); the AI
+   wishlist discount 20%→30% a place (a $600 tank outbid the counter at the head of the list).
+   Found on the way: the Ironworks slag spill alternated corners starting with the PLAYER's, and
+   self-play read Ironworks 1-13 for the enemy seat; both furnaces now vent together. Every map still
+   leans a little to the enemy seat (38% overall, gate 35%) -- unexplained, not the slag; look at
+   resolve order / who queues first before any tuning.
 2. **Fun physics**: explosions / rockets throw INFANTRY with a proper ragdoll-ish arc + tumble + land
    (vehicles rock, never fly). Builds on `applyKnockback` + the THROWN death family.
-3. **Base upgrade clarity**: Income (and CP) upgrades say exactly what you get ("+$25/turn → $135/turn").
+3. ~~Base upgrade clarity~~ DONE: the card reads "Income +$50/turn · $200 · pays back in 4 turns";
+   Command reads "Base acts twice a turn".
 4. **Tech unlocks new Defenses and Support powers**, not just troops.
 5. **Tutorial**: quick but complete — aim follows a moving target or its old spot? support cooldown +
    re-buy, CP, climb, capture, cover, deploy ring, End Turn resolves both sides at once.
 6. **Faction identity, much stronger** in look AND play (they still read alike).
 7. **Look-and-feel overhaul** (toon, "AAA"): infantry up to the tank's quality bar; maps and map props
    more striking; projectiles cooler (grenades already good — use them as the bar).
+8. **GUI flows like a pro web designer** (owner: "showing too much... wasn't clear what to do"):
+   Skirmish set-up as a STEP flow (map → factions → mode → difficulty → go), not one wall.
+9. **Tech tree clarity**: "which are upgrades and which unlock more units" must be obvious at a glance.
+10. **CP made clear**: how many each unit has and what spends them; an "unused CP" warning on End Turn
+   with "don't show again", and a Gameplay option to turn it back on/off.
+11. **Options split**: Settings (display / audio / controls) vs Gameplay (warnings, hints, pace ...).
+12. **Map backgrounds** (skyline / outer ground) look low-detail: enhance.
+13. **Progression per game**: tech CHEAP to start so every game explores a path; the opening is
+   limited (no air strikes at turn 1 -- strikes and defenses unlocked by tech, see item 4).
 
 ## Next — in priority order
 

@@ -1644,7 +1644,7 @@ describe("tactical enemy AI", () => {
     expect(move!.destination!.x).toBeGreaterThan(4);
   });
 
-  it("smart economy answers massed infantry with splash; greedy just buys the priciest unit", () => {
+  it("smart economy answers massed infantry with splash; Easy buys something it can afford at random", () => {
     const spawnedKind = (difficulty: "normal" | "easy") => {
       const enemyBase = createBase("e-base", "Relay", "enemy", { x: 14, z: 0 });
       enemyBase.unlockedTech = ["assault", "ordnance", "armor"]; // grenadier and tank both available
@@ -1664,7 +1664,9 @@ describe("tactical enemy AI", () => {
       return sim.entities.find((e) => e.team === "enemy" && e.id.startsWith("e-spawn-"))?.kind;
     };
     expect(spawnedKind("normal")).toBe("mortar"); // splash to counter 3 infantry (Bastion's is the mortar)
-    expect(spawnedKind("easy")).toBe("tank"); // greedy = strongest affordable
+    // Easy is the RANDOM buyer since the three-brain split (it used to be "greedy"); it only has to
+    // buy something real. It matched "tank" by seed luck until the tank's price moved.
+    expect(spawnedKind("easy")).toBeDefined();
   });
 
   it("airstrike support power: pays, cools down, flies in, and damages the line", () => {

@@ -49,7 +49,7 @@ describe("chain reactions (item 12)", () => {
 });
 
 describe("slag spill (Ironworks' own event)", () => {
-  it("telegraphs a furnace corner, floods it with a burning zone, and alternates corners", () => {
+  it("telegraphs BOTH furnace corners, floods them with burning zones, on every spill", () => {
     const sim = new TacticalSim();
     sim.configure(mapDef("ironworks"), "destroy", "normal");
     while (sim.turn < 3) { sim.endTurn(); settle(sim); }
@@ -64,9 +64,13 @@ describe("slag spill (Ironworks' own event)", () => {
     settle(sim);
     expect(hp(victim)).toBeLessThan(v0);
     expect(sim.burnZones.some((z) => dist(z, spill!) < 0.1)).toBe(true);
-    // The next spill (turn 6) floods the OTHER furnace.
-    const next = sim.eventZonesForTurn(6).find((z) => z.kind === "slag")!;
-    expect(next.x).toBeCloseTo(-spill!.x);
-    expect(next.z).toBeCloseTo(-spill!.z);
+    // Mirror-symmetric: each spill floods both furnaces (alternating corners handed the enemy seat
+    // Ironworks 13-1 in balance self-play), and so does the next one.
+    for (const turn of [3, 6]) {
+      const zones = sim.eventZonesForTurn(turn).filter((z) => z.kind === "slag");
+      expect(zones.length).toBe(2);
+      expect(zones[1].x).toBeCloseTo(-zones[0].x);
+      expect(zones[1].z).toBeCloseTo(-zones[0].z);
+    }
   });
 });

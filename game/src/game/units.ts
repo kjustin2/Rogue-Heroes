@@ -178,7 +178,7 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   jumper: foot({ jump: true, moveRange: 9.0, moveSpeed: 8.5, shotDamage: 30, weaponRange: 17, spread: 2.6, accurateFraction: 0.44, spreadPerMeter: 0.11, accuracyLabel: "carbine", hpMultiplier: 0.95, aiValue: 6 }),
 
   // --- Ground vehicles ---
-  tank: u({ moveRange: 5.4, moveSpeed: 5.5, shotDamage: 55, weaponRange: 28, projectile: "shell", projectileSpeed: 2.45, spread: 2.65, accurateFraction: 0.5, accuracyLabel: "stabilized cannon", ramRange: 2.85, groundShell: true, hpMultiplier: 1.3, aiValue: 3 }),
+  tank: u({ moveRange: 5.4, moveSpeed: 5.5, shotDamage: 78, weaponRange: 28, projectile: "shell", projectileSpeed: 2.45, spread: 2.65, accurateFraction: 0.5, accuracyLabel: "stabilized cannon", ramRange: 2.85, groundShell: true, hpMultiplier: 1.6, aiValue: 3 }),
   apc: u({ moveRange: 7.2, moveSpeed: 7.4, shotDamage: 30, weaponRange: 24, projectile: "bolt", projectileSpeed: 2.8, spread: 3.1, accurateFraction: 0.375, accuracyLabel: "autogun", hpMultiplier: 1.16, aiValue: 3 }),
   artillery: u({ moveRange: 4.2, moveSpeed: 4.4, shotDamage: 88, weaponRange: 42, projectile: "shell", projectileSpeed: 2.45, spread: 4.6, accurateFraction: 0.55, accuracyLabel: "siege gun", groundShell: true, hpMultiplier: 1.2, aiValue: 9 }),
   flak: u({ moveRange: 6.0, moveSpeed: 6.2, shotDamage: 16, weaponRange: 32, accurateFraction: 0.3, projectile: "bolt", accuracyLabel: "flak cannon", aiValue: 6 }),
@@ -225,7 +225,7 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "jumper", label: "Jump Trooper", role: "Vertical", cost: 240, cooldown: 2, tech: "assault", tip: "Jet pack: its move is a leap over cliffs, water and walls. Landing beside an enemy SLAMS it. Flak can catch it mid-arc." },
   { kind: "flamer", label: "Flamer", role: "Burn", cost: 260, cooldown: 2, tech: "ordnance", tip: "Short-range flame projector. Hits leave burning ground for 2 turns: run, don't crouch. FEAR: enemy infantry near the flames break and run from them. Its fuel tanks explode when shot." },
   { kind: "sapper", label: "Scattergun", role: "Breacher", cost: 280, cooldown: 2, tech: "ordnance", tip: "Scattergun: brutal inside 5m, useless past 10. Plants mines ($15) and BREACHES any wall or cover piece in one shot." },
-  { kind: "tank", label: "Tank", role: "Armor", cost: 450, cooldown: 3, tech: "armor", tip: "Massive HP, big gun, rams and crushes cover. HULL DOWN: a turn spent still takes 30% less damage until it moves." },
+  { kind: "tank", label: "Tank", role: "Armor", cost: 600, cooldown: 3, tech: "armor", tip: "Massive HP, big gun, rams and crushes cover. HULL DOWN: a turn spent still takes 30% less damage until it moves." },
   { kind: "apc", label: "APC", role: "Vehicle", cost: 250, cooldown: 2, tech: "armor", tip: "Fast armored flanker; durable and quick, shrugs off small arms. CARRY: two foot troops board from beside the hull and unload beside it." },
   { kind: "artillery", label: "Artillery", role: "Siege", cost: 380, cooldown: 3, tech: "siege", tip: "Long-range siege gun; devastating at distance and tough, but helpless up close. DEPLOY: fires only with outriggers down (a turn, or any turn it holds still); packing up to move costs a turn." },
   { kind: "flak", label: "Flak Track", role: "Anti-Air", cost: 260, cooldown: 2, tech: "armor", tip: "Anti-air specialist: shreds aircraft at range. Weak against ground armour." },

@@ -140,7 +140,9 @@ describe("balance — the same AI on both sides", () => {
     const tally = new Map<TroopKind, Tally>();
     const wins = { player: 0, enemy: 0, draw: 0 };
     const perMap: string[] = [];
-    for (const map of MAPS) {
+    // BALANCE_MAPS=ironworks,karak narrows the run for a bisection; the gate itself always runs all six.
+    const only = process.env.BALANCE_MAPS?.split(",");
+    for (const map of MAPS.filter((m) => !only || only.includes(m.id))) {
       const mapWins = { player: 0, enemy: 0, draw: 0 };
       for (const seed of SEEDS) {
         const result = playGame(map.id, seed, tally);

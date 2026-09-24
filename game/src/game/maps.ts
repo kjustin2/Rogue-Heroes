@@ -534,7 +534,7 @@ const RAW_MAPS: readonly MapDef[] = [
       { kind: "railcar", x: -13, z: -9.5, yaw: 0, mirror: true }, // the rail yard
       { kind: "conduit", x: -9.5, z: 1.5, mirror: true }, // cut it and the derelict turret browns out
     ],
-    // SLAG SPILL: the furnaces vent every third turn, alternating corners -- molten slag floods
+    // SLAG SPILL: both furnaces vent every third turn, together -- molten slag floods
     // the marked foundry floor (a hit on the spill, then burning ground for two turns). Ironworks'
     // own hazard; Karak keeps the collapse.
     events: [{ kind: "slag", startTurn: 3, period: 3, zone: { x: -12, z: 6.5, radius: 3.4 }, power: 18 }],

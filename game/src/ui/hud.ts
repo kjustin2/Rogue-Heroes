@@ -15,6 +15,8 @@ import {
   incomeUpgradeCost,
   commandUpgradeCost,
   isTechUnlocked,
+  troopSheet,
+  unitStats,
   modeDef,
   type TroopKind,
   type TechNode,
@@ -1701,7 +1703,7 @@ function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
       ? `${withoutLabel(reason, spec.label)}.`
       : active
         ? "Click a spot inside the green ring near your base, or click again to deploy beside the base."
-        : `${spec.role}. ${spec.tip} 1 CP · $${spec.cost} · ${cooldownTurns}-turn cooldown. Then click a spot inside the green ring near your base.`;
+        : `${spec.role} · ${troopSheet(spec.kind).hp} HP · ${troopSheet(spec.kind).hit} damage a shot${unitStats(spec.kind).burst ? " (burst)" : ""}. ${spec.tip} 1 CP · $${spec.cost} · ${cooldownTurns}-turn cooldown.`;
     return `<button class="btn confirm ${active ? "active" : ready ? "" : "disabled"}" data-spawn="${spec.kind}" data-disabled="${!ready}" data-tip="${escapeAttr(tip)}">
       ${escapeHtml(spec.label)}${isNew ? `<em class="new-badge">NEW</em>` : ""}
       <span>${active ? "Placing…" : sub}</span>
@@ -1776,23 +1778,28 @@ function upgradeDeckHtml(base: CombatEntity, sim: TacticalSim): string {
   const hasCp = base.commandPoints > 0;
   const incomeCost = incomeUpgradeCost(base);
   const incomeReady = hasCp && incomeCost !== undefined && money >= incomeCost;
-  const nextIncome = INCOME_BY_LEVEL[(base.incomeLevel ?? 0) + 1];
+  // Say exactly what the upgrade buys, in the money the player actually receives (a damaged reactor
+  // pays a fraction, so the gain is scaled the same way the payout is).
+  const nowIncome = baseIncome(base);
+  const nextIncome = incomeCost === undefined ? nowIncome : Math.round(INCOME_BY_LEVEL[(base.incomeLevel ?? 0) + 1] * generatorEfficiency(base));
+  const gain = nextIncome - nowIncome;
+  const payback = gain > 0 && incomeCost !== undefined ? Math.ceil(incomeCost / gain) : 0;
   const incomeTip = incomeCost === undefined
-    ? "Income is fully upgraded."
-    : `Raise income to $${nextIncome}/turn before reactor scaling. Costs 1 CP and $${incomeCost}.`;
+    ? `Income is fully upgraded: $${nowIncome} a turn.`
+    : `Income $${nowIncome} → $${nextIncome} a turn (+$${gain}). Pays for itself in ${payback} turns. Costs 1 CP and $${incomeCost}.`;
   const cmdCost = commandUpgradeCost(base);
   const cmdReady = hasCp && cmdCost !== undefined && money >= cmdCost;
   const cmdTip = cmdCost === undefined
     ? "Command is already upgraded to 2 command points per turn."
-    : `Upgrade the base to 2 command points per turn so it can act twice. Costs 1 CP and $${cmdCost}.`;
+    : `The base acts TWICE a turn instead of once: deploy and research, or two deploys. Costs 1 CP and $${cmdCost}.`;
   return `<div class="upgrade-options part-options">
       <button class="btn confirm ${incomeReady ? "" : "disabled"}" data-base-upgrade="income" data-disabled="${!incomeReady}" data-tip="${escapeAttr(incomeTip)}">
-        Income
-        <span>${incomeCost === undefined ? "Maxed" : `$${incomeCost}`}</span>
+        ${incomeCost === undefined ? `Income $${nowIncome}/turn` : `Income +$${gain}/turn`}
+        <span>${incomeCost === undefined ? "Maxed" : `$${incomeCost} · pays back in ${payback} turns`}</span>
       </button>
       <button class="btn confirm ${cmdReady ? "" : "disabled"}" data-base-upgrade="command" data-disabled="${!cmdReady}" data-tip="${escapeAttr(cmdTip)}">
-        Command +1 CP
-        <span>${cmdCost === undefined ? "Done" : `$${cmdCost}`}</span>
+        ${cmdCost === undefined ? "Base acts twice" : "Base acts twice a turn"}
+        <span>${cmdCost === undefined ? "Done" : `$${cmdCost} · +1 order`}</span>
       </button>
     </div>`;
 }

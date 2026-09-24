@@ -5048,7 +5048,8 @@ export class TacticalSim {
     // was what lost the smart economy to the greedy one.
     // Rank by cost AND wishlist position: the reactive counters at the head of the list (splash vs a
     // crowd, AT vs armour) win unless something much better is affordable further down.
-    const rank = (kind: TroopKind): number => Math.max(0.2, 1 - 0.2 * (desired?.indexOf(kind) ?? 0));
+    // 30% per place: at 20% a $600 tank two places down outbid the $280 mortar at the head of the list.
+    const rank = (kind: TroopKind): number => Math.max(0.2, 1 - 0.3 * (desired?.indexOf(kind) ?? 0));
     const wanted = affordable.filter((spec) => desired?.includes(spec.kind)).sort((a, b) => b.cost * rank(b.kind) - a.cost * rank(a.kind));
     // Easy buys whatever it lands on; the others buy the best they can.
     const pick = (this.brainOverride ?? this.difficulty) === "easy"
@@ -5317,17 +5318,18 @@ export class TacticalSim {
   eventZonesForTurn(turn: number = this.turn): { kind: MapEventKind; x: number; z: number; radius: number }[] {
     const fromMap = this.mapEvents()
       .filter((e) => (e.kind === "barrage" || e.kind === "collapse" || e.kind === "lightning" || e.kind === "slag") && eventOccursWindow(e, turn))
-      .map((e) => ({ kind: e.kind, ...(e.kind === "lightning" ? this.lightningZone(turn) : e.kind === "slag" ? this.slagZone(e, turn) : this.eventZone(e)) }));
+      .flatMap((e) => e.kind === "slag"
+        ? this.slagZones(e).map((z) => ({ kind: e.kind, ...z }))
+        : [{ kind: e.kind, ...(e.kind === "lightning" ? this.lightningZone(turn) : this.eventZone(e)) }]);
     return [...fromMap, ...this.forcedZones];
   }
 
-  // The slag spill alternates furnaces: every other occurrence floods the mirrored corner, so
-  // neither side's foundry floor is permanently safe. Pure function of the turn (telegraph ==
-  // strike == restored save).
-  private slagZone(e: MapEventConfig, turn: number): { x: number; z: number; radius: number } {
+  // BOTH furnaces vent on every spill, mirror-symmetric. It used to alternate, starting with the
+  // player's corner on turn 3: the player's foundry floor flooded first (beside its deploy ring) and
+  // one time more per 16 turns, and balance self-play read Ironworks 1 win to 13 for the enemy seat.
+  private slagZones(e: MapEventConfig): { x: number; z: number; radius: number }[] {
     const zone = this.eventZone(e);
-    const occurrence = Math.floor((turn - e.startTurn) / Math.max(1, e.period ?? 1));
-    return occurrence % 2 ? { x: -zone.x, z: -zone.z, radius: zone.radius } : zone;
+    return [zone, { x: -zone.x, z: -zone.z, radius: zone.radius }];
   }
 
   // Where the storm strikes this turn: somewhere new every turn, but a pure function of the map
@@ -5799,6 +5801,21 @@ function scaleEntityHp(entity: CombatEntity, multiplier: number): void {
     part.hp = part.maxHp;
   }
   recomputeStatus(entity);
+}
+
+/** What a troop is worth on paper, for the Deploy card: total HP (all parts) and damage per shot
+ *  (a burst weapon's full volley). Built once per kind from the real unit factory, so it cannot
+ *  drift from what actually spawns. */
+const troopSheets = new Map<TroopKind, { hp: number; hit: number }>();
+export function troopSheet(kind: TroopKind): { hp: number; hit: number } {
+  let sheet = troopSheets.get(kind);
+  if (!sheet) {
+    const unit = makeTroop(kind, "sheet", "sheet", "player", { x: 0, z: 0 });
+    const stats = unitStats(kind);
+    sheet = { hp: Math.round(unit.parts.reduce((sum, p) => sum + p.maxHp, 0)), hit: Math.round(stats.shotDamage * (stats.burst ?? 1)) };
+    troopSheets.set(kind, sheet);
+  }
+  return sheet;
 }
 
 function makeTroop(kind: TroopKind, id: string, name: string, team: Team, position: Vec2): CombatEntity {
