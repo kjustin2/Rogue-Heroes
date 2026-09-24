@@ -13,7 +13,7 @@ const disarm = (e: ReturnType<TacticalSim["debugSpawn"]>): void => {
 const hp = (e: { parts: { hp: number }[] }): number => e.parts.reduce((s, p) => s + p.hp, 0);
 
 describe("suppression (heavy gunner)", () => {
-  it("a burst that lands leaves the target with one command point and crouched next turn", () => {
+  it("a burst that lands leaves the target with one action point and crouched next turn", () => {
     const sim = staged();
     const mg = sim.debugSpawn("heavy", "player", { x: -4, z: 0 });
     const target = sim.debugSpawn("soldier", "enemy", { x: 3, z: 0 });

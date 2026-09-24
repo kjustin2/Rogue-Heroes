@@ -868,7 +868,7 @@ export class TacticalSim {
       if (this.log[0]?.startsWith(actor.name)) return false; // the reason is already the newest line
       return this.reject(`${actor.name} can't move that way`);
     }
-    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
+    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
     if (actor.kind === "artillery" && actor.deployed) {
       actor.commandPoints = 0;
       actor.deployed = false;
@@ -891,7 +891,7 @@ export class TacticalSim {
     const cover = this.entity(coverId);
     if (!actor || !cover || cover.kind !== "cover") return false;
     if (!actor.status.canMove) return this.reject(`${actor.name} cannot move`);
-    if (actor.commandPoints <= 0) return this.reject(`${actor.name} has no command points`);
+    if (actor.commandPoints <= 0) return this.reject(`${actor.name} has no action points`);
     if (isCliffCover(cover)) {
       if (!isInfantryKind(actor.kind)) return this.reject(`${actor.name} cannot climb the cliff`);
       return this.queueClimbCover(cover.id);
@@ -1019,7 +1019,7 @@ export class TacticalSim {
     const point = isAirBomber(actor) ? { x: actor.position.x, z: actor.position.z } : clampToArena(destination);
     const failure = this.grenadeLocationFailureReason(actor, point);
     if (failure) return this.reject(failure);
-    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
+    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
     actor.grenades = Math.max(0, actor.grenades - 1);
     this.addOrder({
       actorId: actor.id,
@@ -1046,7 +1046,7 @@ export class TacticalSim {
   private loadFailureReason(actor: CombatEntity | undefined, passenger: CombatEntity | undefined): string | undefined {
     if (!actor || !isCarrierKind(actor.kind)) return "Only a transport or APC can carry units";
     if (!actor.status.alive || !actor.status.canMove) return `${actor.name} can't move`;
-    if (actor.commandPoints <= 0) return `${actor.name} has no command points`;
+    if (actor.commandPoints <= 0) return `${actor.name} has no action points`;
     if ((actor.passengerIds?.length ?? 0) >= TRANSPORT_CAPACITY) return `${actor.name} is full (${TRANSPORT_CAPACITY} aboard)`;
     if (!passenger || !passenger.status.alive) return "Pick a friendly unit to airlift";
     if (passenger.id === actor.id || passenger.team !== actor.team) return "Can only airlift your own units";
@@ -1067,7 +1067,7 @@ export class TacticalSim {
     const passenger = this.entity(passengerId);
     const failure = this.loadFailureReason(actor, passenger);
     if (failure) return this.reject(failure);
-    if (!spendCommandPoint(actor!)) return this.reject(`${actor!.name} has no command points`);
+    if (!spendCommandPoint(actor!)) return this.reject(`${actor!.name} has no action points`);
     this.addOrder({ actorId: actor!.id, kind: "load", targetId: passengerId, aim: "center", duration: actor!.kind === "apc" ? 1.2 : 2.6 });
     return true;
   }
@@ -1079,7 +1079,7 @@ export class TacticalSim {
     if (!(actor.passengerIds?.length)) return this.reject(`${actor.name} isn't carrying anyone`);
     const point = clampToArena(destination);
     if (actor.kind === "apc" && dist(actor.position, point) > actor.radius + APC_UNLOAD_REACH) return this.reject("An APC sets its troops down beside itself — pick a spot next to it");
-    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
+    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
     this.addOrder({ actorId: actor.id, kind: "unload", destination: point, aim: "center", duration: actor.kind === "apc" ? 1.2 : 2.4 });
     return true;
   }
@@ -1130,7 +1130,7 @@ export class TacticalSim {
     const point = clampToArena(destination);
     const projected = this.projectedActorForPreview(actor);
     if (dist(muzzlePoint(projected, "weapon"), point) > projectileRange(actor, "weapon")) return this.reject("Ground target is out of range");
-    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
+    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
     this.addOrder({ actorId: actor.id, kind: "shoot", destination: point, aim: "center", duration: 1.35 });
     return true;
   }
@@ -1142,7 +1142,7 @@ export class TacticalSim {
     if (actor.kind !== "mortar") return "Only a mortar fires smoke rounds";
     if (!actor.status.alive) return `${actor.name} is disabled`;
     if (!actor.status.canShoot) return `${actor.name} cannot fire — its tube is destroyed`;
-    if (actor.commandPoints <= 0) return `${actor.name} has no command points`;
+    if (actor.commandPoints <= 0) return `${actor.name} has no action points`;
     if (point) {
       const projected = this.projectedActorForPreview(actor);
       if (dist(muzzlePoint(projected, "weapon"), point) > projectileRange(actor, "weapon")) return "Smoke target is out of range";
@@ -1158,7 +1158,7 @@ export class TacticalSim {
     const point = clampToArena(destination);
     const failure = this.smokeFailureReason(actor, point);
     if (failure) return this.reject(failure);
-    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
+    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
     this.addOrder({ actorId: actor.id, kind: "smoke", destination: point, aim: "center", duration: 1.35 });
     this.pushLog(`${actor.name} lays a smoke round on the marked spot`);
     return true;
@@ -1171,7 +1171,7 @@ export class TacticalSim {
     if (actor.kind !== "artillery") return "Only artillery deploys";
     if (!actor.status.alive) return `${actor.name} is disabled`;
     if (actor.deployed) return `${actor.name} is already deployed`;
-    if (actor.commandPoints <= 0) return `${actor.name} has no command points`;
+    if (actor.commandPoints <= 0) return `${actor.name} has no action points`;
     if (this.orders.some((o) => o.actorId === actor.id && (o.kind === "move" || o.kind === "ram"))) return `${actor.name} can't deploy while it has a move queued`;
     return undefined;
   }
@@ -1197,7 +1197,7 @@ export class TacticalSim {
     if (actor.kind !== "droneop") return "Only a drone operator can send a recon pulse";
     if (!actor.status.alive) return `${actor.name} is disabled`;
     if (!actor.parts.some((p) => p.role === "utility" && p.hp > 0)) return `${actor.name}'s drone is destroyed`;
-    if (actor.commandPoints <= 0) return `${actor.name} has no command points`;
+    if (actor.commandPoints <= 0) return `${actor.name} has no action points`;
     if (actor.commandPoints < actor.maxCommandPoints || this.orders.some((o) => o.actorId === actor.id)) return `${actor.name} needs its whole turn for a recon pulse`;
     if (this.revealedOrders && (!this.hotseat || this.revealedTeam === actor.team)) return "The enemy's orders are already revealed";
     return undefined;
@@ -1340,7 +1340,7 @@ export class TacticalSim {
     const failure = this.ramFailureReason(actor, target);
     if (failure) return this.reject(failure);
     if (!actor) return false;
-    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
+    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
     this.addOrder({
       actorId: actor.id,
       kind: "ram",
@@ -1435,7 +1435,7 @@ export class TacticalSim {
     if (!actor || !target) return false;
     const requestedPart = partId ? this.targetableParts(target).find((part) => part.id === partId) : undefined;
     if (partId && !requestedPart) return this.reject(`${target.name} does not have that targetable part`);
-    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
+    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
     const targetPart = requestedPart ?? preferredPart(target, "weakest");
     this.addOrder({
       actorId: actor.id,
@@ -1454,7 +1454,7 @@ export class TacticalSim {
     if (!isInfantryKind(actor.kind)) return this.reject("Only infantry can change stance");
     if (stance === "prone") return this.reject("Prone is unavailable in this slice");
     if (!actor.status.canMove) return this.reject(`${actor.name} cannot change stance without mobility`);
-    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
+    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
     this.addOrder({
       actorId: actor.id,
       kind: "defend",
@@ -1492,7 +1492,7 @@ export class TacticalSim {
     if (cooldown > 0) return `${spec.label} on cooldown (${cooldown} turn${cooldown === 1 ? "" : "s"})`;
     if (this.fieldUnitCount(base.team) >= POP_CAP) return `Field is full (${POP_CAP} units)`;
     if (this.money(base.team) < spec.cost) return `Not enough money for ${spec.label} ($${spec.cost})`;
-    if (base.commandPoints <= 0) return `${base.name} has no command points`;
+    if (base.commandPoints <= 0) return `${base.name} has no action points`;
     return undefined;
   }
 
@@ -1650,7 +1650,7 @@ export class TacticalSim {
     const cost = incomeUpgradeCost(base);
     if (cost === undefined) return this.reject(`${base.name} income is already maxed`);
     if (this.money(base.team) < cost) return this.reject(`Not enough money to boost income ($${cost})`);
-    if (base.commandPoints <= 0) return this.reject(`${base.name} has no command points`);
+    if (base.commandPoints <= 0) return this.reject(`${base.name} has no action points`);
     spendCommandPoint(base);
     this.addMoney(base.team, -cost);
     base.incomeLevel = (base.incomeLevel ?? 0) + 1;
@@ -1669,11 +1669,11 @@ export class TacticalSim {
     if (!base.status.alive) return this.reject(`${base.name} is disabled`);
     if (commandUpgradeCost(base) === undefined) return this.reject(`${base.name} command is already upgraded`);
     if (this.money(base.team) < COMMAND_UPGRADE_COST) return this.reject(`Not enough money to upgrade command ($${COMMAND_UPGRADE_COST})`);
-    if (base.commandPoints <= 0) return this.reject(`${base.name} has no command points`);
+    if (base.commandPoints <= 0) return this.reject(`${base.name} has no action points`);
     spendCommandPoint(base);
     this.addMoney(base.team, -COMMAND_UPGRADE_COST);
     base.maxCommandPoints = 2;
-    this.pushLog(`${base.name} upgrades to 2 command points per turn`);
+    this.pushLog(`${base.name} upgrades to 2 action points per turn`);
     return true;
   }
 
@@ -1724,7 +1724,7 @@ export class TacticalSim {
       const tech = techNode(spec.tech);
       return `Research ${tech?.name ?? "the required doctrine"} to unlock ${spec.label}`;
     }
-    if (base.commandPoints <= 0) return `${base.name} has no command points`;
+    if (base.commandPoints <= 0) return `${base.name} has no action points`;
     const cooldown = this.supportCooldown(base, kind);
     if (cooldown > 0) return `${spec.label} on cooldown (${cooldown} turn${cooldown === 1 ? "" : "s"})`;
     if (this.money(base.team) < spec.cost) return `Not enough money for ${spec.label} ($${spec.cost})`;
@@ -1828,7 +1828,7 @@ export class TacticalSim {
   buildFailureReason(base: CombatEntity | undefined, kind: DefenseKind, point: Vec2): string | undefined {
     if (!base || base.kind !== "base") return "Select your Home Base to build defenses";
     if (!base.status.alive) return `${base.name} is disabled`;
-    if (base.commandPoints <= 0) return `${base.name} has no command points`;
+    if (base.commandPoints <= 0) return `${base.name} has no action points`;
     const spec = defenseSpec(kind);
     const buildFaction = this.factionOf(base.team);
     if (!buildFaction.defenses.includes(kind)) return `${spec.label} is not a ${buildFaction.name} emplacement`;
@@ -1903,7 +1903,7 @@ export class TacticalSim {
     const lockedBy = (base.unlockedTech ?? []).find((owned) => techNode(owned)?.excludes?.includes(nodeId) || node.excludes?.includes(owned));
     if (lockedBy) return `${node.name} is locked out by ${techNode(lockedBy)?.name ?? "your doctrine"}`;
     if (this.money(base.team) < node.cost) return `Not enough money to research ${node.name} ($${node.cost})`;
-    if (base.commandPoints <= 0) return `${base.name} has no command points`;
+    if (base.commandPoints <= 0) return `${base.name} has no action points`;
     return undefined;
   }
 
@@ -2487,7 +2487,7 @@ export class TacticalSim {
     if (partId && !requestedPart) return this.reject(`${target.name} does not have that targetable part`);
     const targetPart = requestedPart ?? preferredPart(target, aim);
     if (this.previewAttack(actor.id, target.id, targetPart.id, "weapon")?.blockedBySmoke) return this.reject(`${target.name} is hidden by smoke`);
-    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
+    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
     this.addOrder({
       actorId: actor.id,
       kind: "shoot",
@@ -2504,7 +2504,7 @@ export class TacticalSim {
     if (failure) return this.reject(failure);
     const requestedPart = partId ? this.targetableParts(target).find((part) => part.id === partId) : undefined;
     if (partId && !requestedPart) return this.reject(`${target.name} does not have that targetable part`);
-    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no command points`);
+    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
     actor.grenades = Math.max(0, actor.grenades - 1);
     const targetPart = requestedPart ?? preferredPart(target, aim);
     this.addOrder({
@@ -2866,7 +2866,7 @@ export class TacticalSim {
     if (target.flying) return "Bombs can't hit aircraft — use guns on flyers";
     if (!actor.status.alive) return `${actor.name} is disabled`;
     if (actor.grenades <= 0) return `${actor.name} is out of grenades`;
-    if (actor.commandPoints <= 0) return `${actor.name} has no command points`;
+    if (actor.commandPoints <= 0) return `${actor.name} has no action points`;
     const projected = this.projectedActorForPreview(actor);
     const targetPart = preferredPart(target, target.kind === "cover" ? "center" : "core");
     const origin = muzzlePoint(projected, "grenade");
@@ -2880,7 +2880,7 @@ export class TacticalSim {
     if (actor.kind !== "soldier" && actor.kind !== "gunship" && actor.kind !== "bomber") return "This unit carries no bombs/grenades";
     if (!actor.status.alive) return `${actor.name} is disabled`;
     if (actor.grenades <= 0) return `${actor.name} is out of grenades`;
-    if (actor.commandPoints <= 0) return `${actor.name} has no command points`;
+    if (actor.commandPoints <= 0) return `${actor.name} has no action points`;
     const projected = this.projectedActorForPreview(actor);
     const origin = muzzlePoint(projected, "grenade");
     if (dist(origin, point) > grenadeThrowRange(actor)) return "Ground target is outside grenade range";
@@ -3598,7 +3598,7 @@ export class TacticalSim {
   mineFailureReason(actor: CombatEntity | undefined): string | undefined {
     if (!actor) return "Select a unit first";
     if (actor.kind !== "sapper") return "Only sappers carry mines";
-    if (actor.commandPoints <= 0) return `${actor.name} has no command points`;
+    if (actor.commandPoints <= 0) return `${actor.name} has no action points`;
     if (this.money(actor.team) < MINE_COST) return `Not enough money for a mine ($${MINE_COST})`;
     if (this.mines.some((m) => m.team === actor.team && dist(m, actor.position) < 1.2)) return "There is already a mine here";
     return undefined;
@@ -4165,7 +4165,7 @@ export class TacticalSim {
         affected += 1;
       }
     }
-    if (affected > 0) this.pushLog(`${message}: ${affected} unit${affected === 1 ? "" : "s"} lose CP`);
+    if (affected > 0) this.pushLog(`${message}: ${affected} unit${affected === 1 ? "" : "s"} lose AP`);
   }
 
   private firstEntityHitBySegment(projectile: Projectile, from: Vec2, to: Vec2, fromHeight: number, toHeight: number): ProjectileHit | undefined {
@@ -5396,10 +5396,10 @@ export class TacticalSim {
     const ionNow = this.ionStormActive(t);
     const ionPrev = t > 1 && this.ionStormActive(t - 1);
     if (ionNow && !ionPrev) {
-      this.pushLog("An ion storm scrambles command links — units are limited to one command point.");
-      notice = "⚠ Ion storm — units are scrambled to a single command point.";
+      this.pushLog("An ion storm scrambles command links — units are limited to one action point.");
+      notice = "⚠ Ion storm — units are scrambled to a single action point.";
     } else if (ionNow) {
-      notice = "⚠ Ion storm — units limited to one command point.";
+      notice = "⚠ Ion storm — units limited to one action point.";
     }
     const zones = this.eventZonesForTurn(t);
     if (zones.some((z) => z.kind === "barrage")) {

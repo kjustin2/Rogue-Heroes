@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { COVER_PROFILES, createCover, createSoldier, isLandmarkKind, type CoverKind } from "./damageModel";
-import { MAPS, WALK_GAP, mapDef, pinchesTerrain } from "./maps";
+import { BASE_CLEAR, MAPS, WALK_GAP, mapDef, pinchesTerrain } from "./maps";
 import { TacticalSim } from "./sim";
 
 // EVERY MAP'S FURNITURE BELONGS TO ITS BIOME, AND THERE IS LITTLE OF IT (2026-09-23).
@@ -105,6 +105,10 @@ describe("walking room between everything on the map", () => {
         }
       }
       expect(cramped, `${map.id}: ${cramped.join(", ")}`).toEqual([]);
+      // The deploy ring is clear: nothing solid (props, capturables) inside BASE_CLEAR of a base.
+      const bases = solid.filter((e) => e.kind === "base");
+      const crowding = solid.filter((e) => e.kind !== "base" && bases.some((b) => Math.hypot(e.position.x - b.position.x, e.position.z - b.position.z) < BASE_CLEAR + e.radius - 0.01));
+      expect(crowding.map((e) => e.coverKind ?? e.kind), `${map.id}: objects inside a base's deploy ring`).toEqual([]);
       const pinches = solid.filter((e) => e.kind === "cover" && pinchesTerrain(e.position, e.radius, map.terrain.bounds)).map((e) => e.coverKind);
       expect(pinches, `${map.id}: props pinching a lane against terrain`).toEqual([]);
     });

@@ -82,7 +82,7 @@ describe("tactical simulation loop", () => {
     expect(sim.selectedId).toBe("p-a");
   });
 
-  it("lets a unit spend multiple CP on queued orders and undo individual choices", () => {
+  it("lets a unit spend multiple AP on queued orders and undo individual choices", () => {
     const sim = new TacticalSim([
       createSoldier("p-soldier-1", "Rook", "player", { x: 0, z: 0 }),
       createSoldier("e-soldier-1", "Cutlass", "enemy", { x: 6, z: 0 }),
@@ -1195,7 +1195,7 @@ describe("base economy and troop deployment", () => {
     expect(sim.money("player")).toBe(beforeDead);
   });
 
-  it("deploys a troop instantly, spending CP and money and applying a cooldown", () => {
+  it("deploys a troop instantly, spending AP and money and applying a cooldown", () => {
     const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 });
     const sim = new TacticalSim([base]);
     sim.select("p-base-1");
@@ -1468,7 +1468,7 @@ describe("game modes, tech tree, and unit variety", () => {
 });
 
 describe("defenses, difficulty, and base upgrades", () => {
-  it("upgrades the base to two command points per turn", () => {
+  it("upgrades the base to two action points per turn", () => {
     const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 });
     const sim = new TacticalSim([base]);
     sim.economy.set("player", 800);
@@ -2419,7 +2419,7 @@ describe("dynamic map events", () => {
     expect(victim.parts.some((p) => p.hp < p.maxHp)).toBe(true);
   });
 
-  it("an ion storm scrambles units down to one command point", () => {
+  it("an ion storm scrambles units down to one action point", () => {
     const unit = createSoldier("u", "Unit", "player", { x: 0, z: 0 });
     unit.commandPoints = 2;
     const sim = new TacticalSim([unit]);

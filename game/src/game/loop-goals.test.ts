@@ -31,7 +31,7 @@ describe("loop goals", () => {
     expect(sim.fieldUnitCount("enemy")).toBe(0);
   });
 
-  it("G5: deploying a Recruit adds a field unit and spends money + the base CP", () => {
+  it("G5: deploying a Recruit adds a field unit and spends money + the base AP", () => {
     const sim = freshMatch();
     const base = playerBase(sim);
     sim.select(base.id);
@@ -137,7 +137,7 @@ function deployForTest(sim: TacticalSim, kind: Parameters<TacticalSim["queueSpaw
 }
 
 describe("batch balance + UX fixes", () => {
-  it("the +1 CP command upgrade is a heavier investment than before", () => {
+  it("the +1 AP command upgrade is a heavier investment than before", () => {
     expect(COMMAND_UPGRADE_COST).toBeGreaterThan(320);
   });
 

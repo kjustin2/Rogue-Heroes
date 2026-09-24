@@ -419,12 +419,13 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
 - **The ground detail layer** (`makeGroundDetail`) is one InstancedMesh per element kind (grass fans, pebbles, snow clumps, cinders, weeds), placed only on dry flat ground, bending in `windUniforms` (the same clock the cloud deck and tree sway use). Pebbles are 8-triangle octahedra on purpose — the 36-triangle version was 130k triangles on a large map. Costs are in `perf-baseline.json`; rebase after an intentional change.
 - **MAPS ARE MINIMAL, AND THERE IS ALWAYS ROOM FOR TWO TANKS** (owner, 2026-09-23: "way too many items on the board so it
   blocks movement... make each unique impactful and relevant"; "ensure enough space for 2 tanks to get through any space").
-  Each map is 8–14 props (was 42–78), authored as `signature` pieces in PRIORITY order — landmark, then the thing that blows,
+  Each map is 6–14 props (was 42–78), authored as `signature` pieces in PRIORITY order — landmark, then the thing that blows,
   then the rest; `scatter` is empty everywhere. `buildMapObjects` places each at the nearest spot to its authored one where
   it and its mirror twin keep **`WALK_GAP` (7.2m = four radii of the widest ground vehicle) of open ground edge-to-edge**
   from every base, prop, landmark and capturable, and do not PINCH a lane against a cliff step or water
   (`pinchesTerrain`: a wall within `FLUSH` 1.2m is hugging it, which is fine; the arena border is not a pinch)
-  — `findRoom`, a deterministic ring search out to 8m. A piece with no room is LEFT OUT, never crammed in; so a
+  — `findRoom`, a deterministic ring search out to 8m. Nothing solid sits inside a base's deploy ring
+  either: `BASE_CLEAR` (the widest ring, Vanguard's, + 1m) from each base centre, capturables included. A piece with no room is LEFT OUT, never crammed in; so a
   listed kind that never places fails `props.test.ts` and must be cut from the list. Prop counts do NOT grow with
   map area any more. `props.test.ts` pins: biome kinds stay home (the `HOME` table), every listed kind places,
   ≤ 20 props, one landmark and one volatile per map, WALK_GAP between every pair, no terrain pinches.
@@ -775,6 +776,9 @@ tokens are remapped there so the older layers inherit it. Rules that fall out of
 - **No gradients, no `backdrop-filter`, no blurred glows, no sheen/glint/bracket animations** on
   UI. Depth is an offset solid; state is a fill or an outline colour. The "Blizzard chrome" layer
   that did the opposite was deleted, not overridden — do not bring rivets back.
+- **The action currency is AP (action points)** in everything a player reads (owner 2026-09-24: "CP can be
+  confusing as an acronym for gamers"). Code keeps `commandPoints` / `maxCommandPoints` internally; never put
+  "CP" or "command point" in a string, tooltip, log line or doc the player can see.
 - **Menus = title + buttons.** The cosmetic callsign line was removed from the title screen; it is
   still equipped in the Armory. Difficulty is Easy / Normal / Hard (Recruit / Veteran / Elite
   collided with the veteran ranks and the Recruit unit). The vocabulary is **turn**, never round.

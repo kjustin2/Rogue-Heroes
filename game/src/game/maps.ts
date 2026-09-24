@@ -195,8 +195,8 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
   let seq = 0;
 
   const anchors: Array<{ p: Vec2; clear: number }> = [
-    { p: map.playerBase, clear: BASE_RADIUS + WALK_GAP },
-    { p: map.enemyBase, clear: BASE_RADIUS + WALK_GAP },
+    { p: map.playerBase, clear: Math.max(BASE_RADIUS + WALK_GAP, BASE_CLEAR) },
+    { p: map.enemyBase, clear: Math.max(BASE_RADIUS + WALK_GAP, BASE_CLEAR) },
     { p: flags.player, clear: 2.4 },
     { p: flags.enemy, clear: 2.4 },
     { p: map.hill, clear: map.hillRadius + 1.6 },
@@ -247,6 +247,7 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
   const fits = (q: Vec2, r: number, mirrored: boolean): boolean => {
     const twin = { x: 2 * center.x - q.x, z: 2 * center.z - q.z };
     const ok = (x: Vec2): boolean =>
+      dist(x, map.playerBase) >= BASE_CLEAR + r && dist(x, map.enemyBase) >= BASE_CLEAR + r &&
       x.x > bounds.minX + r && x.x < bounds.maxX - r && x.z > bounds.minZ + r && x.z < bounds.maxZ - r &&
       !solids().some((o) => dist(x, o) < o.r + r + WALK_GAP - 0.01) &&
       !steepHere(x) && !pointInWater(x) && !pinchesTerrain(x, r, bounds) &&
@@ -372,6 +373,10 @@ const MISSES_PER_KIND = 48;
  *  little slack. Bases, landmarks, props and capturables all keep it, with no exceptions. */
 export const WALK_GAP = 4 * 1.75 + 0.2;
 const BASE_RADIUS = 2.2;
+/** Nothing solid inside a base's deploy ring (owner 2026-09-24: "ensure there aren't objects right near
+ *  any of the base spawns since then it's tricky to deploy"): the widest ring (base radius + 6 + the
+ *  Vanguard's +4 reach, sim.deployPlacementRadius) plus a metre, measured from the base centre. */
+export const BASE_CLEAR = BASE_RADIUS + 6 + 4 + 1;
 const FLUSH = 1.2; // a wall this close to a prop is hugging it, not pinching a lane
 
 // Reject spots straddling a block edge (cliff face) or on tall stacked tops, so props sit
@@ -530,7 +535,6 @@ const RAW_MAPS: readonly MapDef[] = [
     scatter: [],
     signature: [
       { kind: "furnace", x: -17, z: 8.5, yaw: -0.5, mirror: true },
-      { kind: "gas", x: -6.5, z: -3.8, mirror: true }, // gas bottles on the shop floor: they chain
       { kind: "railcar", x: -13, z: -9.5, yaw: 0, mirror: true }, // the rail yard
       { kind: "conduit", x: -9.5, z: 1.5, mirror: true }, // cut it and the derelict turret browns out
     ],
@@ -605,7 +609,7 @@ const RAW_MAPS: readonly MapDef[] = [
       { kind: "mill", x: -16.2, z: 8.6, yaw: 0, mirror: true }, // on the mill pond's bank
       { kind: "chapel", x: -17, z: -8, yaw: 0.35, mirror: true }, // the ruin stands alone on the south green
       { kind: "fuel", x: -10, z: -3, mirror: true }, // the farm's fuel drum: the one thing here that blows
-      { kind: "tree", x: -20, z: 4, mirror: true }, // a lone field oak: it topples
+      { kind: "tree", x: -11, z: 4, mirror: true }, // a lone field oak: it topples
       { kind: "rock", x: -4.5, z: -6.8, mirror: true, radius: 1.1 },
     ],
   },
@@ -741,8 +745,6 @@ const RAW_MAPS: readonly MapDef[] = [
       { kind: "colossus", x: -2.6, z: 9.6, yaw: 0.25, mirror: true },
       { kind: "brazier", x: -15, z: -4, mirror: true }, // the temple's oil brazier: it bursts and burns
       { kind: "obelisk", x: -6.8, z: -11, mirror: true }, // the precinct's gatepost; it topples
-      { kind: "statue", x: -17, z: -8, mirror: true },
-      { kind: "cliff", x: -9.5, z: 4.2, mirror: true },
     ],
     // The ancient colonnades give way: cover near the central dais collapses every few turns.
     events: [{ kind: "collapse", startTurn: 4, period: 4, zone: { x: 0, z: 0, radius: 9 } }],
@@ -805,10 +807,9 @@ const RAW_MAPS: readonly MapDef[] = [
     scatter: [],
     signature: [
       { kind: "gate", x: -8, z: 0, yaw: 0, mirror: true },
-      { kind: "ammo", x: -12.5, z: 3.5, mirror: true }, // the checkpoint's ammo: it cooks off
+      { kind: "ammo", x: -5, z: 8, mirror: true }, // the checkpoint's ammo: it cooks off
       { kind: "radar", x: -19, z: 9, yaw: 0.8, mirror: true },
       { kind: "bunker", x: -1.6, z: -9, yaw: 0.2, mirror: true },
-      { kind: "hedgehog", x: -17, z: -4, mirror: true }, // tank traps on the approach
     ],
     // Off-map artillery ranges in on the central basin on a steady cadence — don't loiter there.
     events: [{ kind: "barrage", startTurn: 3, period: 4, zone: { x: 0, z: 0, radius: 6 }, power: 34 }],

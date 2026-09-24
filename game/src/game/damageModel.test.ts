@@ -98,7 +98,7 @@ describe("component damage model", () => {
     expect(tank.status.systemsDown).toContain("Turret Ring");
   });
 
-  it("limits command points when utility packs are destroyed", () => {
+  it("limits action points when utility packs are destroyed", () => {
     const soldier = createSoldier("soldier", "Rook", "player", { x: 0, z: 0 });
 
     applyDamage(soldier, "pack", 99);

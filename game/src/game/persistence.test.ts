@@ -44,7 +44,7 @@ describe("serialize / restore fidelity", () => {
     expect(reloaded.entity("t1")!.passengerIds).toContain("s1");
   });
 
-  it("conserves command points across a command-phase save (order or refund, never both lost)", () => {
+  it("conserves action points across a command-phase save (order or refund, never both lost)", () => {
     const sim = new TacticalSim([
       createSoldier("p1", "Rook", "player", { x: 0, z: 0 }),
       createSoldier("e1", "Foe", "enemy", { x: 20, z: 0 }),

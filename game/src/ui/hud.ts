@@ -67,16 +67,16 @@ function syncRevealTracking(base: CombatEntity): void {
 }
 
 const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
-  { id: "move", label: "Move", tip: "Select Move, then click ground or a cover object. Costs 1 CP. Soldiers move farther than heavy units." },
+  { id: "move", label: "Move", tip: "Select Move, then click ground or a cover object. Costs 1 AP. Soldiers move farther than heavy units." },
   { id: "shoot", label: "Shoot", tip: "Select Shoot, pick an enemy part, then confirm. The line previews cover, damage and accuracy." },
   { id: "grenade", label: "Grenade", tip: "Soldier only. Throw a limited-supply grenade in a short arc with splash damage." },
-  { id: "ram", label: "Ram", tip: "Tank only. Select a close target or wall, then confirm. Costs 1 CP, deals 72 damage, and damages your front armor." },
+  { id: "ram", label: "Ram", tip: "Tank only. Select a close target or wall, then confirm. Costs 1 AP, deals 72 damage, and damages your front armor." },
   { id: "melee", label: "Strike", tip: "Infantry only. Strike a hostile at close range; Strikers hit hardest. Needs an intact weapon." },
   { id: "defend", label: "Crouch", tip: "Infantry only. Improves accuracy and makes head shots harder, but slows the next move." },
-  { id: "mine", label: "Mine", tip: "Sapper only. Plant a proximity mine at this spot ($15 + 1 CP). Hostiles that step on it eat a splash blast. Invisible to the enemy." },
-  { id: "smoke", label: "Smoke", tip: "Mortar only. Lay a 3-turn smoke cloud that swallows flat shots; arcing rounds sail over. 1 CP." },
-  { id: "load", label: "Load", tip: "Transport / APC. Click a friendly ground unit to take it aboard (a transport flies to it; an APC needs it beside the hull). 1 CP." },
-  { id: "unload", label: "Unload", tip: "Transport / APC. Click ground to set passengers down (a transport flies there; an APC drops the ramp beside itself). 1 CP." },
+  { id: "mine", label: "Mine", tip: "Sapper only. Plant a proximity mine at this spot ($15 + 1 AP). Hostiles that step on it eat a splash blast. Invisible to the enemy." },
+  { id: "smoke", label: "Smoke", tip: "Mortar only. Lay a 3-turn smoke cloud that swallows flat shots; arcing rounds sail over. 1 AP." },
+  { id: "load", label: "Load", tip: "Transport / APC. Click a friendly ground unit to take it aboard (a transport flies to it; an APC needs it beside the hull). 1 AP." },
+  { id: "unload", label: "Unload", tip: "Transport / APC. Click ground to set passengers down (a transport flies there; an APC drops the ramp beside itself). 1 AP." },
   { id: "deploy", label: "Deploy", tip: "Artillery only. Outriggers down (whole turn): the gun fires only deployed, deploys itself any turn it holds still, and packing up to move costs a turn." },
   { id: "recon", label: "Recon", tip: "Drone Operator only. Whole turn: next turn every enemy unit's planned order is shown on the board." },
 ];
@@ -87,15 +87,15 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
 // cost at the end. One line each; anything longer belongs in the order body once the verb is armed.
 // An action with no entry here falls back to its catalog tip.
 const ACTION_HOW: Partial<Record<Intent, string>> = {
-  move: "Select Move, then click ground inside the cyan ring. An amber arrow marks where the path climbs up. 1 CP.",
-  shoot: "Select Shoot, click an enemy, pick a part, then Confirm. 1 CP.",
+  move: "Select Move, then click ground inside the cyan ring. An amber arrow marks where the path climbs up. 1 AP.",
+  shoot: "Select Shoot, click an enemy, pick a part, then Confirm. 1 AP.",
   grenade: "Select Grenade, then click ground or an enemy within throw range. Splash damage; limited supply.",
-  ram: "Select Ram, click a target beside the tank, then Confirm. 72 damage; dents your front armor. 1 CP.",
-  melee: "Select Strike, click an enemy within reach, then Confirm. Strikers hit hardest. 1 CP.",
-  defend: "Crouch where you stand: better accuracy, harder to head-shot, slower next move. 1 CP.",
-  mine: "Plant a hidden mine at the sapper's feet; enemies that step on it take a blast. $15 + 1 CP.",
-  load: "Select Load, then click a friendly ground unit to lift it aboard. 1 CP.",
-  unload: "Select Unload, then click ground to fly there and set passengers down. 1 CP.",
+  ram: "Select Ram, click a target beside the tank, then Confirm. 72 damage; dents your front armor. 1 AP.",
+  melee: "Select Strike, click an enemy within reach, then Confirm. Strikers hit hardest. 1 AP.",
+  defend: "Crouch where you stand: better accuracy, harder to head-shot, slower next move. 1 AP.",
+  mine: "Plant a hidden mine at the sapper's feet; enemies that step on it take a blast. $15 + 1 AP.",
+  load: "Select Load, then click a friendly ground unit to lift it aboard. 1 AP.",
+  unload: "Select Unload, then click ground to fly there and set passengers down. 1 AP.",
 };
 
 export interface HudCallbacks {
@@ -395,6 +395,7 @@ export class Hud {
     const target = this.targetId ? this.sim.entity(this.targetId) : undefined;
     const friendlyDetails = this.friendlyDetailsId ? this.sim.entity(this.friendlyDetailsId) : undefined;
     const playerUnits = this.sim.entities.filter((entity) => entity.team === "player");
+    const playerBase = playerUnits.find((e) => e.kind === "base" && e.status.alive);
     // Nearest first. With a distance on every row, an ordered list turns "seven identical walls"
     // into "the wall in front of me, then the next one".
     const byRange = (a: CombatEntity, b: CombatEntity): number => {
@@ -462,10 +463,11 @@ export class Hud {
         ${orderPlanner(actor, target, this.targetPartId, this.action, playerOrders.get(actor?.id ?? "") ?? [], this.sim)}
       </section>
 
-      <div class="money-bar" data-tip="Treasury. Your Home Base earns money each turn (less if its reactor is damaged). Spend it on troops, defenses, and base upgrades.">
+      <div class="money-bar" data-tip="Your money. The Home Base pays the income below at the start of every turn (less if its reactor is damaged). Spend it on troops, research, defenses and support.">
         <span class="money-bar__icon">$</span>
-        <span class="money-bar__label">Treasury</span>
+        <span class="money-bar__label">Money</span>
         <span class="money-bar__value">${this.sim.money("player")}</span>
+        <span class="money-bar__income">${playerBase ? `+$${baseIncome(playerBase)} next turn` : "no income"}</span>
       </div>
 
       <section class="log compact-log ${this.logExpanded ? "expanded" : ""}" data-tip="${escapeAttr(this.sim.log.join(" / "))}">
@@ -493,6 +495,10 @@ export class Hud {
     // open it ran under it and hid its own part rows (UI audit, 2026-09-23). It scrolls instead.
     const deck = this.root.querySelector<HTMLElement>(".commandbar");
     this.root.style.setProperty("--deck-top", deck ? `${Math.floor(deck.getBoundingClientRect().top)}px` : "100vh");
+    // The roster ends above the bottom-left stack (money + log) by MEASUREMENT, not a guessed offset:
+    // the money plate grew (2026-09-24) and the fixed "100vh - 122px" ran the roster under it.
+    const money = this.root.querySelector<HTMLElement>(".money-bar");
+    if (money) this.root.style.setProperty("--stack-top", `${Math.floor(money.getBoundingClientRect().top)}px`);
   }
 
   private handleClick(event: Event): void {
@@ -844,7 +850,7 @@ function unitCard(entity: CombatEntity, selected: boolean, orders: TacticalOrder
       </button>
       <div class="unit-actions">
         <button class="mini-action detail" data-detail="${entity.id}" data-tip="Open ${escapeAttr(entity.name)} part health, status, and systems.">Info</button>
-        ${lastOrder && sim.phase === "command" ? `<button class="mini-action undo" data-cancel-order="${lastOrder.id}" data-tip="Undo ${escapeAttr(entity.name)}'s latest queued order and refund 1 CP.">Undo</button>` : ""}
+        ${lastOrder && sim.phase === "command" ? `<button class="mini-action undo" data-cancel-order="${lastOrder.id}" data-tip="Undo ${escapeAttr(entity.name)}'s latest queued order and refund 1 AP.">Undo</button>` : ""}
       </div>
     </div>
   `;
@@ -996,7 +1002,7 @@ function eventChip(sim: TacticalSim): string {
 
 const EVENT_GLYPHS: Record<string, { glyph: string; name: string; label: string }> = {
   sandstorm: { glyph: "≋", name: "Sandstorm", label: "Sandstorm — accuracy drops" },
-  ionstorm: { glyph: "⌁", name: "Ion storm", label: "Ion storm — units limited to 1 CP" },
+  ionstorm: { glyph: "⌁", name: "Ion storm", label: "Ion storm — units limited to 1 AP" },
   barrage: { glyph: "☄", name: "Barrage", label: "Artillery barrage on the marked zone" },
   collapse: { glyph: "▽", name: "Collapse", label: "Structural collapse in the marked zone" },
   lightning: { glyph: "ϟ", name: "Lightning", label: "Lightning strikes the marked point" },
@@ -1053,7 +1059,7 @@ function inspectEntity(entity: CombatEntity, titleText: string, activePartId: st
         <em>${integrity}% integrity</em>
       </div>
       <div class="detail-statline">
-        <div data-tip="${escapeAttr(cpTip(entity))}"><span>CP</span><strong>${entity.commandPoints}/${entity.maxCommandPoints}</strong></div>
+        <div data-tip="${escapeAttr(cpTip(entity))}"><span>AP</span><strong>${entity.commandPoints}/${entity.maxCommandPoints}</strong></div>
         <div data-tip="Down = its mobility part is destroyed and it cannot move. Fixed = a building."><span>Move</span><strong>${moveLabel(entity)}</strong></div>
         <div data-tip="Down = its weapon part is destroyed and it cannot shoot. None = it carries no weapon."><span>Weapon</span><strong>${weaponLabel(entity)}</strong></div>
         ${entity.maxGrenades > 0 ? `<div><span>Grenades</span><strong>${entity.grenades}/${entity.maxGrenades}</strong></div>` : ""}
@@ -1091,10 +1097,10 @@ function orderPlanner(
   const canMelee = Boolean(actor && target && target.team !== "player" && selectedPart && isInfantryKind(actor.kind) && actor.status.canMove && actor.commandPoints > 0 && sim.phase === "command" && meleeStatus?.ok);
   const canDefend = Boolean(actor && isInfantryKind(actor.kind) && actor.status.canMove && actor.commandPoints > 0 && sim.phase === "command");
   const ramTip = actor?.kind === "tank"
-    ? "Costs 1 CP. Deals 72 damage to the target and 14 damage to your front armor."
+    ? "Costs 1 AP. Deals 72 damage to the target and 14 damage to your front armor."
     : "Only tanks can ram.";
   const defendTip = actor && isInfantryKind(actor.kind)
-    ? "Costs 1 CP. Crouch improves accuracy and head-shot defense, but slows this unit's next move."
+    ? "Costs 1 AP. Crouch improves accuracy and head-shot defense, but slows this unit's next move."
     : "Only infantry can change stance.";
   const focusedAction = action !== "select" || Boolean(target);
   const showActions = Boolean(actor && actor.commandPoints > 0 && !focusedAction && sim.phase === "command");
@@ -1127,7 +1133,7 @@ function orderPlanner(
         ${orderHint(actor, focusedAction, sim)}
       </div>
       <div class="cp-badge" data-tip="${actor ? escapeAttr(cpTip(actor)) : "Select a living squad unit."}">
-        ${actor ? `${actor.commandPoints}/${actor.maxCommandPoints} CP` : "-- CP"}
+        ${actor ? `${actor.commandPoints}/${actor.maxCommandPoints} AP` : "-- AP"}
       </div>
       ${(target || action !== "select") ? `<button class="icon-btn close-btn clear-focus" data-command="clear-order-focus" data-tip="Go back to the compact action list."><span>&lt;</span><strong>Back</strong></button>` : ""}
     </div>
@@ -1145,7 +1151,7 @@ function orderPlanner(
               const label = option.id === "grenade" ? bombVerb(actor) : jumps ? "Jump" : option.label;
               const tip = option.id === "grenade" && actor?.flying
                 ? "Select Bomb, then Confirm to drop straight down on whatever is beneath the aircraft. Cannot hit aircraft."
-                : jumps ? "Select Jump, then click any dry ground in range — over cliffs, water and walls. Airborne for the leap, so flak can catch it. 1 CP."
+                : jumps ? "Select Jump, then click any dry ground in range — over cliffs, water and walls. Airborne for the leap, so flak can catch it. 1 AP."
                 : ACTION_HOW[option.id] ?? option.tip;
               // A disabled card states the REASON. Silently dead buttons are how a player concludes
               // a game is broken rather than that their unit is hurt.
@@ -1319,7 +1325,7 @@ function grenadeState(
     const canDrop = actor.grenades > 0 && actor.commandPoints > 0 && actor.status.alive && sim.phase === "command";
     const note = !actor.status.alive ? `${actor.name} is disabled`
       : actor.grenades <= 0 ? "Out of bombs"
-      : actor.commandPoints <= 0 ? "No command points"
+      : actor.commandPoints <= 0 ? "No action points"
       : "Bomb drops straight down beneath the aircraft — fly over the target. Blast radius shown below.";
     return `
       <div class="order-note">${escapeHtml(note)}</div>
@@ -1461,7 +1467,7 @@ function coverInteractionState(actor: CombatEntity | undefined, target: CombatEn
     ${blurb ? `<div class="cover-blurb ${target.capturable ? "capture" : target.coverKind === "fuel" || target.coverKind === "ammo" || target.coverKind === "conduit" || target.coverKind === "gas" ? "volatile" : ""}">${escapeHtml(blurb)}</div>` : ""}
     <div class="cover-actions">
       ${target.capturable ? captureButton(actor, target, sim) : ""}
-      ${actor && isInfantryKind(actor.kind) && !isCliff ? `<button class="btn confirm ${canTakeCover ? "" : "disabled"}" data-cover-action="cover" data-disabled="${!canTakeCover}" data-tip="${escapeAttr(coverReach?.ok ? "Move beside this object and crouch if the unit has enough CP." : coverReach?.reason ?? "Get closer to take cover here.")}">
+      ${actor && isInfantryKind(actor.kind) && !isCliff ? `<button class="btn confirm ${canTakeCover ? "" : "disabled"}" data-cover-action="cover" data-disabled="${!canTakeCover}" data-tip="${escapeAttr(coverReach?.ok ? "Move beside this object and crouch if the unit has enough AP." : coverReach?.reason ?? "Get closer to take cover here.")}">
         Take Cover
         <span>${canTakeCover ? "move+crouch" : "too far"}</span>
       </button>` : ""}
@@ -1469,7 +1475,7 @@ function coverInteractionState(actor: CombatEntity | undefined, target: CombatEn
         Shoot
         <span>target</span>
       </button>` : ""}
-      ${canClimb ? `<button class="btn confirm" data-cover-action="climb" data-tip="${isCliff ? "Infantry spends 1 CP to climb this cliff ascent." : "Climb onto low cover. Tall walls and ridges are too high."}">
+      ${canClimb ? `<button class="btn confirm" data-cover-action="climb" data-tip="${isCliff ? "Infantry spends 1 AP to climb this cliff ascent." : "Climb onto low cover. Tall walls and ridges are too high."}">
         ${isCliff ? "Climb Cliff" : "Climb"}
         <span>${isCliff ? "ascent" : "low object"}</span>
       </button>` : ""}
@@ -1543,7 +1549,7 @@ function mineState(actor: CombatEntity | undefined, sim: TacticalSim): string {
       <strong>${reason ? "Mine unavailable" : "Mine ready"}</strong>
       <span>${reason ? escapeHtml(reason) : "Plants a proximity mine at the sapper's feet. Hostiles that step on it take a splash blast. Your mines are invisible to the enemy."}</span>
     </div>
-    <button class="btn confirm ${reason ? "disabled" : ""}" data-confirm="mine" data-disabled="${Boolean(reason)}" data-tip="${escapeAttr("Plant a proximity mine here ($15 + 1 CP).")}">
+    <button class="btn confirm ${reason ? "disabled" : ""}" data-confirm="mine" data-disabled="${Boolean(reason)}" data-tip="${escapeAttr("Plant a proximity mine here ($15 + 1 AP).")}">
       Plant Mine
       <span>$15</span>
     </button>
@@ -1559,7 +1565,7 @@ function deployState(actor: CombatEntity | undefined, sim: TacticalSim): string 
     </div>
     <button class="btn confirm ${reason ? "disabled" : ""}" data-confirm="deploy" data-disabled="${Boolean(reason)}" data-tip="${escapeAttr("Deploy the gun (whole turn).")}">
       Deploy
-      <span>all CP</span>
+      <span>all AP</span>
     </button>
   `;
 }
@@ -1573,7 +1579,7 @@ function reconState(actor: CombatEntity | undefined, sim: TacticalSim): string {
     </div>
     <button class="btn confirm ${reason ? "disabled" : ""}" data-confirm="recon" data-disabled="${Boolean(reason)}" data-tip="${escapeAttr("Send the recon pulse (whole turn).")}">
       Send Pulse
-      <span>all CP</span>
+      <span>all AP</span>
     </button>
   `;
 }
@@ -1601,7 +1607,7 @@ function baseCommandPanel(base: CombatEntity, sim: TacticalSim): string {
         <h2>${escapeHtml(base.name)}</h2>
       </div>
       <div class="cp-badge" data-tip="${escapeAttr(cpTip(base))}">
-        ${base.commandPoints}/${base.maxCommandPoints} CP
+        ${base.commandPoints}/${base.maxCommandPoints} AP
       </div>
     </div>
     <div class="command-layout single-detail">
@@ -1652,7 +1658,7 @@ function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
     { id: "tech", label: "Tech", tip: "Research doctrines and specializations on the tech tree." },
     { id: "defenses", label: "Defenses", tip: "Build stationary defenses near your base." },
     { id: "support", label: "Support", tip: "Call an off-map support strike." },
-    { id: "upgrade", label: "Base", tip: "Upgrade the base's income and command points." },
+    { id: "upgrade", label: "Base", tip: "Upgrade the base's income and action points." },
   ];
   const tabBar = `<div class="base-tabs">${tabs.map((t) =>
     `<button class="base-tab ${activeBaseTab === t.id ? "active" : ""}" data-base-tab="${t.id}" data-tip="${escapeAttr(t.tip)}">${escapeHtml(t.label)}</button>`
@@ -1703,7 +1709,7 @@ function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
       ? `${withoutLabel(reason, spec.label)}.`
       : active
         ? "Click a spot inside the green ring near your base, or click again to deploy beside the base."
-        : `${spec.role} · ${troopSheet(spec.kind).hp} HP · ${troopSheet(spec.kind).hit} damage a shot${unitStats(spec.kind).burst ? " (burst)" : ""}. ${spec.tip} 1 CP · $${spec.cost} · ${cooldownTurns}-turn cooldown.`;
+        : `${spec.role} · ${troopSheet(spec.kind).hp} HP · ${troopSheet(spec.kind).hit} damage a shot${unitStats(spec.kind).burst ? " (burst)" : ""}. ${spec.tip} 1 AP · $${spec.cost} · ${cooldownTurns}-turn cooldown.`;
     return `<button class="btn confirm ${active ? "active" : ready ? "" : "disabled"}" data-spawn="${spec.kind}" data-disabled="${!ready}" data-tip="${escapeAttr(tip)}">
       ${escapeHtml(spec.label)}${isNew ? `<em class="new-badge">NEW</em>` : ""}
       <span>${active ? "Placing…" : sub}</span>
@@ -1728,7 +1734,7 @@ function defenseDeckHtml(base: CombatEntity, sim: TacticalSim): string {
   const buttons = DEFENSE_CATALOG.filter((spec) => buildable.includes(spec.kind)).map((spec) => {
     const affordable = hasCp && money >= spec.cost;
     const active = sim.pendingBuild === spec.kind;
-    const tip = `${spec.label} (${spec.role}): ${spec.tip} Costs 1 CP and $${spec.cost}. Then click a spot inside the green ring near your base.`;
+    const tip = `${spec.label} (${spec.role}): ${spec.tip} Costs 1 AP and $${spec.cost}. Then click a spot inside the green ring near your base.`;
     return `<button class="btn confirm ${active ? "active" : affordable ? "" : "disabled"}" data-build="${spec.kind}" data-disabled="${!affordable && !active}" data-tip="${escapeAttr(tip)}">
       ${escapeHtml(spec.label)}
       <span>${active ? "Placing…" : `$${spec.cost}`}</span>
@@ -1761,7 +1767,7 @@ function supportDeckHtml(base: CombatEntity, sim: TacticalSim): string {
     const sub = active ? "Targeting…" : cooldown > 0 ? `${cooldown} turn${cooldown === 1 ? "" : "s"}` : `$${spec.cost}`;
     const tip = reason && !active
       ? `${withoutLabel(reason, spec.label)}.`
-      : `${spec.role}. ${spec.tip} 1 CP · $${spec.cost} · ${sim.supportCooldownFor(base.team, spec.kind)}-turn cooldown. Then click the target point.`;
+      : `${spec.role}. ${spec.tip} 1 AP · $${spec.cost} · ${sim.supportCooldownFor(base.team, spec.kind)}-turn cooldown. Then click the target point.`;
     return `<button class="btn confirm ${active ? "active" : ready ? "" : "disabled"}" data-support="${spec.kind}" data-disabled="${!ready && !active}" data-tip="${escapeAttr(tip)}">
       ${escapeHtml(spec.label)}
       <span>${sub}</span>
@@ -1786,12 +1792,12 @@ function upgradeDeckHtml(base: CombatEntity, sim: TacticalSim): string {
   const payback = gain > 0 && incomeCost !== undefined ? Math.ceil(incomeCost / gain) : 0;
   const incomeTip = incomeCost === undefined
     ? `Income is fully upgraded: $${nowIncome} a turn.`
-    : `Income $${nowIncome} → $${nextIncome} a turn (+$${gain}). Pays for itself in ${payback} turns. Costs 1 CP and $${incomeCost}.`;
+    : `Income $${nowIncome} → $${nextIncome} a turn (+$${gain}). Pays for itself in ${payback} turns. Costs 1 AP and $${incomeCost}.`;
   const cmdCost = commandUpgradeCost(base);
   const cmdReady = hasCp && cmdCost !== undefined && money >= cmdCost;
   const cmdTip = cmdCost === undefined
-    ? "Command is already upgraded to 2 command points per turn."
-    : `The base acts TWICE a turn instead of once: deploy and research, or two deploys. Costs 1 CP and $${cmdCost}.`;
+    ? "Command is already upgraded to 2 action points per turn."
+    : `The base acts TWICE a turn instead of once: deploy and research, or two deploys. Costs 1 AP and $${cmdCost}.`;
   return `<div class="upgrade-options part-options">
       <button class="btn confirm ${incomeReady ? "" : "disabled"}" data-base-upgrade="income" data-disabled="${!incomeReady}" data-tip="${escapeAttr(incomeTip)}">
         ${incomeCost === undefined ? `Income $${nowIncome}/turn` : `Income +$${gain}/turn`}
@@ -1879,7 +1885,7 @@ function moveState(actor: CombatEntity | undefined): string {
   return `
     <div class="target-summary ${ready ? "" : "blocked"}">
       <strong>${ready ? "Move order armed" : "Move unavailable"}</strong>
-      <span>${ready ? "Click ground to move, or click an object for cover/climb options." : "No movement or CP."}</span>
+      <span>${ready ? "Click ground to move, or click an object for cover/climb options." : "No movement or AP."}</span>
     </div>
   `;
 }
@@ -1888,7 +1894,7 @@ function orderSummaryState(actor: CombatEntity | undefined, target: CombatEntity
   return `
     <div class="target-summary compact-ready">
       <strong>${actor ? escapeHtml(actor.name) : "Select a unit"}</strong>
-      <span>${target ? `Inspecting ${escapeHtml(target.name)}.` : actor ? `${actor.commandPoints}/${actor.maxCommandPoints} CP ready` : "Pick squad"}</span>
+      <span>${target ? `Inspecting ${escapeHtml(target.name)}.` : actor ? `${actor.commandPoints}/${actor.maxCommandPoints} AP ready` : "Pick squad"}</span>
     </div>
   `;
 }
@@ -1897,7 +1903,7 @@ function queuedOrdersState(orders: TacticalOrder[], sim: TacticalSim): string {
   return `
     <div class="queued-list">
       ${orders.map((order, index) => `
-        <button class="queued-chip undo-order" data-cancel-order="${order.id}" data-tip="Undo step ${index + 1}: ${escapeAttr(orderSummary(order, sim).replace("Queued: ", ""))}. Refunds 1 CP.">
+        <button class="queued-chip undo-order" data-cancel-order="${order.id}" data-tip="Undo step ${index + 1}: ${escapeAttr(orderSummary(order, sim).replace("Queued: ", ""))}. Refunds 1 AP.">
           <strong>${index + 1}. ${escapeHtml(title(order.kind))}</strong>
           <span>${escapeHtml(orderSummary(order, sim).replace("Queued: ", ""))}</span>
           <em>undo</em>
@@ -2188,7 +2194,7 @@ function actionApplicable(action: Intent, actor: CombatEntity | undefined): bool
 /** Why an applicable action cannot be taken right now, for the card's tooltip. */
 function actionDisabledReason(action: Intent, actor: CombatEntity | undefined, sim: TacticalSim): string | undefined {
   if (!actor || sim.phase !== "command") return "Not during the resolve phase.";
-  if (actor.commandPoints <= 0) return `${actor.name} has no command points left this turn.`;
+  if (actor.commandPoints <= 0) return `${actor.name} has no action points left this turn.`;
   if ((action === "move" || action === "ram" || action === "melee" || action === "defend" || action === "load") && !actor.status.canMove) {
     return `${actor.name} cannot move — its legs or treads are destroyed.`;
   }
@@ -2242,18 +2248,18 @@ function cpPips(entity: CombatEntity): string {
   const pips = Array.from({ length: entity.maxCommandPoints }, (_, index) =>
     `<i class="${index < entity.commandPoints ? "full" : ""}"></i>`
   ).join("");
-  return `<span class="cp-pips">${pips}</span><span class="cp-text">CP ${entity.commandPoints}/${entity.maxCommandPoints}</span>`;
+  return `<span class="cp-pips">${pips}</span><span class="cp-text">AP ${entity.commandPoints}/${entity.maxCommandPoints}</span>`;
 }
 
 function actionCostLabel(action: Intent, actor: CombatEntity | undefined): string {
   if (action === "grenade" && actor) return `${actor.grenades}/${actor.maxGrenades} G`;
-  return "1 CP";
+  return "1 AP";
 }
 
 function cpTip(entity: CombatEntity): string {
   const limited = entity.status.commandLimited ? " Damaged systems reduce this unit's refill." : "";
   const grenades = entity.maxGrenades > 0 ? ` Grenades are finite; ${entity.name} has ${entity.grenades} of ${entity.maxGrenades} left.` : "";
-  return `Command Points. Most orders cost 1 CP. ${entity.name} has ${entity.commandPoints} of ${entity.maxCommandPoints} CP this turn.${limited}${grenades}`;
+  return `Action Points. Most orders cost 1 AP. ${entity.name} has ${entity.commandPoints} of ${entity.maxCommandPoints} AP this turn.${limited}${grenades}`;
 }
 
 function confirmShootTip(preview: ShotPreview | undefined, blocker: CombatEntity | undefined, target: CombatEntity): string {
@@ -2280,7 +2286,7 @@ function partTip(part: DamagePart): string {
   if (part.role === "head") return "Head part. Destroying it disables infantry immediately.";
   if (part.role === "weapon") return "Weapon part. Destroying it stops this unit from shooting.";
   if (part.role === "mobility") return "Mobility part. Destroying it stops movement and rams.";
-  if (part.role === "utility") return "System part. Destroying it can jam weapons or reduce CP.";
+  if (part.role === "utility") return "System part. Destroying it can jam weapons or reduce AP.";
   if (part.role === "armor") return "Armor part. Destroying it exposes the core to stronger follow-up shots.";
   if (part.role === "volatile") return "Explosive part. Destroying it causes an area blast.";
   return "Targetable part.";

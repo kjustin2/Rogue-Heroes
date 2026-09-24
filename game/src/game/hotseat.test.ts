@@ -126,7 +126,7 @@ describe("hotseat", () => {
     expect(sim.reconFailureReason(op1)).toBeUndefined();
   });
 
-  it("a queued support strike survives a save (money, CP and cooldown were already paid)", () => {
+  it("a queued support strike survives a save (money, AP and cooldown were already paid)", () => {
     const base = createBase("p-base-1", "HQ", "player", { x: -14, z: 0 });
     const enemyBase = createBase("e-base-1", "Enemy HQ", "enemy", { x: 14, z: 8 });
     const victim = createSoldier("e-victim", "Victim", "enemy", { x: 4, z: 0 });

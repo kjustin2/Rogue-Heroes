@@ -216,7 +216,7 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "scout", label: "Scout", role: "Recon", cost: 100, cooldown: 1, tech: "recon", tip: "Fast, cheap eyes; its optic relay sharpens nearby allies' fire." },
   { kind: "sniper", label: "Marksman", role: "Sniper", cost: 220, cooldown: 2, tech: "recon", tip: "Rail rifle that pierces every body on its line (cover still stops it). Whatever it fires at is MARKED: allies hit it easier this turn." },
   { kind: "striker", label: "Striker", role: "Melee", cost: 340, cooldown: 2, tech: "assault", tip: "CHARGE: the strike order closes up to 5m for free before the blade lands, so anything within a lunge is already in reach." },
-  { kind: "heavy", label: "Heavy Gunner", role: "Suppression", cost: 250, cooldown: 2, tech: "assault", tip: "Machine-gun bursts SUPPRESS whoever they hit: one command point and a forced crouch next turn. Strays rake nearby targets." },
+  { kind: "heavy", label: "Heavy Gunner", role: "Suppression", cost: 250, cooldown: 2, tech: "assault", tip: "Machine-gun bursts SUPPRESS whoever they hit: one action point and a forced crouch next turn. Strays rake nearby targets." },
   { kind: "grenadier", label: "Grenadier", role: "Splash", cost: 250, cooldown: 3, tech: "ordnance", tip: "Arcing launcher with splash that clears cover and clusters. AIRBURST: a round that bursts on cover still lands half its hit on whoever hides behind it." },
   { kind: "mortar", label: "Mortar Team", role: "Indirect", cost: 280, cooldown: 3, tech: "ordnance", tip: "High-arc fire over walls and ridges. SMOKE order: a 3-turn cloud that swallows flat shots; arcing rounds sail over." },
   { kind: "medic", label: "Medic", role: "Frontline Support", cost: 180, cooldown: 2, tech: "support", tip: "Heals nearby infantry each turn. STABILISE: infantry killed within 6m go down instead of dying and come back at 30% if it stays close." },
@@ -254,7 +254,7 @@ export interface DefenseSpec {
 
 export const DEFENSE_CATALOG: readonly DefenseSpec[] = [
   { kind: "wall", label: "Blast Wall", role: "Barrier", cost: 130, tip: "Tall, tough barrier that blocks shots aimed at your base. Cannot be walked or built through." },
-  { kind: "turret", label: "Gun Turret", role: "Defense", cost: 210, tech: "assault", tip: "Stationary auto-cannon. Fires each turn for 1 CP; solid range and accuracy, but cannot move." },
+  { kind: "turret", label: "Gun Turret", role: "Defense", cost: 210, tech: "assault", tip: "Stationary auto-cannon. Fires each turn for 1 AP; solid range and accuracy, but cannot move." },
   { kind: "exturret", label: "Mortar Turret", role: "Siege", cost: 360, tech: "ordnance", tip: "Stationary splash battery: hits harder and soaks more than a gun turret. Clears cover and clusters; detonates if its magazine is hit." },
 ];
 

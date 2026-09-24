@@ -1579,11 +1579,11 @@ function safeStorageSet(key: string, value: string): boolean {
 const TUTORIAL_STEPS: Array<{ title: string; body: string }> = [
   { title: "Welcome, Commander", body: "Turn-based tactics. You start with only a Home Base. Learn the basics against an easy bot." },
   { title: "Select your base", body: "Click your blue Home Base. Its command deck opens at the bottom — from there you deploy troops, research tech, build defenses, and upgrade." },
-  { title: "Deploy a Recruit", body: "In the base deck, click Recruit, then click a spot inside the green ring to place rifle infantry there (click Recruit again to drop it beside the base). It costs money and the base's command point." },
+  { title: "Deploy a Recruit", body: "In the base deck, click Recruit, then click a spot inside the green ring to place rifle infantry there (click Recruit again to drop it beside the base). It costs money and the base's action point." },
   { title: "End the turn", body: "Press Space (or End Turn) to resolve the turn. Income is paid and your new troop is ready to act next turn." },
   { title: "Move a unit", body: "Select your Recruit and press M (Move). A cyan circle shows how far it can go this turn — click inside it to move." },
   { title: "Attack", body: "Press F (Shoot), click an enemy, pick a body part, and Confirm. The line preview shows cover, accuracy, and estimated damage." },
-  { title: "Build defenses and win", body: "From the base, build walls and turrets nearby and upgrade income and command points. Destroy the enemy base and every enemy unit to win." },
+  { title: "Build defenses and win", body: "From the base, build walls and turrets nearby and upgrade income and action points. Destroy the enemy base and every enemy unit to win." },
 ];
 let tutorialStep = 0;
 
@@ -1826,7 +1826,7 @@ function updateOnboardingHints(): void {
   // 6. Some units are done and others still have points: don't end the turn yet.
   const spent = squad.some((u) => u.commandPoints <= 0);
   const idle = squad.find((u) => u.commandPoints > 0 && (u.status.canMove || u.status.canShoot));
-  if (spent && idle) hintOnce("unspent", `${idle.name} still has command points — give every unit an order before pressing ${hintKey("endTurn")}.`);
+  if (spent && idle) hintOnce("unspent", `${idle.name} still has action points — give every unit an order before pressing ${hintKey("endTurn")}.`);
 }
 
 if (settings.reducedMotion) document.body.classList.add("reduced-motion");

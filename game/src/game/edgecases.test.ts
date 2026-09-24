@@ -37,7 +37,7 @@ describe("climbing (real maps)", () => {
     if (terrainHeightAt(onTop) - startH > 0) expect(s.elevation).toBeGreaterThanOrEqual(startH);
   });
 
-  it("a trooper walks up the Ironworks overpass ramp onto the deck; a tank (wider than the ramp) is refused without losing a CP", () => {
+  it("a trooper walks up the Ironworks overpass ramp onto the deck; a tank (wider than the ramp) is refused without losing a AP", () => {
     const sim = new TacticalSim();
     sim.configure(mapDef("ironworks"), "destroy", "normal");
     quietEnemy(sim);
@@ -115,7 +115,7 @@ describe("climbing (real maps)", () => {
 });
 
 describe("order edge cases", () => {
-  it("cancelling a queued move refunds the command point and removes the order", () => {
+  it("cancelling a queued move refunds the action point and removes the order", () => {
     const sim = new TacticalSim();
     sim.configure(mapDef("dustbowl"), "destroy", "normal");
     const s = sim.debugSpawn("soldier", "player", { x: -10, z: 0 });

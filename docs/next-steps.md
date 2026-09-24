@@ -72,14 +72,14 @@ Seat split in balance self-play is 35% (gate 35–65): at the edge; widen seeds 
 13. ~~Progression per game~~ DONE (costs roughly halved, nothing callable on turn 1): tech CHEAP to start so every game explores a path; the opening is
    limited (no air strikes at turn 1 -- strikes and defenses unlocked by tech, see item 4).
 
-14. **Money display** bottom-left is missed: make the treasury big and obvious.
+14. ~~Money display~~ DONE: a big amber money plate with next turn's income under it.
 15. **Map event zones** (lightning, slag, barrage...): hover shows what it is and when; click for more.
 16. **Strike (melee) reach**: a unit within strike range but not adjacent closes AND strikes in ONE order
    (the striker's charge, for every infantry melee), and the range is long enough to be usable.
 17. **Push ability** for infantry: shove a unit far; into water / off the map kills it, with a fun animation.
-18. **Unit action buttons cramped**: give the order grid room.
-19. **Rename CP to AP** (action points) everywhere, and the tutorial explains the system.
-20. **No objects near base spawns**: the deploy ring must be clear.
+18. ~~Unit action buttons cramped~~ DONE: wider floor, 10px gutters, taller buttons.
+19. ~~Rename CP to AP~~ DONE in every player-visible string (tutorial explanation: item 5).
+20. ~~No objects near base spawns~~ DONE: `BASE_CLEAR` keeps every deploy ring empty (props.test).
 21. **Rotatable placements**: a wall's facing and an airstrike's line direction are the player's choice.
 
 ## Next — in priority order

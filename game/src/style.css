@@ -5862,3 +5862,26 @@ body:has(.hotseat-handoff) .battle-loading { display: none; }
 .research-tag--unlock { background: var(--cyan); color: var(--cyan-ink); }
 .research-tag--upgrade { background: var(--amber); color: var(--amber-ink); }
 .research__head span { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* THE MONEY IS THE LOUDEST THING IN ITS CORNER (owner 2026-09-24: "users keep not seeing their money
+   amount"). A big number on an amber plate, with next turn's income under it. */
+.money-bar {
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  row-gap: 0;
+  padding: 8px 12px;
+  background: var(--amber);
+  border: var(--ink-w-panel, 3px) solid var(--ink);
+  box-shadow: var(--drop);
+}
+.money-bar__icon { grid-row: 1 / span 2; width: 34px; height: 34px; line-height: 30px; font-size: 1.2rem; background: var(--paper); color: var(--amber); }
+.money-bar__label { display: none; }
+.money-bar__value { grid-column: 2; font-size: 1.7rem; line-height: 1.05; color: var(--amber-ink); font-weight: 900; }
+.money-bar__value::before { opacity: 0.85; }
+.money-bar__income { grid-column: 2; font-size: var(--fs-small); font-weight: 800; color: var(--amber-ink); opacity: 0.85; }
+.panel.roster { max-height: calc(var(--stack-top, calc(100vh - 122px)) - 16px - 10px); }
+/* ORDER BUTTONS GET ROOM (owner 2026-09-24: "options of what a unit can do look cramped together").
+   Wider floor, 10px gutters, taller targets; the slot number and the cost sit on their own lines. */
+.action-grid { gap: 10px; grid-template-columns: repeat(auto-fill, minmax(clamp(136px, 9vw, 176px), 1fr)); }
+.action-grid .action { min-height: 54px; padding: 9px 12px 9px 32px; gap: 3px; align-content: center; }
+.action-grid .action > kbd { left: 9px; top: 50%; transform: translateY(-50%); }
