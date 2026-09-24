@@ -23,7 +23,7 @@ measured readability gates, and a whole-game glitch sweep whose findings were al
 
 ## Next — in priority order
 
-0. **Faction identity (2026-09-23)** landed on `claude/faction-identity-7pi5tb`: each faction owns
+0. **Faction identity (2026-09-23)** is merged to `main` (PR #3): each faction owns
    its own units, one strike and one doctrine rule (Rapid Response / Scavengers / Dig In), plus
    helmet colours and vehicle add-ons. Playtest all three against the bot; the numbers most likely
    to want tuning are the 30% bounty, the 0.75 dig-in multiplier and `enemyStrikeAct`'s threshold.

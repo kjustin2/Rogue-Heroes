@@ -141,6 +141,8 @@ async function run() {
     // The menu deploy is deferred behind a loading veil and the sim reads "command" the whole time,
     // so wait for the map we picked to actually be configured before spawning into it.
     await waitFor(() => js("window.__rht.sim.mapDef.id === 'dustbowl' && window.__rht.sim.phase === 'command'"), "command phase", 15000);
+    // The veil holds >=600ms after the deploy; a shot before it lifts is a spinner, not a battle.
+    await waitFor(() => js("!document.querySelector('.battle-loading')"), "loading veil gone", 10000);
     await assertCanvasPainted(js, "electron command");
     await shot(win, "command");
 
