@@ -42,6 +42,7 @@
     "shots:damage": "node scripts/shot-damage.mjs",
     "balance:factions": "vite-node src/game/factionMatchup.selfplay.ts",
     "shots:factions": "node scripts/shot-factions.mjs",
+    "measure:maps": "electron scripts/shots-gpu.cjs maps && node scripts/measure-maps.mjs",
     "measure:factions": "electron scripts/shots-gpu.cjs factionmeasure && node scripts/measure-factions.mjs",
     "shots:lineup": "node scripts/shot-lineup.mjs",
     "vision": "node improve/vision.mjs",

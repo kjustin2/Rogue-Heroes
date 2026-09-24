@@ -417,6 +417,17 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
 - `src/render/stage.ts` owns the composer; call `warmUp()` after staging new material
   kinds or the menu↔battle flip stalls on a shader relink. Tear down per-frame/per-swap
   groups via `disposeAndClear()`; `userData.shared` geometry is skipped.
+- **PAINTED TERRAIN** (2026-09-24, overhaul option 5). Every ground surface -- floor, plates, mesa tops -- shares
+  one world-space paint in the `applyCloudShadows` shader patch (`groundPaintUniforms`, set per map by
+  `setGroundPaint` from `GROUND_PAINT[theme.surface]`): two biome patch colours in soft noise blobs (one of them a
+  real DARK -- oil, wet mud, shadowed paving -- for the value plan), a worn LANE meandering base to base and a
+  trampled apron round each base. The plates keep off the lane via `laneDistance()`, which is the same curve as
+  the shader's -- change both together. The floor's vertex colours add CONTACT darkening at the foot of every
+  rise (`paintGround`), and the merged mesa side mesh wears an inverted-hull INK rim (`TERRAIN_INK`, one draw
+  call). Measured by `npm run measure:maps` (board region of `shots:gpu maps`: contrast, range, one-hue share;
+  `SHOT_PREFIX=before-` for a baseline): one-hue share fell from up to 68% to <= 59% on every map; contrast rose
+  on five of six, Ironworks flat (its frame is mostly grey slab tops). Goal (contrast >= 0.10) met on Verdant,
+  Causeway; Dust Bowl 0.100 edge; Crossfire 0.096, Ironworks 0.093, Karak 0.091 short.
 - **The ground detail layer** (`makeGroundDetail`) is one InstancedMesh per element kind (grass fans, pebbles, snow clumps, cinders, weeds), placed only on dry flat ground, bending in `windUniforms` (the same clock the cloud deck and tree sway use). Pebbles are 8-triangle octahedra on purpose — the 36-triangle version was 130k triangles on a large map. Costs are in `perf-baseline.json`; rebase after an intentional change.
 - **MAPS ARE MINIMAL, AND THERE IS ALWAYS ROOM FOR TWO TANKS** (owner, 2026-09-23: "way too many items on the board so it
   blocks movement... make each unique impactful and relevant"; "ensure enough space for 2 tanks to get through any space").

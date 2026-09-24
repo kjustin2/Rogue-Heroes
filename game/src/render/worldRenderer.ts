@@ -10,7 +10,7 @@ import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKin
 import { factionDef, type FactionId } from "../game/factions";
 import type { OrderKind, Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
 import { carpetDropPoints } from "../game/sim";
-import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type SkylineKind } from "../game/maps";
+import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type GroundSurfaceKind, type SkylineKind } from "../game/maps";
 import type { TroopKind } from "../game/units";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, climbsAlong, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
 import { kitGeometry, modelsVersion, propGeometry, toonGradient, vehicleGeometry, vehiclesKitReady, type KitPart, type PropsKind, type VehiclesPart } from "./models";
@@ -1152,8 +1152,10 @@ export class WorldRenderer {
     // MONOCHROME flags the image gate keeps raising on Dust Bowl. Vertex colours on a subdivided
     // floor add a slow, NON-repeating drift in both value and hue on top of it, for no extra draw
     // call and no second texture.
-    const floorGeometry = new THREE.BoxGeometry(width, 0.18, depth, 40, 1, 40);
+    const floorGeometry = new THREE.BoxGeometry(width, 0.18, depth, 96, 1, 96);
     paintMacroVariation(floorGeometry, new THREE.Color(theme.groundAccent).lerp(new THREE.Color(theme.ground), 0.4));
+    paintGround(floorGeometry);
+    setGroundPaint(theme);
     const floor = new THREE.Mesh(
       floorGeometry,
       new THREE.MeshStandardMaterial({
@@ -6498,6 +6500,83 @@ function paintMacroVariation(geometry: THREE.BufferGeometry, warm: THREE.Color):
 }
 
 /**
+ * PAINTED TERRAIN (2026-09-24, overhaul option 5). One ground tone per map read as a sheet of paper
+ * (`npm run measure:maps`: every board flat, one hue carrying up to 68% of the colour). Painted into
+ * the floor's vertex colours on top of the macro drift -- no texture, no draw call:
+ *  - a WORN LANE, meandering base to base, and a trampled APRON round each base (the story of where
+ *    the fighting goes);
+ *  - two biome PATCH colours from `GROUND_PAINT` (mud in the grass, rust on the slag, moss in the
+ *    paving, bare rock through the snow) in soft noise blobs;
+ *  - CONTACT darkening at the foot of every rise, so a mesa sits IN the ground instead of on it.
+ * Vertex colour multiplies `theme.ground`, so a target colour is written as its ratio to the ground.
+ */
+const GROUND_PAINT: Record<GroundSurfaceKind, { path: number; patches: [number, number] }> = {
+  cracked: { path: 0xc09a62, patches: [0x7a4226, 0x33221a] },
+  slag: { path: 0x7a7874, patches: [0x7c4a24, 0x121216] },
+  grass: { path: 0x8a6a42, patches: [0x3e2e1c, 0x8c8a3a] },
+  ice: { path: 0x8ea4b8, patches: [0x3a4654, 0xe4eef6] },
+  paved: { path: 0xa08050, patches: [0x44541f, 0x2e2418] },
+};
+
+/** GLSL smoothstep: 0 at e0, 1 at e1 (either order). */
+function smoothstep(e0: number, e1: number, x: number): number {
+  const t = clamp((x - e0) / (e1 - e0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+/** Distance from a point to the worn lane between the two bases (Infinity when there are none). */
+function laneDistance(x: number, z: number): number {
+  if (plateKeepClear.length < 2) return Infinity;
+  const [a, b] = plateKeepClear;
+  const dx = b.x - a.x, dz = b.z - a.z;
+  const len2 = dx * dx + dz * dz || 1;
+  const t = clamp(((x - a.x) * dx + (z - a.z) * dz) / len2, 0, 1);
+  // A lazy S-bend so the lane reads as walked, not ruled.
+  const len = Math.sqrt(len2);
+  const bend = Math.sin(t * Math.PI * 2) * Math.min(6, len * 0.06);
+  const cx = a.x + dx * t - (dz / len) * bend;
+  const cz = a.z + dz * t + (dx / len) * bend;
+  return Math.hypot(x - cx, z - cz);
+}
+
+function paintGround(geometry: THREE.BufferGeometry): void {
+  // Contact darkening at the foot of each rise (the patches and the lane are world-space shader
+  // paint, shared with the plates and the mesa tops -- see applyCloudShadows).
+  const position = geometry.getAttribute("position");
+  const color = geometry.getAttribute("color") as THREE.BufferAttribute;
+  const blocks = terrainBlocks();
+  for (let i = 0; i < position.count; i += 1) {
+    const x = position.getX(i);
+    const z = position.getZ(i);
+    let near = Infinity;
+    for (const bl of blocks) {
+      const d = Math.hypot(Math.max(bl.minX - x, x - bl.maxX, 0), Math.max(bl.minZ - z, z - bl.maxZ, 0));
+      if (d < near) near = d;
+    }
+    if (near >= 3.6) continue;
+    const k = 0.46 + 0.54 * smoothstep(0.2, 3.6, near);
+    color.setXYZ(i, color.getX(i) * k, color.getY(i) * k, color.getZ(i) * k);
+  }
+  color.needsUpdate = true;
+}
+
+/** Point the shared ground paint at this map: its biome colours and the lane between its bases. */
+function setGroundPaint(theme: MapTheme): void {
+  const paint = GROUND_PAINT[theme.surface ?? "cracked"];
+  groundPaintUniforms.uPaintA.value.setHex(paint.patches[0]);
+  groundPaintUniforms.uPaintB.value.setHex(paint.patches[1]);
+  groundPaintUniforms.uPaintPath.value.setHex(paint.path);
+  const [a, b] = plateKeepClear;
+  if (a && b) {
+    groundPaintUniforms.uBases.value.set(a.x, a.z, b.x, b.z);
+    groundPaintUniforms.uBend.value = Math.min(6, Math.hypot(b.x - a.x, b.z - a.z) * 0.06);
+  } else {
+    groundPaintUniforms.uBases.value.set(1e4, 1e4, 1e4 + 1, 1e4); // no bases (title diorama): no lane
+    groundPaintUniforms.uBend.value = 0;
+  }
+}
+
+/**
  * Sobel a normal map out of an albedo's luminance. The ground's detail — pebbles, cracks, grain —
  * is already drawn as light-over-dark, so its brightness IS a usable height field, and lighting
  * that relief is what turns a painted plane into a surface under a low sun. Far cheaper than
@@ -6832,11 +6911,20 @@ function makeSkyline(kind: SkylineKind, ground: THREE.Color, fog: THREE.Color, r
  * low-frequency structure is exactly the soft blotchy shape a cloud deck wants.
  */
 const cloudUniforms = { uCloudOffset: { value: new THREE.Vector2() } };
+// The ground paint every ground surface shares (floor, plates, mesa tops) -- set per map by setGroundPaint.
+const groundPaintUniforms = {
+  uPaintA: { value: new THREE.Color() },
+  uPaintB: { value: new THREE.Color() },
+  uPaintPath: { value: new THREE.Color() },
+  uBases: { value: new THREE.Vector4(1e4, 1e4, 1e4 + 1, 1e4) },
+  uBend: { value: 0 },
+};
 
 function applyCloudShadows(material: THREE.MeshStandardMaterial, noise: THREE.Texture): void {
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uCloudMap = { value: noise };
     shader.uniforms.uCloudOffset = cloudUniforms.uCloudOffset;
+    Object.assign(shader.uniforms, groundPaintUniforms);
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", `#include <common>
 varying vec2 vCloudXZ;`)
@@ -6846,15 +6934,43 @@ vCloudXZ = (modelMatrix * vec4(transformed, 1.0)).xz;`);
       .replace("#include <common>", `#include <common>
 varying vec2 vCloudXZ;
 uniform sampler2D uCloudMap;
-uniform vec2 uCloudOffset;`)
+uniform vec2 uCloudOffset;
+uniform vec3 uPaintA;
+uniform vec3 uPaintB;
+uniform vec3 uPaintPath;
+uniform vec4 uBases;
+uniform float uBend;`)
       .replace("#include <map_fragment>", `#include <map_fragment>
 // ~85 world units per cloud, so a shadow is a feature of the map rather than of a texture.
 float cloud = texture2D(uCloudMap, vCloudXZ / 85.0 + uCloudOffset).g;
 // Shallow: 0.86 to 1.0. Deeper reads as dirt rather than weather.
-diffuseColor.rgb *= mix(0.86, 1.0, smoothstep(0.35, 0.72, cloud));`);
+diffuseColor.rgb *= mix(0.86, 1.0, smoothstep(0.35, 0.72, cloud));
+#ifdef USE_MAP
+{
+  // GROUND PAINT (overhaul option 5): two biome patch colours in soft world-space blobs, then the
+  // worn lane between the bases and a trampled apron round each. The texture's detail is kept.
+  // Same fields and lane as laneDistance() in TS -- the plates skip the lane by that function.
+  vec2 p = vCloudXZ;
+  vec3 tex = sampledDiffuseColor.rgb;
+  float fa = sin(p.x * 0.083 + 0.6) * cos(p.y * 0.071 - 1.3) + 0.45 * sin((p.x - p.y) * 0.151 + 2.1);
+  float fb = sin(p.x * 0.057 - 2.2) * cos(p.y * 0.093 + 0.8) + 0.45 * cos((p.x + p.y) * 0.127 - 0.5);
+  float wa = smoothstep(0.5, 0.85, fa);
+  float wb = smoothstep(0.52, 0.88, fb) * (1.0 - wa);
+  diffuseColor.rgb = mix(diffuseColor.rgb, uPaintA * tex, wa * 0.85);
+  diffuseColor.rgb = mix(diffuseColor.rgb, uPaintB * tex, wb * 0.8);
+  vec2 A = uBases.xy;
+  vec2 AB = uBases.zw - A;
+  float L = max(length(AB), 0.001);
+  float t = clamp(dot(p - A, AB) / (L * L), 0.0, 1.0);
+  vec2 lc = A + AB * t + vec2(-AB.y, AB.x) / L * sin(t * 6.2831853) * uBend;
+  float lane = 1.0 - smoothstep(1.4, 3.4, distance(p, lc));
+  float apron = max(1.0 - smoothstep(5.5, 9.0, distance(p, A)), 1.0 - smoothstep(5.5, 9.0, distance(p, uBases.zw)));
+  diffuseColor.rgb = mix(diffuseColor.rgb, uPaintPath * tex, max(lane * 0.8, apron * 0.7));
+}
+#endif`);
   };
   // A distinct cache key so this variant compiles and warms separately from the plain one.
-  material.customProgramCacheKey = () => "cloudshadow";
+  material.customProgramCacheKey = () => "cloudshadow-paint";
 }
 
 /**
@@ -7144,6 +7260,7 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
       // across a channel hid the whole crossing under ice-coloured ground. Skip any patch whose
       // widest possible rim could touch a water rect (the three blobs spread ±4.5m from the centre).
       if (plateKeepClear.some((c) => Math.hypot(cx - c.x, cz - c.z) < 6 + 4.5 + 4)) continue;
+      if (laneDistance(cx, cz) < 8) continue; // the worn lane is bare ground (paintGround)
       const reach = 15 * 1.52 + 4.5;
       if (terrainWater().some((w) => cx > w.minX - reach && cx < w.maxX + reach && cz > w.minZ - reach && cz < w.maxZ + reach
         && Math.max(w.minX - cx, cx - w.maxX, 0) + Math.max(w.minZ - cz, cz - w.maxZ, 0) < 6 + 4.5)) continue;
@@ -7240,6 +7357,8 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
  */
 // Thickness of a rise's cap slab (shared by visualGroundAt and makeTerrainBlocks).
 const CAP = 0.1;
+// Terrain ink rim thickness (world units) -- a touch heavier than a vehicle's, it is seen from farther.
+const TERRAIN_INK = 0.045;
 function visualGroundAt(point: Vec2): number {
   let height = terrainHeightAt(point);
   for (const block of terrainBlocks()) {
@@ -7276,6 +7395,7 @@ function makeTerrainBlocks(groundColor: number, accentColor: number, surface: Gr
     x: number, y: number, z: number,
     yaw = 0, tilt = 0, bevel = 0.12,
     faces?: { east: boolean; west: boolean; north: boolean; south: boolean },
+    strata = 1,
   ): void => {
     const geo = new RoundedBoxGeometry(sx, sy, sz, 1, Math.min(Math.min(sx, sy, sz) * 0.45, bevel));
     if (faces) {
@@ -7286,7 +7406,9 @@ function makeTerrainBlocks(groundColor: number, accentColor: number, surface: Gr
         const nz = normal.getZ(i);
         const climbable = Math.abs(nx) >= Math.abs(nz) ? (nx > 0 ? faces.east : faces.west) : (nz > 0 ? faces.north : faces.south);
         const c = climbable ? ledgeColor : cliffColor;
-        colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+        // STRATA: the tiers alternate value, and a face's upper vertices catch a lighter weathered lip.
+        const lip = normal.getY(i) > 0.5 ? 1.18 : 1;
+        colors[i * 3] = c.r * strata * lip; colors[i * 3 + 1] = c.g * strata * lip; colors[i * 3 + 2] = c.b * strata * lip;
       }
       geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
     }
@@ -7323,9 +7445,10 @@ function makeTerrainBlocks(groundColor: number, accentColor: number, surface: Gr
       north: block.height - outside(cx, block.maxZ + 0.3) <= TERRAIN_STEP + 0.01,
       south: block.height - outside(cx, block.minZ - 0.3) <= TERRAIN_STEP + 0.01,
     };
-    for (const [spread, y0, y1] of tiers) {
+    const STRATA = [0.74, 1.0, 1.16];
+    for (const [ti, [spread, y0, y1]] of tiers.entries()) {
       const h = Math.max(0.05, y1 - y0);
-      push(sides, w + spread * 2, h, d + spread * 2, cx, y0 + h / 2, cz, 0, 0, Math.min(0.22, h * 0.4), faces);
+      push(sides, w + spread * 2, h, d + spread * 2, cx, y0 + h / 2, cz, 0, 0, Math.min(0.22, h * 0.4), faces, STRATA[ti]);
     }
 
     push(caps, w + 0.02, CAP, d + 0.02, cx, block.height - CAP / 2, cz, 0, 0, 0.03);
@@ -7341,6 +7464,21 @@ function makeTerrainBlocks(groundColor: number, accentColor: number, surface: Gr
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
+  }
+  if (sideGeo) {
+    // TERRAIN INK (2026-09-24): the same inverted-hull rim the units and machines wear, so a rise is
+    // drawn in the toon language instead of fading into the ground at its own value. The side mesh
+    // pushed out along its normals, drawn BackSide in near-black ground. One draw call for the map.
+    const ink = sideGeo.clone();
+    const pos = ink.getAttribute("position");
+    const nrm = ink.getAttribute("normal");
+    for (let i = 0; i < pos.count; i += 1) {
+      pos.setXYZ(i, pos.getX(i) + nrm.getX(i) * TERRAIN_INK, pos.getY(i) + nrm.getY(i) * TERRAIN_INK, pos.getZ(i) + nrm.getZ(i) * TERRAIN_INK);
+    }
+    ink.deleteAttribute("color");
+    const rim = new THREE.Mesh(ink, new THREE.MeshBasicMaterial({ color: new THREE.Color(groundColor).multiplyScalar(0.16), side: THREE.BackSide }));
+    rim.name = "terrain-ink";
+    group.add(rim);
   }
   if (capGeo) {
     // The caps share the ground's own surface, tiled in world space so a mesa top continues the
