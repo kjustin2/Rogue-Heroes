@@ -1729,14 +1729,21 @@ function safeStorageSet(key: string, value: string): boolean {
 }
 
 // ---- Tutorial ----
+// QUICK BUT COMPLETE (owner 2026-09-24): one idea per card, one or two sentences each, and every
+// basic a first game raises -- AP, both sides moving at once, where a shot lands on a moving target,
+// cooldowns, cover, climbing, capture, push -- answered before it is asked.
 const TUTORIAL_STEPS: Array<{ title: string; body: string }> = [
-  { title: "Welcome, Commander", body: "Turn-based tactics. You start with only a Home Base. Learn the basics against an easy bot." },
-  { title: "Select your base", body: "Click your blue Home Base. Its command deck opens at the bottom — from there you deploy troops, research tech, build defenses, and upgrade." },
-  { title: "Deploy a Recruit", body: "In the base deck, click Recruit, then click a spot inside the green ring to place rifle infantry there (click Recruit again to drop it beside the base). It costs money and the base's action point." },
-  { title: "End the turn", body: "Press Space (or End Turn) to resolve the turn. Income is paid and your new troop is ready to act next turn." },
-  { title: "Move a unit", body: "Select your Recruit and press M (Move). A cyan circle shows how far it can go this turn — click inside it to move." },
-  { title: "Attack", body: "Press F (Shoot), click an enemy, pick a body part, and Confirm. The line preview shows cover, accuracy, and estimated damage." },
-  { title: "Build defenses and win", body: "From the base, build walls and turrets nearby and upgrade income and action points. Destroy the enemy base and every enemy unit to win." },
+  { title: "Plan, then watch", body: "Each turn you give orders, then End Turn plays them out. Both sides act at the SAME time — the enemy is planning while you are." },
+  { title: "Action points (AP)", body: "Every unit gets 2 AP a turn; your Home Base gets 1. Each order — move, shoot, strike, push, crouch — costs 1 AP. Unspent AP is lost when the turn ends." },
+  { title: "Deploy a Recruit", body: "Click your blue Home Base, then Recruit in its Deploy tab, then a spot inside the green ring. That spends the base's 1 AP and the Recruit's price." },
+  { title: "Money and research", body: "Your money is the gold plate bottom-left, with next turn's income under it. The Tech tab unlocks NEW UNITS, defenses and support; UPGRADE cards boost what you already have." },
+  { title: "Move", body: "Select a unit and press M. The cyan ring is how far it can go this turn; the path shows ▲ CLIMB where it steps up onto higher ground." },
+  { title: "Shoot", body: "Press F, click an enemy, pick a body part, Confirm. Your unit fires at where the target IS when the shot goes off — it follows a unit that moved, but a runner can still outpace the round." },
+  { title: "Strike and Push", body: "Strike (B) rushes up to 3.5m and hits in one order. Push shoves a unit far away — into water or off the edge of the map, it is gone." },
+  { title: "Cover and climbing", body: "Units crouched beside cover take less damage. Click a low prop to Climb it for height; tall walls and cliffs block movement and shots." },
+  { title: "Support powers", body: "Once researched, the Support tab calls in a strike or a utility for money. It then cools down for a few turns before you can call — and pay for — it again." },
+  { title: "Hazards and capture", body: "Rings on the ground warn of lightning, barrages or slag: hover one to see what lands when you end the turn. Stand a unit beside a derelict turret or supply depot for a turn to capture it." },
+  { title: "Win", body: "Destroy the enemy Home Base and every enemy unit. Press Space to end your turn — good luck, Commander." },
 ];
 let tutorialStep = 0;
 
@@ -1889,7 +1896,7 @@ function clearToasts(): void {
   document.getElementById("toasts")?.replaceChildren();
 }
 
-// First-time onboarding hints beyond the 7-step tutorial — each fires once ever (persisted to
+// First-time onboarding hints beyond the 11-card tutorial — each fires once ever (persisted to
 // localStorage) and never during the tutorial itself. Reuses the existing toast surface.
 const HINTS_KEY = "rht.hints.v1";
 const seenHints = ((): Set<string> => {

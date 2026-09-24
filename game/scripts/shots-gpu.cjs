@@ -167,6 +167,10 @@ app.whenReady().then(async () => {
         await js(`(() => { const b = document.querySelector('[data-tut="next"]'); if (b) b.click(); })()`);
         await sleep(1500);
         await shot("tutorial-2");
+        // The longest card (Shoot: how a shot treats a moving target), for fit.
+        for (let i = 0; i < 4; i += 1) await js(`(() => { const b = document.querySelector('[data-tut="next"]'); if (b) b.click(); })()`);
+        await sleep(800);
+        await shot("tutorial-shoot");
         await js(`(() => { const b = document.querySelector('[data-tut="exit"]'); if (b) b.click(); })()`);
         await sleep(400);
         continue;

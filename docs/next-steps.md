@@ -57,7 +57,7 @@ Seat split in balance self-play is 35% (gate 35–65): at the edge; widen seeds 
 4. ~~Tech unlocks new Defenses and Support powers~~ DONE: Gun Turret behind Assault, Mortar Turret behind
    Ordnance; each faction has a strike + a utility power (Recon Sweep / Smoke Screen / Resupply Drop), all
    research-gated.
-5. **Tutorial**: quick but complete — aim follows a moving target or its old spot? support cooldown +
+5. ~~Tutorial~~ DONE (11 one-idea cards: AP, simultaneous turns, shots at movers, climb, strike/push, cover, support cooldowns, hazards, capture): quick but complete — aim follows a moving target or its old spot? support cooldown +
    re-buy, CP, climb, capture, cover, deploy ring, End Turn resolves both sides at once.
 6. **Faction identity, much stronger** in look AND play (they still read alike).
 7. **Look-and-feel overhaul** (toon, "AAA"): infantry up to the tank's quality bar; maps and map props
