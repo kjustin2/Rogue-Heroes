@@ -1493,6 +1493,10 @@ describe("defenses, difficulty, and base upgrades", () => {
     const sim = new TacticalSim([base]);
     sim.economy.set("player", 1500);
     sim.select("p-base-1");
+    sim.setPendingBuild("turret");
+    expect(sim.queueBuildStructure({ x: -10.5, z: -5 })).toBe(false); // the Gun Turret needs a doctrine now
+    expect(sim.log[0]).toContain("Assault Doctrine");
+    base.unlockedTech = ["assault"];
 
     sim.setPendingBuild("turret");
     // Too far from the base.
@@ -1676,6 +1680,8 @@ describe("tactical enemy AI", () => {
     const sim = new TacticalSim([base, enemyBase, victim]);
     sim.economy.set("player", 1000);
     base.commandPoints = 1;
+    expect(sim.supportFailureReason(base, "airstrike")).toMatch(/Support Wing/); // nothing callable on turn 1
+    base.unlockedTech = ["recon", "support"];
     sim.select("p-base-1");
     sim.setPendingSupport("airstrike");
     expect(sim.queueSupportAt({ x: 4, z: 0 })).toBe(true);
@@ -1717,7 +1723,7 @@ describe("tactical enemy AI", () => {
     expect(cluster.sim.supportFailureReason(cluster.base, "cluster")).toBeUndefined();
 
     const laser = staged("bastion");
-    expect(laser.sim.supportFailureReason(laser.base, "laser")).toMatch(/Siege/i);
+    expect(laser.sim.supportFailureReason(laser.base, "laser")).toMatch(/Armor Bay/i);
 
     const base = laser.base;
     const sim = laser.sim;

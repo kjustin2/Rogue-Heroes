@@ -47,11 +47,17 @@ describe("faction rosters differ", () => {
     }
   });
 
-  it("gives every faction exactly one strike, and no two the same", () => {
-    const strikes = FACTIONS.map((f) => f.supports);
-    for (const s of strikes) expect(s.length).toBe(1);
-    expect(new Set(strikes.flat()).size).toBe(FACTIONS.length);
-    for (const s of strikes.flat()) expect(SUPPORT_POWERS.some((p) => p.kind === s)).toBe(true);
+  it("gives every faction two support powers of its own, all unlocked by its own research", () => {
+    const all = FACTIONS.flatMap((f) => f.supports);
+    for (const f of FACTIONS) expect(f.supports.length).toBe(2);
+    expect(new Set(all).size).toBe(all.length); // nothing shared
+    for (const f of FACTIONS) for (const kind of f.supports) {
+      const spec = SUPPORT_POWERS.find((p) => p.kind === kind);
+      expect(spec, kind).toBeDefined();
+      // Nothing is callable on turn 1 (owner 2026-09-24): every power needs a doctrine this faction can research.
+      expect(spec!.tech, `${kind} has no tech gate`).toBeDefined();
+      expect(f.tech.includes(spec!.tech!), `${f.id} cannot research ${spec!.tech} for ${kind}`).toBe(true);
+    }
   });
 
   it("names only units it fields, and the sim uses those names", () => {

@@ -134,6 +134,10 @@ const DIFFICULTY_MODS: Record<Difficulty, DifficultyMods> = {
 const RESOLVE_SETTLE_TIMEOUT = 18;
 const RESOLVE_HARD_CEILING = 20;
 
+// Support powers that land damage (the bot's strike logic only drops these on a crowd).
+const DAMAGING_SUPPORT: ReadonlySet<SupportPowerKind> = new Set<SupportPowerKind>(["airstrike", "cluster", "laser"]);
+const RESUPPLY_RADIUS = 4;
+const RESUPPLY_HEAL = 40;
 // Half-angle of a unit's FRONT: a shot from outside this ±60° wedge around its facing flanks it.
 const FRONT_ARC_HALF = Math.PI / 3;
 // Salvage economy: each vehicle wreck holds this much money, stripped this fast by an
@@ -176,7 +180,7 @@ const SLAM_LANDING_DAMAGE = 15;
 // Metres a piercing round carries on past a body it went through.
 const PIERCE_CARRY = 7;
 
-type StrikeKind = "barrage" | "collapse" | "airstrike" | "cluster" | "laser" | "lightning" | "slag";
+type StrikeKind = "barrage" | "collapse" | "airstrike" | "cluster" | "laser" | "lightning" | "slag" | "smokedrop" | "resupply";
 const LIGHTNING_RADIUS = 2.0;
 
 // Gas clouds (see runGasTick / igniteGasAt).
@@ -542,7 +546,7 @@ export class TacticalSim {
   // The support power awaiting a ground target when intent is "support" (set by the HUD).
   pendingSupport: SupportPowerKind | undefined;
   // Support strikes committed this command phase; they fly in during the next resolve.
-  private queuedSupport: { kind: SupportPowerKind; point: Vec2; dir: Vec2 }[] = [];
+  private queuedSupport: { kind: SupportPowerKind; point: Vec2; dir: Vec2; team?: Team }[] = [];
   // Timed one-shot visual events (strike jets, orbital beams) played during a resolve.
   private pendingFx: { at: number; type: VisualEvent["type"]; from: Vec2; to: Vec2; color: number; duration: number; radius?: number; fired?: boolean }[] = [];
 
@@ -561,7 +565,7 @@ export class TacticalSim {
   private forcedSandstorm = false;
   private forcedIonStorm = false;
   private forcedZones: { kind: MapEventKind; x: number; z: number; radius: number }[] = [];
-  private pendingStrikes: { at: number; point: Vec2; radius: number; damage: number; kind: StrikeKind; fired?: boolean }[] = [];
+  private pendingStrikes: { at: number; point: Vec2; radius: number; damage: number; kind: StrikeKind; team?: Team; fired?: boolean }[] = [];
   private strikeClock = 0;
 
   constructor(init?: CombatEntity[] | { map?: MapDef; mode?: ModeId }) {
@@ -1750,7 +1754,7 @@ export class TacticalSim {
     spendCommandPoint(base);
     this.addMoney(base.team, -spec.cost);
     base.supportCooldowns = { ...(base.supportCooldowns ?? {}), [kind]: this.supportCooldownFor(base.team, kind) };
-    this.queuedSupport.push({ kind, point: target, dir });
+    this.queuedSupport.push({ kind, point: target, dir, team: base.team });
     if (base.team === "player") {
       this.pendingSupport = undefined;
       this.intent = "select";
@@ -1758,7 +1762,10 @@ export class TacticalSim {
     this.pushLog(
       kind === "airstrike" ? `${base.name} tasks a strike wing — bombs on the next resolve`
       : kind === "cluster" ? `${base.name} authorizes a cluster strike — saturation on the next resolve`
-      : `${base.name} requests the orbital lance — beam on the next resolve`,
+      : kind === "laser" ? `${base.name} requests the orbital lance — beam on the next resolve`
+      : kind === "reconsweep" ? `${base.name} sends a spotter plane — the enemy's next orders will be revealed`
+      : kind === "smokescreen" ? `${base.name} calls smoke on the point — it blooms on the next resolve`
+      : `${base.name} calls a resupply drop — crates land on the next resolve`,
     );
     return true;
   }
@@ -1786,6 +1793,22 @@ export class TacticalSim {
           const p = clampToArena({ x: point.x + Math.sin(angle) * r, z: point.z + Math.cos(angle) * r });
           this.pendingStrikes.push({ at: 1.1 + i * 0.09, point: p, radius: 1.35, damage: 24, kind: "cluster" });
         }
+      } else if (kind === "reconsweep") {
+        // Pure intel: the same reveal the drone operator's pulse gives, for the caller's side. Set
+        // here, after endTurn has cleared last turn's reveal, so it covers the NEXT command phase.
+        this.revealedOrders = true;
+        this.revealedTeam = call.team ?? "player";
+        this.enemyIntentCache = undefined;
+        const from = clampToArena({ x: point.x - dir.x * 16, z: point.z - dir.z * 16 });
+        const to = clampToArena({ x: point.x + dir.x * 16, z: point.z + dir.z * 16 });
+        this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: 0x9dd8ff, duration: 1.6 });
+      } else if (kind === "smokescreen") {
+        this.pendingStrikes.push({ at: 0.9, point, radius: SMOKE_RADIUS, damage: 0, kind: "smokedrop", team: call.team });
+      } else if (kind === "resupply") {
+        const from = clampToArena({ x: point.x - dir.x * 14, z: point.z - dir.z * 14 });
+        const to = clampToArena({ x: point.x + dir.x * 14, z: point.z + dir.z * 14 });
+        this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: 0x9ef0b8, duration: 1.5 });
+        this.pendingStrikes.push({ at: 1.0, point, radius: RESUPPLY_RADIUS, damage: 0, kind: "resupply", team: call.team });
       } else {
         // The lance burns for ~2s and its detonations sweep down the line with it.
         const from = clampToArena({ x: point.x - dir.x * 4.5, z: point.z - dir.z * 4.5 });
@@ -1809,6 +1832,7 @@ export class TacticalSim {
     const spec = defenseSpec(kind);
     const buildFaction = this.factionOf(base.team);
     if (!buildFaction.defenses.includes(kind)) return `${spec.label} is not a ${buildFaction.name} emplacement`;
+    if (spec.tech && !isTechUnlocked(base, spec.tech)) return `Research ${techNode(spec.tech)?.name ?? "the required doctrine"} to unlock ${spec.label}`;
     if (this.money(base.team) < spec.cost) return `Not enough money for ${spec.label} ($${spec.cost})`;
     if (dist(point, base.position) > this.defensePlacementRadius(base)) return `Place ${spec.label} closer to the base`;
     if (terrainHeightAt(point) > 1.2) return "Cannot build on a cliff top";
@@ -2333,7 +2357,7 @@ export class TacticalSim {
         smokeClouds?: { id: string; x: number; z: number; radius: number; turnsLeft: number }[];
         revealedOrders?: boolean;
         revealedTeam?: Team;
-        queuedSupport?: { kind: SupportPowerKind; point: Vec2; dir: Vec2 }[];
+        queuedSupport?: { kind: SupportPowerKind; point: Vec2; dir: Vec2; team?: Team }[];
         hotseat?: boolean;
         mines?: { id: string; x: number; z: number; team: Team }[];
         pickups?: { id: string; x: number; z: number; amount: number }[];
@@ -2398,7 +2422,7 @@ export class TacticalSim {
       this.pendingSupport = undefined;
       // A support call is paid for (money, command point, cooldown) when it is queued; dropping it
       // on a save/load would take all three and deliver nothing.
-      this.queuedSupport = (data.queuedSupport ?? []).map((c) => ({ kind: c.kind, point: { ...c.point }, dir: { ...c.dir } }));
+      this.queuedSupport = (data.queuedSupport ?? []).map((c) => ({ kind: c.kind, point: { ...c.point }, dir: { ...c.dir }, team: c.team }));
       this.pendingFx = [];
       this.resolveClock = 0;
       this.selectedId = this.entities.find((e) => e.team === "player" && isBuildingKind(e.kind))?.id ?? this.entities[0]?.id ?? "";
@@ -5060,7 +5084,8 @@ export class TacticalSim {
 
   private enemyStrikeAct(base: CombatEntity): boolean {
     const foe: Team = base.team === "enemy" ? "player" : "enemy";
-    const kind = this.factionOf(base.team).supports.find((k) => !this.supportFailureReason(base, k));
+    // Only a STRIKE is worth dropping on a crowd; the utility powers (recon / smoke / resupply) are not bombs.
+    const kind = this.factionOf(base.team).supports.find((k) => DAMAGING_SUPPORT.has(k) && !this.supportFailureReason(base, k));
     if (!kind || this.money(base.team) < supportPowerSpec(kind).cost + 150) return false;
     const hostiles = this.fieldUnits(foe).filter((e) => !e.flying && !e.carriedById && !e.downed);
     const friends = this.entities.filter((e) => e.team === base.team && e.status.alive && !e.flying && e.kind !== "base");
@@ -5448,7 +5473,27 @@ export class TacticalSim {
   // A single environmental detonation: a blast effect plus AoE damage to anything in range
   // (both teams — it's the battlefield, not a unit's attack). Bases are spared so the sky can't
   // hand someone the win.
-  private detonateStrike(strike: { point: Vec2; radius: number; damage: number; kind: StrikeKind }): void {
+  private detonateStrike(strike: { point: Vec2; radius: number; damage: number; kind: StrikeKind; team?: Team }): void {
+    // Utility support powers land a payload, not a blast.
+    if (strike.kind === "smokedrop") {
+      this.smokeClouds.push({ id: `smoke-${++this.effectSeq}`, x: strike.point.x, z: strike.point.z, radius: SMOKE_RADIUS, turnsLeft: SMOKE_TURNS });
+      this.effect("blast", strike.point, strike.point, SMOKE_COLOR, 0.9, SMOKE_RADIUS);
+      this.pushLog("The smoke screen blooms — flat shots through it are lost");
+      return;
+    }
+    if (strike.kind === "resupply") {
+      let helped = 0;
+      for (const e of this.entities) {
+        if (!e.status.alive || e.team !== strike.team || e.kind === "base" || isDefenseKind(e.kind) || e.kind === "cover") continue;
+        if (dist(e.position, strike.point) > strike.radius + e.radius) continue;
+        this.healEntity(e, RESUPPLY_HEAL);
+        e.grenades = e.maxGrenades;
+        helped += 1;
+      }
+      this.effect("ping", strike.point, strike.point, 0x9ef0b8, 0.9, strike.radius);
+      this.pushLog(helped ? `Resupply lands — ${helped} unit${helped === 1 ? "" : "s"} patched up and rearmed` : "Resupply lands on empty ground");
+      return;
+    }
     if (strike.kind === "lightning") {
       // The bolt: a beam effect from the sky to the point, then the blast. Sets gas off like any
       // other blast, and the ground burns briefly where it lands.

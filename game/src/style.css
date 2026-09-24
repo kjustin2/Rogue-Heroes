@@ -5856,3 +5856,9 @@ body:has(.pause-overlay) .mission-intro { display: none; }
 /* The 2-player handoff card replaces the deploy veil: the veil's "Deploying to <map>" was still
    fading underneath when the card mounted, two sets of words in one place (UI audit 2026-09-23). */
 body:has(.hotseat-handoff) .battle-loading { display: none; }
+/* Tech tree: every card says what KIND of research it is (owner 2026-09-24: "which are upgrades and
+   which unlock more units"). Cyan = new units / defenses / strikes; amber = an upgrade to what you have. */
+.research-tag { justify-self: start; font-style: normal; font-weight: 800; font-size: var(--fs-micro); letter-spacing: 0.08em; padding: 1px 6px; border: 2px solid var(--ink); border-radius: 3px; }
+.research-tag--unlock { background: var(--cyan); color: var(--cyan-ink); }
+.research-tag--upgrade { background: var(--amber); color: var(--amber-ink); }
+.research__head span { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

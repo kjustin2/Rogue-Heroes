@@ -39,7 +39,8 @@ export interface FactionDef {
   /** Which tech node ids it may research. Filters TECH_TREE. */
   tech: readonly string[];
   defenses: readonly DefenseKind[];
-  /** Its signature off-map strike. Exactly one per faction, and no two factions share one. */
+  /** Its two off-map support powers: one STRIKE and one utility, both its own (no two factions
+   *  share one), each unlocked by a doctrine in its own tree. */
   supports: readonly SupportPowerKind[];
   /** Team colour accent, also used for the UI chrome. */
   accent: number;
@@ -72,7 +73,7 @@ export interface FactionDef {
 //   Bastion   -- fortress: Mortar, Engineer, Artillery, Bomber, Mortar Turret. Nothing fast.
 // The Heavy Gunner is CORE: whoever lacked it lost AI-vs-AI games outright (Bastion-only, Bastion
 // beat Vanguard 22-3; with Vanguard and Bastion only, the Syndicate won 10 of 96).
-// Each also has one doctrine rule (see FactionDoctrine) and one signature strike. Every faction
+// Each also has one doctrine rule (see FactionDoctrine) and two support powers of its own. Every faction
 // keeps a tech-free opener, an answer to armour and an answer to air -- factions.test.ts asserts
 // all three. `tech` lists what a faction may RESEARCH, which is wider than its roster wherever a
 // node is only a prerequisite.
@@ -85,7 +86,7 @@ export const FACTIONS: readonly FactionDef[] = [
     roster: ["soldier", "scout", "sniper", "jumper", "heavy", "medic", "tank", "flak", "gunship", "interceptor", "transport"],
     tech: ["recon", "assault", "support", "armor", "airwing", "breach", "bulwark", "plating", "hunter", "triage", "welding", "optics", "ghillie"],
     defenses: ["wall", "turret"],
-    supports: ["airstrike"],
+    supports: ["airstrike", "reconsweep"],
     accent: 0x8cefff,
     aiPreference: ["tank", "gunship", "heavy", "jumper", "sniper", "scout"],
     aiTechPath: ["assault", "armor", "airwing"],
@@ -105,7 +106,7 @@ export const FACTIONS: readonly FactionDef[] = [
     roster: ["soldier", "sniper", "heavy", "striker", "grenadier", "flamer", "sapper", "droneop", "medic", "apc", "flak"],
     tech: ["recon", "assault", "support", "ordnance", "armor", "breach", "bulwark", "thermobarics", "cluster", "triage", "welding", "optics", "ghillie"],
     defenses: ["wall", "turret"],
-    supports: ["cluster"],
+    supports: ["cluster", "smokescreen"],
     accent: 0xffca6b,
     aiPreference: ["flamer", "striker", "grenadier", "sapper", "apc", "droneop"],
     aiTechPath: ["assault", "ordnance", "armor"],
@@ -126,7 +127,7 @@ export const FACTIONS: readonly FactionDef[] = [
     roster: ["soldier", "sniper", "heavy", "mortar", "medic", "engineer", "tank", "artillery", "flak", "bomber"],
     tech: ["recon", "assault", "support", "ordnance", "armor", "siege", "airwing", "bulwark", "plating", "thermobarics", "cluster", "triage", "welding", "optics", "ghillie"],
     defenses: ["wall", "turret", "exturret"],
-    supports: ["laser"],
+    supports: ["laser", "resupply"],
     accent: 0x9ef0b8,
     aiPreference: ["tank", "heavy", "artillery", "mortar", "engineer"],
     aiTechPath: ["assault", "armor", "siege"],

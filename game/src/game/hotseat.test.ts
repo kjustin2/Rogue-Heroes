@@ -133,6 +133,7 @@ describe("hotseat", () => {
     const sim = new TacticalSim([base, enemyBase, victim]);
     sim.economy.set("player", 1000);
     base.commandPoints = 1;
+    base.unlockedTech = ["recon", "support"]; // the Airstrike needs Support Wing (nothing is callable on turn 1)
     sim.select("p-base-1");
     sim.setPendingSupport("airstrike");
     expect(sim.queueSupportAt({ x: 4, z: 0 })).toBe(true);

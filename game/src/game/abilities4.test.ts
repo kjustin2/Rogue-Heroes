@@ -23,6 +23,9 @@ describe("grenadier airburst", () => {
     const wall = sim.debugCover("pillar", { x: 0, z: 0 });
     const target = sim.debugSpawn("soldier", "enemy", { x: wall.radius + 0.8, z: 0 });
     disarm(target);
+    // The bot shares the sim's rng: with research cheap it now buys tech on turn 1, which shifts the
+    // accuracy roll this test depends on. Broke bot = the same draw every run.
+    sim.economy.set("enemy", 0);
     target.stance = "crouched";
     const before = hp(target);
     sim.debugSelect(grenadier.id);

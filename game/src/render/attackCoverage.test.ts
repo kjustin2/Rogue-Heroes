@@ -327,7 +327,7 @@ describe("every non-gun attack has an animation", () => {
     expect(trace.effects.has("blast")).toBe(true);
   });
 
-  it("support powers: every one flies in and bursts on the ground", () => {
+  it("support powers: strikes fly in and burst; utility powers are delivered and harm no one", () => {
     for (const power of SUPPORT_POWERS) {
       const sim = new TacticalSim([pinned(createHeavy("t", "T", "enemy", { x: 2, z: 0 }))]);
       // Straight into the resolve queue: which faction may call which power is roster data (and is
@@ -336,9 +336,16 @@ describe("every non-gun attack has an animation", () => {
         .queuedSupport.push({ kind: power.kind, point: { x: 2, z: 0 }, dir: { x: 1, z: 0 } });
       const trace = resolve(sim, [sim.entity("t")!]);
       const delivery = trace.effects.has("jet") || trace.effects.has("beam") || trace.rounds.length > 0;
-      expect(delivery, `${power.kind}: nothing flies in (${[...trace.effects].join(",")})`).toBe(true);
-      expect(trace.effects.has("blast"), `${power.kind}: nothing lands`).toBe(true);
-      expect(trace.hpLost, `${power.kind}: no damage`).toBeGreaterThan(0);
+      const seen = delivery || trace.effects.has("blast") || trace.effects.has("ping");
+      expect(seen, `${power.kind}: nothing on screen (${[...trace.effects].join(",")})`).toBe(true);
+      if (["airstrike", "cluster", "laser"].includes(power.kind)) {
+        expect(delivery, `${power.kind}: nothing flies in (${[...trace.effects].join(",")})`).toBe(true);
+        expect(trace.effects.has("blast"), `${power.kind}: nothing lands`).toBe(true);
+        expect(trace.hpLost, `${power.kind}: no damage`).toBeGreaterThan(0);
+      } else {
+        // Utility powers (recon sweep, smoke screen, resupply) are delivered, not detonated.
+        expect(trace.hpLost, `${power.kind}: a utility power hurt someone`).toBe(0);
+      }
     }
   });
 });

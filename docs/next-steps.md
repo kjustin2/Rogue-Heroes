@@ -54,7 +54,9 @@ Seat split in balance self-play is 35% (gate 35–65): at the edge; widen seeds 
    (vehicles rock, never fly). Builds on `applyKnockback` + the THROWN death family.
 3. ~~Base upgrade clarity~~ DONE: the card reads "Income +$50/turn · $200 · pays back in 4 turns";
    Command reads "Base acts twice a turn".
-4. **Tech unlocks new Defenses and Support powers**, not just troops.
+4. ~~Tech unlocks new Defenses and Support powers~~ DONE: Gun Turret behind Assault, Mortar Turret behind
+   Ordnance; each faction has a strike + a utility power (Recon Sweep / Smoke Screen / Resupply Drop), all
+   research-gated.
 5. **Tutorial**: quick but complete — aim follows a moving target or its old spot? support cooldown +
    re-buy, CP, climb, capture, cover, deploy ring, End Turn resolves both sides at once.
 6. **Faction identity, much stronger** in look AND play (they still read alike).
@@ -62,13 +64,23 @@ Seat split in balance self-play is 35% (gate 35–65): at the edge; widen seeds 
    more striking; projectiles cooler (grenades already good — use them as the bar).
 8. **GUI flows like a pro web designer** (owner: "showing too much... wasn't clear what to do"):
    Skirmish set-up as a STEP flow (map → factions → mode → difficulty → go), not one wall.
-9. **Tech tree clarity**: "which are upgrades and which unlock more units" must be obvious at a glance.
+9. ~~Tech tree clarity~~ DONE: NEW UNITS / UPGRADE tags; doctrines list units + defenses + strikes.
 10. **CP made clear**: how many each unit has and what spends them; an "unused CP" warning on End Turn
    with "don't show again", and a Gameplay option to turn it back on/off.
 11. **Options split**: Settings (display / audio / controls) vs Gameplay (warnings, hints, pace ...).
 12. **Map backgrounds** (skyline / outer ground) look low-detail: enhance.
-13. **Progression per game**: tech CHEAP to start so every game explores a path; the opening is
+13. ~~Progression per game~~ DONE (costs roughly halved, nothing callable on turn 1): tech CHEAP to start so every game explores a path; the opening is
    limited (no air strikes at turn 1 -- strikes and defenses unlocked by tech, see item 4).
+
+14. **Money display** bottom-left is missed: make the treasury big and obvious.
+15. **Map event zones** (lightning, slag, barrage...): hover shows what it is and when; click for more.
+16. **Strike (melee) reach**: a unit within strike range but not adjacent closes AND strikes in ONE order
+   (the striker's charge, for every infantry melee), and the range is long enough to be usable.
+17. **Push ability** for infantry: shove a unit far; into water / off the map kills it, with a fun animation.
+18. **Unit action buttons cramped**: give the order grid room.
+19. **Rename CP to AP** (action points) everywhere, and the tutorial explains the system.
+20. **No objects near base spawns**: the deploy ring must be clear.
+21. **Rotatable placements**: a wall's facing and an airstrike's line direction are the player's choice.
 
 ## Next — in priority order
 

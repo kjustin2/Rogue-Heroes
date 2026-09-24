@@ -1820,7 +1820,10 @@ function techTreePanel(base: CombatEntity, sim: TacticalSim): string {
   for (const root of TECH_TREE) if (root.requires.length === 0 && doctrine.includes(root.id)) walk(root, 0);
   return `
     <div class="research">
-      <div class="research__head"><span>Doctrine — unlocks troops</span><span>Specialize — pick ONE of two</span></div>
+      <div class="research__head">
+        <span><em class="research-tag research-tag--unlock">NEW UNITS</em> Doctrines add units, defenses and strikes</span>
+        <span><em class="research-tag research-tag--upgrade">UPGRADE</em> Boosts what you have — pick ONE of each pair</span>
+      </div>
       ${rows.join("")}
     </div>
   `;
@@ -1847,10 +1850,16 @@ function researchCard(node: TechNode, base: CombatEntity, sim: TacticalSim): str
   const needs = node.requires.find((id) => !isTechUnlocked(base, id));
   // Only what THIS faction fields from the node, by its own names (Armor Bay unlocks the APC for
   // the Syndicate and the Tank for Bastion).
-  const roster = sim.factionOf(base.team).roster;
-  const troops = troopsUnlockedBy(node.id).filter((kind) => roster.includes(kind)).map((kind) => sim.troopLabel(base.team, kind));
+  // A DOCTRINE lists everything it opens for this faction -- troops, defenses AND support powers
+  // (owner 2026-09-24: "which are upgrades and which unlock more units, it's confusing").
+  const faction = sim.factionOf(base.team);
+  const troops = troopsUnlockedBy(node.id).filter((kind) => faction.roster.includes(kind)).map((kind) => sim.troopLabel(base.team, kind));
+  const defenses = DEFENSE_CATALOG.filter((d) => d.tech === node.id && faction.defenses.includes(d.kind)).map((d) => d.label);
+  const supports = SUPPORT_POWERS.filter((p) => p.tech === node.id && faction.supports.includes(p.kind)).map((p) => p.label);
+  const unlocks = [...troops, ...defenses, ...supports];
+  const isUpgrade = node.tier === 4;
   // A specialization's blurb ends "Locks out X." -- the OR between the pair already says that.
-  const what = troops.length ? `Unlocks ${troops.join(", ")}` : node.blurb.replace(/\s*Locks out [^.]*\.?\s*$/, "");
+  const what = !isUpgrade && unlocks.length ? unlocks.join(" · ") : node.blurb.replace(/\s*Locks out [^.]*\.?\s*$/, "");
   const state = unlocked ? "done" : lockedOut ? "locked" : !reason ? "ready" : "blocked";
   const foot = unlocked ? "✓ Researched"
     : lockedOut ? "Locked — other pick taken"
@@ -1859,6 +1868,7 @@ function researchCard(node: TechNode, base: CombatEntity, sim: TacticalSim): str
     : `$${node.cost} · ${escapeHtml(reason ?? "")}`;
   return `<button class="research-card ${state}" data-tech="${node.id}" data-disabled="${unlocked || Boolean(reason)}" data-tip="${escapeAttr(unlocked ? node.blurb : reason ? `${reason}.` : `Costs the base's order this turn and $${node.cost}.`)}">
     <strong>${escapeHtml(node.name)}</strong>
+    <em class="research-tag research-tag--${isUpgrade ? "upgrade" : "unlock"}">${isUpgrade ? "UPGRADE" : "NEW UNITS"}</em>
     <span class="research-card__what">${escapeHtml(what)}</span>
     <span class="research-card__foot">${foot}</span>
   </button>`;

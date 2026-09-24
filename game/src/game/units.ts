@@ -248,13 +248,14 @@ export interface DefenseSpec {
   label: string;
   role: string;
   cost: number;
+  tech?: string; // tech node id that unlocks it (undefined = buildable from the start)
   tip: string;
 }
 
 export const DEFENSE_CATALOG: readonly DefenseSpec[] = [
   { kind: "wall", label: "Blast Wall", role: "Barrier", cost: 130, tip: "Tall, tough barrier that blocks shots aimed at your base. Cannot be walked or built through." },
-  { kind: "turret", label: "Gun Turret", role: "Defense", cost: 210, tip: "Stationary auto-cannon. Fires each turn for 1 CP; solid range and accuracy, but cannot move." },
-  { kind: "exturret", label: "Mortar Turret", role: "Siege", cost: 360, tip: "Stationary splash battery: hits harder and soaks more than a gun turret. Clears cover and clusters; detonates if its magazine is hit." },
+  { kind: "turret", label: "Gun Turret", role: "Defense", cost: 210, tech: "assault", tip: "Stationary auto-cannon. Fires each turn for 1 CP; solid range and accuracy, but cannot move." },
+  { kind: "exturret", label: "Mortar Turret", role: "Siege", cost: 360, tech: "ordnance", tip: "Stationary splash battery: hits harder and soaks more than a gun turret. Clears cover and clusters; detonates if its magazine is hit." },
 ];
 
 export function defenseSpec(kind: DefenseKind): DefenseSpec {
@@ -263,7 +264,7 @@ export function defenseSpec(kind: DefenseKind): DefenseSpec {
 
 // ---- Off-map support powers the Home Base can call in (cost money + the base CP). ----
 
-export type SupportPowerKind = "airstrike" | "cluster" | "laser";
+export type SupportPowerKind = "airstrike" | "cluster" | "laser" | "reconsweep" | "smokescreen" | "resupply";
 
 export interface SupportPowerSpec {
   kind: SupportPowerKind;
@@ -276,9 +277,14 @@ export interface SupportPowerSpec {
 }
 
 export const SUPPORT_POWERS: readonly SupportPowerSpec[] = [
-  { kind: "airstrike", label: "Airstrike", role: "Line", cost: 320, cooldown: 3, tip: "A strike wing carpets a line of bombs through the target point, aligned away from your base. Hardened HQs are unaffected." },
+  // Nothing can be called on turn 1 (owner 2026-09-24): every power is unlocked by a doctrine in its
+  // faction's own tree. Each faction has TWO, both its own: one strike and one utility.
+  { kind: "airstrike", label: "Airstrike", role: "Line", cost: 320, cooldown: 3, tech: "support", tip: "A strike wing carpets a line of bombs through the target point, aligned away from your base. Hardened HQs are unaffected." },
   { kind: "cluster", label: "Cluster Strike", role: "Area", cost: 300, cooldown: 3, tech: "ordnance", tip: "Bomblets saturate a wide area around the target point. Hardened HQs are unaffected." },
-  { kind: "laser", label: "Orbital Lance", role: "Beam", cost: 420, cooldown: 4, tech: "siege", tip: "An orbital beam cuts a burning line through the target point. Hardened HQs are unaffected." },
+  { kind: "laser", label: "Orbital Lance", role: "Beam", cost: 420, cooldown: 4, tech: "armor", tip: "An orbital beam cuts a burning line through the target point. Hardened HQs are unaffected." },
+  { kind: "reconsweep", label: "Recon Sweep", role: "Intel", cost: 110, cooldown: 3, tech: "recon", tip: "A spotter plane maps the enemy: after this turn resolves you see every enemy unit's next order drawn in red. Click anywhere to call it." },
+  { kind: "smokescreen", label: "Smoke Screen", role: "Cover", cost: 90, cooldown: 2, tech: "assault", tip: "Smoke shells land on the point: a 3-turn cloud that swallows flat shots through it. Arcing fire sails over. Cover an advance." },
+  { kind: "resupply", label: "Resupply Drop", role: "Sustain", cost: 140, cooldown: 3, tech: "support", tip: "A crate drop at the point: every one of your units within 4m heals 40 and refills its grenades." },
 ];
 
 export function supportPowerSpec(kind: SupportPowerKind): SupportPowerSpec {

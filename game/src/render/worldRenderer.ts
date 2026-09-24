@@ -4391,6 +4391,15 @@ export class WorldRenderer {
     } else if (kind === "cluster") {
       this.groundAimRoot.add(makeSplashDisc(point, 0xffb02e, 3.2 + 1.35));
       this.groundAimRoot.add(makeEndpoint(point, 0xffb02e, 0.6, y));
+    } else if (kind === "smokescreen") {
+      this.groundAimRoot.add(makeSplashDisc(point, 0xc9d3dc, 3)); // SMOKE_RADIUS
+      this.groundAimRoot.add(makeEndpoint(point, 0xc9d3dc, 0.6, y));
+    } else if (kind === "resupply") {
+      this.groundAimRoot.add(makeSplashDisc(point, 0x9ef0b8, 4)); // RESUPPLY_RADIUS
+      this.groundAimRoot.add(makeEndpoint(point, 0x9ef0b8, 0.6, y));
+    } else if (kind === "reconsweep") {
+      // No footprint: it maps the whole enemy army. Just mark the click.
+      this.groundAimRoot.add(makeEndpoint(point, 0x9dd8ff, 0.8 + pulse * 0.2, y));
     } else {
       const from = { x: point.x - dir.x * 4.5, z: point.z - dir.z * 4.5 };
       const to = { x: point.x + dir.x * 4.5, z: point.z + dir.z * 4.5 };

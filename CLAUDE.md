@@ -649,7 +649,7 @@ kept its ±60° wedge as `FRONT_ARC_HALF`.
   block (`signatureUnits(id)`, derived): Vanguard = scout, jumper, gunship, interceptor, transport;
   Syndicate = striker, grenadier, flamer, sapper, drone op, APC; Bastion = mortar, engineer,
   artillery, bomber (+ Mortar Turret). The heavy gunner is core because the AI leans on it: any
-  faction without it lost AI-vs-AI games outright (`npm run balance:factions`). ONE strike each (airstrike / cluster / laser, never shared). The flat
+  faction without it lost AI-vs-AI games outright (`npm run balance:factions`). TWO support powers each, never shared: a strike + a utility — Vanguard Airstrike + Recon Sweep, Syndicate Cluster + Smoke Screen, Bastion Orbital Lance + Resupply Drop. NOTHING is callable on turn 1: every power (and the Gun / Mortar Turret) is unlocked by a doctrine in the faction's own tree (`tech` on the spec; `doctrines.test.ts` pins it). The bot only drops DAMAGING powers on a crowd (`DAMAGING_SUPPORT`). The flat
   stat passives were replaced by a `doctrine` rule, each read by one clause in sim.ts:
   **Rapid Response** (Vanguard: `troopCooldownFor`/`supportCooldownFor` a turn shorter, min 1;
   deploy ring +4m), **Scavengers** (Syndicate: `recordDamage` pays 30% of a destroyed enemy troop's
@@ -679,6 +679,10 @@ kept its ±60° wedge as `FRONT_ARC_HALF`.
 - Set-up page: "Your faction" and "Enemy faction" (with Random, rolled in the app, not the sim) are
   equal card rows; in Local 2 Players the second row is Player 2. Modes offered: `PLAYABLE_MODES` —
   Annihilation, Capture the Flag, Hold the Hill (Domination and Last Stand stay in the sim, unoffered).
+- **Tech is cheap and says what it is** (2026-09-24): doctrines $120 / ~$170-190 / ~$240, specializations
+  ~$150-180, so every game explores a path. Each research card carries a tag — cyan **NEW UNITS** (a doctrine:
+  lists every unit, defense and support power it opens for this faction) or amber **UPGRADE** (a
+  specialization, pick one of each pair).
 - Locked troops in the Deploy tab are NAMED, grouped by the doctrine that unlocks them ("Scout ·
   Marksman / 🔒 Recon Doctrine") — never a "▮▮▮ ×2" count.
 
