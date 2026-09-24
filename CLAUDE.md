@@ -427,7 +427,9 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   call). Measured by `npm run measure:maps` (board region of `shots:gpu maps`: contrast, range, one-hue share;
   `SHOT_PREFIX=before-` for a baseline): one-hue share fell from up to 68% to <= 59% on every map; contrast rose
   on five of six, Ironworks flat (its frame is mostly grey slab tops). Goal (contrast >= 0.10) met on Verdant,
-  Causeway; Dust Bowl 0.100 edge; Crossfire 0.096, Ironworks 0.093, Karak 0.091 short.
+  Causeway; Dust Bowl 0.100 edge; Crossfire 0.096, Ironworks 0.093, Karak 0.092 short. Ground PLATES are tested
+  PER BLOB against water at their full jittered reach (1.52x radius): a patch-centre test painted ground over
+  water on Verdant, Causeway and Karak; `smoke:ground` asserts no plate vertex over water (fault-injection proven).
 - **The ground detail layer** (`makeGroundDetail`) is one InstancedMesh per element kind (grass fans, pebbles, snow clumps, cinders, weeds), placed only on dry flat ground, bending in `windUniforms` (the same clock the cloud deck and tree sway use). Pebbles are 8-triangle octahedra on purpose — the 36-triangle version was 130k triangles on a large map. Costs are in `perf-baseline.json`; rebase after an intentional change.
 - **MAPS ARE MINIMAL, AND THERE IS ALWAYS ROOM FOR TWO TANKS** (owner, 2026-09-23: "way too many items on the board so it
   blocks movement... make each unique impactful and relevant"; "ensure enough space for 2 tanks to get through any space").

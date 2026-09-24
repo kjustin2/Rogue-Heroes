@@ -7271,9 +7271,14 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
       for (let k = 0; k < 3; k += 1) {
         const blobRadius = 6 + rand() * 9;
         const blobX = cx + (rand() - 0.5) * 9;
+        const blobZ = cz + (rand() - 0.5) * 9;
         const blobY = 0.06 - (vi * 3 + k) * 0.005;
+        // PER BLOB, at its full jittered reach: a patch-centre test let a 15m blob paint grass over
+        // Verdant's mill pond, so the board showed walkable ground where the sim has water.
+        const reachR = blobRadius * 1.52 + 0.5;
+        if (terrainWater().some((w) => Math.hypot(Math.max(w.minX - blobX, blobX - w.maxX, 0), Math.max(w.minZ - blobZ, blobZ - w.maxZ, 0)) < reachR)) continue;
         const rim: BlobRim = { p1: 0, p2: 0, a1: 0, a2: 0 };
-        plateDiscs.push({ x: blobX, z: 0, r: blobRadius, y: blobY, rim });
+        plateDiscs.push({ x: blobX, z: blobZ, r: blobRadius, y: blobY, rim });
         parts.push(blobGeometry(
           blobRadius,
           blobX,
@@ -7284,7 +7289,7 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
           // dark one they were exactly coplanar and fought — the dashed "teeth" along patch rims that
           // survived every shadow-bias change because they were never a shadow (ledger #3).
           blobY,
-          (plateDiscs[plateDiscs.length - 1].z = cz + (rand() - 0.5) * 9),
+          blobZ,
           rand,
           rim,
         ));

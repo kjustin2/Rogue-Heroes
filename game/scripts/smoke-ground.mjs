@@ -111,6 +111,28 @@ try {
       failures += 1;
       console.log(`  FAIL ${mapId}: lowest ground plate at y=${sorted[0]} sits within 1cm of the water/floor surface.`);
     }
+    // THIRD INVARIANT — NO GROUND PLATE OVER WATER (2026-09-24). A patch-centre test let a 15m blob
+    // paint grass over Verdant's mill pond: the board showed walkable ground where the sim has water.
+    const overWater = await page.evaluate(() => {
+      const water = window.__rht.sim.mapDef.terrain.water ?? [];
+      let hits = 0;
+      window.__rht.sceneRoot().traverse((o) => {
+        if (o.name !== "plates") return;
+        o.traverse((m) => {
+          if (!m.isMesh) return;
+          const pos = m.geometry.getAttribute("position");
+          for (let i = 0; i < pos.count; i += 1) {
+            const x = pos.getX(i), z = pos.getZ(i);
+            if (water.some((w) => x > w.minX && x < w.maxX && z > w.minZ && z < w.maxZ)) hits += 1;
+          }
+        });
+      });
+      return hits;
+    });
+    if (overWater) {
+      failures += 1;
+      console.log(`  FAIL ${mapId}: ${overWater} ground-plate vertices lie over water — the board shows ground where units cannot walk.`);
+    }
     for (const f of findings) {
       if (f.spanW <= MAX_TEXTURED_SPAN && f.spanD <= MAX_TEXTURED_SPAN) continue;
       failures += 1;
