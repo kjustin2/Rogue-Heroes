@@ -343,7 +343,7 @@ export class WorldRenderer {
     // Rebuilding their geometry every frame while the player is just looking around churns the
     // GC (the source of the "random pauses" while planning), so skip when nothing changed.
     const overlaySig = sim.phase === "command"
-      ? `${sim.sidesSwapped ? "p2" : "p1"}|${sim.selectedId}|${targetId ?? ""}|${targetPartId ?? ""}|${sim.intent}|${sim.orders.map((o) => `${o.kind}:${o.actorId}:${o.targetId ?? ""}:${o.destination ? `${o.destination.x.toFixed(1)},${o.destination.z.toFixed(1)}` : ""}`).join(",")}|${groundAim ? `${groundAim.x.toFixed(1)},${groundAim.z.toFixed(1)}` : ""}`
+      ? `${sim.sidesSwapped ? "p2" : "p1"}|${sim.selectedId}|${targetId ?? ""}|${targetPartId ?? ""}|${sim.intent}|${sim.orders.map((o) => `${o.kind}:${o.actorId}:${o.targetId ?? ""}:${o.destination ? `${o.destination.x.toFixed(1)},${o.destination.z.toFixed(1)}` : ""}`).join(",")}|${groundAim ? `${groundAim.x.toFixed(1)},${groundAim.z.toFixed(1)}` : ""}|t${sim.placementTurn}`
       : `~resolve${sim.projectiles.length}`;
     if (sim.phase !== "command" || overlaySig !== this.lastOverlaySig) {
       this.lastOverlaySig = overlaySig;
@@ -4313,6 +4313,16 @@ export class WorldRenderer {
   private syncGroundAim(sim: TacticalSim, point?: Vec2): void {
     this.disposeAndClear(this.groundAimRoot);
     if (!point) return;
+    // Placing a wall: a ghost of it, turned the way it will be built (T / Rotate turns it).
+    if (sim.pendingBuild === "wall" && sim.selected) {
+      const yaw = sim.placementYaw(sim.selected.position, point);
+      const ok = !sim.buildFailureReason(sim.selected, "wall", point);
+      const ghost = new THREE.Mesh(wallGhostGeometry(), wallGhostMaterial(ok));
+      ghost.position.set(point.x, drawnGroundAt(point) + 0.78, point.z);
+      ghost.rotation.y = yaw;
+      this.groundAimRoot.add(ghost);
+      return;
+    }
     // Targeting a support power: draw the strike footprint instead of a weapon arc.
     if (sim.pendingSupport) {
       this.drawSupportReticle(sim, sim.pendingSupport, point);
@@ -4376,10 +4386,9 @@ export class WorldRenderer {
   // away from the calling base, so the preview shows the true strike axis.
   private drawSupportReticle(sim: TacticalSim, kind: string, point: Vec2): void {
     const base = sim.selected;
-    const dx = point.x - (base?.position.x ?? point.x - 1);
-    const dz = point.z - (base?.position.z ?? point.z);
-    const len = Math.hypot(dx, dz) || 1;
-    const dir = { x: dx / len, z: dz / len };
+    // The line runs the way the player turned it (sim.placementTurn), same as the strike will fly.
+    const yaw = sim.placementYaw(base?.position ?? { x: point.x - 1, z: point.z }, point);
+    const dir = { x: Math.sin(yaw), z: Math.cos(yaw) };
     const pulse = (Math.sin(performance.now() * 0.008) + 1) * 0.5;
     const y = terrainHeightAt(point) + 0.07;
     if (kind === "airstrike") {
@@ -4670,7 +4679,8 @@ export class WorldRenderer {
       // this is the same spring, keyed off the visual event so no family can land silently).
       if (effect.type === "blast" || effect.type === "impact" || effect.type === "bolt") {
         const radius = (effect.radius ?? 0.5) + (effect.type === "blast" ? 0.6 : 0.2);
-        const power = effect.type === "blast" ? Math.min(1.4, 0.5 + (effect.radius ?? 1) * 0.3) : 0.55;
+        // A long-lived impact is a SHOVE (sim resolveShove): a heavy blow, so its victim's death is thrown.
+        const power = effect.type === "blast" ? Math.min(1.4, 0.5 + (effect.radius ?? 1) * 0.3) : effect.type === "impact" && effect.duration >= 0.9 ? 1.1 : 0.55;
         this.shoveNear(sim, effect.to, radius, power, effect.type === "impact" && dist(effect.from, effect.to) > 0.05 ? effect.from : undefined);
       }
 
@@ -5604,6 +5614,15 @@ function makeClimbMarker(at: Vec2): THREE.Sprite {
   tag.position.set(at.x, drawnGroundAt(at) + 0.75, at.z);
   tag.renderOrder = 10;
   return tag;
+}
+
+let _wallGhost: THREE.BoxGeometry | undefined;
+function wallGhostGeometry(): THREE.BoxGeometry {
+  if (!_wallGhost) { _wallGhost = new THREE.BoxGeometry(2.15, 1.55, 0.62); _wallGhost.userData.shared = true; }
+  return _wallGhost;
+}
+function wallGhostMaterial(ok: boolean): THREE.MeshBasicMaterial {
+  return tubeMaterial(ok ? 0x8ef2d1 : 0xff765f, 0.45);
 }
 
 function makeEndpoint(position: { x: number; z: number }, color: number, radius: number, y = 0.12): THREE.Mesh {

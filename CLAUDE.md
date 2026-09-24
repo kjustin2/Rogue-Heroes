@@ -527,7 +527,13 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   (`freeSpawnNear`) is sized to the unit; `debugSpawn` separates from what is there and a staged wall
   pushes standing units aside. `scatter.test.ts` audits every map: no prop overlap, no prop
   straddling a step (`findRoom` moves an authored piece off a step, mirror-aware).
-- **Charge / dash / breach**: `meleeRange()` adds `STRIKER_CHARGE` for the striker and the melee
+- **Push** (2026-09-24): `queueShove` is a melee order with `shove: true` (same rush); it resolves in
+  `resolveShove` → `applyKnockback(..., { ringOut: true, maxThrow: SHOVE_MAX })`: a body shoved past the arena
+  edge falls off the map and dies, into water drowns; vehicles' mass keeps them near. The shove's impact has a
+  long duration, which the renderer reads as a heavy flinch, so a shove kill plays the THROWN death.
+- **Rotatable placement**: `placementTurn` (45° steps, `rotatePlacement`, T key / Rotate ⟳ button) turns a
+  line strike about its target point and a wall's facing; reset when a new placement is armed.
+- **Charge / dash / breach**: `meleeRange()` adds `MELEE_RUSH` (3.5m) for all infantry and `STRIKER_CHARGE` (6.5m) for the striker; the melee
   order closes the gap first (a real move: mines + separation apply; the swing clock
   starts in reach); a sapper round vs cover/wall is 9999.
 - **Airburst** (grenadier): `airburstBehindCover` — a launcher round that strikes or proximity-fuses

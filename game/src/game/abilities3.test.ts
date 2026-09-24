@@ -29,12 +29,22 @@ describe("striker charge", () => {
     expect(striker.position.x).toBeGreaterThan(-3);
   });
 
-  it("a plain soldier still has to be adjacent to strike", () => {
-    const sim = staged();
-    const soldier = sim.debugSpawn("soldier", "player", { x: -6, z: 0 });
-    const target = sim.debugSpawn("soldier", "enemy", { x: -2, z: 0 });
-    sim.debugSelect(soldier.id);
-    expect(sim.queueMelee(target.id)).toBe(false);
+  it("a plain soldier RUSHES a short way in the same order, and no further than a striker charges", () => {
+    // 4m apart: inside MELEE_RUSH (3.5) + the bodies, so one order closes and strikes.
+    const near = staged();
+    const soldier = near.debugSpawn("soldier", "player", { x: -6, z: 0 });
+    const target = near.debugSpawn("soldier", "enemy", { x: -2, z: 0 });
+    near.debugSelect(soldier.id);
+    expect(near.queueMelee(target.id)).toBe(true);
+    // 7m apart: past a soldier's rush, but inside a striker's charge.
+    const far = staged();
+    const rifle = far.debugSpawn("soldier", "player", { x: -9, z: 0 });
+    const striker = far.debugSpawn("striker", "player", { x: -9, z: 3 });
+    const mark = far.debugSpawn("soldier", "enemy", { x: -2, z: 1.5 });
+    far.debugSelect(rifle.id);
+    expect(far.queueMelee(mark.id)).toBe(false);
+    far.debugSelect(striker.id);
+    expect(far.queueMelee(mark.id)).toBe(true);
   });
 });
 

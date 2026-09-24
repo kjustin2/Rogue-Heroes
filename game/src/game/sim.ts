@@ -82,7 +82,7 @@ export type Phase = "command" | "resolve" | "victory" | "defeat";
 // (measured from the click to the edge of the unit's footprint).
 export const DEPLOY_SNAP = 1.5;
 
-export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "mine" | "interact" | "inspect" | "inspect-detail" | "build" | "support" | "load" | "unload" | "smoke" | "recon" | "deploy";
+export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "push" | "mine" | "interact" | "inspect" | "inspect-detail" | "build" | "support" | "load" | "unload" | "smoke" | "recon" | "deploy";
 export type OrderKind = "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "load" | "unload" | "smoke" | "recon" | "deploy";
 
 // Orders that carry a unit off its spot this resolve -- anything else leaves it dug in.
@@ -156,7 +156,7 @@ const TRANSPORT_CAPACITY = 2; // how many ground units an air transport (or an A
 const APC_LOAD_REACH = 1.2;
 const APC_UNLOAD_REACH = 3;
 // STRIKER CHARGE: metres of free closing distance folded into the strike order.
-export const STRIKER_CHARGE = 5;
+export const STRIKER_CHARGE = 6.5;
 // Hull-down tanks take this fraction of incoming shot damage.
 const HULL_DOWN_DAMAGE = 0.7;
 // AIRBURST (grenadier): a launcher round that bursts on cover still lands this share of its direct
@@ -282,6 +282,8 @@ export interface TacticalOrder {
   stance?: InfantryStance;
   start?: Vec2;
   startedCrouched?: boolean;
+  /** A melee order that SHOVES instead of striking (the Push ability): same rush, a big throw. */
+  shove?: boolean;
   projectileId?: string;
   // STRAFE: hostiles this gunship move has already gunned (one burst each).
   strafed?: string[];
@@ -469,6 +471,10 @@ function pairAngle(a: string, b: string): number {
  */
 const KNOCKBACK_SCALE = 2.4;
 const KNOCKBACK_MAX = 4.5;
+// PUSH (owner 2026-09-24): an infantry shove throws a body "super far" -- into water it drowns, over
+// the arena edge it falls off the map. A vehicle's mass makes it budge a little and no more.
+const SHOVE_FORCE = 90;
+const SHOVE_MAX = 9;
 
 function blastMass(entity: CombatEntity): number {
   if (entity.kind === "cover" || isBuildingKind(entity.kind) || isDefenseKind(entity.kind)) return Infinity;
@@ -1417,7 +1423,7 @@ export class TacticalSim {
     if (this.intent === "ram" && actor.kind === "tank" && actor.status.canMove) {
       return { kind: "ram", radius: ramRange(actor) + actor.radius, position: { ...projected.position }, elevation: projected.elevation };
     }
-    if (this.intent === "melee" && isInfantryKind(actor.kind) && actor.status.canMove) {
+    if ((this.intent === "melee" || this.intent === "push") && isInfantryKind(actor.kind) && actor.status.canMove) {
       return { kind: "melee", radius: meleeRange(actor) + actor.radius, position: { ...projected.position }, elevation: projected.elevation };
     }
     return undefined;
@@ -1445,6 +1451,20 @@ export class TacticalSim {
       aim: aimForPart(targetPart),
       duration: 0.78,
     });
+    return true;
+  }
+
+  /** Player API: PUSH -- rush like a strike, then shove the target hard (see SHOVE_FORCE). */
+  queueShove(targetId: string): boolean {
+    const actor = this.requirePlayerActor();
+    const target = this.entity(targetId);
+    const failure = this.meleeFailureReason(actor, target);
+    if (failure) return this.reject(failure.replace(/strike/i, "push"));
+    if (!actor || !target) return false;
+    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
+    const part = preferredPart(target, "center");
+    this.addOrder({ actorId: actor.id, kind: "melee", shove: true, targetId, targetPartId: part.id, aim: "center", duration: 0.78 });
+    this.pushLog(`${actor.name} moves to push ${target.name}`);
     return true;
   }
 
@@ -1692,7 +1712,20 @@ export class TacticalSim {
     return { center: { ...base.position }, radius: this.defensePlacementRadius(base) };
   }
 
+  // ROTATABLE PLACEMENT (owner 2026-09-24: "for a wall or an air strike a user can turn the direction
+  // it goes in"). Quarter-eighths turned from the default (a line strike runs away from the base; a
+  // wall faces out from it). Reset whenever a new placement is armed.
+  placementTurn = 0;
+  rotatePlacement(steps = 1): void {
+    this.placementTurn = (((this.placementTurn + steps) % 8) + 8) % 8;
+  }
+  /** The facing a player placement at `point` will get: away from `from` (the base), plus the turn. */
+  placementYaw(from: Vec2, point: Vec2): number {
+    return Math.atan2(point.x - from.x, point.z - from.z) + (this.placementTurn * Math.PI) / 4;
+  }
+
   setPendingBuild(kind: DefenseKind | undefined): void {
+    this.placementTurn = 0;
     this.pendingBuild = kind;
     this.intent = kind ? "build" : "select";
     if (kind) this.pendingDeploy = undefined;
@@ -1701,6 +1734,7 @@ export class TacticalSim {
   // ---- Off-map support powers (airstrike / cluster / orbital lance) ----
 
   setPendingSupport(kind: SupportPowerKind | undefined): void {
+    this.placementTurn = 0;
     this.pendingSupport = kind;
     this.intent = kind ? "support" : "select";
     if (kind) {
@@ -1738,11 +1772,11 @@ export class TacticalSim {
     if (!base) return false;
     const kind = this.pendingSupport;
     if (!kind) return this.reject("Choose a support power first");
-    return this.queueSupportFor(base, kind, point);
+    return this.queueSupportFor(base, kind, point, this.placementTurn);
   }
 
   // The one path a strike is committed through, for the player's targeting flow and the bot alike.
-  private queueSupportFor(base: CombatEntity, kind: SupportPowerKind, point: Vec2): boolean {
+  private queueSupportFor(base: CombatEntity, kind: SupportPowerKind, point: Vec2, turn = 0): boolean {
     const failure = this.supportFailureReason(base, kind);
     if (failure) return this.reject(failure);
     const spec = supportPowerSpec(kind);
@@ -1750,7 +1784,9 @@ export class TacticalSim {
     const dx = target.x - base.position.x;
     const dz = target.z - base.position.z;
     const len = Math.hypot(dx, dz);
-    const dir = len > 0.01 ? { x: dx / len, z: dz / len } : { x: 1, z: 0 };
+    const straight = len > 0.01 ? { x: dx / len, z: dz / len } : { x: 1, z: 0 };
+    const a = (turn * Math.PI) / 4; // the player's turn of the line, about the target point
+    const dir = { x: straight.x * Math.cos(a) + straight.z * Math.sin(a), z: -straight.x * Math.sin(a) + straight.z * Math.cos(a) };
     spendCommandPoint(base);
     this.addMoney(base.team, -spec.cost);
     base.supportCooldowns = { ...(base.supportCooldowns ?? {}), [kind]: this.supportCooldownFor(base.team, kind) };
@@ -1848,16 +1884,18 @@ export class TacticalSim {
     if (!base) return false;
     const kind = this.pendingBuild;
     if (!kind) return this.reject("Choose a defense to build first");
-    return this.buildStructureFor(base, kind, clampToArena(point));
+    const at = clampToArena(point);
+    return this.buildStructureFor(base, kind, at, this.placementYaw(base.position, at));
   }
 
-  private buildStructureFor(base: CombatEntity, kind: DefenseKind, point: Vec2): boolean {
+  private buildStructureFor(base: CombatEntity, kind: DefenseKind, point: Vec2, yaw?: number): boolean {
     const failure = this.buildFailureReason(base, kind, point);
     if (failure) return this.reject(failure);
     const spec = defenseSpec(kind);
     spendCommandPoint(base);
     this.addMoney(base.team, -spec.cost);
     const structure = this.createDefenseEntity(kind, base, point);
+    if (yaw !== undefined) structure.yaw = yaw; // a wall spans across the facing the player turned it to
     this.entities.push(structure);
     this.syncEntityElevation(structure);
     structure.commandPoints = 0; // can't act the turn it is built
@@ -2748,7 +2786,8 @@ export class TacticalSim {
       }
       if (!order.fired && order.elapsed >= 0.36) {
         order.fired = true;
-        this.resolveMelee(actor, target, order.targetPartId);
+        if (order.shove) this.resolveShove(actor, target);
+        else this.resolveMelee(actor, target, order.targetPartId);
       }
       if (order.elapsed >= order.duration) order.done = true;
       return;
@@ -3827,7 +3866,7 @@ export class TacticalSim {
    * outright, so it is logged loudly and it cannot happen to a flyer.
    */
   /** Would a thrown body land inside another one? Mirrors the separation rule movement keeps. */
-  private applyKnockback(actor: CombatEntity, entity: CombatEntity, point: Vec2, baseDamage: number, falloff: number): void {
+  private applyKnockback(actor: CombatEntity, entity: CombatEntity, point: Vec2, baseDamage: number, falloff: number, opts: { ringOut?: boolean; maxThrow?: number } = {}): void {
     if (!entity.status.alive || entity.flying) return;
     const mass = blastMass(entity);
     if (!Number.isFinite(mass)) return; // bolted down: bases, defenses, cover
@@ -3839,20 +3878,24 @@ export class TacticalSim {
     const angle = len > 0.001 ? Math.atan2(dz, dx) : this.rng.range(0, Math.PI * 2);
     const dirX = len > 0.001 ? dx / len : Math.cos(angle);
     const dirZ = len > 0.001 ? dz / len : Math.sin(angle);
-    const throwDistance = Math.min(KNOCKBACK_MAX, (baseDamage / 30) * falloff * KNOCKBACK_SCALE / mass);
+    const throwDistance = Math.min(opts.maxThrow ?? KNOCKBACK_MAX, (baseDamage / 30) * falloff * KNOCKBACK_SCALE / mass);
     if (throwDistance < 0.12) return;
 
     const steps = Math.max(4, Math.ceil(throwDistance * 6));
     let footing = terrainHeightAt(entity.position);
     let landed = { ...entity.position };
     let drowned = false;
+    let ringOut = false;
     // What cut the throw short, if anything. A body that was thrown INTO something is a slam:
     // the momentum it did not get to spend lands as damage, on it and on whatever it hit.
     let slammedInto: CombatEntity | "cliff" | "prop" | undefined;
     let travelled = 0;
     for (let i = 1; i <= steps; i += 1) {
       const t = (throwDistance * i) / steps;
-      const next = clampToArena({ x: entity.position.x + dirX * t, z: entity.position.z + dirZ * t });
+      const free = { x: entity.position.x + dirX * t, z: entity.position.z + dirZ * t };
+      const next = clampToArena(free);
+      // Shoved over the arena edge: off the map (blasts still stop at the edge).
+      if (opts.ringOut && (next.x !== free.x || next.z !== free.z)) { landed = free; ringOut = true; break; }
       if (pointInWater(next)) { landed = next; drowned = true; break; }
       const height = terrainHeightAt(next);
       if (height - footing > TERRAIN_STEP) { slammedInto = "cliff"; break; } // slammed into a cliff face; it stops here
@@ -3867,14 +3910,21 @@ export class TacticalSim {
       travelled = t;
     }
 
-    if (landed.x === entity.position.x && landed.z === entity.position.z && !drowned && !slammedInto) return;
+    if (landed.x === entity.position.x && landed.z === entity.position.z && !drowned && !slammedInto && !ringOut) return;
     entity.position = landed;
     entity.dugIn = undefined; // thrown out of its foxhole
     entity.digging = undefined;
     entity.elevation = terrainHeightAt(landed);
     this.effect("impact", landed, landed, 0xffd9a0, 0.3, entity.radius * 0.9);
+    if (ringOut) {
+      for (const part of entity.parts) part.hp = 0;
+      recomputeStatus(entity);
+      this.pushLog(`${entity.name} is shoved clean off the battlefield!`);
+      this.afterDamage(actor, entity, [`${entity.name} fell off the map`], "Ring-out");
+      return;
+    }
     if (!drowned) {
-      this.pushLog(`${entity.name} is thrown by the blast`);
+      this.pushLog(`${entity.name} is ${opts.ringOut ? "sent flying" : "thrown by the blast"}`);
       if (slammedInto) this.resolveSlam(actor, entity, slammedInto, (throwDistance - travelled) / throwDistance, baseDamage, dirX, dirZ);
       return;
     }
@@ -3940,6 +3990,14 @@ export class TacticalSim {
     this.effect("blast", target.position, target.position, 0xffb454, 0.55, target.radius + 1.4);
     this.afterDamage(actor, target, result);
     if (selfResult.amount > 0) this.afterDamage(actor, actor, selfResult, "Ram recoil");
+  }
+
+  private resolveShove(actor: CombatEntity, target: CombatEntity): void {
+    // A long-duration impact from the pusher = the renderer's HEAVY flinch, so a body that dies from
+    // the shove (water, the map edge) plays the THROWN death, tumbling away from the push.
+    this.effect("impact", actor.position, target.position, 0xfff1a6, 0.95, target.radius + 0.6);
+    this.pushLog(`${actor.name} shoves ${target.name}`);
+    this.applyKnockback(actor, target, actor.position, SHOVE_FORCE, 1, { ringOut: true, maxThrow: SHOVE_MAX });
   }
 
   private resolveMelee(actor: CombatEntity, target: CombatEntity, partId?: string): void {
@@ -5923,8 +5981,13 @@ function canJump(entity: CombatEntity): boolean {
   return Boolean(unitStats(entity.kind).jump) && entity.parts.some((p) => p.id === "pack" && p.hp > 0);
 }
 
+/** Every infantry strike includes a RUSH: the order closes this far before the swing, in the same
+ *  order and AP (owner 2026-09-24: the strike reach was "so close it's basically not usable", and a
+ *  move-then-strike took two orders). The Striker's charge goes further. */
+export const MELEE_RUSH = 3.5;
 function meleeRange(entity: CombatEntity): number {
-  return unitStats(entity.kind).meleeRange + (entity.kind === "striker" ? STRIKER_CHARGE : 0);
+  const rush = entity.kind === "striker" ? STRIKER_CHARGE : isInfantryKind(entity.kind) ? MELEE_RUSH : 0;
+  return unitStats(entity.kind).meleeRange + rush;
 }
 
 // Strikers hit at full melee power; other infantry only rifle-butt for a fraction, so melee

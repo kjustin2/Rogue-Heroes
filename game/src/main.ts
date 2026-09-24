@@ -221,6 +221,7 @@ const hud = new Hud(uiRoot, sim, {
   queueRam: (id: string) => sim.queueRam(id),
   queueMelee: (id: string) => sim.queueMelee(id),
   queueMeleePart: (id: string, partId: string) => sim.queueMeleePart(id, partId),
+  queueShove: (id: string) => sim.queueShove(id),
   queueDefend: (stance) => sim.queueDefend(stance),
   queueSpawnTroop: (kind) => {
     const ok = sim.queueSpawnTroop(kind);
@@ -339,7 +340,11 @@ canvas.addEventListener("pointerdown", (event) => {
     return;
   }
 
-  hud.chooseGround(stage.screenToWorld(event.clientX, event.clientY));
+  const ground = stage.screenToWorld(event.clientX, event.clientY);
+  // Clicking a hazard zone with nothing armed explains it in full (hover gives the short version).
+  const hazard = ground && sim.intent === "select" && sim.phase === "command" ? hazardAt(ground) : undefined;
+  if (hazard) showToast(hazard, 6000);
+  hud.chooseGround(ground);
   hud.update();
 });
 
@@ -355,7 +360,22 @@ canvas.addEventListener("pointermove", (event) => {
   }
   // Track the ground point under the cursor so we can preview a grenade/shell landing spot.
   hoverWorld = stage.screenToWorld(event.clientX, event.clientY);
+  // Over a telegraphed hazard zone: say what it is and when it lands (owner 2026-09-24).
+  hud.showWorldTip(hoverWorld && sim.phase === "command" && !anyOverlayOpen() ? hazardAt(hoverWorld) : undefined, event.clientX, event.clientY);
 });
+
+/** Plain-language line for the hazard zone under a ground point, if any (this turn's telegraphs). */
+function hazardAt(point: Vec2): string | undefined {
+  const zone = sim.environment().zones.find((z) => Math.hypot(point.x - z.x, point.z - z.z) <= z.radius);
+  if (!zone) return undefined;
+  const text: Record<string, string> = {
+    lightning: "Lightning — this circle is struck when you end the turn: heavy damage to anyone in it, and the ground burns. Move out.",
+    slag: "Slag spill — molten slag floods this furnace corner when you end the turn, then burns for 2 turns. Stay clear.",
+    barrage: "Artillery barrage — shells land in this zone when you end the turn, on both sides. Clear it.",
+    collapse: "Collapse — cover in this zone crumbles when you end the turn. Don't hide here.",
+  };
+  return text[zone.kind] ?? "Danger zone — something lands here when you end the turn.";
+}
 
 const stopOrbit = (event: PointerEvent): void => {
   if (orbitingPointerId !== event.pointerId) return;
@@ -446,6 +466,12 @@ window.addEventListener("keydown", (event) => {
   if (event.code === "Escape") {
     event.preventDefault();
     if (!hud.handleEscape()) openPauseMenu();
+    return;
+  }
+  // T turns a wall or a line strike while it is being placed (the Rotate button in the placement bar).
+  if (event.code === "KeyT" && (sim.pendingBuild === "wall" || sim.pendingSupport === "airstrike" || sim.pendingSupport === "laser")) {
+    sim.rotatePlacement();
+    hud.update();
     return;
   }
   if (event.code === "KeyR") {
@@ -1935,6 +1961,7 @@ function groundAimHover(): Vec2 | undefined {
   if (anyOverlayOpen() || sim.phase !== "command") return undefined;
   if (sim.pendingSupport) return hoverWorld; // strike-call targeting reticle
   if (sim.pendingDeploy) return hoverWorld; // placed-deploy ghost footprint
+  if (sim.pendingBuild === "wall") return hoverWorld; // the wall ghost, turned the way it will be built
   // Grenade/shell aim a landing arc at the cursor; Move previews the path it would walk.
   const aiming = sim.intent === "grenade" || sim.intent === "move" || (sim.intent === "shoot" && sim.selectedCanGroundTarget());
   return aiming ? hoverWorld : undefined;
@@ -2130,6 +2157,7 @@ declare global {
       queueShootAt(destination: Vec2): boolean;
       queueMelee(id: string): boolean;
       queueMeleePart(id: string, partId: string): boolean;
+      queueShove(id: string): boolean;
       queueSpawnTroop(kind: TroopKind): boolean;
       beginDeploy(kind: TroopKind): void;
       queueDeployAt(kind: TroopKind, point: Vec2): boolean;
@@ -2235,6 +2263,7 @@ window.__rht = {
   queueShootAt: (destination) => sim.queueShootAt(destination),
   queueMelee: (id) => sim.queueMelee(id),
   queueMeleePart: (id, partId) => sim.queueMeleePart(id, partId),
+  queueShove: (id) => sim.queueShove(id),
   queueSpawnTroop: (kind) => sim.queueSpawnTroop(kind),
   beginDeploy: (kind) => sim.setPendingDeploy(kind),
   queueDeployAt: (kind, point) => sim.queueDeployAt(kind, point),

@@ -71,7 +71,8 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "shoot", label: "Shoot", tip: "Select Shoot, pick an enemy part, then confirm. The line previews cover, damage and accuracy." },
   { id: "grenade", label: "Grenade", tip: "Soldier only. Throw a limited-supply grenade in a short arc with splash damage." },
   { id: "ram", label: "Ram", tip: "Tank only. Select a close target or wall, then confirm. Costs 1 AP, deals 72 damage, and damages your front armor." },
-  { id: "melee", label: "Strike", tip: "Infantry only. Strike a hostile at close range; Strikers hit hardest. Needs an intact weapon." },
+  { id: "melee", label: "Strike", tip: "Infantry only. Rush up to 3.5m and strike in ONE order (Strikers charge 6.5m and hit hardest). Needs an intact weapon." },
+  { id: "push", label: "Push", tip: "Infantry only. Rush in and SHOVE a unit far away. Into water it drowns; over the edge of the map it is gone. Vehicles barely budge." },
   { id: "defend", label: "Crouch", tip: "Infantry only. Improves accuracy and makes head shots harder, but slows the next move." },
   { id: "mine", label: "Mine", tip: "Sapper only. Plant a proximity mine at this spot ($15 + 1 AP). Hostiles that step on it eat a splash blast. Invisible to the enemy." },
   { id: "smoke", label: "Smoke", tip: "Mortar only. Lay a 3-turn smoke cloud that swallows flat shots; arcing rounds sail over. 1 AP." },
@@ -119,6 +120,7 @@ export interface HudCallbacks {
   queueRam(id: string): boolean;
   queueMelee(id: string): boolean;
   queueMeleePart(id: string, partId: string): boolean;
+  queueShove(id: string): boolean;
   queueDefend(stance?: InfantryStance): boolean;
   queueMine(): boolean;
   queueRecon(): boolean;
@@ -629,6 +631,7 @@ export class Hud {
       }
     }
 
+    if (target.closest("[data-rotate-placement]")) this.sim.rotatePlacement();
     const command = target.closest<HTMLElement>("[data-command]")?.dataset.command;
     if (command === "end") this.callbacks.endTurn();
     if (command === "reset") this.resetGame();
@@ -672,6 +675,11 @@ export class Hud {
     if (this.action === "grenade") this.callbacks.explainGrenadeTarget(id);
     if (this.action === "ram") this.callbacks.explainRamTarget(id);
     if (this.action === "melee") this.callbacks.explainMeleeTarget(id);
+    if (this.action === "push") {
+      // One click: pick the unit to shove and it is queued -- there is no part to choose.
+      if (this.callbacks.queueShove(id)) this.afterConfirmedOrder();
+      return;
+    }
     if (this.action !== "shoot" && this.action !== "grenade" && this.action !== "ram" && this.action !== "melee") {
       this.action = "inspect";
       this.callbacks.setIntent(this.action);
@@ -753,6 +761,23 @@ export class Hud {
     const next = event.relatedTarget instanceof HTMLElement ? event.relatedTarget.closest("[data-tip]") : undefined;
     if (next === anchor) return;
     this.hideTooltip();
+  }
+
+  // A tooltip for the 3D board itself (a hazard zone under the cursor), placed beside the pointer.
+  private worldTipShown = false;
+  showWorldTip(text: string | undefined, x: number, y: number): void {
+    if (this.tooltipAnchor) return; // a HUD tooltip is up; it wins
+    if (!text) {
+      if (this.worldTipShown) { this.worldTipShown = false; this.hideTooltip(); }
+      return;
+    }
+    this.worldTipShown = true;
+    if (this.tooltip.textContent !== text) this.tooltip.textContent = text;
+    this.tooltip.style.maxWidth = `${Math.min(420, window.innerWidth - 24)}px`;
+    this.tooltip.classList.add("visible");
+    const r = this.tooltip.getBoundingClientRect();
+    this.tooltip.style.left = `${Math.min(window.innerWidth - r.width - 12, x + 16)}px`;
+    this.tooltip.style.top = `${Math.max(12, Math.min(window.innerHeight - r.height - 12, y + 16))}px`;
   }
 
   private hideTooltip(): void {
@@ -842,7 +867,7 @@ function unitCard(entity: CombatEntity, selected: boolean, orders: TacticalOrder
         <span class="unit-line unit-line--sub">
           <span class="unit-status unit-status--${statusBand}">${status}</span>
           ${cpPips(entity)}
-          ${entity.maxGrenades > 0 ? `<span class="supply-chip" data-tip="Grenades left this battle">${entity.grenades} nade${entity.grenades === 1 ? "" : "s"}</span>` : ""}
+          ${entity.maxGrenades > 0 ? `<span class="supply-chip" data-tip="Grenades left this battle">${entity.grenades} grenade${entity.grenades === 1 ? "" : "s"}</span>` : ""}
           ${crouched ? `<span class="stance-chip">Crouched</span>` : ""}
           ${healthStrip(entity)}
         </span>
@@ -1596,6 +1621,7 @@ function baseCommandPanel(base: CombatEntity, sim: TacticalSim): string {
       <div class="placement-bar">
         <strong>Placing ${escapeHtml(pendingLabel)}</strong>
         <span>Click a spot inside the green ring near your Home Base.</span>
+        ${sim.pendingBuild === "wall" ? `<button class="btn ghost" data-rotate-placement="1" type="button" data-tip="Turn it 45 degrees. Hotkey: T.">Rotate ⟳ <kbd>T</kbd></button>` : ""}
         <button class="btn ghost" data-build-cancel="1" type="button" data-tip="Cancel placement.">Cancel</button>
       </div>
     `;
@@ -1774,7 +1800,7 @@ function supportDeckHtml(base: CombatEntity, sim: TacticalSim): string {
     </button>`;
   }).join("");
   const supportNote = sim.pendingSupport
-    ? `<div class="order-note order-note--progress">Targeting ${escapeHtml(supportPowerSpec(sim.pendingSupport).label)} — click the strike point anywhere on the field. <button class="icon-btn" data-support-cancel="1" data-tip="Cancel the strike call.">Cancel</button></div>`
+    ? `<div class="order-note order-note--progress">Targeting ${escapeHtml(supportPowerSpec(sim.pendingSupport).label)} — click the strike point anywhere on the field. ${sim.pendingSupport === "airstrike" || sim.pendingSupport === "laser" ? `<button class="icon-btn" data-rotate-placement="1" data-tip="Turn the strike line 45 degrees. Hotkey: T.">Rotate ⟳ (T)</button>` : ""} <button class="icon-btn" data-support-cancel="1" data-tip="Cancel the strike call.">Cancel</button></div>`
     : "";
   return `${supportNote}<div class="support-options part-options">${buttons}</div>`;
 }
@@ -2145,6 +2171,7 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
   if (action === "grenade") return !(actor.kind === "soldier" || actor.flying) || actor.grenades <= 0;
   if (action === "ram") return actor.kind !== "tank" || !actor.status.canMove;
   if (action === "melee") return !isInfantryKind(actor.kind) || !actor.status.canMove || !hasStrikeWeapon(actor);
+  if (action === "push") return !isInfantryKind(actor.kind) || !actor.status.canMove;
   if (action === "defend") return !isInfantryKind(actor.kind) || !actor.status.canMove;
   if (action === "mine") return Boolean(sim.mineFailureReason(actor));
   if (action === "smoke") return Boolean(sim.smokeFailureReason(actor));
@@ -2180,7 +2207,7 @@ function hasStrikeWeapon(actor: CombatEntity): boolean {
 function actionApplicable(action: Intent, actor: CombatEntity | undefined): boolean {
   if (!actor) return false;
   if (action === "ram") return actor.kind === "tank";
-  if (action === "melee" || action === "defend") return isInfantryKind(actor.kind);
+  if (action === "melee" || action === "push" || action === "defend") return isInfantryKind(actor.kind);
   if (action === "mine") return actor.kind === "sapper";
   if (action === "smoke") return actor.kind === "mortar";
   if (action === "load" || action === "unload") return isCarrier(actor);
@@ -2195,7 +2222,7 @@ function actionApplicable(action: Intent, actor: CombatEntity | undefined): bool
 function actionDisabledReason(action: Intent, actor: CombatEntity | undefined, sim: TacticalSim): string | undefined {
   if (!actor || sim.phase !== "command") return "Not during the resolve phase.";
   if (actor.commandPoints <= 0) return `${actor.name} has no action points left this turn.`;
-  if ((action === "move" || action === "ram" || action === "melee" || action === "defend" || action === "load") && !actor.status.canMove) {
+  if ((action === "move" || action === "ram" || action === "melee" || action === "push" || action === "defend" || action === "load") && !actor.status.canMove) {
     return `${actor.name} cannot move — its legs or treads are destroyed.`;
   }
   if (action === "shoot" && !actor.status.canShoot) return `${actor.name} cannot shoot — its weapon is destroyed.`;
@@ -2215,6 +2242,7 @@ function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: Tac
   if (!actor || sim.phase !== "command") return false;
   if (action === "ram") return actor.kind === "tank" && actor.status.canMove;
   if (action === "melee") return isInfantryKind(actor.kind) && actor.status.canMove && hasStrikeWeapon(actor);
+  if (action === "push") return isInfantryKind(actor.kind) && actor.status.canMove;
   if (action === "defend") return isInfantryKind(actor.kind) && actor.status.canMove;
   if (action === "mine") return actor.kind === "sapper";
   if (action === "smoke") return actor.kind === "mortar" && actor.status.canShoot;
@@ -2236,6 +2264,7 @@ function orderSummary(order: TacticalOrder, sim: TacticalSim): string {
   if (order.kind === "unload") return "Queued: unload";
   if (order.kind === "recon") return "Queued: recon pulse";
   if (order.kind === "deploy") return "Queued: deploy";
+  if (order.kind === "melee" && order.shove) return `Queued: push ${target?.name ?? "target"}`;
   if (order.kind === "melee") return `Queued: strike ${target?.name ?? "target"}${part ? ` / ${part.label}` : ""}`;
   const verb = bombVerb(sim.entity(order.actorId)).toLowerCase();
   if (order.kind === "grenade" && order.destination && !target) return `Queued: ${verb} ${verb === "bomb" ? "drop" : "ground"}`;
