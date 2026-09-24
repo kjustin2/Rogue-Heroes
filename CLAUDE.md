@@ -362,6 +362,7 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
 - **The AI checks line of sight before firing** (`aiShotBlocker` reuses the rng-free player shot
   preview): it breaches a destructible blocker (cover/wall) rather than wasting the shot, or holds
   fire on terrain/friendly blocks. Keep the aim rng draw ahead of the block decision (determinism).
+- **Thrown bodies FLY on screen** (`flyThrownBody`, renderer-only): the sim moves a thrown body in one step; a living ground unit whose position jumps >0.8m in a resolve frame is flown from where it was — infantry arc and tumble backwards (full flip past 3m), vehicles hop and rock — with landing dust. Evidence `shots:gpu -- thrown`. The seam's `endTurn()` skips the unused-AP prompt (scripts drive turns).
 - **Blasts THROW what they don't kill** (`applyKnockback` in `sim.ts`). Direction is away from the
   blast, distance scales with damage x falloff / `blastMass` — infantry 1, vehicles 5.5, anything
   bolted down is Infinity and does not move. The throw marches in steps and stops at the arena edge

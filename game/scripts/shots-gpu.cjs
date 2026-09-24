@@ -89,6 +89,16 @@ app.whenReady().then(async () => {
         win.setSize(1600, 900); await sleep(500);
         continue;
       }
+      if (s === "thrown") {
+        // A pushed trooper FLIES (arc + backward tumble + landing dust) instead of teleporting.
+        // Resolve slowed to a quarter so the flight spans several captures.
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(2400);
+        await js(`(() => { const r = window.__rht, s = r.sim; s.economy.set("enemy", 0); const p = s.debugSpawn("heavy", "player", { x: -6, z: 0 }); const v = s.debugSpawn("soldier", "enemy", { x: -4.6, z: 0 }); for (const q of v.parts) if (q.role === "mobility" || q.role === "weapon") q.hp = 0; s.debugSelect(p.id); s.queueShove(v.id); r.setView({ x: -2, z: 0, zoom: 0.3, pitch: 0.35, yaw: Math.PI / 2 }); r.setResolveScale(0.25); r.endTurn(); })()`);
+        for (let i = 0; i < 8; i += 1) { await sleep(260); await shot(`thrown-${i}`); }
+        await js(`window.__rht.setResolveScale(1)`);
+        continue;
+      }
       if (s === "apwarning") {
         // End Turn with units that still have action points: the prompt, with its "don't show again".
         await js(`window.__rht.scenario("firefight"); window.__rht.deselect();`);

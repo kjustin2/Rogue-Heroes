@@ -1478,6 +1478,12 @@ export class WorldRenderer {
     const renderElevation = prevElevation === undefined ? targetElevation : prevElevation + (targetElevation - prevElevation) * ease;
     group.userData.renderElevation = renderElevation;
     group.position.set(entity.position.x, renderElevation - bob, entity.position.z);
+    // THROWN, NOT TELEPORTED (owner 2026-09-24: "explosions blowing characters back with a fun
+    // animation"). A blast or a push moves a body in the sim in one step; here a sudden jump of a
+    // living ground unit becomes a FLIGHT from where it was to where it landed -- infantry arc high
+    // and tumble backwards (a full flip on a long throw), vehicles only hop and rock -- with a dust
+    // puff on landing. Renderer-only: the sim position is already final.
+    this.flyThrownBody(entity, group, renderElevation - bob);
     // PER-INSTANCE VARIETY on scenery. Every rock, tree and crate was the same mesh at the same
     // size on the same bearing, so a map read as stamped rather than grown — the single most
     // obvious "placeholder" tell left on the board once the shapes themselves were fixed. Cover
@@ -1509,10 +1515,12 @@ export class WorldRenderer {
       }
       group.userData.shownYaw = shownYaw;
     }
+    const flip = (group.userData.flightPitch as number | undefined) ?? 0;
+    const tilt = (group.userData.flightRoll as number | undefined) ?? 0;
     group.rotation.set(
-      sway * 0.45,
+      sway * 0.45 + flip,
       shownYaw + (scenery ? ((variety % 360) / 360) * Math.PI * 2 : 0),
-      (entity.kind === "tank" ? Math.sin(motionTime * 4.8) * 0.018 * walkWeight : 0) + sway + ((group.userData.gaitSway as number | undefined) ?? 0)
+      (entity.kind === "tank" ? Math.sin(motionTime * 4.8) * 0.018 * walkWeight : 0) + sway + ((group.userData.gaitSway as number | undefined) ?? 0) + tilt
     );
     if (defending && isInfantryKind(entity.kind) && entity.status.alive) {
       group.scale.set(1.08, 1, 1.08);
@@ -1772,6 +1780,49 @@ export class WorldRenderer {
     } else if (beat === "land") {
       this.spawnSmokeColumn(p, isVehicleKind(entity.kind) ? 3 : 2, this.propTint.getHex(), 0.34, 0.9, ground + 0.05);
     }
+  }
+
+  private flyThrownBody(entity: CombatEntity, group: THREE.Group, groundY: number): void {
+    const last = group.userData.lastSimPos as { x: number; z: number; y: number } | undefined;
+    group.userData.lastSimPos = { x: entity.position.x, z: entity.position.z, y: groundY };
+    const infantry = isInfantryKind(entity.kind);
+    const thrownKind = infantry || isVehicleKind(entity.kind);
+    if (last && thrownKind && !entity.flying && entity.kind !== "jumper") {
+      const d = Math.hypot(entity.position.x - last.x, entity.position.z - last.z);
+      // Nothing walks 0.8m between two frames; only a throw (or a teleport-style placement) does.
+      if (d > 0.8 && d < 20 && !this.commandPhase) { // only in a resolve: deploys and restores place, they do not throw
+        const dx = (entity.position.x - last.x) / d;
+        const dz = (entity.position.z - last.z) / d;
+        group.userData.flight = {
+          from: { ...last }, start: performance.now(), dur: infantry ? 380 + d * 70 : 320,
+          height: infantry ? Math.min(3, 0.6 + d * 0.35) : 0.35,
+          // Backwards along the throw: a pitch about the unit's own axis, signed by its facing.
+          spin: infantry ? (d > 3 ? Math.PI * 2 : Math.PI * 0.7) : 0.12,
+          side: -Math.sin(entity.yaw) * dz + Math.cos(entity.yaw) * dx,
+        };
+      }
+    }
+    const f = group.userData.flight as { from: { x: number; z: number; y: number }; start: number; dur: number; height: number; spin: number; side: number } | undefined;
+    if (!f) { group.userData.flightPitch = 0; group.userData.flightRoll = 0; return; }
+    const t = (performance.now() - f.start) / f.dur;
+    if (t >= 1) {
+      group.userData.flight = undefined;
+      group.userData.flightPitch = 0;
+      group.userData.flightRoll = 0;
+      // Landing: a puff of dust where it came down.
+      this.particles?.burst({
+        x: entity.position.x, y: groundY + 0.12, z: entity.position.z,
+        count: infantry ? 14 : 8, color: [0xa89e92, 0xcfc4b4], speed: [1.2, 3.2], up: 0.3, size: [0.25, 0.5],
+        life: [0.4, 0.9], gravity: -0.2, drag: 2.2, jitter: 0.3,
+      });
+      return;
+    }
+    const e = 1 - (1 - t) * (1 - t); // ease-out: fast off the ground, settling into the landing
+    group.position.x = f.from.x + (entity.position.x - f.from.x) * e;
+    group.position.z = f.from.z + (entity.position.z - f.from.z) * e;
+    group.position.y = f.from.y + (groundY - f.from.y) * e + Math.sin(Math.PI * t) * f.height;
+    group.userData.flightPitch = -f.spin * e;
+    group.userData.flightRoll = f.side * Math.sin(Math.PI * t) * 0.35;
   }
 
   private syncDebris(entity: CombatEntity, part: DamagePart): void {

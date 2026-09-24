@@ -2374,7 +2374,7 @@ window.__rht = {
   sim,
   setIntent: (intent) => sim.setIntent(intent),
   setAim: (aim) => sim.setAim(aim),
-  endTurn: () => requestEndTurn(),
+  endTurn: () => requestEndTurn(true), // scripts drive turns; the unused-AP prompt is for players
   reset: () => {
     hud.resetGame();
     lastCommandCameraKey = "";

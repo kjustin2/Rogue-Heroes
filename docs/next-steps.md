@@ -50,7 +50,7 @@ Seat split in balance self-play is 35% (gate 35–65): at the edge; widen seeds 
    self-play read Ironworks 1-13 for the enemy seat; both furnaces now vent together. Every map still
    leans a little to the enemy seat (38% overall, gate 35%) -- unexplained, not the slag; look at
    resolve order / who queues first before any tuning.
-2. **Fun physics**: explosions / rockets throw INFANTRY with a proper ragdoll-ish arc + tumble + land
+2. ~~Fun physics~~ DONE (renderer `flyThrownBody`: a blast/push throw FLIES — arc, backward tumble, landing dust; vehicles hop and rock; `shots:gpu thrown`): explosions / rockets throw INFANTRY with a proper ragdoll-ish arc + tumble + land
    (vehicles rock, never fly). Builds on `applyKnockback` + the THROWN death family.
 3. ~~Base upgrade clarity~~ DONE: the card reads "Income +$50/turn · $200 · pays back in 4 turns";
    Command reads "Base acts twice a turn".
