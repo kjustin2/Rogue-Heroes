@@ -5762,12 +5762,20 @@ kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
 .research-card[data-disabled="true"] { cursor: default; }
 
 /* ---- Local 2 Players: the handoff card between planners ---- */
-.hotseat-card { max-width: 520px; text-align: center; }
-.hotseat-card .menu-heading { font-size: 2.4rem; margin: 6px 0 4px; }
-.hotseat-card__kicker { font-size: var(--fs-micro); font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--amber); }
+/* The handoff card: whose turn (big), what to do (one paragraph), what changed (boxed list), go.
+   Centred header, but READING text is left-aligned at a comfortable measure -- centred multi-line
+   copy with a stray bullet under it is what made this read as broken. */
+.hotseat-card { width: min(460px, 92vw); max-width: none; text-align: center; padding: 26px 28px 22px; }
+.hotseat-card .menu-heading { font-size: 2.4rem; margin: 6px 0 0; line-height: 1.1; }
+.hotseat-card__kicker { font-size: var(--fs-small); font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--amber); }
+.hotseat-card__faction { font-size: var(--fs-name); font-weight: 700; color: var(--cyan); margin-top: 2px; }
+.hotseat-card__lead { margin: 16px 0 0; font-size: var(--fs-body); line-height: 1.5; color: var(--cream); text-align: left; }
+.hotseat-card__hint { margin: 8px 0 0; font-size: var(--fs-small); line-height: 1.45; color: var(--text-muted); text-align: left; }
+.hotseat-card__intel { margin: 14px 0 0; padding: 10px 12px; text-align: left; background: var(--paper-lo); border: 2px solid var(--ink); border-radius: 6px; }
+.hotseat-card__intel h3 { margin: 0 0 6px; font-size: var(--fs-small); letter-spacing: 0.08em; text-transform: uppercase; color: var(--amber); }
+.hotseat-card__intel ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: var(--fs-body); line-height: 1.4; color: var(--cream); }
+.hotseat-card .pause-buttons { margin-top: 18px; }
 .hotseat-handoff { background: var(--paper-deep); }
-.hotseat-card__notes { margin: 10px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 0.9rem; color: var(--cream); text-align: left; }
-.hotseat-card__notes li::before { content: "▸ "; color: var(--cyan); }
 /* The planning seat's name in the turn chip: cyan, because the planning side is always drawn as "yours". */
 .turn-chip.seat-1 em, .turn-chip.seat-2 em { color: var(--cyan); font-weight: 800; }
 
@@ -5808,3 +5816,43 @@ body:has(.unit-detail-panel) #toasts { left: calc(50% + clamp(344px, 22vw, 520px
 /* Continue Battle names the battle it resumes: one small line under the label. */
 .title-start--continue { display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .title-start--continue small { font-size: var(--fs-micro); font-weight: 700; letter-spacing: 0.04em; text-transform: none; opacity: 0.85; }
+
+/* ---- DECK CARDS: name on top, price/status beneath (2026-09-23) ----
+   Deploy / Defenses / Support / Base cards were one nowrap flex row of name + NEW badge + price in a
+   ~147px card with overflow:hidden, so any longer name ("Drone Operator", "Flak Technical", or a
+   short one with its NEW badge) pushed the PRICE wholly out of the card. Two rows can't clip: the
+   name wraps inside its column, the NEW badge sits beside it, and the price owns row two. */
+.part-options > .btn.confirm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-content: center;
+  justify-items: start;
+  gap: 2px 8px;
+  white-space: normal;
+  text-align: left;
+  overflow-wrap: anywhere;
+  line-height: 1.15;
+  min-width: 0;
+  min-height: 52px;
+}
+.part-options > .btn.confirm > em { grid-column: 2; grid-row: 1; align-self: start; }
+.part-options > .btn.confirm > span { grid-column: 1 / -1; grid-row: 2; white-space: nowrap; }
+/* A locked doctrine group spans two cells and lists several names: let its sub-line wrap too. */
+.part-options > .btn.locked-troop > span { white-space: normal; }
+/* The placement bar's quick actions are real buttons: body-size text, not the 10.9px icon size. */
+.placing-note .icon-btn { font-size: var(--fs-small); padding: 5px 10px; }
+/* Nothing from the battle draws over a menu or a handoff card: toasts linger for seconds and the
+   turn banner sits at z-index 60, so both used to land on top of the Skirmish page / the 2-player
+   handoff text (UI audit, 2026-09-23). They belong to the board; hide them while it is covered. */
+body:has(.menu-screen:not(.is-leaving)) #toasts,
+body:has(.pause-overlay) #toasts,
+body:has(.menu-screen:not(.is-leaving)) .round-transition,
+body:has(.pause-overlay) .round-transition { display: none; }
+.title-start--continue small { font-size: var(--fs-small); }
+.unit-detail-panel { max-height: min(60vh, calc(var(--deck-top, 100vh) - var(--detail-top, 16px) - 10px)); overflow-y: auto; }
+body:has(.menu-screen:not(.is-leaving)) .mission-intro,
+body:has(.pause-overlay) .mission-intro { display: none; }
+/* The 2-player handoff card replaces the deploy veil: the veil's "Deploying to <map>" was still
+   fading underneath when the card mounted, two sets of words in one place (UI audit 2026-09-23). */
+body:has(.hotseat-handoff) .battle-loading { display: none; }

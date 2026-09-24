@@ -1,7 +1,7 @@
 import { Rng } from "../core/rng";
 import { dist, type Vec2 } from "../core/math";
 import { COVER_PROFILES, createCover, type CombatEntity, type CoverKind } from "./damageModel";
-import { onTerrainEdge, pointInWater, terrainHeightAt, type TerrainRect, type TerrainSpec } from "./terrain";
+import { TERRAIN_STEP, onTerrainEdge, pointInWater, terrainHeightAt, type TerrainRect, type TerrainSpec } from "./terrain";
 
 // A drifting ambient particle bed that gives each map its own living atmosphere.
 export type AmbientKind = "dust" | "embers" | "pollen" | "snow" | "ash";
@@ -127,7 +127,7 @@ export function mapSize(map: MapDef): MapSize {
 
 // Every battlefield is enlarged at load so the whole roster plays bigger — large maps ~2× area,
 // medium ~1.5×, small ~1.3× (linear factors below). Object SIZES and terrain HEIGHTS stay fixed;
-// only positions/extents scale, and scatter counts grow with area so bigger maps aren't sparse.
+// only positions/extents scale; prop counts do not grow (few, deliberate props on every map).
 const SCALE_BY_SIZE: Record<MapSize, number> = { small: 1.14, medium: 1.22, large: 1.41 };
 
 function scaleRect<T extends { minX: number; maxX: number; minZ: number; maxZ: number }>(r: T, f: number): T {
@@ -154,10 +154,9 @@ function scaleMapDef(def: MapDef): MapDef {
     flagOffset: def.flagOffset * f,
     hill: { x: def.hill.x * f, z: def.hill.z * f },
     hillRadius: def.hillRadius * f,
-    // Same object sizes/gaps, but more of them so the bigger arena keeps its density.
     scatter: def.scatter.map((g) => ({
       ...g,
-      count: Math.round(g.count * f * f),
+      count: g.count, // NOT grown with area: minimal is the rule (owner 2026-09-23), not density
       centerGap: g.centerGap === undefined ? undefined : g.centerGap * f,
       minZ: g.minZ === undefined ? undefined : g.minZ * f,
       maxZ: g.maxZ === undefined ? undefined : g.maxZ * f,
@@ -196,8 +195,8 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
   let seq = 0;
 
   const anchors: Array<{ p: Vec2; clear: number }> = [
-    { p: map.playerBase, clear: 4.2 },
-    { p: map.enemyBase, clear: 4.2 },
+    { p: map.playerBase, clear: BASE_RADIUS + WALK_GAP },
+    { p: map.enemyBase, clear: BASE_RADIUS + WALK_GAP },
     { p: flags.player, clear: 2.4 },
     { p: flags.enemy, clear: 2.4 },
     { p: map.hill, clear: map.hillRadius + 1.6 },
@@ -236,6 +235,39 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
     if (n.mirror) placed.push({ x: -n.x, z: -n.z, r });
   }
 
+  // An authored spot that crowds something already placed (or a base) is pushed straight away from
+  // the worst offender until there is WALK_GAP of open ground; the mirror copy is taken from the
+  // pushed point, so the layout stays symmetric.
+  const solids = (): Array<{ x: number; z: number; r: number }> => [
+    ...placed,
+    { x: map.playerBase.x, z: map.playerBase.z, r: BASE_RADIUS },
+    { x: map.enemyBase.x, z: map.enemyBase.z, r: BASE_RADIUS },
+  ];
+  // Does a piece of radius r at q (and, if mirrored, its twin) keep every walking-room rule?
+  const fits = (q: Vec2, r: number, mirrored: boolean): boolean => {
+    const twin = { x: 2 * center.x - q.x, z: 2 * center.z - q.z };
+    const ok = (x: Vec2): boolean =>
+      x.x > bounds.minX + r && x.x < bounds.maxX - r && x.z > bounds.minZ + r && x.z < bounds.maxZ - r &&
+      !solids().some((o) => dist(x, o) < o.r + r + WALK_GAP - 0.01) &&
+      !steepHere(x) && !pointInWater(x) && !pinchesTerrain(x, r, bounds) &&
+      !(map.terrain.bridges ?? []).some((b) => x.x >= b.minX - r && x.x <= b.maxX + r && x.z >= b.minZ - r && x.z <= b.maxZ + r);
+    return ok(q) && (!mirrored || (ok(twin) && dist(q, twin) >= 2 * r + WALK_GAP - 0.01));
+  };
+  // The nearest spot to the authored one that fits, searched outward in rings (deterministic).
+  // Undefined when nothing within reach fits -- the piece is then left out, not crammed in.
+  const findRoom = (p: Vec2, r: number, mirrored: boolean): Vec2 | undefined => {
+    if (fits(p, r, mirrored)) return p;
+    for (let ring = 0.5; ring <= 8; ring += 0.5) {
+      const steps = Math.max(8, Math.round(ring * 6));
+      for (let k = 0; k < steps; k += 1) {
+        const a = (k / steps) * Math.PI * 2;
+        const q = { x: p.x + Math.cos(a) * ring, z: p.z + Math.sin(a) * ring };
+        if (fits(q, r, mirrored)) return q;
+      }
+    }
+    return undefined;
+  };
+
   // Signature features first (explicit, optionally mirrored).
   for (const sig of map.signature ?? []) {
     const profile = COVER_PROFILES[sig.kind];
@@ -253,7 +285,10 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
     // An authored spot that lands on a block edge after map scaling is nudged to the nearest flat
     // ground, so the prop never straddles a step (half floating, half buried); the mirror copies
     // the nudged point so the layout stays symmetric.
-    const at = nudgeOffEdge({ x: sig.x, z: sig.z }, sig.radius ?? profile.radius, map.terrain.bridges ?? []);
+    const r = sig.radius ?? profile.radius;
+    const mirrored = Boolean(sig.mirror && Math.abs(sig.x - center.x) > 0.3);
+    const at = findRoom({ x: sig.x, z: sig.z }, r, mirrored);
+    if (!at) continue; // no room anywhere near its spot: one piece fewer beats a pinch nobody drives through
     place(at.x, at.z, sig.yaw ?? 0);
     if (sig.mirror && Math.abs(sig.x - center.x) > 0.3) place(2 * center.x - at.x, 2 * center.z - at.z, (sig.yaw ?? 0) + Math.PI);
   }
@@ -286,10 +321,11 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
     let kind = deal();
     let misses = 0;
     const tryPlace = (x: number, z: number): boolean => {
-      const r = COVER_PROFILES[kind].radius + group.spacing;
+      const r = COVER_PROFILES[kind].radius + Math.max(group.spacing, WALK_GAP);
       const west = { x, z };
       const east = { x: 2 * center.x - x, z: 2 * center.z - z };
-      if (blocked(west, r) || blocked(east, r)) {
+      const own = COVER_PROFILES[kind].radius;
+      if (blocked(west, r) || blocked(east, r) || pinchesTerrain(west, own, bounds) || pinchesTerrain(east, own, bounds)) {
         // A kind that has had a fair chance and still does not fit (a silo in a crowded yard)
         // yields to the next card, so one big prop can never starve the rest of the section.
         misses += 1;
@@ -330,26 +366,44 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
 
 // How many spots a dealt kind may try before it yields its turn (see `deal` in buildMapObjects).
 const MISSES_PER_KIND = 48;
-
-// Slide a point to the nearest spot whose footprint sits on one level (spiral search, 0.5m rings).
-function nudgeOffEdge(p: Vec2, r: number, bridges: TerrainRect[] = []): Vec2 {
-  const margin = Math.min(0.7, r * 0.8);
-  // A crossing is an open lane: nothing may sit on a bridge or lean over its mouth.
-  const onBridge = (q: Vec2): boolean => bridges.some((b) => q.x >= b.minX - r && q.x <= b.maxX + r && q.z >= b.minZ - r && q.z <= b.maxZ + r);
-  const bad = (q: Vec2): boolean => onTerrainEdge(q, margin) || pointInWater(q) || onBridge(q);
-  if (!bad(p)) return p;
-  for (let ring = 0.5; ring <= 4; ring += 0.5) {
-    for (let i = 0; i < 12; i += 1) {
-      const a = (Math.PI * 2 * i) / 12;
-      const q = { x: p.x + Math.cos(a) * ring, z: p.z + Math.sin(a) * ring };
-      if (!bad(q)) return q;
-    }
-  }
-  return p;
-}
+/** Open ground between any two solid things on a map, edge to edge: room for TWO TANKS ABREAST
+ *  (owner 2026-09-23: "ensure enough space for 2 tanks to get through any space... players hated
+ *  getting stuck behind objects"). Four radii of the widest ground vehicle (artillery, 1.75) plus a
+ *  little slack. Bases, landmarks, props and capturables all keep it, with no exceptions. */
+export const WALK_GAP = 4 * 1.75 + 0.2;
+const BASE_RADIUS = 2.2;
+const FLUSH = 1.2; // a wall this close to a prop is hugging it, not pinching a lane
 
 // Reject spots straddling a block edge (cliff face) or on tall stacked tops, so props sit
 // flush on flat ground or low ledges instead of floating or clipping into a vertical side.
+/**
+ * Would a prop of radius `r` at `p` leave a PINCH against the ground itself -- a gap narrower than
+ * WALK_GAP between it and something no vehicle crosses (a cliff step, water)? Flush against it is
+ * fine: there is nothing to squeeze into. The arena EDGE is not a pinch -- nobody needs to drive
+ * between a prop and the map border; they go round the open side. Reads the ACTIVE terrain.
+ */
+export function pinchesTerrain(p: Vec2, r: number, bounds: TerrainRect): boolean {
+  const outside = (q: Vec2): boolean => q.x < bounds.minX || q.x > bounds.maxX || q.z < bounds.minZ || q.z > bounds.maxZ;
+  for (let i = 0; i < 16; i += 1) {
+    const a = (i / 16) * Math.PI * 2;
+    const at = (d: number): Vec2 => ({ x: p.x + Math.cos(a) * d, z: p.z + Math.sin(a) * d });
+    // Walk out along the ray to the first wall. Within FLUSH of the prop it is hugging it (no tank
+    // fits in, and nothing is trapped); past FLUSH but inside WALK_GAP it is the pinch.
+    let prevH = terrainHeightAt(p);
+    for (let d = r + 0.3; d <= r + WALK_GAP; d += 0.4) {
+      const q = at(d);
+      if (outside(q)) break; // the border: see above
+      const h = terrainHeightAt(q);
+      if (pointInWater(q) || Math.abs(h - prevH) > TERRAIN_STEP) {
+        if (d - r > FLUSH) return true;
+        break;
+      }
+      prevH = h;
+    }
+  }
+  return false;
+}
+
 function steepHere(p: Vec2): boolean {
   return onTerrainEdge(p, 0.7) || terrainHeightAt(p) > 1.2;
 }
@@ -412,28 +466,19 @@ const RAW_MAPS: readonly MapDef[] = [
     flagOffset: 3.4,
     hill: { x: 0, z: 0 },
     hillRadius: 4.2,
-    scatter: [
-      // The river bed: what fell off the convoy.
-      { palette: ["wreck", "crate", "fuel", "ammo", "barricade", "sandbag"], count: 3, spacing: 1.2, rect: { minX: -25, maxX: -16, minZ: -3.2, maxZ: 3.2 } },
-      // The plateau camp around the derrick.
-      // The derrick's crew camp: tents, a guard post, stores.
-      { palette: ["tent", "tent", "sandbag", "ammo", "crate"], count: 4, spacing: 1.0, rect: { minX: -16.4, maxX: -9.6, minZ: 6.2, maxZ: 11.4 } },
-      // Scrub at the canyon mouths and across the open basin: saguaro, boulders, a bleached carcass.
-      { palette: ["rock", "cactus", "cactus", "bones", "rubble"], count: 3, spacing: 1.5, rect: { minX: -31, maxX: -14, minZ: 12, maxZ: 20 } },
-      { palette: ["rock", "cactus", "bones", "cactus", "rock"], count: 3, spacing: 1.5, rect: { minX: -31, maxX: -12, minZ: -12, maxZ: -6 } },
-    ],
+    // MINIMAL BY DESIGN (owner 2026-09-23: "way too many items... blocks movement"; "enough space
+    // for 2 tanks to get through any space"). Listed in PRIORITY order -- landmark, then the thing
+    // that blows, then the rest -- and each is placed at the nearest spot to its authored one that
+    // leaves WALK_GAP round it (findRoom); a piece with no room is left out, never crammed in.
+    scatter: [],
     signature: [
-      // The dead convoy, strung along the river bed where it was caught in the open.
-      { kind: "convoy", x: -15.5, z: 2.9, yaw: 0.18, mirror: true },
-      { kind: "convoy", x: -6.5, z: -2.9, yaw: -0.35, mirror: true },
+      { kind: "convoy", x: -6.5, z: -2.9, yaw: -0.35, mirror: true }, // the dead convoy's last truck: cover that explodes
       { kind: "derrick", x: -13, z: 8.6, yaw: 0.4, mirror: true },
-      // The oil camp: the derrick's storage tank and the pipe run that fed it, placed before the
-      // camp scatter so the tents fill in round them (scattered, they never found room).
-      { kind: "silo", x: -10.3, z: 10.8, mirror: true },
-      { kind: "pipe", x: -15.6, z: 11.0, mirror: true },
-      { kind: "rock", x: -6, z: 4, mirror: true, radius: 1.3, height: 1.6 },
-      { kind: "sandbag", x: -3.2, z: -2.4, mirror: true },
+      { kind: "fuel", x: -10.6, z: 6.4, mirror: true }, // the derrick's fuel: shoot it when they gather there
       { kind: "bunker", x: -6.5, z: 9.2, mirror: true, yaw: 0.6 },
+      { kind: "rock", x: -6, z: 4, mirror: true, radius: 1.3, height: 1.6 },
+      { kind: "cactus", x: -22, z: 15, mirror: true },
+      { kind: "bones", x: -22, z: -9, mirror: true },
     ],
     // Recurring sandstorms sweep the open basin — accuracy and visibility drop in waves.
     events: [{ kind: "sandstorm", startTurn: 3, duration: 2, period: 6 }],
@@ -478,22 +523,16 @@ const RAW_MAPS: readonly MapDef[] = [
     flagOffset: 3.2,
     hill: { x: 0, z: 0 },
     hillRadius: 3.4,
-    scatter: [
-      // The rail yard: lines of cars on stub track, a container or two between them.
-      { palette: ["railcar", "railcar", "railcar", "container"], count: 5, spacing: 0.3, rect: { minX: -21, maxX: -5, minZ: -13.5, maxZ: -4.5 }, grid: { dx: 4.6, dz: 4.5, jitter: 0.2 } },
-      // The foundry floor: plant around the furnace.
-      { palette: ["pipe", "conduit", "gas", "silo", "coil", "crate", "fuel"], count: 5, spacing: 1.1, rect: { minX: -21, maxX: -4, minZ: 3, maxZ: 14 } },
-      // The shop floor along the middle: finished steel waiting to ship, and the gantry's legs.
-      { palette: ["ingot", "coil", "girder", "wall"], count: 3, spacing: 1.6, minZ: -3.5, maxZ: 3.5, centerGap: 4 },
-    ],
+    // MINIMAL BY DESIGN (owner 2026-09-23: "way too many items... blocks movement"; "enough space
+    // for 2 tanks to get through any space"). Listed in PRIORITY order -- landmark, then the thing
+    // that blows, then the rest -- and each is placed at the nearest spot to its authored one that
+    // leaves WALK_GAP round it (findRoom); a piece with no room is left out, never crammed in.
+    scatter: [],
     signature: [
       { kind: "furnace", x: -17, z: 8.5, yaw: -0.5, mirror: true },
-      { kind: "wall", x: -2.2, z: 4.5, mirror: true },
-      { kind: "wall", x: -4.4, z: -5.5, mirror: true },
-      { kind: "crate", x: -3.6, z: 0, mirror: true }, // cover ON the deck; at x -6 it plugged the top of the ramp and nobody could get onto the span
-      { kind: "conduit", x: -9.5, z: 1.5, mirror: true },
-      { kind: "girder", x: -11.5, z: -4.2, mirror: true }, // clear of the overpass ramp mouth: at z -2.2 it shut the ramp to vehicles
-      { kind: "gas", x: -6.5, z: -3.8, mirror: true },
+      { kind: "gas", x: -6.5, z: -3.8, mirror: true }, // gas bottles on the shop floor: they chain
+      { kind: "railcar", x: -13, z: -9.5, yaw: 0, mirror: true }, // the rail yard
+      { kind: "conduit", x: -9.5, z: 1.5, mirror: true }, // cut it and the derelict turret browns out
     ],
     // SLAG SPILL: the furnaces vent every third turn, alternating corners -- molten slag floods
     // the marked foundry floor (a hit on the spill, then burning ground for two turns). Ironworks'
@@ -557,27 +596,17 @@ const RAW_MAPS: readonly MapDef[] = [
     hillRadius: 5.0,
     // A storm rolls through the valley: from turn 4, lightning strikes one marked point every turn.
     events: [{ kind: "lightning", startTurn: 4, period: 1, power: 46 }],
-    scatter: [
-      // The orchard: fruit trees planted in rows.
-      { palette: ["tree"], count: 9, spacing: 0.5, rect: { minX: -23, maxX: -10, minZ: -15.5, maxZ: -7 }, grid: { dx: 3.4, dz: 3.4, jitter: 0.25 } },
-      // Chapel green: the churchyard's headstones, fallen masonry, stumps and scrub around the ruin.
-      { palette: ["grave", "grave", "rubble", "stump", "bush"], count: 5, spacing: 1.2, rect: { minX: -24, maxX: -16, minZ: -1, maxZ: 9 } },
-      // The terraces: farmed shelves above the mill -- hay bales, a fence run, hedges, the woodpile and
-      // field stones on the lower shelves; low cover along a lane that is otherwise all exposure
-      // (scatter keeps off the risers and the upper shelves).
-      { palette: ["haybale", "fence", "bush", "log", "haybale", "rock", "stump"], count: 6, spacing: 1.0, rect: { minX: -20, maxX: -3, minZ: 11.5, maxZ: 18 } },
-      // Field edge between the orchard and the pass: bales left out, harvest crates, a hedge.
-      { palette: ["haybale", "crate", "bush", "rock"], count: 3, spacing: 1.6, rect: { minX: -20, maxX: -7, minZ: -4, maxZ: 3 }, centerGap: 6.5 },
-    ],
+    // MINIMAL BY DESIGN (owner 2026-09-23: "way too many items... blocks movement"; "enough space
+    // for 2 tanks to get through any space"). Listed in PRIORITY order -- landmark, then the thing
+    // that blows, then the rest -- and each is placed at the nearest spot to its authored one that
+    // leaves WALK_GAP round it (findRoom); a piece with no room is left out, never crammed in.
+    scatter: [],
     signature: [
-      { kind: "chapel", x: -21, z: 3.5, yaw: 0.35, mirror: true },
-      // The orchard's fence line, between the rows and the open field.
-      { kind: "fence", x: -18.2, z: -5.6, mirror: true },
-      { kind: "fence", x: -14.8, z: -5.6, mirror: true },
-      { kind: "mill", x: -16.2, z: 8.6, yaw: 0, mirror: true },
+      { kind: "mill", x: -16.2, z: 8.6, yaw: 0, mirror: true }, // on the mill pond's bank
+      { kind: "chapel", x: -17, z: -8, yaw: 0.35, mirror: true }, // the ruin stands alone on the south green
+      { kind: "fuel", x: -10, z: -3, mirror: true }, // the farm's fuel drum: the one thing here that blows
+      { kind: "tree", x: -20, z: 4, mirror: true }, // a lone field oak: it topples
       { kind: "rock", x: -4.5, z: -6.8, mirror: true, radius: 1.1 },
-      { kind: "tree", x: -7.6, z: 3.2, mirror: true },
-      { kind: "tree", x: -11.5, z: 1.6, mirror: true },
     ],
   },
   // FROZEN CAUSEWAY — a harbour the ice took. Sections: THE CAUSEWAY (the raised land bridge down
@@ -628,19 +657,17 @@ const RAW_MAPS: readonly MapDef[] = [
     flagOffset: 3.4,
     hill: { x: 0, z: 0 },
     hillRadius: 3.6,
-    scatter: [
-      // The fishing village: huts on a loose grid, the catch on drying racks, boats hauled up for
-      // the winter and the woodpile between.
-      { palette: ["hut", "hut", "rack", "boat", "hut", "log"], count: 6, spacing: 0.4, rect: { minX: -33, maxX: -19, minZ: -17, maxZ: -8 }, grid: { dx: 4.2, dz: 4.2, jitter: 0.5 } },
-      // The harbour: the freighter's cargo, spilled and frozen in, and the ice it heaved up.
-      { palette: ["container", "container", "crate", "fuel", "iceblock", "barricade"], count: 5, spacing: 1.0, rect: { minX: -31, maxX: -17, minZ: 6, maxZ: 17 } },
-      // The causeway: a wrecked supply route's debris among the pressure ice.
-      { palette: ["iceblock", "rubble", "wall", "wreck", "sandbag", "crate"], count: 4, spacing: 1.8, minZ: -6, maxZ: 6, centerGap: 2.5, rect: { minX: -18, maxX: -6, minZ: -6, maxZ: 6 } },
-    ],
+    // MINIMAL BY DESIGN (owner 2026-09-23: "way too many items... blocks movement"; "enough space
+    // for 2 tanks to get through any space"). Listed in PRIORITY order -- landmark, then the thing
+    // that blows, then the rest -- and each is placed at the nearest spot to its authored one that
+    // leaves WALK_GAP round it (findRoom); a piece with no room is left out, never crammed in.
+    scatter: [],
     signature: [
       { kind: "hull", x: -24.5, z: 11.5, yaw: 0.55, mirror: true },
+      { kind: "fuel", x: -19, z: 7, mirror: true }, // the freighter's spilled fuel
+      { kind: "hut", x: -27, z: -12, mirror: true }, // the fishing village
+      { kind: "boat", x: -22, z: -15, mirror: true },
       { kind: "wall", x: -3, z: 0, mirror: true },
-      { kind: "rubble", x: -7, z: 2.6, mirror: true },
       { kind: "crate", x: -10.5, z: 2.8, mirror: true },
       { kind: "sandbag", x: -12, z: -1, mirror: true },
     ],
@@ -705,25 +732,17 @@ const RAW_MAPS: readonly MapDef[] = [
     flagOffset: 3.4,
     hill: { x: 0, z: 0 },
     hillRadius: 3.2,
-    scatter: [
-      // The colonnade: standing pillars in a line down each side of the precinct.
-      { palette: ["pillar"], count: 3, spacing: 0.3, rect: { minX: -7.6, maxX: -6.0, minZ: -9, maxZ: 9 }, grid: { dx: 2, dz: 4.6, jitter: 0.15 }, centerGap: 5.5 },
-      // The amphitheatre tiers: broken statues on the steps.
-      { palette: ["statue", "statue", "obelisk", "urn", "rubble"], count: 3, spacing: 1.0, rect: { minX: -21.5, maxX: -11.5, minZ: -16.5, maxZ: -9.5 } },
-      // The approaches: fallen city between the cistern and the ravine — a toppled obelisk's twin
-      // still standing, the temple's oil braziers and store jars, scrub reclaiming it all.
-      { palette: ["rubble", "urn", "brazier", "statue", "rubble"], count: 5, spacing: 1.6, rect: { minX: -20, maxX: -12, minZ: -8, maxZ: 5 } },
-      // The temple garden north of the ravine, gone wild: scrub, stumps and boulders round the
-      // store jars.
-      { palette: ["bush", "stump", "rock", "urn"], count: 3, spacing: 1.4, rect: { minX: -12, maxX: -5, minZ: 10.5, maxZ: 16.5 } },
-    ],
+    // MINIMAL BY DESIGN (owner 2026-09-23: "way too many items... blocks movement"; "enough space
+    // for 2 tanks to get through any space"). Listed in PRIORITY order -- landmark, then the thing
+    // that blows, then the rest -- and each is placed at the nearest spot to its authored one that
+    // leaves WALK_GAP round it (findRoom); a piece with no room is left out, never crammed in.
+    scatter: [],
     signature: [
       { kind: "colossus", x: -2.6, z: 9.6, yaw: 0.25, mirror: true },
-      { kind: "cistern", x: -15.5, z: 1.5, mirror: true },
-      // An obelisk at the colonnade's south end, the precinct's gatepost.
-      { kind: "obelisk", x: -6.8, z: -11, mirror: true },
+      { kind: "brazier", x: -15, z: -4, mirror: true }, // the temple's oil brazier: it bursts and burns
+      { kind: "obelisk", x: -6.8, z: -11, mirror: true }, // the precinct's gatepost; it topples
+      { kind: "statue", x: -17, z: -8, mirror: true },
       { kind: "cliff", x: -9.5, z: 4.2, mirror: true },
-      { kind: "rubble", x: -12.5, z: 7.5, mirror: true },
     ],
     // The ancient colonnades give way: cover near the central dais collapses every few turns.
     events: [{ kind: "collapse", startTurn: 4, period: 4, zone: { x: 0, z: 0, radius: 9 } }],
@@ -779,21 +798,17 @@ const RAW_MAPS: readonly MapDef[] = [
     flagOffset: 3.2,
     hill: { x: 0, z: 0 },
     hillRadius: 3.8,
-    scatter: [
-      // The trench line: a run of sandbags from the nest toward the checkpoint.
-      { palette: ["sandbag"], count: 3, spacing: 0.15, rect: { minX: -13, maxX: -7, minZ: -9.4, maxZ: -8.6 }, grid: { dx: 2.4, dz: 1, jitter: 0.1 }, centerGap: 6 },
-      // The radar station's plant.
-      { palette: ["conduit", "ammo", "container", "tower", "crate"], count: 4, spacing: 1.0, rect: { minX: -24, maxX: -17, minZ: 4, maxZ: 13.5 } },
-      // No-man's-land between the nests and the streams: scrub, and the tank traps the border
-      // guards sowed across the approaches.
-      { palette: ["bush", "hedgehog", "tree", "rock", "hedgehog", "stump"], count: 5, spacing: 1.6, rect: { minX: -23, maxX: -6, minZ: -11.5, maxZ: 11.5 }, centerGap: 6 },
-    ],
+    // MINIMAL BY DESIGN (owner 2026-09-23: "way too many items... blocks movement"; "enough space
+    // for 2 tanks to get through any space"). Listed in PRIORITY order -- landmark, then the thing
+    // that blows, then the rest -- and each is placed at the nearest spot to its authored one that
+    // leaves WALK_GAP round it (findRoom); a piece with no room is left out, never crammed in.
+    scatter: [],
     signature: [
       { kind: "gate", x: -8, z: 0, yaw: 0, mirror: true },
+      { kind: "ammo", x: -12.5, z: 3.5, mirror: true }, // the checkpoint's ammo: it cooks off
       { kind: "radar", x: -19, z: 9, yaw: 0.8, mirror: true },
       { kind: "bunker", x: -1.6, z: -9, yaw: 0.2, mirror: true },
-      { kind: "sandbag", x: -9, z: 3.5, mirror: true },
-      { kind: "ammo", x: -12.5, z: 3.5, mirror: true },
+      { kind: "hedgehog", x: -17, z: -4, mirror: true }, // tank traps on the approach
     ],
     // Off-map artillery ranges in on the central basin on a steady cadence — don't loiter there.
     events: [{ kind: "barrage", startTurn: 3, period: 4, zone: { x: 0, z: 0, radius: 6 }, power: 34 }],

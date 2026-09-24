@@ -339,7 +339,7 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   `TerrainBlock`s or the `wall`/`cliff` cover kinds — no new primitive.
 - **Every map is enlarged at load** by `scaleMapDef` in `maps.ts` (large ~2×, medium ~1.5×,
   small ~1.3× area; authored `RAW_MAPS` literals stay at base scale). Only positions/extents
-  scale — object sizes and terrain heights are fixed; scatter counts grow with area. `MapDef.size`
+  scale — object sizes and terrain heights are fixed; prop counts do NOT grow (see MAPS ARE MINIMAL). `MapDef.size`
   is stamped from the authored area so `mapSize()` stays correct. Arena-dependent render constants
   (shadow frustum, max zoom, fill-light range, particle count) are sized for the largest map.
 - **Unit move distances carry a global `MOVE_RANGE_SCALE`** (`sim.ts`, on both `moveRange` and
@@ -417,17 +417,19 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   kinds or the menu↔battle flip stalls on a shader relink. Tear down per-frame/per-swap
   groups via `disposeAndClear()`; `userData.shared` geometry is skipped.
 - **The ground detail layer** (`makeGroundDetail`) is one InstancedMesh per element kind (grass fans, pebbles, snow clumps, cinders, weeds), placed only on dry flat ground, bending in `windUniforms` (the same clock the cloud deck and tree sway use). Pebbles are 8-triangle octahedra on purpose — the 36-triangle version was 130k triangles on a large map. Costs are in `perf-baseline.json`; rebase after an intentional change.
-- **EVERY MAP'S FURNITURE BELONGS TO ITS BIOME** (2026-09-23, owner: "no Roman pillars in a forest"). `props.test.ts` pins it: a
-  `HOME` table names the kinds that say WHICH map this is (cactus / bones = Dust Bowl; girder / coil / ingot / gas / railcar =
-  Ironworks; haybale / fence / grave = Verdant; hut / boat / rack / iceblock = Causeway; pillar / statue / obelisk / urn / brazier =
-  Karak; hedgehog / tower = Crossfire; trees only where things grow) and no map may carry another's; every kind a map's palettes
-  or signatures list must actually be placed; and every map fields at least ten kinds besides its landmarks. Scatter deals each
-  palette like a DECK and a kind that misses keeps its turn (`deal` / `MISSES_PER_KIND` in `buildMapObjects`): drawing a fresh
-  kind per placement ATTEMPT was rejection sampling that favoured the smallest prop, so the foundry floor came out as twelve gas
-  bottles and half of every palette never appeared (fault-injection proven: restore per-attempt draws and five maps fail). A prop
-  that cannot win room in a crowded section is placed as a `signature` instead (the Dust Bowl's oil tank + pipe run, Verdant's
-  fence line, Karak's obelisk). The fifteen biome props are box-built in `buildBiomeProp`; `wall` is a concrete blast wall.
-  Tall ones (girder, obelisk, tower) topple (`isToppleKind`); the brazier is volatile and burns like fuel. Evidence: `npm run shots:props`.
+- **MAPS ARE MINIMAL, AND THERE IS ALWAYS ROOM FOR TWO TANKS** (owner, 2026-09-23: "way too many items on the board so it
+  blocks movement... make each unique impactful and relevant"; "ensure enough space for 2 tanks to get through any space").
+  Each map is 8–14 props (was 42–78), authored as `signature` pieces in PRIORITY order — landmark, then the thing that blows,
+  then the rest; `scatter` is empty everywhere. `buildMapObjects` places each at the nearest spot to its authored one where
+  it and its mirror twin keep **`WALK_GAP` (7.2m = four radii of the widest ground vehicle) of open ground edge-to-edge**
+  from every base, prop, landmark and capturable, and do not PINCH a lane against a cliff step or water
+  (`pinchesTerrain`: a wall within `FLUSH` 1.2m is hugging it, which is fine; the arena border is not a pinch)
+  — `findRoom`, a deterministic ring search out to 8m. A piece with no room is LEFT OUT, never crammed in; so a
+  listed kind that never places fails `props.test.ts` and must be cut from the list. Prop counts do NOT grow with
+  map area any more. `props.test.ts` pins: biome kinds stay home (the `HOME` table), every listed kind places,
+  ≤ 20 props, one landmark and one volatile per map, WALK_GAP between every pair, no terrain pinches.
+  The fifteen biome props are box-built in `buildBiomeProp`; tall ones (girder, obelisk, tower, pillar, tree)
+  topple; the brazier burns like fuel. Evidence: `npm run shots:gpu -- maps`, `npm run shots:props`.
 - **Stone takes the map's hue**: rock / rubble / statue props are tinted 0.5 toward `rockTint` (the ground's own hue at a slightly higher value); wood, foliage and hardware only 0.3 toward `propTint`. A tint into an already-saturated albedo only ever darkens it — which is why the Meshy rock had to be greyscaled first, and why it is gone.
 - **INFANTRY LOCOMOTION IS DISTANCE-LOCKED** (`src/render/gait.ts`, 2026-09-22). The gait phase
   advances by `metres moved / stride`, never by wall time, and a planted boot is placed from that
@@ -523,7 +525,7 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   length × `VEHICLE_KIT_SCALE`, ~2.4 for the tank): a circle smaller than the hull let tanks park inside crates. Spawn clearance
   (`freeSpawnNear`) is sized to the unit; `debugSpawn` separates from what is there and a staged wall
   pushes standing units aside. `scatter.test.ts` audits every map: no prop overlap, no prop
-  straddling a step (`nudgeOffEdge` slides authored signature pieces, mirrored AFTER the nudge).
+  straddling a step (`findRoom` moves an authored piece off a step, mirror-aware).
 - **Charge / dash / breach**: `meleeRange()` adds `STRIKER_CHARGE` for the striker and the melee
   order closes the gap first (a real move: mines + separation apply; the swing clock
   starts in reach); a sapper round vs cover/wall is 9999.
@@ -781,8 +783,18 @@ tokens are remapped there so the older layers inherit it. Rules that fall out of
   `positionTooltip` in hud.ts), are ≤2 lines at 420px, and never repeat the card's own name ("Striker
   on cooldown" on the Striker card is "On cooldown"). The listeners live on `<body>` so menu
   `data-tip`s work; any pointerdown dismisses; the tooltip is `data-allow-overlap`.
-- Pause / edit overlays mark the HUD `inert` like a full menu does; a MutationObserver re-derives
-  the flag when any screen is added or removed (Resume used to be able to leave it stale).
+- **Everything a menu turns on is DERIVED FROM THE DOM** (`syncHudInert`, run by a MutationObserver on
+  every top-level screen change): `menus-open` (the dark backdrop) and `stage.setLowCost` while a menu
+  screen is up, HUD `inert` while a menu or pause/edit overlay is. Never switch such state on in
+  `mountScreen` and off in one close path — Settings' own Back left the backdrop over the battle
+  ("everything kept its filter of brightness down", 2026-09-23). Toasts, the turn banner and the
+  mission-intro rail hide under menus/overlays (CSS `:has`), the intro is cancelled by `cancelIntro()`
+  on every battle start / main menu, and the deploy veil gives way to the hotseat handoff card.
+  `smoke:ui-audit` walks battle → Settings/Controls → Back → Resume and asserts `__rht.menuState()`
+  is clean (fault-injection proven). `AUDIT_ONLY=a,b AUDIT_VIEWPORT=1280` re-checks one screen fast.
+- **Deck cards are two rows** (`.part-options > .btn.confirm`): name (wraps, NEW badge beside it), then
+  price/status. One nowrap row pushed prices wholly out of the card; the audit's `clipped` rule now
+  reports a WHOLLY clipped element too (it skipped them before) and is fault-injected with a pushed price.
 
 ## Owner's quality bars (each has bitten this repo)
 

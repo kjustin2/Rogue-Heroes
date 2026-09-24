@@ -80,7 +80,7 @@ export const FACTIONS: readonly FactionDef[] = [
   {
     id: "vanguard",
     name: "Vanguard",
-    blurb: "Air cavalry: the whole air wing, no indirect fire.",
+    blurb: "Full air wing. No artillery.",
     detail: "Air-mobile regulars. Scouts, jump troopers and the only gunships, interceptors and transports, backed by tanks and machine guns. No mortar, grenadier or artillery, and no engineer: a dug-in enemy has to be taken, not shelled.",
     roster: ["soldier", "scout", "sniper", "jumper", "heavy", "medic", "tank", "flak", "gunship", "interceptor", "transport"],
     tech: ["recon", "assault", "support", "armor", "airwing", "breach", "bulwark", "plating", "hunter", "triage", "welding", "optics", "ghillie"],
@@ -100,7 +100,7 @@ export const FACTIONS: readonly FactionDef[] = [
   {
     id: "syndicate",
     name: "Syndicate",
-    blurb: "Raiders: fire, blades and traps. Every kill pays.",
+    blurb: "Fire and blades. Kills pay.",
     detail: "Fast, cheap and attritional. Strikers, flamers, sappers and grenadiers, carried in by the only APCs, with drone spotters behind them. No tank and no siege gun, so it cannot win a slugging match -- only a quicker one.",
     roster: ["soldier", "sniper", "heavy", "striker", "grenadier", "flamer", "sapper", "droneop", "medic", "apc", "flak"],
     tech: ["recon", "assault", "support", "ordnance", "armor", "breach", "bulwark", "thermobarics", "cluster", "triage", "welding", "optics", "ghillie"],
@@ -121,7 +121,7 @@ export const FACTIONS: readonly FactionDef[] = [
   {
     id: "bastion",
     name: "Bastion",
-    blurb: "Fortress: siege guns and troops that dig in.",
+    blurb: "Siege guns. Troops dig in.",
     detail: "Siege and fortification. Mortars, artillery, engineers, the heavy bomber and the only Mortar Turret, behind tanks and machine guns. No scout, no striker, no fighter: nothing it fails to kill will be caught.",
     roster: ["soldier", "sniper", "heavy", "mortar", "medic", "engineer", "tank", "artillery", "flak", "bomber"],
     tech: ["recon", "assault", "support", "ordnance", "armor", "siege", "airwing", "bulwark", "plating", "thermobarics", "cluster", "triage", "welding", "optics", "ghillie"],

@@ -487,6 +487,10 @@ export class Hud {
     // wrap to three lines), so a fixed top collided with it the first time a storm was announced.
     const rail = this.root.querySelector<HTMLElement>(".topbar.compact-top");
     if (rail) this.root.style.setProperty("--rail-bottom", `${Math.ceil(rail.getBoundingClientRect().bottom) + 10}px`);
+    // The Info panel beside the roster must END above the command deck: at 720p with the base's deck
+    // open it ran under it and hid its own part rows (UI audit, 2026-09-23). It scrolls instead.
+    const deck = this.root.querySelector<HTMLElement>(".commandbar");
+    this.root.style.setProperty("--deck-top", deck ? `${Math.floor(deck.getBoundingClientRect().top)}px` : "100vh");
   }
 
   private handleClick(event: Event): void {

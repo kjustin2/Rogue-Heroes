@@ -503,6 +503,7 @@ function opposingFaction(mapId: string, player: FactionId): FactionId {
 }
 
 function startBattle(mapId: string, modeId: ModeId, difficulty: Difficulty = settings.difficulty, faction: FactionId = settings.faction, player2?: FactionId, botFaction?: FactionId): void {
+  cancelIntro();
   tutorialActive = false;
   renderTutorialPanel(); // a tutorial panel must not survive into the next battle
   closeAllMenus();
@@ -573,10 +574,10 @@ function handToHotseatSeat(): void {
   hud.clearInteraction();
   document.querySelector(".hotseat-handoff")?.remove();
   const other = leaving;
-  const order = hotseatSeatsDone === 0 ? "first" : "second";
+  const first = hotseatSeatsDone === 0;
   const notes: string[] = [];
   if (sim.revealedSeat() === seat && hotseatSeatsDone === 1) {
-    notes.push(`Your recon drone mapped Player ${other}'s plan: their orders are drawn in red.`);
+    notes.push(`Your recon drone mapped Player ${other}'s plan. Their orders are drawn in red.`);
   }
   // Research the other side finished before this turn, and this seat has not been told about yet.
   const theirBase = sim.entities.find((e) => e.kind === "base" && e.team === "enemy");
@@ -584,18 +585,21 @@ function handToHotseatSeat(): void {
     if (hotseatToldTech[seat].has(id)) continue;
     hotseatToldTech[seat].add(id);
     const node = sim.turn > 1 ? TECH_TREE.find((n) => n.id === id) : undefined;
-    if (node) notes.push(`Intel: Player ${other} has ${node.name}.`);
+    if (node) notes.push(`Player ${other} researched ${node.name}.`);
   }
-  if (sim.turn === 1 && hotseatSeatsDone === 0) notes.push("Your units are cyan while you plan; the other player's are red.");
+  // A handoff card reads like a web page, top to bottom: whose turn, what to do, what changed, go.
+  // One instruction paragraph; intel in its own boxed list (never a stray bullet under centred text).
   const screen = mountScreen(
     `
     <div class="overlay-card hotseat-card">
-      <div class="hotseat-card__kicker">Turn ${sim.turn} · plans ${order}</div>
+      <div class="hotseat-card__kicker">Turn ${sim.turn} — ${first ? "first to plan" : "second to plan"}</div>
       <h2 class="menu-heading">Player ${seat}</h2>
-      <p class="settings-note">${escapeHtml(sim.factionOf("player").name)} · your orders. Player ${other}, look away until it is your turn.</p>
-      ${notes.length ? `<ul class="hotseat-card__notes">${notes.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul>` : ""}
+      <div class="hotseat-card__faction">${escapeHtml(sim.factionOf("player").name)}</div>
+      <p class="hotseat-card__lead">Pass the screen to <strong>Player ${seat}</strong>. Player ${other}, look away while they give orders.</p>
+      ${sim.turn === 1 && first ? `<p class="hotseat-card__hint">While you plan, your units are cyan and Player ${other}'s are red.</p>` : ""}
+      ${notes.length ? `<section class="hotseat-card__intel"><h3>Since your last turn</h3><ul>${notes.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul></section>` : ""}
       <div class="pause-buttons">
-        <button class="title-start" data-hotseat-ready data-overlay-close type="button">Ready — Player ${seat}</button>
+        <button class="title-start" data-hotseat-ready data-overlay-close type="button">Start Player ${seat}'s turn</button>
       </div>
     </div>
   `,
@@ -644,6 +648,9 @@ function requestEndTurn(): void {
 // the eye can follow, and the HUD, hints and toasts stay hidden until the rail hands the
 // planning camera back.
 let introActive = false;
+// Stops a running intro rail. Called whenever the battle it belongs to goes away (a new battle, the
+// main menu): the rail used to keep flying the camera and captioning over whatever came next.
+let cancelIntro: () => void = () => {};
 function runMissionIntro(): void {
   if (settings.reducedMotion) return;
   const enemyBase = sim.entities.find((e) => e.kind === "base" && e.team === "enemy");
@@ -673,6 +680,13 @@ function runMissionIntro(): void {
     focusOnPlayerBase();
   };
   overlay.addEventListener("click", finish);
+  cancelIntro = () => {
+    if (!introActive) return;
+    introActive = false;
+    window.cancelAnimationFrame(raf);
+    document.body.classList.remove("killcam", "intro-cam");
+    overlay.remove();
+  };
   // Start on the first beat before the fade lifts, so there is no cut from the base.
   stage.debugSetView({ x: beats[0].focus.x, z: beats[0].focus.z, zoom: beats[0].zoom, pitch, yaw });
   requestAnimationFrame(() => overlay.classList.add("show"));
@@ -764,10 +778,6 @@ function closeAllMenus(): void {
     if (el.classList.contains("menu-screen")) skipNextMenuEntrance = true;
     el.remove();
   }
-  // Hide the persistent radar backdrop. show*() re-adds this synchronously before paint
-  // when swapping menus, so the radar only stops when we leave menus for gameplay.
-  document.body.classList.remove("menus-open");
-  stage.setLowCost(false);
   // Only the diorama's drifting low view gets reset -- closing the pause menu mid-battle must
   // leave the player's camera exactly where they put it.
   if (stage.menuDrift) stage.resetView();
@@ -775,23 +785,26 @@ function closeAllMenus(): void {
 }
 
 /**
- * The battle HUD is unreachable (pointer + keyboard) exactly while a menu screen covers it.
- * Derived from the DOM rather than tracked with a flag, because menus close down several paths --
- * closeAllMenus, dismissTopOverlay, a screen removing itself -- and a stale flag here would leave
- * the whole HUD inert with nothing on top of it.
+ * EVERYTHING A MENU TURNS ON IS DERIVED FROM THE DOM, never set on open and undone on one close path.
+ * While a menu screen is up: the dark menu backdrop shows (`menus-open`) and the stage runs its lean
+ * post chain. While a menu OR a pause/edit overlay covers the battle: the HUD is inert. These used
+ * to be switched on in mountScreen and off only in closeAllMenus, so leaving Settings with its own
+ * Back button kept the backdrop over the battle -- "everything kept its filter of brightness down"
+ * (owner, 2026-09-23). The inert flag had the same bug earlier and was fixed the same way.
  */
 function syncHudInert(): void {
+  const menu = Boolean(document.querySelector(".menu-screen:not(.is-leaving)"));
+  document.body.classList.toggle("menus-open", menu);
+  stage.setLowCost(menu);
   const hud = document.getElementById("ui");
   if (!hud) return;
-  // A pause / edit overlay covers the HUD just as a full menu does: Tab must not walk under it.
-  const covered = Boolean(document.querySelector(".menu-screen:not(.is-leaving), .pause-overlay, .edit-overlay"));
+  const covered = menu || Boolean(document.querySelector(".pause-overlay, .edit-overlay"));
   if (covered) hud.setAttribute("inert", "");
   else hud.removeAttribute("inert");
 }
 
 // Overlays are removed from a dozen click handlers (Resume, Back, Apply ...) that never call
-// syncHudInert; with pause/edit overlays now covering the HUD, a stale inert flag would leave the
-// HUD dead after Resume. Re-derive it from the DOM whenever a top-level screen comes or goes.
+// syncHudInert; re-derive the menu state from the DOM whenever a top-level screen comes or goes.
 new MutationObserver(() => syncHudInert()).observe(document.body, { childList: true });
 
 function dismissTopOverlay(): void {
@@ -876,6 +889,7 @@ function savedBattleNote(raw: string | null | undefined): string {
 }
 
 function showMainMenu(): void {
+  cancelIntro();
   autosaveIfActive(); // quitting a battle to the menu preserves it for Continue
   setInBattle(false);
   closeAllMenus();
@@ -2180,6 +2194,8 @@ declare global {
       // Deterministic HUD geometry checks (overlap / truncation / clipping / occlusion).
       // Empty array is the assertion; smoke:ui-audit drives it across viewports and screens.
       auditUI(): UiFinding[];
+      techIds(): string[];
+      menuState(): { menusOpen: boolean; lowCost: boolean; hudInert: boolean };
       // Colorblind palette toggle for screenshot harnesses.
       setHighContrastTeams(on: boolean): void;
       // Dynamic map events: read current weather/zone state; force one for screenshots/tests.
@@ -2286,6 +2302,8 @@ window.__rht = {
   setDebugOverlay: (on) => { debugOverlay.setEnabled(on); return debugOverlay.isEnabled(); },
   silhouette: (on) => { world.setSilhouette(on); stage.setSilhouette(on); },
   auditUI: () => auditUI(),
+  techIds: () => TECH_TREE.map((n) => n.id),
+  menuState: () => ({ menusOpen: document.body.classList.contains("menus-open"), lowCost: stage.isLowCost, hudInert: Boolean(document.getElementById("ui")?.hasAttribute("inert")) }),
   setHighContrastTeams: (on: boolean) => world.setHighContrastTeams(on),
   environment: () => sim.environment(),
   forceEvent: (kind) => sim.debugForceEvent(kind),

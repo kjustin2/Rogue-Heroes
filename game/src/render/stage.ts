@@ -308,6 +308,8 @@ export class Stage {
    * Lean path while full-screen menus are up: lean post chain + key shadows off. Both
    * shadow states are pre-compiled by warmUp(), so the flip never relinks on a live frame.
    */
+  get isLowCost(): boolean { return this.lowCost; }
+
   setLowCost(on: boolean): void {
     if (on === this.lowCost) return;
     this.lowCost = on;

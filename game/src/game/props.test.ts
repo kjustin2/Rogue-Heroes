@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createCover, createSoldier, isLandmarkKind, type CoverKind } from "./damageModel";
-import { MAPS, mapDef } from "./maps";
+import { COVER_PROFILES, createCover, createSoldier, isLandmarkKind, type CoverKind } from "./damageModel";
+import { MAPS, WALK_GAP, mapDef, pinchesTerrain } from "./maps";
 import { TacticalSim } from "./sim";
 
-// EVERY MAP'S FURNITURE BELONGS TO ITS BIOME, AND THERE IS PLENTY OF IT (2026-09-23).
+// EVERY MAP'S FURNITURE BELONGS TO ITS BIOME, AND THERE IS LITTLE OF IT (2026-09-23).
 //
 // Two ways this went wrong before anyone counted: (1) a kind borrowed from another map because it
 // was in the list (a Roman column standing in the Ironworks foundry), and (2) scatter drawing a new
@@ -23,11 +23,13 @@ const HOME: Partial<Record<CoverKind, readonly string[]>> = {
   tree: ["verdant", "crossfire"], bush: ["verdant", "crossfire", "karak"],
 };
 
+const MAX_PROPS = 20; // blocking props per map, both halves, excluding bridge spans and capturables
+
 function propsOn(mapId: string): Array<{ kind: CoverKind }> {
   const sim = new TacticalSim();
   sim.configure(mapDef(mapId), "destroy", "normal");
   return sim.entities
-    .filter((e) => e.kind === "cover" && e.coverKind && e.coverKind !== "span")
+    .filter((e) => e.kind === "cover" && e.coverKind && e.coverKind !== "span" && !e.capturable)
     .map((e) => ({ kind: e.coverKind as CoverKind }));
 }
 describe("map props fit the biome", () => {
@@ -46,9 +48,13 @@ describe("map props fit the biome", () => {
       expect(missing, `${map.id} lists but never places ${missing.join(", ")}`).toEqual([]);
     });
 
-    it(`${map.id}: at least ten kinds of furniture besides its landmarks`, () => {
-      const furniture = [...kinds].filter((k) => !isLandmarkKind(k));
-      expect(furniture.length, `${map.id}: ${furniture.join(", ")}`).toBeGreaterThanOrEqual(10);
+    // MINIMAL, NOT DENSE (owner 2026-09-23: "way too many items on the board so it blocks movement
+    // all over... make each unique impactful and relevant to that map"). This replaced a test that
+    // demanded ten kinds of furniture per map, which is how the boards filled up.
+    it(`${map.id}: few props (at most ${MAX_PROPS}), one landmark, at least one that explodes`, () => {
+      expect(props.length, `${map.id} places ${props.length} props`).toBeLessThanOrEqual(MAX_PROPS);
+      expect([...kinds].some((k) => isLandmarkKind(k)), `${map.id} has no landmark`).toBe(true);
+      expect([...kinds].some((k) => COVER_PROFILES[k].volatile), `${map.id} has nothing volatile`).toBe(true);
     });
   }
 });
@@ -75,4 +81,32 @@ describe("biome props behave like what they are", () => {
     sim.debugDamage(brazier.id, brazier.parts[0].id, 9999, shooter.id);
     expect(sim.burnZones.length).toBe(1);
   });
+});
+
+// WALKING ROOM (owner 2026-09-23: "if there's a base or an object on the map there's not any other
+// base spot or object immediately near it... so that there's always generally space to walk by").
+// Every pair of solid things -- bases, turrets, landmarks, props, depots -- keeps WALK_GAP of open
+// ground edge to edge -- room for two tanks abreast ("ensure enough space for 2 tanks to get through
+// any space") -- and no prop leaves a tank-width-short gap against a cliff step or water.
+describe("walking room between everything on the map", () => {
+  for (const map of MAPS) {
+    it(`${map.id}: at least ${WALK_GAP}m of open ground between any two solid things`, () => {
+      const sim = new TacticalSim();
+      sim.configure(mapDef(map.id), "destroy", "normal");
+      const solid = sim.entities.filter((e) => e.status.alive && (e.kind === "cover"
+        ? e.coverKind !== "span" && e.coverKind !== "ridge" && e.coverKind !== "cliff"
+        : e.kind === "base" || e.kind === "turret"));
+      const cramped: string[] = [];
+      for (let i = 0; i < solid.length; i += 1) {
+        for (let j = i + 1; j < solid.length; j += 1) {
+          const a = solid[i], b = solid[j];
+          const gap = Math.hypot(a.position.x - b.position.x, a.position.z - b.position.z) - a.radius - b.radius;
+          if (gap < WALK_GAP - 0.01) cramped.push(`${a.coverKind ?? a.kind}~${b.coverKind ?? b.kind} ${gap.toFixed(2)}m`);
+        }
+      }
+      expect(cramped, `${map.id}: ${cramped.join(", ")}`).toEqual([]);
+      const pinches = solid.filter((e) => e.kind === "cover" && pinchesTerrain(e.position, e.radius, map.terrain.bounds)).map((e) => e.coverKind);
+      expect(pinches, `${map.id}: props pinching a lane against terrain`).toEqual([]);
+    });
+  }
 });

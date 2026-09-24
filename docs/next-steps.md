@@ -31,6 +31,30 @@ Capture button, becomes "Captured Turret" you select and fire (Tab reaches owned
 **Not reproduced:** "the picked Deploy card moves to first in the row" — card positions are identical
 before/after picking at 1800×980; likely the same stuck-flash bug. Ask the owner if it persists.
 
+## Playtest round 2 (2026-09-23) — done
+
+Maps decluttered to 8–14 deliberate props each with a two-tank gap everywhere (see CLAUDE.md "MAPS ARE
+MINIMAL"); Striker $280 → $340 (open maps put it at 2.83x the median dmg/$, now 2.33x). Deck cards are two
+rows so a price can never be pushed out; the UI audit's blind spot for wholly-clipped text is closed and
+fault-injected. 2-player: handoff card rewritten (whose turn / one instruction / intel box / go), faction
+blurbs shortened, preview caption no longer repeats the list. Menu state leak ("brightness stayed down
+after Settings") fixed at the root — derived from the DOM — and gated. Intro rail cancels on leaving.
+Seat split in balance self-play is 35% (gate 35–65): at the edge; widen seeds before tuning if it tips.
+
+## Owner's batch 3 (2026-09-24) — the next rounds, in this order
+
+1. **Unit value scaling**: every unit's HP / damage worth its cost (the tank must be worth its price).
+   Measure with the self-play dmg/$ table plus an HP/$ column before touching numbers.
+2. **Fun physics**: explosions / rockets throw INFANTRY with a proper ragdoll-ish arc + tumble + land
+   (vehicles rock, never fly). Builds on `applyKnockback` + the THROWN death family.
+3. **Base upgrade clarity**: Income (and CP) upgrades say exactly what you get ("+$25/turn → $135/turn").
+4. **Tech unlocks new Defenses and Support powers**, not just troops.
+5. **Tutorial**: quick but complete — aim follows a moving target or its old spot? support cooldown +
+   re-buy, CP, climb, capture, cover, deploy ring, End Turn resolves both sides at once.
+6. **Faction identity, much stronger** in look AND play (they still read alike).
+7. **Look-and-feel overhaul** (toon, "AAA"): infantry up to the tank's quality bar; maps and map props
+   more striking; projectiles cooler (grenades already good — use them as the bar).
+
 ## Next — in priority order
 
 0. **Faction identity (2026-09-23)** is merged to `main` (PR #3): each faction owns

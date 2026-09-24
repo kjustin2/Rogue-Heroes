@@ -437,7 +437,7 @@ export function mountMapPreview(host: HTMLElement, map: MapDef, mode: ModeId, op
   };
   const setCaption = (): void => {
     const size = mapSize(scene.map);
-    caption.innerHTML = `<strong>${scene.map.name}<em class="map-size-badge size-${size}">${size}</em></strong><span>${scene.map.feel}</span>`;
+    caption.innerHTML = `<strong>${scene.map.name}<em class="map-size-badge size-${size}">${size}</em></strong><span>${scene.map.blurb}</span>`;
   };
   const tick = (ts: number): void => {
     raf = 0;

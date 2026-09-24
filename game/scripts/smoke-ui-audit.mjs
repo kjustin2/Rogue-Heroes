@@ -78,6 +78,37 @@ const SCREENS = [
   }],
   ["armory", async (page) => { await page.evaluate(() => window.__rht.toMenu()); await delay(400); await page.click('[data-menu="armory"]'); await delay(500); }],
   ["achievements", async (page) => { await page.evaluate(() => window.__rht.toMenu()); await delay(400); await page.click('[data-menu="achievements"]'); await delay(500); }],
+  // EVERY CARD IN EVERY FACTION'S DECK (2026-09-23: a unit's price was pushed wholly out of its card
+  // and nothing caught it). All doctrines researched so every card shows, some on cooldown (the
+  // longer "N turns" label), and the longest-named card ARMED ("Placing…").
+  ...["vanguard", "syndicate", "bastion"].map((faction) => [`deck-${faction}`, async (page) => {
+    await page.evaluate((f) => {
+      const r = window.__rht;
+      r.startBattle("dustbowl", "destroy", "normal", f);
+      const sim = r.sim;
+      sim.economy.set("player", 9000);
+      const base = sim.entities.find((e) => e.team === "player" && e.kind === "base");
+      base.unlockedTech = r.techIds();
+      base.spawnCooldowns = { soldier: 3 }; // a card showing "3 turns" instead of its price
+      sim.select(base.id);
+    }, faction);
+    await delay(500);
+    await page.click('[data-base-tab="deploy"]');
+    await delay(300);
+    await page.evaluate(() => {
+      const cards = [...document.querySelectorAll("[data-spawn]:not([data-spawn-quick])")];
+      const longest = cards.sort((a, b) => b.textContent.trim().length - a.textContent.trim().length)[0];
+      longest?.click();
+    });
+    await delay(400);
+  }]),
+  ["defenses-armed", async (page) => {
+    await page.click('[data-base-tab="defenses"]');
+    await delay(300);
+    await page.evaluate(() => document.querySelector("[data-build]")?.click());
+    await delay(400);
+    await page.evaluate(() => { window.__rht.sim.setPendingBuild?.(undefined); });
+  }],
   ["targeting", async (page) => {
     await page.evaluate(() => window.__rht.scenario("firefight"));
     await delay(500);
@@ -88,6 +119,17 @@ const SCREENS = [
       if (actor) { sim.debugSelect(actor.id); window.__rht.setIntent("shoot"); }
     });
     await delay(600);
+  }],
+  // LOCAL 2 PLAYERS: the set-up page with the Opponent row switched, and the handoff card.
+  ["versus-setup", async (page) => {
+    await page.evaluate(() => window.__rht.toMenu()); await delay(400);
+    await page.click('[data-menu="play"]'); await delay(400);
+    await page.click('[data-opponent="local"]'); await delay(400);
+  }],
+  ["versus-handoff", async (page) => {
+    await page.click("[data-start]");
+    await page.waitForSelector(".hotseat-card", { timeout: 8000 });
+    await delay(400);
   }],
 ];
 
@@ -100,7 +142,13 @@ try {
   for (const size of VIEWPORTS) {
     await page.setViewportSize(size);
     await delay(250);
+    // AUDIT_ONLY=a,b runs just those screens, in SCREENS order (list a prerequisite too:
+    // AUDIT_ONLY=versus-setup,versus-handoff); AUDIT_VIEWPORT=1280 one width. For a quick recheck
+    // of one finding; the full sweep stays the gate.
+    const only = process.env.AUDIT_ONLY?.split(",");
+    if (process.env.AUDIT_VIEWPORT && String(size.width) !== process.env.AUDIT_VIEWPORT) continue;
     for (const [name, setup] of SCREENS) {
+      if (only && !only.includes(name)) continue;
       await setup(page);
       await delay(250);
       const findings = await page.evaluate(() => window.__rht.auditUI());
@@ -154,6 +202,42 @@ try {
   if (injected.found === 0) { console.error("FAULT INJECTION: a strip over the Skirmish choices produced no 'occluded' finding — the gate is decorative"); failures += 1; }
   else if (injected.after !== 0) { console.error("FAULT INJECTION: findings persisted after the strip was removed"); failures += 1; }
   else console.log(`  ok   fault injection — ${injected.found} occluded control(s) under the strip, 0 without it`);
+  // FAULT INJECTION 3 — a price pushed wholly out of its card (the owner's bug). The clipped rule
+  // must name it, and go quiet when the card is gone.
+  const pushed = await page.evaluate(() => {
+    const card = document.querySelector(".menu-screen > .menu-content");
+    const btn = document.createElement("button");
+    btn.id = "audit-fault-price";
+    btn.style.cssText = "position:absolute;left:30px;top:60px;width:120px;display:flex;overflow:hidden;white-space:nowrap;font-size:16px;color:#fff;background:#223";
+    btn.innerHTML = "<strong>An Extremely Long Unit Name</strong><span id=\"audit-fault-price-tag\">$250</span>";
+    card?.appendChild(btn);
+    const found = window.__rht.auditUI().filter((f) => f.rule === "clipped" && f.sel.includes("audit-fault-price")).length;
+    btn.remove();
+    return found;
+  });
+  if (!pushed) { console.error("FAULT INJECTION: a price pushed out of its card produced no 'clipped' finding — the gate is decorative"); failures += 1; }
+  else console.log(`  ok   fault injection — the pushed-out price was named (${pushed})`);
+  // MENU STATE LEAK (owner 2026-09-23: "went into settings then back to battle and everything kept
+  // its filter of brightness down"). Every in-battle menu path must hand the battle back exactly as
+  // it was: no menu backdrop, full render path, live HUD. Settings and Controls, each closed by its
+  // own Back button, then Resume.
+  for (const sub of ["settings", "controls"]) {
+    // A REAL battle (startBattle), not scenario(): outside a battle Settings' Back rightly goes to the title.
+    await page.evaluate(() => { document.querySelectorAll(".menu-screen, .pause-overlay").forEach((e) => e.remove()); window.__rht.startBattle("dustbowl", "destroy", "normal"); });
+    await delay(500);
+    await page.click('[data-command="open-menu"]'); await delay(300);
+    await page.click(`[data-pause="${sub}"]`); await delay(400);
+    const during = await page.evaluate(() => window.__rht.menuState());
+    await page.evaluate(() => document.querySelector(".menu-screen [data-back], .pause-overlay [data-back]")?.click()); await delay(400);
+    await page.evaluate(() => document.querySelector('[data-pause="resume"]')?.click()); await delay(400);
+    const after = await page.evaluate(() => window.__rht.menuState());
+    if (!during.hudInert) { console.error(`MENU LEAK: ${sub} open but the HUD is not inert (the check is blind): ${JSON.stringify(during)}`); failures += 1; }
+    else if (after.menusOpen || after.lowCost || after.hudInert) { console.error(`MENU LEAK: back from ${sub} to the battle left ${JSON.stringify(after)}`); failures += 1; }
+    else console.log(`  ok   menu leak — battle -> ${sub} -> Back -> Resume restores the battle`);
+  }
+  // Back to the Skirmish page: the readability plants go into its card.
+  await page.evaluate(() => window.__rht.toMenu()); await delay(400);
+  await page.click('[data-menu="play"]'); await delay(500);
   // FAULT INJECTION 2 — readability. A 9px label in near-surface grey inside a card, and a bare
   // label floating over the canvas with no plate or halo; the size, contrast and surface rules
   // must each name their offender, and go quiet once it is gone.

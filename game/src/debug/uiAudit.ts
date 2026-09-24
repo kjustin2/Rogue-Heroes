@@ -250,12 +250,19 @@ export function auditUI(root: Element = document.body): UiFinding[] {
     // Partially clipped by a NON-scrolling ancestor: the row is cut in half with no way to reveal
     // it, which is the roster bug. A scroll container is exempt — that content is reachable.
     const shown = visibleBox(el, root);
+    // FULLY clipped counts too. The rule used to skip an element with no visible box at all, which
+    // is exactly a price pushed wholly out of an overflow:hidden card by a long name -- the
+    // worst case of the bug, and the one the owner hit (2026-09-23).
+    if (!shown) {
+      findings.push({ rule: "clipped", sel: describe(el), detail: "wholly hidden by a non-scrolling ancestor", rect: box });
+      continue;
+    }
     // Ratio AND absolute loss. A 9px-tall inline <em> can lose 15% of its area to integer rect
     // rounding alone, so a ratio-only rule reports chrome that is perfectly fine; 4px on an axis is
     // past any rounding and is a real cut.
-    const lostW = shown ? box.w - shown.w : box.w;
-    const lostH = shown ? box.h - shown.h : box.h;
-    if (shown && !scrollableAncestor(el, root) && (lostW > 4 || lostH > 4)) {
+    const lostW = box.w - shown.w;
+    const lostH = box.h - shown.h;
+    if (lostW > 4 || lostH > 4) {
       findings.push({
         rule: "clipped",
         sel: describe(el),
@@ -280,7 +287,7 @@ export function auditUI(root: Element = document.body): UiFinding[] {
       findings.push({
         rule: "overlap",
         sel: describe(a.el),
-        detail: `overlaps ${describe(b.el)} by ${Math.round(area)}px²`,
+        detail: `"${(a.el.textContent ?? "").trim().slice(0, 30)}" overlaps ${describe(b.el)} "${(b.el.textContent ?? "").trim().slice(0, 30)}" by ${Math.round(area)}px²`,
         rect: a.box,
       });
     }
