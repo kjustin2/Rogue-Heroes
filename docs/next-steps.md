@@ -82,6 +82,15 @@ Seat split in balance self-play is 35% (gate 35–65): at the edge; widen seeds 
 20. ~~No objects near base spawns~~ DONE: `BASE_CLEAR` keeps every deploy ring empty (props.test).
 21. ~~Rotatable placements~~ DONE (T / Rotate ⟳ in 45° steps; a wall ghost shows the facing): a wall's facing and an airstrike's line direction are the player's choice.
 
+## Visual goal (2026-09-24) — MET
+
+Owner: "infantry all look the same across factions and bases don't look different enough ... set a goal and
+hit it". Goal: every faction pair differs in SHAPE (silhouette IoU <= 0.80 infantry / <= 0.70 HQ) and COLOUR
+(>= 40 degrees hue) -- measured by `npm run measure:factions` -- plus infantry on the tank's ink line, a stance
+per faction and per-part hit reactions, with perf and animation gates green. Result: 0/15 -> 15/15 pairs; see
+CLAUDE.md "THE FACTION READ IS MEASURED". Next visual steps are the rest of `docs/overhaul-options.md`
+(maps/backgrounds 4-6, props 7-8, projectiles 9-11) once the owner has played this.
+
 ## Next — in priority order
 
 0. **Faction identity (2026-09-23)** is merged to `main` (PR #3): each faction owns

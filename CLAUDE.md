@@ -652,6 +652,27 @@ kept its ±60° wedge as `FRONT_ARC_HALF`.
   Syndicate scarf/bandolier + slat cages, jerrycans, spare wheel + tarp tents and a pennant mast;
   Bastion chest/shoulder plates + track skirts and armour bricks + bunker walls and a roof dome).
   Groups rebuild when `team:faction` changes. Evidence: `npm run shots:gpu -- factions`.
+- **THE FACTION READ IS MEASURED** (2026-09-24, owner: "infantry all look the same across factions and bases
+  don't look different enough"): `npm run measure:factions` stages the HQ + rifleman / heavy / marksman / medic
+  alone per faction on the real GPU (`shots:gpu factionmeasure`), then scores every faction PAIR: silhouette IoU
+  (infantry <= 0.80, HQ <= 0.70) and saturation-weighted hue distance (>= 40 degrees). Baseline 0/15 pairs -> 15/15.
+  `MEASURE_GATE=1` fails the run below the goal. What got it there, all in `worldRenderer.ts`:
+  `factionInfantryDress` is a SILHOUETTE kit per faction on existing part ids (Vanguard crest fin + lit visor
+  band + jet pack with swept fins + shoulder sensor pod + whip antenna; Syndicate pointed hood + face scarf +
+  ankle-length duster; Bastion bucket helm + huge pauldrons + tassets + tower shield), `factionBaseDress` is
+  architecture (Vanguard control tower + radar + helipad; Syndicate scrap palisade + crane; Bastion hex ring
+  wall + glacis + dome + pillboxes), and `FACTION_CAMO` is three hue families (steel blue / rust / green) blended
+  0.62 into troopers, 0.6 into machines -- this supersedes the older, smaller "Look" dress described below.
+  Silhouette mode hides contact shadows (they were a black disc in every shape test, `shots:silhouette` too).
+  The heavy's Vanguard/Syndicate pair sits AT 0.80 -- the one to watch. Same-faction mirror matches still read
+  by team (ring, trim, glow): `shots:gpu -- sameside`.
+- **Infantry wear the ink rim** (`INFANTRY_INK` 1.6cm) on big silhouette parts only (longest side >= 0.3m,
+  thinnest >= 0.08m, never the knee-split legs). **Faction stance** (`FACTION_STANCE`: torso lean, head
+  counters) and **per-part hit reactions** (`partHitByEntity`: head snaps back, thigh buckles, pack spins,
+  weapon knocked aside, chest rocks -- on the hit part even if the hit destroyed it) live in `paintPart`, torso
+  and head only, so the distance-locked gait is untouched (`smoke:animation` skate unchanged). Evidence:
+  `shots:gpu -- hitreactprobe` prints the swing (0.53 rad after a leg strike vs 0.06 idle). The perf baseline
+  was rebased for this (+35% draw calls on the stress scene; real-GPU p95 ~21ms, unchanged).
 - **Identity pass (2026-09-23, owner: "still too similar in look and gameplay")**. Rosters share
   only a CORE (rifleman, heavy gunner, marksman, medic, flak; tank on two) and each faction OWNS a
   block (`signatureUnits(id)`, derived): Vanguard = scout, jumper, gunship, interceptor, transport;
