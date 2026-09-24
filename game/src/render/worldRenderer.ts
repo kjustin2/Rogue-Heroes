@@ -1860,6 +1860,7 @@ export class WorldRenderer {
     if (entity.kind === "base") { if (kit) this.buildBaseKit(group, entity); else this.buildBase(group, entity); }
     if (isDefenseKind(entity.kind)) { if (kit && entity.kind === "turret") this.buildTurretKit(group, entity); else this.buildDefense(group, entity); }
     if (entity.kind === "cover") this.buildCover(group, entity);
+    if (entity.kind === "flak" || entity.kind === "turret" || isAirKind(entity.kind)) this.factionMachineDress(group, entity);
     if (entity.kind === "artillery") group.add(makeOutriggers());
     this.buildDigInRing(group, entity);
     // Flyers add their own ground shadow (dropped to terrain level) in buildGunship; everyone else
@@ -2006,6 +2007,15 @@ export class WorldRenderer {
       this.box(rig, entity, "body", [0.1, 0.08, 0.04], [0.34, 1.42, 0.11], 0xdaf7ff, { accent: true, emissive: glow, emissiveIntensity: 0.7 });
       this.cylinder(rig, entity, "body", 0.013, 0.95, [-0.14, 1.62, -0.36], 0x1a2226, [0.12, 0, 0.06], { metalness: 0.4 });
       this.box(rig, entity, "body", [0.05, 0.05, 0.05], [-0.17, 2.08, -0.3], 0xdaf7ff, { accent: true, emissive: glow, emissiveIntensity: 0.7 });
+      if (entity.kind === "heavy") {
+        // The heavy's bulk swallows the shared kit: a shoulder ROCKET POD keeps its outline Vanguard.
+        this.box(rig, entity, "body", [0.26, 0.56, 0.36], [-0.4, 1.54, -0.1], steel, { metalness: 0.35, rotation: [0.15, 0, 0], bevel: 0.2 });
+        this.box(rig, entity, "body", [0.2, 0.2, 0.04], [-0.4, 1.66, 0.09], 0x0c1418, { emissive: glow, emissiveIntensity: 0.4 });
+      } else if (entity.kind === "medic") {
+        // A MEDEVAC BEACON on a short mast off the pack: the medic's Vanguard read.
+        this.box(rig, entity, "pack", [0.07, 0.5, 0.07], [0.2, 1.62, -0.34], 0x2b3f55, { metalness: 0.4 });
+        this.box(rig, entity, "pack", [0.18, 0.14, 0.18], [0.2, 1.92, -0.34], 0xdaf7ff, { accent: true, emissive: glow, emissiveIntensity: 0.6, bevel: 0.3 });
+      }
     } else if (f === "syndicate") {
       // RAIDERS. A pointed cloth hood peaked over the helmet, a face scarf, and a knee-length ragged
       // poncho flaring out behind -- a hunched, wide, triangular outline nothing else on the field has.
@@ -2034,6 +2044,82 @@ export class WorldRenderer {
       for (const z of [0.2, -0.2]) this.box(rig, entity, "body", [0.5, 0.28, 0.08], [0, 0.64, z], plate, { metalness: 0.3, rotation: [z > 0 ? 0.12 : -0.12, 0, 0], bevel: 0.2 });
       this.box(rig, entity, "body", [0.56, 0.78, 0.08], [0, 0.98, -0.34], 0x3f4f26, { metalness: 0.3, bevel: 0.15 });
       this.box(rig, entity, "body", [0.08, 0.6, 0.02], [0, 0.98, -0.39], 0xe0b12a, { accent: true });
+    }
+  }
+
+  // FACTION DRESS FOR EVERYTHING ELSE (2026-09-24, "more variety in the faction unit looks across all
+  // their units"): the Flak Track and the Gun Turret were the same machine for all three factions, and
+  // the aircraft wore no faction at all. Big silhouette pieces per faction, plus faction livery on the
+  // flyers -- measured by `npm run measure:factions` (shared machines: outline + hue; every roster unit:
+  // reads as its own faction).
+  private factionMachineDress(group: THREE.Group, entity: CombatEntity): void {
+    const f = factionOfEntity(entity);
+    if (!f) return;
+    const glow = entity.team === "enemy" ? TEAMS.enemyAccent : this.playerAccent;
+    if (entity.kind === "flak") {
+      if (f === "vanguard") {
+        // A sleek RADOME on a mast behind the guns and a slab of sensor fins: the tech read.
+        this.cylinder(group, entity, "radar", 0.07, 0.9, [0.6, 1.3, -0.45], 0x2b3f55, [0, 0, 0], { metalness: 0.4 });
+        this.cylinder(group, entity, "radar", 0.42, 0.5, [0.6, 1.95, -0.45], 0x9fb6cc, [0, 0, 0], { metalness: 0.35, radiusBottom: 0.48 });
+        this.box(group, entity, "radar", [0.6, 0.05, 0.05], [0.6, 2.2, -0.45], 0xdaf7ff, { accent: true, emissive: glow, emissiveIntensity: 0.6 });
+        for (const side of [-1, 1]) this.box(group, entity, "hull", [0.08, 0.4, 1.2], [side * 1.0, 0.95, 0], 0x3c5a78, { metalness: 0.3, rotation: [0, 0, side * 0.25], bevel: 0.2 });
+      } else if (f === "syndicate") {
+        // A TECHNICAL: welded scrap gun shields round the mount, a spare-tyre stack and jerrycans.
+        for (const [x, z, yaw] of [[0, 0.42, 0], [-0.45, 0, Math.PI / 2], [0.45, 0, Math.PI / 2]] as const) {
+          this.box(group, entity, "gun", [0.8, 0.62, 0.06], [x, 1.2, z], 0x6e3a22, { metalness: 0.3, rotation: [0.12, yaw, 0.05], roughness: 0.85 });
+        }
+        this.cylinder(group, entity, "hull", 0.32, 0.22, [-0.6, 1.0, -0.55], 0x1c1c1c, [Math.PI / 2, 0, 0], { roughness: 0.95 });
+        this.cylinder(group, entity, "hull", 0.32, 0.22, [-0.6, 1.22, -0.55], 0x1c1c1c, [Math.PI / 2, 0, 0], { roughness: 0.95 });
+        for (const x of [0.3, 0.62]) this.box(group, entity, "hull", [0.26, 0.4, 0.18], [x, 1.08, -0.56], 0xa8472a, { accent: true, roughness: 0.8 });
+        for (const side of [-1, 1]) this.box(group, entity, "hull", [0.9, 0.7, 0.07], [side * 1.25, 1.05, 0.1], 0x5a4636, { metalness: 0.3, rotation: [0.1, side * 1.2, side * 0.35], roughness: 0.85 });
+        this.cylinder(group, entity, "radar", 0.025, 2.0, [0.8, 1.9, -0.6], 0x1a1a1a, [0, 0, -0.1], { metalness: 0.4 });
+        this.box(group, entity, "radar", [0.04, 0.34, 0.6], [0.9, 2.7, -0.32], 0xc4642c, { accent: true, roughness: 0.9 });
+      } else if (f === "bastion") {
+        // An armoured CASEMATE boxed over the gun mount and heavy skirts down to the treads.
+        this.box(group, entity, "hull", [2.2, 0.62, 1.5], [0, 1.15, -0.1], 0x4f6330, { metalness: 0.32, bevel: 0.15 });
+        this.box(group, entity, "hull", [1.8, 0.4, 0.5], [0, 1.2, 0.72], 0x4f6330, { metalness: 0.32, rotation: [-0.6, 0, 0], bevel: 0.15 });
+        this.box(group, entity, "hull", [0.7, 0.06, 0.03], [0, 1.3, 0.66], 0x0c1418, { emissive: glow, emissiveIntensity: 0.5 });
+        for (const side of [-1, 1]) this.box(group, entity, side < 0 ? "left-tread" : "right-tread", [0.14, 0.5, 1.8], [side * 1.32, 0.42, 0], 0x5c6448, { metalness: 0.28, bevel: 0.15 });
+      }
+    } else if (entity.kind === "turret") {
+      if (f === "vanguard") {
+        // A sensor DOME on a stalk and a sleek angled gun shield.
+        this.cylinder(group, entity, "sensor", 0.05, 0.6, [-0.4, 1.7, -0.3], 0x2b3f55, [0, 0, 0], { metalness: 0.4 });
+        this.cylinder(group, entity, "sensor", 0.3, 0.34, [-0.4, 2.12, -0.3], 0x9fb6cc, [0, 0, 0], { metalness: 0.35, radiusBottom: 0.34 });
+        this.box(group, entity, "gun", [1.1, 0.5, 0.08], [0, 1.2, 0.5], 0x3c5a78, { metalness: 0.35, rotation: [-0.35, 0, 0], bevel: 0.2 });
+      } else if (f === "syndicate") {
+        // Jagged scrap plates welded on at odd angles, and a pennant on a whip.
+        this.box(group, entity, "mount", [1.2, 1.1, 0.08], [-1.3, 0.6, 0.0], 0x5a4636, { metalness: 0.3, rotation: [0, Math.PI / 2, 0.4], roughness: 0.85 });
+        for (const [x, y, z, rz, h] of [[-0.6, 1.25, 0.35, 0.35, 1.2], [0.6, 1.3, 0.3, -0.3, 1.35], [0, 1.35, 0.55, 0.05, 0.8]] as const) {
+          this.box(group, entity, "gun", [0.55, h, 0.06], [x, y, z], 0x6e3a22, { metalness: 0.3, rotation: [0.15, 0, rz], roughness: 0.85 });
+        }
+        this.cylinder(group, entity, "sensor", 0.02, 1.6, [0.5, 2.0, -0.5], 0x1a1a1a, [0, 0, 0.08], { metalness: 0.4 });
+        this.box(group, entity, "sensor", [0.04, 0.3, 0.55], [0.55, 2.62, -0.25], 0xc4642c, { accent: true, roughness: 0.9 });
+      } else if (f === "bastion") {
+        // A thick concrete CASEMATE ring round the gun: a pillbox, not a gun on a plinth.
+        for (let i = 0; i < 6; i += 1) {
+          const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+          if (Math.abs(a - Math.PI / 2) < 0.6) continue; // the firing slot faces forward
+          this.box(group, entity, "mount", [1.1, 1.0, 0.34], [Math.sin(a) * 1.4, 0.5, Math.cos(a) * 1.4], 0x5c6448, { roughness: 0.95, rotation: [0, a, 0], bevel: 0.15 });
+        }
+        this.cylinder(group, entity, "mount", 1.65, 0.2, [0, 1.08, -0.1], 0x4f6330, [0, 0, 0], { metalness: 0.3, radiusBottom: 1.65 });
+      }
+    } else if (isAirKind(entity.kind)) {
+      // LIVERY: a faction colour band over the fuselage and wing panels, and the engines burn in the
+      // faction's own light (they were the loudest colour on every aircraft, in one shared orange).
+      const band = f === "vanguard" ? 0x3f6d9a : f === "syndicate" ? 0xa45a2c : 0x437e44;
+      const burn = f === "vanguard" ? 0x5fd0ff : f === "syndicate" ? 0xffa050 : 0x9ef07a;
+      const len = entity.kind === "bomber" ? 3.0 : entity.kind === "interceptor" ? 2.4 : 2.1;
+      this.box(group, entity, "hull", [0.08, 0.3, len * 0.8], [0, 0.34, 0], band, { metalness: 0.3, bevel: 0.2 });
+      for (const side of [-1, 1]) {
+        if (entity.kind === "interceptor" || entity.kind === "bomber") {
+          const off = entity.kind === "bomber" ? 1.9 : 0.95;
+          this.box(group, entity, entity.kind === "bomber" ? "engine" : "wing", [0.9, 0.08, 0.5], [side * off, 0.06, -0.15], band, { metalness: 0.28, rotation: [0, entity.kind === "interceptor" ? side * 0.5 : 0, 0] });
+          this.box(group, entity, "hull", [0.18, 0.12, 0.1], [side * (entity.kind === "bomber" ? 0.9 : 0.16), -0.14, entity.kind === "bomber" ? 0.66 : -1.48], burn, { accent: true, emissive: burn, emissiveIntensity: 0.6 });
+        } else {
+          this.box(group, entity, "hull", [0.06, 0.34, len * 0.55], [side * (entity.kind === "transport" ? 0.62 : 0.52), 0.02, 0], band, { metalness: 0.28 });
+        }
+      }
     }
   }
 
@@ -2303,7 +2389,7 @@ export class WorldRenderer {
     for (const side of [-1, 1]) this.box(group, entity, "hull", [0.06, 0.42, 0.42], [side * 0.22, 0.22, -1.05], factionPanel, { emissive: factionGlow, emissiveIntensity: 0.26 }); // twin tail fins
     for (const side of [-1, 1]) this.box(group, entity, "gun", [0.1, 0.1, 0.8], [side * 0.5, -0.06, 0.62], 0x7c8a84, { metalness: 0.4 }); // wing cannons
     for (const side of [-1, 1]) this.box(group, entity, "gun", [0.14, 0.14, 0.14], [side * 0.5, -0.06, 1.02], 0x2c3e48, { emissive: factionGlow, emissiveIntensity: 0.4 }); // muzzles
-    for (const side of [-1, 1]) this.box(group, entity, "hull", [0.22, 0.22, 0.34], [side * 0.16, 0, -1.3], 0xff8c3a, { emissive: 0xff6a1e, emissiveIntensity: 0.55 }); // engine cans
+    for (const side of [-1, 1]) this.box(group, entity, "hull", [0.22, 0.22, 0.34], [side * 0.16, 0, -1.3], 0x2a3236, { metalness: 0.4 }); // engine cans (the burn is faction livery)
     const shadow = makeContactShadow(entity.radius * 1.1);
     shadow.position.y = -(entity.agl ?? 7.5);
     group.add(shadow);
@@ -2319,7 +2405,10 @@ export class WorldRenderer {
     for (const side of [-1, 1]) this.box(group, entity, "engine", [2.4, 0.12, 1.0], [side * 1.7, 0.02, -0.1], 0x4a5a52, { metalness: 0.18 }); // long wings
     for (const side of [-1, 1]) for (const off of [0.9, 1.9]) this.box(group, entity, "engine", [0.32, 0.34, 0.8], [side * off, -0.16, 0.25], 0x2a3a34, { metalness: 0.25 }); // engine nacelles
     this.box(group, entity, "pack", [0.82, 0.24, 1.7], [0, -0.44, -0.1], 0x3a4042, { metalness: 0.2 }); // bomb bay
-    for (const z of [-0.55, 0, 0.55]) this.box(group, entity, "pack", [0.32, 0.36, 0.42], [0, -0.62, z], 0xffb02e, { emissive: 0xff7d26, emissiveIntensity: 0.3 }); // bombs
+    for (const z of [-0.55, 0, 0.55]) {
+      this.box(group, entity, "pack", [0.32, 0.36, 0.42], [0, -0.62, z], 0x3a3f36, { metalness: 0.3 }); // bombs: drab casings...
+      this.box(group, entity, "pack", [0.34, 0.08, 0.1], [0, -0.62, z + 0.18], 0xffb02e, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.3 }); // ...with a hazard band
+    }
     const shadow = makeContactShadow(entity.radius * 1.35);
     shadow.position.y = -(entity.agl ?? 8);
     group.add(shadow);
@@ -2490,7 +2579,7 @@ export class WorldRenderer {
       this.box(rig, entity, "rifle", [0.3, 0.36, 1.1], [0.5, 0.92, 0.4], 0x2b2f31, { metalness: 0.32, kit: "weapon-mg" });
       // (accent, so the team tint never turns the ammo drum into a pale blue disc at the hip)
       this.cylinder(rig, entity, "rifle", 0.22, 0.22, [0.54, 0.76, 0.5], 0x1a1c1e, [0, 0, 0], { accent: true, metalness: 0.3 });
-      this.box(rig, entity, "rifle", [0.34, 0.3, 0.22], [0.54, 0.92, 1.12], 0xb2842f, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.12 });
+      this.box(rig, entity, "rifle", [0.24, 0.2, 0.26], [0.54, 1.0, 0.22], 0xb2842f, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.12 }); // feed box ON the receiver (it sat past the muzzle, floating ahead of every heavy)
       for (let i = 0; i < 4; i++) this.box(rig, entity, "rifle", [0.12, 0.09, 0.1], [0.34 - i * 0.07, 0.8 - i * 0.015, 0.18 - i * 0.13], 0xb2842f, { accent: true, emissive: 0xff7d26, emissiveIntensity: 0.14 });
       // The back ammunition box (drum + feed chute + frame) replaces the generic rucksack.
       this.box(rig, entity, "pack", [0.44, 0.38, 0.26], [0, 0.92, -0.34], 0x6a4a2a, { accent: true, metalness: 0.32, kit: "ammobox-heavy" });
@@ -2516,8 +2605,8 @@ export class WorldRenderer {
       // The vest and crossed satchel straps are authored into torso-medic; the red cross sits on
       // its sternum plate (the accent) and a red armband rides the left upper arm — a "body"
       // mesh tagged as the arm limb, so it swings with the arm in the walk cycle.
-      this.box(rig, entity, "body", [0.18, 0.42, 0.05], [0, 0.9, 0.24], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.21 });
-      this.box(rig, entity, "body", [0.42, 0.16, 0.05], [0, 0.94, 0.24], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.21 });
+      this.box(rig, entity, "body", [0.13, 0.32, 0.05], [0, 0.92, 0.24], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.18 });
+      this.box(rig, entity, "body", [0.32, 0.12, 0.05], [0, 0.95, 0.24], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.18 });
       this.box(rig, entity, "body", [0.23, 0.1, 0.25], [-0.43, 0.9, 0.03], 0xff3b4e, { accent: true, emissive: 0xff2a44, emissiveIntensity: 0.12, bevel: 0.2 }).userData.limb = "arm-l";
       // SILHOUETTE. In the black-shape test the medic, engineer and sapper were the same outline:
       // a human with small chest kit that vanishes the moment colour does. Each now carries one
@@ -6133,7 +6222,7 @@ function infantryPalette(kind: string): { body: number; trim: number; pack: numb
     case "heavy": return { body: 0xa85a24, trim: 0x453930, pack: 0x4a2716 };
     case "grenadier": return { body: 0xd0a03a, trim: 0x4a4030, pack: 0x5c3510 };
     case "mortar": return { body: 0x7a6a34, trim: 0x46402f, pack: 0x54401a };
-    case "medic": return { body: 0xc44a58, trim: 0x4a3a3d, pack: 0x5e2129 };
+    case "medic": return { body: 0x9a9690, trim: 0x4a3a3d, pack: 0x5e2129 }; // neutral vest: the faction colour carries it, the red cross says medic
     case "engineer": return { body: 0xcaa227, trim: 0x474328, pack: 0x54481a };
     case "flamer": return { body: 0xb33418, trim: 0x4a3a30, pack: 0x6a2812 };
     case "droneop": return { body: 0x7f9fc4, trim: 0x3d4550, pack: 0x2c3f52 };

@@ -666,6 +666,14 @@ kept its ±60° wedge as `FRONT_ARC_HALF`.
   Silhouette mode hides contact shadows (they were a black disc in every shape test, `shots:silhouette` too).
   The heavy's Vanguard/Syndicate pair sits AT 0.80 -- the one to watch. Same-faction mirror matches still read
   by team (ring, trim, glow): `shots:gpu -- sameside`.
+  **Extended to every unit (2026-09-24)**: the measure also compares the shared MACHINES (tank, flak, turret;
+  turret held to the HQ's 0.70) and checks MEMBERSHIP -- every unit a faction fields is shot alone and must sit
+  nearest its own faction's signature hue (mean of HQ + rifleman) by >= 15 degrees. `factionMachineDress` gives
+  the Flak Track and Gun Turret a per-faction outline (Vanguard radome / sensor dome; Syndicate scrap-shield
+  "technical" + pennant; Bastion casemate / hex pillbox) and the flyers a faction livery (fuselage band, wing
+  panels, engine burn in the faction light -- the old shared orange burn made every jet read Syndicate; bombs
+  are drab with a hazard band). Medics wear a NEUTRAL vest (faction camo carries it) with a smaller cross.
+  Flyers are captured at agl 1.6 so the plane, not its shadow, is measured.
 - **Infantry wear the ink rim** (`INFANTRY_INK` 1.6cm) on big silhouette parts only (longest side >= 0.3m,
   thinnest >= 0.08m, never the knee-split legs). **Faction stance** (`FACTION_STANCE`: torso lean, head
   counters) and **per-part hit reactions** (`partHitByEntity`: head snaps back, thigh buckles, pack spins,

@@ -106,13 +106,19 @@ app.whenReady().then(async () => {
         fs.mkdirSync(dir, { recursive: true });
         win.setSize(900, 700); await sleep(500);
         await js(`(() => { const s = document.createElement("style"); s.textContent = "#ui, .toast, .mission-intro, .battle-loading { visibility: hidden !important; }"; document.head.appendChild(s); })()`);
-        const SUBJ = [["base", "base", 0.62], ["rifleman", "soldier", 0.3], ["heavy", "heavy", 0.3], ["marksman", "sniper", 0.3], ["medic", "medic", 0.3]];
+        const SUBJ = [["base", "base", 0.62], ["rifleman", "soldier", 0.3], ["heavy", "heavy", 0.3], ["marksman", "sniper", 0.3], ["medic", "medic", 0.3],
+          ["tank", "tank", 0.5], ["flak", "flak", 0.5], ["turret", "turret", 0.45]];
+        // Every unit each faction fields, colour only, for the membership check (does a signature
+        // unit read as its faction?). Flyers are framed from higher up.
+        const ROSTERS = { vanguard: ["soldier", "scout", "sniper", "jumper", "heavy", "medic", "tank", "flak", "gunship", "interceptor", "transport"],
+          syndicate: ["soldier", "sniper", "heavy", "striker", "grenadier", "flamer", "sapper", "droneop", "medic", "apc", "flak"],
+          bastion: ["soldier", "sniper", "heavy", "mortar", "medic", "engineer", "tank", "artillery", "flak", "bomber"] };
         for (const f of ["vanguard", "syndicate", "bastion"]) {
           await js(`window.__rht.startBattle("verdant", "destroy", "normal", ${JSON.stringify(f)}, ${JSON.stringify(f === "vanguard" ? "bastion" : "vanguard")})`);
           await sleep(2600);
           for (const [id, kind, zoom] of SUBJ) {
             await js(`(() => { const r = window.__rht, sim = r.sim; sim.debugClearField(); const at = { x: 0, z: -9 };
-              const e = ${JSON.stringify(kind)} === "base" ? sim.debugStructure("base", "player", at) : sim.debugSpawn(${JSON.stringify(kind)}, "player", at);
+              const e = ${JSON.stringify(kind)} === "base" ? sim.debugStructure("base", "player", at) : ${JSON.stringify(kind)} === "turret" ? sim.debugStructure("turret", "player", at) : sim.debugSpawn(${JSON.stringify(kind)}, "player", at);
               e.yaw = 0.35; r.deselect(); r.setView({ x: at.x, z: at.z, zoom: ${zoom}, pitch: 0.42, yaw: 1.2 }); })()`);
             await sleep(1600);
             const img = await win.webContents.capturePage();
@@ -122,8 +128,20 @@ app.whenReady().then(async () => {
             fs.writeFileSync(path.join(dir, `${id}-${f}-sil.png`), sil.toPNG());
             await js(`window.__rht.silhouette(false)`); await sleep(200);
           }
+          for (const kind of ROSTERS[f]) {
+            await js(`(() => { const r = window.__rht, sim = r.sim; sim.debugClearField(); const at = { x: 0, z: -9 };
+              const e = sim.debugSpawn(${JSON.stringify(kind)}, "player", at); e.yaw = 0.35; if (e.flying) e.agl = 1.6; r.deselect(); // low enough to be in frame: the livery is measured, not the altitude
+              const air = e.flying; r.setView({ x: at.x, z: at.z, zoom: air ? 0.62 : ${JSON.stringify(kind)} === "tank" || ${JSON.stringify(kind)} === "apc" || ${JSON.stringify(kind)} === "artillery" || ${JSON.stringify(kind)} === "flak" ? 0.5 : 0.3, pitch: air ? 0.62 : 0.42, yaw: 1.2 }); })()`);
+            await sleep(1400);
+            const img = await win.webContents.capturePage();
+            fs.writeFileSync(path.join(dir, `roster-${kind}-${f}.png`), img.toPNG());
+            await js(`window.__rht.silhouette(true)`); await sleep(400);
+            const sil = await win.webContents.capturePage();
+            fs.writeFileSync(path.join(dir, `roster-${kind}-${f}-sil.png`), sil.toPNG());
+            await js(`window.__rht.silhouette(false)`); await sleep(200);
+          }
         }
-        console.log("shot: factions-measure (15 subjects x colour + silhouette)");
+        console.log("shot: factions-measure (shared subjects + every roster unit, colour + silhouette)");
         win.setSize(1600, 900); await sleep(500);
         continue;
       }
