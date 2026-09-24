@@ -59,8 +59,8 @@ Seat split in balance self-play is 35% (gate 35–65): at the edge; widen seeds 
    research-gated.
 5. ~~Tutorial~~ DONE (11 one-idea cards: AP, simultaneous turns, shots at movers, climb, strike/push, cover, support cooldowns, hazards, capture): quick but complete — aim follows a moving target or its old spot? support cooldown +
    re-buy, CP, climb, capture, cover, deploy ring, End Turn resolves both sides at once.
-6. **Faction identity, much stronger** in look AND play (they still read alike).
-7. **Look-and-feel overhaul** (toon, "AAA"): infantry up to the tank's quality bar; maps and map props
+6. **Faction identity, much stronger** — OPTIONS WRITTEN, awaiting the owner's pick: `docs/overhaul-options.md` items 12–15. in look AND play (they still read alike).
+7. **Look-and-feel overhaul** — OPTIONS WRITTEN (`docs/overhaul-options.md` items 1–11), awaiting the pick. (toon, "AAA"): infantry up to the tank's quality bar; maps and map props
    more striking; projectiles cooler (grenades already good — use them as the bar).
 8. ~~GUI flows like a pro web designer~~ DONE (set-up is Battlefield → Sides → Rules with a stepper, a summary and Deploy now) (owner: "showing too much... wasn't clear what to do"):
    Skirmish set-up as a STEP flow (map → factions → mode → difficulty → go), not one wall.
@@ -68,7 +68,7 @@ Seat split in balance self-play is 35% (gate 35–65): at the edge; widen seeds 
 10. ~~AP made clear~~ DONE (unused-AP prompt with "don't show again", Gameplay toggle; tutorial part is item 5): how many each unit has and what spends them; an "unused CP" warning on End Turn
    with "don't show again", and a Gameplay option to turn it back on/off.
 11. ~~Options split~~ DONE (Settings tabs: Display & Sound / Gameplay / Controls): Settings (display / audio / controls) vs Gameplay (warnings, hints, pace ...).
-12. **Map backgrounds** (skyline / outer ground) look low-detail: enhance.
+12. **Map backgrounds** — see `docs/overhaul-options.md` items 4–5. (skyline / outer ground) look low-detail: enhance.
 13. ~~Progression per game~~ DONE (costs roughly halved, nothing callable on turn 1): tech CHEAP to start so every game explores a path; the opening is
    limited (no air strikes at turn 1 -- strikes and defenses unlocked by tech, see item 4).
 
