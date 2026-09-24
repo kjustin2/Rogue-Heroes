@@ -434,7 +434,7 @@ export function createTransport(id: string, name: string, team: Team, position: 
 }
 
 // Flak Track: the dedicated ground anti-air specialist — devastating vs flyers (high vsAir), long
-// range so its overwatch cone blankets the air lane, but thin and weak against ground armor.
+// range so it blankets the air lane, but thin and weak against ground armor.
 export function createFlak(id: string, name: string, team: Team, position: Vec2): CombatEntity {
   const entity: CombatEntity = {
     id,

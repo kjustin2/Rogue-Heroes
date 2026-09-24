@@ -21,6 +21,16 @@ IK knees, per-family death animations, ballistic projectile FX with a no-pop rul
 placement, draped ground overlays, themed maps, the research table, achievements, the toon UI with
 measured readability gates, and a whole-game glitch sweep whose findings were all fixed.
 
+## Playtest round 1 (2026-09-23) — done, awaiting the owner's next pass
+
+Owner report → fixed: selected unit blown out white (selection light + cone removed); move lines cut
+through slabs (draped); sawtooth "teeth" on the deploy ring at the Ironworks rim (conservative drape);
+▲ CLIMB tags on move previews; newly unlocked Deploy cards stuck on an amber flash frame (flash removed,
+NEW badge kept); Overwatch removed (see CLAUDE.md ban); Derelict Turret explains itself, has a Move to
+Capture button, becomes "Captured Turret" you select and fire (Tab reaches owned turrets).
+**Not reproduced:** "the picked Deploy card moves to first in the row" — card positions are identical
+before/after picking at 1800×980; likely the same stuck-flash bug. Ask the owner if it persists.
+
 ## Next — in priority order
 
 0. **Faction identity (2026-09-23)** is merged to `main` (PR #3): each faction owns

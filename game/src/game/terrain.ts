@@ -157,6 +157,24 @@ export function terrainHeightAt(point: Vec2): number {
   return clamp(height, 0, activeMax);
 }
 
+/** A move path's climbs: where the ground rises by at least `minRise` on the way from `from` to `to`.
+ *  Each climb reports the TOP of the rise (where the unit lands after stepping up) and its height.
+ *  Pure and sampled on the sim terrain, so the move preview and the real walk agree. */
+export function climbsAlong(from: Vec2, to: Vec2, minRise = 0.3, spacing = 0.2): Array<{ point: Vec2; rise: number }> {
+  const length = Math.hypot(to.x - from.x, to.z - from.z);
+  const steps = Math.max(1, Math.ceil(length / spacing));
+  const out: Array<{ point: Vec2; rise: number }> = [];
+  let prev = terrainHeightAt(from);
+  for (let i = 1; i <= steps; i += 1) {
+    const t = i / steps;
+    const point = { x: from.x + (to.x - from.x) * t, z: from.z + (to.z - from.z) * t };
+    const h = terrainHeightAt(point);
+    if (h - prev >= minRise) out.push({ point, rise: h - prev });
+    prev = h;
+  }
+  return out;
+}
+
 // True when a point sits on (or very near) a vertical block edge — props placed here would
 // straddle a cliff face and clip. Used by map authoring to keep cover on flat ground/tops.
 export function onTerrainEdge(point: Vec2, margin = 0.6): boolean {

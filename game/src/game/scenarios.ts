@@ -94,7 +94,7 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     id: "high-ground",
-    title: "High-ground overwatch",
+    title: "High-ground ambush",
     description: "A marksman on raised terrain overlooking enemies on the flat below.",
     apply(sim) {
       sim.configure(mapDef("causeway"), "destroy", "normal");

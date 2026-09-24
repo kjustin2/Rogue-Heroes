@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { STRIKER_CHARGE, TacticalSim, mapDef } from "./sim";
 
 // Unit identity abilities, round three (unit-identity picks 1, 3, 11):
-// scout DASH, striker CHARGE, sapper BREACH.
+// striker CHARGE, sapper BREACH. (Scout DASH went with Overwatch, 2026-09-23.)
 const settle = (sim: TacticalSim): void => {
   for (let t = 0; t < 80 && sim.phase === "resolve"; t += 0.05) sim.update(0.05);
 };
@@ -12,24 +12,6 @@ const disarm = (e: ReturnType<TacticalSim["debugSpawn"]>): void => {
   e.status.canMove = false; e.status.canShoot = false;
 };
 const hp = (e: { parts: { hp: number }[] }): number => e.parts.reduce((s, p) => s + p.hp, 0);
-
-describe("scout dash", () => {
-  it("never triggers enemy overwatch, where a soldier on the same path does", () => {
-    for (const [kind, expectReaction] of [["scout", false], ["soldier", true]] as const) {
-      const sim = staged();
-      const watcher = sim.debugSpawn("soldier", "enemy", { x: 0, z: 0 });
-      disarm(watcher); watcher.status.canShoot = true; // stays put, still shoots
-      sim.overwatching.set(watcher.id, 1);
-      sim.overwatchFacing.set(watcher.id, Math.atan2(-1, 0)); // watching -x
-      const runner = sim.debugSpawn(kind, "player", { x: -9, z: 0 });
-      sim.debugSelect(runner.id);
-      expect(sim.queueMove({ x: -4, z: 0 })).toBe(true);
-      sim.endTurn();
-      settle(sim);
-      expect(sim.log.some((l) => l.includes("reaction fire"))).toBe(expectReaction);
-    }
-  });
-});
 
 describe("striker charge", () => {
   it("accepts a strike from STRIKER_CHARGE metres out, runs in, and lands it", () => {

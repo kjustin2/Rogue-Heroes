@@ -6,7 +6,7 @@ is [`CLAUDE.md`](../CLAUDE.md). This file is a short tour of how the game plays.
 ## The loop
 
 - **Command phase:** every unit gets command points. Select a trooper, vehicle or aircraft and
-  queue orders — move, shoot (aimed at a specific part), grenade, melee, overwatch, take cover,
+  queue orders — move, shoot (aimed at a specific part), grenade, melee, take cover,
   load/unload transports, and each kind's signature ability. Your Home Base gets one order a turn:
   deploy a unit (you pick where in its ring), research a doctrine, build a defense, call a support
   strike, or upgrade income.

@@ -185,6 +185,40 @@ app.whenReady().then(async () => {
         await shot("rings-aura");
         continue;
       }
+      if (s === "climb") {
+        // Move preview up a step (Ironworks slab): the path drapes over the lip and a ▲ CLIMB tag
+        // stands on it. Three consecutive frames of the SELECTED trooper catch part flicker; then
+        // deselected, then the queued order (same drape + tag after the click).
+        await js(`window.__rht.startBattle("ironworks", "destroy", "normal")`);
+        await sleep(2400);
+        await js(`(() => { const r = window.__rht, s = r.sim; const u = s.debugSpawn("soldier", "player", { x: -14, z: 0 }); s.debugSelect(u.id); r.setIntent("move"); r.hoverGround({ x: -10.2, z: 0.3 }); r.setView({ x: -12, z: 0, zoom: 0.35, pitch: 0.75, yaw: 0 }); window.__climbId = u.id; })()`);
+        await sleep(1200);
+        for (const f of ["a", "b", "c"]) { await shot(`climb-select-${f}`); await sleep(120); }
+        await js(`(() => { const r = window.__rht; r.hoverGround(undefined); r.setIntent("select"); r.sim.deselect(); })()`);
+        await sleep(700);
+        await shot("climb-deselected");
+        await js(`(() => { const r = window.__rht, s = r.sim; s.debugSelect(window.__climbId); s.queueMove({ x: -10.2, z: 0.3 }); r.setIntent("select"); })()`);
+        await sleep(700);
+        await shot("climb-queued");
+        continue;
+      }
+      if (s === "basedeploy") {
+        // The owner's Ironworks frame: base selected, a Trooper deploy armed (green placement ring),
+        // camera close. The dark wedge beside the base showed a sawtooth edge here.
+        await js(`window.__rht.startBattle("ironworks", "destroy", "normal")`);
+        await sleep(2400);
+        await js(`(() => { const r = window.__rht, s = r.sim; const hq = s.entities.find(e => e.team === "player" && e.kind === "base"); s.select(hq.id); s.setPendingDeploy && s.setPendingDeploy("soldier"); r.setView({ x: hq.position.x + 2, z: hq.position.z, zoom: 0.5 }); })()`);
+        await sleep(1200);
+        await shot("basedeploy");
+        if (process.env.PROBE) {
+          // Bisect the edge teeth: without the deploy overlay, then with every light's shadow off.
+          await js(`window.__rht.sim.setPendingDeploy(undefined)`); await sleep(700);
+          await shot("basedeploy-nodisc");
+          await js(`window.__rht.sceneObject().traverse((o) => { if (o.isLight) o.castShadow = false; })`); await sleep(700);
+          await shot("basedeploy-noshadow");
+        }
+        continue;
+      }
       if (s === "baserings") {
         // The base selected on every map: its selection ring + placement circle must read on each palette.
         for (const map of ["dustbowl", "ironworks", "verdant", "causeway", "karak", "crossfire"]) {

@@ -42,7 +42,7 @@ symbols fail the build.
 | Boot camera steadiness on the real GPU (the title "earthquake" regression) | `npm run probe:intro` |
 | Units inside the terrain (title diorama + 5 AI turns on every map, ~3 min) | `npm run probe:terrain [map]` |
 | **Real-GPU frame-time probe** (hidden Electron, diffs compiled programs across resolves) | `npm run soak:gpu [scenario]` |
-| **Real-GPU screenshots** (`-- menu firefight lineup rings abilities direction nowalk maps volley vehicles structures …`; `vehicles` / `structures` = the vehicles-kit review frames, both teams; `maps` = one gameplay frame per battlefield (`volley` = a seven-family firing line mid-resolve: rounds, trails, flashes, blasts on the real GPU); UI screens `deploy settings armory achievements tech tutorial pause victory defeat hover hover-deck`; `air` = the four flyers, both teams; `deaths` = every death family filmed (16 frames); `tech` = the research table fresh + mid-game; `mapselect` shoots the Skirmish page at 1280×720 / 1600×900 / 2560×1080; `SHOT_PREFIX=before-` for a baseline build) | `npm run shots:gpu` |
+| **Real-GPU screenshots** (`-- menu firefight lineup rings abilities direction nowalk maps volley vehicles structures …`; `vehicles` / `structures` = the vehicles-kit review frames, both teams; `maps` = one gameplay frame per battlefield (`volley` = a seven-family firing line mid-resolve: rounds, trails, flashes, blasts on the real GPU); UI screens `deploy settings armory achievements tech tutorial pause victory defeat hover hover-deck`; `air` = the four flyers, both teams; `deaths` = every death family filmed (16 frames); `climb` = the Move preview up an Ironworks slab (▲ CLIMB tag, draped path, three consecutive frames of the selected unit); `basedeploy` = the base's deploy ring at the Ironworks rim (`PROBE=1` adds no-overlay / no-shadow bisect frames); `tech` = the research table fresh + mid-game; `mapselect` shoots the Skirmish page at 1280×720 / 1600×900 / 2560×1080; `SHOT_PREFIX=before-` for a baseline build) | `npm run shots:gpu` |
 | Locomotion filmstrips (`-- walk` flat-ground stride in profile, `march` scout, `trudge` heavy, `crouch`, `step` = up a terrain step vs talus / plates) | `npm run shots:step` |
 | Build + Electron gameplay smoke | `npm run test:play` |
 | Desktop app (build + Electron) | `npm run standalone` |
@@ -499,6 +499,17 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
 - **Deaths are per family** (`poseDeath`, renderer-only, seeded by entity id; `deathMs()` per family): infantry killed by a big blow (flinch mag >= 0.6) are THROWN (arc + flip + bounce + dust), otherwise CRUMPLE or SPIN; ground vehicles WRECK (hop, roll, turret thrown clear by `blowOffTurret`, charred + smoking, then sink); aircraft SPIRAL nose-down and explode on impact. Group-level transforms (plus the turret throw after `paintPart`), so pooled paint / per-part damage never know. Evidence: `shots:gpu deaths` (`DEATH_VIEW='{...}'` to reframe; `__rht.debugKill(id, blow)` is the capture seam).
 - **Every procedural machine wears the ink rim** (`defaultInk` in `box()`/`cylinder()`): aircraft, flak and the fallback hulls. The flyers were the one rimless family and read as blurry. Accent lamps stay rimless; infantry and scenery keep their own rules. Pale steel/glass (>~180 luminance) on machines blooms into smears — keep barrels gunmetal.
 - **EVERY ground overlay is DRAPED** on the drawn ground (`drawnGroundAt`). Static rings/discs — pickups, mines, map-event telegraphs, burn/gas/smoke skirts, downed markers, objective rings — come from `drapedDisc()` (cached per map, `userData.shared`, cleared in `applyMap`); the aim splash disc is draped per build. Never add a flat `RingGeometry`/`CircleGeometry` at `terrainHeightAt` again (glitch sweep #5: a pickup ring buried in a plate read as a tan comma). Cover props stand on the drawn ground too.
+- **Drape is CONSERVATIVE and CLAMPED** (2026-09-23, the "teeth" beside the Ironworks base): `drapeToTerrain`
+  clamps every vertex to `ARENA_BOUNDS`, and a filled `PlaneGeometry` overlay lifts each vertex to the highest
+  drawn ground within half a grid cell — a triangle spanning a talus lip otherwise cuts UNDER the slope and is
+  hidden in a stripe per cell (sawtooth). Bisected with `PROBE=1 npm run shots:gpu -- basedeploy` (the teeth
+  vanished with the overlay hidden and survived shadows off). Move orders and the live Move preview are draped
+  too (`addDrapedMovePath`): a straight tube between endpoint heights sliced through slabs.
+- **Selection is a ring, never a light.** The old selection point light (+ a translucent cyan cone round the
+  body) blew the selected unit into a glowing white blob and changed the scene's light count on every
+  select/deselect. The body gets a small lift in `paintPart` only. Evidence: `shots:gpu -- climb`.
+- **▲ CLIMB tags** mark every step UP a move path takes (`climbsAlong` in terrain.ts — sim terrain, so the
+  cue matches the walk), on queued moves and on the live preview while Move is armed.
 - **Ground overlays are DRAPED** (`drapeToTerrain`): the move field / weapon ring are subdivided flat
   meshes whose vertices are pulled to `terrainHeightAt` (re-draped only when selection/position/radius
   change). A flat disc at the actor's elevation sinks into the next mesa and hangs past a ledge — that
@@ -514,8 +525,8 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   pushes standing units aside. `scatter.test.ts` audits every map: no prop overlap, no prop
   straddling a step (`nudgeOffEdge` slides authored signature pieces, mirrored AFTER the nudge).
 - **Charge / dash / breach**: `meleeRange()` adds `STRIKER_CHARGE` for the striker and the melee
-  order closes the gap first (a real move: overwatch + mines + separation apply; the swing clock
-  starts in reach); scouts never trigger `checkOverwatch`; a sapper round vs cover/wall is 9999.
+  order closes the gap first (a real move: mines + separation apply; the swing clock
+  starts in reach); a sapper round vs cover/wall is 9999.
 - **Airburst** (grenadier): `airburstBehindCover` — a launcher round that strikes or proximity-fuses
   on a COVER piece lands `AIRBURST_SHARE` (0.5) of its direct damage on the intended target within
   `AIRBURST_REACH` of the burst. Cover is half protection against the launcher, never full.
@@ -613,6 +624,15 @@ Achievements · Armory · Settings · Exit. Elites/bosses (`debugSpawn` options 
 bar) survive only for a future Skirmish set piece. The mission-intro rail now plays at the start of
 every Skirmish battle.
 
+## OVERWATCH IS GONE (owner's rule, 2026-09-23)
+
+**"Doesn't seem like we need overwatch ability, doesn't seem to do much."** The order, its HUD
+button / keybind (`O`), the watch-cone overlays, reaction fire (`checkOverwatch`), the AI's
+cone avoidance, its serialize fields and the scout's DASH perk (which only existed to dodge it)
+are deleted. Do not reintroduce a reaction-fire / watch order. Banned identifiers (grep to zero):
+`overwatch`, `queueOverwatch`, `checkOverwatch`, `overwatching`, `makeWatchCone`. The flank rule
+kept its ±60° wedge as `FRONT_ARC_HALF`.
+
 ## FACTIONS play, look and fight differently (2026-09-22)
 
 - **Look**: `FACTION_CAMO` (worldRenderer) blends each faction's camo into every hull (0.5), base
@@ -695,7 +715,7 @@ same screen — except after a recon pulse: `revealedTeam` records whose drone f
 SECOND and `enemyIntents()` returns the other human's real queued orders (no AI dry-run).
 **The second planner must not see the first one's plan** (2026-09-23 audit; `smoke:hotseat`
 asserts it through `__rht.overlayCounts()` and is fault-injection proven): `syncOrders` draws only
-`"player"`-side orders, overwatch wedges show only the planning side's in the command phase, and
+`"player"`-side orders, and
 `swapSides()` drops the outgoing seat's log lines (`logSeq` / `seatLogMark`) and its armed
 intent / pending deploy / build / support. What a player builds or deploys is physically on the
 board and stays visible; alternation is what keeps that fair. The HUD's turn chip names the seat

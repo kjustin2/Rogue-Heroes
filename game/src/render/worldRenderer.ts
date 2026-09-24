@@ -9,10 +9,10 @@ import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec
 import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isVehicleKind, type CombatEntity, type CoverKind, type DamagePart, type Team, type EntityKind, type PartRole } from "../game/damageModel";
 import { factionDef, type FactionId } from "../game/factions";
 import type { OrderKind, Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
-import { OVERWATCH_ARC_HALF, carpetDropPoints } from "../game/sim";
+import { carpetDropPoints } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type SkylineKind } from "../game/maps";
 import type { TroopKind } from "../game/units";
-import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
+import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, climbsAlong, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
 import { kitGeometry, modelsVersion, propGeometry, toonGradient, vehicleGeometry, vehiclesKitReady, type KitPart, type PropsKind, type VehiclesPart } from "./models";
 import { VEHICLE_LAYOUT } from "./vehiclesLayout";
 import {
@@ -104,8 +104,6 @@ export class WorldRenderer {
   private readonly selectionDisc: THREE.Mesh;
   private readonly ringInk: THREE.Mesh;
   private lastRingSig = "";
-  private readonly selectionBeacon: THREE.Mesh;
-  private readonly selectionLight: THREE.PointLight;
   private readonly targetRing: THREE.Mesh;
   private readonly actionRangeRing: THREE.Mesh;
   private readonly shootRangeRing: THREE.Mesh;
@@ -193,18 +191,6 @@ export class WorldRenderer {
     this.selectionDisc.rotation.x = -Math.PI / 2;
     this.selectionDisc.position.y = 0.026;
     this.scene.add(this.selectionDisc);
-
-    this.selectionBeacon = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.06, 0.34, 1.5, 24, 1, true),
-      new THREE.MeshBasicMaterial({ color: 0x9dfcff, transparent: true, opacity: 0.13, depthWrite: false })
-    );
-    this.selectionBeacon.position.y = 1.18;
-    this.scene.add(this.selectionBeacon);
-
-    // Tight range so the selection glow hugs the unit instead of flooding the ground.
-    this.selectionLight = new THREE.PointLight(0x9dfcff, 1.2, 3.4);
-    this.selectionLight.position.y = 1.55;
-    this.scene.add(this.selectionLight);
 
     this.targetRing = new THREE.Mesh(
       new THREE.RingGeometry(1.08, 1.18, 56),
@@ -703,12 +689,9 @@ export class WorldRenderer {
    * first resolve of a session paid a 70-300ms shader compile in the middle of the action
    * (measured on the real GPU by soak:gpu, which diffs the program list across a resolve).
    */
-  /** Test seam: how many order overlays and overwatch watchers are drawn right now (smoke:hotseat). */
-  overlayCounts(): { orders: number; overwatch: number } {
-    return {
-      orders: this.orderRoot.children.length,
-      overwatch: this.auraRoot.children.filter((c) => c.userData.overwatchOf !== undefined).length,
-    };
+  /** Test seam: how many order overlays are drawn right now (smoke:hotseat). */
+  overlayCounts(): { orders: number } {
+    return { orders: this.orderRoot.children.length };
   }
 
   warmUpSamplers(): THREE.Object3D[] {
@@ -3986,7 +3969,10 @@ export class WorldRenderer {
     const color = _paintColor.set(base).lerp(hexColor(0x33120f), injury * 0.55);
     if (ratio < 0.42 && part.hp > 0) color.lerp(hexColor(0xff5f35), 0.16 + injury * 0.18);
     if (!entity.status.alive) color.lerp(hexColor(0x08090a), 0.55);
-    if (selected && part.hp > 0) color.lerp(hexColor(0xffffff), 0.24);
+    // Selection is a LIFT, not a wash: 24% toward white plus a strong emissive bloomed the selected
+    // trooper into a glowing white blob with no model left in it (owner report, 2026-09-23). The
+    // cyan ring under the unit carries "selected"; the body only needs to step forward a little.
+    if (selected && part.hp > 0) color.lerp(hexColor(0xffffff), 0.07);
     if (targeted && part.hp > 0) color.lerp(hexColor(0xffd166), targetedPart ? 0.58 : 0.3);
     // Hit flash: a freshly-damaged part snaps white for a beat, so the eye catches what got hit.
     const flash = part.hp > 0 ? this.partFlash(entity.id, part.id) : 0;
@@ -4013,7 +3999,7 @@ export class WorldRenderer {
       // player unit, it tinted the whole roster toward one hue and buried the per-role palette
       // underneath it — which is most of why six different troopers read as six teal blobs. The
       // marker ring above each unit is what actually carries the team read.
-      ? (mesh.userData.baseEmissiveIntensity as number) + (unitGlow ? 0.022 : 0) + (coverGlow ? 0.18 : 0) + (selected ? 0.58 : 0) + (targetedPart ? 0.72 : targeted ? 0.34 : 0)
+      ? (mesh.userData.baseEmissiveIntensity as number) + (unitGlow ? 0.022 : 0) + (coverGlow ? 0.18 : 0) + (selected ? 0.2 : 0) + (targetedPart ? 0.72 : targeted ? 0.34 : 0)
       : 0;
     // Living idle: standing infantry breathe, their arms + held weapon carry a slow sway, and the
     // torso does a subtle weight-shift — phase-offset per unit so a squad doesn't move in lockstep,
@@ -4105,8 +4091,6 @@ export class WorldRenderer {
     this.ring.visible = Boolean(selected);
     this.ringInk.visible = Boolean(selected);
     this.selectionDisc.visible = Boolean(selected);
-    this.selectionBeacon.visible = Boolean(selected);
-    this.selectionLight.visible = Boolean(selected);
     if (!selected) return;
     const color = selected.team === "player" ? (selected.accent ?? this.playerAccent) : selected.team === "enemy" ? TEAMS.enemyMarker : 0xf6d776;
     const scale = Math.max(0.72, selected.radius * 1.12);
@@ -4136,18 +4120,6 @@ export class WorldRenderer {
     const discMat = this.selectionDisc.material as THREE.MeshBasicMaterial;
     discMat.color.setHex(color);
     discMat.opacity = 0.12 + pulse * 0.05;
-    this.selectionBeacon.position.x = selected.position.x;
-    this.selectionBeacon.position.y = selected.elevation + 1.18;
-    this.selectionBeacon.position.z = selected.position.z;
-    this.selectionBeacon.scale.set(scale * (1.0 + pulse * 0.08), 1, scale * (1.0 + pulse * 0.08));
-    const beaconMat = this.selectionBeacon.material as THREE.MeshBasicMaterial;
-    beaconMat.color.setHex(color);
-    beaconMat.opacity = 0.28 + pulse * 0.18;
-    this.selectionLight.position.x = selected.position.x;
-    this.selectionLight.position.y = selected.elevation + 1.55;
-    this.selectionLight.position.z = selected.position.z;
-    this.selectionLight.color.setHex(color);
-    this.selectionLight.intensity = 0.9 + pulse * 0.4;
   }
 
   private syncTarget(sim: TacticalSim, targetId: string | undefined): void {
@@ -4194,14 +4166,10 @@ export class WorldRenderer {
 
   // Faint rings showing the reach of support/spotter auras (medic, engineer, scout, sniper),
   // so the player can see which allies benefit. Command phase only to avoid resolve clutter.
-  // Signature for the aura/overwatch overlay: the watcher + aura-unit content, plus a ~15fps pulse
-  // bucket so the slow opacity pulse still animates while the geometry stays static between beats.
+  // Signature for the aura overlay: the aura-unit content, plus a ~15fps pulse bucket so the slow
+  // opacity pulse still animates while the geometry stays static between beats.
   private aurasSignature(sim: TacticalSim): string {
     let sig = `${sim.phase}|${Math.floor(performance.now() / 66)}`;
-    for (const [id] of sim.overwatching) {
-      const w = sim.entity(id);
-      if (w?.status.alive) sig += `|ow:${id}:${w.team}:${w.position.x.toFixed(1)},${w.position.z.toFixed(1)}:${(sim.overwatchFacing.get(id) ?? -9).toFixed(2)}`;
-    }
     if (sim.phase === "command") {
       for (const e of sim.entities) {
         if (!e.status.alive || e.kind === "cover") continue;
@@ -4221,36 +4189,6 @@ export class WorldRenderer {
     if (sig === this.lastAurasSig) return;
     this.lastAurasSig = sig;
     this.disposeAndClear(this.auraRoot);
-    const owPulse = (Math.sin(performance.now() * 0.005) + 1) * 0.5;
-    // Overwatch kill zones show in BOTH phases — the amber wedge is the whole promise.
-    for (const [watcherId] of sim.overwatching) {
-      const watcher = sim.entity(watcherId);
-      if (!watcher || !watcher.status.alive) continue;
-      // While planning, a wedge is only shown to its own side: in hotseat the other human's
-      // overwatch is armed in the same command phase and is theirs to spring.
-      if (sim.phase === "command" && watcher.team !== "player") continue;
-      const radius = sim.overwatchRadius(watcher);
-      const y = watcher.elevation + 0.06;
-      const facing = sim.overwatchFacing.get(watcherId);
-      // Filled directional wedge marking the watched arc (or a full disc for a legacy save with
-      // no stored facing), plus a faint full-range ring so the total reach still reads.
-      this.auraRoot.add(makeWatchCone(watcher.position, y - 0.006, radius, facing ?? 0, facing === undefined ? Math.PI : OVERWATCH_ARC_HALF, 0xffbf4d, 0.24 + owPulse * 0.12));
-      const ring = new THREE.Mesh(
-        new THREE.RingGeometry(radius - 0.16, radius, 72),
-        new THREE.MeshBasicMaterial({ color: 0xffbf4d, transparent: true, opacity: 0.16 + owPulse * 0.12, side: THREE.DoubleSide, depthWrite: false }),
-      );
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.set(watcher.position.x, y, watcher.position.z);
-      this.auraRoot.add(ring);
-      const eye = new THREE.Mesh(
-        new THREE.RingGeometry(0.28, 0.4, 24),
-        new THREE.MeshBasicMaterial({ color: 0xffbf4d, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false, depthTest: false }),
-      );
-      eye.rotation.x = -Math.PI / 2;
-      eye.position.set(watcher.position.x, watcher.elevation + watcher.height + 0.5, watcher.position.z);
-      eye.userData.overwatchOf = watcherId; // one per drawn watcher: what overlayCounts() tallies
-      this.auraRoot.add(eye);
-    }
     if (sim.phase !== "command") return;
     const pulse = (Math.sin(performance.now() * 0.004) + 1) * 0.5;
     for (const entity of sim.entities) {
@@ -4319,12 +4257,16 @@ export class WorldRenderer {
       const to = order.destination ?? sim.entity(order.targetId)?.position;
       if (!to) continue;
       const color = order.kind === "move" ? 0x9dfcff : order.kind === "ram" ? 0xffbf4d : order.kind === "melee" ? 0xb48cff : 0xff7f67;
+      if (order.kind === "move" && order.destination) {
+        addDrapedMovePath(this.orderRoot, from, to, color, 0.32);
+        this.orderRoot.add(makeEndpoint(to, color, actor.radius + 0.22, drawnGroundAt(to) + 0.26));
+        projectedPositions.set(actor.id, order.destination);
+        continue;
+      }
       const fromY = terrainHeightAt(from) + 0.24;
       const toY = terrainHeightAt(to) + 0.24;
       this.orderRoot.add(makeTubeLine(from, to, color, 0.32, fromY, 0.028, toY));
       this.orderRoot.add(makeLine(from, to, color, 0.62, fromY + 0.05, toY + 0.05));
-      if (order.kind === "move") this.orderRoot.add(makeEndpoint(to, color, actor.radius + 0.22, toY + 0.035));
-      if (order.kind === "move" && order.destination) projectedPositions.set(actor.id, order.destination);
     }
     // RECON PULSE: the enemy's next orders as ghost arrows — enemy red, thinner and fainter than the
     // player's own, with a hollow endpoint so they read as intent, not as an order you gave.
@@ -4382,17 +4324,14 @@ export class WorldRenderer {
       this.drawDeployGhost(sim, sim.pendingDeploy, point);
       return;
     }
-    // Aiming overwatch: preview the watch cone toward the cursor so the player sees the arc and
-    // radius before committing. The click direction becomes the watched facing.
-    if (sim.intent === "overwatch") {
-      const watcher = sim.selected;
-      if (watcher && !sim.overwatchFailureReason(watcher)) {
-        const facing = Math.atan2(point.x - watcher.position.x, point.z - watcher.position.z);
-        const radius = sim.overwatchRadius(watcher);
-        const y = watcher.elevation + 0.05;
-        this.groundAimRoot.add(makeWatchCone(watcher.position, y, radius, facing, OVERWATCH_ARC_HALF, 0xffbf4d, 0.3));
-        this.groundAimRoot.add(makeEndpoint({ x: watcher.position.x + Math.sin(facing) * radius, z: watcher.position.z + Math.cos(facing) * radius }, 0xffd166, 0.55, terrainHeightAt(point) + 0.05));
-      }
+    // Choosing a move: the path it would really walk, draped on the ground, with a climb marker at
+    // every step up — so "this goes up onto the slab" reads before the click, not after.
+    if (sim.intent === "move") {
+      const move = sim.previewMoveTo(point);
+      const actor = sim.selected;
+      if (!move || !actor) return;
+      addDrapedMovePath(this.groundAimRoot, move.from, move.to, 0x9dfcff, 0.24);
+      this.groundAimRoot.add(makeEndpoint(move.to, 0x9dfcff, actor.radius + 0.22, drawnGroundAt(move.to) + 0.26));
       return;
     }
     const aim = sim.groundAimPreview(point);
@@ -5228,14 +5167,32 @@ function clearDrapedDiscs(): void {
   drapedDiscs.clear();
 }
 
+const DRAPE_TAPS: ReadonlyArray<readonly [number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]];
 function drapeToTerrain(mesh: THREE.Mesh, lift: number): void {
   const pos = mesh.geometry.attributes.position as THREE.BufferAttribute;
   const s = mesh.scale.x || 1;
+  // The flat layout, kept from the first drape: vertices are clamped below, and a ring that moves
+  // must re-drape from its true shape, not from last time's clamped one.
+  const flat = (mesh.geometry.userData.flatXY as Float32Array | undefined) ?? (mesh.geometry.userData.flatXY = Float32Array.from({ length: pos.count * 2 }, (_, k) => (k % 2 ? pos.getY(k >> 1) : pos.getX(k >> 1))));
+  const b = ARENA_BOUNDS;
+  const params = (mesh.geometry as THREE.PlaneGeometry).parameters;
+  const reach = mesh.geometry.type === "PlaneGeometry" ? (params.width / params.widthSegments) * s * 0.5 : 0;
   for (let i = 0; i < pos.count; i += 1) {
-    const wx = mesh.position.x + pos.getX(i) * s;
-    const wz = mesh.position.z - pos.getY(i) * s; // local +y is world -z once laid flat
-    const p = { x: wx, z: wz };
-    const ground = drawnGroundAt(p);
+    // Clamped to the arena: past the edge the ground drops or climbs the boundary wall, and a
+    // triangle spanning that lip pierced the wall in a sawtooth (the "teeth" beside the Ironworks
+    // base, 2026-09-23). Nothing an overlay marks can be outside the arena anyway.
+    const wx = clamp(mesh.position.x + flat[i * 2] * s, b.minX, b.maxX);
+    const wz = clamp(mesh.position.z - flat[i * 2 + 1] * s, b.minZ, b.maxZ); // local +y is world -z once laid flat
+    pos.setX(i, (wx - mesh.position.x) / s);
+    pos.setY(i, (mesh.position.z - wz) / s);
+    // A filled plane's triangle spanning a lip (flat vertex below, rim-top vertex above) cuts UNDER
+    // the talus slope between them and is hidden in a stripe per grid cell -- the sawtooth. So a
+    // plane vertex rides the highest ground within half a cell: triangles pass over a lip, never
+    // into it. Thin rings (not planes) keep the exact point sample.
+    let ground = drawnGroundAt({ x: wx, z: wz });
+    if (reach > 0) {
+      for (const [dx, dz] of DRAPE_TAPS) ground = Math.max(ground, drawnGroundAt({ x: wx + dx * reach, z: wz + dz * reach }));
+    }
     pos.setZ(i, (ground + lift - mesh.position.y) / s);
   }
   pos.needsUpdate = true;
@@ -5264,34 +5221,6 @@ function makeSplashDisc(position: Vec2, color: number, radius: number): THREE.Gr
   drapeToTerrain(fill, 0.085);
   drapeToTerrain(ring, 0.097);
   group.add(fill, ring);
-  return group;
-}
-
-// A flat filled wedge on the ground — the overwatch watch cone — with its bisector pointing
-// along `facing` (a yaw, atan2(dx,dz) convention). The sector is built symmetric about the
-// mesh's local +X (which maps to world +X once laid flat), then the parent group is turned by
-// `facing - PI/2` so the wedge points where the unit is watching. A full-circle wedge
-// (halfAngle = PI) is the legacy 360° watch fallback.
-function makeWatchCone(center: Vec2, y: number, radius: number, facing: number, halfAngle: number, color: number, opacity: number): THREE.Group {
-  const group = new THREE.Group();
-  // Translucent wedge fill.
-  const fill = new THREE.Mesh(
-    new THREE.CircleGeometry(radius, 48, -halfAngle, halfAngle * 2),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false })
-  );
-  fill.rotation.x = -Math.PI / 2;
-  group.add(fill);
-  // A bright outer arc band so the kill-zone edge reads clearly on any ground color.
-  const band = Math.max(0.16, radius * 0.045);
-  const arc = new THREE.Mesh(
-    new THREE.RingGeometry(radius - band, radius, 48, 1, -halfAngle, halfAngle * 2),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: Math.min(0.95, opacity + 0.55), side: THREE.DoubleSide, depthWrite: false })
-  );
-  arc.rotation.x = -Math.PI / 2;
-  arc.position.y = 0.006;
-  group.add(arc);
-  group.position.set(center.x, y, center.z);
-  group.rotation.y = facing - Math.PI / 2;
   return group;
 }
 
@@ -5608,6 +5537,64 @@ function makeTubeLine(
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
   mesh.frustumCulled = false; // tracer/beam tubes hug the action — never cull (matches the trail/head)
   return mesh;
+}
+
+/**
+ * A move line laid over the DRAWN ground. It used to be one straight tube between the two endpoint
+ * heights, which cut through any slab or step in between and vanished under it. Plus an amber
+ * climb marker at every step UP the sim terrain takes on the way (the same terrain the walk uses).
+ */
+function addDrapedMovePath(root: THREE.Object3D, from: Vec2, to: Vec2, color: number, opacity: number): void {
+  const length = Math.hypot(to.x - from.x, to.z - from.z);
+  if (length < 0.05) return;
+  const steps = Math.max(1, Math.ceil(length / 0.3));
+  const points: THREE.Vector3[] = [];
+  for (let i = 0; i <= steps; i += 1) {
+    const t = i / steps;
+    const p = { x: from.x + (to.x - from.x) * t, z: from.z + (to.z - from.z) * t };
+    points.push(new THREE.Vector3(p.x, drawnGroundAt(p) + 0.24, p.z));
+  }
+  const path = new THREE.CurvePath<THREE.Vector3>();
+  for (let i = 1; i < points.length; i += 1) path.add(new THREE.LineCurve3(points[i - 1], points[i]));
+  const tube = new THREE.Mesh(new THREE.TubeGeometry(path, steps * 2, 0.028, 6, false), tubeMaterial(color, opacity));
+  tube.frustumCulled = false;
+  root.add(tube);
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), lineMaterial(color, 0.62));
+  line.position.y = 0.05;
+  root.add(line);
+  for (const climb of climbsAlong(from, to)) root.add(makeClimbMarker(climb.point));
+}
+
+// A "▲ CLIMB" tag standing over the lip of a climb: an amber pill with an ink rim, the UI's toon
+// language. A 3D arrow read as a diamond from the tactical camera; words and a caret read from any angle.
+let climbTagMaterial: THREE.SpriteMaterial | undefined;
+function makeClimbMarker(at: Vec2): THREE.Sprite {
+  if (!climbTagMaterial) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 96;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "#14181c";
+      ctx.beginPath(); ctx.roundRect(4, 4, 248, 88, 22); ctx.fill();
+      ctx.fillStyle = "#ffc24d";
+      ctx.beginPath(); ctx.roundRect(12, 12, 232, 72, 16); ctx.fill();
+      ctx.fillStyle = "#14181c";
+      ctx.font = "900 44px Rajdhani, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("▲ CLIMB", 128, 50);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    climbTagMaterial = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
+    climbTagMaterial.userData.shared = true;
+  }
+  const tag = new THREE.Sprite(climbTagMaterial);
+  tag.scale.set(1.2, 0.45, 1);
+  tag.position.set(at.x, drawnGroundAt(at) + 0.75, at.z);
+  tag.renderOrder = 10;
+  return tag;
 }
 
 function makeEndpoint(position: { x: number; z: number }, color: number, radius: number, y = 0.12): THREE.Mesh {

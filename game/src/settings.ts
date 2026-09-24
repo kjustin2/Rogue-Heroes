@@ -21,7 +21,7 @@ export const RENDER_SCALE_DPR: Record<RenderScale, number> = { performance: 0.62
 // Rebindable battle keys (KeyboardEvent.code values). Camera (WASD/arrows), digits,
 // Escape, and R stay fixed.
 export type BindableAction =
-  | "endTurn" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "overwatch" | "crouch" | "log" | "confirm" | "cycle";
+  | "endTurn" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "crouch" | "log" | "confirm" | "cycle";
 export const DEFAULT_KEYBINDS: Record<BindableAction, string> = {
   endTurn: "Space",
   move: "KeyM",
@@ -30,7 +30,6 @@ export const DEFAULT_KEYBINDS: Record<BindableAction, string> = {
   ram: "KeyX",
   defend: "KeyV",
   melee: "KeyB",
-  overwatch: "KeyO",
   crouch: "KeyC",
   log: "KeyL",
   confirm: "Enter",
@@ -44,7 +43,6 @@ export const KEYBIND_LABELS: Record<BindableAction, string> = {
   ram: "Ram order",
   defend: "Crouch panel",
   melee: "Strike order",
-  overwatch: "Overwatch panel",
   crouch: "Quick crouch",
   log: "Toggle log",
   confirm: "Confirm action",
@@ -100,7 +98,13 @@ export class GameSettings {
       if (s.actionPace === "slow" || s.actionPace === "normal" || s.actionPace === "fast") this.actionPace = s.actionPace;
       if (s.renderScale && RENDER_SCALES.includes(s.renderScale)) this.renderScale = s.renderScale;
       if (typeof s.highContrastTeams === "boolean") this.highContrastTeams = s.highContrastTeams;
-      if (s.keybinds && typeof s.keybinds === "object") this.keybinds = { ...DEFAULT_KEYBINDS, ...s.keybinds };
+      if (s.keybinds && typeof s.keybinds === "object") {
+        // Only known actions survive a load: a removed action (Overwatch) must not linger as a dead rebind row.
+        const saved = s.keybinds as Record<string, unknown>;
+        for (const action of Object.keys(DEFAULT_KEYBINDS) as BindableAction[]) {
+          if (typeof saved[action] === "string") this.keybinds[action] = saved[action] as string;
+        }
+      }
       if (typeof s.debugInfiniteMoney === "boolean") this.debugInfiniteMoney = s.debugInfiniteMoney;
       if (typeof s.debugFreeCooldown === "boolean") this.debugFreeCooldown = s.debugFreeCooldown;
     } catch {

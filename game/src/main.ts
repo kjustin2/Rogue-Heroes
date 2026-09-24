@@ -249,16 +249,6 @@ const hud = new Hud(uiRoot, sim, {
     if (ok) sfx.build();
     return ok;
   },
-  queueOverwatch: () => {
-    const ok = sim.queueOverwatch();
-    if (ok) sfx.select();
-    return ok;
-  },
-  queueOverwatchToward: (point) => {
-    const ok = sim.queueOverwatchToward(point);
-    if (ok) sfx.select();
-    return ok;
-  },
   queueRecon: () => {
     const ok = sim.queueRecon();
     if (ok) sfx.select();
@@ -481,7 +471,6 @@ window.addEventListener("keydown", (event) => {
     case "ram": hud.setAction("ram"); break;
     case "defend": hud.setAction("defend"); break;
     case "melee": hud.setAction("melee"); break;
-    case "overwatch": hud.setAction("overwatch"); break;
     case "crouch":
       if (sim.queueDefend("crouched")) hud.setAction("select");
       break;
@@ -1932,8 +1921,8 @@ function groundAimHover(): Vec2 | undefined {
   if (anyOverlayOpen() || sim.phase !== "command") return undefined;
   if (sim.pendingSupport) return hoverWorld; // strike-call targeting reticle
   if (sim.pendingDeploy) return hoverWorld; // placed-deploy ghost footprint
-  // Overwatch aims a watch cone at the cursor; grenade/shell aim a landing arc.
-  const aiming = sim.intent === "grenade" || sim.intent === "overwatch" || (sim.intent === "shoot" && sim.selectedCanGroundTarget());
+  // Grenade/shell aim a landing arc at the cursor; Move previews the path it would walk.
+  const aiming = sim.intent === "grenade" || sim.intent === "move" || (sim.intent === "shoot" && sim.selectedCanGroundTarget());
   return aiming ? hoverWorld : undefined;
 }
 
@@ -2135,8 +2124,6 @@ declare global {
       beginBuild(kind: DefenseKind): void;
       beginSupport(kind: SupportPowerKind): void;
       queueSupportAt(point: Vec2): boolean;
-      queueOverwatch(): boolean;
-      queueOverwatchToward(point: Vec2): boolean;
       queueCapture(id: string): boolean;
       queueMine(): boolean;
       queueRecon(): boolean;
@@ -2159,7 +2146,7 @@ declare global {
       perfReset(): void;
       diagnostics(): DiagnosticsReport;
       describeScene(): SceneDescription;
-      overlayCounts(): { orders: number; overwatch: number };
+      overlayCounts(): { orders: number };
       limbPose(entityId: string): { limb: string; rotX: number; rotY: number; posY: number; posZ: number }[];
       /** Objects the projectile/effect roots draw this frame (smoke:attacks). */
       fxCounts(): { projectiles: number; effects: number; airborneEffects: number };
@@ -2241,8 +2228,6 @@ window.__rht = {
   beginBuild: (kind) => sim.setPendingBuild(kind),
   beginSupport: (kind) => sim.setPendingSupport(kind),
   queueSupportAt: (point) => sim.queueSupportAt(point),
-  queueOverwatch: () => sim.queueOverwatch(),
-  queueOverwatchToward: (point) => sim.queueOverwatchToward(point),
   queueCapture: (id) => sim.queueCapture(id),
   queueMine: () => sim.queueMine(),
   queueRecon: () => sim.queueRecon(),

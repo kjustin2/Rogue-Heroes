@@ -1889,82 +1889,6 @@ describe("tactical enemy AI", () => {
     expect(sim.salvage.get(wreck!.id)).toBe(30);
   });
 
-  it("overwatch: a watcher snaps a reaction shot at the first hostile that moves in range", () => {
-    const watcher = createSoldier("p-watch", "Watcher", "player", { x: 0, z: 0 });
-    const runner = createSoldier("e-run", "Runner", "enemy", { x: 9, z: 0 });
-    applyDamage(runner, "rifle", 999); // disarmed: it will charge instead of shooting
-    const sim = new TacticalSim([watcher, runner]);
-    sim.select("p-watch");
-    expect(sim.queueOverwatch()).toBe(true);
-    expect(watcher.commandPoints).toBe(watcher.maxCommandPoints - 1);
-    expect(sim.overwatching.get("p-watch")).toBe(1);
-    // Double-set is rejected.
-    expect(sim.queueOverwatch()).toBe(false);
-
-    sim.endTurn();
-    let reaction = false;
-    for (let i = 0; i < 400 && sim.phase === "resolve"; i += 1) {
-      sim.update(0.05);
-      if (sim.projectiles.some((p) => p.actorId === "p-watch")) reaction = true;
-    }
-    expect(reaction).toBe(true);
-    expect(sim.overwatching.size).toBe(0); // consumed (or expired) with the resolve
-  });
-
-  it("directional overwatch only fires on hostiles inside the watched arc", () => {
-    // Watcher watches toward +Z; a disarmed hostile charges in from -X (behind the arc).
-    const watcher = createSoldier("p-watch", "Watcher", "player", { x: 0, z: 0 });
-    const flanker = createSoldier("e-run", "Flanker", "enemy", { x: -9, z: 0 });
-    applyDamage(flanker, "rifle", 999); // disarmed → it charges (moves) instead of shooting
-    const sim = new TacticalSim([watcher, flanker]);
-    sim.select("p-watch");
-    expect(sim.queueOverwatchToward({ x: 0, z: 10 })).toBe(true); // watch +Z, away from the flanker
-    sim.endTurn();
-    let firedOutside = false;
-    let guard = 0;
-    while (sim.phase === "resolve" && guard++ < 400) {
-      sim.update(0.05);
-      if (sim.projectiles.some((p) => p.actorId === "p-watch")) firedOutside = true;
-    }
-    expect(firedOutside).toBe(false); // the flanker approached from outside the watch cone
-
-    // Same charge, but the watcher watches toward the enemy (-X): the reaction shot triggers.
-    const watcher2 = createSoldier("p-watch2", "Watcher", "player", { x: 0, z: 0 });
-    const charger = createSoldier("e-run2", "Charger", "enemy", { x: -9, z: 0 });
-    applyDamage(charger, "rifle", 999);
-    const sim2 = new TacticalSim([watcher2, charger]);
-    sim2.select("p-watch2");
-    expect(sim2.queueOverwatchToward({ x: -10, z: 0 })).toBe(true); // watch -X, toward the charger
-    sim2.endTurn();
-    let firedInside = false;
-    guard = 0;
-    while (sim2.phase === "resolve" && guard++ < 400) {
-      sim2.update(0.05);
-      if (sim2.projectiles.some((p) => p.actorId === "p-watch2")) firedInside = true;
-    }
-    expect(firedInside).toBe(true);
-  });
-
-  it("AI overwatch avoidance: a live watch cone flags tiles the enemy pathing then steers around", () => {
-    const watcher = createSoldier("p-watch", "Watcher", "player", { x: 0, z: 0 });
-    const mover = createSoldier("e-run", "Runner", "enemy", { x: 0, z: 6 });
-    const sim = new TacticalSim([watcher, mover]);
-    sim.select("p-watch");
-    expect(sim.queueOverwatchToward({ x: 0, z: 10 })).toBe(true); // watch toward +Z
-    const s = sim as unknown as {
-      standingInOverwatch(pos: { x: number; z: number }, team: string): boolean;
-      overwatchRadius(a: typeof watcher): number;
-    };
-    // Straight ahead, inside the 120° arc and within radius → flagged for the enemy.
-    expect(s.standingInOverwatch({ x: 0, z: 4 }, "enemy")).toBe(true);
-    // Behind the watcher (outside the arc) is safe.
-    expect(s.standingInOverwatch({ x: 0, z: -4 }, "enemy")).toBe(false);
-    // A watcher never threatens its own team.
-    expect(s.standingInOverwatch({ x: 0, z: 4 }, "player")).toBe(false);
-    // Beyond the watch radius is safe even dead-center in the arc.
-    expect(s.standingInOverwatch({ x: 0, z: s.overwatchRadius(watcher) + 3 }, "enemy")).toBe(false);
-  });
-
   it("air layer: a gunship flies at altitude, forfeits capture, and is shredded by dedicated AA", () => {
     // Flies at terrain + agl (the constructor syncs elevation).
     const flyer = createGunship("g", "Hawk", "player", { x: 0, z: 0 });
@@ -2200,22 +2124,6 @@ describe("tactical enemy AI", () => {
     while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
     expect(sim.mines.length).toBe(1); // ground pressure mine NOT tripped by the flyer
     expect(transport.parts.reduce((s, p) => s + p.hp, 0)).toBe(before);
-  });
-
-  it("an air unit's overwatch guards the air lane — it never snaps its autocannon at a ground mover", () => {
-    const gunship = createGunship("g", "Hawk", "player", { x: 0, z: 0 });
-    const charger = createSoldier("e-run", "Charger", "enemy", { x: -9, z: 0 });
-    applyDamage(charger, "rifle", 999); // disarmed → charges (moves) toward the gunship
-    const sim = new TacticalSim([gunship, charger]);
-    sim.select("g");
-    expect(sim.queueOverwatchToward({ x: -10, z: 0 })).toBe(true);
-    sim.endTurn();
-    let fired = false, guard = 0;
-    while (sim.phase === "resolve" && guard++ < 400) {
-      sim.update(0.05);
-      if (sim.projectiles.some((p) => p.actorId === "g")) fired = true;
-    }
-    expect(fired).toBe(false); // no air-to-air gun snapping at a GROUND unit through overwatch
   });
 
   it("a move stops at a wall on the flat approach even when a terrain step lies farther along", () => {

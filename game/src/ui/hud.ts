@@ -71,7 +71,6 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "ram", label: "Ram", tip: "Tank only. Select a close target or wall, then confirm. Costs 1 CP, deals 72 damage, and damages your front armor." },
   { id: "melee", label: "Strike", tip: "Infantry only. Strike a hostile at close range; Strikers hit hardest. Needs an intact weapon." },
   { id: "defend", label: "Crouch", tip: "Infantry only. Improves accuracy and makes head shots harder, but slows the next move." },
-  { id: "overwatch", label: "Overwatch", tip: "Hold fire until a hostile MOVES within watch range this resolve, then take a snap reaction shot (reduced accuracy). Costs 1 CP." },
   { id: "mine", label: "Mine", tip: "Sapper only. Plant a proximity mine at this spot ($15 + 1 CP). Hostiles that step on it eat a splash blast. Invisible to the enemy." },
   { id: "smoke", label: "Smoke", tip: "Mortar only. Lay a 3-turn smoke cloud that swallows flat shots; arcing rounds sail over. 1 CP." },
   { id: "load", label: "Load", tip: "Transport / APC. Click a friendly ground unit to take it aboard (a transport flies to it; an APC needs it beside the hull). 1 CP." },
@@ -86,13 +85,12 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
 // cost at the end. One line each; anything longer belongs in the order body once the verb is armed.
 // An action with no entry here falls back to its catalog tip.
 const ACTION_HOW: Partial<Record<Intent, string>> = {
-  move: "Select Move, then click ground inside the cyan ring. 1 CP.",
+  move: "Select Move, then click ground inside the cyan ring. An amber arrow marks where the path climbs up. 1 CP.",
   shoot: "Select Shoot, click an enemy, pick a part, then Confirm. 1 CP.",
   grenade: "Select Grenade, then click ground or an enemy within throw range. Splash damage; limited supply.",
   ram: "Select Ram, click a target beside the tank, then Confirm. 72 damage; dents your front armor. 1 CP.",
   melee: "Select Strike, click an enemy within reach, then Confirm. Strikers hit hardest. 1 CP.",
   defend: "Crouch where you stand: better accuracy, harder to head-shot, slower next move. 1 CP.",
-  overwatch: "Select Overwatch, then click ground to aim the cone; the first enemy to move into it takes a snap shot. 1 CP.",
   mine: "Plant a hidden mine at the sapper's feet; enemies that step on it take a blast. $15 + 1 CP.",
   load: "Select Load, then click a friendly ground unit to lift it aboard. 1 CP.",
   unload: "Select Unload, then click ground to fly there and set passengers down. 1 CP.",
@@ -120,8 +118,6 @@ export interface HudCallbacks {
   queueMelee(id: string): boolean;
   queueMeleePart(id: string, partId: string): boolean;
   queueDefend(stance?: InfantryStance): boolean;
-  queueOverwatch(): boolean;
-  queueOverwatchToward(point: Vec2): boolean;
   queueMine(): boolean;
   queueRecon(): boolean;
   queueDeploy(): boolean;
@@ -369,14 +365,6 @@ export class Hud {
       }
       return;
     }
-    // Overwatch: the clicked ground point picks the watch direction (the unit turns to face it).
-    if (this.action === "overwatch" && this.sim.phase === "command") {
-      if (this.callbacks.queueOverwatchToward(destination)) {
-        this.action = "select";
-        this.callbacks.setIntent("select");
-      }
-      return;
-    }
     // Explosive shooters (tank, artillery, mortar, grenadier, mortar turret) can target a spot.
     if (this.action === "shoot" && this.sim.phase === "command" && this.sim.selectedCanGroundTarget()) {
       if (this.callbacks.queueShootAt(destination)) this.afterConfirmedOrder();
@@ -603,9 +591,6 @@ export class Hud {
     }
     if (confirm === "defend") {
       if (this.callbacks.queueDefend("crouched")) this.afterConfirmedOrder();
-    }
-    if (confirm === "overwatch") {
-      if (this.callbacks.queueOverwatch()) this.afterConfirmedOrder();
     }
     if (confirm === "mine") {
       if (this.callbacks.queueMine()) this.afterConfirmedOrder();
@@ -904,9 +889,7 @@ function emptyTargetPanel(action: Intent): string {
           ? "Click a friendly ground unit to lift it aboard."
           : action === "unload"
             ? "Click ground to fly there and set passengers down."
-            : action === "overwatch"
-              ? "Click ground to aim the watch cone, or Watch Ahead below."
-              : "Click an enemy on the map or a card below, then pick a part.";
+            : "Click an enemy on the map or a card below, then pick a part.";
   return `
     <div class="inspect-head">
       <div>
@@ -1120,7 +1103,6 @@ function orderPlanner(
     action === "interact" ? coverInteractionState(actor, target, sim) : "",
     action === "inspect" || action === "inspect-detail" ? inspectTargetState(actor, target, action === "inspect-detail", sim) : "",
     action === "defend" ? defendState(canDefend, defendTip) : "",
-    action === "overwatch" ? overwatchState(actor, sim) : "",
     action === "mine" ? mineState(actor, sim) : "",
     action === "recon" ? reconState(actor, sim) : "",
     action === "deploy" ? deployState(actor, sim) : "",
@@ -1417,7 +1399,9 @@ function coverBlurb(entity: CombatEntity): string | undefined {
     if (kind === "depot") {
       return `Supply Depot — ${owner}. Send a unit to stand beside it and it flips to your team next turn, paying $${DEPOT_INCOME}/turn while you keep a unit close. The enemy can seize it back the same way.`;
     }
-    return `Derelict structure — ${owner}. Move a unit beside it to capture; a captured turret comes back online next turn and fires for you.`;
+    return entity.team === "player"
+      ? "Captured turret — yours. Select it like any unit and give it a Shoot order; it cannot move."
+      : `Derelict Turret — ${owner}. Stand a unit beside it and end the turn: it becomes YOUR turret, and from the next turn you select it and fire it like any unit.`;
   }
   if (kind === "wreck") return "Burnt-out wreck — hard cover. Park a unit beside it to strip its salvage money.";
   if (kind === "gas") {
@@ -1490,12 +1474,18 @@ function coverInteractionState(actor: CombatEntity | undefined, target: CombatEn
 function inspectTargetState(actor: CombatEntity | undefined, target: CombatEntity | undefined, expanded: boolean, sim: TacticalSim): string {
   if (!target) return `<div class="order-note">Click an enemy on the map or a card in the Target list.</div>`;
   const parts = sim.targetableParts(target);
+  // A derelict turret is kind "turret", not "cover", so it lands here rather than in the cover
+  // panel — it needs the same what-is-this line and capture button, or it reads as inert.
+  const capture = target.capturable && target.team !== "player";
+  const blurb = capture ? coverBlurb(target) : undefined;
   return `
     <div class="target-summary">
       <strong>${escapeHtml(target.name)}</strong>
       <span>${kindLabel(target)} / ${statusText(target)} / ${parts.length} intact parts</span>
     </div>
+    ${blurb ? `<div class="cover-blurb capture">${escapeHtml(blurb)}</div>` : ""}
     <div class="inspect-target-actions">
+      ${capture ? captureButton(actor, target, sim) : ""}
       ${actor?.status.canShoot ? `<button class="btn confirm" data-order-action="shoot" data-tip="Aim at a specific part.">
         Shoot
         <span>aim</span>
@@ -1578,21 +1568,6 @@ function reconState(actor: CombatEntity | undefined, sim: TacticalSim): string {
     <button class="btn confirm ${reason ? "disabled" : ""}" data-confirm="recon" data-disabled="${Boolean(reason)}" data-tip="${escapeAttr("Send the recon pulse (whole turn).")}">
       Send Pulse
       <span>all CP</span>
-    </button>
-  `;
-}
-
-function overwatchState(actor: CombatEntity | undefined, sim: TacticalSim): string {
-  const reason = actor ? sim.overwatchFailureReason(actor) : "Select a unit first";
-  const radius = actor ? sim.overwatchRadius(actor).toFixed(1) : "0";
-  return `
-    <div class="target-summary ${reason ? "blocked" : ""}">
-      <strong>${reason ? "Overwatch unavailable" : "Pick a watch direction"}</strong>
-      <span>${reason ? escapeHtml(reason) : `Click the ground in the direction to watch — the amber wedge (${radius}m radius, 120° arc) is the kill zone. The first hostile to move into it eats a snap reaction shot (wider spread than an aimed shot).`}</span>
-    </div>
-    <button class="btn confirm ${reason ? "disabled" : ""}" data-confirm="overwatch" data-disabled="${Boolean(reason)}" data-tip="${escapeAttr("Watch straight ahead (the way this unit currently faces). Or click a spot on the map to aim the watch cone in that direction.")}">
-      Watch Ahead
-      <span>1 CP</span>
     </button>
   `;
 }
@@ -1723,7 +1698,7 @@ function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
       : active
         ? "Click a spot inside the green ring near your base, or click again to deploy beside the base."
         : `${spec.role}. ${spec.tip} 1 CP · $${spec.cost} · ${cooldownTurns}-turn cooldown. Then click a spot inside the green ring near your base.`;
-    return `<button class="btn confirm ${active ? "active" : ready ? "" : "disabled"} ${isNew ? "just-revealed" : ""}" data-spawn="${spec.kind}" data-disabled="${!ready}" data-tip="${escapeAttr(tip)}">
+    return `<button class="btn confirm ${active ? "active" : ready ? "" : "disabled"}" data-spawn="${spec.kind}" data-disabled="${!ready}" data-tip="${escapeAttr(tip)}">
       ${escapeHtml(spec.label)}${isNew ? `<em class="new-badge">NEW</em>` : ""}
       <span>${active ? "Placing…" : sub}</span>
     </button>`;
@@ -2144,7 +2119,6 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
   if (action === "ram") return actor.kind !== "tank" || !actor.status.canMove;
   if (action === "melee") return !isInfantryKind(actor.kind) || !actor.status.canMove || !hasStrikeWeapon(actor);
   if (action === "defend") return !isInfantryKind(actor.kind) || !actor.status.canMove;
-  if (action === "overwatch") return Boolean(sim.overwatchFailureReason(actor));
   if (action === "mine") return Boolean(sim.mineFailureReason(actor));
   if (action === "smoke") return Boolean(sim.smokeFailureReason(actor));
   if (action === "load") return !isCarrier(actor) || !actor.status.canMove || (actor.passengerIds?.length ?? 0) >= 2;
@@ -2180,7 +2154,6 @@ function actionApplicable(action: Intent, actor: CombatEntity | undefined): bool
   if (!actor) return false;
   if (action === "ram") return actor.kind === "tank";
   if (action === "melee" || action === "defend") return isInfantryKind(actor.kind);
-  if (action === "overwatch") return !isBuildingKind(actor.kind) && !isDefenseKind(actor.kind);
   if (action === "mine") return actor.kind === "sapper";
   if (action === "smoke") return actor.kind === "mortar";
   if (action === "load" || action === "unload") return isCarrier(actor);
@@ -2202,7 +2175,6 @@ function actionDisabledReason(action: Intent, actor: CombatEntity | undefined, s
   if (action === "shoot" && actor.kind === "artillery" && !actor.deployed) return `${actor.name} must deploy before it can fire (Deploy, or hold still for a turn).`;
   if (action === "melee" && !hasStrikeWeapon(actor)) return `${actor.name} has no intact weapon to strike with.`;
   if (action === "grenade" && actor.grenades <= 0) return `${actor.name} is out of grenades.`;
-  if (action === "overwatch") return sim.overwatchFailureReason(actor) ?? undefined;
   if (action === "mine") return sim.mineFailureReason(actor) ?? undefined;
   if (action === "smoke") return sim.smokeFailureReason(actor) ?? undefined;
   if (action === "load" && (actor.passengerIds?.length ?? 0) >= 2) return `${actor.kind === "apc" ? "The APC" : "The transport"} is full.`;
@@ -2217,7 +2189,6 @@ function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: Tac
   if (action === "ram") return actor.kind === "tank" && actor.status.canMove;
   if (action === "melee") return isInfantryKind(actor.kind) && actor.status.canMove && hasStrikeWeapon(actor);
   if (action === "defend") return isInfantryKind(actor.kind) && actor.status.canMove;
-  if (action === "overwatch") return actor.status.canShoot && !isBuildingKind(actor.kind) && !isDefenseKind(actor.kind);
   if (action === "mine") return actor.kind === "sapper";
   if (action === "smoke") return actor.kind === "mortar" && actor.status.canShoot;
   if (action === "load" || action === "unload") return isCarrier(actor);

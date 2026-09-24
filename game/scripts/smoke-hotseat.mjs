@@ -1,7 +1,7 @@
 // LOCAL 2 PLAYERS: menu -> set-up -> handoff to Player 1 -> End Turn hands to Player 2 (sides
 // swapped, the AI queued nothing) -> End Turn resolves -> turn 2 opens with PLAYER 2 planning first.
-// Also guards what the second planner must NOT see (the first planner's order arrows, overwatch
-// wedges and log lines), that Space behind the handoff card cannot skip a player, and that Play
+// Also guards what the second planner must NOT see (the first planner's order arrows
+// and log lines), that Space behind the handoff card cannot skip a player, and that Play
 // Again after a win opens turn 1 on Player 1's handoff again.
 import { mkdirSync } from "node:fs";
 import { assertLit, delay, launchGame } from "../improve/lib/harness.mjs";
@@ -35,7 +35,7 @@ try {
   if (p1.money[0] !== p1.money[1]) fail(`the two players should start with the same money, got ${p1.money}`);
   if ((await endLabel()) !== "Pass to P2") fail(`first planner's End Turn should read "Pass to P2", got "${await endLabel()}"`);
 
-  // Player 1 plans something the other seat must not see: a move, an overwatch wedge, a log line.
+  // Player 1 plans something the other seat must not see: two moves and their log lines.
   const plan = await page.evaluate(() => {
     const r = window.__rht, s = r.sim;
     const pb = s.entities.find((e) => e.kind === "base" && e.team === "player").position;
@@ -46,7 +46,7 @@ try {
     s.select(a.id);
     const moved = s.queueMove({ x: mid.x - 2, z: mid.z - 1 });
     s.select(b.id);
-    const watched = r.queueOverwatchToward({ x: mid.x + 4, z: mid.z + 3 });
+    const watched = s.queueMove({ x: mid.x - 2, z: mid.z + 4 });
     s.select(a.id);
     r.setIntent("move");
     return { moved, watched, names: [a.name, b.name] };
@@ -54,7 +54,7 @@ try {
   if (!plan.moved || !plan.watched) fail(`P1 could not stage its plan: ${JSON.stringify(plan)}`);
   await delay(600);
   const seenByP1 = await page.evaluate(() => window.__rht.overlayCounts());
-  if (!seenByP1.orders || !seenByP1.overwatch) fail(`P1 should see its own orders + overwatch: ${JSON.stringify(seenByP1)}`);
+  if (!seenByP1.orders) fail(`P1 should see its own orders: ${JSON.stringify(seenByP1)}`);
 
   // Pass with the mouse, then press Space behind the card: it must not resolve Player 2's turn away.
   await page.click(".end-turn");
@@ -72,7 +72,7 @@ try {
   });
   if (!p2.swapped || p2.phase !== "command") fail(`P2 planning state wrong: ${JSON.stringify(p2)}`);
   if (p2.intent !== "select") fail(`P2 inherited Player 1's armed action "${p2.intent}"`);
-  if (p2.seen.orders || p2.seen.overwatch) fail(`P2 can see Player 1's plan on the board: ${JSON.stringify(p2.seen)}`);
+  if (p2.seen.orders) fail(`P2 can see Player 1's plan on the board: ${JSON.stringify(p2.seen)}`);
   if (p2.log.some((line) => plan.names.some((n) => line.includes(n)))) fail(`P2 can read Player 1's orders in the log: ${p2.log.join(" | ")}`);
   if ((await endLabel()) !== "End Turn") fail(`second planner's button should read "End Turn", got "${await endLabel()}"`);
   await page.screenshot({ path: "shots/hotseat-p2.png" });

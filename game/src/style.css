@@ -3704,20 +3704,14 @@ body.menus-open .menu-bg span {
   vertical-align: 2px;
   animation: new-badge-pulse 1.4s ease-in-out infinite;
 }
-.btn.confirm.just-revealed {
-  animation: just-revealed-flash 1.6s ease-out 1;
-  border-color: rgba(255, 202, 107, 0.75);
-}
+/* ponytail: no flash on the card itself. The HUD rebuilds its HTML, which restarted the flash every
+   render, so a newly unlocked card sat on its amber first frame and never looked selectable. The
+   NEW badge carries the reveal; the card keeps the ordinary blue "pick me" fill. */
 @keyframes new-badge-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.55; }
 }
-@keyframes just-revealed-flash {
-  0% { background: rgba(255, 202, 107, 0.55); box-shadow: 0 0 26px rgba(255, 202, 107, 0.8); }
-  100% { background: rgba(255, 202, 107, 0); box-shadow: 0 0 0 rgba(255, 202, 107, 0); }
-}
-.reduced-motion .new-badge,
-.reduced-motion .btn.confirm.just-revealed { animation: none; }
+.reduced-motion .new-badge { animation: none; }
 
 /* ---- Environmental forecast chip ---- */
 .forecast-chip {

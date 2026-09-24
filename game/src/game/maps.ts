@@ -364,7 +364,7 @@ const RAW_MAPS: readonly MapDef[] = [
   // and the only hard cover on the straight shot), the CANYON PASSES (a walled corridor along each
   // long edge, the flank route: one lane wide, no sightline into the basin, a chokepoint at each
   // mouth), and the PLATEAU OUTPOSTS (each side's mesa, with a derrick landmark and a tent camp:
-  // the overwatch position over the river bed). The buttes stay as sniper perches. Long armour
+  // the firing position over the river bed). The buttes stay as sniper perches. Long armour
   // lanes down the river, infantry through the canyons, and the mesas decide who sees whom.
   {
     id: "dustbowl",

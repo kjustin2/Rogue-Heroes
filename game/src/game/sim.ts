@@ -82,7 +82,7 @@ export type Phase = "command" | "resolve" | "victory" | "defeat";
 // (measured from the click to the edge of the unit's footprint).
 export const DEPLOY_SNAP = 1.5;
 
-export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "overwatch" | "mine" | "interact" | "inspect" | "inspect-detail" | "build" | "support" | "load" | "unload" | "smoke" | "recon" | "deploy";
+export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "mine" | "interact" | "inspect" | "inspect-detail" | "build" | "support" | "load" | "unload" | "smoke" | "recon" | "deploy";
 export type OrderKind = "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "load" | "unload" | "smoke" | "recon" | "deploy";
 
 // Orders that carry a unit off its spot this resolve -- anything else leaves it dug in.
@@ -129,16 +129,13 @@ const DIFFICULTY_MODS: Record<Difficulty, DifficultyMods> = {
   normal: { label: "Normal", enemyHp: 1, enemyDamage: 1, enemyIncome: 1 },
   hard: { label: "Hard", enemyHp: 1.15, enemyDamage: 1.12, enemyIncome: 1.25 }, // the hard BRAIN carries most of it now
 };
-// Reaction fire is snap fire: the spread multiplier applied to an overwatch shot.
 // Resolve-phase budgets, in simulated seconds. SETTLE is the graceful escape once nothing is
 // airborne; HARD_CEILING is the unconditional one that guarantees the phase always ends.
 const RESOLVE_SETTLE_TIMEOUT = 18;
 const RESOLVE_HARD_CEILING = 20;
 
-const OVERWATCH_SPREAD_PENALTY = 1.55;
-// Half-angle of the overwatch watch cone. The player picks a facing; only hostiles moving
-// inside this arc (±60°, a 120° wedge) around it trip the reaction shot.
-export const OVERWATCH_ARC_HALF = Math.PI / 3;
+// Half-angle of a unit's FRONT: a shot from outside this ±60° wedge around its facing flanks it.
+const FRONT_ARC_HALF = Math.PI / 3;
 // Salvage economy: each vehicle wreck holds this much money, stripped this fast by an
 // adjacent unit at the start of each turn.
 const SALVAGE_PER_WRECK = 60;
@@ -491,14 +488,6 @@ export class TacticalSim {
   // Vehicles that already left a wreck behind, and salvage money remaining per wreck id.
   readonly wrecked = new Set<string>();
   readonly salvage = new Map<string, number>();
-  // Units on overwatch: actorId -> reaction shots remaining. Set during command (costs a
-  // CP), consumed when a hostile moves inside watch radius during resolve, cleared at the
-  // start of the next command phase.
-  readonly overwatching = new Map<string, number>();
-  // Direction each watcher is facing (yaw). A reaction shot only triggers for a hostile that
-  // moves inside the watch radius AND within OVERWATCH_ARC_HALF of this facing — the player
-  // picks the arc when arming overwatch, so it covers an approach lane, not the whole field.
-  readonly overwatchFacing = new Map<string, number>();
   // Burning ground left by flamer hits (damages at turn start) and sapper proximity mines.
   readonly burnZones: { id: string; x: number; z: number; radius: number; turnsLeft: number }[] = [];
   // GAS CLOUDS. A shot-out canister leaks a cloud that grows each turn until it hits its cap or
@@ -703,8 +692,6 @@ export class TacticalSim {
     this.defending.clear();
     this.detonated.clear();
     this.toppled.clear();
-    this.overwatching.clear();
-    this.overwatchFacing.clear();
     this.wrecked.clear();
     this.salvage.clear();
     this.burnZones.splice(0);
@@ -834,7 +821,8 @@ export class TacticalSim {
   // squad is currently selected — e.g. a wall, turret, or the base was clicked — we step in
   // from the first/last unit so Tab always lands on a real unit instead of stalling.
   cyclePlayer(direction = 1): void {
-    const units = this.living("player").filter((e) => !isBuildingKind(e.kind) && !isDefenseKind(e.kind));
+    // Gun emplacements you own (built or captured) are commandable, so Tab reaches them; walls are not.
+    const units = this.living("player").filter((e) => !isBuildingKind(e.kind) && e.kind !== "wall");
     if (!units.length) return;
     const step = direction < 0 ? -1 : 1;
     const index = units.findIndex((e) => e.id === this.selectedId);
@@ -846,6 +834,16 @@ export class TacticalSim {
 
   queueMove(destination: Vec2): boolean {
     return this.queueMoveToDestination(destination);
+  }
+
+  /** Where a move toward `destination` would really stop (range + terrain + blockers), without
+   *  queueing it or logging — the live path the renderer previews while Move is armed. */
+  previewMoveTo(destination: Vec2): { from: Vec2; to: Vec2 } | undefined {
+    const actor = this.selected;
+    if (!actor || actor.team !== "player" || this.phase !== "command" || !actor.status.canMove || actor.commandPoints <= 0) return undefined;
+    const from = this.projectedActorForPreview(actor).position;
+    const limited = limitMoveDestination(actor, from, clampToArena(destination));
+    return { from, to: this.blockedMoveDestination(actor, from, limited, undefined, true) };
   }
 
   private queueMoveToDestination(destination: Vec2, allowedCoverId?: string): boolean {
@@ -1395,7 +1393,7 @@ export class TacticalSim {
     return { position: { ...projected.position }, elevation: projected.elevation, stance: projected.stance };
   }
 
-  selectedActionRange(): { kind: "ram" | "melee" | "grenade" | "move" | "overwatch" | "shoot"; radius: number; position: Vec2; elevation: number } | undefined {
+  selectedActionRange(): { kind: "ram" | "melee" | "grenade" | "move" | "shoot"; radius: number; position: Vec2; elevation: number } | undefined {
     const actor = this.selected;
     if (!actor || actor.team !== "player" || this.phase !== "command") return undefined;
     const projected = this.projectedActorForPreview(actor);
@@ -1403,9 +1401,6 @@ export class TacticalSim {
     // targets one by one and read "too far" — the single most asked "why can't I" in play.
     if (this.intent === "shoot" && actor.status.canShoot && projectileRange(actor, "weapon") > 0) {
       return { kind: "shoot", radius: projectileRange(actor, "weapon"), position: { ...projected.position }, elevation: projected.elevation };
-    }
-    if (this.intent === "overwatch" && !this.overwatchFailureReason(actor)) {
-      return { kind: "overwatch", radius: this.overwatchRadius(actor), position: { ...projected.position }, elevation: projected.elevation };
     }
     // Show how far the unit can move this turn, centred on where it WILL stand after any
     // already-queued move (so a second move previews from the projected spot, not the origin).
@@ -2142,7 +2137,7 @@ export class TacticalSim {
   /** Hotseat: hand the "player" seat to the other human (and back). Command phase only. */
   swapSides(): void {
     if (this.phase !== "command") return;
-    // The outgoing seat's planning lines ("Recruit 3 queued move", "sets overwatch ...") would tell
+    // The outgoing seat's planning lines ("Recruit 3 queued move", "moves to cover ...") would tell
     // the other human exactly what was ordered. They are dropped, not deferred: the resolve reports
     // what actually happened.
     this.log.splice(0, Math.min(this.logSeq - this.seatLogMark, this.log.length));
@@ -2310,8 +2305,6 @@ export class TacticalSim {
       troopSeq: this.troopSeq,
       detonated: [...this.detonated],
       toppled: [...this.toppled],
-      overwatch: [...this.overwatching],
-      overwatchFacing: [...this.overwatchFacing],
       wrecked: [...this.wrecked],
       salvage: [...this.salvage],
       burnZones: this.burnZones,
@@ -2333,7 +2326,7 @@ export class TacticalSim {
         map: string; mode: ModeId; difficulty?: Difficulty; turn?: number; factions?: Partial<Record<Team, FactionId>>;
         droppedBridges?: number[];
         economy: [Team, number][]; entities: CombatEntity[]; orders?: TacticalOrder[]; modeState: ModeState; troopSeq?: number;
-        detonated?: string[]; toppled?: string[]; overwatch?: [string, number][]; overwatchFacing?: [string, number][];
+        detonated?: string[]; toppled?: string[];
         wrecked?: string[]; salvage?: [string, number][];
         burnZones?: { id: string; x: number; z: number; radius: number; turnsLeft: number }[];
         gasClouds?: { id: string; x: number; z: number; radius: number; maxRadius: number }[];
@@ -2374,16 +2367,12 @@ export class TacticalSim {
       this.projectiles.splice(0);
       this.effects.splice(0);
       this.defending.clear();
-      this.overwatching.clear();
-      this.overwatchFacing.clear();
       // Restore which volatile covers already blew up, so a destroyed-but-still-present cover
       // caught in a later blast doesn't detonate a second time after a save/load.
       this.detonated.clear();
       for (const id of data.detonated ?? []) this.detonated.add(id);
       this.toppled.clear();
       for (const id of data.toppled ?? []) this.toppled.add(id);
-      for (const [id, shots] of data.overwatch ?? []) this.overwatching.set(id, shots);
-      for (const [id, facing] of data.overwatchFacing ?? []) this.overwatchFacing.set(id, facing);
       this.wrecked.clear();
       for (const id of data.wrecked ?? []) this.wrecked.add(id);
       this.salvage.clear();
@@ -2484,102 +2473,6 @@ export class TacticalSim {
       duration: 1.35,
     });
     return true;
-  }
-
-  // ---- Overwatch / reaction fire ----
-
-  /** Watch radius: slightly inside weapon range so the reaction shot can actually connect. */
-  overwatchRadius(actor: CombatEntity): number {
-    return projectileRange(actor) * 0.9;
-  }
-
-  overwatchFailureReason(actor: CombatEntity | undefined): string | undefined {
-    if (!actor) return "Select a unit first";
-    if (!actor.status.canShoot) return `${actor.name} cannot shoot`;
-    if (this.isPowerCut(actor)) return `${actor.name} has no power — the conduit is cut`;
-    if (this.overwatching.has(actor.id)) return `${actor.name} is already on overwatch`;
-    if (actor.commandPoints <= 0) return `${actor.name} has no command points`;
-    if (isBuildingKind(actor.kind)) return "The base cannot overwatch";
-    return undefined;
-  }
-
-  /** Player API: put the selected unit on overwatch (1 CP, 1 reaction shot this resolve),
-   *  watching in the direction it currently faces. */
-  queueOverwatch(): boolean {
-    const actor = this.requirePlayerActor();
-    if (!actor) return false;
-    return this.armOverwatch(actor, actor.yaw);
-  }
-
-  /** Overwatch aimed at a chosen ground point: the unit turns to face it and watches that lane. */
-  queueOverwatchToward(point: Vec2): boolean {
-    const actor = this.requirePlayerActor();
-    if (!actor) return false;
-    const facing = Math.atan2(point.x - actor.position.x, point.z - actor.position.z);
-    return this.armOverwatch(actor, facing);
-  }
-
-  private armOverwatch(actor: CombatEntity, facing: number): boolean {
-    const failure = this.overwatchFailureReason(actor);
-    if (failure) return this.reject(failure);
-    spendCommandPoint(actor);
-    actor.yaw = facing; // the unit visibly turns to watch its chosen lane
-    this.overwatching.set(actor.id, 1);
-    this.overwatchFacing.set(actor.id, facing);
-    this.pushLog(`${actor.name} sets overwatch — the first hostile to move into its watch arc eats a reaction shot`);
-    this.bus.emit("ORDER_QUEUED", { actorId: actor.id, kind: "shoot" });
-    return true;
-  }
-
-  // Called while any unit is moving during resolve: opposing watchers inside radius take
-  // their reaction shot (single round, widened spread — snap fire, not an aimed shot).
-  private checkOverwatch(mover: CombatEntity): void {
-    if (this.overwatching.size === 0 || !mover.status.alive || mover.kind === "cover" || mover.team === "neutral") return;
-    for (const [watcherId, shots] of this.overwatching) {
-      if (shots <= 0) {
-        this.overwatching.delete(watcherId);
-        continue;
-      }
-      const watcher = this.entity(watcherId);
-      if (!watcher || !watcher.status.alive || !watcher.status.canShoot || this.isPowerCut(watcher)) {
-        this.overwatching.delete(watcherId);
-        continue;
-      }
-      if (watcher.team === mover.team) continue;
-      // DASH: a scout is too fast to track — overwatch never triggers on it.
-      if (mover.kind === "scout") continue;
-      // An aircraft's autocannon is air-to-air ONLY — its overwatch guards the air lane and never
-      // snaps at ground units (closes the loophole where a plane could gun the ground via overwatch).
-      if (isAirKind(watcher.kind) && !mover.flying) continue;
-      if (dist(watcher.position, mover.position) > this.overwatchRadius(watcher)) continue;
-      // Directional overwatch: only fire if the mover is inside the watched arc (older saves
-      // with no stored facing fall back to a full 360° watch).
-      const facing = this.overwatchFacing.get(watcherId);
-      if (facing !== undefined) {
-        const bearing = Math.atan2(mover.position.x - watcher.position.x, mover.position.z - watcher.position.z);
-        const delta = Math.abs(Math.atan2(Math.sin(bearing - facing), Math.cos(bearing - facing)));
-        if (delta > OVERWATCH_ARC_HALF) continue;
-      }
-      this.overwatching.set(watcherId, shots - 1);
-      if ((this.overwatching.get(watcherId) ?? 0) <= 0) this.overwatching.delete(watcherId);
-      const part = preferredPart(mover, "center");
-      const reaction: TacticalOrder = {
-        id: `order-${++this.orderSeq}`,
-        actorId: watcher.id,
-        kind: "shoot",
-        targetId: mover.id,
-        targetPartId: part.id,
-        aim: "center",
-        elapsed: 0,
-        duration: 0,
-        fired: true,
-        done: true,
-      };
-      watcher.yaw = Math.atan2(mover.position.x - watcher.position.x, mover.position.z - watcher.position.z);
-      this.spawnShotProjectile(reaction, watcher, mover, OVERWATCH_SPREAD_PENALTY, false);
-      this.pushLog(`${watcher.name} reaction fire — ${mover.name} moved into the kill zone`);
-      this.effect("ping", { ...watcher.position }, { ...mover.position }, 0xffd166, 0.5, watcher.radius + 0.5);
-    }
   }
 
   private queueGrenadeFor(actor: CombatEntity, target: CombatEntity, aim: AimMode, partId?: string): boolean {
@@ -2709,7 +2602,6 @@ export class TacticalSim {
       this.separateFromUnits(actor, order.destination);
       this.syncEntityElevation(actor);
       actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
-      this.checkOverwatch(actor);
       this.checkMines(actor);
       this.checkPickups(actor);
       if (actor.kind === "gunship") this.strafeAlongPath(order, actor);
@@ -2818,7 +2710,7 @@ export class TacticalSim {
 
     if (order.kind === "melee") {
       actor.yaw = Math.atan2(target.position.x - actor.position.x, target.position.z - actor.position.z);
-      // CHARGE: a striker closes the gap first (a real move — overwatch and mines apply) and the
+      // CHARGE: a striker closes the gap first (a real move — mines apply) and the
       // swing clock only starts once the blade is in reach.
       const swingReach = unitStats(actor.kind).meleeRange + actor.radius + target.radius;
       if (!order.fired && dist(actor.position, target.position) > swingReach + 0.05) {
@@ -2826,8 +2718,7 @@ export class TacticalSim {
         actor.position = moveToward(actor.position, target.position, Math.min(gap, moveSpeed(actor) * 1.6 * dt));
         this.separateFromUnits(actor);
         this.syncEntityElevation(actor);
-        this.checkOverwatch(actor);
-        this.checkMines(actor);
+          this.checkMines(actor);
         order.elapsed = 0;
         return;
       }
@@ -2842,7 +2733,6 @@ export class TacticalSim {
     actor.yaw = Math.atan2(target.position.x - actor.position.x, target.position.z - actor.position.z);
     actor.position = moveToward(actor.position, target.position, moveSpeed(actor) * 1.25 * dt);
     this.syncEntityElevation(actor);
-    this.checkOverwatch(actor);
     this.checkMines(actor);
     this.checkPickups(actor);
     if (!order.fired && dist(actor.position, target.position) <= actor.radius + target.radius + 0.25) {
@@ -3703,7 +3593,7 @@ export class TacticalSim {
     return true;
   }
 
-  // Called while units move during resolve (same hook as overwatch): a hostile stepping
+  // Called while units move during resolve (same hook as pickups): a hostile stepping
   // on a mine detonates it.
   private checkMines(mover: CombatEntity): void {
     // Flyers overfly ground pressure mines (like pickups/captures — they never touch the ground).
@@ -3719,7 +3609,7 @@ export class TacticalSim {
     }
   }
 
-  // Same move-resolve hook as mines/overwatch: a unit that runs over a cash cache banks it.
+  // Same move-resolve hook as mines: a unit that runs over a cash cache banks it.
   private checkPickups(mover: CombatEntity): void {
     if (!this.pickups.length || !mover.status.alive || mover.kind === "cover" || mover.flying) return;
     if (mover.team !== "player" && mover.team !== "enemy") return;
@@ -3779,7 +3669,7 @@ export class TacticalSim {
     }
   }
 
-  // Flanking: a shot from OUTSIDE the target's facing wedge (reusing the overwatch cone as "front")
+  // Flanking: a shot from OUTSIDE the target's facing wedge (the ±60° FRONT_ARC_HALF wedge)
   // catches an exposed side/rear. Returns 0 (dead ahead) .. 1 (directly behind). Only mobile units
   // that actually turn to face a threat can be flanked — cover, the base, and static defenses can't.
   private flankFactor(actor: CombatEntity, target: CombatEntity): number {
@@ -3792,8 +3682,8 @@ export class TacticalSim {
     if (target.kind === "cover" || target.kind === "base" || isDefenseKind(target.kind)) return 0;
     const bearing = Math.atan2(pos.x - target.position.x, pos.z - target.position.z);
     const delta = Math.abs(Math.atan2(Math.sin(bearing - target.yaw), Math.cos(bearing - target.yaw)));
-    if (delta <= OVERWATCH_ARC_HALF) return 0; // inside the front 120° cone — facing the shooter
-    return clamp((delta - OVERWATCH_ARC_HALF) / (Math.PI - OVERWATCH_ARC_HALF), 0, 1);
+    if (delta <= FRONT_ARC_HALF) return 0; // inside the front 120° cone — facing the shooter
+    return clamp((delta - FRONT_ARC_HALF) / (Math.PI - FRONT_ARC_HALF), 0, 1);
   }
 
   private estimateShotDamage(actor: CombatEntity, target: CombatEntity, targetPart: DamagePart, aim: AimMode, cover: boolean, attackMode: AttackMode = "weapon"): number {
@@ -4161,9 +4051,13 @@ export class TacticalSim {
       const [team] = adjacentTeams;
       if (structure.team === team) continue;
       structure.team = team;
-      if (structure.kind === "turret") structure.commandPoints = 0; // comes online next turn
+      const wasName = structure.name;
+      if (structure.kind === "turret") {
+        structure.commandPoints = 0; // comes online next turn
+        structure.name = "Captured Turret"; // "Derelict" on a turret you now command read as still-dead
+      }
       this.effect("ping", { ...structure.position }, { ...structure.position }, team === "player" ? 0x75d8ff : 0xff765f, 0.9, structure.radius + 0.8);
-      this.pushLog(`${this.sideName(team, team === "player" ? "You" : "The enemy")} captured ${structure.name}${structure.coverKind === "depot" ? ` (+$${DEPOT_INCOME}/turn)` : ""}`);
+      this.pushLog(`${this.sideName(team, team === "player" ? "You" : "The enemy")} captured ${wasName}${structure.coverKind === "depot" ? ` (+$${DEPOT_INCOME}/turn)` : structure.kind === "turret" && team === "player" ? " — select it next turn to fire it" : ""}`);
     }
   }
 
@@ -5037,39 +4931,16 @@ export class TacticalSim {
       if (dist(actor.position, c) < step * 0.3) continue; // didn't meaningfully move
       const progress = startToGoal - dist(c, goal); // positive = closer to the goal
       const sheltered = this.isShelteredAt(c, threat) ? 2.4 : 0;
-      // Steer clear of live enemy overwatch cones: a tile inside one hands the player a free
-      // reaction shot, so it's weighted below a slightly-less-direct route that stays out of arc.
-      const exposed = this.standingInOverwatch(c, actor.team) ? 2.8 : 0;
       // Small pull toward the target's exposed rear — enough to circle when it costs little
       // progress, never enough to march the long way around.
       const flankBias = this.flankFactorAt(c, target) * 1.2;
-      const score = progress + sheltered - exposed + flankBias;
+      const score = progress + sheltered + flankBias;
       if (score > bestScore) {
         bestScore = score;
         best = c;
       }
     }
     return best;
-  }
-
-  // True if standing at `pos` would trip a live hostile overwatch cone (same radius + arc test
-  // checkOverwatch fires with). The AI routes around these so it doesn't feed itself free shots.
-  private standingInOverwatch(pos: Vec2, moverTeam: Team): boolean {
-    if (this.overwatching.size === 0) return false;
-    for (const [watcherId, shots] of this.overwatching) {
-      if (shots <= 0) continue;
-      const watcher = this.entity(watcherId);
-      if (!watcher || !watcher.status.alive || !watcher.status.canShoot || watcher.team === moverTeam) continue;
-      if (dist(watcher.position, pos) > this.overwatchRadius(watcher)) continue;
-      const facing = this.overwatchFacing.get(watcherId);
-      if (facing !== undefined) {
-        const bearing = Math.atan2(pos.x - watcher.position.x, pos.z - watcher.position.z);
-        const delta = Math.abs(Math.atan2(Math.sin(bearing - facing), Math.cos(bearing - facing)));
-        if (delta > OVERWATCH_ARC_HALF) continue;
-      }
-      return true;
-    }
-    return false;
   }
 
   // True if standing at `pos` puts sturdy cover between the unit and the threat.
@@ -5290,8 +5161,6 @@ export class TacticalSim {
     this.orders.splice(0);
     this.projectiles.splice(0);
     this.defending.clear();
-    this.overwatching.clear(); // unspent reaction shots expire with the resolve
-    this.overwatchFacing.clear();
     this.strikeDeflected.clear(); // next volley may report a deflection again
     this.refreshDefendingStances();
     this.finalizeTurnReport();

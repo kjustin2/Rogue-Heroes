@@ -1424,7 +1424,7 @@ export function makeGunRun(effect: VisualEvent, t: number, ground: number, groun
   return out;
 }
 
-/** A generic marker pulse (overwatch, pickups, marks, captures): a flat ring plus a soft disc that
+/** A generic marker pulse (pickups, marks, captures): a flat ring plus a soft disc that
  *  pops and shrinks. Never a glowing ball — the old additive sphere read as a hit on anything. */
 export function makePing(effect: VisualEvent, t: number, ground: number): THREE.Object3D[] {
   const out: THREE.Object3D[] = [];
