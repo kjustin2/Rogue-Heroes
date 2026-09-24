@@ -65,6 +65,9 @@ export class WorldRenderer {
   // The unit lurches away from the shooter for a beat so a hit reads as a physical reaction,
   // not just the white part-flash.
   private readonly flinchByEntity = new Map<string, { at: number; mag: number; dx: number; dz: number }>();
+  // PER-PART HIT REACTION (2026-09-24): the part a hit landed on reacts on its own -- the head snaps
+  // back, a leg buckles, a pack spins -- on top of the whole-body flinch.
+  private readonly partHitByEntity = new Map<string, { partId: string; at: number; mag: number }>();
   private lastDamageSeq = 0;
   // Dynamic map events: danger-zone rings + an eased sandstorm fog/haze blend.
   private readonly environmentRoot = new THREE.Group();
@@ -290,6 +293,7 @@ export class WorldRenderer {
       this.destroyedPartKeys.clear();
       this.disposeAndClear(this.debrisRoot);
       this.flinchByEntity.clear();
+      this.partHitByEntity.clear();
     }
     this.animateDebris();
     this.pickables.splice(0);
@@ -607,6 +611,7 @@ export class WorldRenderer {
       dx /= len;
       dz /= len;
       this.flinchByEntity.set(entry.targetId, { at: now, mag: Math.min(1, entry.amount / 42), dx, dz });
+      this.partHitByEntity.set(entry.targetId, { partId: entry.partId, at: now, mag: Math.min(1, entry.amount / 30) });
     }
     // Cap concurrent numbers so a 40-unit splash melee can't spike draw calls — recycle the
     // oldest (the flash still records for every hit; you can't read 200 numbers anyway).
@@ -961,6 +966,8 @@ export class WorldRenderer {
       root.visible = !on;
     }
     if (this.ambientPoints) this.ambientPoints.visible = !on;
+    contactShadowsHidden = on;
+    this.scene.traverse((node) => { if (node.userData.contactShadow) node.visible = !on; });
     this.silhouetteMode = on;
   }
 
@@ -1974,29 +1981,59 @@ export class WorldRenderer {
   // ---------------------------------------------------------------------------------------------
   private factionInfantryDress(rig: THREE.Group, entity: CombatEntity): void {
     const f = factionOfEntity(entity);
-    // 2026-09-23 ("the factions still feel too similar"): each faction also carries ONE saturated
-    // secondary read -- Vanguard pale-steel helmets, Syndicate rust hoods, Bastion gorgets with
-    // hazard-yellow chevrons -- so a rank reads as its faction before its kinds are told apart.
-    if (f === "syndicate") {
-      // Irregulars: a rust neck scarf with a tail blowing off the back, a bandolier, and a rust
-      // cloth HOOD draped over the back of the helmet down onto the shoulders -- a hunched outline.
-      this.cylinder(rig, entity, "body", 0.19, 0.12, [0, 1.19, 0.01], 0xa8472a, [0, 0, 0], { accent: true, metalness: 0.02, roughness: 0.95 });
-      this.box(rig, entity, "body", [0.12, 0.3, 0.04], [0.07, 1.04, -0.2], 0xa8472a, { accent: true, rotation: [0.35, 0, 0.15], roughness: 0.95 });
-      this.box(rig, entity, "body", [0.07, 0.62, 0.36], [0, 0.93, 0.02], 0x3b2a1c, { rotation: [0, 0, 0.75], metalness: 0.05, roughness: 0.9 });
-      this.box(rig, entity, "body", [0.4, 0.34, 0.12], [0, 1.24, -0.2], 0x9a3f22, { accent: true, rotation: [-0.22, 0, 0], roughness: 0.95, bevel: 0.2 });
-      for (const side of [-1, 1]) this.box(rig, entity, "body", [0.12, 0.22, 0.26], [side * 0.22, 1.2, -0.08], 0x9a3f22, { accent: true, rotation: [0, 0, side * 0.3], roughness: 0.95, bevel: 0.2 });
+    const glow = entity.team === "enemy" ? TEAMS.enemyAccent : this.playerAccent;
+    // THREE SILHOUETTES, not three scarves (2026-09-24, "infantry all look the same across
+    // factions"). Each faction's kit changes the OUTLINE at tactical distance -- head, shoulders and
+    // back -- measured by `npm run measure:factions` (goal: outline overlap <= 80% between factions).
+    // Every piece rides an existing part id, so the rig, pooled paint and per-part damage are unchanged.
+    if (f === "vanguard") {
+      // AIR CAVALRY. A sleek visored helmet with a raised crest fin, a wide team-lit visor band, and a
+      // tall jet / radio pack with twin thrusters and a whip antenna -- the tall, lean, techy outline.
+      const steel = 0x3c5a78;
+      this.box(rig, entity, "head", [0.07, 0.24, 0.5], [0, 1.68, -0.04], 0x2b3f55, { metalness: 0.4, bevel: 0.3 });
+      this.box(rig, entity, "head", [0.44, 0.09, 0.07], [0, 1.43, 0.24], 0x0c1418, { emissive: glow, emissiveIntensity: 0.55, bevel: 0.3 });
+      this.box(rig, entity, "body", [0.36, 0.5, 0.2], [0, 1.02, -0.3], steel, { metalness: 0.35, bevel: 0.2 });
+      for (const side of [-1, 1]) {
+        this.cylinder(rig, entity, "body", 0.075, 0.24, [side * 0.11, 0.7, -0.33], 0x1e2833, [0, 0, 0], { metalness: 0.5, radiusBottom: 0.1 });
+        this.box(rig, entity, "body", [0.1, 0.05, 0.1], [side * 0.11, 0.57, -0.33], 0xffc27a, { accent: true, emissive: 0xff8a2a, emissiveIntensity: 0.45 });
+        // Jet-pack stabiliser fins swept up and out: the one sideways shape only Vanguard has.
+        this.box(rig, entity, "body", [0.36, 0.05, 0.2], [side * 0.34, 1.2, -0.36], 0x2b3f55, { metalness: 0.4, rotation: [0, 0, side * 0.55], bevel: 0.3 });
+        // Slim angular shoulder caps swept back -- a clean line, not a slab.
+        this.box(rig, entity, "body", [0.16, 0.07, 0.3], [side * 0.3, 1.2, -0.02], steel, { metalness: 0.35, rotation: [0.25, 0, side * -0.35], bevel: 0.3 });
+      }
+      // An asymmetric shoulder SENSOR POD with a lit lens: a high bump on one shoulder only Vanguard has.
+      this.box(rig, entity, "body", [0.16, 0.2, 0.2], [0.34, 1.4, 0.0], 0x2b3f55, { metalness: 0.4, bevel: 0.3 });
+      this.box(rig, entity, "body", [0.1, 0.08, 0.04], [0.34, 1.42, 0.11], 0xdaf7ff, { accent: true, emissive: glow, emissiveIntensity: 0.7 });
+      this.cylinder(rig, entity, "body", 0.013, 0.95, [-0.14, 1.62, -0.36], 0x1a2226, [0.12, 0, 0.06], { metalness: 0.4 });
+      this.box(rig, entity, "body", [0.05, 0.05, 0.05], [-0.17, 2.08, -0.3], 0xdaf7ff, { accent: true, emissive: glow, emissiveIntensity: 0.7 });
+    } else if (f === "syndicate") {
+      // RAIDERS. A pointed cloth hood peaked over the helmet, a face scarf, and a knee-length ragged
+      // poncho flaring out behind -- a hunched, wide, triangular outline nothing else on the field has.
+      const cloth = 0x8a3f1e;
+      this.cylinder(rig, entity, "head", 0.03, 0.62, [0, 1.56, -0.06], cloth, [-0.28, 0, 0], { roughness: 0.95, radiusBottom: 0.3 });
+      this.box(rig, entity, "head", [0.34, 0.12, 0.12], [0, 1.3, 0.17], 0xc4642c, { accent: true, roughness: 0.95, bevel: 0.25 });
+      // A long DUSTER, shoulders to ankles, flaring into an A-frame: the raider outline.
+      this.box(rig, entity, "body", [0.78, 1.08, 0.08], [0, 0.62, -0.24], cloth, { rotation: [-0.2, 0, 0], roughness: 0.95, bevel: 0.1 });
+      for (const side of [-1, 1]) {
+        this.box(rig, entity, "body", [0.1, 1.02, 0.46], [side * 0.46, 0.6, -0.02], cloth, { rotation: [0, 0, side * 0.3], roughness: 0.95, bevel: 0.1 });
+        // Tattered hem: two torn tails hanging below the poncho's edge.
+        this.box(rig, entity, "body", [0.14, 0.22, 0.05], [side * 0.2, 0.06, -0.31], 0x6e3016, { rotation: [-0.25, 0, side * 0.3], roughness: 0.95 });
+      }
+      this.box(rig, entity, "body", [0.08, 0.6, 0.34], [0, 0.95, 0.03], 0x3b2a1c, { rotation: [0, 0, 0.75], metalness: 0.05, roughness: 0.9 });
     } else if (f === "bastion") {
-      // Fortress troops: a heavy chest plate, broad square shoulder plates, and a raised armoured
-      // GORGET the helmet sinks into -- a boxier, neckless outline. Hazard-yellow chevrons on the plate.
-      this.box(rig, entity, "body", [0.4, 0.3, 0.07], [0, 0.95, 0.21], 0x4c5240, { metalness: 0.3, bevel: 0.25 });
-      for (const side of [-1, 1]) this.box(rig, entity, "body", [0.26, 0.08, 0.36], [side * 0.34, 1.17, 0.01], 0x4c5240, { metalness: 0.32, rotation: [0, 0, side * -0.18], bevel: 0.3 });
-      this.box(rig, entity, "body", [0.46, 0.16, 0.4], [0, 1.2, -0.01], 0x4c5240, { metalness: 0.32, bevel: 0.3 });
-      for (const side of [-1, 1]) this.box(rig, entity, "body", [0.16, 0.05, 0.02], [side * 0.07, 0.99, 0.25], 0xe0b12a, { accent: true, rotation: [0, 0, side * 0.6] });
-    } else if (f === "vanguard") {
-      // Regulars: a back-mounted radio with a tall whip antenna -- the one thing that sticks up --
-      // under a pale-steel helmet (FACTION_HELMET).
-      this.box(rig, entity, "body", [0.2, 0.24, 0.1], [-0.08, 1.02, -0.24], 0x2c3a44, { metalness: 0.25 });
-      this.cylinder(rig, entity, "body", 0.012, 0.62, [-0.14, 1.42, -0.26], 0x1a2226, [0, 0, 0.08], { metalness: 0.4 });
+      // FORTRESS. Huge square pauldrons, a full-face bucket helm with a lit slit, plated tassets front
+      // and back, and a tower shield slung across the back -- the broad, blocky, armoured outline.
+      const plate = 0x4f6330;
+      for (const side of [-1, 1]) {
+        this.box(rig, entity, "body", [0.3, 0.24, 0.46], [side * 0.42, 1.18, 0.0], plate, { metalness: 0.35, rotation: [0, 0, side * -0.2], bevel: 0.25 });
+        this.box(rig, entity, "body", [0.06, 0.05, 0.4], [side * 0.55, 1.26, 0.0], 0xe0b12a, { accent: true, rotation: [0, 0, side * -0.2] });
+      }
+      this.box(rig, entity, "head", [0.46, 0.48, 0.46], [0, 1.44, 0.0], 0x3f4f26, { metalness: 0.35, bevel: 0.2 });
+      this.box(rig, entity, "head", [0.3, 0.05, 0.03], [0, 1.46, 0.24], 0x0c1418, { emissive: glow, emissiveIntensity: 0.6 });
+      this.box(rig, entity, "head", [0.5, 0.06, 0.5], [0, 1.69, 0.0], plate, { metalness: 0.35, bevel: 0.3 });
+      for (const z of [0.2, -0.2]) this.box(rig, entity, "body", [0.5, 0.28, 0.08], [0, 0.64, z], plate, { metalness: 0.3, rotation: [z > 0 ? 0.12 : -0.12, 0, 0], bevel: 0.2 });
+      this.box(rig, entity, "body", [0.56, 0.78, 0.08], [0, 0.98, -0.34], 0x3f4f26, { metalness: 0.3, bevel: 0.15 });
+      this.box(rig, entity, "body", [0.08, 0.6, 0.02], [0, 0.98, -0.39], 0xe0b12a, { accent: true });
     }
   }
 
@@ -2063,31 +2100,68 @@ export class WorldRenderer {
 
   private factionBaseDress(group: THREE.Group, entity: CombatEntity): void {
     const f = factionOfEntity(entity);
+    const glow = entity.team === "enemy" ? TEAMS.enemyAccent : this.playerAccent;
+    // THREE HEADQUARTERS, not one box with three trinkets (2026-09-24, "bases don't look different
+    // enough"): each faction adds architecture that changes the HQ's outline -- measured by
+    // `npm run measure:factions` (goal: outline overlap <= 70% between factions).
     if (f === "vanguard") {
-      // Radar dish on a lattice mast, and a helipad slab with its H.
-      this.cylinder(group, entity, "comms", 0.07, 2.2, [1.6, 1.1, 1.2], 0x33424c, [0, 0, 0], { metalness: 0.4 });
-      this.cylinder(group, entity, "comms", 0.62, 0.1, [1.6, 2.3, 1.2], 0x8a9aa4, [Math.PI / 2.6, 0, 0.2], { metalness: 0.45 });
-      this.box(group, entity, "core", [1.8, 0.1, 1.8], [-1.8, 0.05, 1.5], 0x39454d, { roughness: 0.9 });
-      for (const x of [-0.35, 0.35]) this.box(group, entity, "core", [0.12, 0.02, 0.9], [-1.8 + x, 0.11, 1.5], 0xe8e2d0, { accent: true });
-      this.box(group, entity, "core", [0.6, 0.02, 0.12], [-1.8, 0.11, 1.5], 0xe8e2d0, { accent: true });
+      // AIRFIELD: a tall control tower with a glass cab and a big radar dish, and the helipad.
+      this.cylinder(group, entity, "comms", 0.34, 3.4, [1.7, 1.7, -1.3], 0x3c5a78, [0, 0, 0], { metalness: 0.35 });
+      this.box(group, entity, "comms", [1.1, 0.62, 1.1], [1.7, 3.66, -1.3], 0x2b3f55, { metalness: 0.35, bevel: 0.2 });
+      for (const [x, z, w, d] of [[1.7, -0.74, 0.9, 0.04], [1.7, -1.86, 0.9, 0.04], [1.14, -1.3, 0.04, 0.9], [2.26, -1.3, 0.04, 0.9]] as const) {
+        this.box(group, entity, "comms", [w, 0.3, d], [x, 3.68, z], 0x0c1418, { emissive: glow, emissiveIntensity: 0.5 });
+      }
+      this.box(group, entity, "comms", [1.3, 0.08, 1.3], [1.7, 4.02, -1.3], 0x9fb6cc, { metalness: 0.4 });
+      this.cylinder(group, entity, "comms", 0.05, 0.9, [1.7, 4.5, -1.3], 0x1a2226, [0, 0, 0], { metalness: 0.4 });
+      this.cylinder(group, entity, "comms", 0.62, 0.1, [1.7, 4.95, -1.3], 0x9fb6cc, [Math.PI / 3.2, 0, 0.5], { metalness: 0.45, radiusBottom: 0.36 });
+      this.cylinder(group, entity, "comms", 0.03, 0.42, [1.7, 5.1, -1.12], 0x1a2226, [Math.PI / 3.2, 0, 0.5], { metalness: 0.4 });
+      this.box(group, entity, "core", [2.2, 0.1, 2.2], [-2.0, 0.05, 1.6], 0x2e3c48, { roughness: 0.9 });
+      for (const x of [-0.42, 0.42]) this.box(group, entity, "core", [0.14, 0.02, 1.1], [-2.0 + x, 0.11, 1.6], 0xe8e2d0, { accent: true });
+      this.box(group, entity, "core", [0.7, 0.02, 0.14], [-2.0, 0.11, 1.6], 0xe8e2d0, { accent: true });
+      for (const [x, z] of [[-3.0, 0.6], [-1.0, 0.6], [-3.0, 2.6], [-1.0, 2.6]] as const) {
+        this.box(group, entity, "core", [0.1, 0.06, 0.1], [x, 0.12, z], 0xdaf7ff, { accent: true, emissive: glow, emissiveIntensity: 0.6 });
+      }
     } else if (f === "syndicate") {
-      // A camp: two tarp tents and a tall scrap mast flying a rust pennant.
-      // A tent is a square prism turned 45deg about its length: the top half is the ridged roof,
-      // the bottom half sits under the ground.
+      // SCRAP FORT: a jagged palisade of tilted, uneven scrap slabs round the camp, a crane jib
+      // swinging over it, the tarp tents and the pennant mast -- a spiky, improvised outline.
+      const scrap = [0x6e3a22, 0x5a4636, 0x8a4a26, 0x4e3a2a];
+      const slabs = 11;
+      for (let i = 0; i < slabs; i += 1) {
+        const a = (i / slabs) * Math.PI * 2 + 0.2;
+        if (Math.abs(Math.sin(a - Math.PI / 2)) < 0.22 && Math.cos(a) > 0) continue; // a gap for the gate side
+        const r = 2.75;
+        const h = 1.0 + ((i * 37) % 7) * 0.22;
+        this.box(group, entity, "core", [0.9, h, 0.16], [Math.cos(a) * r, h / 2 - 0.05, Math.sin(a) * r], scrap[i % scrap.length],
+          { metalness: 0.3, roughness: 0.85, rotation: [((i * 13) % 5 - 2) * 0.06, -a + Math.PI / 2, ((i * 7) % 5 - 2) * 0.07] });
+      }
+      this.cylinder(group, entity, "comms", 0.12, 3.6, [-1.9, 1.8, -1.6], 0x4a3a2a, [0, 0, 0], { metalness: 0.35 });
+      this.box(group, entity, "comms", [0.16, 0.16, 3.6], [-1.9, 3.6, -0.2], 0xa8472a, { accent: true, metalness: 0.3, rotation: [-0.35, 0, 0] });
+      this.cylinder(group, entity, "comms", 0.02, 1.3, [-1.9, 3.1, 1.2], 0x1a1a1a, [0, 0, 0], { metalness: 0.4 });
+      this.box(group, entity, "comms", [0.4, 0.3, 0.4], [-1.9, 2.4, 1.2], 0x3a2f24, { metalness: 0.4 });
       for (const [x, z] of [[-2.1, 1.3], [2.0, -1.7]] as const) {
         const tent = this.box(group, entity, "core", [1.4, 0.95, 0.95], [x, 0.02, z], 0x8f5a34, { accent: true, rotation: [Math.PI / 4, 0, 0], roughness: 0.95, bevel: 0.08 });
         tent.userData.sunk = true; // half below ground on purpose; the terrain-clip audit skips it
       }
-      this.cylinder(group, entity, "comms", 0.06, 4.2, [-1.7, 2.1, -1.3], 0x3a2f24, [0, 0, 0.05], { metalness: 0.3 });
-      this.box(group, entity, "comms", [0.05, 0.4, 0.8], [-1.7, 3.95, -0.9], 0xb8502a, { accent: true, roughness: 0.9 });
-      for (const [x, z] of [[1.9, 1.4], [2.2, 1.0]] as const) this.cylinder(group, entity, "power", 0.2, 0.5, [x, 0.25, z], 0x5a3a22, [0, 0, 0], { roughness: 0.85 });
+      this.cylinder(group, entity, "comms", 0.06, 4.6, [1.8, 2.3, 1.6], 0x3a2f24, [0, 0, 0.05], { metalness: 0.3 });
+      this.box(group, entity, "comms", [0.05, 0.5, 1.0], [1.8, 4.3, 2.1], 0xc4642c, { accent: true, roughness: 0.9 });
     } else if (f === "bastion") {
-      // A bunker: concrete revetment walls round three sides and a squat armoured dome on the roof.
-      for (const [x, z, yaw, len] of [[0, -1.95, 0, 3.8], [-2.05, 0, Math.PI / 2, 3.2], [2.05, 0.2, Math.PI / 2, 2.8]] as const) {
-        this.box(group, entity, "core", [len, 0.9, 0.42], [x, 0.45, z], 0x6a6e5c, { rotation: [0, yaw, 0], roughness: 0.95, bevel: 0.15 });
+      // FORTRESS: a hexagonal ring wall with a sloped glacis, a big armoured dome with a gun slit on
+      // the roof, and two pillboxes on the front corners -- a low, broad, immovable outline.
+      const concrete = 0x5c6448;
+      for (let i = 0; i < 6; i += 1) {
+        const a = (i / 6) * Math.PI * 2;
+        const r = 2.7;
+        this.box(group, entity, "core", [2.9, 1.15, 0.5], [Math.cos(a) * r, 0.52, Math.sin(a) * r], concrete, { roughness: 0.95, rotation: [0, -a + Math.PI / 2, 0], bevel: 0.15 });
+        this.box(group, entity, "core", [2.9, 0.5, 0.6], [Math.cos(a) * (r + 0.42), 0.2, Math.sin(a) * (r + 0.42)], 0x4e5640, { roughness: 0.95, rotation: [0.5, -a + Math.PI / 2, 0], bevel: 0.1 });
       }
-      this.cylinder(group, entity, "core", 0.8, 0.5, [0.3, 2.78, -0.4], 0x4c5240, [0, 0, 0], { metalness: 0.3, radiusBottom: 0.95 });
-      this.box(group, entity, "core", [0.9, 0.08, 0.14], [0.3, 2.9, 0.42], 0x1d2a2e, { emissive: 0xffa04a, emissiveIntensity: 0.3 });
+      this.cylinder(group, entity, "core", 1.05, 0.7, [0.2, 2.9, -0.3], 0x4f6330, [0, 0, 0], { metalness: 0.35, radiusBottom: 1.3 });
+      this.cylinder(group, entity, "core", 0.55, 0.35, [0.2, 3.4, -0.3], 0x4f6330, [0, 0, 0], { metalness: 0.35, radiusBottom: 1.05 });
+      this.box(group, entity, "core", [1.0, 0.1, 0.14], [0.2, 3.02, 0.75], 0x0c1418, { emissive: glow, emissiveIntensity: 0.5 });
+      for (const side of [-1, 1]) {
+        this.cylinder(group, entity, "power", 0.55, 0.7, [side * 2.1, 0.35, 2.0], 0x5c6448, [0, 0, 0], { roughness: 0.95, radiusBottom: 0.7 });
+        this.cylinder(group, entity, "power", 0.07, 0.8, [side * 2.1, 0.5, 2.55], 0x2a2e24, [Math.PI / 2, 0, 0], { metalness: 0.5 });
+        this.box(group, entity, "power", [0.5, 0.05, 0.03], [side * 2.1, 0.58, 2.57], 0xe0b12a, { accent: true });
+      }
     }
   }
 
@@ -3543,7 +3617,7 @@ export class WorldRenderer {
     // LineSegments and therefore a whole extra draw call, so only the few shapes that carry a
     // trooper's silhouette at tactical distance are worth tracing.
     if (materialOptions.outline && isInfantryKind(entity.kind) && OUTLINED_PARTS.has(partId)) this.outline(mesh);
-    const ink = materialOptions.ink ?? this.defaultInk(entity, materialOptions.accent);
+    const ink = materialOptions.ink ?? this.defaultInk(entity, materialOptions.accent, partId, size);
     if (ink) this.inkRim(mesh, size, ink);
     group.add(mesh);
     return mesh;
@@ -3555,8 +3629,16 @@ export class WorldRenderer {
    * board and read as blurry next to everything else. Troopers and scenery keep their own rules;
    * accent lamps stay rimless so a glow is never boxed in black.
    */
-  private defaultInk(entity: CombatEntity, accent?: boolean): number {
-    return !accent && entity.kind !== "cover" && !isInfantryKind(entity.kind) ? VEHICLE_INK : 0;
+  private defaultInk(entity: CombatEntity, accent?: boolean, partId?: string, size?: [number, number, number]): number {
+    if (accent || entity.kind === "cover") return 0;
+    // INFANTRY WEAR THE INK TOO (2026-09-24, "the tank looks great but infantry still looks silly"):
+    // the one line weight is most of why the tank reads finished. Thinner than a hull's, and never
+    // on the legs (they are split at the knee at load; a rim made from the whole leg would show the
+    // unsplit mesh) or on parts too small to carry a line.
+    // Only the big silhouette-carrying shapes (a torso, a helmet, a cloak, a pauldron): every small
+    // strap and pouch with its own rim cost ~24 draw calls a trooper for lines nobody can see.
+    if (isInfantryKind(entity.kind)) return partId === "legs" || !size || Math.max(...size) < 0.3 || Math.min(...size) < 0.08 ? 0 : INFANTRY_INK;
+    return VEHICLE_INK;
   }
 
   // Inverted-hull ink rim: a BackSide copy of the part, scaled so the rim is `width` thick in
@@ -3592,8 +3674,9 @@ export class WorldRenderer {
     );
     mesh.position.set(pos[0], pos[1], pos[2]);
     mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
-    const ink = this.defaultInk(entity, materialOptions.accent);
-    if (ink) this.inkRim(mesh, [radius * 2, depth, radius * 2], ink);
+    const wide = Math.max(radius, materialOptions.radiusBottom ?? radius) * 2;
+    const ink = this.defaultInk(entity, materialOptions.accent, partId, [wide, depth, wide]);
+    if (ink) this.inkRim(mesh, [wide, depth, wide], ink);
     mesh.userData.roughness = roughness;
     mesh.userData.metalness = metalness;
     setShadowBudget(mesh, Math.max(depth, radius * 2));
@@ -4074,6 +4157,31 @@ export class WorldRenderer {
       } else if (part.id === "rifle") {
         mesh.rotation.x += Math.sin(t + 0.3) * 0.09 * idleW;
         mesh.rotation.z += Math.sin(t * 0.8) * 0.04 * idleW;
+      }
+    }
+    // Alive UNIT, not alive part: a leg shot to pieces is exactly when it should buckle hardest.
+    if (isInfantryKind(entity.kind) && entity.status.alive) {
+      // FACTION STANCE: Syndicate raiders prowl hunched forward, Bastion stands braced upright, Vanguard
+      // leans a touch into the fight. Torso and head only -- legs belong to the distance-locked gait.
+      const f = factionOfEntity(entity);
+      const lean = f ? FACTION_STANCE[f] : 0;
+      if (lean && !limb && part.role === "core") mesh.rotation.x += lean;
+      if (lean && part.role === "head") mesh.rotation.x -= lean * 0.7; // eyes stay on the horizon
+      // PER-PART HIT: a quick snap on the part that was hit, easing out over ~0.45s.
+      const hit = this.partHitByEntity.get(entity.id);
+      if (hit && hit.partId === part.id) {
+        const age = (performance.now() - hit.at) / 450;
+        if (age < 1) {
+          const k = hit.mag * Math.sin(Math.PI * Math.min(1, age * 1.6)) * (1 - age);
+          if (part.role === "head") mesh.rotation.x -= 0.55 * k; // the head snaps back
+          else if (part.id === "legs" && mesh.userData.segment === "thigh") mesh.rotation.x += 0.45 * k; // the knee buckles
+          else if (part.id === "legs" && mesh.userData.segment === "shin") mesh.rotation.x -= 0.5 * k;
+          else if (part.id === "pack") mesh.rotation.y += 0.7 * k; // the pack spins on its straps
+          else if (part.role === "weapon") mesh.rotation.z += 0.35 * k; // the weapon is knocked aside
+          else if (part.role === "core" && !limb) mesh.rotation.x -= 0.22 * k; // the chest rocks back
+        } else {
+          this.partHitByEntity.delete(entity.id);
+        }
       }
     }
     // "Still has orders left" cue: a player unit with command points remaining carries a slow pulse
@@ -5491,9 +5599,13 @@ export const FACTION_TINT = { player: 0x5bc6e5, playerCore: 0x6fc4dd, enemy: 0x8
  *   Bastion   -- olive-grey concrete: heavy, fortified.
  */
 const FACTION_OF_TEAM: Partial<Record<Team, FactionId>> = {};
-const FACTION_CAMO: Record<FactionId, number> = { vanguard: 0x4f6d86, syndicate: 0x9d7046, bastion: 0x676e4c };
+// Three hue families a quarter-turn apart (steel blue / rust orange / olive green) so a faction reads
+// by colour before shape -- measured by `npm run measure:factions` (goal: >= 40 degrees apart).
+const FACTION_CAMO: Record<FactionId, number> = { vanguard: 0x3f6d9a, syndicate: 0xa45a2c, bastion: 0x437e44 };
 /** Each faction's helmet: the one-glance read on a rank (kept under ~180 luminance, see audit:unit). */
-const FACTION_HELMET: Record<FactionId, number> = { vanguard: 0xa9b6bc, syndicate: 0x9a4a2c, bastion: 0x5d6548 };
+/** Torso lean (radians, + = forward) per faction: the stance half of the faction read. */
+const FACTION_STANCE: Record<FactionId, number> = { vanguard: 0.05, syndicate: 0.16, bastion: -0.04 };
+const FACTION_HELMET: Record<FactionId, number> = { vanguard: 0x9fb6cc, syndicate: 0x7a3620, bastion: 0x4a5a2a };
 function factionOfEntity(entity: CombatEntity): FactionId | undefined {
   return entity.kind === "cover" || entity.team === "neutral" ? undefined : FACTION_OF_TEAM[entity.team];
 }
@@ -5506,7 +5618,9 @@ function roleColor(entity: CombatEntity, role: PartRole, fallback: number): numb
     const machine = !isInfantryKind(entity.kind);
     // Infantry went 0.28 -> 0.42 (2026-09-23): at 0.28 the kind's own hue won outright and two
     // factions' riflemen were the same green man. The kind still carries its accent and outline.
-    fallback = blendHex(fallback, FACTION_CAMO[faction], machine ? 0.5 : 0.42);
+    // 0.42 -> 0.62 for troopers (2026-09-24): at 0.42 the three factions' riflemen measured 12-38
+    // degrees apart in hue -- the same man in three tints. The kind keeps its accent zone and shape.
+    fallback = blendHex(fallback, FACTION_CAMO[faction], machine ? 0.6 : 0.62);
   }
   if (entity.team === "enemy" && entity.kind !== "cover") {
     if (role === "weapon") return blendHex(fallback, 0xff9c7a, 0.2);
@@ -7501,6 +7615,9 @@ function _scorchGeometry(): THREE.CircleGeometry {
 // better than the distant PCF sun shadow alone. One shared texture/material/geometry;
 // one mesh (and draw call) per unit.
 let _contactShadowMaterial: THREE.MeshBasicMaterial | undefined;
+// Silhouette mode paints everything black, and a contact shadow is a disc on the ground, not the
+// unit -- it filled every shape test with the same ellipse. Hidden while silhouettes are on.
+let contactShadowsHidden = false;
 let _contactShadowGeometry: THREE.CircleGeometry | undefined;
 function makeContactShadow(radius: number): THREE.Mesh {
   if (!_contactShadowMaterial) {
@@ -7528,6 +7645,8 @@ function makeContactShadow(radius: number): THREE.Mesh {
   blob.position.y = 0.024;
   blob.scale.setScalar(Math.max(0.55, radius * 1.25));
   blob.userData.decor = true;
+  blob.userData.contactShadow = true;
+  blob.visible = !contactShadowsHidden;
   return blob;
 }
 
@@ -7648,6 +7767,7 @@ function setShadowBudget(mesh: THREE.Mesh, size: number): void {
 
 // Vehicles-kit ink rim (world units). Matches the trooper edge weight at tactical zoom.
 const VEHICLE_INK = 0.03;
+const INFANTRY_INK = 0.016;
 // Rig scale for the tank / APC / artillery kit parts (structures and cover are authored 1:1).
 const VEHICLE_KIT_SCALE = 0.78;
 const _inkMaterial = new THREE.MeshBasicMaterial({ color: 0x0b0d10, side: THREE.BackSide });

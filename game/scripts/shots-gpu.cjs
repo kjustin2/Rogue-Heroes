@@ -99,6 +99,34 @@ app.whenReady().then(async () => {
         await js(`window.__rht.setResolveScale(1)`);
         continue;
       }
+      if (s === "factionmeasure") {
+        // Capture for scripts/measure-factions.mjs (analysis there): every subject alone, per
+        // faction, identical framing, colour shot then silhouette shot. Real GPU, full FX.
+        const dir = path.join(__dirname, "..", "shots", "factions-measure");
+        fs.mkdirSync(dir, { recursive: true });
+        win.setSize(900, 700); await sleep(500);
+        await js(`(() => { const s = document.createElement("style"); s.textContent = "#ui, .toast, .mission-intro, .battle-loading { visibility: hidden !important; }"; document.head.appendChild(s); })()`);
+        const SUBJ = [["base", "base", 0.62], ["rifleman", "soldier", 0.3], ["heavy", "heavy", 0.3], ["marksman", "sniper", 0.3], ["medic", "medic", 0.3]];
+        for (const f of ["vanguard", "syndicate", "bastion"]) {
+          await js(`window.__rht.startBattle("verdant", "destroy", "normal", ${JSON.stringify(f)}, ${JSON.stringify(f === "vanguard" ? "bastion" : "vanguard")})`);
+          await sleep(2600);
+          for (const [id, kind, zoom] of SUBJ) {
+            await js(`(() => { const r = window.__rht, sim = r.sim; sim.debugClearField(); const at = { x: 0, z: -9 };
+              const e = ${JSON.stringify(kind)} === "base" ? sim.debugStructure("base", "player", at) : sim.debugSpawn(${JSON.stringify(kind)}, "player", at);
+              e.yaw = 0.35; r.deselect(); r.setView({ x: at.x, z: at.z, zoom: ${zoom}, pitch: 0.42, yaw: 1.2 }); })()`);
+            await sleep(1600);
+            const img = await win.webContents.capturePage();
+            fs.writeFileSync(path.join(dir, `${id}-${f}.png`), img.toPNG());
+            await js(`window.__rht.silhouette(true)`); await sleep(500);
+            const sil = await win.webContents.capturePage();
+            fs.writeFileSync(path.join(dir, `${id}-${f}-sil.png`), sil.toPNG());
+            await js(`window.__rht.silhouette(false)`); await sleep(200);
+          }
+        }
+        console.log("shot: factions-measure (15 subjects x colour + silhouette)");
+        win.setSize(1600, 900); await sleep(500);
+        continue;
+      }
       if (s === "apwarning") {
         // End Turn with units that still have action points: the prompt, with its "don't show again".
         await js(`window.__rht.scenario("firefight"); window.__rht.deselect();`);
@@ -453,6 +481,64 @@ app.whenReady().then(async () => {
         await js(`(() => { const base = window.__rht.sim.entities.find((e) => e.team === "player" && e.kind === "base"); base.unlockedTech = ["assault", "armor", "recon", "breach"]; })()`);
         await openTech();
         await shot("tech-mid");
+        continue;
+      }
+      if (s === "hitreact") {
+        // Per-part hit reaction: a marksman round to the HEAD of a Bastion trooper, resolve at a
+        // quarter speed, eight frames -- the head should snap back and settle.
+        await js(`window.__rht.startBattle("verdant", "destroy", "normal", "vanguard", "bastion")`);
+        await sleep(2400);
+        await js(`(() => { const r = window.__rht, s = r.sim; s.debugClearField(); s.economy.set("enemy", 0);
+          const a = s.debugSpawn("sniper", "player", { x: -6, z: -9 }); a.yaw = Math.PI / 2;
+          const b = s.debugSpawn("soldier", "enemy", { x: 2, z: -9 }); b.yaw = -Math.PI / 2;
+          for (const p of b.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0;
+          s.debugSelect(a.id); s.queueShootPart(b.id, "head");
+          r.setView({ x: 2, z: -9, zoom: 0.18, pitch: 0.25, yaw: 0 }); r.setResolveScale(0.25); r.endTurn(); })()`);
+        // The resolve camera pulls out; pin the view on the target before every frame.
+        for (let i = 0; i < 24; i += 1) { await sleep(200); await js(`window.__rht.setView({ x: 2, z: -9, zoom: 0.18, pitch: 0.25, yaw: 0 })`); await shot(`hitreact-${i}`); }
+        await js(`window.__rht.setResolveScale(1)`);
+        continue;
+      }
+      if (s === "hitreactprobe") {
+        // Numbers, not frames: did a round hit the HEAD, and what did the head mesh's pitch do?
+        await js(`window.__rht.startBattle("verdant", "destroy", "normal", "vanguard", "bastion")`);
+        await sleep(2400);
+        await js(`(() => { const r = window.__rht, s = r.sim; s.debugClearField(); s.economy.set("enemy", 0);
+          const a = s.debugSpawn("soldier", "player", { x: -0.2, z: -9 }); a.yaw = Math.PI / 2;
+          const b = s.debugSpawn("heavy", "enemy", { x: 1, z: -9 }); b.yaw = -Math.PI / 2; window.__probeId = b.id;
+          for (const p of b.parts) if (p.role === "weapon") p.hp = 0; // legs stay intact: they are the part under test
+          s.debugSelect(a.id); s.queueMeleePart(b.id, "legs"); r.endTurn(); window.__pitch = [];
+          const t0 = performance.now();
+          const tick = () => { let head; r.sceneObject().traverse((o) => { if (o.userData?.entityId === window.__probeId && o.userData?.partId === "legs" && o.userData?.segment === "thigh" && !head) head = o; });
+            if (head) window.__pitch.push([Math.round(performance.now() - t0), +head.rotation.x.toFixed(3)]);
+            if (performance.now() - t0 < 4000) requestAnimationFrame(tick); };
+          requestAnimationFrame(tick); })()`);
+        await sleep(4500);
+        const out = await js(`(() => { const rep = window.__rht.sim.turnReports[0]; const hits = rep ? rep.entries.filter((e) => e.targetId === window.__probeId).map((e) => e.partId + ":" + e.amount) : [];
+          const p = window.__pitch; const hitAt = window.__rht.sim.log.length ? 0 : 0;
+          // The strike lands ~0.36s into the order (x4 wall time at normal pace ~ 0.4s): compare the
+          // head pitch in the calm before it with the biggest excursion in the window after.
+          const before = p.filter((q) => q[0] < 250).map((q) => q[1]);
+          const after = p.filter((q) => q[0] >= 250 && q[0] < 1600).map((q) => q[1]);
+          const rest = before.length ? before.reduce((a, b) => a + b, 0) / before.length : 0;
+          const swing = after.length ? Math.max(...after.map((x) => Math.abs(x - rest))) : 0;
+          const tgt = window.__rht.sim.entity(window.__probeId);
+          const strikeLog = window.__rht.sim.log.filter((l) => /strikes|legs/i.test(l)).slice(0, 3);
+          return JSON.stringify({ alive: tgt?.status.alive, legsHp: tgt?.parts.find((q) => q.id === "legs")?.hp, strikeLog, samples: p.length, restPitch: +rest.toFixed(3), maxSwingAfterHit: +swing.toFixed(3), idleWobbleBefore: before.length ? +(Math.max(...before) - Math.min(...before)).toFixed(3) : null }); })()`);
+        console.log("hitreact probe: " + out);
+        continue;
+      }
+      if (s === "sameside") {
+        // The hardest team read: the SAME faction on both sides (Random can roll it, hotseat allows
+        // it). Faction colour is shared, so team must still read from ring, trim and glow.
+        await js(`window.__rht.startBattle("verdant", "destroy", "normal", "vanguard", "vanguard")`);
+        await sleep(2400);
+        await js(`(() => { const r = window.__rht, s = r.sim; s.debugClearField();
+          ["soldier", "heavy", "sniper", "medic"].forEach((k, i) => { const a = s.debugSpawn(k, "player", { x: -3, z: -12 + i * 1.6 }); a.yaw = Math.PI / 2;
+            const b = s.debugSpawn(k, "enemy", { x: 3, z: -12 + i * 1.6 }); b.yaw = -Math.PI / 2; });
+          r.deselect(); r.setView({ x: 0, z: -9.6, zoom: 0.42, pitch: 0.5, yaw: 0.9 }); })()`);
+        await sleep(1800);
+        await shot("sameside");
         continue;
       }
       if (s === "factions") {
