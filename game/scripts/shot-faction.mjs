@@ -25,6 +25,7 @@ const { page, errors, close } = await launchGame({
 try {
   await page.waitForSelector(".main-menu");
   await page.click('[data-menu="play"]');
+  await page.click('[data-step-jump="2"]'); // factions live on the Sides step
   await page.waitForSelector("[data-faction]");
   // The menu fades in; screenshotting on the selector alone catches it mid-transition and the
   // evidence is a washed-out frame that says nothing about the real contrast.
@@ -128,6 +129,7 @@ try {
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForSelector(".main-menu", { timeout: 20000 });
     await page.click('[data-menu="play"]');
+    await page.click('[data-step-jump="2"]');
     await page.waitForSelector("[data-faction]");
   }
 

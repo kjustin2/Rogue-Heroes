@@ -22,6 +22,8 @@ const SCREENS = [
   // Back to the menu first, or "title" just re-audits whatever the previous screen left up.
   ["title", async (page) => { await page.evaluate(() => window.__rht.toMenu()); await delay(600); }],
   ["deploy", async (page) => { await page.click('[data-menu="play"]'); await delay(500); }],
+  ["setup-sides", async (page) => { await page.click('[data-step-jump="2"]'); await delay(300); }],
+  ["setup-rules", async (page) => { await page.click('[data-step-jump="3"]'); await delay(300); }],
   ["settings", async (page) => { await page.evaluate(() => window.__rht.toMenu()); await delay(400); await page.click('[data-menu="settings"]'); await delay(500); }],
   ["pause", async (page) => {
     await page.evaluate(() => window.__rht.scenario("firefight"));
@@ -124,6 +126,7 @@ const SCREENS = [
   ["versus-setup", async (page) => {
     await page.evaluate(() => window.__rht.toMenu()); await delay(400);
     await page.click('[data-menu="play"]'); await delay(400);
+    await page.click('[data-step-jump="2"]'); await delay(200);
     await page.click('[data-opponent="local"]'); await delay(400);
   }],
   ["versus-handoff", async (page) => {
@@ -160,25 +163,28 @@ try {
       for (const f of findings.slice(0, process.env.AUDIT_VERBOSE ? 400 : 6)) console.log(`         ${f.rule}: ${f.sel} — ${f.detail}`);
     }
   }
-  // ONE-SCREEN RULE — at 720p the Skirmish page shows Map, Faction, Mode, Difficulty and Deploy
-  // without scrolling the card body (CLAUDE.md: "every choice on a set-up page fits one 1280x720
-  // screen"). The offscreen rule cannot see it because the body is a legitimate scroll container.
+  // ONE-SCREEN RULE — at 720p every STEP of the Skirmish set-up flow (Battlefield / Sides / Rules)
+  // fits without scrolling its body, and the footer's Deploy is on screen. The offscreen rule cannot
+  // see it because the body is a legitimate scroll container.
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.evaluate(() => window.__rht.toMenu());
   await delay(400);
   await page.click('[data-menu="play"]');
   await delay(500);
-  const oneScreen = await page.evaluate(() => {
-    const body = document.querySelector(".menu-screen > .menu-content > .start-layout");
-    const diff = document.querySelector("[data-diff]");
-    const start = document.querySelector("[data-start]");
-    const r = (el) => el ? el.getBoundingClientRect() : null;
-    return { scroll: body ? body.scrollHeight - body.clientHeight : -1, diff: r(diff)?.bottom, start: r(start)?.bottom, h: window.innerHeight };
-  });
-  if (oneScreen.scroll > 1 || !oneScreen.diff || oneScreen.diff > oneScreen.h || oneScreen.start > oneScreen.h) {
-    console.error(`ONE-SCREEN: the Skirmish page scrolls at 1280x720 (${JSON.stringify(oneScreen)})`);
-    failures += 1;
-  } else console.log("  ok   one-screen — Skirmish choices + Deploy all on a 720p screen");
+  for (const stepNo of [1, 2, 3]) {
+    await page.click(`[data-step-jump="${stepNo}"]`);
+    await delay(250);
+    const oneScreen = await page.evaluate(() => {
+      const body = document.querySelector(".menu-screen > .menu-content > .start-layout");
+      const start = document.querySelector("[data-start]");
+      const r = (el) => el ? el.getBoundingClientRect() : null;
+      return { scroll: body ? body.scrollHeight - body.clientHeight : -1, start: r(start)?.bottom, h: window.innerHeight };
+    });
+    if (oneScreen.scroll > 1 || !oneScreen.start || oneScreen.start > oneScreen.h) {
+      console.error(`ONE-SCREEN: set-up step ${stepNo} scrolls or hides Deploy at 1280x720 (${JSON.stringify(oneScreen)})`);
+      failures += 1;
+    } else console.log(`  ok   one-screen — set-up step ${stepNo} fits a 720p screen with Deploy visible`);
+  }
   // FAULT INJECTION — the gate must be able to fail. Lay a strip over the Skirmish page's
   // Difficulty row (the shape of the real bug: the sticky Deploy bar over the faction cards) and
   // demand the occluded rule names it; then take the strip away and demand it goes quiet again.

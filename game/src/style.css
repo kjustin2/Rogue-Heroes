@@ -5885,3 +5885,42 @@ body:has(.hotseat-handoff) .battle-loading { display: none; }
 .action-grid { gap: 10px; grid-template-columns: repeat(auto-fill, minmax(clamp(136px, 9vw, 176px), 1fr)); }
 .action-grid .action { min-height: 54px; padding: 9px 12px 9px 32px; gap: 3px; align-content: center; }
 .action-grid .action > kbd { left: 9px; top: 50%; transform: translateY(-50%); }
+/* Settings: one tab at a time (Display & Sound / Gameplay / Controls), not one long wall. */
+.settings-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 10px; }
+.settings-screen .settings-section { display: none; }
+.settings-screen[data-tab="display"] .settings-section[data-section="display"],
+.settings-screen[data-tab="gameplay"] .settings-section[data-section="gameplay"],
+.settings-screen[data-tab="controls"] .settings-section[data-section="controls"] { display: block; }
+/* Unused-AP prompt: same card language as the handoff (kicker, headline, one paragraph, list, go). */
+.ap-warning-card { width: min(460px, 92vw); max-width: none; padding: 24px 28px 20px; text-align: center; }
+.ap-warning__lead { margin: 12px 0 0; text-align: left; font-size: var(--fs-body); line-height: 1.5; color: var(--cream); }
+.ap-warning__list { margin: 12px 0 0; padding: 10px 12px 10px 30px; text-align: left; background: var(--paper-lo); border: 2px solid var(--ink); border-radius: 6px; display: grid; gap: 4px; font-size: var(--fs-body); color: var(--cream); }
+.ap-warning__never { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; font-size: var(--fs-small); color: var(--cream); text-align: left; flex-wrap: wrap; }
+.ap-warning__never span { color: var(--text-muted); }
+.ap-warning .pause-buttons { margin-top: 16px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+/* ---- SKIRMISH SET-UP AS A STEP FLOW (2026-09-24) ----
+   One decision group per screen: Battlefield → Sides → Rules. The stepper names the steps and lets
+   you jump back; the footer is Back / Deploy now / Next. */
+.start-steps { display: flex; gap: 6px; list-style: none; margin: 0 0 12px; padding: 0; }
+.start-steps li { flex: 1; }
+.start-steps button { width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 12px; font: inherit; font-weight: 800; font-size: var(--fs-name); color: var(--text-muted); background: var(--paper-lo); border: 2px solid var(--ink); border-radius: 6px; cursor: pointer; text-align: left; }
+.start-steps button span { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--paper); border: 2px solid var(--ink); font-size: var(--fs-small); }
+.start-steps button.on { color: var(--cyan-ink); background: var(--cyan); }
+.start-steps button.on span { background: var(--cream); color: var(--cyan-ink); }
+.start-flow .start-layout { display: block; }
+.start-flow .start-step { display: none; }
+.start-flow[data-step="1"] .start-step[data-step="1"] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 16px; align-items: start; }
+.start-flow[data-step="2"] .start-step[data-step="2"],
+.start-flow[data-step="3"] .start-step[data-step="3"] { display: grid; gap: 12px; }
+.start-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.start-actions .title-start { margin-left: auto; }
+.start-actions__quick { margin-left: auto; }
+.start-summary__list { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 6px 0 0; padding: 10px 14px; background: var(--paper-lo); border: 2px solid var(--ink); border-radius: 6px; font-size: var(--fs-body); }
+.start-summary__list dt { color: var(--text-muted); font-weight: 700; }
+.start-summary__list dd { margin: 0; color: var(--cream); font-weight: 800; }
+@media (max-width: 900px) { .start-flow[data-step="1"] .start-step[data-step="1"] { grid-template-columns: 1fr; } }
+.menu-head .start-steps { margin: 0 0 0 auto; flex: 1 1 360px; max-width: 560px; }
+.menu-head:has(.start-steps) { flex-wrap: wrap; gap: 10px; }
+/* Step 1 fits one screen at 720p: the list scrolls inside itself, the preview shrinks to fit. */
+.start-flow .start-step--map .map-list { max-height: clamp(180px, calc(100vh - 300px), 640px); }
+.start-flow .start-step--map .map-preview-canvas { max-height: clamp(140px, calc(100vh - 380px), 520px); }

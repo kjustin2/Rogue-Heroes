@@ -788,8 +788,13 @@ tokens are remapped there so the older layers inherit it. Rules that fall out of
 - **Menus = title + buttons.** The cosmetic callsign line was removed from the title screen; it is
   still equipped in the Armory. Difficulty is Easy / Normal / Hard (Recruit / Veteran / Elite
   collided with the veteran ranks and the Recruit unit). The vocabulary is **turn**, never round.
+- **The Skirmish set-up is a STEP FLOW** (owner 2026-09-24: the one-page version "was overwhelming"):
+  Battlefield → Sides → Rules, a stepper in the header (jump back any time), a summary on Rules, and a
+  footer of Back / Deploy now / Next. `[data-start]` is always on screen (smokes rely on it); a smoke that
+  clicks a Sides/Rules control first clicks `[data-step-jump="N"]`. Every STEP fits 1280×720
+  (`smoke:ui-audit` one-screen check per step). Settings is three tabs: Display & Sound / Gameplay / Controls.
 - **Every choice on a set-up page fits one 1280×720 screen in reading order, and nothing sits under
-  a sticky bar.** The Skirmish page is Map + Preview left, Faction → Mode → Difficulty right, Deploy
+  a sticky bar.** The old one-page layout was Map + Preview left, Faction → Mode → Difficulty right, Deploy
   last; a card with a CTA footer is a header / scrolling-body / footer grid, never a sticky strip
   laid over its own content (that is how the faction pick got "hidden behind Deploy").
   `shots:gpu mapselect` is the repro at the three widths that have bitten this repo.

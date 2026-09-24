@@ -67,6 +67,9 @@ export class GameSettings {
   renderScale: RenderScale = "quality";
   // High-contrast team palette (blue vs orange) for colorblind players.
   highContrastTeams = false;
+  /** Ask before ending a turn with units that still have action points (Gameplay tab; the prompt's
+   *  "don't show again" box turns it off). */
+  warnUnusedAp = true;
   keybinds: Record<BindableAction, string> = { ...DEFAULT_KEYBINDS };
   // Debug/sandbox cheats — only shown + applied when the game is launched with the ?debug flag
   // (see the Debug section in Settings / the README). Persisted like any other setting.
@@ -98,6 +101,7 @@ export class GameSettings {
       if (s.actionPace === "slow" || s.actionPace === "normal" || s.actionPace === "fast") this.actionPace = s.actionPace;
       if (s.renderScale && RENDER_SCALES.includes(s.renderScale)) this.renderScale = s.renderScale;
       if (typeof s.highContrastTeams === "boolean") this.highContrastTeams = s.highContrastTeams;
+      if (typeof s.warnUnusedAp === "boolean") this.warnUnusedAp = s.warnUnusedAp;
       if (s.keybinds && typeof s.keybinds === "object") {
         // Only known actions survive a load: a removed action (Overwatch) must not linger as a dead rebind row.
         const saved = s.keybinds as Record<string, unknown>;
@@ -114,7 +118,7 @@ export class GameSettings {
 
   save(): void {
     try {
-      localStorage.setItem(KEY, JSON.stringify({ muted: this.muted, volume: this.volume, musicVolume: this.musicVolume, difficulty: this.difficulty, faction: this.faction, reducedMotion: this.reducedMotion, actionPace: this.actionPace, renderScale: this.renderScale, highContrastTeams: this.highContrastTeams, keybinds: this.keybinds, debugInfiniteMoney: this.debugInfiniteMoney, debugFreeCooldown: this.debugFreeCooldown }));
+      localStorage.setItem(KEY, JSON.stringify({ muted: this.muted, volume: this.volume, musicVolume: this.musicVolume, difficulty: this.difficulty, faction: this.faction, reducedMotion: this.reducedMotion, actionPace: this.actionPace, renderScale: this.renderScale, highContrastTeams: this.highContrastTeams, warnUnusedAp: this.warnUnusedAp, keybinds: this.keybinds, debugInfiniteMoney: this.debugInfiniteMoney, debugFreeCooldown: this.debugFreeCooldown }));
     } catch {
       // ignore
     }

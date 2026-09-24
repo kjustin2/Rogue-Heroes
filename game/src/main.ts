@@ -40,7 +40,7 @@ import type { AimMode, Team } from "./game/damageModel";
 import { isAirKind, isInfantryKind, isVehicleKind } from "./game/damageModel";
 import { TECH_TREE, troopsUnlockedBy } from "./game/tech";
 import { supportPowerSpec, troopSpec, unitStats } from "./game/units";
-import { factionTroopLabel, signatureUnits } from "./game/factions";
+import { factionDef, factionTroopLabel, signatureUnits } from "./game/factions";
 import { sfx } from "./audio";
 import { music } from "./music";
 import { progression, COSMETICS, COSMETIC_CATEGORIES, type Cosmetic } from "./progression";
@@ -646,10 +646,19 @@ function handToHotseatSeat(): void {
 }
 
 /** End Turn from the button or the key. In hotseat the first press passes the turn to the other seat. */
-function requestEndTurn(): void {
+function requestEndTurn(skipApCheck = false): void {
   if (sim.phase !== "command") return;
   // Never behind the handoff card: the next player has not seen the board yet.
   if (document.querySelector(".hotseat-handoff")) return;
+  if (document.querySelector(".ap-warning")) return;
+  // UNUSED AP (owner 2026-09-24: new players "weren't clear on the AP concept"). Ending a turn with
+  // units that could still act asks first, naming them; "don't show again" turns it off for good
+  // and the Gameplay tab turns it back on. The Home Base is not counted: saving money is a choice.
+  if (!skipApCheck && settings.warnUnusedAp && !AUTOMATED) {
+    const idle = sim.entities.filter((e) => e.team === "player" && e.status.alive && !e.downed && !e.carriedById &&
+      e.kind !== "base" && e.kind !== "wall" && e.kind !== "cover" && e.commandPoints > 0);
+    if (idle.length) { showApWarning(idle); return; }
+  }
   if (sim.hotseat && hotseatSeatsDone === 0) {
     hotseatSeatsDone = 1;
     handToHotseatSeat();
@@ -662,6 +671,40 @@ function requestEndTurn(): void {
   sfx.turn();
   resolveCam.begin(stage.viewState());
   sim.endTurn();
+}
+
+function showApWarning(idle: { name: string; commandPoints: number }[]): void {
+  const total = idle.reduce((n, e) => n + e.commandPoints, 0);
+  const list = idle.slice(0, 6).map((e) => `<li><strong>${escapeHtml(e.name)}</strong> — ${e.commandPoints} AP left</li>`).join("");
+  const more = idle.length > 6 ? `<li>…and ${idle.length - 6} more</li>` : "";
+  const screen = mountScreen(
+    `
+    <div class="overlay-card ap-warning-card">
+      <div class="hotseat-card__kicker">Before you end the turn</div>
+      <h2 class="menu-heading">${total} action point${total === 1 ? "" : "s"} unused</h2>
+      <p class="ap-warning__lead">Every unit gets its action points back each turn — unspent ones are lost. Each order (move, shoot, strike…) costs 1 AP.</p>
+      <ul class="ap-warning__list">${list}${more}</ul>
+      <label class="ap-warning__never"><input type="checkbox" data-ap-never /> Don't show this again <span>(turn it back on in Settings → Gameplay)</span></label>
+      <div class="pause-buttons">
+        <button class="menu-action" data-ap="plan" type="button">Keep planning</button>
+        <button class="title-start" data-ap="end" type="button">End turn anyway</button>
+      </div>
+    </div>
+  `,
+    "pause-overlay ap-warning",
+  );
+  screen.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    const choice = target.closest<HTMLElement>("[data-ap]")?.dataset.ap;
+    if (!choice && target !== screen) return;
+    if (screen.querySelector<HTMLInputElement>("[data-ap-never]")?.checked) {
+      settings.warnUnusedAp = false;
+      settings.save();
+    }
+    screen.remove();
+    if (choice === "end") requestEndTurn(true);
+    hud.update();
+  });
 }
 
 // Mission-intro cinematic: a letterboxed rail flyover — enemy lines, the contested centre, then
@@ -961,7 +1004,7 @@ function showMainMenu(): void {
 
 // The Skirmish set-up page. `versus` = Local 2 Players, picked by the Opponent row at the top of the
 // page (it used to be its own main-menu button); switching re-renders with the other picks kept.
-function showStartScreen(versus = false, keep?: { map: string; mode: ModeId }): void {
+function showStartScreen(versus = false, keep?: { map: string; mode: ModeId; step?: number }): void {
   closeAllMenus();
   let selectedMap = keep?.map ?? MAPS[0].id;
   let selectedMode: ModeId = keep?.mode ?? "destroy";
@@ -1013,22 +1056,30 @@ function showStartScreen(versus = false, keep?: { map: string; mode: ModeId }): 
       <div class="menu-head">
         <button class="menu-back" data-overlay-close data-back type="button">&lsaquo; Back</button>
         <h2 class="menu-heading">${versus ? "Local 2 Players" : "Skirmish"}</h2>
+      <!-- A STEP FLOW (owner 2026-09-24: the one-page set-up "was overwhelming"): one decision group per
+             step, the steps named up top, Back / Next at the foot, and Deploy now for players who
+             already like what is picked. -->
+        <ol class="start-steps">
+          <li><button type="button" data-step-jump="1"><span>1</span> Battlefield</button></li>
+          <li><button type="button" data-step-jump="2"><span>2</span> Sides</button></li>
+          <li><button type="button" data-step-jump="3"><span>3</span> Rules</button></li>
+        </ol>
       </div>
       <div class="start-layout">
-        <div class="start-left">
+        <section class="start-step start-step--map" data-step="1">
           <div class="menu-section">
-            <div class="menu-label">Map</div>
+            <div class="menu-label">Pick a battlefield</div>
             <div class="map-list">${mapList}</div>
           </div>
           <div class="menu-section">
             <div class="map-preview" data-preview></div>
           </div>
-        </div>
-        <div class="start-right">
+        </section>
+        <section class="start-step" data-step="2">
           <div class="menu-section">
-            <div class="menu-label">Opponent</div>
+            <div class="menu-label">Who are you fighting?</div>
             <div class="chip-row">
-              <button class="menu-chip ${versus ? "" : "on"}" data-opponent="bot" type="button" data-tip="Fight the computer. Pick its faction and difficulty below.">vs Bot</button>
+              <button class="menu-chip ${versus ? "" : "on"}" data-opponent="bot" type="button" data-tip="Fight the computer. Pick its faction below and its difficulty on the next step.">vs Bot</button>
               <button class="menu-chip ${versus ? "on" : ""}" data-opponent="local" type="button" data-tip="Two players on one screen: you take turns planning, and who plans first swaps every turn.">Local 2 Players</button>
             </div>
           </div>
@@ -1040,19 +1091,26 @@ function showStartScreen(versus = false, keep?: { map: string; mode: ModeId }): 
             <div class="menu-label">${versus ? "Player 2 faction" : "Enemy faction"}</div>
             <div class="menu-grid faction-grid ${versus ? "" : "faction-grid--four"}">${otherCards}</div>
           </div>
+        </section>
+        <section class="start-step" data-step="3">
           <div class="menu-section">
-            <div class="menu-label">Mode</div>
+            <div class="menu-label">How is it won?</div>
             <div class="chip-row">${modeChips}</div>
             <p class="choice-blurb" data-mode-blurb>${escapeHtml(modeDef(selectedMode).blurb)}</p>
           </div>
           ${versus ? "" : `<div class="menu-section">
-            <div class="menu-label">Difficulty</div>
+            <div class="menu-label">How good is the bot?</div>
             <div class="chip-row">${diffChips}</div>
             <p class="choice-blurb" data-diff-blurb>${escapeHtml(difficultyBlurb(selectedDifficulty))}</p>
           </div>`}
-        </div>
+          <div class="menu-section start-summary" data-summary></div>
+        </section>
       </div>
-      <div class="menu-actions"><button class="title-start" data-start type="button">Deploy to Battle</button></div>
+      <div class="menu-actions start-actions">
+        <button class="menu-action" data-step-go="back" type="button">‹ Back</button>
+        <button class="menu-action start-actions__quick" data-start type="button">Deploy now</button>
+        <button class="title-start" data-step-go="next" type="button">Next ›</button>
+      </div>
     </div>
   `,
     "menu-screen title-screen",
@@ -1067,18 +1125,56 @@ function showStartScreen(versus = false, keep?: { map: string; mode: ModeId }): 
     preview?.update(mapDef(selectedMap), selectedMode);
   };
 
+  // The step the flow shows. The last step turns "Deploy now" into the main button.
+  let step = keep?.step ?? 1;
+  const summary = (): string => {
+    const other = selectedFaction2 === "random" ? "Random" : factionDef(selectedFaction2).name;
+    return `<div class="menu-label">Your battle</div>
+      <dl class="start-summary__list">
+        <dt>Battlefield</dt><dd>${escapeHtml(mapDef(selectedMap).name)}</dd>
+        <dt>${versus ? "Player 1" : "You"}</dt><dd>${escapeHtml(factionDef(selectedFaction).name)}</dd>
+        <dt>${versus ? "Player 2" : "Enemy"}</dt><dd>${escapeHtml(other)}${versus ? "" : ` · ${escapeHtml(difficultyLabel(selectedDifficulty))}`}</dd>
+        <dt>Mode</dt><dd>${escapeHtml(modeDef(selectedMode).name)}</dd>
+      </dl>`;
+  };
+  const showStep = (n: number): void => {
+    step = Math.max(1, Math.min(3, n));
+    screen.dataset.step = String(step);
+    for (const b of screen.querySelectorAll<HTMLElement>("[data-step-jump]")) b.classList.toggle("on", Number(b.dataset.stepJump) === step);
+    const next = screen.querySelector<HTMLElement>('[data-step-go="next"]');
+    const quick = screen.querySelector<HTMLElement>("[data-start]");
+    const back = screen.querySelector<HTMLElement>('[data-step-go="back"]');
+    if (next) next.hidden = step === 3;
+    if (back) back.style.visibility = step === 1 ? "hidden" : "visible";
+    if (quick) { quick.className = step === 3 ? "title-start" : "menu-action start-actions__quick"; quick.textContent = step === 3 ? "Deploy to Battle" : "Deploy now"; }
+    const sum = screen.querySelector<HTMLElement>("[data-summary]");
+    if (sum) sum.innerHTML = summary();
+    if (step === 1) renderPreview();
+  };
+  screen.classList.add("start-flow");
+  showStep(step);
+  // Any pick on the Rules step (mode, difficulty) rewrites the summary right under it.
+  screen.addEventListener("click", () => {
+    const sum = screen.querySelector<HTMLElement>("[data-summary]");
+    if (sum && step === 3) sum.innerHTML = summary();
+  });
+
   screen.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
     if (target.closest("[data-back]")) {
       showMainMenu();
       return;
     }
+    const jump = target.closest<HTMLElement>("[data-step-jump]")?.dataset.stepJump;
+    if (jump) { showStep(Number(jump)); return; }
+    const go = target.closest<HTMLElement>("[data-step-go]")?.dataset.stepGo;
+    if (go) { showStep(step + (go === "next" ? 1 : -1)); return; }
     const opponentBtn = target.closest<HTMLElement>("[data-opponent]");
     if (opponentBtn) {
       const local = opponentBtn.dataset.opponent === "local";
       if (local !== versus) {
         skipNextMenuEntrance = true; // swap in place, no fade
-        showStartScreen(local, { map: selectedMap, mode: selectedMode });
+        showStartScreen(local, { map: selectedMap, mode: selectedMode, step });
       }
       return;
     }
@@ -1164,6 +1260,12 @@ function showSettings(): void {
         <button class="menu-back" data-overlay-close data-back type="button">&lsaquo; Back</button>
         <h2 class="menu-heading">Settings</h2>
       </div>
+      <div class="settings-tabs" role="tablist">
+        <button class="menu-chip on" data-settings-tab="display" type="button" role="tab">Display &amp; Sound</button>
+        <button class="menu-chip" data-settings-tab="gameplay" type="button" role="tab">Gameplay</button>
+        <button class="menu-chip" data-settings-tab="controls" type="button" role="tab">Controls</button>
+      </div>
+      <section class="settings-section" data-section="display">
       <div class="settings-row">
         <label>Fullscreen</label>
         <button class="menu-toggle ${document.fullscreenElement ? "on" : ""}" data-set="fullscreen" type="button">${document.fullscreenElement ? "On" : "Off"}</button>
@@ -1187,18 +1289,24 @@ function showSettings(): void {
         <input type="range" min="0" max="100" value="${Math.round(settings.musicVolume * 100)}" data-set="musicVolume" />
       </div>
       <div class="settings-row">
-        <label data-tip="How fast queued orders play out when the turn resolves.">Action speed</label>
-        <div class="settings-choices">
-          ${ACTION_PACES.map((p) => `<button class="menu-chip ${settings.actionPace === p ? "on" : ""}" data-set="pace" data-value="${p}" type="button">${PACE_LABEL[p]}</button>`).join("")}
-        </div>
-      </div>
-      <div class="settings-row">
         <label>Reduced motion</label>
         <button class="menu-toggle ${settings.reducedMotion ? "on" : ""}" data-set="motion" type="button">${settings.reducedMotion ? "On" : "Off"}</button>
       </div>
       <div class="settings-row">
         <label>High-contrast teams</label>
         <button class="menu-toggle ${settings.highContrastTeams ? "on" : ""}" data-set="teams" type="button" data-tip="Colorblind-safe palette: your side blue, enemy orange.">${settings.highContrastTeams ? "On" : "Off"}</button>
+      </div>
+      </section>
+      <section class="settings-section" data-section="gameplay">
+      <div class="settings-row">
+        <label data-tip="How fast queued orders play out when the turn resolves.">Action speed</label>
+        <div class="settings-choices">
+          ${ACTION_PACES.map((p) => `<button class="menu-chip ${settings.actionPace === p ? "on" : ""}" data-set="pace" data-value="${p}" type="button">${PACE_LABEL[p]}</button>`).join("")}
+        </div>
+      </div>
+      <div class="settings-row">
+        <label data-tip="When you end a turn while units still have action points, ask first. The prompt has its own 'don't show again' box.">Warn about unused AP</label>
+        <button class="menu-toggle ${settings.warnUnusedAp ? "on" : ""}" data-set="warn-ap" type="button">${settings.warnUnusedAp ? "On" : "Off"}</button>
       </div>
       ${DEBUG_UNLOCKED ? `
       <div class="settings-row settings-row--head"><label>Debug</label></div>
@@ -1210,17 +1318,22 @@ function showSettings(): void {
         <label>No deploy cooldowns</label>
         <button class="menu-toggle ${settings.debugFreeCooldown ? "on" : ""}" data-set="debug-cd" type="button" data-tip="Zeroes deploy cooldowns so you can reinforce instantly.">${settings.debugFreeCooldown ? "On" : "Off"}</button>
       </div>` : ""}
+      </section>
+      <section class="settings-section" data-section="controls">
       <div class="settings-row settings-row--head"><label>Controls</label><button class="menu-toggle" data-set="binds-reset" type="button" data-tip="Restore every key to its default.">Reset keys</button></div>
       ${(Object.keys(KEYBIND_LABELS) as BindableAction[]).map((action) => `
         <div class="settings-row settings-row--bind">
           <label>${escapeHtml(KEYBIND_LABELS[action])}</label>
           <button class="menu-toggle bind-key" data-rebind="${action}" type="button" data-tip="Click, then press the new key.">${escapeHtml(keyDisplay(settings.keybinds[action]))}</button>
         </div>`).join("")}
+      </section>
       <p class="settings-note">Settings save automatically.</p>
     </div>
   `,
     "menu-screen",
   );
+  screen.classList.add("settings-screen");
+  screen.dataset.tab = "display";
 
   screen.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
@@ -1230,7 +1343,21 @@ function showSettings(): void {
       if (inBattle) { screen.remove(); openPauseMenu(); } else showMainMenu();
       return;
     }
+    // Settings TABS (owner 2026-09-24: "options broke out between settings and gameplay settings").
+    const tab = target.closest<HTMLElement>("[data-settings-tab]")?.dataset.settingsTab;
+    if (tab) {
+      screen.dataset.tab = tab;
+      for (const b of screen.querySelectorAll<HTMLElement>("[data-settings-tab]")) b.classList.toggle("on", b.dataset.settingsTab === tab);
+      return;
+    }
     const set = target.closest<HTMLElement>("[data-set]")?.dataset.set;
+    if (set === "warn-ap") {
+      settings.warnUnusedAp = !settings.warnUnusedAp;
+      settings.save();
+      const b = target.closest<HTMLElement>("[data-set]");
+      if (b) { b.classList.toggle("on", settings.warnUnusedAp); b.textContent = settings.warnUnusedAp ? "On" : "Off"; }
+      return;
+    }
     if (set === "fullscreen") {
       toggleFullscreen();
       return; // label refreshes via the fullscreenchange listener

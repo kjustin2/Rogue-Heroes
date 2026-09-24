@@ -79,6 +79,25 @@ app.whenReady().then(async () => {
         continue;
       }
       if (s === "deploy") { await toTitle(); await clickMenu('[data-menu="play"]'); await shot("deploy"); continue; }
+      if (s === "setupflow") {
+        // The three set-up steps (Battlefield / Sides / Rules) at 1280x720, the width that bites.
+        win.setSize(1280, 720); await sleep(500);
+        await toTitle(); await clickMenu('[data-menu="play"]');
+        for (const n of [1, 2, 3]) { await clickMenu(`[data-step-jump="${n}"]`); await shot(`setup-step${n}`); }
+        await toTitle(); await clickMenu('[data-menu="settings"]'); await shot("settings-display");
+        await clickMenu('[data-settings-tab="gameplay"]'); await shot("settings-gameplay");
+        win.setSize(1600, 900); await sleep(500);
+        continue;
+      }
+      if (s === "apwarning") {
+        // End Turn with units that still have action points: the prompt, with its "don't show again".
+        await js(`window.__rht.scenario("firefight"); window.__rht.deselect();`);
+        await sleep(1500);
+        await clickMenu('[data-command="end"]');
+        await shot("apwarning");
+        await js(`document.querySelectorAll(".ap-warning").forEach((e) => e.remove())`);
+        continue;
+      }
       if (s === "settings") { await toTitle(); await clickMenu('[data-menu="settings"]'); await shot("settings"); continue; }
       if (s === "armory") { await toTitle(); await clickMenu('[data-menu="armory"]'); await shot("armory"); continue; }
       if (s === "achievements") { await toTitle(); await clickMenu('[data-menu="achievements"]'); await shot("achievements"); continue; }
@@ -448,7 +467,7 @@ app.whenReady().then(async () => {
       }
       if (s === "versus") {
         // Local 2 Players: the set-up page, then the handoff card before Player 1 plans.
-        await toTitle(); await clickMenu('[data-menu="play"]'); await clickMenu('[data-opponent="local"]');
+        await toTitle(); await clickMenu('[data-menu="play"]'); await clickMenu('[data-step-jump="2"]'); await clickMenu('[data-opponent="local"]');
         await shot("versus-setup");
         await clickMenu("[data-start]"); await sleep(2500);
         await shot("versus-handoff");

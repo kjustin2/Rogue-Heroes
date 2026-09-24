@@ -18,11 +18,13 @@ const RESOLVE_MS = 150000;
 try {
   await page.waitForSelector(".main-menu");
   await page.click('[data-menu="play"]');
+  await page.click('[data-step-jump="2"]'); // Sides step of the set-up flow
   await page.waitForSelector('[data-opponent="local"]');
   if (await page.$('[data-menu="versus"]')) fail("Local 2 Players should live on the Skirmish page, not the main menu");
   await page.click('[data-opponent="local"]');
   await page.waitForSelector('[data-opponent="local"].on');
   if (await page.$('[data-mode="survival"]')) fail("Last Stand offered in 2-player set-up");
+  await page.click('[data-step-jump="1"]');
   await page.click('[data-map="verdant"]');
   await page.click("[data-start]");
   await page.waitForSelector(".hotseat-card", { timeout: 8000 });

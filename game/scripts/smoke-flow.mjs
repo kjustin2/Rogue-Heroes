@@ -22,6 +22,7 @@ try {
   await page.click('[data-menu="play"]');
   await page.waitForSelector('[data-map="ironworks"]');
   await page.click('[data-map="ironworks"]');
+  await page.click('[data-step-jump="3"]'); // Rules step of the set-up flow
   await page.click('[data-mode="ctf"]');
   await page.click("[data-start]");
   await page.waitForSelector(".title-screen", { state: "detached", timeout: 4000 }).catch(() => {});
