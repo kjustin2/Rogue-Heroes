@@ -415,6 +415,118 @@ def build_barricade():
     return part([*posts, *planks, rail, brace, brace2], "barricade", bevel=0.02)
 
 
+
+# ----------------------------------------------------------------------------- FACTION HQ ARCHITECTURE
+# (2026-09-24, visual polish round) Each faction's HQ dress, authored here instead of box-built in TS.
+# Pieces used ONCE are authored in base-relative game coordinates at the spots the TS dress used (vpart
+# places them from the layout); pieces used many times (scrap slab, wall run, tent, pillbox) are unit
+# pieces the TS scales per use (box({geometry})). Same outlines the faction measure scored, far more detail.
+
+# VANGUARD -- airfield control tower (1.7, *, -1.3), radar dish on top, helipad (-2.0, 1.6).
+def build_vb_tower():
+    x, z = 1.7, -1.3
+    foot = gcyl("foot", 0.46, 0.3, (x, 0.15, z), vertices=10)
+    shaft = gcyl("shaft", 0.3, 3.2, (x, 1.8, z), vertices=10, radius_end=0.22)
+    rings = [gcyl(f"ring{i}", 0.35 - i * 0.02, 0.08, (x, 0.7 + i * 0.85, z), vertices=10) for i in range(3)]
+    ladder = gbox("ladder", (0.18, 3.0, 0.06), (x, 1.75, z + 0.33))
+    rungs = [gbox(f"rung{i}", (0.22, 0.04, 0.08), (x, 0.5 + i * 0.5, z + 0.36)) for i in range(6)]
+    return part([foot, shaft, *rings, ladder, *rungs], "vb-tower", bevel=BEVEL_FINE)
+
+
+def build_vb_cab():
+    x, z = 1.7, -1.3
+    floor_ = gbox("floor", (1.2, 0.14, 1.2), (x, 3.38, z))
+    under = gcyl("under", 0.52, 0.3, (x, 3.18, z), vertices=8, radius_end=0.62)
+    posts = [gbox(f"post{i}", (0.1, 0.62, 0.1), (x + sx * 0.54, 3.76, z + sz * 0.54)) for i, (sx, sz) in enumerate(((-1, -1), (1, -1), (-1, 1), (1, 1)))]
+    sill = gbox("sill", (1.28, 0.08, 1.28), (x, 3.5, z))
+    roof = gbox("roof", (1.46, 0.12, 1.46), (x, 4.1, z))
+    lip = gbox("lip", (1.2, 0.1, 1.2), (x, 4.2, z))
+    mast = gcyl("mast", 0.06, 0.5, (x, 4.45, z), vertices=8)
+    return part([floor_, under, *posts, sill, roof, lip, mast], "vb-cab", bevel=BEVEL_FINE)
+
+
+def build_vb_dish():
+    x, y, z = 1.7, 4.95, -1.3
+    dish = gcyl("dish", 0.66, 0.16, (x, y, z), vertices=16, radius_end=0.34, pitch=math.radians(-58))
+    rim = gcyl("rim", 0.7, 0.05, (x, y + 0.04, z - 0.03), vertices=16, pitch=math.radians(-58))
+    feed = gcyl("feed", 0.03, 0.62, (x, y + 0.22, z + 0.2), axis="z", vertices=6, pitch=math.radians(-58))
+    horn = gbox("horn", (0.12, 0.12, 0.12), (x, y + 0.36, z + 0.46))
+    yoke = [gbox(f"yoke{s}", (0.06, 0.42, 0.14), (x + s * 0.3, y - 0.2, z)) for s in (-1, 1)]
+    hub = gcyl("hub", 0.16, 0.22, (x, y - 0.42, z), vertices=10)
+    return part([dish, rim, feed, horn, *yoke, hub], "vb-dish", bevel=0.01)
+
+
+def build_vb_pad():
+    x, z = -2.0, 1.6
+    slab = gbox("slab", (2.2, 0.12, 2.2), (x, 0.06, z))
+    rims = [gbox(f"rim{i}", (2.34, 0.1, 0.14), (x, 0.05, z + s * 1.13), pitch=s * 0.35) for i, s in enumerate((-1, 1))]
+    rims += [gbox(f"rimx{i}", (0.14, 0.1, 2.34), (x + s * 1.13, 0.05, z), roll=-s * 0.35) for i, s in enumerate((-1, 1))]
+    sockets = [gbox(f"sock{i}", (0.18, 0.08, 0.18), (x + sx * 1.0, 0.13, z + sz * 1.0)) for i, (sx, sz) in enumerate(((-1, -1), (1, -1), (-1, 1), (1, 1)))]
+    return part([slab, *rims, *sockets], "vb-pad", bevel=BEVEL_FINE)
+
+
+# SYNDICATE -- scrap fort: a corrugated scrap slab (unit piece), a lattice crane, a ridge tent (unit).
+def build_sb_slab():
+    sheet = gbox("sheet", (0.9, 1.0, 0.1), (0, 0.5, 0))
+    ribs = [gbox(f"rib{i}", (0.07, 0.98, 0.16), (-0.33 + i * 0.22, 0.49, 0)) for i in range(4)]
+    crown = [gbox("crownA", (0.34, 0.24, 0.1), (-0.24, 1.02, 0), roll=0.5), gbox("crownB", (0.3, 0.2, 0.1), (0.22, 0.98, 0), roll=-0.35)]
+    patch = gbox("patch", (0.36, 0.3, 0.14), (0.16, 0.36, 0.02), roll=0.12)
+    return part([sheet, *ribs, *crown, patch], "sb-slab", bevel=0.012)
+
+
+def build_sb_crane():
+    x, z = -1.9, -1.6
+    legs = [gbox(f"leg{i}", (0.07, 3.6, 0.07), (x + sx * 0.14, 1.8, z + sz * 0.14)) for i, (sx, sz) in enumerate(((-1, -1), (1, -1), (-1, 1), (1, 1)))]
+    braces = [gbox(f"brace{i}", (0.36, 0.05, 0.05), (x, 0.4 + i * 0.64, z + (0.14 if i % 2 else -0.14)), roll=0.6 if i % 2 else -0.6) for i in range(5)]
+    cab = gbox("cab", (0.5, 0.42, 0.5), (x, 3.5, z))
+    jib = gbox("jib", (0.18, 0.18, 3.7), (x, 3.72, z + 1.55))
+    _pivot_rotate(jib, (x, 3.72, z), -0.3)
+    counter = gbox("counter", (0.46, 0.4, 0.5), (x, 3.6, z - 0.62))
+    tip_z = z + 3.2 * math.cos(0.3)
+    tip_y = 3.72 + 3.2 * math.sin(0.3)
+    cable = gcyl("cable", 0.02, tip_y - 2.55, (x, (tip_y + 2.55) / 2, tip_z), vertices=5)
+    hook = gbox("hook", (0.3, 0.26, 0.3), (x, 2.44, tip_z))
+    return part([*legs, *braces, cab, jib, counter, cable, hook], "sb-crane", bevel=0.01)
+
+
+def build_sb_tent():
+    roofs = [gbox(f"roof{s}", (1.4, 0.06, 0.78), (0, 0.44, s * 0.27), pitch=s * 0.9) for s in (-1, 1)]
+    ridge = gbox("ridge", (1.5, 0.08, 0.08), (0, 0.78, 0))
+    poles = [gbox(f"pole{s}", (0.06, 0.84, 0.06), (s * 0.7, 0.42, 0)) for s in (-1, 1)]
+    flap = gbox("flap", (0.06, 0.5, 0.44), (0.72, 0.26, 0.1), yaw=0.5)
+    return part([*roofs, ridge, *poles, flap], "sb-tent", bevel=0.01)
+
+
+# BASTION -- fortress: a crenellated wall run (unit piece), a riveted dome (0.2, *, -0.3), a pillbox (unit).
+def build_bb_wall():
+    body = gbox("body", (2.9, 0.9, 0.5), (0, 0.45, 0))
+    author_kit.taper(body, 0.92)
+    footing = gbox("footing", (3.0, 0.18, 0.62), (0, 0.09, 0))
+    merlons = [gbox(f"merlon{i}", (0.38, 0.26, 0.54), (-1.2 + i * 0.6, 1.02, 0)) for i in range(5)]
+    band = gbox("band", (2.92, 0.08, 0.54), (0, 0.72, 0))
+    return part([body, footing, *merlons, band], "bb-wall", bevel=0.02)
+
+
+def build_bb_dome():
+    x, z = 0.2, -0.3
+    drum = gcyl("drum", 1.3, 0.28, (x, 2.66, z), vertices=16)
+    dome = gico("dome", 1.12, (x, 2.8, z), scale=(1, 0.62, 1), subdiv=2)
+    author_props.floor(dome, 2.8)
+    band = gcyl("band", 1.16, 0.08, (x, 2.9, z), vertices=16)
+    rivets = [gbox(f"rv{i}", (0.1, 0.1, 0.1), (x + math.cos(a) * 1.3, 2.8, z + math.sin(a) * 1.3)) for i, a in enumerate(i * math.pi / 6 for i in range(12))]
+    cupola = gcyl("cupola", 0.44, 0.34, (x, 3.5, z), vertices=10, radius_end=0.36)
+    hatch = gcyl("hatch", 0.3, 0.08, (x, 3.7, z), vertices=10)
+    return part([drum, dome, band, *rivets, cupola, hatch], "bb-dome", bevel=0.015)
+
+
+def build_bb_pillbox():
+    body = gcyl("body", 0.7, 0.62, (0, 0.31, 0), vertices=12, radius_end=0.58)
+    cap = gcyl("cap", 0.66, 0.12, (0, 0.68, 0), vertices=12)
+    slit = gbox("slit", (0.62, 0.1, 0.2), (0, 0.44, 0.58))
+    bags = [gico(f"bag{i}", 0.2, (math.cos(a) * 0.78, 0.1, math.sin(a) * 0.78), scale=(1.4, 0.55, 0.8), subdiv=1) for i, a in enumerate(math.pi * (0.35 + k * 0.27) for k in range(7))]
+    return part([body, cap, slit, *bags], "bb-pillbox", bevel=0.015)
+
+
 BUILDERS = [
     build_tank_track, build_tank_hull, build_tank_front, build_tank_turret, build_tank_cannon,
     build_apc_wheels, build_apc_hull, build_apc_front, build_apc_cupola, build_apc_autogun,
@@ -422,6 +534,9 @@ BUILDERS = [
     build_turret_mount, build_turret_gun, build_turret_sensor,
     build_hq_core, build_hq_comms, build_hq_power, build_hq_gate,
     build_crates, build_sandbags, build_barricade,
+    build_vb_tower, build_vb_cab, build_vb_dish, build_vb_pad,
+    build_sb_slab, build_sb_crane, build_sb_tent,
+    build_bb_wall, build_bb_dome, build_bb_pillbox,
 ]
 
 

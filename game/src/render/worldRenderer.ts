@@ -2212,25 +2212,25 @@ export class WorldRenderer {
     // `npm run measure:factions` (goal: outline overlap <= 70% between factions).
     if (f === "vanguard") {
       // AIRFIELD: a tall control tower with a glass cab and a big radar dish, and the helipad.
-      this.cylinder(group, entity, "comms", 0.34, 3.4, [1.7, 1.7, -1.3], 0x3c5a78, [0, 0, 0], { metalness: 0.35 });
-      this.box(group, entity, "comms", [1.1, 0.62, 1.1], [1.7, 3.66, -1.3], 0x2b3f55, { metalness: 0.35, bevel: 0.2 });
+      // Blender-authored (vehicles kit `vb-*`); the ladder, rings, cab frame and dish yoke are in the mesh.
+      this.vpart(group, entity, "comms", "vb-tower", 0x3c5a78, { metalness: 0.35 });
+      this.vpart(group, entity, "comms", "vb-cab", 0x2b3f55, { metalness: 0.35 });
       for (const [x, z, w, d] of [[1.7, -0.74, 0.9, 0.04], [1.7, -1.86, 0.9, 0.04], [1.14, -1.3, 0.04, 0.9], [2.26, -1.3, 0.04, 0.9]] as const) {
         this.box(group, entity, "comms", [w, 0.3, d], [x, 3.68, z], 0x0c1418, { emissive: glow, emissiveIntensity: 0.5 });
       }
-      this.box(group, entity, "comms", [1.3, 0.08, 1.3], [1.7, 4.02, -1.3], 0x9fb6cc, { metalness: 0.4 });
-      this.cylinder(group, entity, "comms", 0.05, 0.9, [1.7, 4.5, -1.3], 0x1a2226, [0, 0, 0], { metalness: 0.4 });
-      this.cylinder(group, entity, "comms", 0.62, 0.1, [1.7, 4.95, -1.3], 0x9fb6cc, [Math.PI / 3.2, 0, 0.5], { metalness: 0.45, radiusBottom: 0.36 });
-      this.cylinder(group, entity, "comms", 0.03, 0.42, [1.7, 5.1, -1.12], 0x1a2226, [Math.PI / 3.2, 0, 0.5], { metalness: 0.4 });
-      this.box(group, entity, "core", [2.2, 0.1, 2.2], [-2.0, 0.05, 1.6], 0x2e3c48, { roughness: 0.9 });
-      for (const x of [-0.42, 0.42]) this.box(group, entity, "core", [0.14, 0.02, 1.1], [-2.0 + x, 0.11, 1.6], 0xe8e2d0, { accent: true });
-      this.box(group, entity, "core", [0.7, 0.02, 0.14], [-2.0, 0.11, 1.6], 0xe8e2d0, { accent: true });
+      // The radar dish SWEEPS (paintPart spins any mesh tagged spinY), so the airfield is never still.
+      this.vpart(group, entity, "comms", "vb-dish", 0x9fb6cc, { metalness: 0.45 }).userData.spinY = 0.0007;
+      this.vpart(group, entity, "core", "vb-pad", 0x2e3c48, { roughness: 0.9 });
+      for (const x of [-0.42, 0.42]) this.box(group, entity, "core", [0.14, 0.02, 1.1], [-2.0 + x, 0.135, 1.6], 0xe8e2d0, { accent: true });
+      this.box(group, entity, "core", [0.7, 0.02, 0.14], [-2.0, 0.135, 1.6], 0xe8e2d0, { accent: true });
       for (const [x, z] of [[-3.0, 0.6], [-1.0, 0.6], [-3.0, 2.6], [-1.0, 2.6]] as const) {
-        this.box(group, entity, "core", [0.1, 0.06, 0.1], [x, 0.12, z], 0xdaf7ff, { accent: true, emissive: glow, emissiveIntensity: 0.6 });
+        this.box(group, entity, "core", [0.1, 0.06, 0.1], [x, 0.2, z], 0xdaf7ff, { accent: true, emissive: glow, emissiveIntensity: 0.6 });
       }
     } else if (f === "syndicate") {
       // SCRAP FORT: a jagged palisade of tilted, uneven scrap slabs round the camp, a crane jib
       // swinging over it, the tarp tents and the pennant mast -- a spiky, improvised outline.
       const scrap = [0x6e3a22, 0x5a4636, 0x8a4a26, 0x4e3a2a];
+      const slab = vehicleGeometry("sb-slab");
       const slabs = 11;
       for (let i = 0; i < slabs; i += 1) {
         const a = (i / slabs) * Math.PI * 2 + 0.2;
@@ -2238,15 +2238,13 @@ export class WorldRenderer {
         const r = 2.75;
         const h = 1.0 + ((i * 37) % 7) * 0.22;
         this.box(group, entity, "core", [0.9, h, 0.16], [Math.cos(a) * r, h / 2 - 0.05, Math.sin(a) * r], scrap[i % scrap.length],
-          { metalness: 0.3, roughness: 0.85, rotation: [((i * 13) % 5 - 2) * 0.06, -a + Math.PI / 2, ((i * 7) % 5 - 2) * 0.07] });
+          { geometry: slab, ink: VEHICLE_INK, metalness: 0.3, roughness: 0.85, rotation: [((i * 13) % 5 - 2) * 0.06, -a + Math.PI / 2, ((i * 7) % 5 - 2) * 0.07] });
       }
-      this.cylinder(group, entity, "comms", 0.12, 3.6, [-1.9, 1.8, -1.6], 0x4a3a2a, [0, 0, 0], { metalness: 0.35 });
-      this.box(group, entity, "comms", [0.16, 0.16, 3.6], [-1.9, 3.6, -0.2], 0xa8472a, { accent: true, metalness: 0.3, rotation: [-0.35, 0, 0] });
-      this.cylinder(group, entity, "comms", 0.02, 1.3, [-1.9, 3.1, 1.2], 0x1a1a1a, [0, 0, 0], { metalness: 0.4 });
-      this.box(group, entity, "comms", [0.4, 0.3, 0.4], [-1.9, 2.4, 1.2], 0x3a2f24, { metalness: 0.4 });
+      // Lattice crane with jib, counterweight, cable and hook (Blender, `sb-crane`), rust-red.
+      this.vpart(group, entity, "comms", "sb-crane", 0x8a4a26, { metalness: 0.3 });
+      const tent = vehicleGeometry("sb-tent");
       for (const [x, z] of [[-2.1, 1.3], [2.0, -1.7]] as const) {
-        const tent = this.box(group, entity, "core", [1.4, 0.95, 0.95], [x, 0.02, z], 0x8f5a34, { accent: true, rotation: [Math.PI / 4, 0, 0], roughness: 0.95, bevel: 0.08 });
-        tent.userData.sunk = true; // half below ground on purpose; the terrain-clip audit skips it
+        this.box(group, entity, "core", [1.5, 0.82, 1.1], [x, 0.41, z], 0x8f5a34, { geometry: tent, ink: VEHICLE_INK, accent: true, roughness: 0.95, bevel: 0.08 });
       }
       this.cylinder(group, entity, "comms", 0.06, 4.6, [1.8, 2.3, 1.6], 0x3a2f24, [0, 0, 0.05], { metalness: 0.3 });
       this.box(group, entity, "comms", [0.05, 0.5, 1.0], [1.8, 4.3, 2.1], 0xc4642c, { accent: true, roughness: 0.9 });
@@ -2254,19 +2252,22 @@ export class WorldRenderer {
       // FORTRESS: a hexagonal ring wall with a sloped glacis, a big armoured dome with a gun slit on
       // the roof, and two pillboxes on the front corners -- a low, broad, immovable outline.
       const concrete = 0x5c6448;
+      const wall = vehicleGeometry("bb-wall");
       for (let i = 0; i < 6; i += 1) {
         const a = (i / 6) * Math.PI * 2;
         const r = 2.7;
-        this.box(group, entity, "core", [2.9, 1.15, 0.5], [Math.cos(a) * r, 0.52, Math.sin(a) * r], concrete, { roughness: 0.95, rotation: [0, -a + Math.PI / 2, 0], bevel: 0.15 });
+        this.box(group, entity, "core", [2.9, 1.28, 0.62], [Math.cos(a) * r, 0.64, Math.sin(a) * r], concrete, { geometry: wall, ink: VEHICLE_INK, roughness: 0.95, rotation: [0, -a + Math.PI / 2, 0], bevel: 0.15 });
         this.box(group, entity, "core", [2.9, 0.5, 0.6], [Math.cos(a) * (r + 0.42), 0.2, Math.sin(a) * (r + 0.42)], 0x4e5640, { roughness: 0.95, rotation: [0.5, -a + Math.PI / 2, 0], bevel: 0.1 });
       }
-      this.cylinder(group, entity, "core", 1.05, 0.7, [0.2, 2.9, -0.3], 0x4f6330, [0, 0, 0], { metalness: 0.35, radiusBottom: 1.3 });
-      this.cylinder(group, entity, "core", 0.55, 0.35, [0.2, 3.4, -0.3], 0x4f6330, [0, 0, 0], { metalness: 0.35, radiusBottom: 1.05 });
+      this.vpart(group, entity, "core", "bb-dome", 0x4f6330, { metalness: 0.35 }); // riveted drum, dome, cupola
       this.box(group, entity, "core", [1.0, 0.1, 0.14], [0.2, 3.02, 0.75], 0x0c1418, { emissive: glow, emissiveIntensity: 0.5 });
+      // Corner PILLBOXES on the two front vertices of the hex wall (they used to sit INSIDE the wall run, on
+      // the "power" part, whose paint turned them yellow).
       for (const side of [-1, 1]) {
-        this.cylinder(group, entity, "power", 0.55, 0.7, [side * 2.1, 0.35, 2.0], 0x5c6448, [0, 0, 0], { roughness: 0.95, radiusBottom: 0.7 });
-        this.cylinder(group, entity, "power", 0.07, 0.8, [side * 2.1, 0.5, 2.55], 0x2a2e24, [Math.PI / 2, 0, 0], { metalness: 0.5 });
-        this.box(group, entity, "power", [0.5, 0.05, 0.03], [side * 2.1, 0.58, 2.57], 0xe0b12a, { accent: true });
+        const [x, z] = [side * 2.7, 1.56];
+        this.box(group, entity, "core", [1.5, 0.66, 1.42], [x, 1.58, z], 0x5c6448, { geometry: vehicleGeometry("bb-pillbox"), ink: VEHICLE_INK, roughness: 0.95 });
+        this.cylinder(group, entity, "core", 0.07, 0.8, [x, 1.66, z + 0.62], 0x2a2e24, [Math.PI / 2, 0, 0], { metalness: 0.5 });
+        this.box(group, entity, "core", [0.5, 0.05, 0.03], [x, 1.74, z + 0.66], 0xe0b12a, { accent: true });
       }
     }
   }
@@ -4333,6 +4334,8 @@ export class WorldRenderer {
     if (entity.flying && part.id === "rotor" && entity.status.alive) {
       mesh.rotation.y += performance.now() * 0.03; // any rotorcraft (gunship, transport) spins its rotor
     }
+    const spinY = mesh.userData.spinY as number | undefined;
+    if (spinY && entity.status.alive) mesh.rotation.y += performance.now() * spinY;
     if (entity.kind === "tank" && part.role === "mobility" && mesh.geometry.type === "CylinderGeometry" && mesh.parent?.userData.moving) {
       mesh.rotation.y += ((mesh.parent.userData.motionTime as number | undefined) ?? 0) * 2.2;
     }

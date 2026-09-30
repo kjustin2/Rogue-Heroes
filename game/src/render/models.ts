@@ -197,7 +197,10 @@ export type VehiclesPart =
   | "arty-hull" | "arty-front" | "arty-mount" | "arty-gun" | "arty-track"
   | "turret-mount" | "turret-gun" | "turret-sensor"
   | "hq-core" | "hq-comms" | "hq-power" | "hq-gate"
-  | "crates" | "sandbags" | "barricade";
+  | "crates" | "sandbags" | "barricade"
+  | "vb-tower" | "vb-cab" | "vb-dish" | "vb-pad"
+  | "sb-slab" | "sb-crane" | "sb-tent"
+  | "bb-wall" | "bb-dome" | "bb-pillbox";
 
 const vehicles = new Map<string, THREE.BufferGeometry>();
 let vehiclesState: "idle" | "loading" | "ready" | "failed" = "idle";
