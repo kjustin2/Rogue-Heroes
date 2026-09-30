@@ -17,6 +17,9 @@ try {
   await page.waitForSelector(".main-menu");
   await page.click('[data-menu="play"]');
   await page.waitForSelector("[data-start]");
+  // Syndicate: the Striker this smoke unlocks and fields is theirs (rosters differ per faction).
+  await page.click('[data-step-jump="2"]');
+  await page.click('[data-faction="syndicate"]');
   await page.click("[data-start]");
   await page.waitForSelector(".menu-screen", { state: "detached", timeout: 4000 }).catch(() => {});
 

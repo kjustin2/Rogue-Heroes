@@ -68,7 +68,7 @@ try {
   const summaries = [];
   for (const faction of cards) {
     await page.click(`[data-faction="${faction}"]`);
-    await page.click("[data-map]");
+    // (The map cards live on step 1 of the set-up flow; the default map is fine here.)
     await page.click("[data-start]");
     await page.waitForFunction(() => window.__rht?.sim?.phase === "command", null, { timeout: 20000 });
     await page.waitForTimeout(900);

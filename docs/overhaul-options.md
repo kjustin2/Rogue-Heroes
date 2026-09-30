@@ -30,10 +30,10 @@ blocks (pink medic, yellow slabs), no shared line weight, and proportions that c
 
 ## B. Maps & backgrounds — pick any
 
-4. **Layered horizon** — three silhouette layers per biome (mesas / smokestacks / forest / ice floes /
+4. **Layered horizon** — DONE (per-map skyline, fog = horizon, cloud shadows; per-map light 2026-09-24) — three silhouette layers per biome (mesas / smokestacks / forest / ice floes /
    ziggurats / border fences) fading into a gradient sky dome whose horizon colour IS the fog colour,
    plus slow cloud shadows drifting over the board. Fixes "backgrounds look weird and low detail".
-5. **Painted terrain** — 2–3 ground materials per map (worn path, base ground, accent patches like
+5. **Painted terrain** — DONE (2026-09-24) — 2–3 ground materials per map (worn path, base ground, accent patches like
    scorch, snow drift, moss), cliff faces with strata (tri-planar rock), shoreline foam on water.
 6. **Landmark pass** — each map's landmark (derrick, furnace, chapel/mill, freighter, colossus,
    checkpoint gate) rebuilt to the tank's bar in the Blender kit, lit by one accent colour so it is
@@ -41,7 +41,7 @@ blocks (pink medic, yellow slabs), no shared line weight, and proportions that c
 
 ## C. Props — pick any
 
-7. **Hero props** — maps now carry 6–14 props, so each can be a hero piece: re-author the ~20 kinds in
+7. **Hero props** — DONE (2026-09-24) — maps now carry 6–14 props, so each can be a hero piece: re-author the ~20 kinds in
    use (convoy, railcar, bunker, fuel, gas, conduit, brazier, ammo…) at tank quality — bevels, ink rim,
    baked AO, and volatile props visibly *volatile* (hazard stripes, glowing cells, fuel sloshing).
 8. **Destruction states** — every prop gets a damaged mesh and a rubble footprint instead of popping

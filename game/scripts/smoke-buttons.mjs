@@ -126,6 +126,12 @@ try {
   await page.click('[data-base-upgrade="command"]');
   if (await page.evaluate(() => window.__rht.sim.entities.find((e) => e.kind === "base" && e.team === "player").maxCommandPoints) !== 2) fail("Command upgrade button failed");
   await refreshBaseCp(page, baseId);
+  // The Gun Turret is research-gated (Assault doctrine) since batch 3: unlock it the way the tech
+  // button would, so this step tests the Build button and placement, not the tree.
+  await page.evaluate(() => {
+    const base = window.__rht.sim.entities.find((e) => e.kind === "base" && e.team === "player");
+    base.unlockedTech = [...(base.unlockedTech ?? []), "assault"];
+  });
   await page.click('[data-base-tab="defenses"]');
   await page.waitForSelector('[data-build="turret"]');
   await page.click('[data-build="turret"]');

@@ -430,6 +430,29 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   Causeway; Dust Bowl 0.100 edge; Crossfire 0.096, Ironworks 0.093, Karak 0.092 short. Ground PLATES are tested
   PER BLOB against water at their full jittered reach (1.52x radius): a patch-centre test painted ground over
   water on Verdant, Causeway and Karak; `smoke:ground` asserts no plate vertex over water (fault-injection proven).
+- **LIGHT IS PER MAP** (2026-09-24): `MapTheme.light` (`LightRig`: sun colour / strength / elevation / azimuth,
+  hemi sky + bounce, rim) is applied to the stage's EXISTING three lights by `stage.setLightRig` — always through
+  `applyMapLook()` in main.ts, which pairs it with `world.applyMap` (never call one without the other). Sun
+  elevation is clamped >= 28 degrees (lower grows acne on the flat arena, ledger #4). Ironworks keeps a NEUTRAL key
+  with the furnace orange only on the rim: an orange key turned the steel yard into one brown (97% one hue).
+- **N8AO contact shading** (`n8ao` 2.0.1, `src/n8ao.d.ts` types): `N8AOPostPass` after the RenderPass on the
+  Quality ("Low") and Ultra ("Medium") tiers only; half-res, radius 1.6m, intensity 2.2, gammaCorrection off.
+  Real-GPU soak: p50 unchanged (13.9ms). `three-good-godrays` was considered and rejected (tactical pitch — the
+  sky is a sliver).
+- **Faction light pools**: every living HQ throws a slow-breathing draped disc of `FACTION_GLOW` (shared with the
+  aircraft engine burn) in `syncEnvironment` — a disc, not a light.
+- **Map life** (renderer clock only): `makeChimneySmoke` (projectileFx — continuous-phase toon puff column, no pop)
+  over the furnace and huts; `PROP_LIFE` particle bursts (furnace embers, derrick flare-off, brazier sparks); dust
+  devils on the Dust Bowl. Evidence `shots:gpu -- life`.
+- **Faction HQ architecture is Blender** (vehicles kit `vb-*` / `sb-*` / `bb-*`): once-used pieces via `vpart`
+  (authored in base-relative game coordinates), repeated pieces (scrap slab, wall run, tent, pillbox) via
+  `box({ geometry })`. The radar dish spins through `userData.spinY` (any part mesh can use it). Bastion pillboxes
+  sit ON the wall corners (they were inside the wall, painted yellow by the `power` part).
+- **Hero props** (`art/props/author_hero_props.py`, overhaul option 7): girder, coil, hedgehog, boat, obelisk, urn,
+  iceblock, haybale, grave — one shaped body each via `heroBody()` in `buildBiomeProp`, accents stay TS, box build
+  is the fallback. Only boat + obelisk are placed by the current minimal maps; the rest are ready. `shots:gpu --
+  heroprops`. **Faction dress** (`art/infantry/author_dress.py`): hood, duster, bucket helm, pauldron, tower
+  shield, jet pack as `kit:` parts on the same boxes. `measure:factions` GOAL MET after both.
 - **The ground detail layer** (`makeGroundDetail`) is one InstancedMesh per element kind (grass fans, pebbles, snow clumps, cinders, weeds), placed only on dry flat ground, bending in `windUniforms` (the same clock the cloud deck and tree sway use). Pebbles are 8-triangle octahedra on purpose — the 36-triangle version was 130k triangles on a large map. Costs are in `perf-baseline.json`; rebase after an intentional change.
 - **MAPS ARE MINIMAL, AND THERE IS ALWAYS ROOM FOR TWO TANKS** (owner, 2026-09-23: "way too many items on the board so it
   blocks movement... make each unique impactful and relevant"; "ensure enough space for 2 tanks to get through any space").

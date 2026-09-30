@@ -2272,8 +2272,9 @@ export class WorldRenderer {
         if (Math.abs(Math.sin(a - Math.PI / 2)) < 0.22 && Math.cos(a) > 0) continue; // a gap for the gate side
         const r = 2.75;
         const h = 1.0 + ((i * 37) % 7) * 0.22;
+        // Driven into the ground on purpose (a palisade has no feet): the terrain-clip audit skips it.
         this.box(group, entity, "core", [0.9, h, 0.16], [Math.cos(a) * r, h / 2 - 0.05, Math.sin(a) * r], scrap[i % scrap.length],
-          { geometry: slab, ink: VEHICLE_INK, metalness: 0.3, roughness: 0.85, rotation: [((i * 13) % 5 - 2) * 0.06, -a + Math.PI / 2, ((i * 7) % 5 - 2) * 0.07] });
+          { geometry: slab, ink: VEHICLE_INK, metalness: 0.3, roughness: 0.85, rotation: [((i * 13) % 5 - 2) * 0.06, -a + Math.PI / 2, ((i * 7) % 5 - 2) * 0.07] }).userData.sunk = true;
       }
       // Lattice crane with jib, counterweight, cable and hook (Blender, `sb-crane`), rust-red.
       this.vpart(group, entity, "comms", "sb-crane", 0x8a4a26, { metalness: 0.3 });

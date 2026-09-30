@@ -91,6 +91,14 @@ per faction and per-part hit reactions, with perf and animation gates green. Res
 CLAUDE.md "THE FACTION READ IS MEASURED". Next visual steps are the rest of `docs/overhaul-options.md`
 (maps/backgrounds 4-6, props 7-8, projectiles 9-11) once the owner has played this.
 
+## Visual polish round (2026-09-24) — done
+
+Per-map light rigs + N8AO contact AO + faction light pools; faction HQs, 9 hero props and 6 faction dress pieces
+authored in Blender; map life (chimney smoke, embers, flare-off, sparks, dust devils). See CLAUDE.md "LIGHT IS
+PER MAP" onward. `measure:factions` GOAL MET; `measure:maps` contrast still short on Ironworks / Karak / Crossfire
+(0.087-0.094 vs 0.10) — judged by eye as fine, noted not forced. Known older item: `soak:gpu` reports one toon
+program compiling on the first resolve (predates this round; present on the prior build).
+
 ## Next — in priority order
 
 0. **Faction identity (2026-09-23)** is merged to `main` (PR #3): each faction owns
