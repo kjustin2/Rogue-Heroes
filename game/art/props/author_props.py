@@ -320,6 +320,10 @@ import author_landmarks  # noqa: E402
 
 BUILDERS.update(author_landmarks.LANDMARK_BUILDERS)
 VARIANTS.update(author_landmarks.LANDMARK_VARIANTS)
+import author_hero_props  # noqa: E402
+
+BUILDERS.update(author_hero_props.HERO_BUILDERS)
+VARIANTS.update(author_hero_props.HERO_VARIANTS)
 
 
 def main():

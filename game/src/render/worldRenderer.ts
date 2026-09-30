@@ -2013,7 +2013,7 @@ export class WorldRenderer {
       const steel = 0x3c5a78;
       this.box(rig, entity, "head", [0.07, 0.24, 0.5], [0, 1.68, -0.04], 0x2b3f55, { metalness: 0.4, bevel: 0.3 });
       this.box(rig, entity, "head", [0.44, 0.09, 0.07], [0, 1.43, 0.24], 0x0c1418, { emissive: glow, emissiveIntensity: 0.55, bevel: 0.3 });
-      this.box(rig, entity, "body", [0.36, 0.5, 0.2], [0, 1.02, -0.3], steel, { metalness: 0.35, bevel: 0.2 });
+      this.box(rig, entity, "body", [0.36, 0.5, 0.22], [0, 1.02, -0.3], steel, { kit: "dress-jetpack", metalness: 0.35, bevel: 0.2 });
       for (const side of [-1, 1]) {
         this.cylinder(rig, entity, "body", 0.075, 0.24, [side * 0.11, 0.7, -0.33], 0x1e2833, [0, 0, 0], { metalness: 0.5, radiusBottom: 0.1 });
         this.box(rig, entity, "body", [0.1, 0.05, 0.1], [side * 0.11, 0.57, -0.33], 0xffc27a, { accent: true, emissive: 0xff8a2a, emissiveIntensity: 0.45 });
@@ -2040,12 +2040,12 @@ export class WorldRenderer {
       // RAIDERS. A pointed cloth hood peaked over the helmet, a face scarf, and a knee-length ragged
       // poncho flaring out behind -- a hunched, wide, triangular outline nothing else on the field has.
       const cloth = 0x8a3f1e;
-      this.cylinder(rig, entity, "head", 0.03, 0.62, [0, 1.56, -0.06], cloth, [-0.28, 0, 0], { roughness: 0.95, radiusBottom: 0.3 });
+      this.box(rig, entity, "head", [0.64, 0.8, 0.64], [0, 1.63, -0.06], cloth, { kit: "dress-hood", rotation: [-0.28, 0, 0], roughness: 0.95 });
       this.box(rig, entity, "head", [0.34, 0.12, 0.12], [0, 1.3, 0.17], 0xc4642c, { accent: true, roughness: 0.95, bevel: 0.25 });
       // A long DUSTER, shoulders to ankles, flaring into an A-frame: the raider outline.
-      this.box(rig, entity, "body", [0.78, 1.08, 0.08], [0, 0.62, -0.24], cloth, { rotation: [-0.2, 0, 0], roughness: 0.95, bevel: 0.1 });
+      this.box(rig, entity, "body", [0.78, 1.08, 0.1], [0, 0.62, -0.24], cloth, { kit: "dress-duster", rotation: [-0.2, 0, 0], roughness: 0.95, bevel: 0.1 });
       for (const side of [-1, 1]) {
-        this.box(rig, entity, "body", [0.1, 1.02, 0.46], [side * 0.46, 0.6, -0.02], cloth, { rotation: [0, 0, side * 0.3], roughness: 0.95, bevel: 0.1 });
+        this.box(rig, entity, "body", [0.1, 1.06, 0.48], [side * 0.5, 0.6, -0.02], cloth, { rotation: [0, 0, side * 0.42], roughness: 0.95, bevel: 0.1 });
         // Tattered hem: two torn tails hanging below the poncho's edge.
         this.box(rig, entity, "body", [0.14, 0.22, 0.05], [side * 0.2, 0.06, -0.31], 0x6e3016, { rotation: [-0.25, 0, side * 0.3], roughness: 0.95 });
       }
@@ -2055,14 +2055,13 @@ export class WorldRenderer {
       // and back, and a tower shield slung across the back -- the broad, blocky, armoured outline.
       const plate = 0x4f6330;
       for (const side of [-1, 1]) {
-        this.box(rig, entity, "body", [0.3, 0.24, 0.46], [side * 0.42, 1.18, 0.0], plate, { metalness: 0.35, rotation: [0, 0, side * -0.2], bevel: 0.25 });
+        this.box(rig, entity, "body", [0.3, 0.24, 0.46], [side * 0.42, 1.18, 0.0], plate, { kit: "dress-pauldron", metalness: 0.35, rotation: [0, 0, side * -0.2], bevel: 0.25 });
         this.box(rig, entity, "body", [0.06, 0.05, 0.4], [side * 0.55, 1.26, 0.0], 0xe0b12a, { accent: true, rotation: [0, 0, side * -0.2] });
       }
-      this.box(rig, entity, "head", [0.46, 0.48, 0.46], [0, 1.44, 0.0], 0x3f4f26, { metalness: 0.35, bevel: 0.2 });
-      this.box(rig, entity, "head", [0.3, 0.05, 0.03], [0, 1.46, 0.24], 0x0c1418, { emissive: glow, emissiveIntensity: 0.6 });
-      this.box(rig, entity, "head", [0.5, 0.06, 0.5], [0, 1.69, 0.0], plate, { metalness: 0.35, bevel: 0.3 });
+      this.box(rig, entity, "head", [0.52, 0.54, 0.52], [0, 1.46, 0.0], 0x3f4f26, { kit: "dress-bucket", metalness: 0.35, bevel: 0.2 });
+      this.box(rig, entity, "head", [0.3, 0.05, 0.03], [0, 1.47, 0.27], 0x0c1418, { emissive: glow, emissiveIntensity: 0.6 });
       for (const z of [0.2, -0.2]) this.box(rig, entity, "body", [0.5, 0.28, 0.08], [0, 0.64, z], plate, { metalness: 0.3, rotation: [z > 0 ? 0.12 : -0.12, 0, 0], bevel: 0.2 });
-      this.box(rig, entity, "body", [0.56, 0.78, 0.08], [0, 0.98, -0.34], 0x3f4f26, { metalness: 0.3, bevel: 0.15 });
+      this.box(rig, entity, "body", [0.56, 0.78, 0.1], [0, 0.98, -0.34], 0x3f4f26, { kit: "dress-shield", rotation: [0, Math.PI, 0], metalness: 0.3, bevel: 0.15 });
       this.box(rig, entity, "body", [0.08, 0.6, 0.02], [0, 0.98, -0.39], 0xe0b12a, { accent: true });
     }
   }
@@ -3318,11 +3317,23 @@ export class WorldRenderer {
    * and each built round ONE read from the tactical camera: the silhouette, then a single small
    * accent. The group is spun per entity in syncEntity, so none of these picks its own yaw.
    */
+  /** A hero prop's authored body (props kit, overhaul option 7); false = kit not loaded, build the boxes. */
+  private heroBody(group: THREE.Group, entity: CombatEntity, id: string, kind: PropsKind, size: [number, number, number], centre: [number, number, number], color: number, opts: { metalness?: number; roughness?: number; rotation?: [number, number, number] } = {}): boolean {
+    const geometry = propGeometry(kind, hash(entity.id));
+    if (!geometry) return false;
+    this.box(group, entity, id, size, centre, color, { geometry, roughness: 0.9, ...opts });
+    return true;
+  }
+
   private buildBiomeProp(group: THREE.Group, entity: CombatEntity): void {
     const id = entity.parts[0].id;
     const v = hash(entity.id);
     switch (entity.coverKind) {
       case "girder": {
+        if (this.heroBody(group, entity, id, "girder", [1.0, 2.61, 1.0], [0, 1.305, 0], 0x7a4a34, { metalness: 0.4 })) {
+          this.box(group, entity, id, [0.62, 0.16, 0.54], [0, 0.34, 0], 0xd8a53a, { accent: true, bevel: 0.3 });
+          break;
+        }
         // A rusted I-beam gantry leg on its base plate, a torn-off brace stub, a hazard-striped foot.
         this.box(group, entity, id, [1.0, 0.12, 1.0], [0, 0.06, 0], 0x3a3a3c, { metalness: 0.4, bevel: 0.25 });
         for (const z of [-0.2, 0.2]) this.box(group, entity, id, [0.52, 2.4, 0.1], [0, 1.3, z], 0x7a4a34, { metalness: 0.4, bevel: 0.3 });
@@ -3333,6 +3344,10 @@ export class WorldRenderer {
         break;
       }
       case "coil": {
+        if (this.heroBody(group, entity, id, "coil", [1.06, 1.17, 1.2], [0, 0.585, 0], 0x8a9096, { metalness: 0.5, roughness: 0.5 })) {
+          this.cylinder(group, entity, id, 0.2, 0.98, [0, 0.62, 0], 0x23272b, [Math.PI / 2, 0, 0], { metalness: 0.3 });
+          break;
+        }
         // A coil of strip steel on its side in a timber cradle, strapped, the dark eye showing.
         for (const x of [-0.42, 0.42]) this.box(group, entity, id, [0.22, 0.24, 1.2], [x, 0.12, 0], 0x5a4630, { bevel: 0.25, roughness: 0.95 });
         this.cylinder(group, entity, id, 0.52, 0.96, [0, 0.62, 0], 0x8a9096, [Math.PI / 2, 0, 0], { metalness: 0.5, roughness: 0.5 });
@@ -3341,6 +3356,7 @@ export class WorldRenderer {
         break;
       }
       case "ingot": {
+
         // Square steel billets stacked crosswise, three courses, the top bar still glowing from the mill.
         for (const z of [-0.38, 0, 0.38]) this.box(group, entity, id, [1.5, 0.22, 0.3], [0, 0.11, z], 0x62676e, { metalness: 0.5, bevel: 0.25 });
         for (const x of [-0.38, 0, 0.38]) this.box(group, entity, id, [0.3, 0.22, 1.5], [x, 0.33, 0], 0x6e737a, { metalness: 0.5, bevel: 0.25 });
@@ -3349,6 +3365,7 @@ export class WorldRenderer {
         break;
       }
       case "haybale": {
+        if (this.heroBody(group, entity, id, "haybale", [1.7, 0.86, 0.9], [-0.05, 0.43, 0], 0xc9a24a, { roughness: 0.98 })) break;
         // Round bales: one stood on its end (the wound face is the read from above), one on its
         // flank beside it, apart enough that the pair never reads as one bent tube.
         this.cylinder(group, entity, id, 0.42, 0.84, [-0.48, 0.42, 0.05], 0xc9a24a, [0, 0, 0], { roughness: 0.98 });
@@ -3366,6 +3383,7 @@ export class WorldRenderer {
         break;
       }
       case "grave": {
+        if (this.heroBody(group, entity, id, "grave", [1.15, 0.87, 1.1], [0.02, 0.435, 0.35], 0x8f8a80, { roughness: 0.94, rotation: [0, (v % 8) * 0.2 - 0.7, 0] })) break;
         // Churchyard headstones: a round-topped slab, a cross, a sunk ledger, all leaning with age.
         const lean = ((v % 5) - 2) * 0.05;
         this.box(group, entity, id, [0.5, 0.72, 0.14], [-0.3, 0.34, 0.12], 0x8f8a80, { bevel: 0.35, roughness: 0.94, rotation: [lean, 0.15, lean * 0.6] });
@@ -3376,6 +3394,13 @@ export class WorldRenderer {
         break;
       }
       case "boat": {
+        if (this.heroBody(group, entity, id, "boat", [2.24, 0.4, 1.1], [0.02, 0.53, 0], 0x8a3a2a, { roughness: 0.9 })) {
+          for (const x of [-0.6, 0.5]) this.box(group, entity, id, [0.2, 0.18, 1.2], [x, 0.09, 0], 0x5a4630, { bevel: 0.3 });
+          this.box(group, entity, id, [1.7, 0.2, 1.1], [-0.2, 0.26, 0], 0xd8cbb0, { bevel: 0.15, roughness: 0.9 });
+          this.box(group, entity, id, [2.3, 0.08, 0.1], [0.1, 0.75, 0], 0x4a2f1c, { bevel: 0.3 });
+          this.box(group, entity, id, [1.7, 0.05, 0.1], [-0.1, 0.05, 0.78], 0x9a7a52, { bevel: 0.3, rotation: [0, 0.12, 0] });
+          break;
+        }
         // A rowboat hauled out for the winter, keel up on its chocks: a broad, flat hull with a square
         // transom and a wedge bow, a pale painted strake round the gunwale, the oars stowed beside it.
         for (const x of [-0.6, 0.5]) this.box(group, entity, id, [0.2, 0.18, 1.2], [x, 0.09, 0], 0x5a4630, { bevel: 0.3 });
@@ -3400,6 +3425,7 @@ export class WorldRenderer {
         break;
       }
       case "iceblock": {
+        if (this.heroBody(group, entity, id, "iceblock", [1.6, 1.2, 1.4], [0, 0.6, 0], 0xbcd7e8, { roughness: 0.35, rotation: [0, (v % 12) * 0.52, 0] })) break;
         // Pressure ice: slabs the freeze heaved up and tipped, pale faces catching the low sun.
         const tip = (n: number): number => (((v >> (n * 3)) % 9) - 4) * 0.09;
         this.box(group, entity, id, [1.5, 0.5, 1.2], [0, 0.2, 0], 0xa9c8dc, { bevel: 0.2, roughness: 0.4, rotation: [tip(0), tip(1) * 4, tip(2)] });
@@ -3409,6 +3435,10 @@ export class WorldRenderer {
         break;
       }
       case "obelisk": {
+        if (this.heroBody(group, entity, id, "obelisk", [1.12, 3.02, 1.12], [0, 1.51, 0], 0xb49a72, { roughness: 0.92 })) {
+          this.box(group, entity, id, [0.26, 0.26, 0.26], [0, 3.06, 0], 0xd8b45a, { accent: true, metalness: 0.5, bevel: 0.2, rotation: [Math.PI / 4, Math.PI / 4, 0] });
+          break;
+        }
         // A sandstone obelisk on its plinth, one carved band, a gilded cap.
         this.box(group, entity, id, [1.12, 0.32, 1.12], [0, 0.16, 0], 0x8a7a60, { bevel: 0.25, roughness: 0.94 });
         this.box(group, entity, id, [0.64, 1.1, 0.64], [0, 0.86, 0], 0xb49a72, { bevel: 0.12, roughness: 0.92 });
@@ -3419,6 +3449,7 @@ export class WorldRenderer {
         break;
       }
       case "urn": {
+        if (this.heroBody(group, entity, id, "urn", [1.2, 1.0, 1.1], [0, 0.5, -0.15], 0xa4552e, { roughness: 0.9, rotation: [0, (v % 6) * 1.05, 0] })) break;
         // Store jars: two amphorae standing, one fallen on its side and cracked.
         const jar = (x: number, z: number, r: number): void => {
           this.sphere(group, entity, id, r, [x, r * 1.3, z], 0xa4552e, { scaleY: 1.3 });
@@ -3450,6 +3481,7 @@ export class WorldRenderer {
         break;
       }
       case "hedgehog": {
+        if (this.heroBody(group, entity, id, "hedgehog", [1.4, 1.1, 1.4], [0, 0.55, 0], 0x5a4a40, { metalness: 0.45, rotation: [0, (v % 6) * 0.35, 0] })) break;
         // A Czech hedgehog: three rusted steel angles welded through one another, standing on their ends.
         for (let i = 0; i < 3; i += 1) {
           this.box(group, entity, id, [0.2, 1.6, 0.2], [0, 0.52, 0], 0x5a4a40, { metalness: 0.45, bevel: 0.25, rotation: [0, (i / 3) * Math.PI * 2, 0.86] });

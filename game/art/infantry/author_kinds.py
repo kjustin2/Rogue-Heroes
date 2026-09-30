@@ -517,3 +517,8 @@ BUILDERS += [body_torso, body_arm, body_leg, body_hips, body_head]
 from author_bodies import BUILDERS as BODY_BUILDERS  # noqa: E402
 
 BUILDERS += BODY_BUILDERS
+
+# Faction dress pieces (author_dress.py).
+from author_dress import DRESS_BUILDERS  # noqa: E402
+
+BUILDERS += DRESS_BUILDERS

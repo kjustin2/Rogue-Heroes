@@ -699,6 +699,20 @@ app.whenReady().then(async () => {
         }
         continue;
       }
+      if (s === "heroprops") {
+        // The Blender hero props (overhaul option 7), all nine kinds in two rows on a cleared field.
+        await js(`window.__rht.startBattle("verdant", "destroy", "normal")`);
+        await sleep(1500);
+        await js(`(() => { const sim = window.__rht.sim; sim.debugClearField(); ["girder","coil","hedgehog","boat","obelisk","urn","iceblock","haybale","grave"].forEach((k, i) => sim.debugCover(k, { x: -8 + (i % 5) * 4, z: -9 + Math.floor(i / 5) * 4.5 })); window.__rht.deselect(); })()`);
+        await sleep(2500);
+        await js(`window.__rht.setView({ x: 0, z: -7, zoom: 0.42, pitch: 0.42, yaw: 0.35 })`);
+        await sleep(800);
+        await shot("heroprops");
+        await js(`window.__rht.setView({ x: -4, z: -9, zoom: 0.26, pitch: 0.36, yaw: 0.5 })`);
+        await sleep(800);
+        await shot("heroprops-close");
+        continue;
+      }
       if (s === "lineup") {
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
         await sleep(1500);

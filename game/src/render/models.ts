@@ -115,7 +115,9 @@ export type KitPart =
   // Per-kind EXTRAS, hung off an existing part id so they ride the rig.
   | "cape-sniper" | "antenna-droneop" | "hose-flamer" | "sheath-striker" | "pauldron-heavy" | "ammobox-heavy"
   | "stretcher-medic" | "toolroll-engineer" | "detonator-sapper" | "mines-sapper" | "bipod-mortar" | "drums-grenadier"
-  | "weapon-smg";
+  | "weapon-smg"
+  // Faction dress (art/infantry/author_dress.py), placed by factionInfantryDress.
+  | "dress-hood" | "dress-duster" | "dress-bucket" | "dress-pauldron" | "dress-shield" | "dress-jetpack";
 
 const kit = new Map<string, THREE.BufferGeometry>();
 let kitState: "idle" | "loading" | "ready" | "failed" = "idle";
@@ -142,12 +144,15 @@ function loadInfantryKit(): void {
 // re-tinted to sit next to the toon troopers, and one silhouette on every map).
 // ---------------------------------------------------------------------------
 export type PropsKind = "rock" | "stump" | "log" | "bush" | "canopy" | "trunk" | "cactus" | "statue" | "rubble"
-  | "convoy" | "derrick" | "furnace" | "railcar" | "chapel" | "mill" | "hull" | "hut" | "colossus" | "cistern" | "gate" | "radar";
+  | "convoy" | "derrick" | "furnace" | "railcar" | "chapel" | "mill" | "hull" | "hut" | "colossus" | "cistern" | "gate" | "radar"
+  | "girder" | "coil" | "hedgehog" | "boat" | "obelisk" | "urn" | "iceblock" | "haybale" | "grave";
 export const PROPS_VARIANTS: Record<PropsKind, number> = {
   rock: 4, stump: 3, log: 3, bush: 4, canopy: 3, trunk: 3, cactus: 3, statue: 3, rubble: 3,
   // Landmarks: one authored shape each (they are the thing you recognise, so they do not vary),
   // except the two that are laid in lines/clusters and want a second silhouette.
   convoy: 1, derrick: 1, furnace: 1, railcar: 2, chapel: 1, mill: 1, hull: 1, hut: 2, colossus: 1, cistern: 1, gate: 1, radar: 1,
+  // Hero props (overhaul option 7): the biome props' shaped bodies; accents stay TS.
+  girder: 1, coil: 1, hedgehog: 1, boat: 1, obelisk: 1, urn: 1, iceblock: 2, haybale: 1, grave: 2,
 };
 // The full name set (kept literal so the Blender validator can diff it against what it built).
 export type PropsPart =
@@ -161,7 +166,8 @@ export type PropsPart =
   | "statue-0" | "statue-1" | "statue-2"
   | "rubble-0" | "rubble-1" | "rubble-2"
   | "convoy-0" | "derrick-0" | "furnace-0" | "railcar-0" | "railcar-1" | "chapel-0" | "mill-0" | "hull-0"
-  | "hut-0" | "hut-1" | "colossus-0" | "cistern-0" | "gate-0" | "radar-0";
+  | "hut-0" | "hut-1" | "colossus-0" | "cistern-0" | "gate-0" | "radar-0"
+  | "girder-0" | "coil-0" | "hedgehog-0" | "boat-0" | "obelisk-0" | "urn-0" | "iceblock-0" | "iceblock-1" | "haybale-0" | "grave-0" | "grave-1";
 
 const props = new Map<string, THREE.BufferGeometry>();
 let propsState: "idle" | "loading" | "ready" | "failed" = "idle";
