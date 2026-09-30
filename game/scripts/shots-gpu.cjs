@@ -699,6 +699,19 @@ app.whenReady().then(async () => {
         }
         continue;
       }
+      if (s === "life") {
+        // MAP LIFE: each map's emitting prop after a few seconds of running (smoke, flare, sparks,
+        // chimney, dust devils); three frames apart on Ironworks for a strip.
+        for (const [map, kind] of [["ironworks", "furnace"], ["dustbowl", "derrick"], ["karak", "brazier"], ["causeway", "hut"]]) {
+          await js(`window.__rht.startBattle(${JSON.stringify(map)}, "destroy", "normal")`);
+          await sleep(1500);
+          await js(`(() => { const r = window.__rht, e = r.sim.entities.find((x) => x.coverKind === ${JSON.stringify(kind)}); r.deselect(); if (e) r.setView({ x: e.position.x, z: e.position.z + 2, zoom: 0.62, pitch: 0.5, yaw: 0.4 }); })()`);
+          await sleep(4500);
+          await shot(`life-${map}`);
+          if (map === "ironworks") for (const k of [1, 2]) { await sleep(700); await shot(`life-${map}-${k}`); }
+        }
+        continue;
+      }
       if (s === "heroprops") {
         // The Blender hero props (overhaul option 7), all nine kinds in two rows on a cleared field.
         await js(`window.__rht.startBattle("verdant", "destroy", "normal")`);

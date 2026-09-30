@@ -20,7 +20,7 @@ import {
   isLobbed, makeLightning, makeMuzzleFlash, makePing, makeProjectileModel, makeProjectileShadow, makeProjectileTrail,
   makeScorchStar, makeStrikeFlash, orientAlongVelocity, prewarmProjectileFx, projectileFamily,
   projectileFxWarmUpMaterials, projectileGeometry, projectileMaterial, pushTrailPoint, setFxViewer,
-  carpetFallU, makeCarpetFall, makeGunRun, type LandingHint, type ProjectileFamily, type TrailPoint,
+  carpetFallU, makeCarpetFall, makeChimneySmoke, makeGunRun, type LandingHint, type ProjectileFamily, type TrailPoint,
 } from "./projectileFx";
 
 // Cover kinds built by buildBiomeProp (the per-map furniture added 2026-09-23).
@@ -68,6 +68,8 @@ export class WorldRenderer {
   // PER-PART HIT REACTION (2026-09-24): the part a hit landed on reacts on its own -- the head snaps
   // back, a leg buckles, a pack spins -- on top of the whole-body flinch.
   private readonly baseGlowMats = new Map<FactionId, THREE.MeshBasicMaterial>();
+  private surfaceKind: GroundSurfaceKind = "cracked";
+  private nextDustDevilAt = 0;
   private readonly partHitByEntity = new Map<string, { partId: string; at: number; mag: number }>();
   private lastDamageSeq = 0;
   // Dynamic map events: danger-zone rings + an eased sandstorm fog/haze blend.
@@ -377,6 +379,16 @@ export class WorldRenderer {
   // over barrage/collapse zones so the player can read — and clear — the threatened ground.
   private syncEnvironment(sim: TacticalSim): void {
     this.disposeAndClear(this.environmentRoot);
+    // DUST DEVILS on the Dust Bowl: every few seconds a little twister of dust lifts off open ground.
+    if (this.surfaceKind === "cracked" && this.particles && !this.silhouetteMode) {
+      const now = performance.now();
+      if (now > this.nextDustDevilAt) {
+        this.nextDustDevilAt = now + 2600 + Math.random() * 2600;
+        const x = ARENA_BOUNDS.minX + Math.random() * arenaWidth();
+        const z = ARENA_BOUNDS.minZ + Math.random() * arenaDepth();
+        this.particles.burst({ x, y: drawnGroundAt({ x, z }) + 0.2, z, count: 14, color: [0xd8b07a, 0xc49860, 0xe6c98a], speed: [0.6, 1.4], up: 1.4, vertical: 0.3, size: [0.14, 0.32], life: [1.2, 2.2], gravity: -0.6, drag: 1.4, jitter: 0.5 });
+      }
+    }
     const env = sim.environment();
     this.sandstormBlend += (env.sandstorm - this.sandstormBlend) * 0.06;
     const fog = this.scene.fog as THREE.FogExp2 | null;
@@ -415,6 +427,15 @@ export class WorldRenderer {
           const arc = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x9ad0ff, transparent: true, opacity: (0.4 + 0.5 * Math.abs(Math.sin(t * 7))) * this.ionBlend }));
           this.environmentRoot.add(arc);
         }
+      }
+    }
+    // CHIMNEY SMOKE over the Ironworks furnace and the Causeway huts: toon puffs, not particles.
+    if (!this.silhouetteMode) {
+      const seconds = performance.now() / 1000;
+      for (const prop of sim.entities) {
+        if (prop.kind !== "cover" || !prop.status.alive || (prop.coverKind !== "furnace" && prop.coverKind !== "hut")) continue;
+        const furnace = prop.coverKind === "furnace";
+        for (const o of makeChimneySmoke(prop.position.x, drawnGroundAt(prop.position) + prop.height * 0.98, prop.position.z, seconds, hash(prop.id), furnace ? 1 : 0.45, furnace)) this.environmentRoot.add(o);
       }
     }
     // FACTION LIGHT POOL (2026-09-24): each living HQ throws its faction's light on the ground round it --
@@ -1010,6 +1031,7 @@ export class WorldRenderer {
     // Trimmed below the authored density: under the graded post stack the full value
     // dissolves the frame edges into a cream wash and units stop reading at distance.
     this.baseFogDensity = theme.fogDensity * 0.72;
+    this.surfaceKind = theme.surface ?? "cracked";
     this.baseSkyColor = theme.sky;
     this.sandstormBlend = 0;
     if (this.skyTexture) this.skyTexture.dispose();
@@ -1623,6 +1645,20 @@ export class WorldRenderer {
             life: [1.2, 2.2], gravity: -0.6, drag: 1.2, jitter: 0.1,
           });
         }
+      }
+    }
+    // MAP LIFE (2026-09-24): standing scenery that breathes -- the Ironworks furnace smokes, the derrick
+    // flares off, braziers throw sparks, fishing huts smoke. Same throttled burst as a wreck's smoke.
+    const life = entity.kind === "cover" && entity.coverKind && entity.status.alive ? PROP_LIFE[entity.coverKind] : undefined;
+    if (life && this.particles) {
+      const now = performance.now();
+      if (now - ((group.userData.lastLifeAt as number | undefined) ?? 0) > life.every) {
+        group.userData.lastLifeAt = now;
+        this.particles.burst({
+          x: entity.position.x, y: group.position.y + entity.height * life.y, z: entity.position.z,
+          count: 1, color: life.color, speed: life.speed, up: 1, size: life.size, life: life.life,
+          gravity: life.gravity, drag: 1.1, jitter: life.jitter,
+        });
       }
     }
     // AIRBORNE INFANTRY (a jump trooper mid-leap): lean into the arc and pour thrust out of the
@@ -5747,6 +5783,12 @@ const FACTION_OF_TEAM: Partial<Record<Team, FactionId>> = {};
 // by colour before shape -- measured by `npm run measure:factions` (goal: >= 40 degrees apart).
 const FACTION_CAMO: Record<FactionId, number> = { vanguard: 0x3f6d9a, syndicate: 0xa45a2c, bastion: 0x437e44 };
 /** Each faction's helmet: the one-glance read on a rank (kept under ~180 luminance, see audit:unit). */
+/** Map life: what a standing prop gives off, and how often (ms). Renderer clock, never the sim. */
+const PROP_LIFE: Partial<Record<CoverKind, { every: number; y: number; color: number[]; size: [number, number]; life: [number, number]; speed: [number, number]; gravity: number; jitter: number }>> = {
+  furnace: { every: 260, y: 0.98, color: [0xffa040, 0xff7a24], size: [0.06, 0.12], life: [1.2, 2], speed: [0.4, 0.9], gravity: -1.2, jitter: 0.4 }, // embers; the smoke is makeChimneySmoke
+  derrick: { every: 420, y: 1.0, color: [0xffa040, 0xff7a24, 0x3a3430], size: [0.14, 0.3], life: [0.9, 1.6], speed: [0.3, 0.7], gravity: -0.9, jitter: 0.12 },
+  brazier: { every: 150, y: 1.05, color: [0xffb04a, 0xff7a24], size: [0.05, 0.1], life: [0.8, 1.4], speed: [0.3, 0.8], gravity: -1.1, jitter: 0.14 },
+};
 /** Each faction's LIGHT: base light pools and aircraft engine burn share it. */
 const FACTION_GLOW: Record<FactionId, number> = { vanguard: 0x5fd0ff, syndicate: 0xffa050, bastion: 0x9ef07a };
 /** Torso lean (radians, + = forward) per faction: the stance half of the faction read. */

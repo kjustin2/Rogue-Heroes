@@ -1284,6 +1284,25 @@ export function makeBlastAfterlife(effect: VisualEvent, u: number, ground: numbe
   return out;
 }
 
+/** CHIMNEY SMOKE (map life, 2026-09-24): a steady column of ink-rimmed puffs over a stack. Every puff
+ *  is placed by a continuous phase (time + its index), born at <=0.3 scale, swells, drifts downwind and
+ *  shrinks to nothing at the top -- the no-pop rule for a column that never ends. `size` scales it. */
+export function makeChimneySmoke(x: number, y: number, z: number, seconds: number, seed: number, size = 1, dark = true): THREE.Object3D[] {
+  const out: THREE.Object3D[] = [];
+  const COUNT = 6;
+  const PERIOD = 4.2;
+  for (let i = 0; i < COUNT; i += 1) {
+    const phase = (seconds / PERIOD + i / COUNT + (seed % 7) * 0.13) % 1;
+    const scale = (phase < 0.3 ? 0.3 + (phase / 0.3) * 0.7 : 1 - ((phase - 0.3) / 0.7) ** 1.5) * size;
+    if (scale <= 0.03) continue;
+    const p = puff(scale * 1.5, (i + seed) % 2 ? (dark ? SMOKE : SMOKE_LIGHT) : SMOKE_LIGHT);
+    p.position.set(x + phase * 1.4 * size + Math.sin(phase * 5 + i) * 0.15, y + phase * 3.2 * size, z + phase * 0.6 * size);
+    p.rotation.set(phase * 2 + i, i * 1.3, phase);
+    out.push(p);
+  }
+  return out;
+}
+
 /** LIGHTNING: a jagged bolt of ink-rimmed white bars from the sky with three forks, a ground flash
  *  and a scorch star. Every kink is rolled from the effect id, so each strike has its own shape and
  *  a restored save draws the same bolt. Two-frame life: the bars thin as `t` runs. */
