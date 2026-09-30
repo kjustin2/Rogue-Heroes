@@ -12,8 +12,10 @@ import {
   VignetteEffect,
   type Effect,
 } from "postprocessing";
+import { N8AOPostPass } from "n8ao";
 import { clamp, lerp, type Vec2 } from "../core/math";
 import { ARENA_BOUNDS } from "../game/terrain";
+import type { LightRig } from "../game/maps";
 import { GradeEffect } from "./gradeEffect";
 
 export interface PickResult {
@@ -54,8 +56,10 @@ export type QualityTier = "performance" | "balanced" | "quality" | "ultra";
  * whole-arena frustum -- while comfortably covering the widest tactical zoom.
  */
 const SHADOW_RADIUS = 42;
-/** Direction from the focus point to the key light. Fixed, so the sun angle never changes. */
+/** Direction from the focus point to the key light: the default sun, until a map sets its own (setLightRig). */
 const KEY_LIGHT_OFFSET = new THREE.Vector3(-13, 14, 9);
+/** The rig every map had before per-map light, and the fallback for a theme without one. */
+const DEFAULT_RIG: LightRig = { key: 0xffe6c0, keyIntensity: 3.2, elevation: 41.5, azimuth: 0, sky: 0xd7dde4, bounce: 0x4a3424, hemi: 0.4, rim: 0x8fdcff, rimIntensity: 0.62 };
 
 export class Stage {
   readonly renderer: THREE.WebGLRenderer;
@@ -113,6 +117,10 @@ export class Stage {
   private readonly baseVignette = 0.32;
   private readonly baseAberration = 0.0011;
   private readonly keyLight: THREE.DirectionalLight;
+  private readonly hemiLight: THREE.HemisphereLight;
+  private readonly rimLight: THREE.DirectionalLight;
+  /** Focus -> sun, set per map by setLightRig. */
+  private readonly keyOffset = KEY_LIGHT_OFFSET.clone();
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.orbitPitch = Math.atan2(this.baseOffset.y, Math.hypot(this.baseOffset.x, this.baseOffset.z));
@@ -150,6 +158,7 @@ export class Stage {
     // measured FLAT (luminance sigma ~0.05 against a 0.10 floor) -- there was light everywhere and
     // shade nowhere. The key now dominates and the fills only keep shadows from going to mud.
     const hemi = new THREE.HemisphereLight(0xd7dde4, 0x4a3424, 0.40);
+    this.hemiLight = hemi;
     this.scene.add(hemi);
 
     // Warm dusty key "sun" with soft shadows covering the full arena.
@@ -194,6 +203,7 @@ export class Stage {
     // Cool steel rim light makes units and buildings pop off the warm ground.
     const rim = new THREE.DirectionalLight(0x8fdcff, 0.62);
     rim.position.set(12, 9, -14);
+    this.rimLight = rim;
     this.scene.add(rim);
 
     // Warm fill from the opposite side to lift shadow detail toward sand tones.
@@ -220,6 +230,16 @@ export class Stage {
 
     this.composer = new EffectComposer(this.renderer, { frameBufferType: THREE.HalfFloatType });
     this.composer.addPass(new RenderPass(this.scene, this.camera));
+    if (this.quality === "quality" || this.quality === "ultra") {
+      // CONTACT SHADING (N8AO, 2026-09-24): screen-space AO where a boot meets the ground, a wall meets
+      // a mesa, a hull sits in a crater -- the "in the world, not pasted on" read toon games get from
+      // baked AO, for props and units the vertex bake cannot see each other in. Half-res, a tight
+      // world radius, low intensity: contact, not grime. Off on the lower tiers and under ?lowfx.
+      const ao = new N8AOPostPass(this.scene, this.camera, window.innerWidth, window.innerHeight);
+      ao.setQualityMode(this.quality === "ultra" ? "Medium" : "Low");
+      Object.assign(ao.configuration, { aoRadius: 1.6, distanceFalloff: 1.2, intensity: 2.2, halfRes: true, gammaCorrection: false });
+      this.composer.addPass(ao);
+    }
     const effects: Effect[] = [];
     // Daylight scene: a high threshold so bloom picks out muzzle flashes, tracers, team
     // glows and explosions — not the sand.
@@ -277,6 +297,24 @@ export class Stage {
     const h = window.innerHeight;
     this.composer.setSize(w, h);
     this.menuComposer.setSize(w, h);
+  }
+
+  /**
+   * Relight the scene for a map (its own sun, fill and rim) on the existing lights. The key keeps the
+   * default's distance from the focus so the shadow frustum and its texel snapping are unchanged.
+   */
+  setLightRig(rig: LightRig = DEFAULT_RIG): void {
+    this.keyLight.color.setHex(rig.key);
+    this.keyLight.intensity = rig.keyIntensity;
+    const dist = KEY_LIGHT_OFFSET.length();
+    const el = THREE.MathUtils.degToRad(Math.max(28, rig.elevation));
+    const az = Math.atan2(KEY_LIGHT_OFFSET.x, KEY_LIGHT_OFFSET.z) + THREE.MathUtils.degToRad(rig.azimuth);
+    this.keyOffset.set(Math.sin(az) * Math.cos(el) * dist, Math.sin(el) * dist, Math.cos(az) * Math.cos(el) * dist);
+    this.hemiLight.color.setHex(rig.sky);
+    this.hemiLight.groundColor.setHex(rig.bounce);
+    this.hemiLight.intensity = rig.hemi;
+    this.rimLight.color.setHex(rig.rim);
+    this.rimLight.intensity = rig.rimIntensity;
   }
 
   /**
@@ -469,7 +507,7 @@ export class Stage {
     const texel = (SHADOW_RADIUS * 2) / this.keyLight.shadow.mapSize.x;
     const x = Math.round(this.focus.x / texel) * texel;
     const z = Math.round(this.focus.z / texel) * texel;
-    this.keyLight.position.set(x + KEY_LIGHT_OFFSET.x, KEY_LIGHT_OFFSET.y, z + KEY_LIGHT_OFFSET.z);
+    this.keyLight.position.set(x + this.keyOffset.x, this.keyOffset.y, z + this.keyOffset.z);
     this.keyLight.target.position.set(x, 0, z);
     this.keyLight.target.updateMatrixWorld();
   }

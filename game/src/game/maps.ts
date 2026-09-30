@@ -22,8 +22,28 @@ export type GroundSurfaceKind = "cracked" | "grass" | "slag" | "paved" | "ice";
 // family per map so the distance tells the same story as the ground.
 export type SkylineKind = "mountains" | "stacks" | "forest" | "floes" | "ziggurats" | "fences";
 
+/**
+ * A map's light (2026-09-24, visual polish round). One rig for every map made the six battlefields read as
+ * one time of day; each biome now sets its own sun (colour, strength, height, bearing), sky/bounce fill and
+ * rim. Applied to the stage's EXISTING lights by `stage.setLightRig` -- never more lights.
+ */
+export interface LightRig {
+  key: number;
+  keyIntensity: number;
+  /** Sun height above the horizon, degrees. Keep >= 28: lower grows shadow acne on the flat arena (ledger #4). */
+  elevation: number;
+  /** Sun bearing, degrees (0 = the default "from the north-west" key). */
+  azimuth: number;
+  sky: number;
+  bounce: number;
+  hemi: number;
+  rim: number;
+  rimIntensity: number;
+}
+
 export interface MapTheme {
   ground: number;
+  light?: LightRig;
   skyline?: SkylineKind;
   surface?: GroundSurfaceKind;
   groundAccent: number;
@@ -431,7 +451,7 @@ const RAW_MAPS: readonly MapDef[] = [
     blurb: "A dead supply road through a desert basin, walled by canyons.",
     feel: "Armour down the dry river bed, infantry through the canyon passes; the plateau derricks watch it all.",
     seed: 0x44555354,
-    theme: { ground: 0x7a5530, skyline: "mountains", surface: "cracked", groundAccent: 0xd9a05a, grid: 0xd6ad6d, fog: 0x8fa6b8, fogDensity: 0.009, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x7fa8c9, ambient: { kind: "dust", color: 0xe6c98a, density: 1.1 } },
+    theme: { ground: 0x7a5530, skyline: "mountains", light: { key: 0xffe2b0, keyIntensity: 3.4, elevation: 46, azimuth: 0, sky: 0xdce6f0, bounce: 0x6a4424, hemi: 0.38, rim: 0x9fd8ff, rimIntensity: 0.55 }, surface: "cracked", groundAccent: 0xd9a05a, grid: 0xd6ad6d, fog: 0x8fa6b8, fogDensity: 0.009, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x7fa8c9, ambient: { kind: "dust", color: 0xe6c98a, density: 1.1 } },
     terrain: {
       bounds: { minX: -35, maxX: 35, minZ: -22, maxZ: 22 }, // LARGE: wide basin, long armor/sniper lanes
       maxHeight: 3.6,
@@ -503,7 +523,7 @@ const RAW_MAPS: readonly MapDef[] = [
     blurb: "A working foundry: furnace, rail yard, and the overpass between.",
     feel: "Rail-car lanes for infantry, the overpass for whoever holds the middle, a lit furnace at each corner.",
     seed: 0x49524f4e,
-    theme: { ground: 0x333a44, skyline: "stacks", surface: "slag", groundAccent: 0x7d8794, grid: 0x6f7c8c, fog: 0x5a4632, fogDensity: 0.011, playerLight: 0x5fd7ff, enemyLight: 0xff6d57, sky: 0x8a5a32, ambient: { kind: "embers", color: 0xff9a4a, density: 0.85 } },
+    theme: { ground: 0x333a44, skyline: "stacks", light: { key: 0xeef0f4, keyIntensity: 3.3, elevation: 34, azimuth: 25, sky: 0xa8b4c8, bounce: 0x3a2a22, hemi: 0.3, rim: 0xff8a3a, rimIntensity: 1.0 }, surface: "slag", groundAccent: 0x7d8794, grid: 0x6f7c8c, fog: 0x5a4632, fogDensity: 0.011, playerLight: 0x5fd7ff, enemyLight: 0xff6d57, sky: 0x8a5a32, ambient: { kind: "embers", color: 0xff9a4a, density: 0.85 } },
     terrain: {
       bounds: { minX: -24, maxX: 24, minZ: -15, maxZ: 15 },
       maxHeight: 2.6,
@@ -560,7 +580,7 @@ const RAW_MAPS: readonly MapDef[] = [
     blurb: "A farmed valley: terraced slopes, orchard rows, a chapel ruin and the mill pond.",
     feel: "Climb the terraces for a long view down the valley, fight through the orchard rows, or cross the open chapel green.",
     seed: 0x56455244,
-    theme: { ground: 0x35502a, skyline: "forest", surface: "grass", groundAccent: 0x93b04a, grid: 0x86a85f, fog: 0x93b0c4, fogDensity: 0.009, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x86b2d4, ambient: { kind: "pollen", color: 0xd8f0a0, density: 1 } },
+    theme: { ground: 0x35502a, skyline: "forest", light: { key: 0xfff0c8, keyIntensity: 3.25, elevation: 40, azimuth: -10, sky: 0xd6ecff, bounce: 0x3c5024, hemi: 0.4, rim: 0xbfe8ff, rimIntensity: 0.5 }, surface: "grass", groundAccent: 0x93b04a, grid: 0x86a85f, fog: 0x93b0c4, fogDensity: 0.009, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x86b2d4, ambient: { kind: "pollen", color: 0xd8f0a0, density: 1 } },
     terrain: {
       bounds: { minX: -28, maxX: 28, minZ: -19, maxZ: 19 },
       maxHeight: 3.6,
@@ -625,7 +645,7 @@ const RAW_MAPS: readonly MapDef[] = [
     blurb: "A harbour the ice took: a beached freighter, a fishing village, one land bridge between.",
     feel: "Head-on down the causeway, or take the bridges out to the harbour and the village on the flanks.",
     seed: 0x46524f5a,
-    theme: { ground: 0x64798f, skyline: "floes", surface: "ice", groundAccent: 0xe2eef6, grid: 0xbfd6e6, fog: 0xc9b294, fogDensity: 0.011, playerLight: 0x7fd7ff, enemyLight: 0xff8f7f, sky: 0xd8b58a, ambient: { kind: "snow", color: 0xeaf4ff, density: 1.2 } },
+    theme: { ground: 0x64798f, skyline: "floes", light: { key: 0xffcf9c, keyIntensity: 3.1, elevation: 29, azimuth: 35, sky: 0xa8c4ec, bounce: 0x3e4c66, hemi: 0.34, rim: 0x8fc8ff, rimIntensity: 0.7 }, surface: "ice", groundAccent: 0xe2eef6, grid: 0xbfd6e6, fog: 0xc9b294, fogDensity: 0.011, playerLight: 0x7fd7ff, enemyLight: 0xff8f7f, sky: 0xd8b58a, ambient: { kind: "snow", color: 0xeaf4ff, density: 1.2 } },
     terrain: {
       bounds: { minX: -37, maxX: 37, minZ: -19, maxZ: 19 }, // LARGE: long land bridge, deep flanks
       maxHeight: 2.8,
@@ -692,7 +712,7 @@ const RAW_MAPS: readonly MapDef[] = [
     blurb: "A temple city in ruin: colonnade, fallen colossus, amphitheatre and cistern.",
     feel: "Cross the ravines into the precinct, hold the colossus or climb the amphitheatre steps.",
     seed: 0x4b415241,
-    theme: { ground: 0x664d2c, skyline: "ziggurats", surface: "paved", groundAccent: 0xc79149, grid: 0xc6a567, fog: 0x6a5f86, fogDensity: 0.012, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x6e5f96, ambient: { kind: "ash", color: 0xcbb083, density: 0.9 } },
+    theme: { ground: 0x664d2c, skyline: "ziggurats", light: { key: 0xffe0c0, keyIntensity: 3.5, elevation: 34, azimuth: -30, sky: 0xa898d8, bounce: 0x2e2030, hemi: 0.26, rim: 0xb89cff, rimIntensity: 0.8 }, surface: "paved", groundAccent: 0xc79149, grid: 0xc6a567, fog: 0x6a5f86, fogDensity: 0.012, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x6e5f96, ambient: { kind: "ash", color: 0xcbb083, density: 0.9 } },
     terrain: {
       bounds: { minX: -26, maxX: 26, minZ: -18, maxZ: 18 },
       maxHeight: 3.6,
@@ -762,7 +782,7 @@ const RAW_MAPS: readonly MapDef[] = [
     blurb: "A militarised border: checkpoint gates, a radar station, a trench line.",
     feel: "Push the trench line, hold the radar station, meet at the checkpoint — mirrored to the bag.",
     seed: 0x43524f53,
-    theme: { ground: 0x414833, skyline: "fences", surface: "grass", groundAccent: 0x98a15c, grid: 0x97a277, fog: 0x94a3b4, fogDensity: 0.010, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x8fa3ba, ambient: { kind: "pollen", color: 0xc6d8a8, density: 0.7 } },
+    theme: { ground: 0x414833, skyline: "fences", light: { key: 0xfff0dc, keyIntensity: 3.5, elevation: 36, azimuth: 15, sky: 0xc8d0dc, bounce: 0x2a3020, hemi: 0.3, rim: 0x9fd8ff, rimIntensity: 0.55 }, surface: "grass", groundAccent: 0x98a15c, grid: 0x97a277, fog: 0x94a3b4, fogDensity: 0.010, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x8fa3ba, ambient: { kind: "pollen", color: 0xc6d8a8, density: 0.7 } },
     terrain: {
       bounds: { minX: -26, maxX: 26, minZ: -17, maxZ: 17 },
       maxHeight: 3.0,

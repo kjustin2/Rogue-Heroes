@@ -67,6 +67,7 @@ export class WorldRenderer {
   private readonly flinchByEntity = new Map<string, { at: number; mag: number; dx: number; dz: number }>();
   // PER-PART HIT REACTION (2026-09-24): the part a hit landed on reacts on its own -- the head snaps
   // back, a leg buckles, a pack spins -- on top of the whole-body flinch.
+  private readonly baseGlowMats = new Map<FactionId, THREE.MeshBasicMaterial>();
   private readonly partHitByEntity = new Map<string, { partId: string; at: number; mag: number }>();
   private lastDamageSeq = 0;
   // Dynamic map events: danger-zone rings + an eased sandstorm fog/haze blend.
@@ -415,6 +416,23 @@ export class WorldRenderer {
           this.environmentRoot.add(arc);
         }
       }
+    }
+    // FACTION LIGHT POOL (2026-09-24): each living HQ throws its faction's light on the ground round it --
+    // a slow-breathing draped disc, not a real light (the rig stays at three). The base reads as WHOSE
+    // from across the board, and the colour matches the faction's engine burn and lamps.
+    for (const base of sim.entities) {
+      if (base.kind !== "base" || !base.status.alive) continue;
+      const f = factionOfEntity(base);
+      if (!f) continue;
+      const breathe = 0.5 + 0.5 * Math.sin(performance.now() * 0.0012 + (hash(base.id) % 7));
+      let mat = this.baseGlowMats.get(f);
+      if (!mat) {
+        mat = new THREE.MeshBasicMaterial({ color: FACTION_GLOW[f], transparent: true, side: THREE.DoubleSide, depthWrite: false });
+        mat.userData.shared = true;
+        this.baseGlowMats.set(f, mat);
+      }
+      mat.opacity = 0.1 + breathe * 0.06;
+      this.environmentRoot.add(new THREE.Mesh(drapedDisc(base.position.x, base.position.z, 3.2, 7.5, 48, 0.04), mat));
     }
     // Burning ground: flickering fire ring + rising flame cones + an orange ground glow.
     const flicker = (Math.sin(performance.now() * 0.02) + 1) * 0.5;
@@ -2110,7 +2128,7 @@ export class WorldRenderer {
       // LIVERY: a faction colour band over the fuselage and wing panels, and the engines burn in the
       // faction's own light (they were the loudest colour on every aircraft, in one shared orange).
       const band = f === "vanguard" ? 0x3f6d9a : f === "syndicate" ? 0xa45a2c : 0x437e44;
-      const burn = f === "vanguard" ? 0x5fd0ff : f === "syndicate" ? 0xffa050 : 0x9ef07a;
+      const burn = FACTION_GLOW[f];
       const len = entity.kind === "bomber" ? 3.0 : entity.kind === "interceptor" ? 2.4 : 2.1;
       this.box(group, entity, "hull", [0.08, 0.3, len * 0.8], [0, 0.34, 0], band, { metalness: 0.3, bevel: 0.2 });
       for (const side of [-1, 1]) {
@@ -5694,6 +5712,8 @@ const FACTION_OF_TEAM: Partial<Record<Team, FactionId>> = {};
 // by colour before shape -- measured by `npm run measure:factions` (goal: >= 40 degrees apart).
 const FACTION_CAMO: Record<FactionId, number> = { vanguard: 0x3f6d9a, syndicate: 0xa45a2c, bastion: 0x437e44 };
 /** Each faction's helmet: the one-glance read on a rank (kept under ~180 luminance, see audit:unit). */
+/** Each faction's LIGHT: base light pools and aircraft engine burn share it. */
+const FACTION_GLOW: Record<FactionId, number> = { vanguard: 0x5fd0ff, syndicate: 0xffa050, bastion: 0x9ef07a };
 /** Torso lean (radians, + = forward) per faction: the stance half of the faction read. */
 const FACTION_STANCE: Record<FactionId, number> = { vanguard: 0.05, syndicate: 0.16, bastion: -0.04 };
 const FACTION_HELMET: Record<FactionId, number> = { vanguard: 0x9fb6cc, syndicate: 0x7a3620, bastion: 0x4a5a2a };

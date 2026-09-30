@@ -183,7 +183,7 @@ const hud = new Hud(uiRoot, sim, {
   endTurn: () => requestEndTurn(),
   reset: () => {
     sim.reset();
-    world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
+    applyMapLook();
     focusOnPlayerBase();
     lastEndPhase = undefined;
     // Play Again / Restart in Local 2 Players: turn 1 opens on Player 1's handoff again. Without
@@ -537,7 +537,7 @@ function startBattle(mapId: string, modeId: ModeId, difficulty: Difficulty = set
   // the same opponent, so a seeded run, a save reload and a replay all agree. Rolling it inside
   // the sim would put hidden nondeterminism in a system the chaos and determinism tests rely on.
   sim.configure(mapDef(mapId), modeId, player2 ? "normal" : difficulty, { player: faction, enemy: player2 ?? botFaction ?? opposingFaction(mapId, faction) }, Boolean(player2));
-  world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
+  applyMapLook();
   world.setPlayerAccent(progression.accentColor());
   focusOnPlayerBase();
   lastEndPhase = undefined;
@@ -903,7 +903,7 @@ function stageMenuDiorama(): void {
     u.yaw = -Math.PI * 0.5;
   }
   sim.select("");
-  world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
+  applyMapLook();
   world.setPlayerAccent(progression.accentColor());
   stage.debugSetView({ x: 0.5, z: 0.4, zoom: 0.62, pitch: 0.42, yaw: 0.6 });
   stage.menuDrift = true;
@@ -1695,7 +1695,7 @@ function loadSavedBattle(): void {
       window.setTimeout(beginHotseatTurn, 0); // after closeAllMenus below
     }
     closeAllMenus();
-    world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
+    applyMapLook();
     world.setPlayerAccent(progression.accentColor());
     focusOnPlayerBase();
     lastEndPhase = undefined;
@@ -1903,6 +1903,12 @@ const seenHints = ((): Set<string> => {
 // that makes three states true at once still delivers them one at a time.
 let lastHintAt = -Infinity;
 const HINT_GAP_MS = 5000;
+/** The active map's ground, sky and props (world) AND its light (stage) -- always together. */
+function applyMapLook(): void {
+  world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
+  stage.setLightRig(sim.mapDef.theme.light);
+}
+
 function hintOnce(id: string, text: string): boolean {
   if (tutorialActive || introActive || seenHints.has(id)) return false;
   if (document.querySelector(".hotseat-handoff")) return false; // nobody is looking at the board yet
@@ -2420,7 +2426,7 @@ window.__rht = {
     tutorialActive = false;
     renderTutorialPanel(); // the panel leaked from a tutorial cut into every later scenario shot
     lastEndPhase = undefined; // let victory/defeat scenarios render their end screen
-    world.applyMap(sim.mapDef.theme, [sim.mapDef.playerBase, sim.mapDef.enemyBase]);
+    applyMapLook();
     world.setPlayerAccent(progression.accentColor());
     const focus = sim.selected;
     if (focus) stage.focusOn(focus.position);
