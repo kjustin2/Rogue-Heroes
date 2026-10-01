@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import { createBase, createCover, createSoldier } from "./damageModel";
-import { DEPLOY_SNAP, TacticalSim, troopSpec } from "./sim";
+import { DEPLOY_SNAP, SPAWN_GAP, TacticalSim, troopSpec } from "./sim";
 import { dist } from "../core/math";
 
 function armed(): { sim: TacticalSim; base: ReturnType<typeof createBase> } {
@@ -76,8 +76,8 @@ describe("placed deploy", () => {
     const preview = sim.deployPointPreview(base, "soldier", blocker.position);
     expect(preview.reason).toBeUndefined();
     expect(preview.snapped).toBe(true);
-    expect(dist(preview.point, blocker.position)).toBeLessThanOrEqual(DEPLOY_SNAP + 0.65 + 1e-6);
-    expect(dist(preview.point, blocker.position)).toBeGreaterThanOrEqual(blocker.radius + 0.5 + 0.3 - 1e-6);
+    expect(dist(preview.point, blocker.position)).toBeLessThanOrEqual(DEPLOY_SNAP + 0.65 + SPAWN_GAP + 1e-6);
+    expect(dist(preview.point, blocker.position)).toBeGreaterThanOrEqual(blocker.radius * 2 + SPAWN_GAP - 1e-6);
     expect(sim.queueDeployAt("soldier", blocker.position)).toBe(true);
     const unit = spawned(sim)!;
     expect(unit.position).toEqual(preview.point);
@@ -89,7 +89,7 @@ describe("placed deploy", () => {
     const centre = { x: base.position.x - 4, z: base.position.z + 3 };
     for (let i = 0; i < 12; i += 1) {
       const a = (Math.PI * 2 * i) / 12;
-      for (const r of [0.6, 1.4, 2.2]) {
+      for (const r of [0.6, 1.4, 2.2, 3.0, 3.8]) {
         sim.entities.push(createCover(`c-ring-${i}-${r}`, "Crate", { x: centre.x + Math.sin(a) * r, z: centre.z + Math.cos(a) * r }, { coverKind: "crate" }));
       }
     }
@@ -98,6 +98,20 @@ describe("placed deploy", () => {
     expect(sim.log[0]).toContain("No room");
     expect(sim.money("player")).toBe(money);
     expect(base.commandPoints).toBe(1);
+  });
+
+  it("two deploys aimed at the SAME spot never jam: the second keeps the full spawn gap", () => {
+    const { sim, base } = armed();
+    base.maxCommandPoints = 2;
+    base.commandPoints = 2;
+    const spot = { x: base.position.x + 4, z: base.position.z + 1 };
+    expect(sim.queueDeployAt("soldier", spot)).toBe(true);
+    base.spawnCooldowns = {};
+    sim.setPendingDeploy("soldier");
+    expect(sim.queueDeployAt("soldier", spot)).toBe(true);
+    const units = sim.entities.filter((e) => e.id.startsWith("p-spawn-"));
+    expect(units).toHaveLength(2);
+    expect(dist(units[0].position, units[1].position)).toBeGreaterThanOrEqual(units[0].radius + units[1].radius + SPAWN_GAP - 1e-6);
   });
 
   it("cancelling costs nothing and clears the ring; quick deploy still lands beside the base", () => {

@@ -224,6 +224,23 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
 - **Deaths are per family** (`poseDeath`, renderer-only, seeded by entity id; `deathMs()` per family): infantry killed by a big blow (flinch mag >= 0.6) are THROWN (arc + flip + bounce + dust), otherwise CRUMPLE or SPIN; ground vehicles WRECK (hop, roll, turret thrown clear by `blowOffTurret`, charred + smoking, then sink); aircraft SPIRAL nose-down and explode on impact. Group-level transforms (plus the turret throw after `paintPart`), so pooled paint / per-part damage never know. Evidence: `shots:gpu deaths` (`DEATH_VIEW='{...}'` to reframe; `__rht.debugKill(id, blow)` is the capture seam).
 - **Every procedural machine wears the ink rim** (`defaultInk` in `box()`/`cylinder()`): aircraft, flak and the fallback hulls. The flyers were the one rimless family and read as blurry. Accent lamps stay rimless; infantry and scenery keep their own rules. Pale steel/glass (>~180 luminance) on machines blooms into smears — keep barrels gunmetal.
 - **EVERY ground overlay is DRAPED** on the drawn ground (`drawnGroundAt`). Static rings/discs — pickups, mines, map-event telegraphs, burn/gas/smoke skirts, downed markers, objective rings — come from `drapedDisc()` (cached per map, `userData.shared`, cleared in `applyMap`); the aim splash disc is draped per build. Never add a flat `RingGeometry`/`CircleGeometry` at `terrainHeightAt` again (glitch sweep #5: a pickup ring buried in a plate read as a tan comma). Cover props stand on the drawn ground too.
+- **GROUND CIRCLES (2026-09-24, owner: "the circle around your base ... sticks out the back of the map",
+  "being cut off ... look closely at each")**. Every draped overlay is clamped to the arena AND drops triangles
+  wholly outside it (`clipToArena`), so a circle ends at the board edge; `drapedDisc` drapes conservatively too.
+  A thin ring takes ONE height per angle (`pairRingHeights`) so it never twists into teeth at a step. The BIG
+  zone rings (deploy ring + its fill, weapon reach) are laid FLAT at the actor's ground (`drapeToTerrain(...,
+  flatAt)`) -- draped over a stepped mesa they zigzagged -- and the ring OUTLINES (selection, reach, deploy)
+  draw on top of everything (`depthTest: false`, renderOrder 19-21) so towers, smoke and motes never hide them.
+  Every ground overlay material carries `overlayDepthBias` (polygonOffset -4) to beat the plates' -2. The
+  selection pulse is opacity only (scaling a draped ring lifted it off the ground). Gate: `smoke:ground`'s
+  overlay invariant (`__rht.auditOverlays()`, all six maps, fault-injection proven). Close-up evidence:
+  `npm run shots:gpu -- baseclose` (both bases, every map, selected / deploy / from behind, HUD hidden).
+- **The board grows behind the bases** (`fitBases` in `maps.ts`): every base keeps `DEPLOY_RING_FIT` (the
+  Vanguard's deploy ring + 0.8m) of board on every side, so the whole deploy ring is placeable. The bases did
+  not move (moving them in shrank Ironworks' no-man's land by 17m); `scale.test.ts` measures crossings base to
+  base, and `maps.test.ts` asserts the fit.
+- **Spawn spacing**: a newly fielded unit keeps `SPAWN_GAP` (0.9m, was 0.3) of open ground from every body,
+  for placed deploys (snapping to the nearest spot that keeps it) and base spawns alike (`deploy.test.ts`).
 - **Drape is CONSERVATIVE and CLAMPED** (2026-09-23, the "teeth" beside the Ironworks base): `drapeToTerrain`
   clamps every vertex to `ARENA_BOUNDS`, and a filled `PlaneGeometry` overlay lifts each vertex to the highest
   drawn ground within half a grid cell — a triangle spanning a talus lip otherwise cuts UNDER the slope and is

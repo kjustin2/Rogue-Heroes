@@ -298,12 +298,30 @@ app.whenReady().then(async () => {
         }
         continue;
       }
+      if (s === "baseclose") {
+        // CLOSE inspection of every base circle (owner: "circle of base going over something and being cut
+        // off ... look closely at each"): both bases on every map, plain selection and deploy armed, from the
+        // gameplay angle and from behind, HUD hidden so nothing covers the ring.
+        for (const map of ["dustbowl", "ironworks", "verdant", "causeway", "karak", "crossfire"]) {
+          await js(`window.__rht.startBattle(${JSON.stringify(map)}, "destroy", "normal")`);
+          await sleep(2000);
+          await js(`document.body.classList.add("shots-hide-hud"); document.querySelectorAll("#ui, .hud, .topbar").forEach((e) => (e.style.visibility = "hidden"))`);
+          for (const team of ["player", "enemy"]) {
+            for (const [tag, deploy, yaw] of [["sel", false, 0.25], ["dep", true, 0.25], ["back", true, 0.25 + Math.PI]]) {
+              await js(`(() => { const r = window.__rht, sim = r.sim; const hq = sim.entities.find(e => e.team === ${JSON.stringify(team)} && e.kind === "base"); sim.setPendingDeploy(undefined); sim.select(hq.id); if (${deploy} && hq.team === "player") sim.setPendingDeploy("soldier"); r.setView({ x: hq.position.x, z: hq.position.z, zoom: 0.95, pitch: 0.62, yaw: ${yaw} }); })()`);
+              await sleep(700);
+              await shot(`baseclose-${map}-${team}-${tag}`);
+            }
+          }
+        }
+        continue;
+      }
       if (s === "baserings") {
         // The base selected on every map: its selection ring + placement circle must read on each palette.
         for (const map of ["dustbowl", "ironworks", "verdant", "causeway", "karak", "crossfire"]) {
           await js(`window.__rht.startBattle(${JSON.stringify(map)}, "destroy", "normal")`);
           await sleep(2200);
-          await js(`(() => { const sim = window.__rht.sim; const hq = sim.entities.find(e => e.team === "player" && e.kind === "base"); sim.select(hq.id); window.__rht.setView({ x: hq.position.x, z: hq.position.z, zoom: 0.8, pitch: 0.6, yaw: 0.25 }); })()`);
+          await js(`(() => { const sim = window.__rht.sim; const hq = sim.entities.find(e => e.team === "player" && e.kind === "base"); sim.select(hq.id); sim.setPendingDeploy("soldier"); window.__rht.setView({ x: hq.position.x + 2, z: hq.position.z, zoom: 1.05, pitch: 0.7, yaw: 0.25 }); })()`);
           await sleep(700);
           await shot("basering-" + map);
           if (process.env.PROBE) console.log(map, await js(`(() => { const out = []; const sim = window.__rht.sim; const hq = sim.entities.find(e => e.team === "player" && e.kind === "base"); const THREE_Box = null; window.__rht.sceneObject().traverse((o) => { if (!o.isMesh || !o.visible) return; o.geometry.computeBoundingSphere(); const bs = o.geometry.boundingSphere; const wp = o.getWorldPosition(o.position.clone()); const r = bs.radius * Math.max(o.scale.x, o.scale.y, o.scale.z) * (o.parent ? o.parent.scale.x : 1); if (r > 3.5 && r < 12 && Math.hypot(wp.x - hq.position.x, wp.z - hq.position.z) < 4) out.push([o.name, o.geometry.type, r.toFixed(1), wp.y.toFixed(2), o.material.type, o.material.color && o.material.color.getHexString(), o.material.opacity, o.material.transparent, o.parent && (o.parent.name || o.parent.userData.entityId || o.parent.type)]); }); return JSON.stringify(out); })()`));

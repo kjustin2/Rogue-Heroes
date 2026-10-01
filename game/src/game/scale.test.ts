@@ -18,9 +18,14 @@ const span = (map: (typeof MAPS)[number]): { width: number; depth: number; diago
   return { width, depth, diagonal: Math.hypot(width, depth) };
 };
 
-/** Turns for a unit to walk the long axis of a map, at full move orders. */
+/** The battlefield a unit actually walks: base to base. (Not the board width: the board extends behind
+ *  each base so its whole deploy ring fits, and that strip is not ground anyone crosses.) */
+const battleLength = (map: (typeof MAPS)[number]): number =>
+  Math.hypot(map.enemyBase.x - map.playerBase.x, map.enemyBase.z - map.playerBase.z);
+
+/** Turns for a unit to walk from its base to the enemy's, at full move orders. */
 const turnsToCross = (kind: TroopKind, map: (typeof MAPS)[number]): number =>
-  span(map).width / (unitStats(kind).moveRange * MOVE_RANGE_SCALE);
+  battleLength(map) / (unitStats(kind).moveRange * MOVE_RANGE_SCALE);
 
 /**
  * Turns for a unit to reach the contested middle from its own base. This, not crossing the whole
@@ -29,7 +34,7 @@ const turnsToCross = (kind: TroopKind, map: (typeof MAPS)[number]): number =>
  * fight is decided it is simply a unit you never build.
  */
 const turnsToMidfield = (kind: TroopKind, map: (typeof MAPS)[number]): number =>
-  (span(map).width / 2) / (unitStats(kind).moveRange * MOVE_RANGE_SCALE);
+  (battleLength(map) / 2) / (unitStats(kind).moveRange * MOVE_RANGE_SCALE);
 
 describe("map scale stays coherent with movement, range and accuracy", () => {
   it("reports the scale table", () => {

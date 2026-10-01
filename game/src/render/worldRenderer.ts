@@ -189,6 +189,14 @@ export class WorldRenderer {
     );
     this.ringInk.rotation.x = -Math.PI / 2;
     this.scene.add(this.ringInk, this.ring);
+    // ALWAYS VISIBLE (owner 2026-09-24: "objects like clouds on map block viewing parts of the circle for
+    // base"): the base's own tower, landmarks, chimney smoke and dust motes drew over the ring. The ring
+    // OUTLINES (selection, weapon reach, deploy) draw on top of everything; the faint fills stay
+    // depth-tested so the board never turns x-ray.
+    for (const [mesh, order] of [[this.ringInk, 20], [this.ring, 21]] as const) {
+      (mesh.material as THREE.MeshBasicMaterial).depthTest = false;
+      mesh.renderOrder = order;
+    }
 
     this.selectionDisc = new THREE.Mesh(
       new THREE.CircleGeometry(1.34, 64),
@@ -231,13 +239,17 @@ export class WorldRenderer {
       new THREE.MeshBasicMaterial({ color: 0xffa24d, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false })
     );
     this.shootRangeRing.rotation.x = -Math.PI / 2;
+    (this.shootRangeRing.material as THREE.MeshBasicMaterial).depthTest = false;
+    this.shootRangeRing.renderOrder = 19;
     this.shootRangeRing.visible = false;
     this.scene.add(this.shootRangeRing);
 
     this.placementRing = new THREE.Mesh(
-      new THREE.RingGeometry(0.985, 1.0, 160, 1),
-      new THREE.MeshBasicMaterial({ color: 0x8ef2d1, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false })
+      // 4% of the radius: at a 10-12m deploy ring the old 1.5% band was a 0.15m hairline that vanished.
+      new THREE.RingGeometry(0.96, 1.0, 160, 1),
+      new THREE.MeshBasicMaterial({ color: 0x8ef2d1, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false, depthTest: false })
     );
+    this.placementRing.renderOrder = 19;
     this.placementRing.rotation.x = -Math.PI / 2;
     this.placementRing.visible = false;
     this.scene.add(this.placementRing);
@@ -249,6 +261,8 @@ export class WorldRenderer {
     this.placementDisc.rotation.x = -Math.PI / 2;
     this.placementDisc.visible = false;
     this.scene.add(this.placementDisc);
+    // Depth-tested ground fills must beat the plates too (see overlayDepthBias).
+    for (const mesh of [this.placementDisc, this.selectionDisc, this.actionRangeRing]) overlayDepthBias(mesh.material as THREE.Material);
   }
 
   private prewarmActionAssets(): void {
@@ -388,6 +402,7 @@ export class WorldRenderer {
     let mat = this.auraMats.get(color);
     if (!mat) {
       mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false });
+      overlayDepthBias(mat);
       mat.userData.shared = true;
       this.auraMats.set(color, mat);
     }
@@ -399,6 +414,7 @@ export class WorldRenderer {
     let mat = this.envMats.get(key) as M | undefined;
     if (!mat) {
       mat = new ctor(q);
+      overlayDepthBias(mat);
       mat.userData.shared = true; // disposeAndClear(environmentRoot) leaves it alone
       this.envMats.set(key, mat);
     }
@@ -481,7 +497,7 @@ export class WorldRenderer {
         this.baseGlowMats.set(f, mat);
       }
       mat.opacity = 0.1 + breathe * 0.06;
-      this.environmentRoot.add(new THREE.Mesh(drapedDisc(base.position.x, base.position.z, 3.2, 7.5, 48, 0.04), mat));
+      this.environmentRoot.add(new THREE.Mesh(drapedDisc(base.position.x, base.position.z, 3.2, 7.5, 48, 0.09), mat));
     }
     // Burning ground: flickering fire ring + rising flame cones + an orange ground glow.
     const flicker = (Math.sin(performance.now() * 0.02) + 1) * 0.5;
@@ -4572,7 +4588,7 @@ export class WorldRenderer {
     if (shoot) {
       this.shootRangeRing.position.set(range.position.x, range.elevation, range.position.z);
       this.shootRangeRing.scale.setScalar(range.radius);
-      if (sig !== this.lastRangeSig) drapeToTerrain(this.shootRangeRing, 0.07);
+      if (sig !== this.lastRangeSig) drapeToTerrain(this.shootRangeRing, 0.07, range.elevation);
       this.lastRangeSig = sig;
       (this.shootRangeRing.material as THREE.MeshBasicMaterial).opacity = 0.55 + pulse * 0.2;
       return;
@@ -4659,8 +4675,8 @@ export class WorldRenderer {
     this.placementDisc.scale.setScalar(placement.radius);
     if (sig !== this.lastPlacementSig) {
       // The build radius around a base spans mesa steps and the shoreline; drape both like the move field.
-      drapeToTerrain(this.placementRing, 0.07);
-      drapeToTerrain(this.placementDisc, 0.05);
+      drapeToTerrain(this.placementRing, 0.07, y);
+      drapeToTerrain(this.placementDisc, 0.05, y); // flat like its ring: draped, its triangles climbed a mesa edge as slivers
       this.lastPlacementSig = sig;
     }
     (this.placementRing.material as THREE.MeshBasicMaterial).opacity = 0.5 + pulse * 0.2;
@@ -5607,6 +5623,7 @@ function drapedDisc(x: number, z: number, inner: number, outer: number, segments
   const pos = geo.attributes.position as THREE.BufferAttribute;
   const b = ARENA_BOUNDS;
   const outside = new Uint8Array(pos.count);
+  const grounds = new Float32Array(pos.count);
   // CONSERVATIVE drape, as drapeToTerrain does for filled planes: each vertex rides the highest drawn
   // ground within half a cell, so a triangle spanning a talus lip passes OVER it instead of cutting under
   // the slope (the sawtooth "teeth" at the edge of a base light pool on a Verdant terrace).
@@ -5618,8 +5635,12 @@ function drapedDisc(x: number, z: number, inner: number, outer: number, segments
     const cx = clamp(x, b.minX, b.maxX), cz = clamp(z, b.minZ, b.maxZ);
     let ground = drawnGroundAt({ x: cx, z: cz });
     for (const [dx, dz] of DRAPE_TAPS) ground = Math.max(ground, drawnGroundAt({ x: cx + dx * reach, z: cz + dz * reach }));
-    pos.setXYZ(i, cx, ground + lift, cz);
+    grounds[i] = ground;
+    pos.setX(i, cx);
+    pos.setZ(i, cz);
   }
+  pairRingHeights(geo, grounds);
+  for (let i = 0; i < pos.count; i += 1) pos.setY(i, grounds[i] + lift);
   clipToArena(geo, outside);
   geo.computeBoundingSphere();
   geo.userData.shared = true;
@@ -5632,7 +5653,12 @@ function clearDrapedDiscs(): void {
 }
 
 const DRAPE_TAPS: ReadonlyArray<readonly [number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]];
-function drapeToTerrain(mesh: THREE.Mesh, lift: number): void {
+/**
+ * `flatAt` (a world height) lays the mesh FLAT at that height instead of draping it, still clamped and
+ * clipped to the arena. For the big zone rings (deploy, weapon reach): a 12m circle draped over a stepped
+ * mesa climbed every tier and read as a zigzag; a clean circle drawn on top reads as the zone it is.
+ */
+function drapeToTerrain(mesh: THREE.Mesh, lift: number, flatAt?: number): void {
   const pos = mesh.geometry.attributes.position as THREE.BufferAttribute;
   const s = mesh.scale.x || 1;
   // The flat layout, kept from the first drape: vertices are clamped below, and a ring that moves
@@ -5642,6 +5668,7 @@ function drapeToTerrain(mesh: THREE.Mesh, lift: number): void {
   const params = (mesh.geometry as THREE.PlaneGeometry).parameters;
   const reach = mesh.geometry.type === "PlaneGeometry" ? (params.width / params.widthSegments) * s * 0.5 : 0;
   const outside = new Uint8Array(pos.count);
+  const grounds = new Float32Array(pos.count);
   for (let i = 0; i < pos.count; i += 1) {
     // Clamped to the arena: past the edge the ground drops or climbs the boundary wall, and a
     // triangle spanning that lip pierced the wall in a sawtooth (the "teeth" beside the Ironworks
@@ -5657,12 +5684,14 @@ function drapeToTerrain(mesh: THREE.Mesh, lift: number): void {
     // the talus slope between them and is hidden in a stripe per grid cell -- the sawtooth. So a
     // plane vertex rides the highest ground within half a cell: triangles pass over a lip, never
     // into it. Thin rings (not planes) keep the exact point sample.
-    let ground = drawnGroundAt({ x: wx, z: wz });
-    if (reach > 0) {
+    let ground = flatAt ?? drawnGroundAt({ x: wx, z: wz });
+    if (reach > 0 && flatAt === undefined) {
       for (const [dx, dz] of DRAPE_TAPS) ground = Math.max(ground, drawnGroundAt({ x: wx + dx * reach, z: wz + dz * reach }));
     }
-    pos.setZ(i, (ground + lift - mesh.position.y) / s);
+    grounds[i] = ground;
   }
+  pairRingHeights(mesh.geometry, grounds);
+  for (let i = 0; i < pos.count; i += 1) pos.setZ(i, (grounds[i] + lift - mesh.position.y) / s);
   pos.needsUpdate = true;
   clipToArena(mesh.geometry, outside);
   mesh.geometry.computeBoundingSphere();
@@ -5676,6 +5705,35 @@ function drapeToTerrain(mesh: THREE.Mesh, lift: number): void {
  * three vertices all lie outside is dropped: the circle simply ends where the board does.
  * `smoke:ground` asserts no overlay vertex outside the arena (fault-injection proven).
  */
+/**
+ * Ground overlays must beat the ground PLATES, which carry polygonOffset -2 to win against the floor: an
+ * overlay a few cm above a plate still lost the depth test and was cut by the plate's blob outline (the
+ * jagged hole in the base light pool on Causeway). -4 puts every overlay in front of every ground surface.
+ */
+function overlayDepthBias(material: THREE.Material): void {
+  material.polygonOffset = true;
+  material.polygonOffsetFactor = -4;
+  material.polygonOffsetUnits = -4;
+}
+
+/**
+ * A thin ring takes ONE height per angle -- the higher of its inner and outer vertex. Draped separately,
+ * a step that fell between the two edges put one on the ground and one on the step, and the strip twisted
+ * into a sawtooth wherever a deploy / selection ring crossed a mesa (owner: "circle of base going over
+ * something and being cut off"). RingGeometry lays its vertices out ring by ring, theta-major.
+ */
+function pairRingHeights(geometry: THREE.BufferGeometry, grounds: Float32Array): void {
+  if (geometry.type !== "RingGeometry") return;
+  const { thetaSegments, phiSegments, innerRadius } = (geometry as THREE.RingGeometry).parameters;
+  if (phiSegments !== 1 || innerRadius <= 0) return; // thin bands only: a filled disc must follow each step
+  const stride = thetaSegments + 1;
+  for (let i = 0; i < stride; i += 1) {
+    let top = -Infinity;
+    for (let j = 0; j <= phiSegments; j += 1) top = Math.max(top, grounds[j * stride + i]);
+    for (let j = 0; j <= phiSegments; j += 1) grounds[j * stride + i] = top;
+  }
+}
+
 function clipToArena(geometry: THREE.BufferGeometry, outside: Uint8Array): void {
   const index = geometry.getIndex();
   if (!index) return;
@@ -5708,6 +5766,8 @@ function makeSplashDisc(position: Vec2, color: number, radius: number): THREE.Gr
   ring.rotation.x = -Math.PI / 2;
   ring.position.set(position.x, y + 0.012, position.z);
   // Draped like the move field: a flat disc at the landing height sank into the next step.
+  overlayDepthBias(fill.material as THREE.Material);
+  overlayDepthBias(ring.material as THREE.Material);
   drapeToTerrain(fill, 0.085);
   drapeToTerrain(ring, 0.097);
   group.add(fill, ring);

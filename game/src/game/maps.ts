@@ -155,22 +155,45 @@ function scaleRect<T extends { minX: number; maxX: number; minZ: number; maxZ: n
 }
 
 // Pure: return an enlarged copy of an authored map. Stamps the pre-scale size tier onto `size`.
+/**
+ * THE WHOLE DEPLOY RING FITS ON THE BOARD (owner 2026-09-24: "move the spawn location of the bases so their
+ * full circle is available to deploy"). The widest ring is the Vanguard's (base radius 2.2 + 6 + its +4
+ * reach, `sim.deployPlacementRadius`). Bases sat ~4.5m from the rim, so half the ring hung off the board.
+ * The board grows BEHIND each base rather than the bases moving in: moving them shrank Ironworks' no-man's
+ * land from 46m to 29m and pushed authored props out of their places; growing the back edge changes nothing
+ * between the bases. Asserted by maps.test.ts.
+ */
+export const DEPLOY_RING_FIT = 2.2 + 6 + 4 + 0.8;
+function fitBases(bounds: TerrainRect, bases: Vec2[]): TerrainRect {
+  const out = { ...bounds };
+  for (const p of bases) {
+    out.minX = Math.min(out.minX, p.x - DEPLOY_RING_FIT);
+    out.maxX = Math.max(out.maxX, p.x + DEPLOY_RING_FIT);
+    out.minZ = Math.min(out.minZ, p.z - DEPLOY_RING_FIT);
+    out.maxZ = Math.max(out.maxZ, p.z + DEPLOY_RING_FIT);
+  }
+  return out;
+}
+
 function scaleMapDef(def: MapDef): MapDef {
   const size = tierFromArea(def.terrain.bounds);
   const f = SCALE_BY_SIZE[size];
   const t = def.terrain;
+  const playerBase = { x: def.playerBase.x * f, z: def.playerBase.z * f };
+  const enemyBase = { x: def.enemyBase.x * f, z: def.enemyBase.z * f };
+  const bounds = fitBases(scaleRect(t.bounds, f), [playerBase, enemyBase]);
   return {
     ...def,
     size,
     terrain: {
       ...t,
-      bounds: scaleRect(t.bounds, f),
+      bounds,
       blocks: t.blocks?.map((b) => ({ ...scaleRect(b, f), height: b.height })), // footprints scale, height fixed
       water: t.water?.map((r) => scaleRect(r, f)),
       bridges: t.bridges?.map((r) => scaleRect(r, f)),
     },
-    playerBase: { x: def.playerBase.x * f, z: def.playerBase.z * f },
-    enemyBase: { x: def.enemyBase.x * f, z: def.enemyBase.z * f },
+    playerBase,
+    enemyBase,
     flagOffset: def.flagOffset * f,
     hill: { x: def.hill.x * f, z: def.hill.z * f },
     hillRadius: def.hillRadius * f,

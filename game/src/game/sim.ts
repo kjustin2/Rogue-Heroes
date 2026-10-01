@@ -1571,7 +1571,7 @@ export class TacticalSim {
   // THIS unit), off a terrain step, and — for ground troops — dry.
   private deploySpotBlocked(base: CombatEntity, point: Vec2, unitRadius: number, flying: boolean): boolean {
     if (dist(point, base.position) < base.radius + unitRadius + 0.3) return true;
-    if (this.entities.some((e) => e.id !== base.id && e.status.alive && !e.carriedById && dist(e.position, point) < e.radius + unitRadius + 0.3)) return true;
+    if (this.entities.some((e) => e.id !== base.id && e.status.alive && !e.carriedById && dist(e.position, point) < e.radius + unitRadius + SPAWN_GAP)) return true;
     if (onTerrainEdge(point, spawnClearance(unitRadius))) return true;
     if (!flying && pointInWater(point)) return true;
     return false;
@@ -1590,8 +1590,8 @@ export class TacticalSim {
     let best: Vec2 | undefined;
     let bestDist = Infinity;
     // Reach is measured to the footprint EDGE, so a trooper clicked onto another trooper still
-    // finds the spot beside it (two 0.65 bodies plus the 0.3 gap need 1.6 centre to centre).
-    const reach = DEPLOY_SNAP + radius;
+    // finds the spot beside it (two 0.65 bodies plus SPAWN_GAP need 2.2 centre to centre).
+    const reach = DEPLOY_SNAP + radius + SPAWN_GAP;
     for (let r = 0.3; r <= reach + 1e-6; r += 0.3) {
       for (let i = 0; i < 16; i += 1) {
         const angle = (Math.PI * 2 * i) / 16;
@@ -1973,7 +1973,7 @@ export class TacticalSim {
           x: base.position.x + Math.sin(angle) * radius,
           z: base.position.z + Math.cos(angle) * radius,
         });
-        const blocked = this.entities.some((e) => e.id !== base.id && e.status.alive && !e.carriedById && dist(e.position, point) < e.radius + unitRadius + 0.3)
+        const blocked = this.entities.some((e) => e.id !== base.id && e.status.alive && !e.carriedById && dist(e.position, point) < e.radius + unitRadius + SPAWN_GAP)
           || onTerrainEdge(point, spawnClearance(unitRadius));
         if (!blocked) return point;
       }
@@ -6265,6 +6265,12 @@ function projectileMaxAge(maxTravel: number, speed: number): number {
  * How far a unit must stand from a terrain step so its model (a trooper's weapon, a tank's hull)
  * stays out of the face -- the same clearance the move footprint uses.
  */
+/** Open ground between a newly fielded unit and anything already standing there, edge to edge (owner
+ *  2026-09-24: "you can't try to spawn two units right on top of each other ... basic spacing so it doesn't
+ *  seem jammed"). It was 0.3m: two troopers deployed shoulder to shoulder. Deploys snap to the nearest
+ *  spot that keeps this gap (deployPointPreview); base spawns ring out until they find one (freeSpawnNear). */
+export const SPAWN_GAP = 0.9;
+
 function spawnClearance(unitRadius: number): number {
   // Infantry (radius < 1): up to 1.3m of weapon reach (the heavy's gun, the striker's blade) plus a
   // little of the drawn talus that flares past a block. Vehicles: most of the hull plus the talus.

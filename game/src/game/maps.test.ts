@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { buildMapObjects, flagPositions, mapCenter, mapDef, MAPS, mapSize } from "./maps";
+import { buildMapObjects, DEPLOY_RING_FIT, flagPositions, mapCenter, mapDef, MAPS, mapSize } from "./maps";
 import { DEFAULT_TERRAIN, pointInWater, setActiveTerrain } from "./terrain";
 
 const area = (b: { minX: number; maxX: number; minZ: number; maxZ: number }): number => (b.maxX - b.minX) * (b.maxZ - b.minZ);
@@ -34,6 +34,16 @@ describe("map scaling + size tiers", () => {
 });
 
 describe("map geometry", () => {
+  it("every base's whole deploy ring (the widest, Vanguard's) fits on its board", () => {
+    for (const m of MAPS) {
+      const b = m.terrain.bounds;
+      for (const p of [m.playerBase, m.enemyBase]) {
+        const room = Math.min(p.x - b.minX, b.maxX - p.x, p.z - b.minZ, b.maxZ - p.z);
+        expect(room, `${m.id} base @${p.x.toFixed(1)},${p.z.toFixed(1)}`).toBeGreaterThanOrEqual(DEPLOY_RING_FIT - 1e-6);
+      }
+    }
+  });
+
   it("mapCenter is the midpoint of the bounds", () => {
     const c = mapDef("ironworks");
     const b = c.terrain.bounds;
