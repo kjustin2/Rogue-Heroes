@@ -36,7 +36,7 @@ import {
   FACTIONS,
   type FactionId,
 } from "./game/sim";
-import type { AimMode, Team } from "./game/damageModel";
+import type { AimMode, CombatEntity, Team } from "./game/damageModel";
 import { isAirKind, isInfantryKind, isVehicleKind } from "./game/damageModel";
 import { TECH_TREE, troopsUnlockedBy } from "./game/tech";
 import { supportPowerSpec, troopSpec, unitStats } from "./game/units";
@@ -405,6 +405,8 @@ uiRoot.addEventListener("pointerdown", (event) => {
 
 const heldKeys = new Set<string>();
 let lastCommandCameraKey = "";
+let framedBase: CombatEntity | undefined;
+let baseSelectedAt = 0;
 
 function clickArmedConfirm(): boolean {
   const button = uiRoot.querySelector<HTMLElement>("[data-confirm][data-disabled='false']");
@@ -2311,6 +2313,8 @@ declare global {
       cancelOrder(id: string): void;
       camera(): { x: number; z: number; zoom: number; yaw: number; pitch: number };
       setView(view: { x?: number; z?: number; zoom?: number; yaw?: number; pitch?: number; overview?: boolean }): void;
+      view(): { x: number; z: number; zoom: number; yaw: number; pitch: number };
+      projectToScreen(point: { x: number; z: number }, height?: number): { x: number; y: number; visible: boolean; behind: boolean };
       renderDebug(): WorldRenderDebug;
       // Debug scenario harness: cut straight to a staged battle state for tests/screenshots.
       scenario(id: string): boolean;
@@ -2420,6 +2424,8 @@ window.__rht = {
   cancelOrder: (id) => sim.cancelOrder(id),
   camera: () => stage.viewState(),
   setView: (view) => stage.debugSetView(view),
+  view: () => stage.viewState(),
+  projectToScreen: (point, height) => stage.projectToScreen(point, height),
   viewState: () => stage.viewState(),
   renderDebug: () => world.debugState(),
   scenario: (id) => {
@@ -2509,10 +2515,27 @@ function syncCameraAssist(): void {
 
   if (sim.phase !== "command") {
     lastCommandCameraKey = "";
+    framedBase = undefined;
     return;
   }
 
   const actor = sim.selected;
+  // A picked base opens the big command panel over the lower screen: frame its whole deploy circle
+  // above the panel, once per pick (after the HUD has drawn the panel, so its real top is measured).
+  // Compared by object, not id: ids repeat from battle to battle.
+  if (actor?.kind !== "base") {
+    framedBase = undefined;
+    baseSelectedAt = 0;
+  } else if (framedBase !== actor) {
+    if (!baseSelectedAt) baseSelectedAt = performance.now();
+    const waited = performance.now() - baseSelectedAt;
+    const bar = document.querySelector(".commandbar");
+    // Retry while the player's own pan holds the guide off, but never yank the view late.
+    if (bar && waited > 150 && (stage.frameDisc(actor.position, sim.deployPlacementRadius(actor), bar.getBoundingClientRect().top) || waited > 1500)) {
+      framedBase = actor;
+      baseSelectedAt = 0;
+    }
+  }
   const target = sim.entity(hud.focusedTargetId ?? hud.hoveredTargetId);
   if (!actor || actor.team !== "player" || !target || target.team === "player") {
     lastCommandCameraKey = "";

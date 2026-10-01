@@ -124,6 +124,29 @@ try {
       s.setPendingDeploy && s.setPendingDeploy(undefined);
       return hits;
     });
+    // FIFTH INVARIANT — THE PICKED BASE'S DEPLOY CIRCLE IS IN VIEW (2026-10-01). The command panel
+    // covers the lower screen; picking the base must frame the whole circle above it, on every map.
+    const hidden = await page.evaluate(async () => {
+      const r = window.__rht, s = r.sim;
+      const hq = s.entities.find((e) => e.kind === "base" && e.team === "player");
+      s.deselect();
+      await new Promise((res) => setTimeout(res, 200));
+      s.select(hq.id);
+      await new Promise((res) => setTimeout(res, 2400));
+      const bar = document.querySelector(".commandbar").getBoundingClientRect();
+      const radius = s.deployPlacementRadius(hq), out = [];
+      for (let i = 0; i < 16; i += 1) {
+        const a = (i / 16) * Math.PI * 2;
+        const p = r.projectToScreen({ x: hq.position.x + Math.cos(a) * radius, z: hq.position.z + Math.sin(a) * radius }, 0.1);
+        if (!p.visible || p.y > bar.top) out.push(i);
+      }
+      s.deselect();
+      return out;
+    });
+    if (hidden.length) {
+      failures += 1;
+      console.log(`  FAIL ${mapId}: ${hidden.length}/16 points of the picked base's deploy circle are off screen or under the command panel.`);
+    }
     if (overlays.length) {
       failures += 1;
       console.log(`  FAIL ${mapId}: ${overlays.length} ground overlay(s) drawn past the board edge: ${JSON.stringify(overlays.slice(0, 4))}`);

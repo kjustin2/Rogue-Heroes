@@ -1,4 +1,4 @@
-# Next steps — the roadmap (updated 2026-09-24)
+# Next steps — the roadmap (updated 2026-10-01)
 
 The ONE live planning doc: where the game is, what is next, what is deliberately deferred. Read it at the
 start of every session; update it at the end. Finished work lives in `git log`, not here.
@@ -10,7 +10,7 @@ on purpose — see `CLAUDE.md`). A Skirmish: six themed maps (each with sections
 its own light), three modes (Annihilation, Capture the Flag, Hold the Hill), three factions that look, play
 and research differently, three AI brains (Easy / Normal / Hard differ in intelligence), or Local 2 Players.
 
-State of `main`: `npm run verify` green (556 vitest incl. chaos, balance self-play and the movement +
+State of `main`: `npm run verify` green (558 vitest incl. chaos, balance self-play and the movement +
 projectile oracle), `npm run smoke:core` green (11 smokes), `npm run probe:terrain` 0 offenders,
 `npm run measure:factions` GOAL MET, `npm run soak:gpu` with no mid-resolve shader compiles, perf gate OK.
 
@@ -19,7 +19,9 @@ defenses and strikes, the tutorial, the step-flow set-up, AP wording, push, rota
 pass); the measured faction look (silhouette kits, HQ architecture, machine dress, livery); painted terrain,
 per-map light rigs, N8AO contact shading, map life; Blender HQs, hero props and faction dress; the movement +
 projectile oracle and the seven bugs it found; a perf pass (no per-frame material churn, memoised colour
-blends, static scenery keeps its paint, warmed debris program).
+blends, static scenery keeps its paint, warmed debris program); base circles whole and on the board (the
+board grows behind the bases, spawn spacing, flat zone rings drawn over props); bullets as burning streaks;
+a toon rim on units and a lit lip on mesas; a picked base frames its deploy circle above the command panel.
 
 ## Next — in priority order
 
@@ -53,7 +55,7 @@ blends, static scenery keeps its paint, warmed debris program).
 - **Seat split in balance self-play** sits at 38-42% for the player seat (gate 35-65). Maps are point-
   mirrored, so a layout cannot favour a seat by itself; if `balance.test.ts` tips, widen the seed set before
   tuning, and look at resolve order / who queues first.
-- **`measure:maps` contrast** is just under 0.10 on Ironworks / Karak / Crossfire (0.087-0.094); judged by eye
+- **`measure:maps` contrast** is just under 0.10 on Ironworks / Karak / Crossfire (0.089-0.096); judged by eye
   as fine. Not forced.
 - **`getParameters` ~2.7% of the frame** (perf:profile, stress scene) persists after the material-churn fixes;
   not vertex alphas, not the light set, not instanced shadows. Find what re-triggers three's program

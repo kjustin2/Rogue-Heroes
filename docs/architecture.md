@@ -235,6 +235,18 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   selection pulse is opacity only (scaling a draped ring lifted it off the ground). Gate: `smoke:ground`'s
   overlay invariant (`__rht.auditOverlays()`, all six maps, fault-injection proven). Close-up evidence:
   `npm run shots:gpu -- baseclose` (both bases, every map, selected / deploy / from behind, HUD hidden).
+- **A picked base frames its deploy circle above the command panel** (2026-10-01). The panel covers the lower
+  half of the screen and hid over half the circle. `syncCameraAssist` (main.ts) calls `stage.frameDisc` once
+  per pick (compared by entity OBJECT: ids repeat across battles), after the HUD has drawn the panel so its
+  real top is measured; `frameDisc` grid-searches the smallest zoom + a focus slide toward the camera that puts
+  16 circle points on screen above it, and eases there UNCLAMPED (a base sits near the back edge; the board
+  grows a circle's width behind it). `guideTo` returns false while the player's own pan holds guides off; the
+  pick retries for 1.5 s, then gives up rather than yank the view late. Gate: `smoke:ground`'s fifth
+  invariant (fault-injection proven: 6/16 points hidden without it). Evidence: `shots:gpu -- basesel`.
+- **Toon rim + lit mesa lip** (2026-10-01): unit parts (`spec.rim`, everything but cover) take a narrow
+  `smoothstep` fresnel rim (`applyToonRim`, program key "toon-rim", its own pool so scenery parts never get
+  it: on big flat props it bleached the faces). Mesa caps wear a lighter vertex tone on their rounded rim
+  (bevel CAP*0.45) so each rise is outlined in light at its top, in dark ink at its foot.
 - **The board grows behind the bases** (`fitBases` in `maps.ts`): every base keeps `DEPLOY_RING_FIT` (the
   Vanguard's deploy ring + 0.8m) of board on every side, so the whole deploy ring is placeable. The bases did
   not move (moving them in shrank Ironworks' no-man's land by 17m); `scale.test.ts` measures crossings base to

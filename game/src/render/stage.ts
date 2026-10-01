@@ -586,17 +586,18 @@ export class Stage {
     this.updateCamera();
   }
 
-  guideTo(target: CameraGuideTarget, options: { mode?: CameraGuideMode; strength?: number; durationMs?: number } = {}): void {
-    if (performance.now() < this.guideSuppressUntil) return;
+  guideTo(target: CameraGuideTarget, options: { mode?: CameraGuideMode; strength?: number; durationMs?: number; unclamped?: boolean } = {}): boolean {
+    if (performance.now() < this.guideSuppressUntil) return false;
     this.guide = {
-      focus: this.clampFocus(target.focus),
-      zoom: target.zoom === undefined ? undefined : clamp(target.zoom, 0.62, 1.55),
+      focus: options.unclamped ? { ...target.focus } : this.clampFocus(target.focus),
+      zoom: target.zoom === undefined ? undefined : clamp(target.zoom, 0.62, 2.6), // the wheel's range
       pitch: target.pitch === undefined ? undefined : clamp(target.pitch, 0.12, 1.18),
       yaw: target.yaw,
       mode: options.mode ?? "aim",
       strength: options.strength ?? (options.mode === "resolve" ? 2.0 : 3.2),
       expiresAt: performance.now() + (options.durationMs ?? (options.mode === "resolve" ? 260 : 1500)),
     };
+    return true;
   }
 
   viewState(): { x: number; z: number; zoom: number; yaw: number; pitch: number } {
@@ -669,17 +670,54 @@ export class Stage {
   }
 
   private updateCamera(): void {
+    this.placeCamera(this.camera, this.focus, this.zoom, this.shakeOffset, this.lookShake);
+  }
+
+  private placeCamera(camera: THREE.PerspectiveCamera, focus: Vec2, zoom: number, shake?: THREE.Vector3, look?: THREE.Vector3): void {
     const azimuth = this.baseAzimuth + this.orbitYaw;
     const horizontal = Math.cos(this.orbitPitch) * this.baseDistance;
-    const offsetX = Math.sin(azimuth) * horizontal;
-    const offsetZ = Math.cos(azimuth) * horizontal;
-    const offsetY = Math.sin(this.orbitPitch) * this.baseDistance;
-    this.camera.position.set(
-      this.focus.x + offsetX * this.zoom + this.shakeOffset.x,
-      offsetY * this.zoom + this.shakeOffset.y,
-      this.focus.z + offsetZ * this.zoom + this.shakeOffset.z
+    camera.position.set(
+      focus.x + Math.sin(azimuth) * horizontal * zoom + (shake?.x ?? 0),
+      Math.sin(this.orbitPitch) * this.baseDistance * zoom + (shake?.y ?? 0),
+      focus.z + Math.cos(azimuth) * horizontal * zoom + (shake?.z ?? 0)
     );
-    this.camera.lookAt(this.focus.x + this.lookShake.x, this.lookShake.y, this.focus.z + this.lookShake.z);
+    camera.lookAt(focus.x + (look?.x ?? 0), look?.y ?? 0, focus.z + (look?.z ?? 0));
+  }
+
+  /**
+   * Ease the camera to the closest view that shows a whole ground disc (a base's deploy circle)
+   * on screen ABOVE `panelTopPx` (the command panel's top edge): zoom out only as far as needed,
+   * sliding the focus toward the camera so the disc rides up the screen. Keeps yaw and pitch.
+   * False while the player's own camera input holds the guide off (retry later).
+   */
+  frameDisc(center: Vec2, radius: number, panelTopPx: number): boolean {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const bottomNdc = Math.min(0.2, 1 - (2 * (panelTopPx - rect.top)) / Math.max(1, rect.height)) + 0.04;
+    const azimuth = this.baseAzimuth + this.orbitYaw;
+    const probe = this.camera.clone();
+    const p = new THREE.Vector3();
+    const fits = (): boolean => {
+      probe.updateMatrixWorld();
+      for (let i = 0; i < 16; i += 1) {
+        const a = (i / 16) * Math.PI * 2;
+        p.set(center.x + Math.cos(a) * radius, 0.1, center.z + Math.sin(a) * radius).project(probe);
+        if (p.z >= 1 || Math.abs(p.x) > 0.94 || p.y > 0.9 || p.y < bottomNdc) return false;
+      }
+      return true;
+    };
+    // ponytail: brute-force grid (~40 zooms x ~40 shifts, 16 projections each), once per base pick.
+    for (let zoom = Math.max(0.62, this.zoom); zoom <= 2.6; zoom += 0.05) {
+      for (let shift = 0; shift <= radius * 2; shift += 0.5) {
+        // Unclamped: a base sits near the back edge, so the slide toward the camera runs past the
+        // pan limit (the board grows a deploy circle's width behind every base, so there is ground).
+        const focus = { x: center.x + Math.sin(azimuth) * shift, z: center.z + Math.cos(azimuth) * shift };
+        this.placeCamera(probe, focus, zoom);
+        if (fits()) {
+          return this.guideTo({ focus, zoom }, { durationMs: 1400, unclamped: true });
+        }
+      }
+    }
+    return true; // nothing fits (a tiny window): leave the camera alone
   }
 }
 

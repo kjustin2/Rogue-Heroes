@@ -4516,6 +4516,7 @@ export class WorldRenderer {
   
     spec.roughness = mesh.userData.roughness as number;
     spec.metalness = mesh.userData.metalness as number;
+    spec.rim = entity.kind !== "cover";
     mesh.material = partMaterial(spec);
   }
 
@@ -6034,6 +6035,26 @@ function roleColor(entity: CombatEntity, role: PartRole, fallback: number): numb
     return blendHex(fallback, FACTION_TINT.player, 0.1);
   }
   return fallback;
+}
+
+/**
+ * TOON RIM (2026-09-24, owner: "units could look even cooler"): a thin bright edge where a surface turns
+ * away from the camera, inside the inverted-hull ink line -- the polished-toon read (Hades / BotW-style
+ * rim). It BRIGHTENS the surface's own colour (keeps the hue; adding white would bleach units pale) and the
+ * band is narrow because kit parts are flat-shaded: a wide band lit whole facets. Top-facing edges get a
+ * little more (a sky rim). One program variant for every pooled part material ("toon-rim").
+ */
+function applyToonRim(material: THREE.MeshToonMaterial): void {
+  material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace("#include <opaque_fragment>", `{
+  vec3 rimN = normalize(normal);
+  float facing = clamp(dot(rimN, normalize(vViewPosition)), 0.0, 1.0);
+  float rim = smoothstep(0.66, 0.74, 1.0 - facing) * (0.75 + 0.25 * clamp(rimN.y, 0.0, 1.0));
+  outgoingLight = mix(outgoingLight, outgoingLight * 1.55 + 0.03, rim * 0.55);
+}
+#include <opaque_fragment>`);
+  };
+  material.customProgramCacheKey = () => "toon-rim";
 }
 
 // MEMOISED (perf pass, 2026-09-24): roleColor calls this for every part of every unit every frame, and
@@ -7758,7 +7779,7 @@ function makeTerrainBlocks(groundColor: number, accentColor: number, surface: Gr
       push(sides, w + spread * 2, h, d + spread * 2, cx, y0 + h / 2, cz, 0, 0, Math.min(0.22, h * 0.4), faces, STRATA[ti]);
     }
 
-    push(caps, w + 0.02, CAP, d + 0.02, cx, block.height - CAP / 2, cz, 0, 0, 0.03);
+    push(caps, w + 0.02, CAP, d + 0.02, cx, block.height - CAP / 2, cz, 0, 0, CAP * 0.45);
   }
 
   const sideGeo = sides.length ? mergeGeometries(sides, false) : null;
@@ -7791,6 +7812,12 @@ function makeTerrainBlocks(groundColor: number, accentColor: number, surface: Gr
     // The caps share the ground's own surface, tiled in world space so a mesa top continues the
     // terrain rather than wearing a stretched copy of it.
     rewriteWorldUvs(capGeo, GROUND_TILE);
+    // LIT LIP: the cap's rounded rim and thin edge wear a lighter tone than its flat top, so every
+    // mesa's outline is drawn against the ground below in light (the ink rim draws its foot in dark).
+    const capN = capGeo.getAttribute("normal");
+    const lip = new Float32Array(capN.count * 3);
+    for (let i = 0; i < capN.count; i += 1) lip.fill(capN.getY(i) > 0.97 || capN.getY(i) < -0.5 ? 1 : 1.42, i * 3, i * 3 + 3);
+    capGeo.setAttribute("color", new THREE.BufferAttribute(lip, 3));
     const capMap = surface.map.clone();
     capMap.needsUpdate = true;
     capMap.repeat.set(1, 1);
@@ -7802,6 +7829,7 @@ function makeTerrainBlocks(groundColor: number, accentColor: number, surface: Gr
       normalMap: capNormal,
       normalScale: new THREE.Vector2(0.32, 0.32),
       color: capColor,
+      vertexColors: true,
       roughness: 0.9,
       metalness: 0.03,
       polygonOffset: true,
@@ -8226,6 +8254,8 @@ export interface PartMatSpec {
   transparent: boolean;
   opacity: number;
   depthWrite: boolean;
+  /** Units, vehicles and buildings get the toon rim; scenery does not (big flat-shaded props bleached). */
+  rim?: boolean;
 }
 
 const _partSpec: PartMatSpec = {
@@ -8241,6 +8271,7 @@ const _partSpec: PartMatSpec = {
 const _poolColor = new THREE.Color();
 const _poolEmissive = new THREE.Color();
 const partMaterialPool = new Map<number, PartMaterial>();
+const rimPartMaterialPool = new Map<number, PartMaterial>(); // a separate pool: the key has no spare bit
 
 const q = (value: number, steps: number): number => Math.min(steps, Math.max(0, Math.round(value * steps)));
 
@@ -8250,7 +8281,8 @@ function partMaterial(spec: PartMatSpec): PartMaterial {
   const i = Math.min(127, Math.round(spec.emissiveIntensity / 0.05));
   const key = ((((c * 32768 + e) * 128 + i) * 16 + q(spec.roughness, 15)) * 16 + q(spec.metalness, 15)) * 16
     + q(spec.opacity, 7) * 2 + (spec.depthWrite ? 1 : 0);
-  let material = partMaterialPool.get(key);
+  const pool = spec.rim ? rimPartMaterialPool : partMaterialPool;
+  let material = pool.get(key);
   if (!material) {
     // Same stepped toon ramp as the stylized hulls (models.ts), so a trooper and the tank beside
     // it shade in the same four bands. Roughness/metalness are kept in the pool key for the
@@ -8268,8 +8300,9 @@ function partMaterial(spec: PartMatSpec): PartMaterial {
       opacity: q(spec.opacity, 7) / 7,
       depthWrite: spec.depthWrite,
     });
+    if (spec.rim) applyToonRim(material);
     material.userData.shared = true; // pooled — disposeSubtree must never free it
-    partMaterialPool.set(key, material);
+    pool.set(key, material);
   }
   return material;
 }
@@ -8284,6 +8317,7 @@ function pooledPartMaterial(color: number, emissive: number, emissiveIntensity: 
   _partSpec.transparent = false;
   _partSpec.opacity = 1;
   _partSpec.depthWrite = true;
+  _partSpec.rim = false; // the spec object is shared with paintPart; never inherit its last value
   return partMaterial(_partSpec);
 }
 
