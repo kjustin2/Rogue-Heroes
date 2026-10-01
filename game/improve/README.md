@@ -6,7 +6,7 @@
 | `npm run vision [-- <scenario>\|all]` | Per scenario: `clean.png`, `annotated.png` (debug overlay labels every unit), `scene.json` (`describeScene()` + `diagnostics()`), `report.md`. Hand the PNG + report to an agent to map pixels to state. Output: `improve/vision/` (gitignored). |
 | `npm run improve:gallery` | One full-FX frame per registered scenario (`src/game/scenarios.ts`) with objective image stats. Output: `improve/scenario-gallery/` (gitignored). |
 
-`lib/harness.mjs` is the shared smoke/shot harness (see CLAUDE.md "Smokes"): `launchGame`,
+`lib/harness.mjs` is the shared smoke/shot harness (see `docs/testing.md`, "Smokes"): `launchGame`,
 `deployBattle` (deploy through the seam — never race the menu's deferred start), `assertLit`,
 `endTurnAndSettle`, `waitForCommand`.
 

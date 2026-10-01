@@ -81,9 +81,9 @@ game/
   improve/       perf bench + baseline, scenario gallery, the shared test harness
   art/           Blender scripts that author the infantry / props / vehicles kits
   public/models/ the committed GLB kits (the game also runs with this folder empty)
-docs/            next-steps.md (the roadmap — start here), research digests
-CLAUDE.md        the detailed engineering guide: architecture, rules, hard-won lessons — read it
-                 before changing rendering, terrain or the test harness
+docs/            next-steps.md (the roadmap — start here); architecture, game-systems, testing,
+                 art-pipeline, ui (the deep reference per area); research digests
+CLAUDE.md        the always-loaded agent guide: workflow, hard rules, silent-breakage invariants, doc index
 ```
 
 `window.__rht` is the automation seam every smoke drives (start a battle, stage a scenario, read

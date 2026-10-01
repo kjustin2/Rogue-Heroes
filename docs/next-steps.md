@@ -1,177 +1,65 @@
-# Next steps — the roadmap (updated 2026-09-23)
+# Next steps — the roadmap (updated 2026-09-24)
 
-This is the ONE live planning doc. Read it at the start of every session; update it at the end.
-Setup for a fresh clone: root `README.md`. Engineering rules: `CLAUDE.md`.
+The ONE live planning doc: where the game is, what is next, what is deliberately deferred. Read it at the
+start of every session; update it at the end. Finished work lives in `git log`, not here.
 
 ## Where the game is
 
-**Skirmish is the whole game until it is perfected** (owner's rule — Campaign and Skirmish Run were
-deleted on purpose; see "SKIRMISH ONLY" in `CLAUDE.md` for the ban list). A Skirmish is: six themed
-maps, each with its own sections, landmarks and hazard event; three modes (Annihilation, Capture the
-Flag, Hold the Hill); three factions that look, play and research differently; three AI brains
-(Easy / Normal / Hard differ in intelligence, not just stats); or Local 2 Players hotseat.
+**Skirmish is the whole game until it is perfected** (owner's rule; Campaign and Skirmish Run were deleted
+on purpose — see `CLAUDE.md`). A Skirmish: six themed maps (each with sections, a landmark, a hazard event and
+its own light), three modes (Annihilation, Capture the Flag, Hold the Hill), three factions that look, play
+and research differently, three AI brains (Easy / Normal / Hard differ in intelligence), or Local 2 Players.
 
-State of the checkout: `npm run verify` green (typecheck, script syntax, 430+ vitest incl. chaos +
-balance self-play, build); `npm run smoke:core` green; `npm run perf` OK against the baseline;
-`npm run smoke:electron` green. Everything is committed on `main`.
+State of `main`: `npm run verify` green (556 vitest incl. chaos, balance self-play and the movement +
+projectile oracle), `npm run smoke:core` green (11 smokes), `npm run probe:terrain` 0 offenders,
+`npm run measure:factions` GOAL MET, `npm run soak:gpu` with no mid-resolve shader compiles, perf gate OK.
 
-What was built in the last stretch (for context, not to redo): one toon art direction end to end
-(Blender kits for infantry, props, vehicles — no Meshy anywhere), distance-locked infantry gait with
-IK knees, per-family death animations, ballistic projectile FX with a no-pop rule, deploy-anywhere
-placement, draped ground overlays, themed maps, the research table, achievements, the toon UI with
-measured readability gates, and a whole-game glitch sweep whose findings were all fixed.
-
-## Playtest round 1 (2026-09-23) — done, awaiting the owner's next pass
-
-Owner report → fixed: selected unit blown out white (selection light + cone removed); move lines cut
-through slabs (draped); sawtooth "teeth" on the deploy ring at the Ironworks rim (conservative drape);
-▲ CLIMB tags on move previews; newly unlocked Deploy cards stuck on an amber flash frame (flash removed,
-NEW badge kept); Overwatch removed (see CLAUDE.md ban); Derelict Turret explains itself, has a Move to
-Capture button, becomes "Captured Turret" you select and fire (Tab reaches owned turrets).
-**Not reproduced:** "the picked Deploy card moves to first in the row" — card positions are identical
-before/after picking at 1800×980; likely the same stuck-flash bug. Ask the owner if it persists.
-
-## Playtest round 2 (2026-09-23) — done
-
-Maps decluttered to 8–14 deliberate props each with a two-tank gap everywhere (see CLAUDE.md "MAPS ARE
-MINIMAL"); Striker $280 → $340 (open maps put it at 2.83x the median dmg/$, now 2.33x). Deck cards are two
-rows so a price can never be pushed out; the UI audit's blind spot for wholly-clipped text is closed and
-fault-injected. 2-player: handoff card rewritten (whose turn / one instruction / intel box / go), faction
-blurbs shortened, preview caption no longer repeats the list. Menu state leak ("brightness stayed down
-after Settings") fixed at the root — derived from the DOM — and gated. Intro rail cancels on leaving.
-Seat split in balance self-play is 35% (gate 35–65): at the edge; widen seeds before tuning if it tips.
-
-## Owner's batch 3 (2026-09-24) — the next rounds, in this order
-
-1. ~~Unit value scaling~~ DONE: tank shell 55→78 (one-shots a trooper), armour ×1.3→×1.6, $450→$600
-   (self-play 2.45x median, in band); Deploy tooltips show HP + damage a shot (`troopSheet`); the AI
-   wishlist discount 20%→30% a place (a $600 tank outbid the counter at the head of the list).
-   Found on the way: the Ironworks slag spill alternated corners starting with the PLAYER's, and
-   self-play read Ironworks 1-13 for the enemy seat; both furnaces now vent together. Every map still
-   leans a little to the enemy seat (38% overall, gate 35%) -- unexplained, not the slag; look at
-   resolve order / who queues first before any tuning.
-2. ~~Fun physics~~ DONE (renderer `flyThrownBody`: a blast/push throw FLIES — arc, backward tumble, landing dust; vehicles hop and rock; `shots:gpu thrown`): explosions / rockets throw INFANTRY with a proper ragdoll-ish arc + tumble + land
-   (vehicles rock, never fly). Builds on `applyKnockback` + the THROWN death family.
-3. ~~Base upgrade clarity~~ DONE: the card reads "Income +$50/turn · $200 · pays back in 4 turns";
-   Command reads "Base acts twice a turn".
-4. ~~Tech unlocks new Defenses and Support powers~~ DONE: Gun Turret behind Assault, Mortar Turret behind
-   Ordnance; each faction has a strike + a utility power (Recon Sweep / Smoke Screen / Resupply Drop), all
-   research-gated.
-5. ~~Tutorial~~ DONE (11 one-idea cards: AP, simultaneous turns, shots at movers, climb, strike/push, cover, support cooldowns, hazards, capture): quick but complete — aim follows a moving target or its old spot? support cooldown +
-   re-buy, CP, climb, capture, cover, deploy ring, End Turn resolves both sides at once.
-6. **Faction identity, much stronger** — OPTIONS WRITTEN, awaiting the owner's pick: `docs/overhaul-options.md` items 12–15. in look AND play (they still read alike).
-7. **Look-and-feel overhaul** — OPTIONS WRITTEN (`docs/overhaul-options.md` items 1–11), awaiting the pick. (toon, "AAA"): infantry up to the tank's quality bar; maps and map props
-   more striking; projectiles cooler (grenades already good — use them as the bar).
-8. ~~GUI flows like a pro web designer~~ DONE (set-up is Battlefield → Sides → Rules with a stepper, a summary and Deploy now) (owner: "showing too much... wasn't clear what to do"):
-   Skirmish set-up as a STEP flow (map → factions → mode → difficulty → go), not one wall.
-9. ~~Tech tree clarity~~ DONE: NEW UNITS / UPGRADE tags; doctrines list units + defenses + strikes.
-10. ~~AP made clear~~ DONE (unused-AP prompt with "don't show again", Gameplay toggle; tutorial part is item 5): how many each unit has and what spends them; an "unused CP" warning on End Turn
-   with "don't show again", and a Gameplay option to turn it back on/off.
-11. ~~Options split~~ DONE (Settings tabs: Display & Sound / Gameplay / Controls): Settings (display / audio / controls) vs Gameplay (warnings, hints, pace ...).
-12. **Map backgrounds** — see `docs/overhaul-options.md` items 4–5. (skyline / outer ground) look low-detail: enhance.
-13. ~~Progression per game~~ DONE (costs roughly halved, nothing callable on turn 1): tech CHEAP to start so every game explores a path; the opening is
-   limited (no air strikes at turn 1 -- strikes and defenses unlocked by tech, see item 4).
-
-14. ~~Money display~~ DONE: a big amber money plate with next turn's income under it.
-15. ~~Map event zones~~ DONE: hovering a telegraphed zone says what lands and when; clicking it toasts the full line.
-16. ~~Strike (melee) reach~~ DONE (every infantry strike rushes 3.5m in one order; the Striker charges 6.5m): a unit within strike range but not adjacent closes AND strikes in ONE order
-   (the striker's charge, for every infantry melee), and the range is long enough to be usable.
-17. ~~Push ability~~ DONE (`queueShove`; ring-out off the arena edge, drowning in water, thrown death; vehicles barely budge): shove a unit far; into water / off the map kills it, with a fun animation.
-18. ~~Unit action buttons cramped~~ DONE: wider floor, 10px gutters, taller buttons.
-19. ~~Rename CP to AP~~ DONE in every player-visible string (tutorial explanation: item 5).
-20. ~~No objects near base spawns~~ DONE: `BASE_CLEAR` keeps every deploy ring empty (props.test).
-21. ~~Rotatable placements~~ DONE (T / Rotate ⟳ in 45° steps; a wall ghost shows the facing): a wall's facing and an airstrike's line direction are the player's choice.
-
-## Visual goal (2026-09-24) — MET
-
-Owner: "infantry all look the same across factions and bases don't look different enough ... set a goal and
-hit it". Goal: every faction pair differs in SHAPE (silhouette IoU <= 0.80 infantry / <= 0.70 HQ) and COLOUR
-(>= 40 degrees hue) -- measured by `npm run measure:factions` -- plus infantry on the tank's ink line, a stance
-per faction and per-part hit reactions, with perf and animation gates green. Result: 0/15 -> 15/15 pairs; see
-CLAUDE.md "THE FACTION READ IS MEASURED". Next visual steps are the rest of `docs/overhaul-options.md`
-(maps/backgrounds 4-6, props 7-8, projectiles 9-11) once the owner has played this.
-
-## Visual polish round (2026-09-24) — done
-
-Per-map light rigs + N8AO contact AO + faction light pools; faction HQs, 9 hero props and 6 faction dress pieces
-authored in Blender; map life (chimney smoke, embers, flare-off, sparks, dust devils). See CLAUDE.md "LIGHT IS
-PER MAP" onward. `measure:factions` GOAL MET; `measure:maps` contrast still short on Ironworks / Karak / Crossfire
-(0.087-0.094 vs 0.10) — judged by eye as fine, noted not forced. Known older item: `soak:gpu` reports one toon
-program compiling on the first resolve (predates this round; present on the prior build).
+Built most recently (for context): owner batch 3 (unit value scaling, thrown-body physics, research-gated
+defenses and strikes, the tutorial, the step-flow set-up, AP wording, push, rotatable placement, fewest-words
+pass); the measured faction look (silhouette kits, HQ architecture, machine dress, livery); painted terrain,
+per-map light rigs, N8AO contact shading, map life; Blender HQs, hero props and faction dress; the movement +
+projectile oracle and the seven bugs it found; a perf pass (no per-frame material churn, memoised colour
+blends, static scenery keeps its paint, warmed debris program).
 
 ## Next — in priority order
 
-0. **Faction identity (2026-09-23)** is merged to `main` (PR #3): each faction owns
-   its own units, one strike and one doctrine rule (Rapid Response / Scavengers / Dig In), plus
-   helmet colours and vehicle add-ons. Playtest all three against the bot; the numbers most likely
-   to want tuning are the 30% bounty, the 0.75 dig-in multiplier and `enemyStrikeAct`'s threshold.
-   Details in `CLAUDE.md` ("FACTIONS play, look and fight differently").
-1. **Owner playtest of Skirmish on the standalone build**, then iterate off what he reports.
-   Build it with `cd game && npm run standalone` (or `npm run dist:exe` on Windows). Areas that
-   changed most and have had the least human play: deaths, projectiles, the research table, the
-   Ironworks slag spill, the three AI brains, hotseat, themed map layouts. Every report becomes a
-   measured repro (a `shots:gpu` case, a filmstrip, or a test) BEFORE a fix — see "How to work".
-2. **Balance pass from play**, not from self-play alone. `balance.test.ts` gates the extremes
-   (per-kind damage per $ within 0.5x–2.5x of the median; seats 35–65%) but the striker and tank
-   sit near the top of the band. Tune `src/game/units.ts` only with the self-play table in hand.
-3. **Map terrain vocabulary.** Verdant Pass is DONE (2026-09-23): its two stepped pyramid
-   mountains are now farmed TERRACES, three shelves per valley side climbing to the map edge in
-   0.8 risers with jogged lips, hedges and stumps on the lower shelf. Karak is the one map still
-   built on stepped pyramid mesas (NW/SE); a canyon, crater ring or dune field would give it its
-   own landform. Constraints: impassable = step > `TERRAIN_STEP` or water; shelves must be deep
-   enough to stop on (`spawnClearance`: 1.4m infantry, ~2.6m tank); `scatter.test.ts` must stay
-   green; rerun balance self-play (the Verdant change moved Verdant from 4 draws to 2 and pushed
-   the bomber row under the floor, see the next item).
-   **Bomber AI (found on the Verdant pass).** The bot only bombs a foe that is already beneath
-   it at the START of a turn; flying toward one spends the turn, so 34 self-play bombers averaged
-   ~27 damage a game and the row sits at the band floor on noise alone. Tried in the Verdant
-   branch and reverted (too big a balance swing for a map change): a bombing run (move over the
-   nearest ground foe in reach, release on arrival — an actor's orders run in sequence) took the
-   bomber to 1.8x the median; requiring a group of two took it to 2.3x and sank the APC to 0.38x.
-   So the aircraft is fine and the AI is what is weak. The fix is that run plus a bomber retune
-   (fewer loads or a smaller carpet) in one change, then take `bomber` back out of `UNGATED`
-   in `balance.test.ts`.
-4. **Remaining unit-identity ideas** (only if the owner wants more depth):
-   - Engineer: deployable bridge span or sandbag line (reuse the Defenses placement flow).
-   - Flak: a one-turn tracer wall that reveals and blocks air movement through it (needs a new
-     persistent, serialized, rendered line object — that is why it was skipped).
-   - Hit reactions per body part: head snaps back, leg buckles, pack spins (today one shove).
-   - **Attack arms (found by the 2026-09-23 attack audit, not fixed):** the Blender motion banks'
-     `shoulderPitch` / `shoulderYaw` / `offhandPitch` channels never reach an arm, because arms
-     are `"body"`-part meshes and the pose code's `part.role === "core"` branch catches them first
-     (they get the torso's pitch instead). Every attack still animates (weapon, torso, recoil,
-     rounds), but the arms hold still. Before moving the limb branches up, settle the SIGN on a
-     filmstrip: the pistol and launcher clips raise the arm with NEGATIVE shoulderPitch, while the
-     melee blade (which is live) is swung with `rotation.x -= shoulderPitch` — the two readings
-     disagree, and the arm has to follow the blade. Films: `shots:filmstrip -- pistol launcher melee`.
-5. **Elites / bosses** survive in code (`debugSpawn` options + the top-of-screen boss bar) for a
-   possible Skirmish set piece — only when asked.
+1. **Owner playtest on the standalone build** (`cd game && npm run standalone`, or `npm run dist:exe`), then
+   iterate off what he reports. Every report becomes a measured repro (a `shots:gpu` case, a filmstrip or a
+   test) BEFORE a fix.
+2. **Open overhaul picks** — `docs/overhaul-options.md` (infantry direction 1-3, landmark pass 6, destruction
+   states 8, projectile trails / impact marks / muzzle pass 9-11, faction mechanics 14, faction voice 15).
+   Implement only what the owner picks.
+3. **Bomber AI.** The bot only bombs a foe already beneath it at the start of a turn, so self-play bombers
+   average ~27 damage a game and the row sits at the band floor (it is in `UNGATED` in `balance.test.ts`).
+   A bombing run (move over the nearest ground foe, release on arrival) alone took it to 1.8x the median;
+   do the run AND a bomber retune (fewer loads or a smaller carpet) in one change, then un-gate it.
+4. **The AI never uses Push** (the player's shove / ring-out). Add it to the Hard brain where a foe stands
+   within shove reach of water or the arena edge.
+5. **Attack arms.** The Blender motion banks' `shoulderPitch` / `shoulderYaw` / `offhandPitch` never reach an
+   arm: arms are `"body"`-part meshes and the pose code's `part.role === "core"` branch catches them first.
+   Every attack still animates (weapon, torso, recoil) but the arms hold still. Settle the SIGN on a
+   filmstrip first (pistol / launcher clips raise with NEGATIVE shoulderPitch; the melee blade is swung
+   with `rotation.x -= shoulderPitch`): `npm run shots:filmstrip -- pistol launcher melee`.
+6. **Karak's landform.** It is the last map built on stepped pyramid mesas; a canyon, crater ring or dune
+   field would give it its own. Constraints: impassable = step > `TERRAIN_STEP` or water; shelves deep enough
+   to stop on (`spawnClearance`); `scatter.test.ts`, `props.test.ts`, `movement.test.ts` green; rerun self-play.
+7. **Remaining unit-identity ideas** (only if asked): engineer bridge span / sandbag line; a flak tracer wall
+   that blocks air movement (needs a new persistent, serialized line object).
+8. **Elites / bosses** survive in code (`debugSpawn` options + the boss bar) for a possible set piece — only
+   when asked.
 
 ## Known and deliberately deferred (do not re-chase without new evidence)
 
-- **Balance self-play seat split moved toward the gate's low edge** with the 2026-09-23 map-props
-  pass: player seat 40% of decided games (8 / 12, 16 draws) on top of the Verdant terraces, vs
-  58% (11 / 8) before either change (35% with the props alone). Maps are point-mirrored, so a layout
-  cannot favour a seat by itself; at ~20 decided games this is inside the noise, but a later
-  layout change may tip `balance.test.ts` red. If it does, widen the seed set before tuning.
-
-- `soak:gpu` sees ONE toon program compile on the first resolve (a transparent toon material
-  created mid-resolve; key diff field #51). Not a visible hitch — max frame 20.8 ms, same as later
-  resolves. Twin-cloning both vertex-colour states did not catch it; find the material created
-  mid-resolve before trying again.
-- Command-phase shimmer on grass and trees is the WIND (ground detail + tree sway), not a glitch.
-- The real-GPU tools (`soak:gpu`, `shots:gpu`, `probe:intro`) only mean something on a machine
-  with a GPU. In a cloud container they run under `xvfb-run` on SwiftShader: use them to check that
-  a scene renders and to read layouts, not to judge frame times or subtle shading.
-  There a resolve takes ~40s of wall time (the clock runs on rendered frames), which is why
-  `smoke:flow` now waits up to 120s for a turn; under `?lowfx=1` SwiftShader also drops the big
-  ground plane in wide views (sky shows through), on `main` as much as anywhere.
-
-## How to work (the rules that kept this repo sane)
-
-- **Gate every commit with `npm run verify`**; run `npm run test:full` before handing a build over.
-- **Never claim a visual change from code.** Screenshot it (`npm run shots:gpu -- <case>`), judge
-  motion on filmstrips (`shots:filmstrip`, `shots:step`), and READ the images.
-- **Bisect before you tune** any rendering artefact (see the hatching ledger in `CLAUDE.md`).
-- One test script at a time (they share the GPU); never leave a dev server running.
-- The owner tests on the standalone build, not the dev server. Hand him a build, not a report.
+- **Seat split in balance self-play** sits at 38-42% for the player seat (gate 35-65). Maps are point-
+  mirrored, so a layout cannot favour a seat by itself; if `balance.test.ts` tips, widen the seed set before
+  tuning, and look at resolve order / who queues first.
+- **`measure:maps` contrast** is just under 0.10 on Ironworks / Karak / Crossfire (0.087-0.094); judged by eye
+  as fine. Not forced.
+- **`getParameters` ~2.7% of the frame** (perf:profile, stress scene) persists after the material-churn fixes;
+  not vertex alphas, not the light set, not instanced shadows. Find what re-triggers three's program
+  lookup before trying again.
+- The heavy gunner's Syndicate / Bastion outline pair sits near the 0.80 IoU line (0.78); watch it when
+  changing faction dress.
+- Command-phase shimmer on grass and trees is the WIND, not a glitch.
+- Real-GPU tools (`soak:gpu`, `shots:gpu`, `probe:intro`) only mean something on a machine with a GPU; under
+  SwiftShader use them to check a scene renders and to read layouts, not to judge frame times.

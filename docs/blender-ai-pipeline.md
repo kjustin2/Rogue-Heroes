@@ -213,7 +213,7 @@ prototyping/inspection aid, not the pipeline.** Everything below sharpens that.
 29. **Terrain is not a Blender deliverable here.** Every reference for stylized terrain export is
     a static sculpt; this game scales every map at load (`scaleMapDef`) and mutates a terrain
     singleton. The correct import is **tiles/kits into the generator**, not a baked landscape.
-    Source: repo `CLAUDE.md` (Architecture) + item 27.
+    Source: `docs/architecture.md` + item 27.
     *Applies:* author reusable 1x1x1 tiles (cliff face, mesa cap edge trim, shore lip) and let
     `makeTerrainBlocks` place them — same contract as kit parts.
 
@@ -250,7 +250,7 @@ prototyping/inspection aid, not the pipeline.** Everything below sharpens that.
 ## Implement next (ranked by visual impact ÷ effort)
 
 **Status 2026-09-18:** items **1, 3, 4, 5, 10, 14** are DONE (Cycles vertex AO, validator + selftest,
-props kit with 29 seeded variants incl. tree canopies, warm/cool ramp, CLAUDE.md Blender rules);
+props kit with 29 seeded variants incl. tree canopies, warm/cool ramp, docs/art-pipeline.md Blender rules);
 item 2 was already true (pooled parts are `MeshToonMaterial`). Remaining, in priority order: 6
 (gltf-transform post-pass on the kits), 7 (authored pivots as extras), 8/9 (walk-cycle channels,
 pose bank), 11 (sway weights in `COLOR_1`), 12 (cliff skirt — hatching-ledger blast radius), 15.
@@ -259,7 +259,7 @@ pose bank), 11 (sway weights in `COLOR_1`), 12 (cliff skirt — hatching-ledger 
 retired the Meshy pipeline entirely; item 13 (palette atlas on the Meshy hulls) is moot and dropped. `art/vehicles/
 author_vehicles.py` → `vehicles-kit.glb` + generated `vehiclesLayout.ts`; one mesh per damage-model
 part for tank / APC / artillery / gun turret / HQ, single meshes for crates / sandbags / barricade;
-pooled toon parts with an inverted-hull ink rim. See CLAUDE.md "Meshy is gone; vehicles are a
+pooled toon parts with an inverted-hull ink rim. See docs/art-pipeline.md "Meshy is gone; vehicles are a
 Blender kit" for the rules and the two gotchas (world-space `add_box` meshes, bevel vs greeble
 thickness).
 
@@ -307,8 +307,8 @@ thickness).
 13. ~~**Palette atlas for static props** via `gltf-transform palette` on the Meshy hulls~~ (DROPPED 2026-09-20: no Meshy hulls) + a UV-offset
     tint instead of a material swap in `tintModelToMap`. Touches: `build-models.mjs`, `models.ts`.
 14. **blender-mcp as an inspection REPL only**: document the `--background`-first rule and the
-    localhost/safe-mode caveat in `CLAUDE.md`; no write path to `public/models/` from a live session.
-    Touches: `CLAUDE.md` (Blender section).
+    localhost/safe-mode caveat in `docs/art-pipeline.md`; no write path to `public/models/` from a live session.
+    Touches: `docs/art-pipeline.md` (Blender rules).
 15. **Far LOD for the lineup/tactical zoom** via `gltf-transform simplify --ratio 0.5` on the props
     kit, swapped by camera distance. Touches: `scripts/pack-kit.mjs`, `worldRenderer.ts`
     (`buildCover` LOD pick). Lowest priority: perf is not the bottleneck today (`perf-baseline.json`).

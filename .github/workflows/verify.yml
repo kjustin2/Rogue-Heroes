@@ -1,0 +1,32 @@
+# The commit gate, on every push and PR: typecheck -> script syntax -> vitest (pure sim, incl. chaos,
+# balance self-play and the movement + projectile oracle) -> production build. The GPU smokes and
+# real-GPU probes stay local (they need a display and a real GPU; see docs/testing.md).
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: game
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1" # verify never launches Electron
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: game/package-lock.json
+      - run: npm ci
+      - run: npm run verify

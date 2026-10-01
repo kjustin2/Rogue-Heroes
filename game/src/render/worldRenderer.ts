@@ -377,6 +377,34 @@ export class WorldRenderer {
 
   // Dynamic map events: ease the sandstorm haze (fog + sky tint) and draw pulsing danger rings
   // over barrage/collapse zones so the player can read — and clear — the threatened ground.
+  // ENVIRONMENT MATERIAL POOL (2026-09-24, perf pass). syncEnvironment rebuilds its overlays every frame and
+  // used to allocate a fresh material for each one -- ~15 per frame, each a first-sight program lookup for
+  // three (getParameters ~3% of the frame in perf:profile) plus garbage. Same parameters (opacity quantised
+  // to 1/40) = the same shared material; the pool is bounded by the handful of call sites x 41 opacities.
+  private readonly envMats = new Map<string, THREE.Material>();
+  /** One pooled material per aura colour; syncAuras pulses its opacity every frame. */
+  private readonly auraMats = new Map<number, THREE.MeshBasicMaterial>();
+  private auraMaterial(color: number): THREE.MeshBasicMaterial {
+    let mat = this.auraMats.get(color);
+    if (!mat) {
+      mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false });
+      mat.userData.shared = true;
+      this.auraMats.set(color, mat);
+    }
+    return mat;
+  }
+  private envMat<M extends THREE.Material, P extends { color?: THREE.ColorRepresentation; opacity?: number }>(ctor: new (params: P) => M, params: P): M {
+    const q = { ...params, opacity: params.opacity === undefined ? undefined : Math.round(params.opacity * 40) / 40 };
+    const key = `${ctor.name}|${JSON.stringify(q)}`;
+    let mat = this.envMats.get(key) as M | undefined;
+    if (!mat) {
+      mat = new ctor(q);
+      mat.userData.shared = true; // disposeAndClear(environmentRoot) leaves it alone
+      this.envMats.set(key, mat);
+    }
+    return mat;
+  }
+
   private syncEnvironment(sim: TacticalSim): void {
     this.disposeAndClear(this.environmentRoot);
     // DUST DEVILS on the Dust Bowl: every few seconds a little twister of dust lifts off open ground.
@@ -424,7 +452,7 @@ export class WorldRenderer {
             new THREE.Vector3(x, 0, z),
             new THREE.Vector3(x + Math.sin(t * 11) * 0.5, h, z + Math.cos(t * 9) * 0.5),
           ]);
-          const arc = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x9ad0ff, transparent: true, opacity: (0.4 + 0.5 * Math.abs(Math.sin(t * 7))) * this.ionBlend }));
+          const arc = new THREE.Line(geo, this.envMat(THREE.LineBasicMaterial, { color: 0x9ad0ff, transparent: true, opacity: (0.4 + 0.5 * Math.abs(Math.sin(t * 7))) * this.ionBlend }));
           this.environmentRoot.add(arc);
         }
       }
@@ -448,7 +476,7 @@ export class WorldRenderer {
       const breathe = 0.5 + 0.5 * Math.sin(performance.now() * 0.0012 + (hash(base.id) % 7));
       let mat = this.baseGlowMats.get(f);
       if (!mat) {
-        mat = new THREE.MeshBasicMaterial({ color: FACTION_GLOW[f], transparent: true, side: THREE.DoubleSide, depthWrite: false });
+        mat = this.envMat(THREE.MeshBasicMaterial, { color: FACTION_GLOW[f], transparent: true, side: THREE.DoubleSide, depthWrite: false });
         mat.userData.shared = true;
         this.baseGlowMats.set(f, mat);
       }
@@ -461,12 +489,12 @@ export class WorldRenderer {
       const y = drawnGroundAt(burn) + 0.07;
       const ring = new THREE.Mesh(
         drapedDisc(burn.x, burn.z, burn.radius - 0.25, burn.radius, 40, 0.07),
-        new THREE.MeshBasicMaterial({ color: 0xff6b1a, transparent: true, opacity: 0.35 + flicker * 0.3, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }),
+        this.envMat(THREE.MeshBasicMaterial, { color: 0xff6b1a, transparent: true, opacity: 0.35 + flicker * 0.3, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }),
       );
       this.environmentRoot.add(ring);
       const glow = new THREE.Mesh(
         drapedDisc(burn.x, burn.z, 0, burn.radius * 0.9, 24, 0.05),
-        new THREE.MeshBasicMaterial({ color: 0xff7a2a, transparent: true, opacity: 0.12 + flicker * 0.08, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }),
+        this.envMat(THREE.MeshBasicMaterial, { color: 0xff7a2a, transparent: true, opacity: 0.12 + flicker * 0.08, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }),
       );
       this.environmentRoot.add(glow);
       for (let f = 0; f < 4; f += 1) {
@@ -490,12 +518,12 @@ export class WorldRenderer {
       const y = drawnGroundAt(cloud) + 0.05;
       const skirt = new THREE.Mesh(
         drapedDisc(cloud.x, cloud.z, 0, cloud.radius, 40, 0.05),
-        new THREE.MeshBasicMaterial({ color: 0x9bd44a, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }),
+        this.envMat(THREE.MeshBasicMaterial, { color: 0x9bd44a, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }),
       );
       this.environmentRoot.add(skirt);
       const rim = new THREE.Mesh(
         drapedDisc(cloud.x, cloud.z, cloud.radius - 0.14, cloud.radius, 48, 0.06),
-        new THREE.MeshBasicMaterial({ color: 0xc8f06a, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }),
+        this.envMat(THREE.MeshBasicMaterial, { color: 0xc8f06a, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }),
       );
       this.environmentRoot.add(rim);
       for (let b = 0; b < 7; b += 1) {
@@ -503,7 +531,7 @@ export class WorldRenderer {
         const r = cloud.radius * (0.15 + ((b * 37) % 60) / 100);
         const blob = new THREE.Mesh(
           new THREE.SphereGeometry(cloud.radius * (0.3 + (b % 3) * 0.08), 10, 7),
-          new THREE.MeshBasicMaterial({ color: b % 2 ? 0xa8dc55 : 0x86b83a, transparent: true, opacity: 0.13, depthWrite: false }),
+          this.envMat(THREE.MeshBasicMaterial, { color: b % 2 ? 0xa8dc55 : 0x86b83a, transparent: true, opacity: 0.13, depthWrite: false }),
         );
         blob.position.set(cloud.x + Math.cos(t) * r, y + 0.45 + Math.sin(t * 1.7) * 0.2, cloud.z + Math.sin(t * 0.8) * r);
         blob.scale.y = 0.55;
@@ -517,7 +545,7 @@ export class WorldRenderer {
       const fade = Math.min(1, cloud.turnsLeft / 2);
       const skirt = new THREE.Mesh(
         drapedDisc(cloud.x, cloud.z, 0, cloud.radius, 40, 0.05),
-        new THREE.MeshBasicMaterial({ color: 0x6f757a, transparent: true, opacity: 0.22 * fade, side: THREE.DoubleSide, depthWrite: false }),
+        this.envMat(THREE.MeshBasicMaterial, { color: 0x6f757a, transparent: true, opacity: 0.22 * fade, side: THREE.DoubleSide, depthWrite: false }),
       );
       this.environmentRoot.add(skirt);
       for (let b = 0; b < 10; b += 1) {
@@ -525,7 +553,7 @@ export class WorldRenderer {
         const r = cloud.radius * (0.1 + ((b * 41) % 65) / 100);
         const blob = new THREE.Mesh(
           new THREE.SphereGeometry(cloud.radius * (0.34 + (b % 3) * 0.1), 10, 7),
-          new THREE.MeshBasicMaterial({ color: b % 2 ? 0xa3a9ae : 0x767d83, transparent: true, opacity: 0.36 * fade, depthWrite: false }),
+          this.envMat(THREE.MeshBasicMaterial, { color: b % 2 ? 0xa3a9ae : 0x767d83, transparent: true, opacity: 0.36 * fade, depthWrite: false }),
         );
         blob.position.set(cloud.x + Math.cos(t) * r, y + 0.6 + (b % 4) * 0.35 + Math.sin(t * 1.5) * 0.15, cloud.z + Math.sin(t * 0.9) * r);
         blob.scale.y = 0.8;
@@ -538,7 +566,7 @@ export class WorldRenderer {
       if (!entity.downed || !entity.status.alive) continue;
       const disc = new THREE.Mesh(
         drapedDisc(entity.position.x, entity.position.z, 0.55, 0.7, 32, 0.06),
-        new THREE.MeshBasicMaterial({ color: 0xff5c5c, transparent: true, opacity: 0.45 + downPulse * 0.35, side: THREE.DoubleSide, depthWrite: false }),
+        this.envMat(THREE.MeshBasicMaterial, { color: 0xff5c5c, transparent: true, opacity: 0.45 + downPulse * 0.35, side: THREE.DoubleSide, depthWrite: false }),
       );
       this.environmentRoot.add(disc);
     }
@@ -549,7 +577,7 @@ export class WorldRenderer {
       const y = drawnGroundAt(mine) + 0.05;
       const disc = new THREE.Mesh(
         drapedDisc(mine.x, mine.z, 0, 0.26, 16, 0.05),
-        new THREE.MeshBasicMaterial({ color: 0x39434a, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }),
+        this.envMat(THREE.MeshBasicMaterial, { color: 0x39434a, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }),
       );
       this.environmentRoot.add(disc);
       if (minePulse) {
@@ -568,12 +596,12 @@ export class WorldRenderer {
       const y = drawnGroundAt(cache) + 0.05;
       const ring = new THREE.Mesh(
         drapedDisc(cache.x, cache.z, 0.5, 0.74, 32, 0.05),
-        new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.26 + cachePulse * 0.24, side: THREE.DoubleSide, depthWrite: false }),
+        this.envMat(THREE.MeshBasicMaterial, { color: 0xffd166, transparent: true, opacity: 0.26 + cachePulse * 0.24, side: THREE.DoubleSide, depthWrite: false }),
       );
       this.environmentRoot.add(ring);
       const coin = new THREE.Mesh(
         new THREE.OctahedronGeometry(0.26),
-        new THREE.MeshStandardMaterial({ color: 0xffcf4d, emissive: 0xffb020, emissiveIntensity: 0.65, metalness: 0.75, roughness: 0.32 }),
+        this.envMat(THREE.MeshStandardMaterial, { color: 0xffcf4d, emissive: 0xffb020, emissiveIntensity: 0.65, metalness: 0.75, roughness: 0.32 }),
       );
       coin.position.set(cache.x, y + 0.52 + cachePulse * 0.16, cache.z);
       coin.rotation.set(0.32, performance.now() * 0.0032, 0);
@@ -583,7 +611,7 @@ export class WorldRenderer {
       // click (the thin ring + floating coin alone are a fiddly target). Clicking it shows its payout.
       const hit = new THREE.Mesh(
         drapedDisc(cache.x, cache.z, 0, 0.74, 16, 0.08),
-        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
+        this.envMat(THREE.MeshBasicMaterial, { transparent: true, opacity: 0, depthWrite: false }),
       );
       hit.userData.pickupId = cache.id;
       this.environmentRoot.add(hit);
@@ -594,12 +622,12 @@ export class WorldRenderer {
       const color = zone.kind === "barrage" ? 0xff5a3c : zone.kind === "lightning" ? 0xbfe4ff : 0xffb24a;
       const ring = new THREE.Mesh(
         drapedDisc(zone.x, zone.z, zone.radius - 0.4, zone.radius, 72, 0.07),
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4 + pulse * 0.42, side: THREE.DoubleSide, depthWrite: false }),
+        this.envMat(THREE.MeshBasicMaterial, { color, transparent: true, opacity: 0.4 + pulse * 0.42, side: THREE.DoubleSide, depthWrite: false }),
       );
       this.environmentRoot.add(ring);
       const disc = new THREE.Mesh(
         drapedDisc(zone.x, zone.z, 0, zone.radius, 56, 0.06),
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.06 + pulse * 0.05, side: THREE.DoubleSide, depthWrite: false }),
+        this.envMat(THREE.MeshBasicMaterial, { color, transparent: true, opacity: 0.06 + pulse * 0.05, side: THREE.DoubleSide, depthWrite: false }),
       );
       this.environmentRoot.add(disc);
     }
@@ -772,10 +800,17 @@ export class WorldRenderer {
         // warm-up (a fading part) is drawn opaque again later, and soak:gpu caught that opaque
         // variant (program-key bit 17) compiling mid-resolve when only opaque->transparent was covered.
         const twin = m.clone();
+        // clone() does NOT carry a shader patch: without these the twin of a wind-swayed / ground-paint
+        // material compiled a DIFFERENT program, and the real one compiled mid-resolve (soak:gpu: a toon
+        // + onBeforeCompile program, a tree fading as it toppled).
+        twin.onBeforeCompile = m.onBeforeCompile;
+        twin.customProgramCacheKey = m.customProgramCacheKey;
         twin.transparent = !m.transparent;
         twin.opacity = twin.transparent ? 0.5 : 1;
         for (const g of geos) {
-          const sampler = new THREE.Mesh(g, twin);
+          // Sample on the SAME kind of mesh: a twin of an instanced material (the wind-bent ground
+          // detail) compiles the instancing program, and its shader patch reads instanceMatrix.
+          const sampler = mesh instanceof THREE.InstancedMesh ? new THREE.InstancedMesh(g, twin, 1) : new THREE.Mesh(g, twin);
           sampler.receiveShadow = mesh.receiveShadow;
           sampler.castShadow = mesh.castShadow;
           out.push(sampler);
@@ -792,6 +827,10 @@ export class WorldRenderer {
       ...projectileFxWarmUpMaterials(),
       // The vehicles kit's inverted-hull ink rim.
       inkMaterial(),
+      // DEBRIS chunks (syncDebris): a plain toon material, no vertex colours, faded transparent as the
+      // chunks settle -- soak:gpu caught it compiling on the first resolve that destroyed a part.
+      new THREE.MeshToonMaterial({ color: 0x777777, gradientMap: toonGradient() }),
+      new THREE.MeshToonMaterial({ color: 0x777777, gradientMap: toonGradient(), transparent: true, opacity: 0.5 }),
     ]) for (const g of geos) out.push(new THREE.Mesh(g, m));
     return out;
   }
@@ -1721,6 +1760,21 @@ export class WorldRenderer {
       group.rotation.z += Math.sin(performance.now() * 0.075) * s * 0.07;
     }
     const renderGhosted = ghosted;
+    // STATIC SCENERY KEEPS ITS PAINT (perf pass, 2026-09-24). paintPart re-derives every part mesh's
+    // material every frame (~6.5% of the frame in perf:profile); a living, non-volatile prop only changes
+    // when one of these does. Volatile props pulse, dying ones fade, units animate: those always repaint.
+    const staticPaint = entity.kind === "cover" && entity.status.alive && !entity.parts.some((p) => p.role === "volatile");
+    if (staticPaint) {
+      let sig = `${entity.id === selectedId}|${entity.id === targetId}|${targetPartId ?? ""}|${renderGhosted}|${this.silhouetteMode}|${modelsVersion()}`;
+      for (const part of entity.parts) sig += `|${part.hp}:${this.partFlash(entity.id, part.id) > 0}`;
+      const cached = group.userData.pickMeshes as PartMesh[] | undefined;
+      if (cached && group.userData.paintSig === sig) {
+        for (const mesh of cached) this.pickables.push(mesh);
+        return;
+      }
+      group.userData.paintSig = sig;
+      group.userData.pickMeshes = [];
+    }
     // One id->part map per entity per frame instead of a parts.find per part MESH —
     // paintPart runs for ~20 meshes on an 8-part unit, so the linear scans added up.
     _partById.clear();
@@ -1735,6 +1789,7 @@ export class WorldRenderer {
       this.syncDebris(entity, part);
       this.paintPart(group, mesh, entity, part, entity.id === selectedId, entity.id === targetId, part.id === targetPartId, renderGhosted);
       if (entity.status.alive) this.pickables.push(mesh);
+      if (staticPaint) (group.userData.pickMeshes as PartMesh[]).push(mesh);
       if (dying && (part.id === "turret" || part.id === "cannon") && isVehicleKind(entity.kind) && !isAirKind(entity.kind)) this.blowOffTurret(mesh, group);
     });
     if (this.trackedFeet.size) this.recordFeet(entity, group);
@@ -4279,7 +4334,8 @@ export class WorldRenderer {
     const injury = 1 - ratio;
     // Reuse module-scope scratch Colors: paintPart runs for every part mesh of every entity
     // every frame, so `new THREE.Color()` here was allocating hundreds of objects per frame.
-    const color = _paintColor.set(base).lerp(hexColor(0x33120f), injury * 0.55);
+    // copy() from the hexColor cache, not set(hex): set() re-runs the sRGB->linear conversion per part per frame.
+    const color = _paintColor.copy(hexColor(base)).lerp(hexColor(0x33120f), injury * 0.55);
     if (ratio < 0.42 && part.hp > 0) color.lerp(hexColor(0xff5f35), 0.16 + injury * 0.18);
     if (!entity.status.alive) color.lerp(hexColor(0x08090a), 0.55);
     // Selection is a LIFT, not a wash: 24% toward white plus a strong emissive bloomed the selected
@@ -4509,7 +4565,10 @@ export class WorldRenderer {
   // Signature for the aura overlay: the aura-unit content, plus a ~15fps pulse bucket so the slow
   // opacity pulse still animates while the geometry stays static between beats.
   private aurasSignature(sim: TacticalSim): string {
-    let sig = `${sim.phase}|${Math.floor(performance.now() / 66)}`;
+    // Content only. The time term that used to sit here (performance.now() / 66) rebuilt every aura ring --
+    // a 96-segment ring, a terrain drape and a material each -- 15 times a second just to pulse it. The
+    // pulse is an opacity on the pooled material now (syncAuras).
+    let sig = `${sim.phase}`;
     if (sim.phase === "command") {
       for (const e of sim.entities) {
         if (!e.status.alive || e.kind === "cover") continue;
@@ -4525,12 +4584,13 @@ export class WorldRenderer {
   }
 
   private syncAuras(sim: TacticalSim): void {
+    const pulse = (Math.sin(performance.now() * 0.004) + 1) * 0.5;
+    for (const mat of this.auraMats.values()) mat.opacity = 0.16 + pulse * 0.1;
     const sig = this.aurasSignature(sim);
     if (sig === this.lastAurasSig) return;
     this.lastAurasSig = sig;
     this.disposeAndClear(this.auraRoot);
     if (sim.phase !== "command") return;
-    const pulse = (Math.sin(performance.now() * 0.004) + 1) * 0.5;
     for (const entity of sim.entities) {
       if (!entity.status.alive || entity.kind === "cover") continue;
       const tags = new Set<string>();
@@ -4545,7 +4605,7 @@ export class WorldRenderer {
       for (const aura of auras) {
         const ring = new THREE.Mesh(
           new THREE.RingGeometry(aura.radius - 0.13, aura.radius, 96, 1),
-          new THREE.MeshBasicMaterial({ color: aura.color, transparent: true, opacity: 0.16 + pulse * 0.1, side: THREE.DoubleSide, depthWrite: false }),
+          this.auraMaterial(aura.color),
         );
         ring.rotation.x = -Math.PI / 2;
         ring.position.set(entity.position.x, entity.elevation, entity.position.z);
@@ -5847,9 +5907,22 @@ function roleColor(entity: CombatEntity, role: PartRole, fallback: number): numb
   return fallback;
 }
 
+// MEMOISED (perf pass, 2026-09-24): roleColor calls this for every part of every unit every frame, and
+// each call built two Colors and ran two sRGB conversions (setHex / LinearToSRGB ~7% of the frame in
+// perf:profile). The inputs are a small set of palette constants, so the cache stays tiny.
+const blendCache = new Map<number, Map<number, number>>();
+const _blendA = new THREE.Color();
+const _blendB = new THREE.Color();
 function blendHex(a: number, b: number, amount: number): number {
-  const color = new THREE.Color(a).lerp(new THREE.Color(b), amount);
-  return color.getHex();
+  let byAmount = blendCache.get(amount);
+  if (!byAmount) blendCache.set(amount, (byAmount = new Map()));
+  const key = a * 0x1000000 + b; // two 24-bit colours in one exact integer
+  let out = byAmount.get(key);
+  if (out === undefined) {
+    out = _blendA.setHex(a).lerp(_blendB.setHex(b), amount).getHex();
+    byAmount.set(key, out);
+  }
+  return out;
 }
 
 function makeLine(from: { x: number; z: number }, to: { x: number; z: number }, color: number, opacity: number, y = 0.16, toY = y): THREE.Line {

@@ -52,6 +52,7 @@ function loadKit(url: string, into: Map<string, THREE.BufferGeometry>, onDone: (
         // wearing that part. UVs stay for the pooled materials' shared detail normal map.
         geometry.applyMatrix4(mesh.matrixWorld);
         geometry.userData.shared = true;
+        rgbVertexColor(geometry);
         into.set(node.name, geometry);
       });
       onDone(true);
@@ -60,6 +61,24 @@ function loadKit(url: string, into: Map<string, THREE.BufferGeometry>, onDone: (
     undefined,
     () => onDone(false),
   );
+}
+
+/**
+ * Blender exports COLOR_0 as RGBA (normalised integers); the procedural parts bake RGB. A pooled part
+ * material is shared by both kinds of mesh, and three keys a program on `vertexAlphas` -- so every switch
+ * between a kit mesh and a procedural one sent the renderer back to its program lookup (getParameters
+ * ~2.6% of the frame in perf:profile). Alpha is always 1 here, so the kit drops it: one key, no switching.
+ */
+function rgbVertexColor(geometry: THREE.BufferGeometry): void {
+  const color = geometry.getAttribute("color");
+  if (!color || color.itemSize !== 4) return;
+  const rgb = new Float32Array(color.count * 3);
+  for (let i = 0; i < color.count; i += 1) {
+    rgb[i * 3] = color.getX(i); // getX/Y/Z honour `normalized` (Uint8/16 -> 0..1)
+    rgb[i * 3 + 1] = color.getY(i);
+    rgb[i * 3 + 2] = color.getZ(i);
+  }
+  geometry.setAttribute("color", new THREE.BufferAttribute(rgb, 3));
 }
 
 // Four-step light ramp for every toon surface (pooled parts AND props): deep shade,
