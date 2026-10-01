@@ -835,6 +835,35 @@ export class WorldRenderer {
     return out;
   }
 
+  /** Ground overlays (transparent rings / discs / planes) with a DRAWN vertex past the arena edge: the
+   *  "circle sticks out the back of the map" gate (smoke:ground). Only triangles in the index count. */
+  auditOverlays(): { name: string; type: string; color: string; over: number }[] {
+    const out: { name: string; type: string; color: string; over: number }[] = [];
+    const b = ARENA_BOUNDS;
+    const v = new THREE.Vector3();
+    this.scene.updateMatrixWorld(true);
+    this.scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || !m.visible) return;
+      const type = m.geometry.type;
+      if (type !== "RingGeometry" && type !== "CircleGeometry" && type !== "PlaneGeometry" && type !== "BufferGeometry") return;
+      const mat = m.material as THREE.MeshBasicMaterial;
+      if (!mat || Array.isArray(mat) || !mat.transparent || mat.depthWrite) return; // overlays only
+      let parent: THREE.Object3D | null = m;
+      while (parent) { if (!parent.visible) return; parent = parent.parent; }
+      const pos = m.geometry.getAttribute("position");
+      const index = m.geometry.getIndex();
+      const count = index ? index.count : pos.count;
+      let over = 0;
+      for (let k = 0; k < count; k += 1) {
+        v.fromBufferAttribute(pos, index ? index.getX(k) : k).applyMatrix4(m.matrixWorld);
+        over = Math.max(over, b.minX - v.x, v.x - b.maxX, b.minZ - v.z, v.z - b.maxZ);
+      }
+      if (over > 0.05) out.push({ name: m.name || m.parent?.name || "-", type, color: mat.color?.getHexString() ?? "", over: +over.toFixed(2) });
+    });
+    return out;
+  }
+
   /** What the projectile and effect roots are drawing THIS frame (the smoke:attacks seam): object
    *  counts, and how many effect objects hang well above the ground (a gun run's tracers). */
   fxCounts(): { projectiles: number; effects: number; airborneEffects: number } {
@@ -4491,25 +4520,24 @@ export class WorldRenderer {
     const color = selected.team === "player" ? (selected.accent ?? this.playerAccent) : selected.team === "enemy" ? TEAMS.enemyMarker : 0xf6d776;
     const scale = Math.max(0.72, selected.radius * 1.12);
     const pulse = (Math.sin(performance.now() * 0.009) + 1) * 0.5;
-    const pulseScale = 1.0 + pulse * 0.04;
     this.ring.position.set(selected.position.x, selected.elevation, selected.position.z);
     this.ringInk.position.copy(this.ring.position);
     this.ring.scale.setScalar(scale);
     this.ringInk.scale.setScalar(scale);
     const ringSig = `${selected.id}|${selected.position.x.toFixed(2)}|${selected.position.z.toFixed(2)}|${selected.elevation.toFixed(2)}`;
+    this.selectionDisc.position.set(selected.position.x, selected.elevation, selected.position.z);
     if (ringSig !== this.lastRingSig) {
       drapeToTerrain(this.ringInk, 0.075);
       drapeToTerrain(this.ring, 0.085);
+      drapeToTerrain(this.selectionDisc, 0.03); // a flat disc sank into slopes and plates
       this.lastRingSig = ringSig;
     }
-    this.ring.scale.setScalar(scale * pulseScale);
-    this.ringInk.scale.setScalar(scale * pulseScale);
+    // The pulse is OPACITY only: scaling a draped ring 4% every frame lifted it off slopes and pushed its
+    // clipped edge back past the board rim.
     const mat = this.ring.material as THREE.MeshBasicMaterial;
     mat.color.setHex(color);
     mat.opacity = 0.88 + pulse * 0.12;
-    this.selectionDisc.position.x = selected.position.x;
-    this.selectionDisc.position.y = selected.elevation + 0.026;
-    this.selectionDisc.position.z = selected.position.z;
+
     // Clamp so large entities (bases/buildings) don't spread a big translucent floor pool,
     // and keep it faint so it reads as a highlight rather than a colored ground patch.
     this.selectionDisc.scale.setScalar(Math.min(scale, 1.45) * (1.18 + pulse * 0.06));
@@ -5577,7 +5605,22 @@ function drapedDisc(x: number, z: number, inner: number, outer: number, segments
   const rings = Math.max(1, Math.min(12, Math.ceil((outer - inner) / 0.45)));
   geo = new THREE.RingGeometry(inner, outer, segments, rings).rotateX(-Math.PI / 2).translate(x, 0, z);
   const pos = geo.attributes.position as THREE.BufferAttribute;
-  for (let i = 0; i < pos.count; i += 1) pos.setY(i, drawnGroundAt({ x: pos.getX(i), z: pos.getZ(i) }) + lift);
+  const b = ARENA_BOUNDS;
+  const outside = new Uint8Array(pos.count);
+  // CONSERVATIVE drape, as drapeToTerrain does for filled planes: each vertex rides the highest drawn
+  // ground within half a cell, so a triangle spanning a talus lip passes OVER it instead of cutting under
+  // the slope (the sawtooth "teeth" at the edge of a base light pool on a Verdant terrace).
+  const cell = Math.max((outer - inner) / rings, (2 * Math.PI * outer) / segments);
+  const reach = cell * 0.5;
+  for (let i = 0; i < pos.count; i += 1) {
+    const x = pos.getX(i), z = pos.getZ(i);
+    outside[i] = x < b.minX - 0.01 || x > b.maxX + 0.01 || z < b.minZ - 0.01 || z > b.maxZ + 0.01 ? 1 : 0;
+    const cx = clamp(x, b.minX, b.maxX), cz = clamp(z, b.minZ, b.maxZ);
+    let ground = drawnGroundAt({ x: cx, z: cz });
+    for (const [dx, dz] of DRAPE_TAPS) ground = Math.max(ground, drawnGroundAt({ x: cx + dx * reach, z: cz + dz * reach }));
+    pos.setXYZ(i, cx, ground + lift, cz);
+  }
+  clipToArena(geo, outside);
   geo.computeBoundingSphere();
   geo.userData.shared = true;
   drapedDiscs.set(key, geo);
@@ -5598,12 +5641,16 @@ function drapeToTerrain(mesh: THREE.Mesh, lift: number): void {
   const b = ARENA_BOUNDS;
   const params = (mesh.geometry as THREE.PlaneGeometry).parameters;
   const reach = mesh.geometry.type === "PlaneGeometry" ? (params.width / params.widthSegments) * s * 0.5 : 0;
+  const outside = new Uint8Array(pos.count);
   for (let i = 0; i < pos.count; i += 1) {
     // Clamped to the arena: past the edge the ground drops or climbs the boundary wall, and a
     // triangle spanning that lip pierced the wall in a sawtooth (the "teeth" beside the Ironworks
     // base, 2026-09-23). Nothing an overlay marks can be outside the arena anyway.
-    const wx = clamp(mesh.position.x + flat[i * 2] * s, b.minX, b.maxX);
-    const wz = clamp(mesh.position.z - flat[i * 2 + 1] * s, b.minZ, b.maxZ); // local +y is world -z once laid flat
+    const rawX = mesh.position.x + flat[i * 2] * s;
+    const rawZ = mesh.position.z - flat[i * 2 + 1] * s; // local +y is world -z once laid flat
+    outside[i] = rawX < b.minX - 0.01 || rawX > b.maxX + 0.01 || rawZ < b.minZ - 0.01 || rawZ > b.maxZ + 0.01 ? 1 : 0;
+    const wx = clamp(rawX, b.minX, b.maxX);
+    const wz = clamp(rawZ, b.minZ, b.maxZ);
     pos.setX(i, (wx - mesh.position.x) / s);
     pos.setY(i, (mesh.position.z - wz) / s);
     // A filled plane's triangle spanning a lip (flat vertex below, rim-top vertex above) cuts UNDER
@@ -5617,7 +5664,29 @@ function drapeToTerrain(mesh: THREE.Mesh, lift: number): void {
     pos.setZ(i, (ground + lift - mesh.position.y) / s);
   }
   pos.needsUpdate = true;
+  clipToArena(mesh.geometry, outside);
   mesh.geometry.computeBoundingSphere();
+}
+
+/**
+ * CIRCLES END AT THE BOARD EDGE (2026-09-24, owner: "the circle around your base when selected seems to
+ * stick out the back of the map"). A vertex past the arena is clamped onto the edge, which squashed the
+ * outside arc of a ring flat along the rim (a bright stripe on the boundary); drapedDisc did not even
+ * clamp, so base light pools and every static ring ran out over the outer plain. Now a triangle whose
+ * three vertices all lie outside is dropped: the circle simply ends where the board does.
+ * `smoke:ground` asserts no overlay vertex outside the arena (fault-injection proven).
+ */
+function clipToArena(geometry: THREE.BufferGeometry, outside: Uint8Array): void {
+  const index = geometry.getIndex();
+  if (!index) return;
+  const full = (geometry.userData.fullIndex as ArrayLike<number> | undefined) ?? (geometry.userData.fullIndex = Array.from(index.array as ArrayLike<number>));
+  const keep: number[] = [];
+  for (let t = 0; t + 2 < full.length; t += 3) {
+    const a = full[t], b = full[t + 1], c = full[t + 2];
+    if (outside[a] && outside[b] && outside[c]) continue;
+    keep.push(a, b, c);
+  }
+  if (keep.length !== index.count) geometry.setIndex(keep);
 }
 
 function makeSplashDisc(position: Vec2, color: number, radius: number): THREE.Group {

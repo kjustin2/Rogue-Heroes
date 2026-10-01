@@ -2345,6 +2345,8 @@ declare global {
       debugKill(id: string, blow?: number): void;
       /** Units whose model sits inside the drawn terrain (see WorldRenderer.auditTerrainClip). */
       auditTerrainClip(tolerance?: number): { id: string; name: string; kind: string; part: string; depth: number; x: number; z: number }[];
+      /** Ground overlays drawn past the arena edge (the "circle sticks out the back of the map" gate). */
+      auditOverlays(): { name: string; type: string; color: string; over: number }[];
       /** Multiplies the resolve-phase sim clock (filmstrips run at 0.25 to see a swing). */
       setResolveScale(scale: number): void;
       setDebugOverlay(on: boolean): boolean;
@@ -2444,6 +2446,7 @@ window.__rht = {
   fxCounts: () => world.fxCounts(),
   trackFeet: (entityId: string, on: boolean) => world.trackFeet(entityId, on),
   auditTerrainClip: (tolerance?: number) => world.auditTerrainClip(tolerance),
+  auditOverlays: () => world.auditOverlays(),
   footTrack: (entityId: string) => world.footTrack(entityId),
   partColors: (entityId: string) => world.partColors(entityId),
   sceneGraph: () => ({ total: countSceneObjects(), topLevel: stage.scene.children.length }),

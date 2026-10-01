@@ -23,7 +23,7 @@ import { guard } from "./lib/guard.cjs";
 
 guard("smoke-ground");
 
-const MAPS = ["ironworks", "dustbowl", "verdant", "causeway", "karak"];
+const MAPS = ["ironworks", "dustbowl", "verdant", "causeway", "karak", "crossfire"];
 // A textured ground surface may be at most this much bigger than the arena it belongs to. The
 // legitimate ones (floor, mesa caps, the scattered plate layer) land at 1.0-1.8x because the plate
 // blobs overshoot the bounds a little; the mistake this catches was NINE times.
@@ -110,6 +110,23 @@ try {
     if (sorted.length && sorted[0] < -0.015 + 0.01) {
       failures += 1;
       console.log(`  FAIL ${mapId}: lowest ground plate at y=${sorted[0]} sits within 1cm of the water/floor surface.`);
+    }
+    // FOURTH INVARIANT — EVERY CIRCLE ENDS AT THE BOARD EDGE (2026-09-24, owner: "the circle around your
+    // base when selected seems to stick out the back of the map"). Select the base (selection ring), arm a
+    // deploy (its ring + disc), and let the faction light pools draw; no overlay may draw past the arena.
+    const overlays = await page.evaluate(async () => {
+      const r = window.__rht, s = r.sim;
+      const hq = s.entities.find((e) => e.kind === "base" && e.team === "player");
+      s.select(hq.id);
+      s.setPendingDeploy && s.setPendingDeploy("soldier");
+      await new Promise((res) => setTimeout(res, 700));
+      const hits = r.auditOverlays();
+      s.setPendingDeploy && s.setPendingDeploy(undefined);
+      return hits;
+    });
+    if (overlays.length) {
+      failures += 1;
+      console.log(`  FAIL ${mapId}: ${overlays.length} ground overlay(s) drawn past the board edge: ${JSON.stringify(overlays.slice(0, 4))}`);
     }
     // THIRD INVARIANT — NO GROUND PLATE OVER WATER (2026-09-24). A patch-centre test let a 15m blob
     // paint grass over Verdant's mill pond: the board showed walkable ground where the sim has water.
