@@ -35,6 +35,7 @@ export const INK = 0x1c1712;
 const HOT = 0xfff6d8; // white-hot core
 const TRACER = 0xffd866; // tracer yellow
 const TRACER_ALT = 0xff9a3a; // the MG's every-other round
+const TRACER_DEEP = 0xff6a1c; // the outer burn sleeve of a tracer
 const FLASH = 0xffe58a; // muzzle-flash body
 const FLASH_RIM = 0xff8a2e; // muzzle-flash rim (the "outline" of a flash is orange, not ink)
 const FIRE = [0xfff0b0, 0xffd24a, 0xff9a2a, 0xf25a1a, 0x9e3a1c, 0x6e6660, 0x8a847a] as const;
@@ -473,12 +474,24 @@ function tracerModel(family: ProjectileFamily, age: number, seed: number): THREE
   const sleeve = new THREE.Mesh(projectileGeometry("tracer"), fxSolid(sleeveColor, true));
   const rim = new THREE.Mesh(projectileGeometry("tracer"), fxSolid(INK, true));
   core.frustumCulled = sleeve.frustumCulled = rim.frustumCulled = false;
-  sleeve.scale.set(1.8, 1.04, 1.8);
-  rim.scale.set(2.5, 1.1, 2.5);
+  // BULLET UPGRADE (2026-09-24, owner: "the main bullet ones look not amazing"): a LONG burning dash in
+  // four layers -- white-hot core, tracer sleeve, a deep-orange burn sleeve, ink -- ending in a tapered
+  // tail, so a round reads as a streak of fire, not a pill. Still opaque and warm (one ballistic language).
+  const burn = new THREE.Mesh(projectileGeometry("tracer"), fxSolid(TRACER_DEEP, true));
+  burn.frustumCulled = false;
+  sleeve.scale.set(1.7, 1.03, 1.7);
+  burn.scale.set(2.35, 1.06, 2.35);
+  rim.scale.set(2.95, 1.1, 2.95);
   const streak = new THREE.Group();
-  streak.add(rim, sleeve, core);
-  streak.scale.y = 1.5; // a dash, not a bead: the streak carries the read, the head only tips it
-  streak.position.y = -0.16;
+  streak.add(rim, burn, sleeve, core);
+  streak.scale.y = 2.7;
+  streak.position.y = -0.36;
+  // Tapered tail: the streak runs out to a point behind the round instead of a rounded cap.
+  const tail = solid("spike", TRACER_DEEP, 1.25);
+  tail.rotation.x = Math.PI; // point backwards (down the -y the streak trails along)
+  tail.position.y = -0.86;
+  tail.scale.set(0.75, 1.35, 0.75);
+  streak.add(tail);
   const head = solid("ember", HOT, 1.7, sleeveColor);
   head.scale.setScalar(1.05);
   head.position.y = 0.2;
@@ -783,7 +796,14 @@ export function makeProjectileTrail(p: Projectile, family: ProjectileFamily, his
     const mid = (fromBehind + behind[i]) / 2;
     const u = clamp01(1 - mid / ribbonReach);
     if (u <= 0.02) break;
-    const seg = tube(from, to, trailColor, q(0.8 * u * u), (0.012 + 0.04 * u * u) * tapered * width);
+    // Small arms trail a SOLID inked tracer line that tapers to nothing (the old one was a hair-thin
+    // translucent tube, invisible at tactical zoom). Radius steps of 4mm keep the tube cache bounded.
+    const seg = isSmallArms(family)
+      ? (() => {
+          const r = Math.round(((0.006 + 0.03 * u * u) * width) / 0.004) * 0.004;
+          return r >= 0.004 ? solidTube(from, to, u > 0.6 ? TRACER : TRACER_DEEP, r, r + 0.012) : undefined;
+        })()
+      : tube(from, to, trailColor, q(0.8 * u * u), (0.012 + 0.04 * u * u) * tapered * width);
     if (seg) out.push(seg);
     from = to;
     fromBehind = behind[i];
@@ -1087,9 +1107,14 @@ export function makeGroundChew(x: number, z: number, t: number, ground: number, 
  *  ~/0.22 factor to make the fireball fill roughly half the damage radius. Shape per family: a
  *  shell lands a multi-ring blast with a dust crown; an AP round a sharp cone with a metal-spark
  *  fan; a burn zone catches with tongues, never a white flash. */
+/** The largest radius a blast is DRAWN at. A vehicle kill fires a ~4m blast, and drawn at full size its
+ *  fireball covered half a squad and its shockwave swept 10m (the rule: no FX fills the screen). The sim's
+ *  damage radius is untouched; only the picture is capped. */
+const BLAST_DRAW_MAX = 2.0;
+
 export function makeBlast(effect: VisualEvent, t: number, ground: number, hint?: LandingHint): THREE.Object3D[] {
   const out: THREE.Object3D[] = [];
-  const radius = effect.radius ?? 1;
+  const radius = Math.min(effect.radius ?? 1, BLAST_DRAW_MAX);
   const R = radius / 0.22; // blob scale that spans the blast radius
   const lift = Math.min(radius, 1.3); // how high the column climbs — a wide blast is not a tall one
   const seed = seedOf(effect.id) % 11;
@@ -1224,11 +1249,13 @@ export function makeBlast(effect: VisualEvent, t: number, ground: number, hint?:
   }
   if (shell && t > 0.06) {
     const u = clamp01((t - 0.06) / 0.94);
-    const crown = solid("crown", DUST, 1.25);
+    // A LOW, THIN ring of kicked-up dust. It was lifted to ~0.9m, up to 2.4x thick and 25% inked, and
+    // at the tactical pitch it read as a beige plate with a black rim hovering over the crater.
+    const crown = solid("crown", DUST, 1.1);
     crown.rotation.x = Math.PI / 2;
-    crown.position.set(cx, ground + 0.25 + Math.sin(u * Math.PI) * lift * 0.35, cz);
-    const spread = radius * (0.6 + u * 1.3);
-    crown.scale.set(spread, spread, 0.8 + Math.sin(u * Math.PI) * 1.6);
+    crown.position.set(cx, ground + 0.12 + Math.sin(u * Math.PI) * 0.18, cz);
+    const spread = radius * (0.55 + u * 0.95);
+    crown.scale.set(spread, spread, 0.45 + Math.sin(u * Math.PI) * 0.5);
     out.push(crown);
   }
   for (const o of out) o.traverse((c) => { c.frustumCulled = false; });
@@ -1246,7 +1273,7 @@ export function blastAfterlife(family: ProjectileFamily | undefined, burn: boole
 }
 export function makeBlastAfterlife(effect: VisualEvent, u: number, ground: number, hint?: LandingHint): THREE.Object3D[] {
   const out: THREE.Object3D[] = [];
-  const radius = effect.radius ?? 1;
+  const radius = Math.min(effect.radius ?? 1, BLAST_DRAW_MAX);
   const R = radius / 0.22;
   const lift = Math.min(radius, 1.3);
   const seed = seedOf(effect.id) % 11;
@@ -1272,11 +1299,11 @@ export function makeBlastAfterlife(effect: VisualEvent, u: number, ground: numbe
     // The dust crown settles: wide, low, and thinning to nothing.
     const settle = 1 - u;
     if (settle > 0.05) {
-      const crown = solid("crown", DUST, 1.25);
+      const crown = solid("crown", DUST, 1.1);
       crown.rotation.x = Math.PI / 2;
-      crown.position.set(cx, ground + 0.16 + settle * 0.15, cz);
-      const spread = radius * (1.9 + u * 0.5);
-      crown.scale.set(spread, spread, settle * 0.9);
+      crown.position.set(cx, ground + 0.08 + settle * 0.06, cz);
+      const spread = radius * (1.5 + u * 0.3);
+      crown.scale.set(spread, spread, settle * 0.4);
       out.push(crown);
     }
   }

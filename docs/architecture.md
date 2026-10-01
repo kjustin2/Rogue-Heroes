@@ -334,6 +334,13 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   temporal`** — twelve CONSECUTIVE real-GPU frames at full resolve speed; read neighbours, and a
   shape absent in frame N and full-size in N+1 is a fail. (`shots:filmstrip artillery` only fires
   because the stage plants the outriggers first — an undeployed piece refuses the order.)
+  (5b) **BULLETS ARE BURNING STREAKS** (2026-09-24, owner: "the main bullet ones look not amazing"): the small-arms
+  tracer is four layers (white-hot core, tracer sleeve, `TRACER_DEEP` burn sleeve, ink) 2.7x long with a tapered
+  `spike` tail, and trails an OPAQUE inked tube tapering to nothing (`solidTube`, radius quantised to 4mm so the
+  tube cache stays bounded) instead of a hair-thin translucent one. **Blasts are drawn at most `BLAST_DRAW_MAX`
+  (2m) radius** (a vehicle kill's ~4m blast covered half a squad; the sim radius is untouched), and the shell
+  dust CROWN is a low thin ring (it hovered at 0.9m, 2.4x thick and inked, and read as a beige plate).
+  Evidence: `shots:gpu -- volley temporal`.
   (6) **ONE BALLISTIC LANGUAGE** (2026-09-22, owner: "some projectiles look like laser beams"): every round is a physical bullet, tracer or shell in WARM colours. No team-colour tracers, no energy darts, no muzzle-to-target lance tubes, no electric impact stars. The sim's `bolt` rounds (APC/turret/aircraft/flak) draw as the `mg` family; the base relay's as a `tank` shell. The only electric visual left is the lightning map event (`makeLightning`); the orbital-lance support strike is a deliberate sky strike, not a unit's weapon.
 - **Frame loop is guarded** (`frame` → `frameBody` in try/catch, `__rht.frameErrors()`); one bad frame never kills rAF again.
 - **`dt` is floored at 0.** rAF's timestamp is the frame's START and can predate the boot-time `last`, so the first frame's delta was negative — and `trauma - dt*1.7` turned it into a full-strength camera shake on the title screen (the "earthquake before the slow pan"). `npm run probe:intro` (real GPU) measures camera jitter from boot: 1.48 before, 0.03 after; it fails above 0.2.
