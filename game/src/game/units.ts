@@ -26,7 +26,7 @@ export type AirKind = "gunship" | "interceptor" | "bomber" | "transport";
 export type TroopKind = InfantryKind | GroundVehicleKind | AirKind;
 
 /** Emplacements and scenery: never deployed as troops, but they are damageable entities. */
-export type StructureKind = "base" | "turret" | "exturret" | "wall" | "cover";
+export type StructureKind = "base" | "turret" | "exturret" | "aaturret" | "bunker" | "sensor" | "wall" | "cover";
 
 /** Every kind that can exist as a CombatEntity. */
 export type EntityKind = TroopKind | StructureKind;
@@ -193,6 +193,11 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   base: u({ shotDamage: 42, weaponRange: 30, accurateFraction: 0.3, projectile: "bolt", projectileSpeed: 2.8, spread: 1.25, accuracyLabel: "command relay", aiValue: 6 }),
   turret: u({ shotDamage: 30, weaponRange: 24, projectile: "bolt", projectileSpeed: 2.8, spread: 2.3, accurateFraction: 0.375, spreadPerMeter: 0.05, accuracyLabel: "turret autogun", aiValue: 4 }),
   exturret: u({ shotDamage: 58, projectile: "shell", projectileSpeed: 2.45, spread: 4.6, accurateFraction: 0.77, accuracyLabel: "mortar battery", groundShell: true, hpMultiplier: 1.25, aiValue: 5 }),
+  // Flak Nest: the Flak Track's gun on a fixed mount, a little longer-reaching. Shreds aircraft.
+  aaturret: u({ shotDamage: 16, weaponRange: 34, projectile: "bolt", projectileSpeed: 2.8, accurateFraction: 0.3, accuracyLabel: "flak cannon", aiValue: 5 }),
+  // MG Bunker: a Heavy Gunner's ten-round burst behind concrete. Short reach, suppresses, very tough.
+  bunker: u({ shotDamage: 8, weaponRange: 22, burst: 10, spread: 4.4, accurateFraction: 0.32, spreadPerMeter: 0.16, accuracyLabel: "bunker MG", suppresses: true, hpMultiplier: 1.3, aiValue: 5 }),
+  sensor: u({ aiValue: 3 }),
   wall: u({ aiValue: 1 }),
   cover: u({}),
 };
@@ -241,7 +246,9 @@ export function troopSpec(kind: TroopKind): TroopSpec {
 
 // ---- Buildable base defenses. Placed near the Home Base; balanced for cost. ----
 
-export type DefenseKind = "turret" | "wall" | "exturret";
+/** Buildable from the base's Defenses deck. Sandbags become cover and a minefield becomes mines;
+ *  every other kind is an emplacement entity of the same name. */
+export type DefenseKind = "wall" | "sandbag" | "turret" | "aaturret" | "exturret" | "bunker" | "sensor" | "minefield";
 
 export interface DefenseSpec {
   kind: DefenseKind;
@@ -252,10 +259,22 @@ export interface DefenseSpec {
   tip: string;
 }
 
+// DEFENSES (owner 2026-10-01: "not a lot in them ... should start out with some starter thing and have
+// more options based on your tech line and possibly differ per faction"). Two starters everyone has
+// (Sandbags, Blast Wall), two shared tech pieces (Gun Turret, Flak Nest) and each faction's own:
+// Vanguard's Sensor Mast, the Syndicate's Minefield, Bastion's Mortar Turret and MG Bunker.
+// Prices sit against the troops they replace: a Gun Turret ($210) is a Recruit's gun that cannot move
+// or be flanked; a Flak Nest is a Flak Track ($260) that cannot move; the Bunker is a Heavy Gunner
+// with three times the armour that cannot advance. Which faction gets which: factions.ts.
 export const DEFENSE_CATALOG: readonly DefenseSpec[] = [
+  { kind: "sandbag", label: "Sandbags", role: "Cover", cost: 60, tip: "A low sandbag line: infantry crouched behind it take far less fire. Anyone can use it, enemy included." },
   { kind: "wall", label: "Blast Wall", role: "Barrier", cost: 130, tip: "Tall, tough barrier that blocks shots aimed at your base. Cannot be walked or built through." },
   { kind: "turret", label: "Gun Turret", role: "Defense", cost: 210, tech: "assault", tip: "Stationary auto-cannon. Fires each turn for 1 AP; solid range and accuracy, but cannot move." },
+  { kind: "aaturret", label: "Flak Nest", role: "Anti-Air", cost: 230, tech: "armor", tip: "A fixed flak cannon: long reach, shreds aircraft. Weak against ground armour." },
+  { kind: "sensor", label: "Sensor Mast", role: "Spotter", cost: 150, tech: "recon", tip: "No gun. Every ally within 10m shoots straighter, like a spotter standing beside them." },
+  { kind: "minefield", label: "Minefield", role: "Trap", cost: 110, tech: "ordnance", tip: "Three hidden mines in a small triangle. The first enemy to step on each sets it off." },
   { kind: "exturret", label: "Mortar Turret", role: "Siege", cost: 360, tech: "ordnance", tip: "Stationary splash battery: hits harder and soaks more than a gun turret. Clears cover and clusters; detonates if its magazine is hit." },
+  { kind: "bunker", label: "MG Bunker", role: "Hold", cost: 300, tech: "armor", tip: "A concrete machine-gun nest: a long suppressing burst, short reach, very hard to crack." },
 ];
 
 export function defenseSpec(kind: DefenseKind): DefenseSpec {
@@ -264,7 +283,7 @@ export function defenseSpec(kind: DefenseKind): DefenseSpec {
 
 // ---- Off-map support powers the Home Base can call in (cost money + the base CP). ----
 
-export type SupportPowerKind = "airstrike" | "cluster" | "laser" | "reconsweep" | "smokescreen" | "resupply";
+export type SupportPowerKind = "airstrike" | "cluster" | "laser" | "reconsweep" | "smokescreen" | "resupply" | "paradrop" | "napalm" | "barrage";
 
 export interface SupportPowerSpec {
   kind: SupportPowerKind;
@@ -277,14 +296,18 @@ export interface SupportPowerSpec {
 }
 
 export const SUPPORT_POWERS: readonly SupportPowerSpec[] = [
-  // Nothing can be called on turn 1 (owner 2026-09-24): every power is unlocked by a doctrine in its
-  // faction's own tree. Each faction has TWO, both its own: one strike and one utility.
+  // Each faction has THREE, all its own (owner 2026-10-01, replacing "nothing on turn 1"): a cheap
+  // UTILITY it starts with, and two researched powers. Vanguard: Recon Sweep / Airstrike / Paradrop.
+  // Syndicate: Smoke Screen / Napalm / Cluster Strike. Bastion: Resupply / Orbital Lance / Barrage.
   { kind: "airstrike", label: "Airstrike", role: "Line", cost: 320, cooldown: 3, tech: "support", tip: "A strike wing carpets a line of bombs through the target point, aligned away from your base. Hardened HQs are unaffected." },
   { kind: "cluster", label: "Cluster Strike", role: "Area", cost: 300, cooldown: 3, tech: "ordnance", tip: "Bomblets saturate a wide area around the target point. Hardened HQs are unaffected." },
   { kind: "laser", label: "Orbital Lance", role: "Beam", cost: 420, cooldown: 4, tech: "armor", tip: "An orbital beam cuts a burning line through the target point. Hardened HQs are unaffected." },
-  { kind: "reconsweep", label: "Recon Sweep", role: "Intel", cost: 110, cooldown: 3, tech: "recon", tip: "A spotter plane maps the enemy: after this turn resolves you see every enemy unit's next order drawn in red. Click anywhere to call it." },
-  { kind: "smokescreen", label: "Smoke Screen", role: "Cover", cost: 90, cooldown: 2, tech: "assault", tip: "Smoke shells land on the point: a 3-turn cloud that swallows flat shots through it. Arcing fire sails over. Cover an advance." },
-  { kind: "resupply", label: "Resupply Drop", role: "Sustain", cost: 140, cooldown: 3, tech: "support", tip: "A crate drop at the point: every one of your units within 4m heals 40 and refills its grenades." },
+  { kind: "reconsweep", label: "Recon Sweep", role: "Intel", cost: 110, cooldown: 3, tip: "A spotter plane maps the enemy: after this turn resolves you see every enemy unit's next order drawn in red. Click anywhere to call it." },
+  { kind: "smokescreen", label: "Smoke Screen", role: "Cover", cost: 90, cooldown: 2, tip: "Smoke shells land on the point: a 3-turn cloud that swallows flat shots through it. Arcing fire sails over. Cover an advance." },
+  { kind: "resupply", label: "Resupply Drop", role: "Sustain", cost: 140, cooldown: 3, tip: "A crate drop at the point: every one of your units within 4m heals 40 and refills its grenades." },
+  { kind: "paradrop", label: "Paradrop", role: "Insert", cost: 320, cooldown: 4, tech: "airwing", tip: "A transport drops two Troopers on the point at the end of the turn. They act from next turn. Needs room in your 10-unit field." },
+  { kind: "napalm", label: "Napalm", role: "Burn", cost: 240, cooldown: 3, tech: "assault", tip: "Firebombs set a wide patch alight: a light blast, then burning ground for 2 turns that infantry flee." },
+  { kind: "barrage", label: "Barrage", role: "Siege", cost: 340, cooldown: 4, tech: "siege", tip: "Six heavy shells walk across a wide circle around the point, one after another. Hardened HQs are unaffected." },
 ];
 
 export function supportPowerSpec(kind: SupportPowerKind): SupportPowerSpec {

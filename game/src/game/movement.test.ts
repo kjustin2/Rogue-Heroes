@@ -35,6 +35,8 @@ function unitViolations(sim: TacticalSim, tag: string): string[] {
     if (u.elevation < ground - 0.06) v.push(`${tag}: ${u.name} sunk ${(ground - u.elevation).toFixed(2)}m below ground`);
     for (const s of solids) {
       if (s.id === u.id || standingOn(u, s)) continue;
+      // Wholly ABOVE it (a trooper on a mesa over a low wreck on the ground below) is not inside it.
+      if (u.elevation >= s.elevation + s.height - 0.1) continue;
       const d = Math.hypot(u.position.x - s.position.x, u.position.z - s.position.z);
       // Deeply inside: centres closer than 60% of the summed radii (a unit brushing a crate is fine).
       if (d < (u.radius + s.radius) * 0.6) v.push(`${tag}: ${u.name} inside ${s.name} (d=${d.toFixed(2)}, radii ${u.radius}+${s.radius})`);

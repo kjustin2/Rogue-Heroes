@@ -3,7 +3,7 @@ import { CARPET_BOMBS, TacticalSim, carpetDropPoints, type Projectile, type Troo
 import { TROOP_CATALOG, SUPPORT_POWERS } from "../game/units";
 import {
   createApc, createArtillery, createBomber, createDroneOp, createEngineer, createExTurret, createFlak,
-  createFlamer, createGrenadier, createGunship, createHeavy, createInterceptor, createJumper, createMedic, createMortar,
+  createBase, createFlamer, createGrenadier, createGunship, createHeavy, createInterceptor, createJumper, createMedic, createMortar,
   createSapper, createScout, createSniper, createSoldier, createStriker, createTank, createTransport, createTurret,
   type CombatEntity,
 } from "../game/damageModel";
@@ -329,7 +329,8 @@ describe("every non-gun attack has an animation", () => {
 
   it("support powers: strikes fly in and burst; utility powers are delivered and harm no one", () => {
     for (const power of SUPPORT_POWERS) {
-      const sim = new TacticalSim([pinned(createHeavy("t", "T", "enemy", { x: 2, z: 0 }))]);
+      // A player HQ well clear of the point: the paradrop lands the caller's troopers, so needs one.
+      const sim = new TacticalSim([pinned(createHeavy("t", "T", "enemy", { x: 2, z: 0 })), createBase("pb", "Home Base", "player", { x: -16, z: 0 })]);
       // Straight into the resolve queue: which faction may call which power is roster data (and is
       // being reshuffled elsewhere); this checks the strike's visuals, not who is allowed it.
       (sim as unknown as { queuedSupport: { kind: string; point: { x: number; z: number }; dir: { x: number; z: number } }[] })
@@ -338,13 +339,15 @@ describe("every non-gun attack has an animation", () => {
       const delivery = trace.effects.has("jet") || trace.effects.has("beam") || trace.rounds.length > 0;
       const seen = delivery || trace.effects.has("blast") || trace.effects.has("ping");
       expect(seen, `${power.kind}: nothing on screen (${[...trace.effects].join(",")})`).toBe(true);
-      if (["airstrike", "cluster", "laser"].includes(power.kind)) {
-        expect(delivery, `${power.kind}: nothing flies in (${[...trace.effects].join(",")})`).toBe(true);
+      if (["airstrike", "cluster", "laser", "napalm", "barrage"].includes(power.kind)) {
+        // The barrage is off-map guns: its shells arrive, nothing flies over.
+        if (power.kind !== "barrage") expect(delivery, `${power.kind}: nothing flies in (${[...trace.effects].join(",")})`).toBe(true);
         expect(trace.effects.has("blast"), `${power.kind}: nothing lands`).toBe(true);
         expect(trace.hpLost, `${power.kind}: no damage`).toBeGreaterThan(0);
       } else {
         // Utility powers (recon sweep, smoke screen, resupply) are delivered, not detonated.
         expect(trace.hpLost, `${power.kind}: a utility power hurt someone`).toBe(0);
+        if (power.kind === "paradrop") expect(sim.entities.filter((e) => e.kind === "soldier" && e.team === "player").length, "two troopers landed").toBe(2);
       }
     }
   });

@@ -28,7 +28,7 @@ try {
   // Start a battle through the menu.
   await page.click('[data-menu="play"]');
   await page.waitForSelector('[data-map="ironworks"]');
-  await page.click("[data-start]");
+  await page.evaluate(() => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < 3; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector("[data-start]").click(); });
   await page.waitForFunction(() => window.__rht && window.__rht.sim.phase === "command");
 
   const problems = [];

@@ -45,10 +45,10 @@ try {
   await page.reload({ waitUntil: "networkidle" });
   await page.waitForSelector(".main-menu");
   await page.click('[data-menu="play"]');
-  await page.waitForSelector("[data-start]");
+  await page.waitForSelector('[data-step-go="next"]');
   await page.click('[data-map="ironworks"]');
   await delay(150);
-  await page.click("[data-start]");
+  await page.evaluate(() => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < 3; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector("[data-start]").click(); });
   await page.waitForFunction(() => window.__rht?.sim?.phase === "command", null, { timeout: 12000 });
   await delay(700);
 

@@ -9,7 +9,7 @@ import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec
 import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isVehicleKind, type CombatEntity, type CoverKind, type DamagePart, type Team, type EntityKind, type PartRole } from "../game/damageModel";
 import { factionDef, type FactionId } from "../game/factions";
 import type { OrderKind, Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
-import { carpetDropPoints } from "../game/sim";
+import { carpetDropPoints, minefieldPoints } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type GroundSurfaceKind, type SkylineKind } from "../game/maps";
 import type { TroopKind } from "../game/units";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, climbsAlong, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
@@ -409,7 +409,8 @@ export class WorldRenderer {
     return mat;
   }
   private envMat<M extends THREE.Material, P extends { color?: THREE.ColorRepresentation; opacity?: number }>(ctor: new (params: P) => M, params: P): M {
-    const q = { ...params, opacity: params.opacity === undefined ? undefined : Math.round(params.opacity * 40) / 40 };
+    // Quantised so near-equal fades share one material; never an `opacity: undefined` key (three warns).
+    const q = params.opacity === undefined ? params : { ...params, opacity: Math.round(params.opacity * 40) / 40 };
     const key = `${ctor.name}|${JSON.stringify(q)}`;
     let mat = this.envMats.get(key) as M | undefined;
     if (!mat) {
@@ -1638,7 +1639,7 @@ export class WorldRenderer {
     // Emplacements TRAVERSE to their target instead of snapping: the sim sets yaw the instant an
     // order starts, and the wind-up before the shot is long enough for a 4 rad/s turn to arrive.
     let shownYaw = entity.yaw;
-    if (entity.kind === "turret" || entity.kind === "exturret") {
+    if (entity.kind === "turret" || entity.kind === "exturret" || entity.kind === "aaturret" || entity.kind === "bunker") {
       const prev = group.userData.shownYaw as number | undefined;
       if (prev === undefined) shownYaw = entity.yaw;
       else {
@@ -1697,7 +1698,7 @@ export class WorldRenderer {
         else group.position.y += Math.sin(t * 52) * 0.004 * idle;
         group.rotation.x += Math.sin(t * 0.7) * 0.006 * idle + Math.sin(t * 47) * 0.0025 * idle;
         group.rotation.z += Math.sin(t * 0.45) * 0.005 * idle;
-      } else if (entity.kind === "turret" || entity.kind === "exturret") {
+      } else if (entity.kind === "turret" || entity.kind === "exturret" || entity.kind === "aaturret") {
         // Emplacements: a slow traverse hunt while PLANNING, like a gun looking for work. During
         // the resolve the barrel must point exactly where the round goes — the hunt (up to 7°)
         // made a turret fire visibly off its own muzzle. (Walls stay put.)
@@ -3032,6 +3033,8 @@ export class WorldRenderer {
       }
       return;
     }
+    if (entity.kind === "bunker") { this.buildBunker(group, entity); return; }
+    if (entity.kind === "sensor") { this.buildSensorMast(group, entity, glow); return; }
     // Shared emplacement base + traversing ring, dug in behind a sandbag berm.
     this.box(group, entity, "mount", [1.5, 0.36, 1.5], [0, 0.18, 0], 0x333a42, { metalness: 0.24, bevel: 0.12 });
     this.box(group, entity, "mount", [1.72, 0.14, 1.72], [0, 0.05, 0], 0x22272d, { metalness: 0.18, bevel: 0.1 });
@@ -3054,9 +3057,57 @@ export class WorldRenderer {
     }
     if (entity.kind === "exturret") {
       this.buildMortarBattery(group, entity);
+    } else if (entity.kind === "aaturret") {
+      this.buildFlakNest(group, entity, glow);
     } else {
       this.buildAutoCannon(group, entity, glow);
     }
+  }
+
+  // FLAK NEST: the gun-turret plinth (one emplacement language) with TWIN long barrels raised at the
+  // sky and a fire-control dish beside them -- the silhouette says "shoots up", nothing else does.
+  private buildFlakNest(group: THREE.Group, entity: CombatEntity, glow: number): void {
+    this.box(group, entity, "gun", [0.86, 0.34, 0.8], [0, 0.78, -0.08], 0x3f4a44, { metalness: 0.28, bevel: 0.16 });
+    for (const x of [-0.17, 0.17]) {
+      this.cylinder(group, entity, "gun", 0.06, 1.35, [x, 1.32, 0.3], 0x1f2529, [0.85, 0, 0], { metalness: 0.46 });
+      this.cylinder(group, entity, "gun", 0.085, 0.16, [x, 1.82, 0.67], 0x15191c, [0.85, 0, 0], { metalness: 0.5 });
+    }
+    // Ready rounds clipped along the breech.
+    this.box(group, entity, "gun", [0.5, 0.12, 0.2], [0, 0.98, -0.42], 0x8a7340, { metalness: 0.4, bevel: 0.35 });
+    // Fire-control radar: a dish on a post that sweeps.
+    this.cylinder(group, entity, "sensor", 0.03, 0.5, [-0.62, 1.05, -0.45], 0x2b3238, [0, 0, 0], { metalness: 0.4 });
+    this.cylinder(group, entity, "sensor", 0.26, 0.05, [-0.62, 1.34, -0.45], 0x9fb0b8, [1.2, 0, 0], { metalness: 0.42 }).userData.spinY = 0.0012;
+    this.box(group, entity, "sensor", [0.08, 0.08, 0.04], [-0.62, 1.12, -0.32], 0xdaf7ff, { emissive: glow, emissiveIntensity: 0.45, bevel: 0.3 });
+  }
+
+  // MG BUNKER: a low, wide poured-concrete pillbox -- no plinth, no traverse ring, a dark firing slit
+  // with the gun's snout in it. The only defense lower and wider than it is tall.
+  private buildBunker(group: THREE.Group, entity: CombatEntity): void {
+    this.cylinder(group, entity, "shell", 1.2, 0.28, [0, 0.14, 0], 0x55595a, [0, 0, 0], { metalness: 0.06, radiusBottom: 1.32 });
+    this.cylinder(group, entity, "shell", 1.02, 0.62, [0, 0.58, 0], 0x6b6f6c, [0, 0, 0], { metalness: 0.06, radiusBottom: 1.16 });
+    this.cylinder(group, entity, "shell", 0.62, 0.22, [0, 1.0, 0], 0x7a7e79, [0, 0, 0], { metalness: 0.06, radiusBottom: 1.02 });
+    // Firing slit: a dark band across the front, the gun barrel poking through.
+    this.box(group, entity, "gun", [1.1, 0.16, 0.2], [0, 0.72, 0.98], 0x15181a, { metalness: 0.2, bevel: 0.2 });
+    this.cylinder(group, entity, "gun", 0.06, 0.62, [0, 0.72, 1.18], 0x1d2226, [Math.PI / 2, 0, 0], { metalness: 0.46 });
+    this.box(group, entity, "gun", [0.13, 0.13, 0.12], [0, 0.72, 1.5], 0x111417, { metalness: 0.5, bevel: 0.3 });
+    // Sandbags heaped at the foot, the same stock as every berm.
+    for (const a of [-1.9, -1.25, 1.25, 1.9]) {
+      this.box(group, entity, "shell", [0.52, 0.26, 0.3], [Math.sin(a) * 1.28, 0.13, Math.cos(a) * 1.28], 0x8a7f66, { accent: true, metalness: 0.04, bevel: 0.45, rotation: [0, a, 0] });
+    }
+  }
+
+  // SENSOR MAST: the tallest, thinnest defense -- a braced lattice mast with a sweeping array on top.
+  private buildSensorMast(group: THREE.Group, entity: CombatEntity, glow: number): void {
+    this.box(group, entity, "mast", [0.9, 0.2, 0.9], [0, 0.1, 0], 0x333a42, { metalness: 0.24, bevel: 0.15 });
+    for (const [x, z] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]] as const) {
+      this.cylinder(group, entity, "mast", 0.035, 2.7, [x * 0.7, 1.45, z * 0.7], 0x4a535c, [0, 0, 0], { metalness: 0.45, radiusBottom: 0.05 });
+    }
+    for (const y of [0.7, 1.4, 2.1]) this.box(group, entity, "mast", [0.34, 0.05, 0.34], [0, y, 0], 0x5a646e, { metalness: 0.4, bevel: 0.3 });
+    // The array: a wide flat panel that sweeps, with a lit sensor strip -- the only light on it.
+    const head = this.box(group, entity, "array", [1.1, 0.34, 0.12], [0, 2.95, 0], 0x8796a3, { metalness: 0.35, bevel: 0.2 });
+    head.userData.spinY = 0.0009;
+    // Centred on the panel (through both faces) so it sweeps WITH it: both spin about the same axis.
+    this.box(group, entity, "array", [0.8, 0.07, 0.15], [0, 2.95, 0], 0xdaf7ff, { emissive: glow, emissiveIntensity: 0.55, bevel: 0.3 }).userData.spinY = 0.0009;
   }
 
   // Twin mortar tubes on a braced cradle, fed from a rack of shells behind.
@@ -4758,14 +4809,28 @@ export class WorldRenderer {
   private syncGroundAim(sim: TacticalSim, point?: Vec2): void {
     this.disposeAndClear(this.groundAimRoot);
     if (!point) return;
-    // Placing a wall: a ghost of it, turned the way it will be built (T / Rotate turns it).
-    if (sim.pendingBuild === "wall" && sim.selected) {
+    // Placing a defense: a ghost of it where it will stand, turned the way it will be built (T turns the
+    // rotatable ones), green when the click would be accepted and red when it would be refused. Every
+    // kind gets one (owner 2026-10-01: the turret showed nothing and refused every click).
+    if (sim.pendingBuild && sim.selected) {
+      const kind = sim.pendingBuild;
       const yaw = sim.placementYaw(sim.selected.position, point);
-      const ok = !sim.buildFailureReason(sim.selected, "wall", point);
-      const ghost = new THREE.Mesh(wallGhostGeometry(), wallGhostMaterial(ok));
-      ghost.position.set(point.x, drawnGroundAt(point) + 0.78, point.z);
-      ghost.rotation.y = yaw;
-      this.groundAimRoot.add(ghost);
+      const ok = !sim.buildFailureReason(sim.selected, kind, point);
+      const ground = drawnGroundAt(point);
+      if (kind === "minefield") {
+        for (const p of minefieldPoints(point, yaw)) {
+          const mine = new THREE.Mesh(defenseGhostGeometry("mine"), wallGhostMaterial(ok));
+          mine.position.set(p.x, drawnGroundAt(p) + 0.08, p.z);
+          this.groundAimRoot.add(mine);
+        }
+      } else {
+        const shape = kind === "wall" ? "wall" : kind === "sandbag" ? "sandbag" : kind === "sensor" ? "mast" : kind === "bunker" ? "bunker" : "emplacement";
+        const ghost = new THREE.Mesh(shape === "wall" ? wallGhostGeometry() : defenseGhostGeometry(shape), wallGhostMaterial(ok));
+        ghost.position.set(point.x, ground + (shape === "wall" ? 0.78 : 0), point.z);
+        ghost.rotation.y = yaw;
+        this.groundAimRoot.add(ghost);
+      }
+      this.groundAimRoot.add(makeEndpoint(point, ok ? 0x8de4ff : 0xff765f, kind === "minefield" ? 2 : kind === "bunker" ? 1.45 : 1.15, ground + 0.06));
       return;
     }
     // Targeting a support power: draw the strike footprint instead of a weapon arc.
@@ -4851,6 +4916,20 @@ export class WorldRenderer {
     } else if (kind === "resupply") {
       this.groundAimRoot.add(makeSplashDisc(point, 0x9ef0b8, 4)); // RESUPPLY_RADIUS
       this.groundAimRoot.add(makeEndpoint(point, 0x9ef0b8, 0.6, y));
+    } else if (kind === "napalm") {
+      // Three firebombs along the line, each a 1.7m burn patch (sim: scheduleSupportStrikes).
+      for (let i = 0; i < 3; i += 1) {
+        const p = { x: point.x + dir.x * (i - 1) * 1.8, z: point.z + dir.z * (i - 1) * 1.8 };
+        this.groundAimRoot.add(makeSplashDisc(p, 0xff6a1c, 1.7));
+      }
+      this.groundAimRoot.add(makeLine({ x: point.x - dir.x * 4, z: point.z - dir.z * 4 }, { x: point.x + dir.x * 4, z: point.z + dir.z * 4 }, 0xff6a1c, 0.5 + pulse * 0.3, y));
+    } else if (kind === "barrage") {
+      this.groundAimRoot.add(makeSplashDisc(point, 0xffac5a, 4.5 + 1.6));
+      this.groundAimRoot.add(makeEndpoint(point, 0xffac5a, 0.6, y));
+    } else if (kind === "paradrop") {
+      // Where the two troopers land: a small drop zone, team blue, no blast.
+      this.groundAimRoot.add(makeSplashDisc(point, 0xbfe8ff, 2.2));
+      this.groundAimRoot.add(makeEndpoint(point, 0xbfe8ff, 0.7 + pulse * 0.2, y));
     } else if (kind === "reconsweep") {
       // No footprint: it maps the whole enemy army. Just mark the click.
       this.groundAimRoot.add(makeEndpoint(point, 0x9dd8ff, 0.8 + pulse * 0.2, y));
@@ -6199,6 +6278,21 @@ let _wallGhost: THREE.BoxGeometry | undefined;
 function wallGhostGeometry(): THREE.BoxGeometry {
   if (!_wallGhost) { _wallGhost = new THREE.BoxGeometry(2.15, 1.55, 0.62); _wallGhost.userData.shared = true; }
   return _wallGhost;
+}
+/** A translucent stand-in for a defense being placed: its rough volume, feet at y = 0. Cached, shared. */
+const _defenseGhosts = new Map<string, THREE.BufferGeometry>();
+function defenseGhostGeometry(shape: "emplacement" | "bunker" | "mast" | "sandbag" | "mine"): THREE.BufferGeometry {
+  let geo = _defenseGhosts.get(shape);
+  if (!geo) {
+    geo = shape === "sandbag" ? new THREE.BoxGeometry(1.9, 0.75, 0.62).translate(0, 0.375, 0)
+      : shape === "bunker" ? new THREE.CylinderGeometry(1.0, 1.3, 1.1, 20).translate(0, 0.55, 0)
+      : shape === "mast" ? new THREE.CylinderGeometry(0.18, 0.4, 3.1, 10).translate(0, 1.55, 0)
+      : shape === "mine" ? new THREE.CylinderGeometry(0.28, 0.32, 0.1, 14)
+      : new THREE.CylinderGeometry(0.75, 0.86, 1.5, 16).translate(0, 0.75, 0);
+    geo.userData.shared = true;
+    _defenseGhosts.set(shape, geo);
+  }
+  return geo;
 }
 function wallGhostMaterial(ok: boolean): THREE.MeshBasicMaterial {
   return tubeMaterial(ok ? 0x8ef2d1 : 0xff765f, 0.45);

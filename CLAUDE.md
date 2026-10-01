@@ -45,6 +45,9 @@ composition root `src/main.ts`; the whole test/debug surface is `window.__rht`.
 6. Update `docs/next-steps.md` and the area doc. Hand the owner the build (`npm run desktop` /
    `npm run standalone`, or `npm run dist:exe` for the shareable .exe) with screenshots.
 
+**When the owner describes something from his playtest, read `game/logs/latest.log` first**: every local
+run writes a play log there (clicks, orders, refusals with reasons, console errors; `docs/architecture.md`).
+
 Never run two test scripts at once (one GPU; parallel real-GPU runs froze the machine). Stop every
 dev server / watcher before ending a turn (`taskkill /T` the tree). Smokes never steal OS focus and
 always run muted. Scratch diagnostics go in `game/scripts/_*.mjs` and are deleted after use.
@@ -73,6 +76,8 @@ always run muted. Scratch diagnostics go in `game/scripts/_*.mjs` and are delete
   `queueOverwatch`, `checkOverwatch`, `overwatching`, `makeWatchCone`.
 - **NO MESHY, no AI-generated models** (2026-09-20). Every model is a validated Blender kit or
   procedural; every GLB has a procedural fallback and the game runs with `public/models/` empty.
+- **NO SKIPPING THE SET-UP PICKS** (2026-10-01). No "Deploy now" shortcut: the deploy button exists only on
+  the last set-up step; a stepper tab opens only a step already reached.
 - **AP, never CP**, in anything a player reads (code keeps `commandPoints` internally).
 - **FEWEST WORDS** on screen: labels, numbers, 2-5 word states; explanations go in hover tooltips or the
   tutorial; never repeat what a header or the board already shows. Menus = title + buttons.

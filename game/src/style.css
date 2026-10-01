@@ -5900,7 +5900,8 @@ body:has(.hotseat-handoff) .battle-loading { display: none; }
 .ap-warning .pause-buttons { margin-top: 16px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 /* ---- SKIRMISH SET-UP AS A STEP FLOW (2026-09-24) ----
    One decision group per screen: Battlefield → Sides → Rules. The stepper names the steps and lets
-   you jump back; the footer is Back / Deploy now / Next. */
+   you jump back to a step already reached; the footer is Back / Next, and Deploy on the last step only
+   (owner 2026-10-01: nobody skips the picks). */
 .start-steps { display: flex; gap: 6px; list-style: none; margin: 0 0 12px; padding: 0; }
 .start-steps li { flex: 1; }
 .start-steps button { width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 12px; font: inherit; font-weight: 800; font-size: var(--fs-name); color: var(--text-muted); background: var(--paper-lo); border: 2px solid var(--ink); border-radius: 6px; cursor: pointer; text-align: left; }
@@ -5914,7 +5915,8 @@ body:has(.hotseat-handoff) .battle-loading { display: none; }
 .start-flow[data-step="3"] .start-step[data-step="3"] { display: grid; gap: 12px; }
 .start-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .start-actions .title-start { margin-left: auto; }
-.start-actions__quick { margin-left: auto; }
+.start-actions [hidden] { display: none; }
+.start-steps button:disabled { opacity: 0.55; cursor: default; }
 .start-summary__list { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 6px 0 0; padding: 10px 14px; background: var(--paper-lo); border: 2px solid var(--ink); border-radius: 6px; font-size: var(--fs-body); }
 .start-summary__list dt { color: var(--text-muted); font-weight: 700; }
 .start-summary__list dd { margin: 0; color: var(--cream); font-weight: 800; }

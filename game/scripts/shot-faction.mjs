@@ -25,7 +25,7 @@ const { page, errors, close } = await launchGame({
 try {
   await page.waitForSelector(".main-menu");
   await page.click('[data-menu="play"]');
-  await page.click('[data-step-jump="2"]'); // factions live on the Sides step
+  await page.evaluate((n) => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < n; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector(`[data-step-jump="${n}"]`).click(); }, 2); // factions live on the Sides step
   await page.waitForSelector("[data-faction]");
   // The menu fades in; screenshotting on the selector alone catches it mid-transition and the
   // evidence is a washed-out frame that says nothing about the real contrast.
@@ -69,7 +69,7 @@ try {
   for (const faction of cards) {
     await page.click(`[data-faction="${faction}"]`);
     // (The map cards live on step 1 of the set-up flow; the default map is fine here.)
-    await page.click("[data-start]");
+    await page.evaluate(() => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < 3; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector("[data-start]").click(); });
     await page.waitForFunction(() => window.__rht?.sim?.phase === "command", null, { timeout: 20000 });
     await page.waitForTimeout(900);
     await assertLit(page, `faction ${faction}`);
@@ -129,7 +129,7 @@ try {
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForSelector(".main-menu", { timeout: 20000 });
     await page.click('[data-menu="play"]');
-    await page.click('[data-step-jump="2"]');
+    await page.evaluate((n) => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < n; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector(`[data-step-jump="${n}"]`).click(); }, 2);
     await page.waitForSelector("[data-faction]");
   }
 

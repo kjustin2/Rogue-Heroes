@@ -137,6 +137,8 @@ async function run() {
     // Real player path: menu -> map pick -> battle.
     await clickRequired('[data-menu="play"]', "play button");
     await clickRequired('[data-map="dustbowl"]', "map card");
+    await clickRequired('[data-step-go="next"]', "next button"); // Sides
+    await clickRequired('[data-step-go="next"]', "next button"); // Rules: the only step with Deploy
     await clickRequired("[data-start]", "start button");
     // The menu deploy is deferred behind a loading veil and the sim reads "command" the whole time,
     // so wait for the map we picked to actually be configured before spawning into it.

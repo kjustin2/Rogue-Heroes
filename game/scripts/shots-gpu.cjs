@@ -37,6 +37,8 @@ app.whenReady().then(async () => {
     for (const s of scenarios) {
       // Menu screens are reached the way the player reaches them: from the title, by button.
       const toTitle = async () => { await js(`(() => { if (window.__rht.toMenu) window.__rht.toMenu(); else { const b = document.querySelector("[data-back]"); if (b) b.click(); } })()`); await sleep(900); };
+      // The set-up is a step flow whose tabs open only steps already reached: walk Next to step n.
+      const toStep = async (n) => { await js(`(() => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < ${n}; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector('[data-step-jump="${n}"]').click(); })()`); await sleep(900); };
       const clickMenu = async (sel) => { await js(`(() => { const b = document.querySelector(${JSON.stringify(sel)}); if (b) b.click(); })()`); await sleep(900); };
       if (s === "menu") { await toTitle(); await shot("menu"); continue; }
       if (s === "mapselect") {
@@ -83,7 +85,7 @@ app.whenReady().then(async () => {
         // The three set-up steps (Battlefield / Sides / Rules) at 1280x720, the width that bites.
         win.setSize(1280, 720); await sleep(500);
         await toTitle(); await clickMenu('[data-menu="play"]');
-        for (const n of [1, 2, 3]) { await clickMenu(`[data-step-jump="${n}"]`); await shot(`setup-step${n}`); }
+        for (const n of [1, 2, 3]) { await toStep(n); await shot(`setup-step${n}`); }
         await toTitle(); await clickMenu('[data-menu="settings"]'); await shot("settings-display");
         await clickMenu('[data-settings-tab="gameplay"]'); await shot("settings-gameplay");
         win.setSize(1600, 900); await sleep(500);
@@ -316,6 +318,54 @@ app.whenReady().then(async () => {
         }
         continue;
       }
+      if (s === "defenses") {
+        // Each faction's Defenses and Support decks fresh (starters open, the rest locked with their
+        // doctrine), then with all research, a turret placement ghost under the cursor, and every
+        // new emplacement standing by the base, close.
+        for (const faction of ["vanguard", "syndicate", "bastion"]) {
+          await js(`window.__rht.startBattle("dustbowl", "destroy", "normal", ${JSON.stringify(faction)})`);
+          await sleep(2400);
+          const pick = async (tab) => { await js(`(() => { const sim = window.__rht.sim; const hq = sim.entities.find(e => e.team === "player" && e.kind === "base"); sim.select(hq.id); })()`); await sleep(500); await js(`(() => { const b = document.querySelector('[data-base-tab="${tab}"]'); if (b) b.click(); })()`); await sleep(500); };
+          await pick("defenses"); await shot(`defenses-${faction}-fresh`);
+          await pick("support"); await shot(`support-${faction}-fresh`);
+          await js(`(() => { const sim = window.__rht.sim; sim.economy.set("player", 9000); const hq = sim.entities.find(e => e.team === "player" && e.kind === "base"); hq.unlockedTech = ["recon","assault","support","ordnance","armor","siege","airwing"]; })()`);
+          await pick("defenses"); await shot(`defenses-${faction}-open`);
+          await pick("support"); await shot(`support-${faction}-open`);
+          // A turret ghost at a legal spot and at a refused one (inside the base).
+          await js(`(() => { const sim = window.__rht.sim; const hq = sim.entities.find(e => e.team === "player" && e.kind === "base"); sim.select(hq.id); sim.setPendingBuild("turret"); window.__rht.hoverGround({ x: hq.position.x + 6, z: hq.position.z + 2 }); window.__rht.setView({ x: hq.position.x + 5, z: hq.position.z + 1, zoom: 0.8, pitch: 0.75, yaw: 0.3 }); })()`);
+          await sleep(900); await shot(`ghost-${faction}-ok`);
+          await js(`(() => { const sim = window.__rht.sim; const hq = sim.entities.find(e => e.team === "player" && e.kind === "base"); window.__rht.hoverGround({ x: hq.position.x + 13, z: hq.position.z + 2 }); window.__rht.setView({ x: hq.position.x + 8, z: hq.position.z + 1, zoom: 0.9, pitch: 0.75, yaw: 0.3 }); })()`);
+          await sleep(700); await shot(`ghost-${faction}-refused`);
+          // The faction's top support's reticle (napalm / paradrop / barrage), out in the field.
+          await js(`(() => { const sim = window.__rht.sim; sim.setPendingBuild(undefined); const hq = sim.entities.find(e => e.team === "player" && e.kind === "base"); sim.select(hq.id); const kind = sim.factionOf("player").supports.find((k) => ["paradrop", "napalm", "barrage"].includes(k)); sim.setPendingSupport(kind); window.__rht.hoverGround({ x: 0, z: 0 }); window.__rht.setView({ x: 0, z: 0, zoom: 0.8, pitch: 0.8, yaw: 0.3 }); })()`);
+          await sleep(800); await shot(`reticle-${faction}`);
+          await js(`window.__rht.sim.setPendingSupport(undefined)`);
+          await js(`(() => { const sim = window.__rht.sim; sim.setPendingBuild(undefined); window.__rht.deselect(); const hq = sim.entities.find(e => e.team === "player" && e.kind === "base");
+            const kinds = sim.factionOf("player").defenses.filter((k) => k !== "minefield" && k !== "sandbag");
+            kinds.forEach((k, i) => sim.debugBuild(k, "player", { x: hq.position.x + 7 + (i % 3) * 3.2, z: hq.position.z - 3 + Math.floor(i / 3) * 3.6 }));
+            window.__rht.setView({ x: hq.position.x + 10, z: hq.position.z - 1, zoom: 0.7, pitch: 0.7, yaw: 0.45 }); })()`);
+          await sleep(1200); await shot(`emplacements-${faction}`);
+        }
+        continue;
+      }
+      if (s === "glprobe") {
+        // GL ERRORS PER FRAME (2026-10-01): wraps blitFramebuffer and polls getError over 2s of a battle.
+        // A depth blit failed 144 times a second for weeks unseen (see stage.ts, NO DEPTH BLIT); any
+        // non-zero error count here is a bug. Run after a postprocessing / three / n8ao bump.
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(2500);
+        console.log("glprobe", await js(`(async () => {
+          const gl = document.querySelector("canvas").getContext("webgl2");
+          const stats = { blits: 0, blitErrors: 0, otherErrors: 0, depthBlits: 0 };
+          const orig = gl.blitFramebuffer.bind(gl);
+          gl.blitFramebuffer = (...a) => { stats.blits += 1; if (a[8] & gl.DEPTH_BUFFER_BIT) stats.depthBlits += 1; gl.getError(); orig(...a); if (gl.getError() !== 0) stats.blitErrors += 1; };
+          const poll = setInterval(() => { if (gl.getError() !== 0) stats.otherErrors += 1; }, 16);
+          await new Promise((r) => setTimeout(r, 2000));
+          clearInterval(poll);
+          return JSON.stringify(stats);
+        })()`));
+        continue;
+      }
       if (s === "basesel") {
         // The REAL flow, camera untouched: battle opens on the player's base, the player picks it and a
         // unit to deploy. The whole deploy circle must be on screen and clear of the HUD panels.
@@ -388,7 +438,7 @@ app.whenReady().then(async () => {
         await strip("boot-title", 12, 400);
         await js(`(() => { const b = document.querySelector('[data-menu="play"]'); if (b) b.click(); })()`);
         await sleep(900);
-        await js(`(() => { const b = document.querySelector("[data-start]"); if (b) b.click(); })()`);
+        await js(`(() => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < 3; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector("[data-start]").click(); })()`);
         await sleep(200);
         await strip("boot-mission", 20, 300);
         continue;
@@ -614,9 +664,9 @@ app.whenReady().then(async () => {
       }
       if (s === "versus") {
         // Local 2 Players: the set-up page, then the handoff card before Player 1 plans.
-        await toTitle(); await clickMenu('[data-menu="play"]'); await clickMenu('[data-step-jump="2"]'); await clickMenu('[data-opponent="local"]');
+        await toTitle(); await clickMenu('[data-menu="play"]'); await toStep(2); await clickMenu('[data-opponent="local"]');
         await shot("versus-setup");
-        await clickMenu("[data-start]"); await sleep(2500);
+        await toStep(3); await clickMenu("[data-start]"); await sleep(2500);
         await shot("versus-handoff");
         continue;
       }

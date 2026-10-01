@@ -9,7 +9,7 @@ try {
   await page.click('[data-menu="play"]');
   await page.waitForSelector("[data-map]");
   await page.click('[data-map="dustbowl"]');
-  await page.click("[data-start]");
+  await page.evaluate(() => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < 3; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector("[data-start]").click(); });
   await page.waitForFunction(() => window.__rht?.sim?.phase === "command", null, { timeout: 20000 });
   await page.evaluate((kinds) => {
     const sim = window.__rht.sim;

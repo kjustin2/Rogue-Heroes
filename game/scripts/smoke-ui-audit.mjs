@@ -22,8 +22,8 @@ const SCREENS = [
   // Back to the menu first, or "title" just re-audits whatever the previous screen left up.
   ["title", async (page) => { await page.evaluate(() => window.__rht.toMenu()); await delay(600); }],
   ["deploy", async (page) => { await page.click('[data-menu="play"]'); await delay(500); }],
-  ["setup-sides", async (page) => { await page.click('[data-step-jump="2"]'); await delay(300); }],
-  ["setup-rules", async (page) => { await page.click('[data-step-jump="3"]'); await delay(300); }],
+  ["setup-sides", async (page) => { await page.evaluate((n) => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < n; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector(`[data-step-jump="${n}"]`).click(); }, 2); await delay(300); }],
+  ["setup-rules", async (page) => { await page.evaluate((n) => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < n; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector(`[data-step-jump="${n}"]`).click(); }, 3); await delay(300); }],
   ["settings", async (page) => { await page.evaluate(() => window.__rht.toMenu()); await delay(400); await page.click('[data-menu="settings"]'); await delay(500); }],
   ["pause", async (page) => {
     await page.evaluate(() => window.__rht.scenario("firefight"));
@@ -126,11 +126,11 @@ const SCREENS = [
   ["versus-setup", async (page) => {
     await page.evaluate(() => window.__rht.toMenu()); await delay(400);
     await page.click('[data-menu="play"]'); await delay(400);
-    await page.click('[data-step-jump="2"]'); await delay(200);
+    await page.evaluate((n) => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < n; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector(`[data-step-jump="${n}"]`).click(); }, 2); await delay(200);
     await page.click('[data-opponent="local"]'); await delay(400);
   }],
   ["versus-handoff", async (page) => {
-    await page.click("[data-start]");
+    await page.evaluate(() => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < 3; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector("[data-start]").click(); });
     await page.waitForSelector(".hotseat-card", { timeout: 8000 });
     await delay(400);
   }],
@@ -172,14 +172,15 @@ try {
   await page.click('[data-menu="play"]');
   await delay(500);
   for (const stepNo of [1, 2, 3]) {
-    await page.click(`[data-step-jump="${stepNo}"]`);
+    await page.evaluate((n) => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < n; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector(`[data-step-jump="${n}"]`).click(); }, stepNo);
     await delay(250);
-    const oneScreen = await page.evaluate(() => {
+    const oneScreen = await page.evaluate((n) => {
       const body = document.querySelector(".menu-screen > .menu-content > .start-layout");
-      const start = document.querySelector("[data-start]");
+      // The forward button of the step: Next, or Deploy on the last step.
+      const start = document.querySelector(n === 3 ? "[data-start]" : '[data-step-go="next"]');
       const r = (el) => el ? el.getBoundingClientRect() : null;
       return { scroll: body ? body.scrollHeight - body.clientHeight : -1, start: r(start)?.bottom, h: window.innerHeight };
-    });
+    }, stepNo);
     if (oneScreen.scroll > 1 || !oneScreen.start || oneScreen.start > oneScreen.h) {
       console.error(`ONE-SCREEN: set-up step ${stepNo} scrolls or hides Deploy at 1280x720 (${JSON.stringify(oneScreen)})`);
       failures += 1;

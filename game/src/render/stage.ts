@@ -229,16 +229,28 @@ export class Stage {
     if (this.quality === "performance") return; // direct renderer.render path
 
     this.composer = new EffectComposer(this.renderer, { frameBufferType: THREE.HalfFloatType });
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    const scenePass = new RenderPass(this.scene, this.camera);
+    // NO DEPTH BLIT (2026-10-01). postprocessing 6.39.2 copies the scene depth into a "stable" depth
+    // texture after this pass, and under three r170 that copy failed EVERY frame (GL_INVALID_OPERATION
+    // "read and write depth stencil attachments cannot be the same image", 144/s; found by the play log).
+    // N8AO is handed the composer's LIVE depth texture instead (below): it is attached to the input
+    // buffer N8AO reads from, never to the output it writes, so there is no feedback loop and no copy.
+    // 6.39.5 "fixes" the blit but N8AO 2.0.1 then renders BLACK through it: postprocessing is pinned at
+    // exactly 6.39.2 -- bump it only with `npm run shots:gpu -- _glprobe maps` (docs/architecture.md).
+    scenePass.needsDepthBlit = false;
+    this.composer.addPass(scenePass);
     if (this.quality === "quality" || this.quality === "ultra") {
       // CONTACT SHADING (N8AO, 2026-09-24): screen-space AO where a boot meets the ground, a wall meets
       // a mesa, a hull sits in a crater -- the "in the world, not pasted on" read toon games get from
       // baked AO, for props and units the vertex bake cannot see each other in. Half-res, a tight
       // world radius, low intensity: contact, not grime. Off on the lower tiers and under ?lowfx.
       const ao = new N8AOPostPass(this.scene, this.camera, window.innerWidth, window.innerHeight);
-      ao.setQualityMode(this.quality === "ultra" ? "Medium" : "Low");
+      // One step lighter than first shipped: with real depth (2026-10-01, NO DEPTH BLIT) AO does its full work.
+      ao.setQualityMode(this.quality === "ultra" ? "Low" : "Performance");
       Object.assign(ao.configuration, { aoRadius: 1.6, distanceFalloff: 1.2, intensity: 2.2, halfRes: true, gammaCorrection: false });
       this.composer.addPass(ao);
+      const liveDepth = (this.composer as unknown as { depthTexture: THREE.DepthTexture | null }).depthTexture;
+      if (liveDepth) ao.setDepthTexture(liveDepth);
     }
     const effects: Effect[] = [];
     // Daylight scene: a high threshold so bloom picks out muzzle flashes, tracers, team

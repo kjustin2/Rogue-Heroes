@@ -8,8 +8,11 @@ import {
   POP_CAP,
   START_MONEY_PLAYER,
   TacticalSim,
+  defenseSpec,
   generatorEfficiency,
   incomeUpgradeCost,
+  mapDef,
+  supportPowerSpec,
   troopSpec,
   type Projectile,
 } from "./sim";
@@ -1493,8 +1496,9 @@ describe("defenses, difficulty, and base upgrades", () => {
     const sim = new TacticalSim([base]);
     sim.economy.set("player", 1500);
     sim.select("p-base-1");
-    sim.setPendingBuild("turret");
-    expect(sim.queueBuildStructure({ x: -10.5, z: -5 })).toBe(false); // the Gun Turret needs a doctrine now
+    // A locked Gun Turret will not even ARM (owner 2026-10-01: it armed, then every click failed).
+    expect(sim.setPendingBuild("turret")).toBe(false);
+    expect(sim.pendingBuild).toBeUndefined();
     expect(sim.log[0]).toContain("Assault Doctrine");
     base.unlockedTech = ["assault"];
 
@@ -1515,6 +1519,80 @@ describe("defenses, difficulty, and base upgrades", () => {
     sim.setPendingBuild("wall");
     expect(sim.queueBuildStructure({ x: -10.5, z: -5 })).toBe(false);
     expect(sim.log[0]).toContain("blocked");
+  });
+
+  // REGRESSION (owner 2026-10-01: "I couldn't place a gun turret ... clicked all over the green ring ...
+  // it was broken"). The class: a placement that ARMS but can never be placed. On every real map, for
+  // every faction: a locked piece refuses to arm; an unlocked one arms AND lands somewhere in its ring.
+  it("every defense and support either refuses to arm, or arms and can be placed in its ring", () => {
+    for (const mapId of ["dustbowl", "ironworks", "verdant", "causeway", "karak", "crossfire"]) {
+      for (const faction of ["vanguard", "syndicate", "bastion"] as const) {
+        const sim = new TacticalSim();
+        sim.configure(mapDef(mapId), "destroy", "normal", { player: faction, enemy: faction === "vanguard" ? "bastion" : "vanguard" });
+        const base = sim.entities.find((e) => e.kind === "base" && e.team === "player")!;
+        const fresh = (): void => { base.commandPoints = 1; sim.economy.set("player", 9000); sim.select(base.id); };
+        const ring = (r: number): { x: number; z: number }[] => {
+          const out = [];
+          for (let d = 2; d <= r; d += 1.1) for (let i = 0; i < 16; i += 1) out.push({ x: base.position.x + Math.sin(i / 16 * Math.PI * 2) * d, z: base.position.z + Math.cos(i / 16 * Math.PI * 2) * d });
+          return out;
+        };
+        for (const unlocked of [false, true]) {
+          base.unlockedTech = unlocked ? ["recon", "assault", "support", "ordnance", "armor", "siege", "airwing"] : [];
+          for (const kind of sim.factionOf("player").defenses) {
+            fresh();
+            const locked = Boolean(defenseSpec(kind).tech) && !unlocked;
+            expect(sim.setPendingBuild(kind), `${mapId}/${faction}/${kind} arm`).toBe(!locked);
+            if (locked) continue;
+            const spot = ring(sim.defensePlacementRadius(base)).find((p) => !sim.buildFailureReason(base, kind, p));
+            expect(spot, `${mapId}/${faction}/${kind}: no legal spot in its ring`).toBeDefined();
+            expect(sim.queueBuildStructure(spot!), `${mapId}/${faction}/${kind}: ${sim.log[0]}`).toBe(true);
+          }
+          for (const kind of sim.factionOf("player").supports) {
+            fresh();
+            const locked = Boolean(supportPowerSpec(kind).tech) && !unlocked;
+            expect(sim.setPendingSupport(kind), `${mapId}/${faction}/${kind} arm`).toBe(!locked);
+            if (!locked) expect(sim.queueSupportAt({ x: 0, z: 0 }), `${mapId}/${faction}/${kind}: ${sim.log[0]}`).toBe(true);
+            if (base.supportCooldowns) base.supportCooldowns = {};
+          }
+        }
+      }
+    }
+    setActiveTerrain(DEFAULT_TERRAIN);
+  });
+
+  it("builds every new defense: sandbags become cover, a minefield three mines, emplacements that act", () => {
+    const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 });
+    const sim = new TacticalSim([base]);
+    sim.economy.set("player", 5000);
+    base.unlockedTech = ["assault", "ordnance", "armor", "recon"];
+    const build = (kind: Parameters<TacticalSim["setPendingBuild"]>[0], at: { x: number; z: number }): void => {
+      base.commandPoints = 1;
+      sim.select(base.id);
+      expect(sim.setPendingBuild(kind), sim.log[0]).toBe(true);
+      expect(sim.queueBuildStructure(at), sim.log[0]).toBe(true);
+    };
+    const playAs = (id: string): void => { (sim as unknown as { factions: Record<string, string> }).factions.player = id; };
+    // Faction decks are asserted to differ: Vanguard cannot lay mines.
+    sim.select(base.id);
+    expect(sim.setPendingBuild("minefield")).toBe(false);
+    build("sandbag", { x: -10, z: -8 });
+    expect(sim.entities.some((e) => e.kind === "cover" && e.coverKind === "sandbag")).toBe(true);
+    build("aaturret", { x: -9, z: 1 });
+    build("sensor", { x: -17, z: -1 });
+    playAs("syndicate");
+    build("minefield", { x: -10, z: -2 });
+    expect(sim.mines.filter((m) => m.team === "player").length).toBe(3);
+    playAs("bastion");
+    build("bunker", { x: -9, z: -12 });
+    for (const kind of ["aaturret", "bunker"] as const) {
+      const e = sim.entities.find((x) => x.kind === kind)!;
+      expect(e.status.canShoot, kind).toBe(true);
+      expect(e.status.canMove, kind).toBe(false);
+    }
+    // The mast relays: an ally beside it shoots straighter than one far away.
+    const near = createSoldier("p-n", "Near", "player", { x: -17, z: 4 });
+    const assist = (sim as unknown as { accuracyAssistMultiplier(a: unknown): number }).accuracyAssistMultiplier(near);
+    expect(assist).toBeLessThan(1);
   });
 
   it("lets a tank fire an explosive shell at a ground spot", () => {

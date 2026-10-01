@@ -1621,7 +1621,7 @@ function baseCommandPanel(base: CombatEntity, sim: TacticalSim): string {
       <div class="placement-bar">
         <strong>Placing ${escapeHtml(pendingLabel)}</strong>
         <span>Place in the green ring.</span>
-        ${sim.pendingBuild === "wall" ? `<button class="btn ghost" data-rotate-placement="1" type="button" data-tip="Turn it 45 degrees. Hotkey: T.">Rotate ⟳ <kbd>T</kbd></button>` : ""}
+        ${sim.pendingBuild && ROTATABLE_BUILDS.has(sim.pendingBuild) ? `<button class="btn ghost" data-rotate-placement="1" type="button" data-tip="Turn it 45 degrees. Hotkey: T.">Rotate ⟳ <kbd>T</kbd></button>` : ""}
         <button class="btn ghost" data-build-cancel="1" type="button" data-tip="Cancel placement.">Cancel</button>
       </div>
     `;
@@ -1753,14 +1753,31 @@ function deployNoteHtml(sim: TacticalSim): string {
     <button class="icon-btn" data-deploy-cancel="1" data-tip="Cancel placement.">Cancel</button></div>`;
 }
 
+/** Strikes laid along a line, so they show Rotate (T). */
+export const LINE_SUPPORTS: ReadonlySet<SupportPowerKind> = new Set<SupportPowerKind>(["airstrike", "laser", "napalm"]);
+/** Placements whose facing matters, so they show Rotate (T). */
+export const ROTATABLE_BUILDS: ReadonlySet<DefenseKind> = new Set<DefenseKind>(["wall", "sandbag", "minefield"]);
+
 function defenseDeckHtml(base: CombatEntity, sim: TacticalSim): string {
   const money = sim.money(base.team);
   const hasCp = base.commandPoints > 0;
   const buildable = sim.factionOf(base.team).defenses;
   const buttons = DEFENSE_CATALOG.filter((spec) => buildable.includes(spec.kind)).map((spec) => {
-    const affordable = hasCp && money >= spec.cost;
+    // Research-locked pieces stay visible and say what unlocks them (owner 2026-10-01: a locked
+    // Gun Turret armed anyway, then refused every click in the ring).
+    if (spec.tech && !isTechUnlocked(base, spec.tech)) {
+      const techName = TECH_TREE.find((n) => n.id === spec.tech)?.name ?? "a doctrine";
+      return `<button class="btn confirm disabled locked-troop" data-build="${spec.kind}" data-disabled="true" data-tip="${escapeAttr(`${spec.label} (${spec.role}): ${spec.tip} Research ${techName} on the Tech tab to build it.`)}">
+      ${escapeHtml(spec.label)}
+      <span>🔒 ${escapeHtml(techName)}</span>
+    </button>`;
+    }
+    const reason = sim.buildBlockedReason(base, spec.kind);
+    const affordable = hasCp && money >= spec.cost && !reason;
     const active = sim.pendingBuild === spec.kind;
-    const tip = `${spec.label} (${spec.role}): ${spec.tip} Costs 1 AP and $${spec.cost}. Then click a spot inside the green ring near your base.`;
+    const tip = reason && !active
+      ? `${spec.label}: ${withoutLabel(reason, spec.label)}.`
+      : `${spec.label} (${spec.role}): ${spec.tip} Costs 1 AP and $${spec.cost}. Then click a spot inside the green ring near your base.`;
     return `<button class="btn confirm ${active ? "active" : affordable ? "" : "disabled"}" data-build="${spec.kind}" data-disabled="${!affordable && !active}" data-tip="${escapeAttr(tip)}">
       ${escapeHtml(spec.label)}
       <span>${active ? "Placing…" : `$${spec.cost}`}</span>
@@ -1777,7 +1794,8 @@ function supportDeckHtml(base: CombatEntity, sim: TacticalSim): string {
   // Off-map support powers: tech-locked ones stay classified (same discovery language as the
   // troop deck); unlocked ones show cost / cooldown, and the armed one shows Targeting.
   const available = sim.factionOf(base.team).supports;
-  const buttons = SUPPORT_POWERS.filter((spec) => available.includes(spec.kind)).map((spec) => {
+  // The faction's own order: its starter first, then the researched powers.
+  const buttons = available.map((kind) => supportPowerSpec(kind)).map((spec) => {
     const techLocked = Boolean(spec.tech) && !isTechUnlocked(base, spec.tech as string);
     if (techLocked) {
       const techName = TECH_TREE.find((n) => n.id === spec.tech)?.name ?? "a doctrine";
@@ -1800,7 +1818,7 @@ function supportDeckHtml(base: CombatEntity, sim: TacticalSim): string {
     </button>`;
   }).join("");
   const supportNote = sim.pendingSupport
-    ? `<div class="order-note order-note--progress">${escapeHtml(supportPowerSpec(sim.pendingSupport).label)}: pick a spot. ${sim.pendingSupport === "airstrike" || sim.pendingSupport === "laser" ? `<button class="icon-btn" data-rotate-placement="1" data-tip="Turn the strike line 45 degrees. Hotkey: T.">Rotate ⟳ (T)</button>` : ""} <button class="icon-btn" data-support-cancel="1" data-tip="Cancel the strike call.">Cancel</button></div>`
+    ? `<div class="order-note order-note--progress">${escapeHtml(supportPowerSpec(sim.pendingSupport).label)}: pick a spot. ${LINE_SUPPORTS.has(sim.pendingSupport) ? `<button class="icon-btn" data-rotate-placement="1" data-tip="Turn the strike line 45 degrees. Hotkey: T.">Rotate ⟳ (T)</button>` : ""} <button class="icon-btn" data-support-cancel="1" data-tip="Cancel the strike call.">Cancel</button></div>`
     : "";
   return `${supportNote}<div class="support-options part-options">${buttons}</div>`;
 }

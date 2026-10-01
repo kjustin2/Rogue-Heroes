@@ -121,8 +121,13 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   elevation is clamped >= 28 degrees (lower grows acne on the flat arena, ledger #4). Ironworks keeps a NEUTRAL key
   with the furnace orange only on the rim: an orange key turned the steel yard into one brown (97% one hue).
 - **N8AO contact shading** (`n8ao` 2.0.1, `src/n8ao.d.ts` types): `N8AOPostPass` after the RenderPass on the
-  Quality ("Low") and Ultra ("Medium") tiers only; half-res, radius 1.6m, intensity 2.2, gammaCorrection off.
-  Real-GPU soak: p50 unchanged (13.9ms). `three-good-godrays` was considered and rejected (tactical pitch — the
+  Quality ("Performance") and Ultra ("Low") tiers only; half-res, radius 1.6m, intensity 2.2, gammaCorrection off.
+  **DEPTH WIRING (2026-10-01)**: postprocessing 6.39.2's "stable depth" blit after the RenderPass failed EVERY
+  frame under three r170 (same GL image on both ends; 144 GL errors/s, found by the play log). The RenderPass
+  has `needsDepthBlit = false` and N8AO is handed the composer's LIVE depth texture (`ao.setDepthTexture`):
+  attached to the input it reads, never the output it writes. postprocessing is pinned at **exactly 6.39.2**:
+  6.39.5 fixes the blit but N8AO then renders the scene BLACK. Any bump of postprocessing / n8ao / three runs
+  `npm run shots:gpu -- glprobe maps` (glprobe must print all zeros; the maps must not be black). `three-good-godrays` was considered and rejected (tactical pitch — the
   sky is a sliver).
 - **Faction light pools**: every living HQ throws a slow-breathing draped disc of `FACTION_GLOW` (shared with the
   aircraft engine burn) in `syncEnvironment` — a disc, not a light.
@@ -367,6 +372,15 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
 `BrowserWindow`. **Never regress to a random-port http server: localStorage is
 origin-keyed, so a new port every launch silently wipes all saves** (real 06-24 bug).
 `npm run desktop` runs against an existing `dist/`; `standalone` builds first.
+
+**PLAY LOG** (owner 2026-10-01: "when I run the game locally ... sends logs to a file so afterwards when I make
+references to what happened while I tested you know what I mean"). Run from the repo (never the packaged
+.exe), the shell copies the page console to `game/logs/play-<time>.log` and `game/logs/latest.log` (last 20
+kept, git-ignored; `RHT_NO_PLAYLOG=1` off). The game writes a `[play]` trail (`src/debug/playLog.ts`): every
+button clicked (label + data-*, DISABLED flagged), every ground click with what was armed, battle starts, each
+turn's phase, every sim log line during a battle (orders, refusals WITH their reason, hits, kills), toasts,
+uncaught errors -- plus every console warning/error and renderer crash. **When the owner refers to his
+playtest, read `game/logs/latest.log` first.** `RHT_HIDDEN=1` launches the shell without showing a window.
 
 ## Persistence
 

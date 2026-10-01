@@ -18,15 +18,15 @@ const RESOLVE_MS = 150000;
 try {
   await page.waitForSelector(".main-menu");
   await page.click('[data-menu="play"]');
-  await page.click('[data-step-jump="2"]'); // Sides step of the set-up flow
+  await page.evaluate((n) => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < n; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector(`[data-step-jump="${n}"]`).click(); }, 2); // Sides step of the set-up flow
   await page.waitForSelector('[data-opponent="local"]');
   if (await page.$('[data-menu="versus"]')) fail("Local 2 Players should live on the Skirmish page, not the main menu");
   await page.click('[data-opponent="local"]');
   await page.waitForSelector('[data-opponent="local"].on');
   if (await page.$('[data-mode="survival"]')) fail("Last Stand offered in 2-player set-up");
-  await page.click('[data-step-jump="1"]');
+  await page.evaluate((n) => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < n; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector(`[data-step-jump="${n}"]`).click(); }, 1);
   await page.click('[data-map="verdant"]');
-  await page.click("[data-start]");
+  await page.evaluate(() => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < 3; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector("[data-start]").click(); });
   await page.waitForSelector(".hotseat-card", { timeout: 8000 });
   if ((await handoff()) !== "Player 1") fail(`turn 1 should open with Player 1, got ${await handoff()}`);
   await page.screenshot({ path: "shots/hotseat-handoff.png" });

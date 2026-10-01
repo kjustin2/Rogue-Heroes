@@ -40,6 +40,9 @@ import {
   createTurret,
   COVER_PROFILES,
   createExTurret,
+  createAaTurret,
+  createBunker,
+  createSensor,
   createWall,
   factionLiving,
   isBuildingKind,
@@ -135,7 +138,9 @@ const RESOLVE_SETTLE_TIMEOUT = 18;
 const RESOLVE_HARD_CEILING = 20;
 
 // Support powers that land damage (the bot's strike logic only drops these on a crowd).
-const DAMAGING_SUPPORT: ReadonlySet<SupportPowerKind> = new Set<SupportPowerKind>(["airstrike", "cluster", "laser"]);
+const DAMAGING_SUPPORT: ReadonlySet<SupportPowerKind> = new Set<SupportPowerKind>(["airstrike", "cluster", "laser", "napalm", "barrage"]);
+/** A Sensor Mast's spotter relay reaches this far (a spotter unit's reaches 6.2m). */
+const SENSOR_REACH = 10;
 const RESUPPLY_RADIUS = 4;
 const RESUPPLY_HEAL = 40;
 // Half-angle of a unit's FRONT: a shot from outside this ±60° wedge around its facing flanks it.
@@ -180,7 +185,7 @@ const SLAM_LANDING_DAMAGE = 15;
 // Metres a piercing round carries on past a body it went through.
 const PIERCE_CARRY = 7;
 
-type StrikeKind = "barrage" | "collapse" | "airstrike" | "cluster" | "laser" | "lightning" | "slag" | "smokedrop" | "resupply";
+type StrikeKind = "barrage" | "collapse" | "airstrike" | "cluster" | "laser" | "lightning" | "slag" | "smokedrop" | "resupply" | "napalm" | "paradrop";
 const LIGHTNING_RADIUS = 2.0;
 
 // Gas clouds (see runGasTick / igniteGasAt).
@@ -530,6 +535,8 @@ export class TacticalSim {
   // planning. swapSides() drops the outgoing seat's planning chatter so the next seat cannot read
   // the other human's orders off the log.
   private logSeq = 0;
+  /** Lines ever pushed to the log (monotonic; the play log reads the new ones each frame). */
+  get logTotal(): number { return this.logSeq; }
   private seatLogMark = 0;
   readonly turnReports: TurnReport[] = [];
   readonly economy = new Map<Team, number>([["player", START_MONEY_PLAYER], ["enemy", START_MONEY_ENEMY], ["neutral", 0]]);
@@ -1552,13 +1559,16 @@ export class TacticalSim {
     return { center: { ...base.position }, radius: this.deployPlacementRadius(base) };
   }
 
-  setPendingDeploy(kind: TroopKind | undefined): void {
+  setPendingDeploy(kind: TroopKind | undefined): boolean {
+    const blocked = kind && this.spawnFailureReason(this.selected, kind);
+    if (blocked) return this.reject(blocked);
     this.pendingDeploy = kind;
     this.intent = kind ? "deploy" : "select";
     if (kind) {
       this.pendingBuild = undefined;
       this.pendingSupport = undefined;
     }
+    return true;
   }
 
   // The footprint a troop of this kind needs on the ground (rng-free probe entity, never fielded).
@@ -1724,16 +1734,26 @@ export class TacticalSim {
     return Math.atan2(point.x - from.x, point.z - from.z) + (this.placementTurn * Math.PI) / 4;
   }
 
-  setPendingBuild(kind: DefenseKind | undefined): void {
+  // Arming a placement refuses up front when the order could not be placed ANYWHERE (owner 2026-10-01:
+  // a locked Gun Turret armed anyway, then every click in the ring was silently rejected).
+  setPendingBuild(kind: DefenseKind | undefined): boolean {
+    const blocked = kind && this.buildBlockedReason(this.selected, kind);
+    if (blocked) return this.reject(blocked);
     this.placementTurn = 0;
     this.pendingBuild = kind;
     this.intent = kind ? "build" : "select";
-    if (kind) this.pendingDeploy = undefined;
+    if (kind) {
+      this.pendingDeploy = undefined;
+      this.pendingSupport = undefined;
+    }
+    return true;
   }
 
   // ---- Off-map support powers (airstrike / cluster / orbital lance) ----
 
-  setPendingSupport(kind: SupportPowerKind | undefined): void {
+  setPendingSupport(kind: SupportPowerKind | undefined): boolean {
+    const blocked = kind && this.supportFailureReason(this.selected, kind);
+    if (blocked) return this.reject(blocked);
     this.placementTurn = 0;
     this.pendingSupport = kind;
     this.intent = kind ? "support" : "select";
@@ -1741,6 +1761,7 @@ export class TacticalSim {
       this.pendingBuild = undefined;
       this.pendingDeploy = undefined;
     }
+    return true;
   }
 
   supportCooldown(base: CombatEntity, kind: SupportPowerKind): number {
@@ -1762,6 +1783,7 @@ export class TacticalSim {
     const cooldown = this.supportCooldown(base, kind);
     if (cooldown > 0) return `${spec.label} on cooldown (${cooldown} turn${cooldown === 1 ? "" : "s"})`;
     if (this.money(base.team) < spec.cost) return `Not enough money for ${spec.label} ($${spec.cost})`;
+    if (kind === "paradrop" && this.fieldUnitCount(base.team) >= POP_CAP) return `Field is full (${POP_CAP} units)`;
     return undefined;
   }
 
@@ -1801,6 +1823,9 @@ export class TacticalSim {
       : kind === "laser" ? `${base.name} requests the orbital lance — beam on the next resolve`
       : kind === "reconsweep" ? `${base.name} sends a spotter plane — the enemy's next orders will be revealed`
       : kind === "smokescreen" ? `${base.name} calls smoke on the point — it blooms on the next resolve`
+      : kind === "paradrop" ? `${base.name} sends a paradrop — two troopers land on the next resolve`
+      : kind === "napalm" ? `${base.name} orders napalm — the point burns on the next resolve`
+      : kind === "barrage" ? `${base.name} calls a barrage — six shells on the next resolve`
       : `${base.name} calls a resupply drop — crates land on the next resolve`,
     );
     return true;
@@ -1840,6 +1865,28 @@ export class TacticalSim {
         this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: 0x9dd8ff, duration: 1.6 });
       } else if (kind === "smokescreen") {
         this.pendingStrikes.push({ at: 0.9, point, radius: SMOKE_RADIUS, damage: 0, kind: "smokedrop", team: call.team });
+      } else if (kind === "paradrop") {
+        const from = clampToArena({ x: point.x - dir.x * 16, z: point.z - dir.z * 16 });
+        const to = clampToArena({ x: point.x + dir.x * 16, z: point.z + dir.z * 16 });
+        this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: 0xbfe8ff, duration: 1.7 });
+        this.pendingStrikes.push({ at: 1.0, point, radius: 0, damage: 0, kind: "paradrop", team: call.team });
+      } else if (kind === "napalm") {
+        // Three firebombs along the run; each leaves the flamer's burning ground (fear and tick free).
+        const from = clampToArena({ x: point.x - dir.x * 15, z: point.z - dir.z * 15 });
+        const to = clampToArena({ x: point.x + dir.x * 15, z: point.z + dir.z * 15 });
+        this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: 0xff8a3a, duration: 1.5 });
+        for (let i = 0; i < 3; i += 1) {
+          const p = clampToArena({ x: point.x + dir.x * (i - 1) * 1.8, z: point.z + dir.z * (i - 1) * 1.8 });
+          this.pendingStrikes.push({ at: 1.0 + i * 0.15, point: p, radius: 1.7, damage: 18, kind: "napalm", team: call.team });
+        }
+      } else if (kind === "barrage") {
+        // Six heavy shells walk across a 4.5m circle, one after another (the map barrage's shell).
+        for (let i = 0; i < 6; i += 1) {
+          const angle = this.rng.range(0, Math.PI * 2);
+          const r = Math.sqrt(this.rng.range(0, 1)) * 4.5;
+          const p = clampToArena({ x: point.x + Math.sin(angle) * r, z: point.z + Math.cos(angle) * r });
+          this.pendingStrikes.push({ at: 0.9 + i * 0.32, point: p, radius: 1.6, damage: 38, kind: "barrage", team: call.team });
+        }
       } else if (kind === "resupply") {
         const from = clampToArena({ x: point.x - dir.x * 14, z: point.z - dir.z * 14 });
         const to = clampToArena({ x: point.x + dir.x * 14, z: point.z + dir.z * 14 });
@@ -1860,8 +1907,8 @@ export class TacticalSim {
     this.queuedSupport = [];
   }
 
-  // Why a structure can't be placed at a point right now, or undefined if it can.
-  buildFailureReason(base: CombatEntity | undefined, kind: DefenseKind, point: Vec2): string | undefined {
+  // Why a structure can't be built ANYWHERE right now (locked, broke, no AP), or undefined if it can.
+  buildBlockedReason(base: CombatEntity | undefined, kind: DefenseKind): string | undefined {
     if (!base || base.kind !== "base") return "Select your Home Base to build defenses";
     if (!base.status.alive) return `${base.name} is disabled`;
     if (base.commandPoints <= 0) return `${base.name} has no action points`;
@@ -1870,11 +1917,21 @@ export class TacticalSim {
     if (!buildFaction.defenses.includes(kind)) return `${spec.label} is not a ${buildFaction.name} emplacement`;
     if (spec.tech && !isTechUnlocked(base, spec.tech)) return `Research ${techNode(spec.tech)?.name ?? "the required doctrine"} to unlock ${spec.label}`;
     if (this.money(base.team) < spec.cost) return `Not enough money for ${spec.label} ($${spec.cost})`;
+    return undefined;
+  }
+
+  // Why a structure can't be placed at a point right now, or undefined if it can.
+  buildFailureReason(base: CombatEntity | undefined, kind: DefenseKind, point: Vec2): string | undefined {
+    const blockedReason = this.buildBlockedReason(base, kind);
+    if (blockedReason || !base) return blockedReason;
+    const spec = defenseSpec(kind);
     if (dist(point, base.position) > this.defensePlacementRadius(base)) return `Place ${spec.label} closer to the base`;
     if (terrainHeightAt(point) > 1.2) return "Cannot build on a cliff top";
     const radius = defenseRadius(kind);
     const blocked = this.entities.some((e) => e.status.alive && e.id !== base.id && dist(e.position, point) < e.radius + radius + 0.2);
     if (blocked) return "Spot is blocked by another object";
+    if (pointInWater(point)) return "Cannot build in the water";
+    if (kind === "minefield" && this.mines.some((m) => m.team === base.team && dist(m, point) < 2.4)) return "There is already a minefield here";
     return undefined;
   }
 
@@ -1894,6 +1951,24 @@ export class TacticalSim {
     const spec = defenseSpec(kind);
     spendCommandPoint(base);
     this.addMoney(base.team, -spec.cost);
+    if (kind === "minefield") {
+      for (const p of minefieldPoints(point, yaw ?? 0)) this.mines.push({ id: `mine-${++this.effectSeq}`, x: p.x, z: p.z, team: base.team });
+      this.pendingBuild = undefined;
+      this.intent = "select";
+      this.pushLog(`${base.name} lays a minefield`);
+      return true;
+    }
+    if (kind === "sandbag") {
+      // Sandbags are COVER, not an emplacement: neutral, so whoever crouches behind them gets the cover.
+      const bags = createCover(`cover-sb-${++this.troopSeq}`, COVER_PROFILES.sandbag.label, { ...point }, { coverKind: "sandbag" });
+      if (yaw !== undefined) bags.yaw = yaw;
+      this.entities.push(bags);
+      this.syncEntityElevation(bags);
+      this.pendingBuild = undefined;
+      this.intent = "select";
+      this.pushLog(`${base.name} stacks a sandbag line`);
+      return true;
+    }
     const structure = this.createDefenseEntity(kind, base, point);
     if (yaw !== undefined) structure.yaw = yaw; // a wall spans across the facing the player turned it to
     this.entities.push(structure);
@@ -1910,10 +1985,7 @@ export class TacticalSim {
     const id = `${prefix}-def-${++this.troopSeq}`;
     const spec = defenseSpec(kind);
     const name = `${spec.label} ${this.troopSeq}`;
-    const structure =
-      kind === "turret" ? createTurret(id, name, base.team, { ...point })
-      : kind === "exturret" ? createExTurret(id, name, base.team, { ...point })
-      : createWall(id, name, base.team, { ...point });
+    const structure = makeEmplacement(kind, id, name, base.team, { ...point });
     scaleEntityHp(structure, tierHpMultiplier(structure.kind));
     if (base.team === "enemy") scaleEntityHp(structure, DIFFICULTY_MODS[this.difficulty].enemyHp);
     return structure;
@@ -1964,21 +2036,25 @@ export class TacticalSim {
 
   // A clear deployment spot just outside the base, fanning out on the unit's own side.
   private freeSpawnNear(base: CombatEntity, unitRadius = 0.5): Vec2 {
-    const ring = base.radius + unitRadius + 1.1;
-    const forward = base.team === "player" ? 1 : -1;
+    return this.freeSpotNear(base.position, unitRadius, base.radius + unitRadius + 1.1, base.team === "player" ? 1 : -1, base.id);
+  }
+
+  /** The nearest clear ground for a unit of `unitRadius`, searched outward in rings from `ring`. */
+  private freeSpotNear(center: Vec2, unitRadius: number, ring = 0, forward = 1, ignoreId = ""): Vec2 {
     for (let radius = ring; radius <= ring + 6; radius += 0.8) {
       for (let i = 0; i < 12; i += 1) {
         const angle = (Math.PI * 2 * i) / 12 + (forward > 0 ? 0 : Math.PI);
         const point = clampToArena({
-          x: base.position.x + Math.sin(angle) * radius,
-          z: base.position.z + Math.cos(angle) * radius,
+          x: center.x + Math.sin(angle) * radius,
+          z: center.z + Math.cos(angle) * radius,
         });
-        const blocked = this.entities.some((e) => e.id !== base.id && e.status.alive && !e.carriedById && dist(e.position, point) < e.radius + unitRadius + SPAWN_GAP)
+        const blocked = this.entities.some((e) => e.id !== ignoreId && e.status.alive && !e.carriedById && dist(e.position, point) < e.radius + unitRadius + SPAWN_GAP)
           || onTerrainEdge(point, spawnClearance(unitRadius));
         if (!blocked) return point;
+        if (radius === 0) break; // the centre itself is one sample, not twelve
       }
     }
-    return clampToArena({ x: base.position.x + forward * ring, z: base.position.z });
+    return clampToArena({ x: center.x + forward * ring, z: center.z });
   }
 
   cancelOrder(orderId: string): boolean {
@@ -2156,10 +2232,7 @@ export class TacticalSim {
   debugStructure(kind: DefenseKind | "base", team: Team, position: Vec2): CombatEntity {
     const id = `${team === "player" ? "p" : "e"}-dbg-${++this.troopSeq}`;
     const at = clampToArena(position);
-    const entity = kind === "base" ? createBase(id, "Home Base", team, at)
-      : kind === "turret" ? createTurret(id, "Gun Turret", team, at)
-      : kind === "exturret" ? createExTurret(id, "Mortar Turret", team, at)
-      : createWall(id, "Blast Wall", team, at);
+    const entity = kind === "base" ? createBase(id, "Home Base", team, at) : makeEmplacement(kind, id, defenseSpec(kind).label, team, at);
     this.entities.push(entity);
     this.syncEntityElevation(entity);
     return entity;
@@ -2283,10 +2356,7 @@ export class TacticalSim {
     const id = `${team === "player" ? "p" : "e"}-dbg-${++this.troopSeq}`;
     const name = `${defenseSpec(kind).label} ${this.troopSeq}`;
     const point = clampToArena(position);
-    const structure =
-      kind === "turret" ? createTurret(id, name, team, point)
-      : kind === "exturret" ? createExTurret(id, name, team, point)
-      : createWall(id, name, team, point);
+    const structure = makeEmplacement(kind, id, name, team, point);
     scaleEntityHp(structure, tierHpMultiplier(structure.kind));
     if (team === "enemy") scaleEntityHp(structure, DIFFICULTY_MODS[this.difficulty].enemyHp);
     this.entities.push(structure);
@@ -2667,7 +2737,14 @@ export class TacticalSim {
       this.checkMines(actor);
       this.checkPickups(actor);
       if (actor.kind === "gunship") this.strafeAlongPath(order, actor);
-      if (dist(actor.position, order.destination) < 0.08 || order.elapsed >= order.duration) order.done = true;
+      if (dist(actor.position, order.destination) < 0.08) order.done = true;
+      else if (order.elapsed >= order.duration) {
+        // Out of time SHORT of the stop (shoved, or the move began late): that halt point was never
+        // checked, so back it off a rise like the planned stop was (an APC hull ended half inside an
+        // Ironworks step, movement.test.ts 2026-10-01).
+        order.done = true;
+        if (!actor.flying && order.start) this.settleHalt(actor, order.start);
+      }
       return;
     }
 
@@ -2946,7 +3023,7 @@ export class TacticalSim {
 
   private blockedMoveDestination(actor: CombatEntity, start: Vec2, destination: Vec2, allowedCoverId?: string, silent = false): Vec2 {
     const stop = this.blockedMoveStop(actor, start, destination, allowedCoverId, silent);
-    return actor.flying || canJump(actor) ? stop : settleClearOfRises(start, stop, spawnClearance(actor.radius));
+    return actor.flying || canJump(actor) ? stop : settleClearOfRises(start, stop, spawnClearance(actor.radius), actor.radius * 0.9);
   }
 
   private blockedMoveStop(actor: CombatEntity, start: Vec2, destination: Vec2, allowedCoverId?: string, silent = false): Vec2 {
@@ -3757,6 +3834,7 @@ export class TacticalSim {
       case "heavy": return 0.5;
       case "turret": return 0.45;
       case "exturret": return 0.3;
+      case "bunker": return 0.5;
       default: return 0.14;
     }
   }
@@ -3940,6 +4018,9 @@ export class TacticalSim {
     }
 
     if (landed.x === entity.position.x && landed.z === entity.position.z && !drowned && !slammedInto && !ringOut) return;
+    // Thrown OFF a ledge, the body can land with its hull against the face it fell from; slide it to
+    // the nearest ground its whole footprint fits on (movement.test.ts, 2026-10-01).
+    if (!drowned && !ringOut && !this.groundFits(entity, landed)) landed = this.nearestFittingGround(entity, landed);
     entity.position = landed;
     entity.dugIn = undefined; // thrown out of its foxhole
     entity.digging = undefined;
@@ -3963,6 +4044,25 @@ export class TacticalSim {
     this.effect("blast", landed, landed, 0x4f9fd0, 0.7, entity.radius + 1.2);
     this.pushLog(`${entity.name} is blasted into the water and drowns`);
     this.afterDamage(actor, entity, [`${entity.name} drowned`], "Drowning");
+  }
+
+  /** Can this body stand here: dry, its hull clear of any taller-than-a-step rise, no unit or prop? */
+  private groundFits(body: CombatEntity, at: Vec2): boolean {
+    if (pointInWater(at) || this.bodyAt(body, at) || this.solidPropAt(body, at)) return false;
+    const here = terrainHeightAt(at);
+    return !discSamples(at, body.radius * 0.9).some((p) => terrainHeightAt(p) - here > TERRAIN_STEP * 0.9);
+  }
+
+  /** The nearest point (within 3m) where `groundFits`; `at` itself when nothing nearer fits. */
+  private nearestFittingGround(body: CombatEntity, at: Vec2): Vec2 {
+    for (let r = 0.25; r <= 3; r += 0.25) {
+      for (let i = 0; i < 16; i += 1) {
+        const a = (i / 16) * Math.PI * 2;
+        const c = clampToArena({ x: at.x + Math.sin(a) * r, z: at.z + Math.cos(a) * r });
+        if (this.groundFits(body, c)) return c;
+      }
+    }
+    return at;
   }
 
   /** The unit standing where a thrown body wants to go, if any (cover is not a body). */
@@ -4003,7 +4103,8 @@ export class TacticalSim {
     const otherResult = applyDamage(into, preferredPart(into, "center").id, Math.round(force * 0.5));
     if (!isBuildingKind(into.kind) && !isDefenseKind(into.kind) && !into.flying && Number.isFinite(blastMass(into))) {
       const shove = clampToArena({ x: into.position.x + dirX * 0.45, z: into.position.z + dirZ * 0.45 });
-      if (!pointInWater(shove) && Math.abs(terrainHeightAt(shove) - terrainHeightAt(into.position)) <= TERRAIN_STEP && !this.bodyAt(into, shove)) {
+      // ...unless that step is into a prop, a rise or a step (an APC was shoved into a boulder).
+      if (Math.abs(terrainHeightAt(shove) - terrainHeightAt(into.position)) <= TERRAIN_STEP && this.groundFits(into, shove)) {
         into.position = shove;
         into.elevation = terrainHeightAt(shove);
       }
@@ -4453,7 +4554,7 @@ export class TacticalSim {
       entity.id !== actor.id &&
       entity.team === actor.team &&
       entity.status.alive &&
-      dist(entity.position, actor.position) <= 6.2 &&
+      dist(entity.position, actor.position) <= (entity.kind === "sensor" ? SENSOR_REACH : 6.2) &&
       entity.parts.some((part) => part.hp > 0 && part.tags?.includes("spotter-aura"))
     );
     if (!spotter) return 1;
@@ -4476,6 +4577,27 @@ export class TacticalSim {
   // Push a moving unit out of any unit/structure it overlaps so squads can't walk through
   // each other (or through walls/turrets). Only the mover is nudged, so two units closing in
   // slide past instead of stacking.
+  /** A ground move that halted short: back off along its path to the first spot clear of rises AND
+   *  of solid props / emplacements (keeps the halt where it is when the whole path is tight). */
+  private settleHalt(actor: CombatEntity, start: Vec2): void {
+    const margin = spawnClearance(actor.radius);
+    const solids = this.entities.filter((e) => e.id !== actor.id && e.status.alive && !e.flying && !e.carriedById &&
+      ((e.kind === "cover" && e.coverKind !== "ridge") || e.kind === "base" || isDefenseKind(e.kind)));
+    const clear = (p: Vec2): boolean => !risesNear(p, margin) && !solids.some((e) => dist(e.position, p) < e.radius + actor.radius);
+    const stop = { ...actor.position };
+    if (!risesNear(stop, margin)) return;
+    const length = dist(start, stop);
+    for (let back = 0.15; back < length; back += 0.15) {
+      const t = (length - back) / length;
+      const c = { x: start.x + (stop.x - start.x) * t, z: start.z + (stop.z - start.z) * t };
+      if (clear(c)) {
+        actor.position = c;
+        this.syncEntityElevation(actor);
+        return;
+      }
+    }
+  }
+
   private separateFromUnits(actor: CombatEntity, destination?: Vec2): void {
     if (actor.flying) return; // a flyer sits above the ground plane — it never jostles ground units
     // Relax over a few passes: pushing off one neighbour can shove the mover into another, so a
@@ -4492,7 +4614,11 @@ export class TacticalSim {
           if (other.coverKind === "ridge") continue;
           // Climbing onto cover is INFANTRY only: a tank whose move ended where a wreck had just appeared
           // (its target, killed mid-turn) drove into the hulk under this exemption (movement.test.ts).
-          if (destination && isInfantryKind(actor.kind) && dist(other.position, destination) <= other.radius) continue;
+          // And only onto cover it CAN climb: a tall wreck that appeared on the destination mid-turn (its
+          // owner killed by a strike) let the walker step into the hulk (movement.test.ts, 2026-10-01).
+          // The reach matches `onTop` below (where the unit is actually lifted onto it): a destination in the
+          // ring between left the walker standing at ground level inside the cover.
+          if (destination && isInfantryKind(actor.kind) && canClimbCover(other) && dist(other.position, destination) <= (isCliffCover(other) ? other.radius : Math.max(0.35, other.radius * 0.65))) continue;
           // Only INFANTRY climb onto cover (elevationForEntityAt lifts nobody else), so a vehicle "on top"
           // of a wreck is inside it -- an aircraft shot down onto an APC left it there (movement.test.ts).
           const onTop = isInfantryKind(actor.kind) && isClimbableCover(other) && dist(actor.position, other.position) <= Math.max(0.35, other.radius * 0.65);
@@ -5196,8 +5322,10 @@ export class TacticalSim {
   private enemyStrikeAct(base: CombatEntity): boolean {
     const foe: Team = base.team === "enemy" ? "player" : "enemy";
     // Only a STRIKE is worth dropping on a crowd; the utility powers (recon / smoke / resupply) are not bombs.
-    const kind = this.factionOf(base.team).supports.find((k) => DAMAGING_SUPPORT.has(k) && !this.supportFailureReason(base, k));
-    if (!kind || this.money(base.team) < supportPowerSpec(kind).cost + 150) return false;
+    // Its strongest strike it can afford with $150 to spare (the list runs from starter to top tier).
+    const kind = [...this.factionOf(base.team).supports].reverse().find((k) =>
+      DAMAGING_SUPPORT.has(k) && !this.supportFailureReason(base, k) && this.money(base.team) >= supportPowerSpec(k).cost + 150);
+    if (!kind) return false;
     const hostiles = this.fieldUnits(foe).filter((e) => !e.flying && !e.carriedById && !e.downed);
     const friends = this.entities.filter((e) => e.team === base.team && e.status.alive && !e.flying && e.kind !== "base");
     let best: Vec2 | undefined;
@@ -5581,6 +5709,23 @@ export class TacticalSim {
     if (detonated) this.pendingStrikes = this.pendingStrikes.filter((s) => !s.fired);
   }
 
+  // PARADROP: two of the caller's line troopers land around the point (dry, clear ground; never past
+  // the field cap). They act from the next turn, like any deploy.
+  private landParadrop(point: Vec2, team: Team): void {
+    const base = this.entities.find((e) => e.kind === "base" && e.team === team && e.status.alive);
+    if (!base) return;
+    let landed = 0;
+    for (let i = 0; i < 2 && this.fieldUnitCount(team) < POP_CAP; i += 1) {
+      const unit = this.createTroop("soldier", base, nearestDryPoint(this.freeSpotNear(point, 0.5)));
+      unit.commandPoints = 0;
+      this.entities.push(unit);
+      this.syncEntityElevation(unit);
+      landed += 1;
+    }
+    this.effect("ping", point, point, 0xbfe8ff, 0.9, 2.2);
+    this.pushLog(landed ? `Paradrop: ${landed} trooper${landed === 1 ? "" : "s"} on the ground` : "Paradrop aborted: the field is full");
+  }
+
   // A single environmental detonation: a blast effect plus AoE damage to anything in range
   // (both teams — it's the battlefield, not a unit's attack). Bases are spared so the sky can't
   // hand someone the win.
@@ -5611,12 +5756,20 @@ export class TacticalSim {
       this.effect("bolt", strike.point, strike.point, 0xd8ecff, 0.45, 0.4);
       this.burnZones.push({ id: `burn-${++this.effectSeq}`, x: strike.point.x, z: strike.point.z, radius: 1.2, turnsLeft: 1 });
     }
+    if (strike.kind === "paradrop") {
+      this.landParadrop(strike.point, strike.team ?? "player");
+      return;
+    }
+    if (strike.kind === "napalm") {
+      this.burnZones.push({ id: `burn-${++this.effectSeq}`, x: strike.point.x, z: strike.point.z, radius: strike.radius, turnsLeft: 2 });
+    }
     if (strike.kind === "slag") {
       // The spill leaves the floor burning for two turns (the flamer's burn zone, so the tick,
       // the render and the AI's fear of fire all come for free).
       this.burnZones.push({ id: `burn-${++this.effectSeq}`, x: strike.point.x, z: strike.point.z, radius: strike.radius * 0.85, turnsLeft: 2 });
     }
     const color = strike.kind === "lightning" ? 0xd8ecff
+      : strike.kind === "napalm" ? 0xff6a1c
       : strike.kind === "slag" ? 0xff7a2a
       : strike.kind === "barrage" ? 0xffac5a
       : strike.kind === "collapse" ? 0xb59a72
@@ -5647,7 +5800,7 @@ export class TacticalSim {
     }
     // Environmental events log per shell (they threaten a marked zone); support strikes
     // logged once when tasked, so a 8-bomb cluster doesn't spam the feed.
-    if (strike.kind === "barrage") this.pushLog("Shells hammer the marked zone.");
+    if (strike.kind === "barrage" && !strike.team) this.pushLog("Shells hammer the marked zone."); // a called barrage logged once when tasked
     else if (strike.kind === "collapse") this.pushLog("Cover collapses in the marked zone.");
     else if (strike.kind === "lightning") this.pushLog("Lightning strikes the marked point!");
     else if (strike.kind === "slag") this.pushLog("Molten slag floods the foundry floor!");
@@ -6022,7 +6175,31 @@ function baseMoveRange(entity: CombatEntity): number {
 function defenseRadius(kind: DefenseKind): number {
   if (kind === "wall") return 1.15;
   if (kind === "exturret") return 1.0;
+  if (kind === "bunker") return 1.2;
+  if (kind === "sensor") return 0.7;
+  if (kind === "sandbag") return COVER_PROFILES.sandbag.radius;
+  if (kind === "minefield") return 1.4; // the triangle's reach
   return 0.95;
+}
+
+/** The emplacement entity for a defense kind (sandbags and minefields are not entities). */
+function makeEmplacement(kind: DefenseKind, id: string, name: string, team: Team, at: Vec2): CombatEntity {
+  switch (kind) {
+    case "turret": return createTurret(id, name, team, at);
+    case "exturret": return createExTurret(id, name, team, at);
+    case "aaturret": return createAaTurret(id, name, team, at);
+    case "bunker": return createBunker(id, name, team, at);
+    case "sensor": return createSensor(id, name, team, at);
+    default: return createWall(id, name, team, at);
+  }
+}
+
+/** A minefield's three mines: a triangle 1.3m round the point, turned with the placement. */
+export function minefieldPoints(point: Vec2, yaw: number): Vec2[] {
+  return [0, 1, 2].map((i) => {
+    const a = yaw + (i * Math.PI * 2) / 3;
+    return clampToArena({ x: point.x + Math.sin(a) * 1.3, z: point.z + Math.cos(a) * 1.3 });
+  });
 }
 
 function ramRange(entity: CombatEntity): number {
@@ -6080,7 +6257,8 @@ function muzzlePoint(entity: CombatEntity, attackMode: AttackMode = "weapon"): V
   if (entity.kind === "sniper") return localPoint(entity, { x: 0.5, z: 0.72 });
   if (entity.kind === "grenadier" || entity.kind === "mortar") return localPoint(entity, { x: 0.46, z: 0.58 });
   if (isInfantryKind(entity.kind)) return localPoint(entity, { x: 0.42, z: 0.4 });
-  if (entity.kind === "turret" || entity.kind === "exturret") return localPoint(entity, { x: 0, z: 0.62 });
+  if (entity.kind === "turret" || entity.kind === "exturret" || entity.kind === "aaturret") return localPoint(entity, { x: 0, z: 0.62 });
+  if (entity.kind === "bunker") return localPoint(entity, { x: 0, z: 1.05 });
   if (entity.kind === "base") return localPoint(entity, { x: 0.2, z: 1.28 });
   return { ...entity.position };
 }
@@ -6091,7 +6269,8 @@ function muzzleHeight(entity: CombatEntity, attackMode: AttackMode = "weapon"): 
   if (entity.kind === "sniper") return entity.elevation + stanceMuzzleHeight(entity, 1.12);
   if (entity.kind === "grenadier" || entity.kind === "mortar") return entity.elevation + stanceMuzzleHeight(entity, 1.02);
   if (isInfantryKind(entity.kind)) return entity.elevation + stanceMuzzleHeight(entity, 1.05);
-  if (entity.kind === "turret" || entity.kind === "exturret") return entity.elevation + 1.2;
+  if (entity.kind === "turret" || entity.kind === "exturret" || entity.kind === "aaturret") return entity.elevation + 1.2;
+  if (entity.kind === "bunker") return entity.elevation + 0.75;
   if (entity.kind === "base") return entity.elevation + 1.75;
   return entity.elevation + Math.max(0.22, entity.height * 0.55);
 }
@@ -6286,15 +6465,27 @@ function risesNear(point: Vec2, margin: number): boolean {
   const here = terrainHeightAt(point);
   return discSamples(point, margin).some((p) => terrainHeightAt(p) - here > 0.3);
 }
-function settleClearOfRises(start: Vec2, stop: Vec2, margin: number): Vec2 {
+function settleClearOfRises(start: Vec2, stop: Vec2, margin: number, hull?: number): Vec2 {
   if (!risesNear(stop, margin)) return stop;
   const length = dist(start, stop);
-  for (let back = 0.15; back < length; back += 0.15) {
-    const t = (length - back) / length;
-    const c = { x: start.x + (stop.x - start.x) * t, z: start.z + (stop.z - start.z) * t };
-    if (!risesNear(c, margin)) return c;
-  }
-  return stop;
+  const along = (fits: (p: Vec2) => boolean): Vec2 | undefined => {
+    for (let back = 0.15; back < length; back += 0.15) {
+      const t = (length - back) / length;
+      const c = { x: start.x + (stop.x - start.x) * t, z: start.z + (stop.z - start.z) * t };
+      if (fits(c)) return c;
+    }
+    return undefined;
+  };
+  const clear = along((c) => !risesNear(c, margin));
+  if (clear) return clear;
+  // The whole path hugs a rise (a walk along a mesa foot): settle for the HULL being clear of any
+  // taller-than-a-step face, so at least nothing ends inside the rock (movement.test.ts, 2026-10-01).
+  if (hull === undefined || !hullInRise(stop, hull)) return stop;
+  return along((c) => !hullInRise(c, hull)) ?? stop;
+}
+function hullInRise(point: Vec2, hull: number): boolean {
+  const here = terrainHeightAt(point);
+  return discSamples(point, hull).some((p) => terrainHeightAt(p) - here > TERRAIN_STEP * 0.9);
 }
 
 /** The nearest dry point within 4m that is clear of every terrain step by `margin` (or `point`). */

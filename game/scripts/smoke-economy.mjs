@@ -16,11 +16,11 @@ try {
   // Navigate the landing menu into a battle (Start Game -> Deploy) so HUD clicks land.
   await page.waitForSelector(".main-menu");
   await page.click('[data-menu="play"]');
-  await page.waitForSelector("[data-start]");
+  await page.waitForSelector('[data-step-go="next"]');
   // Syndicate: the Striker this smoke unlocks and fields is theirs (rosters differ per faction).
-  await page.click('[data-step-jump="2"]');
+  await page.evaluate((n) => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < n; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector(`[data-step-jump="${n}"]`).click(); }, 2);
   await page.click('[data-faction="syndicate"]');
-  await page.click("[data-start]");
+  await page.evaluate(() => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < 3; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector("[data-start]").click(); });
   await page.waitForSelector(".menu-screen", { state: "detached", timeout: 4000 }).catch(() => {});
 
   const baseId = await page.evaluate(() => {

@@ -123,6 +123,12 @@ export class Sfx {
     this.blip(540, 0.04, "triangle", 0.18);
   }
 
+  /** A refused order: a short falling dissonant pair. */
+  error(): void {
+    this.blip(220, 0.07, "square", 0.12);
+    this.blip(196, 0.09, "square", 0.1, 0.06);
+  }
+
   select(): void {
     this.blip(720, 0.05, "sine", 0.2);
   }

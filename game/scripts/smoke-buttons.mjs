@@ -74,10 +74,10 @@ try {
     if (!painted.ok) throw new Error(`map preview for ${id} not painted/captioned: ${JSON.stringify(painted)}`);
   }
   await page.click('[data-map="dustbowl"]');
-  await page.click('[data-step-jump="3"]'); // the set-up is a step flow: mode + difficulty live on Rules
+  await page.evaluate((n) => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < n; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector(`[data-step-jump="${n}"]`).click(); }, 3); // the set-up is a step flow: mode + difficulty live on Rules
   await page.click('[data-mode="hill"]');
   await page.click('[data-diff="normal"]');
-  await page.click("[data-start]");
+  await page.evaluate(() => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < 3; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector("[data-start]").click(); });
   await page.waitForSelector(".title-screen", { state: "detached", timeout: 4000 }).catch(() => {});
   if (await page.$(".main-menu")) fail("Start Game did not dismiss the menu");
 

@@ -38,9 +38,10 @@ export interface FactionDef {
   roster: readonly TroopKind[];
   /** Which tech node ids it may research. Filters TECH_TREE. */
   tech: readonly string[];
+  /** Its Defenses deck: the two starters, the shared tech pieces, and its own. Filters DEFENSE_CATALOG. */
   defenses: readonly DefenseKind[];
-  /** Its two off-map support powers: one STRIKE and one utility, both its own (no two factions
-   *  share one), each unlocked by a doctrine in its own tree. */
+  /** Its three off-map support powers, all its own (no two factions share one): a utility it starts
+   *  with, then two unlocked by doctrines in its own tree. */
   supports: readonly SupportPowerKind[];
   /** Team colour accent, also used for the UI chrome. */
   accent: number;
@@ -73,7 +74,7 @@ export interface FactionDef {
 //   Bastion   -- fortress: Mortar, Engineer, Artillery, Bomber, Mortar Turret. Nothing fast.
 // The Heavy Gunner is CORE: whoever lacked it lost AI-vs-AI games outright (Bastion-only, Bastion
 // beat Vanguard 22-3; with Vanguard and Bastion only, the Syndicate won 10 of 96).
-// Each also has one doctrine rule (see FactionDoctrine) and two support powers of its own. Every faction
+// Each also has one doctrine rule (see FactionDoctrine) and three support powers of its own. Every faction
 // keeps a tech-free opener, an answer to armour and an answer to air -- factions.test.ts asserts
 // all three. `tech` lists what a faction may RESEARCH, which is wider than its roster wherever a
 // node is only a prerequisite.
@@ -85,8 +86,8 @@ export const FACTIONS: readonly FactionDef[] = [
     detail: "Air-mobile regulars. Scouts, jump troopers and the only gunships, interceptors and transports, backed by tanks and machine guns. No mortar, grenadier or artillery, and no engineer: a dug-in enemy has to be taken, not shelled.",
     roster: ["soldier", "scout", "sniper", "jumper", "heavy", "medic", "tank", "flak", "gunship", "interceptor", "transport"],
     tech: ["recon", "assault", "support", "armor", "airwing", "breach", "bulwark", "plating", "hunter", "triage", "welding", "optics", "ghillie"],
-    defenses: ["wall", "turret"],
-    supports: ["airstrike", "reconsweep"],
+    defenses: ["sandbag", "wall", "turret", "aaturret", "sensor"],
+    supports: ["reconsweep", "airstrike", "paradrop"],
     accent: 0x8cefff,
     aiPreference: ["tank", "gunship", "heavy", "jumper", "sniper", "scout"],
     aiTechPath: ["assault", "armor", "airwing"],
@@ -105,8 +106,8 @@ export const FACTIONS: readonly FactionDef[] = [
     detail: "Fast, cheap and attritional. Strikers, flamers, sappers and grenadiers, carried in by the only APCs, with drone spotters behind them. No tank and no siege gun, so it cannot win a slugging match -- only a quicker one.",
     roster: ["soldier", "sniper", "heavy", "striker", "grenadier", "flamer", "sapper", "droneop", "medic", "apc", "flak"],
     tech: ["recon", "assault", "support", "ordnance", "armor", "breach", "bulwark", "thermobarics", "cluster", "triage", "welding", "optics", "ghillie"],
-    defenses: ["wall", "turret"],
-    supports: ["cluster", "smokescreen"],
+    defenses: ["sandbag", "wall", "turret", "aaturret", "minefield"],
+    supports: ["smokescreen", "napalm", "cluster"],
     accent: 0xffca6b,
     aiPreference: ["flamer", "striker", "grenadier", "sapper", "apc", "droneop"],
     aiTechPath: ["assault", "ordnance", "armor"],
@@ -126,8 +127,8 @@ export const FACTIONS: readonly FactionDef[] = [
     detail: "Siege and fortification. Mortars, artillery, engineers, the heavy bomber and the only Mortar Turret, behind tanks and machine guns. No scout, no striker, no fighter: nothing it fails to kill will be caught.",
     roster: ["soldier", "sniper", "heavy", "mortar", "medic", "engineer", "tank", "artillery", "flak", "bomber"],
     tech: ["recon", "assault", "support", "ordnance", "armor", "siege", "airwing", "bulwark", "plating", "thermobarics", "cluster", "triage", "welding", "optics", "ghillie"],
-    defenses: ["wall", "turret", "exturret"],
-    supports: ["laser", "resupply"],
+    defenses: ["sandbag", "wall", "turret", "aaturret", "exturret", "bunker"],
+    supports: ["resupply", "laser", "barrage"],
     accent: 0x9ef0b8,
     aiPreference: ["tank", "heavy", "artillery", "mortar", "engineer"],
     aiTechPath: ["assault", "armor", "siege"],

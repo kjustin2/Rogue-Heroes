@@ -1,4 +1,5 @@
 import "./style.css";
+import { installPlayLog, play } from "./debug/playLog";
 // Self-hosted fonts (no CDN — the packaged Electron app must work offline).
 import "@fontsource/orbitron/600.css";
 import "@fontsource/orbitron/700.css";
@@ -16,7 +17,7 @@ import { WorldRenderer, type WorldRenderDebug } from "./render/worldRenderer";
 import { preloadAll as preloadModels, modelsVersion } from "./render/models";
 import { FeelDirector } from "./render/feel";
 import { POI_WEIGHT, ResolveDirector } from "./render/resolveDirector";
-import { Hud } from "./ui/hud";
+import { Hud, LINE_SUPPORTS, ROTATABLE_BUILDS } from "./ui/hud";
 import type { MapEventKind } from "./game/maps";
 import {
   TacticalSim,
@@ -229,25 +230,27 @@ const hud = new Hud(uiRoot, sim, {
     return ok;
   },
   beginDeploy: (kind: TroopKind) => {
-    sim.setPendingDeploy(kind);
-    sfx.ui();
+    if (sim.setPendingDeploy(kind)) sfx.ui();
+    else refused();
   },
   cancelDeploy: () => sim.setPendingDeploy(undefined),
   queueDeployAt: (kind, point) => {
     const ok = sim.queueDeployAt(kind, point);
     if (ok) sfx.deploy();
+    else refused();
     return ok;
   },
   upgradeBaseIncome: () => sim.upgradeBaseIncome(),
   upgradeBaseCommand: () => sim.upgradeBaseCommand(),
   beginBuild: (kind: DefenseKind) => {
-    sim.setPendingBuild(kind);
-    sfx.ui();
+    if (sim.setPendingBuild(kind)) sfx.ui();
+    else refused();
   },
   cancelBuild: () => sim.setPendingBuild(undefined),
   queueBuildStructure: (point) => {
     const ok = sim.queueBuildStructure(point);
     if (ok) sfx.build();
+    else refused();
     return ok;
   },
   queueRecon: () => {
@@ -266,8 +269,8 @@ const hud = new Hud(uiRoot, sim, {
     return ok;
   },
   beginSupport: (kind) => {
-    sim.setPendingSupport(kind);
-    sfx.ui();
+    if (sim.setPendingSupport(kind)) sfx.ui();
+    else refused();
   },
   cancelSupport: () => sim.setPendingSupport(undefined),
   queueSupportAt: (point) => {
@@ -275,7 +278,7 @@ const hud = new Hud(uiRoot, sim, {
     if (ok) {
       sfx.turn();
       showToast("Strike inbound — resolves at end of turn");
-    }
+    } else refused();
     return ok;
   },
   queueShootAt: (point) => sim.queueShootAt(point),
@@ -344,6 +347,7 @@ canvas.addEventListener("pointerdown", (event) => {
   // Clicking a hazard zone with nothing armed explains it in full (hover gives the short version).
   const hazard = ground && sim.intent === "select" && sim.phase === "command" ? hazardAt(ground) : undefined;
   if (hazard) showToast(hazard, 6000);
+  if (ground) play(`ground (${ground.x.toFixed(1)}, ${ground.z.toFixed(1)}) intent=${sim.intent}${sim.pendingBuild ? ` build=${sim.pendingBuild}` : ""}${sim.pendingDeploy ? ` deploy=${sim.pendingDeploy}` : ""}${sim.pendingSupport ? ` support=${sim.pendingSupport}` : ""} selected=${sim.selected?.name ?? "-"}`);
   hud.chooseGround(ground);
   hud.update();
 });
@@ -471,7 +475,7 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   // T turns a wall or a line strike while it is being placed (the Rotate button in the placement bar).
-  if (event.code === "KeyT" && (sim.pendingBuild === "wall" || sim.pendingSupport === "airstrike" || sim.pendingSupport === "laser")) {
+  if (event.code === "KeyT" && ((sim.pendingBuild && ROTATABLE_BUILDS.has(sim.pendingBuild)) || (sim.pendingSupport && LINE_SUPPORTS.has(sim.pendingSupport)))) {
     sim.rotatePlacement();
     hud.update();
     return;
@@ -539,6 +543,8 @@ function startBattle(mapId: string, modeId: ModeId, difficulty: Difficulty = set
   // the same opponent, so a seeded run, a save reload and a replay all agree. Rolling it inside
   // the sim would put hidden nondeterminism in a system the chaos and determinism tests rely on.
   sim.configure(mapDef(mapId), modeId, player2 ? "normal" : difficulty, { player: faction, enemy: player2 ?? botFaction ?? opposingFaction(mapId, faction) }, Boolean(player2));
+  play(`battle start map=${mapId} mode=${modeId} you=${faction} enemy=${sim.factionOf("enemy").id}${player2 ? " (local 2 players)" : ` bot=${difficulty}`}`);
+  playLogSeen = sim.logTotal;
   applyMapLook();
   world.setPlayerAccent(progression.accentColor());
   focusOnPlayerBase();
@@ -1054,8 +1060,9 @@ function showStartScreen(versus = false, keep?: { map: string; mode: ModeId; ste
         <button class="menu-back" data-overlay-close data-back type="button">&lsaquo; Back</button>
         <h2 class="menu-heading">${versus ? "Local 2 Players" : "Skirmish"}</h2>
       <!-- A STEP FLOW (owner 2026-09-24: the one-page set-up "was overwhelming"): one decision group per
-             step, the steps named up top, Back / Next at the foot, and Deploy now for players who
-             already like what is picked. -->
+             step, the steps named up top, Back / Next at the foot. The deploy button lives on the
+             LAST step only (owner 2026-10-01: no skipping the picks), and a step tab only opens a
+             step already reached. -->
         <ol class="start-steps">
           <li><button type="button" data-step-jump="1"><span>1</span> Battlefield</button></li>
           <li><button type="button" data-step-jump="2"><span>2</span> Sides</button></li>
@@ -1105,7 +1112,7 @@ function showStartScreen(versus = false, keep?: { map: string; mode: ModeId; ste
       </div>
       <div class="menu-actions start-actions">
         <button class="menu-action" data-step-go="back" type="button">‹ Back</button>
-        <button class="menu-action start-actions__quick" data-start type="button">Deploy now</button>
+        <button class="title-start" data-start type="button" hidden>Deploy to Battle</button>
         <button class="title-start" data-step-go="next" type="button">Next ›</button>
       </div>
     </div>
@@ -1122,8 +1129,9 @@ function showStartScreen(versus = false, keep?: { map: string; mode: ModeId; ste
     preview?.update(mapDef(selectedMap), selectedMode);
   };
 
-  // The step the flow shows. The last step turns "Deploy now" into the main button.
+  // The step the flow shows; the deploy button appears on the last step only.
   let step = keep?.step ?? 1;
+  let reached = step;
   const summary = (): string => {
     const other = selectedFaction2 === "random" ? "Random" : factionDef(selectedFaction2).name;
     return `<div class="menu-label">Your battle</div>
@@ -1135,15 +1143,19 @@ function showStartScreen(versus = false, keep?: { map: string; mode: ModeId; ste
       </dl>`;
   };
   const showStep = (n: number): void => {
-    step = Math.max(1, Math.min(3, n));
+    step = Math.max(1, Math.min(3, n, reached + 1));
+    reached = Math.max(reached, step);
     screen.dataset.step = String(step);
-    for (const b of screen.querySelectorAll<HTMLElement>("[data-step-jump]")) b.classList.toggle("on", Number(b.dataset.stepJump) === step);
+    for (const b of screen.querySelectorAll<HTMLButtonElement>("[data-step-jump]")) {
+      b.classList.toggle("on", Number(b.dataset.stepJump) === step);
+      b.disabled = Number(b.dataset.stepJump) > reached;
+    }
     const next = screen.querySelector<HTMLElement>('[data-step-go="next"]');
     const quick = screen.querySelector<HTMLElement>("[data-start]");
     const back = screen.querySelector<HTMLElement>('[data-step-go="back"]');
     if (next) next.hidden = step === 3;
     if (back) back.style.visibility = step === 1 ? "hidden" : "visible";
-    if (quick) { quick.className = step === 3 ? "title-start" : "menu-action start-actions__quick"; quick.textContent = step === 3 ? "Deploy to Battle" : "Deploy now"; }
+    if (quick) quick.hidden = step !== 3;
     const sum = screen.querySelector<HTMLElement>("[data-summary]");
     if (sum) sum.innerHTML = summary();
     if (step === 1) renderPreview();
@@ -1163,7 +1175,7 @@ function showStartScreen(versus = false, keep?: { map: string; mode: ModeId; ste
       return;
     }
     const jump = target.closest<HTMLElement>("[data-step-jump]")?.dataset.stepJump;
-    if (jump) { showStep(Number(jump)); return; }
+    if (jump) { if (Number(jump) <= reached) showStep(Number(jump)); return; }
     const go = target.closest<HTMLElement>("[data-step-go]")?.dataset.stepGo;
     if (go) { showStep(step + (go === "next" ? 1 : -1)); return; }
     const opponentBtn = target.closest<HTMLElement>("[data-opponent]");
@@ -1847,6 +1859,7 @@ function watchEnemyIntel(): void {
 }
 
 function showToast(text: string, lifeMs = 2600): void {
+  play(`toast "${text}"`);
   // Toasts stack in a shared column above the order panel — concurrent toasts
   // (e.g. several medals at once) must never overlap in place.
   let host = document.getElementById("toasts");
@@ -2050,6 +2063,7 @@ function frameBody(now: number): void {
   resolveFocus = shot.focus; // consumed by syncCameraAssist, the single camera authority
   if (DEBUG_UNLOCKED && inBattle && sim.phase === "command") applyDebugCheats();
   processBattleEvents();
+  syncPlayLog();
   watchEnemyIntel();
   feel.update(dt);
   music.setState(
@@ -2087,7 +2101,32 @@ function frameBody(now: number): void {
   if (debugOverlay.isEnabled()) debugOverlay.render(buildSceneDescription());
 }
 
+installPlayLog();
+play(`session start ${new Date().toISOString()} ${innerWidth}x${innerHeight}`);
 requestAnimationFrame(frame);
+
+// The sim's own log lines (orders, refusals with their reason, hits, kills) into the play log,
+// stamped with the turn and phase they happened in.
+let playLogSeen = 0;
+let playLogPhase = "";
+function syncPlayLog(): void {
+  if (sim.phase !== playLogPhase) {
+    playLogPhase = sim.phase;
+    if (inBattle) play(`--- turn ${sim.turn} ${sim.phase} ---`);
+  }
+  // Only a real battle: the title screen's diorama runs a sim too.
+  const fresh = inBattle ? Math.min(sim.logTotal - playLogSeen, sim.log.length) : 0;
+  for (let i = fresh - 1; i >= 0; i -= 1) play(`game T${sim.turn}: ${sim.log[i]}`);
+  playLogSeen = sim.logTotal;
+}
+
+// A placement click or pick the sim refused: say WHY on screen (the reason is the newest log line);
+// a silent no-op read as "placing is broken" (owner 2026-10-01).
+function refused(): void {
+  const reason = sim.log[0];
+  if (reason) showToast(reason);
+  sfx.error();
+}
 
 // The cursor ground point, only while aiming a grenade/shell at a spot (so the renderer can
 // draw the landing arc and blast radius).
@@ -2095,7 +2134,7 @@ function groundAimHover(): Vec2 | undefined {
   if (anyOverlayOpen() || sim.phase !== "command") return undefined;
   if (sim.pendingSupport) return hoverWorld; // strike-call targeting reticle
   if (sim.pendingDeploy) return hoverWorld; // placed-deploy ghost footprint
-  if (sim.pendingBuild === "wall") return hoverWorld; // the wall ghost, turned the way it will be built
+  if (sim.pendingBuild) return hoverWorld; // the defense's ghost, turned the way it will be built
   // Grenade/shell aim a landing arc at the cursor; Move previews the path it would walk.
   const aiming = sim.intent === "grenade" || sim.intent === "move" || (sim.intent === "shoot" && sim.selectedCanGroundTarget());
   return aiming ? hoverWorld : undefined;

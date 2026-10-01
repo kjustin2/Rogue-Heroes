@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TacticalSim, mapDef, troopSpec, unitStats } from "./sim";
 import { FACTIONS, factionDef, signatureUnits, type FactionId } from "./factions";
-import { SUPPORT_POWERS, type EntityKind } from "./units";
+import { DEFENSE_CATALOG, SUPPORT_POWERS, type EntityKind } from "./units";
 
 // FACTION IDENTITY (2026-09-23): each faction owns a block of units, one strike and one doctrine
 // rule. These pin the three rules end to end and the roster shape that makes the factions differ.
@@ -47,16 +47,32 @@ describe("faction rosters differ", () => {
     }
   });
 
-  it("gives every faction two support powers of its own, all unlocked by its own research", () => {
+  it("gives every faction three support powers of its own: a starter, then two by its own research", () => {
     const all = FACTIONS.flatMap((f) => f.supports);
-    for (const f of FACTIONS) expect(f.supports.length).toBe(2);
+    for (const f of FACTIONS) expect(f.supports.length).toBe(3);
     expect(new Set(all).size).toBe(all.length); // nothing shared
-    for (const f of FACTIONS) for (const kind of f.supports) {
+    for (const f of FACTIONS) for (const [i, kind] of f.supports.entries()) {
       const spec = SUPPORT_POWERS.find((p) => p.kind === kind);
       expect(spec, kind).toBeDefined();
-      // Nothing is callable on turn 1 (owner 2026-09-24): every power needs a doctrine this faction can research.
+      // Owner 2026-10-01: every deck starts with something. The first power is tech-free; the rest
+      // need a doctrine this faction can research.
+      if (i === 0) { expect(spec!.tech, `${kind} is the starter`).toBeUndefined(); continue; }
       expect(spec!.tech, `${kind} has no tech gate`).toBeDefined();
       expect(f.tech.includes(spec!.tech!), `${f.id} cannot research ${spec!.tech} for ${kind}`).toBe(true);
+    }
+  });
+
+  it("gives every faction a defenses deck with tech-free starters and research-gated pieces it can reach", () => {
+    for (const f of FACTIONS) {
+      const specs = f.defenses.map((k) => DEFENSE_CATALOG.find((d) => d.kind === k)!);
+      expect(specs.filter((d) => !d.tech).length, `${f.id} starters`).toBeGreaterThanOrEqual(2);
+      expect(specs.length, `${f.id} deck size`).toBeGreaterThanOrEqual(5);
+      for (const d of specs) if (d.tech) expect(f.tech.includes(d.tech), `${f.id} cannot research ${d.tech} for ${d.kind}`).toBe(true);
+    }
+    // Each faction owns at least one piece nobody else builds.
+    for (const f of FACTIONS) {
+      const others = FACTIONS.filter((o) => o.id !== f.id).flatMap((o) => o.defenses);
+      expect(f.defenses.some((k) => !others.includes(k)), `${f.id} has no defense of its own`).toBe(true);
     }
   });
 

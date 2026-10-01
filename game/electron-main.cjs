@@ -58,6 +58,35 @@ function serveAppProtocol() {
   });
 }
 
+// PLAY LOG (owner 2026-10-01: "when I run the game locally ... sends logs to a file so afterwards
+// when I make references to what happened while I tested you know what I mean"). Running from the
+// repo (npm run desktop / standalone; never the packaged .exe) copies the page console -- the game's
+// "[play]" trail of clicks, orders, refusals and errors, see src/debug/playLog.ts -- to
+// game/logs/play-<time>.log and game/logs/latest.log. The last 20 sessions are kept.
+// RHT_NO_PLAYLOG=1 turns it off.
+let playLog = null;
+function openPlayLog() {
+  if (app.isPackaged || process.env.RHT_NO_PLAYLOG === "1") return;
+  const dir = path.join(__dirname, "logs");
+  fs.mkdirSync(dir, { recursive: true });
+  const old = fs.readdirSync(dir).filter((f) => /^play-.*\.log$/.test(f)).sort();
+  for (const f of old.slice(0, Math.max(0, old.length - 19))) fs.rmSync(path.join(dir, f), { force: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const file = path.join(dir, `play-${stamp}.log`);
+  const latest = path.join(dir, "latest.log");
+  fs.writeFileSync(latest, "");
+  playLog = (line) => {
+    fs.appendFileSync(file, line + "\n");
+    fs.appendFileSync(latest, line + "\n");
+  };
+  playLog(`# Rogue Heroes play log ${new Date().toString()} -> ${file}`);
+}
+function logLine(level, text) {
+  if (!playLog) return;
+  const t = new Date().toTimeString().slice(0, 8);
+  playLog(`${t} ${level === "info" || level === "log" ? "" : level.toUpperCase() + " "}${text}`);
+}
+
 function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
   const win = new BrowserWindow({
@@ -78,7 +107,15 @@ function createWindow() {
   });
 
   Menu.setApplicationMenu(null);
-  win.once("ready-to-show", () => win.show());
+  // Electron 42 passes the details on the event; older builds passed (event, level, message).
+  win.webContents.on("console-message", (event, legacyLevel, legacyMessage) => {
+    const level = typeof event.level === "string" ? event.level : ["log", "warning", "error"][legacyLevel] ?? "log";
+    logLine(level, event.message ?? legacyMessage ?? "");
+  });
+  win.webContents.on("render-process-gone", (_e, details) => logLine("error", `renderer gone: ${details.reason}`));
+  win.webContents.on("unresponsive", () => logLine("error", "window unresponsive"));
+  // RHT_HIDDEN=1: never show the window (scripted checks must not steal focus).
+  if (process.env.RHT_HIDDEN !== "1") win.once("ready-to-show", () => win.show());
   // Launch with --debug (or RHT_DEBUG=1) to unlock the in-game Debug/Sandbox settings section.
   const debug = process.argv.includes("--debug") || process.env.RHT_DEBUG === "1";
   win.loadURL(`app://rht/index.html${debug ? "?debug" : ""}`);
@@ -91,6 +128,7 @@ app.commandLine.appendSwitch("disable-features", "OverlayScrollbar");
 
 app.whenReady().then(() => {
   serveAppProtocol();
+  openPlayLog();
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

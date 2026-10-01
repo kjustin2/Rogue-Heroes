@@ -10,7 +10,7 @@ on purpose — see `CLAUDE.md`). A Skirmish: six themed maps (each with sections
 its own light), three modes (Annihilation, Capture the Flag, Hold the Hill), three factions that look, play
 and research differently, three AI brains (Easy / Normal / Hard differ in intelligence), or Local 2 Players.
 
-State of `main`: `npm run verify` green (558 vitest incl. chaos, balance self-play and the movement +
+State of `main`: `npm run verify` green (561 vitest incl. chaos, balance self-play and the movement +
 projectile oracle), `npm run smoke:core` green (11 smokes), `npm run probe:terrain` 0 offenders,
 `npm run measure:factions` GOAL MET, `npm run soak:gpu` with no mid-resolve shader compiles, perf gate OK.
 
@@ -22,6 +22,10 @@ projectile oracle and the seven bugs it found; a perf pass (no per-frame materia
 blends, static scenery keeps its paint, warmed debris program); base circles whole and on the board (the
 board grows behind the bases, spawn spacing, flat zone rings drawn over props); bullets as burning streaks;
 a toon rim on units and a lit lip on mesas; a picked base frames its deploy circle above the command panel.
+Then (2026-10-01): no Deploy-now shortcut in set-up; the PLAY LOG (`game/logs/latest.log`); the locked-turret
+placement fix (decks show locks, picks refuse up front, every refusal toasts its reason, every defense has a
+placement ghost); Defenses decks of 5-6 and Support decks of 3 per faction (starters, tech pieces, faction-own);
+three movement bugs the oracle found; the per-frame GL depth-blit error (postprocessing pinned at 6.39.2).
 
 ## Next — in priority order
 
@@ -35,19 +39,21 @@ a toon rim on units and a lit lip on mesas; a picked base frames its deploy circ
    average ~27 damage a game and the row sits at the band floor (it is in `UNGATED` in `balance.test.ts`).
    A bombing run (move over the nearest ground foe, release on arrival) alone took it to 1.8x the median;
    do the run AND a bomber retune (fewer loads or a smaller carpet) in one change, then un-gate it.
-4. **The AI never uses Push** (the player's shove / ring-out). Add it to the Hard brain where a foe stands
+4. **The bot and the new decks.** It drops its strongest strike on a crowd, but never builds a defense, lays a
+   minefield, paradrops or calls a utility power. Add only after the owner has played the new decks.
+5. **The AI never uses Push** (the player's shove / ring-out). Add it to the Hard brain where a foe stands
    within shove reach of water or the arena edge.
-5. **Attack arms.** The Blender motion banks' `shoulderPitch` / `shoulderYaw` / `offhandPitch` never reach an
+6. **Attack arms.** The Blender motion banks' `shoulderPitch` / `shoulderYaw` / `offhandPitch` never reach an
    arm: arms are `"body"`-part meshes and the pose code's `part.role === "core"` branch catches them first.
    Every attack still animates (weapon, torso, recoil) but the arms hold still. Settle the SIGN on a
    filmstrip first (pistol / launcher clips raise with NEGATIVE shoulderPitch; the melee blade is swung
    with `rotation.x -= shoulderPitch`): `npm run shots:filmstrip -- pistol launcher melee`.
-6. **Karak's landform.** It is the last map built on stepped pyramid mesas; a canyon, crater ring or dune
+7. **Karak's landform.** It is the last map built on stepped pyramid mesas; a canyon, crater ring or dune
    field would give it its own. Constraints: impassable = step > `TERRAIN_STEP` or water; shelves deep enough
    to stop on (`spawnClearance`); `scatter.test.ts`, `props.test.ts`, `movement.test.ts` green; rerun self-play.
-7. **Remaining unit-identity ideas** (only if asked): engineer bridge span / sandbag line; a flak tracer wall
+8. **Remaining unit-identity ideas** (only if asked): engineer bridge span (sandbags are now in every Defenses deck); a flak tracer wall
    that blocks air movement (needs a new persistent, serialized line object).
-8. **Elites / bosses** survive in code (`debugSpawn` options + the boss bar) for a possible set piece — only
+9. **Elites / bosses** survive in code (`debugSpawn` options + the boss bar) for a possible set piece — only
    when asked.
 
 ## Known and deliberately deferred (do not re-chase without new evidence)

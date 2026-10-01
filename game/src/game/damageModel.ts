@@ -194,7 +194,7 @@ function part(id: string, label: string, role: PartRole, maxHp: number, extras: 
 }
 
 function statusFor(kind: EntityKind): EntityStatus {
-  const defenseShooter = kind === "turret" || kind === "exturret";
+  const defenseShooter = kind === "turret" || kind === "exturret" || kind === "aaturret" || kind === "bunker";
   return {
     alive: true,
     canMove: isInfantryKind(kind) || isVehicleKind(kind),
@@ -765,7 +765,7 @@ export function createBase(id: string, name: string, team: Team, position: Vec2)
 function createDefense(
   id: string,
   name: string,
-  kind: "turret" | "exturret" | "wall",
+  kind: "turret" | "exturret" | "aaturret" | "bunker" | "sensor" | "wall",
   team: Team,
   position: Vec2,
   config: { radius: number; height: number; parts: DamagePart[]; canAct: boolean }
@@ -816,6 +816,46 @@ export function createExTurret(id: string, name: string, team: Team, position: V
       part("mount", "Battery Base", "core", 92, { critical: true }),
       part("gun", "Mortar Battery", "weapon", 44),
       part("ammo", "Shell Magazine", "volatile", 30),
+    ],
+  });
+}
+
+// A fixed flak cannon: the Flak Track's gun on a ring mount.
+export function createAaTurret(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  return createDefense(id, name, "aaturret", team, position, {
+    radius: 0.95,
+    height: 1.7,
+    canAct: true,
+    parts: [
+      part("mount", "Gun Ring", "core", 80, { critical: true }),
+      part("gun", "Flak Cannon", "weapon", 38, { vsAir: 2.4 }),
+      part("sensor", "Fire-Control Radar", "utility", 24),
+    ],
+  });
+}
+
+// A concrete machine-gun nest: low, wide and very tough; its gun pokes through a slit.
+export function createBunker(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  return createDefense(id, name, "bunker", team, position, {
+    radius: 1.2,
+    height: 1.25,
+    canAct: true,
+    parts: [
+      part("shell", "Concrete Shell", "core", 150, { critical: true }),
+      part("gun", "Bunker MG", "weapon", 44),
+    ],
+  });
+}
+
+// A sensor mast: no gun. Its array is a spotter relay for every ally around it (sim reads the tag).
+export function createSensor(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  return createDefense(id, name, "sensor", team, position, {
+    radius: 0.7,
+    height: 3.2,
+    canAct: false,
+    parts: [
+      part("mast", "Mast", "core", 70, { critical: true }),
+      part("array", "Sensor Array", "utility", 30, { tags: ["spotter-aura"] }),
     ],
   });
 }
@@ -1091,7 +1131,7 @@ export function isBuildingKind(kind: EntityKind): boolean {
 
 // Player/enemy-built defensive emplacements (turret, explosive turret, wall).
 export function isDefenseKind(kind: EntityKind): boolean {
-  return kind === "turret" || kind === "exturret" || kind === "wall";
+  return kind === "turret" || kind === "exturret" || kind === "aaturret" || kind === "bunker" || kind === "sensor" || kind === "wall";
 }
 
 function utilityMessages(entity: CombatEntity, part: DamagePart): string[] {
