@@ -4906,7 +4906,7 @@ export class WorldRenderer {
    */
   auditTerrainClip(tolerance = 0.12): { id: string; name: string; kind: string; part: string; depth: number; x: number; z: number }[] {
     const out: { id: string; name: string; kind: string; part: string; depth: number; x: number; z: number }[] = [];
-    const box = new THREE.Box3();
+    const vertex = new THREE.Vector3();
     for (const [id, group] of this.groups) {
       if (!group.visible || group.userData.diedAt !== undefined) continue;
       const ent = group.userData.entitySnapshot as { name: string; kind: string; flying?: boolean } | undefined;
@@ -4916,13 +4916,15 @@ export class WorldRenderer {
       group.traverse((o) => {
         const m = o as THREE.Mesh;
         if (!m.isMesh || !m.visible || !m.userData.partId || m.userData.ink || m.userData.decor || m.userData.sunk) return;
-        box.setFromObject(m);
-        if (box.isEmpty()) return;
-        const xs = [box.min.x, (box.min.x + box.max.x) / 2, box.max.x];
-        const zs = [box.min.z, (box.min.z + box.max.z) / 2, box.max.z];
-        for (const x of xs) for (const z of zs) {
-          const depth = drawnGroundAt({ x, z }) - box.min.y;
-          if (depth > tolerance && (!worst || depth > worst.depth)) worst = { part: String(m.userData.partId), depth, x, z };
+        // The mesh's REAL vertices in world space, not its world AABB: the box of a rotated tread juts far
+        // past the tread (a tank turned ~100 degrees "sank" 0.57m into a step it was not touching).
+        const pos = m.geometry.getAttribute("position");
+        if (!pos) return;
+        const stride = Math.max(1, Math.floor(pos.count / 96));
+        for (let i = 0; i < pos.count; i += stride) {
+          vertex.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
+          const depth = drawnGroundAt({ x: vertex.x, z: vertex.z }) - vertex.y;
+          if (depth > tolerance && (!worst || depth > worst.depth)) worst = { part: String(m.userData.partId), depth, x: vertex.x, z: vertex.z };
         }
       });
       if (worst) out.push({ id, name: ent.name, kind: ent.kind, ...worst });

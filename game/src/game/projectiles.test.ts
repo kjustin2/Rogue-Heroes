@@ -67,12 +67,15 @@ describe("every projectile family flies and lands as expected", () => {
           const step = Math.hypot(f.x[i] - f.x[i - 1], f.z[i] - f.z[i - 1], f.h[i] - f.h[i - 1]);
           expect(step, `stalled at sample ${i}`).toBeGreaterThan(0.01);
         }
-        // It flies AT the target: its path passes close to it (a miss keeps flying past, and the
-        // marksman's round punches through by design, so where a round ENDS proves nothing).
-        const closest = Math.min(...f.x.map((x, i) => Math.hypot(x - target.position.x, f.z[i] - target.position.z)));
+        // It flies AT the target: its HEADING points at it. (Not "passes within Nm": a low round now
+        // stops in the dirt short of the target's feet -- it used to burrow on underground, which is
+        // the only reason that proxy ever passed for a round that dipped.)
+        const hx = f.x[f.x.length - 1] - f.x[0], hz = f.z[f.z.length - 1] - f.z[0];
+        const tx = target.position.x - f.x[0], tz = target.position.z - f.z[0];
+        const off = Math.acos(Math.max(-1, Math.min(1, (hx * tx + hz * tz) / (Math.hypot(hx, hz) * Math.hypot(tx, tz) || 1)))) * 180 / Math.PI;
         // Explosive rounds scatter wider by design (and their blast still reaches); small arms do not.
         const explosive = c.lobbed || c.name === "scattergun" || c.name === "tank shell";
-        expect(closest, "passes near its target").toBeLessThan(explosive ? 3.5 : 2.2);
+        expect(off, "heads at its target (degrees off)").toBeLessThan(explosive ? 20 : 12);
       }
     });
   }

@@ -179,10 +179,22 @@ export function climbsAlong(from: Vec2, to: Vec2, minRise = 0.3, spacing = 0.2):
 // straddle a cliff face and clip. Used by map authoring to keep cover on flat ground/tops.
 export function onTerrainEdge(point: Vec2, margin = 0.6): boolean {
   const here = terrainHeightAt(point);
-  for (const dx of [-margin, margin]) {
-    for (const dz of [-margin, margin]) {
-      if (Math.abs(terrainHeightAt({ x: point.x + dx, z: point.z + dz }) - here) > 0.05) return true;
+  return discSamples(point, margin).some((p) => Math.abs(terrainHeightAt(p) - here) > 0.05);
+}
+
+/**
+ * Sample points covering a disc: two rings (half and full radius) of 12. The old checks sampled four
+ * DIAGONAL corners (outside the disc, and blind to a narrow step between them) or one outer ring, so a
+ * step corner could sit inside a unit's clearance unseen -- a tank tread in a Verdant step, a flak hull
+ * in an Ironworks step (movement.test.ts).
+ */
+export function discSamples(point: Vec2, radius: number): Vec2[] {
+  const out: Vec2[] = [];
+  for (const r of [radius * 0.5, radius]) {
+    for (let i = 0; i < 12; i += 1) {
+      const a = (i / 12) * Math.PI * 2;
+      out.push({ x: point.x + Math.sin(a) * r, z: point.z + Math.cos(a) * r });
     }
   }
-  return false;
+  return out;
 }

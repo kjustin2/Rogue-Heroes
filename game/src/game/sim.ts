@@ -64,7 +64,7 @@ import {
   type Team,
 } from "./damageModel";
 import { createScenario } from "./scenario";
-import { DEFAULT_TERRAIN, TERRAIN_STEP, ARENA_BOUNDS, clampToArena, nearestDryPoint, onTerrainEdge, setActiveTerrain, terrainHeightAt, pointInWater } from "./terrain";
+import { DEFAULT_TERRAIN, TERRAIN_STEP, ARENA_BOUNDS, clampToArena, discSamples, nearestDryPoint, onTerrainEdge, setActiveTerrain, terrainHeightAt, pointInWater } from "./terrain";
 import { TROOP_CATALOG, TROOP_KINDS, troopSpec, defenseSpec, supportPowerSpec, unitStats, type TroopKind, type DefenseKind, type SupportPowerKind, type ProjectileKind } from "./units";
 import { TECH_TREE, techNode, aggregateTechEffect, type TechNode, type TechEffect } from "./tech";
 import { modeDef, type ModeId } from "./modes";
@@ -2793,14 +2793,32 @@ export class TacticalSim {
       return;
     }
 
+    // RAM. The tank charges to CONTACT and stops there. It used to keep driving at the target's centre
+    // for the whole order, with no step check and no separation -- a ram that did not destroy its target
+    // left the tank parked inside it (a wreck, a crate), and a charge could climb a cliff face
+    // (movement.test.ts). Now it moves like every other mover: up to contact, never into a step.
     actor.yaw = Math.atan2(target.position.x - actor.position.x, target.position.z - actor.position.z);
-    actor.position = moveToward(actor.position, target.position, moveSpeed(actor) * 1.25 * dt);
-    this.syncEntityElevation(actor);
-    this.checkMines(actor);
-    this.checkPickups(actor);
-    if (!order.fired && dist(actor.position, target.position) <= actor.radius + target.radius + 0.25) {
-      order.fired = true;
-      this.resolveRam(actor, target);
+    const contact = actor.radius + target.radius + 0.25;
+    if (!order.fired) {
+      const step = Math.min(Math.max(0, dist(actor.position, target.position) - contact), moveSpeed(actor) * 1.25 * dt);
+      if (step > 0) {
+        const want = moveToward(actor.position, target.position, step);
+        if (this.blockedBySteepTerrain(actor, actor.position, want, undefined, step, true)) {
+          order.fired = true; // the charge stalls against the step; nothing is hit
+          order.done = true;
+          this.pushLog(`${actor.name}'s ram is stopped by the terrain`);
+          return;
+        }
+        actor.position = want;
+        this.separateFromUnits(actor);
+        this.syncEntityElevation(actor);
+        this.checkMines(actor);
+        this.checkPickups(actor);
+      }
+      if (dist(actor.position, target.position) <= contact + 0.05) {
+        order.fired = true;
+        this.resolveRam(actor, target);
+      }
     }
     if (order.elapsed >= order.duration) order.done = true;
   }
@@ -3380,6 +3398,10 @@ export class TacticalSim {
     projectile.travel = nextTravel;
     projectile.position = next;
     projectile.height = nextHeight;
+    // Off the board = a miss. A round that sailed past its target used to fly on over the outer plain
+    // until its range ran out (12m+ past the rim, movement.test.ts).
+    const { minX, maxX, minZ, maxZ } = ARENA_BOUNDS;
+    if (next.x < minX - 1 || next.x > maxX + 1 || next.z < minZ - 1 || next.z > maxZ + 1) this.expireProjectile(projectile);
   }
 
   private groundImpactProjectile(projectile: Projectile, intendedTarget: CombatEntity | undefined, point: Vec2): void {
@@ -3420,10 +3442,17 @@ export class TacticalSim {
 
     const progress = clamp(projectile.rollElapsed / Math.max(0.001, projectile.rollDuration), 0, 1);
     const speed = projectile.rollSpeed * (1 - progress * 0.72);
-    const next = clampToArena({
+    const raw = {
       x: projectile.position.x + projectile.direction.x * speed * dt,
       z: projectile.position.z + projectile.direction.z * speed * dt,
-    });
+    };
+    // A grenade that rolls to the board edge goes off there. Clamping it back inside made it jump
+    // BACKWARDS a step (movement.test.ts: "moved against its own direction").
+    const next = clampToArena(raw);
+    if (next.x !== raw.x || next.z !== raw.z) {
+      this.detonateRollingGrenade(projectile, actor, intendedTarget, order);
+      return;
+    }
     const nextHeight = terrainHeightAt(next) + 0.13;
     const hit = this.firstEntityHitBySegment(projectile, projectile.position, next, projectile.height, nextHeight);
     if (hit) {
@@ -4052,6 +4081,10 @@ export class TacticalSim {
     if (isVehicleKind(target.kind) && !target.status.alive && !this.wrecked.has(target.id)) {
       this.wrecked.add(target.id);
       const wreck = createCover(`wreck-${target.id}`, `${target.name} Wreck`, { ...target.position }, { coverKind: "wreck" });
+      // The hulk comes to rest on CLEAR ground: an aircraft shot down over a tank, or a vehicle killed
+      // against another, used to leave its wreck on top of the survivor (and shoving the survivor out
+      // could push it into a base). Move the wreck, not the living (movement.test.ts).
+      wreck.position = this.clearWreckSpot(wreck, target.id);
       wreck.yaw = target.yaw;
       this.entities.push(wreck);
       this.syncEntityElevation(wreck);
@@ -4064,6 +4097,22 @@ export class TacticalSim {
       this.pushLog(`${target.name} burns out — the wreck is hard cover and holds $${SALVAGE_PER_WRECK} salvage`);
     }
     this.checkEndState();
+  }
+
+  /** The nearest spot (within 6m) where a wreck overlaps no living body or solid, on dry level ground. */
+  private clearWreckSpot(wreck: CombatEntity, deadId: string): Vec2 {
+    const free = (p: Vec2): boolean =>
+      !pointInWater(p) && !onTerrainEdge(p, wreck.radius * 0.8) &&
+      !this.entities.some((e) => e.id !== deadId && e.id !== wreck.id && e.status.alive && !e.flying && !e.carriedById && dist(e.position, p) < e.radius + wreck.radius + 0.2);
+    if (free(wreck.position)) return wreck.position;
+    for (let r = 0.8; r <= 6; r += 0.8) {
+      for (let i = 0; i < 12; i += 1) {
+        const a = (i / 12) * Math.PI * 2;
+        const p = clampToArena({ x: wreck.position.x + Math.sin(a) * r, z: wreck.position.z + Math.cos(a) * r });
+        if (free(p)) return p;
+      }
+    }
+    return wreck.position;
   }
 
   private medicInReach(target: CombatEntity): CombatEntity | undefined {
@@ -4441,8 +4490,12 @@ export class TacticalSim {
           // onto it (or ascending a cliff), so don't fight the climb. Every OTHER solid prop pushes
           // the mover out, so unit-vs-unit separation can't deflect someone into (and through) it.
           if (other.coverKind === "ridge") continue;
-          if (destination && dist(other.position, destination) <= other.radius) continue;
-          const onTop = isClimbableCover(other) && dist(actor.position, other.position) <= Math.max(0.35, other.radius * 0.65);
+          // Climbing onto cover is INFANTRY only: a tank whose move ended where a wreck had just appeared
+          // (its target, killed mid-turn) drove into the hulk under this exemption (movement.test.ts).
+          if (destination && isInfantryKind(actor.kind) && dist(other.position, destination) <= other.radius) continue;
+          // Only INFANTRY climb onto cover (elevationForEntityAt lifts nobody else), so a vehicle "on top"
+          // of a wreck is inside it -- an aircraft shot down onto an APC left it there (movement.test.ts).
+          const onTop = isInfantryKind(actor.kind) && isClimbableCover(other) && dist(actor.position, other.position) <= Math.max(0.35, other.radius * 0.65);
           if (onTop) continue;
         }
         const minDist = actor.radius + other.radius;
@@ -6082,7 +6135,11 @@ function firstGroundBetweenShot(from: Vec2, to: Vec2, fromHeight: number, toHeig
     };
     const lineHeight = trajectoryHeight(fromHeight, toHeight, t, arcHeight);
     const terrain = terrainHeightAt(point);
-    if (terrain > 0.04 && lineHeight <= terrain + 0.05) return { point, height: terrain + 0.04, progress: t };
+    // ANY ground stops a round, flat ground included (2026-09-24). This used to test `terrain > 0.04`,
+    // so only raised blocks counted: a shot fired DOWN off a mesa that missed kept descending through the
+    // flat floor until its range ran out -- a tracer diving into the dirt and flying on underground
+    // (movement.test.ts, the projectile oracle, caught it on four maps).
+    if (lineHeight <= terrain + 0.05) return { point, height: terrain + 0.04, progress: t };
   }
   return undefined;
 }
@@ -6221,11 +6278,7 @@ function spawnClearance(unitRadius: number): number {
  */
 function risesNear(point: Vec2, margin: number): boolean {
   const here = terrainHeightAt(point);
-  for (let i = 0; i < 8; i += 1) {
-    const a = (i / 8) * Math.PI * 2;
-    if (terrainHeightAt({ x: point.x + Math.sin(a) * margin, z: point.z + Math.cos(a) * margin }) - here > 0.3) return true;
-  }
-  return false;
+  return discSamples(point, margin).some((p) => terrainHeightAt(p) - here > 0.3);
 }
 function settleClearOfRises(start: Vec2, stop: Vec2, margin: number): Vec2 {
   if (!risesNear(stop, margin)) return stop;

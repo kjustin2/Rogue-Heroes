@@ -825,6 +825,32 @@ parked with hull / cannon in mesas, and zero after the fix. The rules it proved:
   keep literal positions.
 - Intentionally sunk dressing (Syndicate tents) is `userData.sunk` and skipped by the audit.
 
+## THE MOVEMENT + PROJECTILE ORACLE (2026-09-24) — read before touching movement, rams, wrecks or rounds
+
+Owner: "most of the bugs I've seen is from units moving through the map or clipping or projectiles moving in
+the wrong way". `src/game/movement.test.ts` plays AI vs AI on all six real maps, three faction matchups, each
+side fielding its WHOLE roster from turn 1, 12 turns, and checks every tick / turn end: rounds finite, moving
+forward along their own direction, fired toward their aim, never underground for 2+ ticks, never past the
+board rim, never outliving their life; ground units never inside a prop / base / defense, never with a hull
+in a step, never sunk. Fault-injection proven (re-adding the flat-ground hole fails Dust Bowl; re-adding the
+vehicle climb exemption fails Verdant + Karak). Bugs it found and the fixes (do not undo):
+- **Rounds tunnelled through FLAT ground**: `firstGroundBetweenShot` only counted raised terrain
+  (`terrain > 0.04`), so a downhill miss dove into the floor and flew on underground. Any ground stops a round.
+- **Rounds flew off the board**: a miss now expires 1m past `ARENA_BOUNDS`; a rolling grenade that reaches the
+  edge detonates there (clamping it inward made it jump BACKWARDS).
+- **Vehicles inside wrecks**: only INFANTRY climb onto cover, so both `separateFromUnits` exemptions (perched
+  on top, move destination on the cover) are infantry-only now; a wreck comes to rest on clear ground
+  (`clearWreckSpot`) instead of on the survivor beside it.
+- **Rams**: the tank charges to CONTACT and stops, with the step check and separation every mover has (it used
+  to drive at the target's centre for the whole order — into a surviving target or up a cliff).
+- **Clearance sampling**: `onTerrainEdge` (four diagonal corners) and `risesNear` (one ring) both sample a disc
+  now (`discSamples`: two rings of 12) — a step corner could sit inside a unit's clearance unseen.
+- **`auditTerrainClip` measures real vertices**, not the world AABB (a rotated tread's box juts past the
+  tread: the "tank 0.57m in a Verdant step" report was the box). `probe:terrain` = 0 on every map,
+  fault-injection proven (tanks drawn 0.6m low → caught).
+- `projectiles.test.ts` asserts a round's HEADING at its target, not "passes within 2.2m" (that proxy only
+  passed because a dipping round burrowed on past the target).
+
 ## Move orders that go nowhere are REFUSED (2026-09-22)
 
 `queueMoveToDestination` refuses (no CP spent) a move whose blocked stop is within 0.3 of the start,
