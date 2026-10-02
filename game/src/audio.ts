@@ -28,7 +28,7 @@ const MAX_VOICES = 10;
 /**
  * THE LOUDNESS HIERARCHY, in one table. Every sample is the same peak level, but the recordings differ by
  * 10+ dB in energy (a firework bang is a spike, a rifle a long crack), so this gain is set from each group's
- * MEASURED RMS (scripts/_sfx_stats.py) to give the order a player expects:
+ * MEASURED RMS (scripts/audio-stats.py) to give the order a player expects:
  *   deep boom > cannon = blast > crack > pop > rifle > carbine = pellet > pistol,
  * with the machine gun held back (it fires ten rounds) and impacts under the guns that cause them.
  */

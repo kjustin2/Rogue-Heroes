@@ -129,7 +129,7 @@ How the factions, the three AI brains and Local 2 Players work, with the measure
 - **Audio** (`src/audio.ts`, `src/music.ts`, `public/audio`, credits in `ATTRIBUTION.md`, rebuild `npm run art:audio`, needs ffmpeg).
   - *Sources:* recorded CC0 samples play over every synthesized voice, which stays as the fallback. Every sample is peak-normalised
     to -3 dBFS and the recordings differ by 10+ dB in energy, so loudness is set in ONE table, `GROUP_GAIN`, from each group's measured
-    RMS (`scripts/_sfx_stats.py`): deep boom > cannon = blast > crack > pop > rifle > carbine = pellet > pistol, machine gun held back.
+    RMS (`scripts/audio-stats.py`): deep boom > cannon = blast > crack > pop > rifle > carbine = pellet > pistol, machine gun held back.
   - *One voice per weapon* (`GUN_VOICES`, pure `voiceFor`): the same few recordings pitched and weighted per shooter (a marksman's
     rifle, scout and jumper carbines pitched up, pistols for the field hands, a deep MG, tank / siege gun / mortar pit / base relay at
     four pitches, flak cracks, rocket and flame synthesized, a hand grenade is a swish). `audio.test.ts` fails if an armed unit has no

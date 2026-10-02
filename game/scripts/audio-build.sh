@@ -32,7 +32,7 @@ shot "$RAW/sfx/gunshots/sounds/sks.wav" carbine 0.9
 shot "$RAW/sfx/gunshots/sounds/cz.wav" pistol 0.8
 shot "$RAW/sfx/gunshots/sounds/shotty.wav" pellet 0.69
 B="$RAW/sfx/bangs"
-# Sorted by measured tone and length (scripts/_sfx_stats.py): deep and long = boomdeep, mid = blast, bright and short = pop.
+# Sorted by measured tone and length (scripts/audio-stats.py): deep and long = boomdeep, mid = blast, bright and short = pop.
 n=1; for f in bang_03 fw_04 fw_06; do norm "$B/$f.ogg" "boomdeep_0$n"; n=$((n+1)); done
 n=1; for f in bang_01 bang_07 bang_09 bang_10 bang_08 fw_01 fw_05; do norm "$B/$f.ogg" "blast_0$n"; n=$((n+1)); done
 n=1; for f in bang_02 bang_04 bang_05 bang_06 fw_02 fw_03; do norm "$B/$f.ogg" "pop_0$n"; n=$((n+1)); done

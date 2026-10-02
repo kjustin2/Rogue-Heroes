@@ -405,7 +405,7 @@ app.whenReady().then(async () => {
           const ok = await js(`fetch(new URL("audio/music/" + window.__rht.musicTrack() + ".ogg", document.baseURI)).then((r) => r.status)`);
           console.log("audioprobe", map, track, pools[map].includes(track) ? "in-pool" : "WRONG POOL", "http", ok);
         }
-        const missing = await js(`(async () => { const names = ["rifle","carbine","pistol","pellet","bolt_01","cannon_01","blast_01","boom_01","hitmetal_000","hitpunch_000","hitsoft_000","hitplate_000","hitwood_000"]; const bad = []; for (const n of names) { const r = await fetch(new URL("audio/sfx/" + n + ".ogg", document.baseURI)); if (!r.ok) bad.push(n); } return JSON.stringify(bad); })()`);
+        const missing = await js(`(async () => { const names = ["rifle","carbine","pistol","pellet","bolt_01","cannon_01","blast_01","boomdeep_01","pop_01","crack_01","hitmetal_000","hitpunch_000","hitsoft_000","hitplate_000","hitwood_000"]; const bad = []; for (const n of names) { const r = await fetch(new URL("audio/sfx/" + n + ".ogg", document.baseURI)); if (!r.ok) bad.push(n); } return JSON.stringify(bad); })()`);
         console.log("audioprobe missing sfx:", missing);
         continue;
       }
