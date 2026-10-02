@@ -625,9 +625,10 @@ export class WorldRenderer {
     }
     // OIL: a black glossy puddle with a violet rim and a few pale glints; it lights as a burn zone.
     for (const slick of sim.oilSlicks) {
+      const fade = this.zoneFade(slick.id, slick);
       const body = new THREE.Mesh(
         drapedDisc(slick.x, slick.z, 0, slick.radius, 40, 0.06),
-        this.envMat(THREE.MeshBasicMaterial, { color: 0x14111a, transparent: true, opacity: 0.88, side: THREE.DoubleSide, depthWrite: false }),
+        this.envMat(THREE.MeshBasicMaterial, { color: 0x14111a, transparent: true, opacity: 0.88 * fade, side: THREE.DoubleSide, depthWrite: false }),
       );
       this.environmentRoot.add(body);
       const rim = new THREE.Mesh(
@@ -647,9 +648,10 @@ export class WorldRenderer {
     // BOUNCE PADS: a yellow disc with a dark rim and two chevrons pointing the way it launches.
     for (const pad of sim.pads) {
       const y = drawnGroundAt(pad) + 0.09;
+      const padFade = this.zoneFade(pad.id, pad);
       const disc = new THREE.Mesh(
         drapedDisc(pad.x, pad.z, 0, PAD_RADIUS, 28, 0.07),
-        this.envMat(THREE.MeshBasicMaterial, { color: 0xf0c828, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false }),
+        this.envMat(THREE.MeshBasicMaterial, { color: 0xf0c828, transparent: true, opacity: 0.95 * padFade, side: THREE.DoubleSide, depthWrite: false }),
       );
       this.environmentRoot.add(disc);
       const rim = new THREE.Mesh(
@@ -1555,6 +1557,8 @@ export class WorldRenderer {
     if (!group) {
       group = this.buildEntity(entity);
       group.userData.team = teamKey;
+      group.userData.born = performance.now();
+      if (entity.ownerTeam) this.placedDust(entity.position); // set down just now: a puff where it lands
       group.userData.entitySnapshot = entity; // live reference, read by auditTerrainClip
       this.groups.set(entity.id, group);
       this.entityRoot.add(group);
@@ -1723,6 +1727,8 @@ export class WorldRenderer {
     } else if (scenery) {
       const jitter = 0.89 + ((variety >> 9) % 23) / 100;
       group.scale.set(jitter, 0.92 + ((variety >> 14) % 19) / 100, jitter);
+      // A charge or barrier somebody just set down drops in with a little overshoot, not a pop.
+      if (entity.ownerTeam) group.scale.multiplyScalar(popIn((performance.now() - ((group.userData.born as number | undefined) ?? 0)) / 260));
     } else {
       group.scale.setScalar(entity.status.alive ? 1 : 0.94);
     }
@@ -2010,6 +2016,22 @@ export class WorldRenderer {
 
   /** Bounce pad positions this frame (a launch that starts on one is drawn as a leap). */
   private padSpots: readonly { x: number; z: number }[] = [];
+  /** First-seen time of each pad / puddle, so a fresh one fades up and kicks a little dust. */
+  private readonly zoneBorn = new Map<string, number>();
+
+  private placedDust(at: { x: number; z: number }): void {
+    this.particles?.burst({
+      x: at.x, y: terrainHeightAt(at) + 0.12, z: at.z, count: 10, color: [0xa89e92, 0xcfc4b4], speed: [0.8, 2.2], up: 0.25, size: [0.18, 0.4],
+      life: [0.35, 0.8], gravity: -0.2, drag: 2.4, jitter: 0.3,
+    });
+  }
+
+  /** 0..1 fade-in of a zone over its first 300ms (and the dust at birth). */
+  private zoneFade(id: string, at: { x: number; z: number }): number {
+    let born = this.zoneBorn.get(id);
+    if (born === undefined) { born = performance.now(); this.zoneBorn.set(id, born); this.placedDust(at); }
+    return Math.min(1, (performance.now() - born) / 300);
+  }
 
   private flyThrownBody(entity: CombatEntity, group: THREE.Group, groundY: number): void {
     const last = group.userData.lastSimPos as { x: number; z: number; y: number } | undefined;
@@ -6126,6 +6148,12 @@ const DAMAGE_FLASH_MS = 320;
 // How long a whole-body hit flinch lasts (ms). Short + snappy — a strike, not a stumble.
 const FLINCH_MS = 300;
 // A dead unit stays on the board this long: the fall, a beat, then it sinks away.
+/** Scale for something dropped in: rises from 60% with a small overshoot, settles at 1 (t = 0..1 over its first moments). */
+function popIn(t: number): number {
+  if (t >= 1) return 1;
+  const k = Math.max(0, t);
+  return 0.6 + 0.4 * (1 + 2.2 * Math.pow(k - 1, 3) + 1.2 * Math.pow(k - 1, 2));
+}
 const FLIGHT_Q = new THREE.Quaternion();
 const FLIGHT_AXIS = new THREE.Vector3();
 type DeathStyle = "thrown" | "crumple" | "spin" | "wreck" | "spiral";
@@ -6708,9 +6736,9 @@ const INFANTRY_KIT_PARTS: Partial<Record<EntityKind, InfantryKitParts>> = {
 // The phase is driven by the ORDER's own elapsed/duration, never by a clock of its own. Combat owns
 // durations; animation owns pose. That means an attack animation can never desync from the shot it
 // belongs to, and slowing the action pace slows the choreography with it for free.
-export type WeaponFamily = "rifle" | "burst" | "marksman" | "cannon" | "launcher" | "flamer" | "melee" | "shotgun" | "pistol" | "throw";
+export type WeaponFamily = "rifle" | "burst" | "marksman" | "cannon" | "launcher" | "flamer" | "melee" | "shotgun" | "pistol" | "throw" | "aid";
 /** Every attack family, for the tests that must cover them all (a hand-kept list skipped two). */
-export const WEAPON_FAMILIES: readonly WeaponFamily[] = ["rifle", "burst", "marksman", "cannon", "launcher", "flamer", "melee", "shotgun", "pistol", "throw"];
+export const WEAPON_FAMILIES: readonly WeaponFamily[] = ["rifle", "burst", "marksman", "cannon", "launcher", "flamer", "melee", "shotgun", "pistol", "throw", "aid"];
 
 export function weaponFamily(kind: EntityKind): WeaponFamily {
   if (kind === "striker") return "melee";
@@ -6733,6 +6761,8 @@ export function weaponFamily(kind: EntityKind): WeaponFamily {
  */
 export function attackFamilyForOrder(kind: EntityKind, orderKind: OrderKind): WeaponFamily | undefined {
   if (orderKind === "melee") return "melee";
+  // A medic or engineer treating: the tool comes up toward the patient and the body leans in (no round, no recoil).
+  if (orderKind === "treat") return isInfantryKind(kind) ? "aid" : undefined;
   if (orderKind === "shoot" || orderKind === "smoke") return weaponFamily(kind);
   if (orderKind === "grenade") {
     // A hand grenade is THROWN: before this a Recruit raised its rifle and "fired" the grenade.
@@ -6765,6 +6795,7 @@ const FAMILY_SHAPE: Record<WeaponFamily, { contact: number; draw: number; lift: 
   flamer: { contact: 0.3, draw: 0.04, lift: 0.05, brace: 0.08 },
   melee: { contact: 0.5, draw: 0.34, lift: 0.5, brace: 0.3 },
   shotgun: { contact: 0.36, draw: 0.12, lift: 0.24, brace: 0.1 },
+  aid: { contact: 0.4, draw: -0.02, lift: 0.4, brace: 0.16 },
   pistol: { contact: 0.4, draw: 0.05, lift: 0.18, brace: 0.03 },
   // The rifle is lowered out of the way while the free arm throws (see throwArmAngle); the body
   // leans hard into the release. Contact = the sim's release (0.58s of a 1.15s order).

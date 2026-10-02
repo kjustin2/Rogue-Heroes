@@ -4142,7 +4142,7 @@ export class TacticalSim {
     }
     recomputeStatus(target);
     this.effect("ping", target.position, target.position, 0x8effa6, 1, target.radius + 0.9);
-    this.effect("bolt", actor.position, target.position, 0x8effa6, 0.7, 0.2);
+    this.effect("ping", actor.position, actor.position, 0x9dffb8, 0.7, actor.radius + 0.5); // the healer's side of the beam: no sound of its own
     this.pushLog(`${actor.name} ${actor.kind === "medic" ? "treats" : "repairs"} ${target.name}: ${mended} ${mended === 1 ? "part" : "parts"} restored`);
   }
 
@@ -4229,6 +4229,7 @@ export class TacticalSim {
     for (const charge of this.entities) {
       if (charge.coverKind !== "charge" || !charge.status.alive || charge.fuse === undefined) continue;
       charge.fuse -= 1;
+      if (charge.fuse > 0) this.effect("ping", charge.position, charge.position, 0xff3b30, 0.6, 0.9);
       if (charge.fuse > 0) { charge.name = `Charge (${charge.fuse})`; this.pushLog(`A charge ticks: ${charge.fuse} ${charge.fuse === 1 ? "turn" : "turns"}`); continue; }
       for (const part of charge.parts) part.hp = 0;
       recomputeStatus(charge);

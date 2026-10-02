@@ -38,7 +38,7 @@ import {
   type FactionId,
 } from "./game/sim";
 import type { AimMode, CombatEntity, Team } from "./game/damageModel";
-import { isAirKind, isInfantryKind, isVehicleKind } from "./game/damageModel";
+import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isVehicleKind } from "./game/damageModel";
 import { TECH_TREE, troopsUnlockedBy } from "./game/tech";
 import { supportPowerSpec, troopSpec, unitStats } from "./game/units";
 import { factionDef, factionTroopLabel, signatureUnits } from "./game/factions";
@@ -2171,7 +2171,35 @@ function groundAimHover(): Vec2 | undefined {
 // Diff freshly-spawned projectiles/effects against the seen-sets and fire the one-shot
 // feedback for each: audio, camera trauma/kick, and pooled flash lights. This is the single
 // seam where sim events become player-facing juice (one-way data flow preserved).
+/** The entity a hit effect landed on (nearest within its own reach), so the thud can match the material. */
+function entityAtPoint(at: { x: number; z: number }): { kind: string; coverKind?: string } | undefined {
+  let best: CombatEntity | undefined;
+  let bestGap = 0.9;
+  for (const e of sim.entities) {
+    if (e.carriedById) continue;
+    const gap = Math.hypot(e.position.x - at.x, e.position.z - at.z) - e.radius;
+    if (gap < bestGap) { bestGap = gap; best = e; }
+  }
+  return best ? { kind: best.kind, coverKind: best.coverKind } : undefined;
+}
+
+const lastSpot = new Map<string, { x: number; z: number }>();
+/** Feed the movement bed: who is walking, driving or flying in view this frame. */
+function updateMoveBed(): void {
+  if (sim.phase !== "resolve") { sfx.moveBed(0, 0, 0); lastSpot.clear(); return; }
+  let infantry = 0, vehicles = 0, air = 0;
+  for (const e of sim.entities) {
+    if (!e.status.alive || e.kind === "cover" || isBuildingKind(e.kind) || isDefenseKind(e.kind) || e.carriedById) continue;
+    const before = lastSpot.get(e.id);
+    lastSpot.set(e.id, { x: e.position.x, z: e.position.z });
+    if (!before || Math.hypot(e.position.x - before.x, e.position.z - before.z) < 0.004 || !stage.isInView(e.position)) continue;
+    if (isAirKind(e.kind)) air += 1; else if (isVehicleKind(e.kind)) vehicles += 1; else infantry += 1;
+  }
+  sfx.moveBed(infantry, vehicles, air);
+}
+
 function processBattleEvents(): void {
+  updateMoveBed();
   // A killing blow is the moment of a turn worth watching, and the only one that earns a freeze.
   // Without the hold, a unit that dies in the same frame as everything else simply vanishes: the
   // eye never registers what happened to it.
@@ -2193,9 +2221,9 @@ function processBattleEvents(): void {
   for (const projectile of sim.projectiles) {
     if (seenProjectileIds.has(projectile.id)) continue;
     seenProjectileIds.add(projectile.id);
-    sfx.shot(projectile.kind, projectile.sourceKind);
-    resolveCam.note(projectile.origin.x, projectile.origin.z, POI_WEIGHT.shot, 0.7);
     const onScreen = stage.isInView(projectile.origin) ? 1 : 0.3;
+    sfx.shot(projectile.kind, projectile.sourceKind, onScreen < 1 ? 0.35 : 1); // a shot off-screen is heard, not felt
+    resolveCam.note(projectile.origin.x, projectile.origin.z, POI_WEIGHT.shot, 0.7);
     const heavy = projectile.kind === "shell" || projectile.kind === "grenade";
     if (heavy) {
       feel.addTrauma((projectile.kind === "shell" ? 0.12 : 0.08) * onScreen);
@@ -2207,8 +2235,12 @@ function processBattleEvents(): void {
   for (const effect of sim.effects) {
     if (seenEffectIds.has(effect.id)) continue;
     seenEffectIds.add(effect.id);
-    if (effect.type === "blast") {
-      sfx.explosion((effect.radius ?? 1) >= 3);
+    const heard = stage.isInView(effect.to) ? 1 : 0.35;
+    if (effect.type === "blast" && effect.color === 0xff7a2a && (effect.radius ?? 0) >= 3) {
+      sfx.ignite(heard); // a puddle of oil catching
+      feel.addTrauma(0.06 * heard);
+    } else if (effect.type === "blast") {
+      sfx.explosion(effect.radius ?? 1.5, heard);
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.blast, 1.5);
       const onScreen = stage.isInView(effect.to) ? 1 : 0.3;
       const size = Math.min(1, (effect.radius ?? 1) / 3);
@@ -2218,11 +2250,12 @@ function processBattleEvents(): void {
       stage.punch(0.25 * size * onScreen);
       world.flashLight(effect.to, 0xffa24d, (4.5 + size * 4) * onScreen, 260, 1.8);
     } else if (effect.type === "impact") {
-      sfx.impact();
+      const hit = entityAtPoint(effect.to);
+      sfx.impact(hit?.kind, hit?.coverKind, heard);
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.impact, 0.9);
       if (stage.isInView(effect.to)) feel.addTrauma(0.05);
     } else if (effect.type === "bolt") {
-      sfx.explosion();
+      sfx.explosion(4, heard);
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.strike, 2);
       const onScreen = stage.isInView(effect.to) ? 1 : 0.3;
       feel.addTrauma(0.2 * onScreen);
@@ -2231,7 +2264,7 @@ function processBattleEvents(): void {
     } else if (effect.type === "strike") {
       // A landed blow: the camera kicks away from the impact and the director looks at it. Same
       // sound as an impact for now -- the visual pass comes first.
-      sfx.strike();
+      sfx.strike(heard);
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.impact, 1.2);
       const onScreen = stage.isInView(effect.to) ? 1 : 0.3;
       feel.addTrauma(0.12 * onScreen);
@@ -2239,7 +2272,7 @@ function processBattleEvents(): void {
       feel.kick(effect.to, { x: view.x, z: view.z }, 1.1 * onScreen);
       stage.punch(0.12 * onScreen);
     } else if (effect.type === "topple") {
-      sfx.crash();
+      sfx.crash(heard);
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.topple, 1.8);
       if (stage.isInView(effect.to)) feel.addTrauma(0.14);
     } else if (effect.type === "jet") {
@@ -2247,9 +2280,15 @@ function processBattleEvents(): void {
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.strike, 2);
       feel.addTrauma(0.08);
     } else if (effect.type === "land") {
-      if (effect.color === 0xffe27a) sfx.boing(); else sfx.impact(); // a bounce pad, or a jump trooper touching down
+      if (effect.color === 0xffe27a) sfx.boing(); else sfx.place(heard); // a bounce pad, or a jump trooper / a placed item touching down
     } else if (effect.type === "ping" && effect.color === 0x8effa6) {
       sfx.heal();
+    } else if (effect.type === "ping" && effect.color === 0xff3b30) {
+      sfx.fuse();
+    } else if (effect.type === "ping" && effect.color === 0x8de4ff && (effect.radius ?? 0) < 4) {
+      sfx.clank(heard);
+    } else if (effect.type === "ping" && effect.color === 0x2b2430) {
+      sfx.place(heard);
     } else if (effect.type === "beam") {
       sfx.beam();
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.strike, 2);

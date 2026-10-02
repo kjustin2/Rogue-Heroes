@@ -409,6 +409,17 @@ app.whenReady().then(async () => {
         console.log("audioprobe missing sfx:", missing);
         continue;
       }
+      if (s === "treatanim") {
+        // A medic healing a wounded trooper: walk up, lift the tool, lean in (aid pose), the chime ring; then a charge dropping in.
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(2000);
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); const m = sim.debugSpawn("medic", "player", { x: -9, z: 0 }); const p = sim.debugSpawn("soldier", "player", { x: -3, z: 0 }); for (const part of p.parts) part.hp = Math.max(1, Math.round(part.hp * 0.3)); sim.debugSelect(m.id); sim.queueTreat(p.id); r.setView({ x: -5.5, z: 0, zoom: 0.4, pitch: 0.5, yaw: 0.9 }); sim.endTurn(); })()`);
+        for (let i = 0; i < 6; i += 1) { await sleep(i === 0 ? 800 : 260); await shot("treat-" + i); }
+        await sleep(2500);
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); const d = sim.debugSpawn("demo", "player", { x: -6, z: 14 }); sim.debugSelect(d.id); sim.queuePlace({ x: -3.5, z: 14 }); r.setView({ x: -4, z: 6, zoom: 0.4, pitch: 0.6, yaw: 0.5 }); })()`);
+        for (let i = 0; i < 3; i += 1) { await sleep(i === 0 ? 60 : 110); await shot("place-" + i); }
+        continue;
+      }
       if (s === "glprobe") {
         // GL ERRORS PER FRAME (2026-10-01): wraps blitFramebuffer and polls getError over 2s of a battle.
         // A depth blit failed 144 times a second for weeks unseen (see stage.ts, NO DEPTH BLIT); any

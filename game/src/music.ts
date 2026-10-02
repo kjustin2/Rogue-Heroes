@@ -57,7 +57,13 @@ export class MusicDirector {
     this.scene = scene;
     this.pool = scene === "menu" ? MENU_TRACKS : MAP_TRACKS[scene] ?? MENU_TRACKS;
     this.current = "";
-    this.nextTrack(true);
+    // A playing track fades out under the change instead of cutting; the new one fades in.
+    if (this.el && !this.el.paused && this.ctx && this.fileGain) {
+      this.fileGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.12);
+      window.setTimeout(() => this.nextTrack(true), 450);
+    } else {
+      this.nextTrack(true);
+    }
   }
 
   private nextTrack(force = false): void {
@@ -66,6 +72,8 @@ export class MusicDirector {
     const pick = options[Math.floor(Math.random() * options.length)] ?? this.pool[0];
     this.current = pick;
     if (this.el) {
+      this.fileGain?.gain.setValueAtTime(0.0001, this.ctx?.currentTime ?? 0); // the playing event ramps it back up
+
       this.el.src = new URL(`audio/music/${pick}.ogg`, document.baseURI).href;
       if (force || !this.el.paused) void this.el.play().catch(() => undefined);
     }
@@ -89,7 +97,7 @@ export class MusicDirector {
       this.filesBroken = true;
       this.setProceduralLevel(1);
     });
-    el.addEventListener("playing", () => this.setProceduralLevel(0));
+    el.addEventListener("playing", () => { this.setProceduralLevel(0); this.applyLayers(); });
     this.el = el;
     this.nextTrack(true);
   }

@@ -374,3 +374,13 @@ describe("the renderer's attack choreography covers every family", () => {
     expect(new Set(WEAPON_FAMILIES).size).toBe(WEAPON_FAMILIES.length);
   });
 });
+
+describe("treat animation", () => {
+  it("a medic or engineer treating plays the aid pose (the tool lifts, the body leans in); a tank does not", () => {
+    expect(attackFamilyForOrder("medic", "treat")).toBe("aid");
+    expect(attackFamilyForOrder("engineer", "treat")).toBe("aid");
+    expect(attackFamilyForOrder("tank", "treat")).toBeUndefined();
+    const peak = Math.max(...Array.from({ length: 41 }, (_, i) => { const p = attackPose("aid", i / 40); return Math.abs(p.lift) + Math.abs(p.brace); }));
+    expect(peak).toBeGreaterThan(0.2);
+  });
+});

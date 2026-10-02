@@ -126,13 +126,24 @@ How the factions, the three AI brains and Local 2 Players work, with the measure
   The bot does not yet place charges, pads, oil or barriers (deferred, `docs/next-steps.md`).
 - **Balance:** the self-play damage-per-dollar band cannot see a utility unit's worth, so the four field hands are
   `UNGATED` in `balance.test.ts` (printed, not gated); the Rocketeer is gated.
-- **Audio:** recorded CC0 samples (`public/audio/sfx`) play for gunfire, cannons, blasts and hits, each over its
-  synthesized voice; music is per scene (menus share a pool; each map has three tracks, one picked at random when the
-  battle starts, the next follows when it ends: `MAP_TRACKS` in `music.ts`). Two independent sliders: Sound effects and
-  Music (separate buses, mute gates both). Every file has a procedural fallback. Sources: `public/audio/ATTRIBUTION.md`;
-  rebuild with `npm run art:audio` (needs ffmpeg).
+- **Audio** (`src/audio.ts`, `src/music.ts`, `public/audio`, credits in `ATTRIBUTION.md`, rebuild `npm run art:audio`, needs ffmpeg).
+  - *Sources:* recorded CC0 samples play over every synthesized voice, which stays as the fallback. Every sample is peak-normalised
+    to -3 dBFS and the recordings differ by 10+ dB in energy, so loudness is set in ONE table, `GROUP_GAIN`, from each group's measured
+    RMS (`scripts/_sfx_stats.py`): deep boom > cannon = blast > crack > pop > rifle > carbine = pellet > pistol, machine gun held back.
+  - *One voice per weapon* (`GUN_VOICES`, pure `voiceFor`): the same few recordings pitched and weighted per shooter (a marksman's
+    rifle, scout and jumper carbines pitched up, pistols for the field hands, a deep MG, tank / siege gun / mortar pit / base relay at
+    four pitches, flak cracks, rocket and flame synthesized, a hand grenade is a swish). `audio.test.ts` fails if an armed unit has no
+    voice, if fewer than 20 distinct voices remain, or if the loudness order breaks.
+  - *Hits and blasts:* a hit sounds like what it hit (`impactClass`: flesh, hull, concrete, wood, by the entity under the effect);
+    an explosion's radius picks pop, blast or deep boom (`blastGroup`); off-screen sounds play at 35%. Oil catching, placing, a charge's
+    fuse tick, healing, a bounce pad and a trooper settling into a post each have their own sound.
+  - *Movement bed:* quiet footfalls, a track rumble and a rotor whirr under the units moving in view (`moveBed`).
+  - *Music:* menus share a pool; each map has three tracks, one picked at random when the battle starts (`MAP_TRACKS`), the next
+    follows when it ends; tracks are loudness-matched to -20 LUFS, fade out and in at scene changes, duck under the result stinger.
+    Sound effects and Music are separate buses and sliders; mute gates both.
 - **Visuals:** a shove is a stagger (lean and recover, upright on landing); a real throw is a full tumble about the
-  axis across the throw; a pad launch is an upright leap. A queued shot's line ends on the aimed PART (`orderAimPoint`).
+  axis across the throw; a pad launch is an upright leap. Treating plays the `aid` pose (tool lifts, body leans in); a placed
+  charge/barrier drops in with a small overshoot and kicks dust, pads and oil fade up. A queued shot's line ends on the aimed PART (`orderAimPoint`).
 
 ## THREE AI BRAINS (2026-09-22) — difficulty is intelligence first, stats second
 
