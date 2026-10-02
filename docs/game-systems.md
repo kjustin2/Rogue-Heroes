@@ -89,7 +89,7 @@ How the factions, the three AI brains and Local 2 Players work, with the measure
 - **Bots.** Ground units plan an A* route (1.2m grid, wall clearance = `spawnClearance`) instead of the greedy
   sidestep; no two end a move on top of each other (`spreadDestination`); Hard seeks high ground and builds a gun
   emplacement toward closing foes (`enemyDefenseAct`).
-- **Achievements** are four pages (Campaign / Kills / Skill / Range), 46 medals with higher tiers; `commander.test.ts`
+- **Achievements** are four pages (Battles / Kills / Skill / Range), 46 medals with higher tiers; `commander.test.ts`
   asserts a long perfect career earns every one.
 
 ## THREE AI BRAINS (2026-09-22) — difficulty is intelligence first, stats second

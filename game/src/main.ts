@@ -203,7 +203,16 @@ const hud = new Hud(uiRoot, sim, {
     if (entity && !stage.isInView(entity.position)) stage.focusOn(entity.position);
   },
   deselect: () => sim.deselect(),
-  queueMove: (destination) => sim.queueMove(destination),
+  queueMove: (destination) => {
+    const mark = sim.logTotal;
+    const ok = sim.queueMove(destination);
+    // A move that was cut short (water, a cliff face) or refused says so ON SCREEN: it used to sit
+    // only in the log, so a unit that stopped at the shore read as "move is broken".
+    const why = sim.logTotal > mark ? sim.log[0] : undefined;
+    if (why && /can't cross|must use a cliff|can't move that way|blocked by/.test(why)) showToast(why);
+    if (!ok) sfx.error();
+    return ok;
+  },
   queueMoveToCover: (id: string) => sim.queueMoveToCover(id),
   queueTakeCover: (id: string) => sim.queueTakeCover(id),
   queueClimbCover: (id: string) => sim.queueClimbCover(id),
@@ -972,7 +981,7 @@ function showMainMenu(): void {
     <div class="title-screen__content menu-content main-menu__content">
       <h1 class="title-logo">ROGUE HEROES<span>TACTICS</span></h1>
       <!-- ONE primary action and the utilities demoted to a quiet row. Skirmish is the game for
-           now: Campaign and Skirmish Run were cut (2026-09-22) until Skirmish is perfected. -->
+           now: the other modes were cut (2026-09-22) until Skirmish is perfected. -->
       <div class="main-menu__buttons" data-allow-overlap>
         ${hasSave
           ? `<button class="title-start title-start--continue" data-menu="continue" type="button">Continue Battle<small>${escapeHtml(savedBattleNote(saved))}</small></button>
@@ -1461,7 +1470,7 @@ function armoryCardHtml(c: Cosmetic): string {
 // ACHIEVEMENTS: the lifetime service record -- stats, every medal (earned lit, the rest ghosted
 // with how close they are), and doctrine mastery. Its own main-menu page; it used to be a strip
 // at the top of the Armory where nobody looked for it.
-let achievementsPage: MedalPage = "Campaign";
+let achievementsPage: MedalPage = "Battles";
 function showAchievements(): void {
   closeAllMenus();
   const s = commander.stats;
@@ -1506,7 +1515,7 @@ function showAchievements(): void {
       </div>
       <div class="chip-row achievement-pages">${pageTabs}</div>
       <div class="achievement-grid">${medals}</div>
-      ${mastered && achievementsPage === "Campaign" ? `<div class="armory-category-title">Doctrine Mastery</div><div class="commander-profile__medals">${mastered}</div>` : ""}
+      ${mastered && achievementsPage === "Battles" ? `<div class="armory-category-title">Doctrine Mastery</div><div class="commander-profile__medals">${mastered}</div>` : ""}
     </div>
   `,
     "menu-screen",
@@ -1879,6 +1888,9 @@ function showToast(text: string, lifeMs = 2600): void {
     host.id = "toasts";
     document.body.appendChild(host);
   }
+  // The same line twice in a row is one toast, not a stack of two (a click handled by two listeners
+  // showed "Field cache" twice).
+  if ([...host.children].some((c) => c.textContent === text && c.classList.contains("show"))) return;
   const toast = document.createElement("div");
   toast.className = "toast";
   toast.textContent = text;
@@ -1906,7 +1918,7 @@ function applyDebugCheats(): void {
 function inspectPickup(id: string): void {
   const cache = sim.pickups.find((p) => p.id === id);
   if (!cache) return;
-  showToast(`💰 Field cache — roll a unit over it to bank $${cache.amount}`);
+  showToast(`💰 Field cache — walk a unit onto it to bank $${cache.amount}`);
   sfx.ui();
 }
 

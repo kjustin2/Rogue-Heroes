@@ -3053,7 +3053,7 @@ export class TacticalSim {
     if (actor.commandPoints <= 0) return `${actor.name} has no action points`;
     const projected = this.projectedActorForPreview(actor);
     const origin = muzzlePoint(projected, "grenade");
-    if (dist(origin, point) > grenadeThrowRange(actor)) return "Ground target is outside grenade range";
+    if (dist(origin, point) > grenadeThrowRange(actor)) return `Out of range: it reaches ${grenadeThrowRange(actor)}m`;
     return undefined;
   }
 

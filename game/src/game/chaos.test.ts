@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createHeavy, createScout, createSoldier, createStriker, createTank, type CombatEntity } from "./damageModel";
+import { createGunship, createBomber, createTransport, createInterceptor, createHeavy, createScout, createSoldier, createStriker, createTank, type CombatEntity } from "./damageModel";
 import { TacticalSim } from "./sim";
 import { ARENA_BOUNDS, DEFAULT_TERRAIN, nearestDryPoint, pointInWater, setActiveTerrain } from "./terrain";
 import { mapDef } from "./maps";
@@ -87,7 +87,7 @@ function chaosTurn(sim: TacticalSim, rng: () => number): void {
 function runChaos(seed: number, mapId?: string): string[] {
   const rng = mulberry32(seed);
   const roster = (team: "player" | "enemy", sign: number): CombatEntity[] => {
-    const make = [createSoldier, createStriker, createScout, createHeavy, createTank];
+    const make = [createSoldier, createStriker, createScout, createHeavy, createTank, createGunship, createBomber, createTransport, createInterceptor];
     return make.map((f, i) => f(`${team}-${i}`, `${team}${i}`, team, { x: sign * (6 + i * 1.5), z: (i - 2) * 2.4 }));
   };
   const sim = new TacticalSim([...roster("player", -1), ...roster("enemy", 1)]);

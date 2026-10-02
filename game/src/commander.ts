@@ -28,8 +28,8 @@ export interface CommanderStats {
   fastestWin: number;
 }
 
-export type MedalPage = "Campaign" | "Kills" | "Skill" | "Range";
-export const MEDAL_PAGES: readonly MedalPage[] = ["Campaign", "Kills", "Skill", "Range"];
+export type MedalPage = "Battles" | "Kills" | "Skill" | "Range";
+export const MEDAL_PAGES: readonly MedalPage[] = ["Battles", "Kills", "Skill", "Range"];
 
 export interface MedalDef {
   id: string;
@@ -48,20 +48,20 @@ const INFANTRY_KILLS = (s: CommanderStats): number => s.kills - killsOf(s, AIR_K
 
 export const MEDALS: readonly MedalDef[] = [
   // ---- CAMPAIGN: wins and battles fought, each a bigger number than the last ----
-  { id: "first-victory", page: "Campaign", name: "First Blood", blurb: "Win your first battle." },
-  { id: "warlord", page: "Campaign", name: "Warlord", blurb: "Win 10 battles.", progress: (s) => [s.wins, 10] },
-  { id: "conqueror", page: "Campaign", name: "Conqueror", blurb: "Win 25 battles.", progress: (s) => [s.wins, 25] },
-  { id: "overlord", page: "Campaign", name: "Overlord", blurb: "Win 50 battles.", progress: (s) => [s.wins, 50] },
-  { id: "legend", page: "Campaign", name: "Living Legend", blurb: "Win 100 battles.", progress: (s) => [s.wins, 100] },
-  { id: "veteran", page: "Campaign", name: "Old Soldier", blurb: "Fight 25 battles.", progress: (s) => [s.battles, 25] },
-  { id: "career", page: "Campaign", name: "Career Soldier", blurb: "Fight 75 battles.", progress: (s) => [s.battles, 75] },
-  { id: "lifer", page: "Campaign", name: "Lifer", blurb: "Fight 200 battles.", progress: (s) => [s.battles, 200] },
-  { id: "streak3", page: "Campaign", name: "On a Roll", blurb: "Win 3 battles in a row.", progress: (s) => [s.bestStreak, 3] },
-  { id: "streak7", page: "Campaign", name: "Unstoppable", blurb: "Win 7 battles in a row.", progress: (s) => [s.bestStreak, 7] },
-  { id: "streak15", page: "Campaign", name: "Undefeated", blurb: "Win 15 battles in a row.", progress: (s) => [s.bestStreak, 15] },
-  { id: "mastery5", page: "Campaign", name: "Student of War", blurb: "Earn 5 doctrine mastery stars.", progress: (s) => [masteryStars(s), 5] },
-  { id: "mastery15", page: "Campaign", name: "Master Tactician", blurb: "Earn 15 doctrine mastery stars.", progress: (s) => [masteryStars(s), 15] },
-  { id: "mastery30", page: "Campaign", name: "Grand Strategist", blurb: "Earn 30 doctrine mastery stars.", progress: (s) => [masteryStars(s), 30] },
+  { id: "first-victory", page: "Battles", name: "First Blood", blurb: "Win your first battle." },
+  { id: "warlord", page: "Battles", name: "Warlord", blurb: "Win 10 battles.", progress: (s) => [s.wins, 10] },
+  { id: "conqueror", page: "Battles", name: "Conqueror", blurb: "Win 25 battles.", progress: (s) => [s.wins, 25] },
+  { id: "overlord", page: "Battles", name: "Overlord", blurb: "Win 50 battles.", progress: (s) => [s.wins, 50] },
+  { id: "legend", page: "Battles", name: "Living Legend", blurb: "Win 100 battles.", progress: (s) => [s.wins, 100] },
+  { id: "veteran", page: "Battles", name: "Old Soldier", blurb: "Fight 25 battles.", progress: (s) => [s.battles, 25] },
+  { id: "career", page: "Battles", name: "Career Soldier", blurb: "Fight 75 battles.", progress: (s) => [s.battles, 75] },
+  { id: "lifer", page: "Battles", name: "Lifer", blurb: "Fight 200 battles.", progress: (s) => [s.battles, 200] },
+  { id: "streak3", page: "Battles", name: "On a Roll", blurb: "Win 3 battles in a row.", progress: (s) => [s.bestStreak, 3] },
+  { id: "streak7", page: "Battles", name: "Unstoppable", blurb: "Win 7 battles in a row.", progress: (s) => [s.bestStreak, 7] },
+  { id: "streak15", page: "Battles", name: "Undefeated", blurb: "Win 15 battles in a row.", progress: (s) => [s.bestStreak, 15] },
+  { id: "mastery5", page: "Battles", name: "Student of War", blurb: "Earn 5 doctrine mastery stars.", progress: (s) => [masteryStars(s), 5] },
+  { id: "mastery15", page: "Battles", name: "Master Tactician", blurb: "Earn 15 doctrine mastery stars.", progress: (s) => [masteryStars(s), 15] },
+  { id: "mastery30", page: "Battles", name: "Grand Strategist", blurb: "Earn 30 doctrine mastery stars.", progress: (s) => [masteryStars(s), 30] },
   // ---- KILLS: lifetime tallies, overall and by arm ----
   { id: "kills25", page: "Kills", name: "Blooded", blurb: "Reach 25 lifetime unit kills.", progress: (s) => [s.kills, 25] },
   { id: "centurion", page: "Kills", name: "Centurion", blurb: "Reach 100 lifetime unit kills.", progress: (s) => [s.kills, 100] },
