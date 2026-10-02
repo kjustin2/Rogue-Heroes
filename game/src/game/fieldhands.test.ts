@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { TacticalSim, mapDef } from "./sim";
 import { applyDamage } from "./damageModel";
-import { ARENA_BOUNDS, DEFAULT_TERRAIN, setActiveTerrain } from "./terrain";
+import { ARENA_BOUNDS, DEFAULT_TERRAIN, pointInWater, setActiveTerrain } from "./terrain";
+const pointInWaterAt = (x: number, z: number): boolean => pointInWater({ x, z });
 
 // FIELD HANDS (owner 2026-10-03): Heal / Repair, charges, bounce pads, oil, barriers, the rocketeer.
 const settle = (sim: TacticalSim): void => {
@@ -314,5 +315,66 @@ describe("manned emplacements", () => {
     sim.entity(gunner.id)!.status.alive = false;
     sim.endTurn(); settle(sim);
     expect(sim.entity(gp.id)!.occupantId).toBeUndefined();
+  });
+});
+
+describe("bot field hands", () => {
+  const run = (difficulty: "normal" | "hard", kind: "oiler" | "builder" | "demo"): TacticalSim => {
+    const sim = new TacticalSim();
+    sim.configure(mapDef("dustbowl"), "destroy", difficulty);
+    sim.economy.set("enemy", 900);
+    sim.economy.set("player", 0);
+    for (const e of sim.entities) if (e.kind === "base") for (const p of e.parts) if (p.role === "weapon") p.hp = 0;
+    const hand = sim.debugSpawn(kind, "enemy", { x: 10, z: 0 });
+    const bait = sim.debugSpawn("soldier", "player", { x: -2, z: 0 });
+    disarm(bait);
+    hand.commandPoints = hand.maxCommandPoints;
+    sim.endTurn();
+    settle(sim);
+    return sim;
+  };
+
+  it("the Hard bot lays oil across the foe's lane, a barrier ahead of its line and a charge in front of them; Normal does not", () => {
+    expect(run("hard", "oiler").oilSlicks.some((o) => o.team === "enemy")).toBe(true);
+    expect(run("hard", "builder").entities.some((e) => e.coverKind === "barrier")).toBe(true);
+    expect(run("hard", "demo").entities.some((e) => e.coverKind === "charge")).toBe(true);
+    expect(run("normal", "oiler").oilSlicks.length).toBe(0);
+  });
+
+  it("bots treat a charge, a foe's oil and a foe's pad as danger and stay out", () => {
+    const sim = staged();
+    const danger = (p: { x: number; z: number }): boolean => (sim as unknown as { aiDangerAt(p: unknown, m?: number): boolean }).aiDangerAt(p);
+    expect(danger({ x: -5, z: 0 })).toBe(false);
+    sim.oilSlicks.push({ id: "o", x: -5, z: 0, radius: 2.7, team: "player" });
+    expect(danger({ x: -5, z: 0 })).toBe(true);
+    sim.oilSlicks.length = 0;
+    sim.pads.push({ id: "p", x: -5, z: 0, yaw: 0, team: "player" });
+    expect(danger({ x: -5, z: 0.5 })).toBe(true);
+    sim.pads.length = 0;
+    const demo = sim.debugSpawn("demo", "player", { x: -8, z: 0 });
+    sim.debugSelect(demo.id);
+    sim.queuePlace({ x: -5, z: 0 });
+    expect(danger({ x: -5, z: 0 })).toBe(true);
+  });
+});
+
+describe("bot push", () => {
+  it("the Hard bot shoves a trooper that stands at the water's edge", () => {
+    const sim = new TacticalSim();
+    sim.configure(mapDef("causeway"), "destroy", "hard");
+    // first water metre along z at x = 0
+    let zw = 0;
+    for (let z = 0; z < 40; z += 0.25) if (pointInWaterAt(0, z)) { zw = z; break; }
+    expect(zw).toBeGreaterThan(2);
+    for (const e of sim.entities) if (e.kind === "base") for (const p of e.parts) if (p.role === "weapon") p.hp = 0;
+    sim.economy.set("enemy", 0);
+    const hunter = sim.debugSpawn("soldier", "enemy", { x: 0, z: zw - 5 });
+    const victim = sim.debugSpawn("soldier", "player", { x: 0, z: zw - 1.6 });
+    disarm(victim);
+    hunter.commandPoints = hunter.maxCommandPoints;
+    sim.endTurn();
+    settle(sim);
+    expect(sim.log.join(" | ")).toContain("shoves");
+    setActiveTerrain(DEFAULT_TERRAIN);
   });
 });

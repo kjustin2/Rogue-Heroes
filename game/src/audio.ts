@@ -297,6 +297,12 @@ export class Sfx {
     this.thunk(140, 0.1);
   }
 
+  /** Cash banked: two bright rising notes. */
+  coin(gain = 1): void {
+    this.blip(1320 * 0.75, 0.07, "triangle", 0.14 * gain);
+    this.blip(1760 * 0.75, 0.16, "triangle", 0.12 * gain, 0.07);
+  }
+
   /** A fuse tick: one short bright beep. */
   fuse(): void {
     this.blip(1040, 0.06, "square", 0.1);
@@ -341,6 +347,83 @@ export class Sfx {
     if (infantry > 0 && t - this.lastStepAt > 0.34 / (1 + 0.3 * Math.min(infantry, 6))) {
       this.lastStepAt = t;
       this.sample("hitsoft", 0.1, 1.7 + Math.random() * 0.5);
+    }
+  }
+
+  // ---- ambience: each map's own air (wind, hum, birds, distant guns), quiet, under the effects bus ----
+  private amb: { map: string; stop: () => void } | undefined;
+  private nextAmbEvent = 0;
+
+  /** Name the map ("" for none): its ambience fades in. Wind that fits the place, not a single loop for all six. */
+  setAmbience(map: string): void {
+    if (this.amb?.map === map) return;
+    this.amb?.stop();
+    this.amb = undefined;
+    const ctx = this.ctx;
+    if (!ctx || !this.master || !map) return;
+    const noise = (): AudioBufferSourceNode => {
+      const buffer = ctx.createBuffer(1, ctx.sampleRate * 3, ctx.sampleRate);
+      const d = buffer.getChannelData(0);
+      for (let i = 0; i < d.length; i += 1) d[i] = Math.random() * 2 - 1;
+      const src = ctx.createBufferSource(); src.buffer = buffer; src.loop = true; src.start();
+      return src;
+    };
+    // [filter type, frequency, Q, level, gust rate Hz, gust depth 0..1]
+    const WIND: Record<string, [BiquadFilterType, number, number, number, number, number]> = {
+      dustbowl: ["bandpass", 520, 0.7, 0.05, 0.11, 0.6],  // dry desert wind, long gusts
+      ironworks: ["lowpass", 140, 0.5, 0.05, 0.05, 0.2],  // furnace roar: low and steady
+      verdant: ["highpass", 2400, 0.4, 0.022, 0.15, 0.5], // a light breeze through leaves
+      causeway: ["bandpass", 360, 0.5, 0.06, 0.08, 0.8],  // cold gusty wind
+      karak: ["bandpass", 240, 0.9, 0.04, 0.06, 0.5],     // hollow, low
+      crossfire: ["lowpass", 110, 0.5, 0.04, 0.04, 0.3],  // distant rumble
+    };
+    const w = WIND[map] ?? WIND.dustbowl;
+    const src = noise();
+    const filter = ctx.createBiquadFilter(); filter.type = w[0]; filter.frequency.value = w[1]; filter.Q.value = w[2];
+    const level = ctx.createGain(); level.gain.value = 0;
+    const gust = ctx.createOscillator(); gust.frequency.value = w[4];
+    const gustDepth = ctx.createGain(); gustDepth.gain.value = w[3] * w[5];
+    gust.connect(gustDepth).connect(level.gain); gust.start();
+    src.connect(filter).connect(level).connect(this.master);
+    level.gain.setTargetAtTime(w[3], ctx.currentTime, 1.5);
+    const extras: OscillatorNode[] = [];
+    if (map === "ironworks" || map === "karak") {
+      // a machine hum / a temple drone
+      for (const f of map === "ironworks" ? [55, 82.5] : [49, 73.4]) {
+        const o = ctx.createOscillator(); o.type = map === "ironworks" ? "sawtooth" : "sine"; o.frequency.value = f;
+        const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 180;
+        const g = ctx.createGain(); g.gain.value = map === "ironworks" ? 0.012 : 0.02;
+        o.connect(lp).connect(g).connect(this.master); o.start(); extras.push(o);
+      }
+    }
+    this.nextAmbEvent = ctx.currentTime + 3;
+    this.amb = {
+      map,
+      stop: () => {
+        level.gain.setTargetAtTime(0, ctx.currentTime, 0.3);
+        window.setTimeout(() => { try { src.stop(); gust.stop(); for (const o of extras) o.stop(); } catch { /* already stopped */ } }, 1500);
+      },
+    };
+  }
+
+  /** Per-frame: the occasional bird (Verdant) or far-off gun (Crossfire). */
+  tickAmbience(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.amb || this.muted || ctx.currentTime < this.nextAmbEvent) return;
+    this.nextAmbEvent = ctx.currentTime + 4 + Math.random() * 6;
+    if (this.amb.map === "verdant") {
+      const base = 2200 + Math.random() * 900;
+      for (let i = 0; i < 2 + Math.floor(Math.random() * 2); i += 1) {
+        const t = ctx.currentTime + i * 0.13;
+        const o = ctx.createOscillator(); o.type = "sine";
+        o.frequency.setValueAtTime(base, t); o.frequency.exponentialRampToValueAtTime(base * 1.35, t + 0.09);
+        const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.025, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
+        o.connect(g).connect(this.master!); o.start(t); o.stop(t + 0.14);
+      }
+    } else if (this.amb.map === "crossfire") {
+      this.sample("boomdeep", 0.07, 0.5 + Math.random() * 0.2); // a far-off gun
+    } else if (this.amb.map === "ironworks") {
+      this.sample("hitmetal", 0.05, 0.5 + Math.random() * 0.3); // a distant clank
     }
   }
 

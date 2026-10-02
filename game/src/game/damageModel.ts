@@ -158,6 +158,8 @@ export interface CombatEntity {
   ownerTeam?: Team;
   // A manned emplacement (gun post, mortar pit): the trooper crewing it. It fires only while crewed.
   occupantId?: string;
+  // FACTION TRAITS (factions.ts unitMods), stamped at deploy: the same Recruit is quicker for Vanguard and sturdier for Bastion.
+  mods?: { hp?: number; move?: number; range?: number; damage?: number; grenades?: number };
 }
 
 export interface CoverOptions {

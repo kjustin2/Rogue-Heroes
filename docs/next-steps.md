@@ -47,8 +47,7 @@ three movement bugs the oracle found; the per-frame GL depth-blit error (postpro
    do the run AND a bomber retune (fewer loads or a smaller carpet) in one change, then un-gate it.
 4. **The bot and the new decks.** It drops its strongest strike on a crowd, but never builds a defense, lays a
    minefield, paradrops or calls a utility power. Add only after the owner has played the new decks.
-5. **The AI never uses Push** (the player's shove / ring-out). Add it to the Hard brain where a foe stands
-   within shove reach of water or the arena edge.
+5. ~~The AI never uses Push~~ Done 2026-10-03 (Hard brain, `aiShoveAct`).
 6. **Attack arms.** The Blender motion banks' `shoulderPitch` / `shoulderYaw` / `offhandPitch` never reach an
    arm: arms are `"body"`-part meshes and the pose code's `part.role === "core"` branch catches them first.
    Every attack still animates (weapon, torso, recoil) but the arms hold still. Settle the SIGN on a

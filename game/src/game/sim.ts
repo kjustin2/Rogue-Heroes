@@ -1752,6 +1752,15 @@ export class TacticalSim {
     return true;
   }
 
+  /** Stamp the unit's faction traits (health, speed, reach, damage, grenades) on it at deploy. */
+  private applyFactionMods(unit: CombatEntity): void {
+    const mods = this.factionOf(unit.team).unitMods?.[unit.kind as TroopKind];
+    if (!mods) return;
+    unit.mods = { ...mods };
+    if (mods.hp) scaleEntityHp(unit, mods.hp);
+    if (mods.grenades) { unit.maxGrenades += mods.grenades; unit.grenades += mods.grenades; }
+  }
+
   private createTroop(kind: TroopKind, base: CombatEntity, at?: Vec2): CombatEntity {
     const prefix = base.team === "player" ? "p" : "e";
     const id = `${prefix}-spawn-${++this.troopSeq}`;
@@ -1762,6 +1771,7 @@ export class TacticalSim {
     spawnAt.position = at ? { ...at } : this.freeSpawnNear(base, spawnAt.radius);
     if (!spawnAt.flying) spawnAt.position = nearestDryPoint(spawnAt.position);
     const unit = spawnAt;
+    this.applyFactionMods(unit);
     // Difficulty scaling: enemy units field with more health on higher difficulties.
     if (base.team === "enemy") scaleEntityHp(unit, DIFFICULTY_MODS[this.difficulty].enemyHp);
     // Specialization scaling: Bulwark Training / Reactive Plating deploy tougher units.
@@ -2444,6 +2454,7 @@ export class TacticalSim {
     // Placement bypasses the movement rules, so a ground unit could otherwise be dropped into a
     // water channel that movement would never have let it enter.
     if (!unit.flying) unit.position = nearestDryPoint(unit.position);
+    this.applyFactionMods(unit);
     if (team === "enemy") scaleEntityHp(unit, DIFFICULTY_MODS[this.difficulty].enemyHp);
     // Elites/bosses: substantially tougher, gold-trimmed, tracked by the top HP bar.
     if (options.elite || options.bossName) {
@@ -4417,6 +4428,7 @@ export class TacticalSim {
     // most ground units barely scratch it. This single number IS the AA read on the shot preview.
     const vsAir = target.flying ? this.vsAirMultiplier(actor) : 1;
     const antiArmor = isVehicleKind(target.kind) ? unitStats(actor.kind).antiArmor ?? 1 : 1;
+    base *= actor.mods?.damage ?? 1;
     return Math.round(base * antiArmor * falloff * (cover ? 1.05 : aimMultiplier) * vulnerability * shellObjectBoost * flank * vsAir * this.supportDamageMultiplier(actor) * this.teamDamageScale(actor) * this.techDamageScale(actor, target));
   }
 
@@ -5473,7 +5485,58 @@ export class TacticalSim {
     for (const z of this.eventZonesForTurn(this.turn)) if (dist(pos, z) <= z.radius + margin) return true;
     for (const z of this.burnZones) if (dist(pos, z) <= z.radius + margin) return true;
     for (const z of this.gasClouds) if (dist(pos, z) <= z.radius + margin) return true;
+    // A foe's puddle of oil is a fire waiting for a round; any charge is a bomb on a fuse; a foe's pad throws whoever steps on it.
+    for (const o of this.oilSlicks) if (o.team !== "enemy" && dist(pos, o) <= o.radius + margin) return true;
+    for (const c of this.entities) if (c.coverKind === "charge" && c.status.alive && dist(pos, c.position) <= CHARGE_BLAST_RADIUS + 0.6) return true;
+    for (const p of this.pads) if (p.team !== "enemy" && dist(pos, p) <= PAD_RADIUS + 0.8) return true;
     return false;
+  }
+
+  /** Hard brain: shove a trooper that stands with water or the map edge behind it (the throw does the killing). */
+  private aiShoveAct(actor: CombatEntity, foes: CombatEntity[]): boolean {
+    if (!isInfantryKind(actor.kind) || actor.commandPoints <= 0 || !actor.status.canMove) return false;
+    const reach = meleeRange(actor) + actor.radius + 1.5;
+    for (const foe of foes) {
+      if (!isInfantryKind(foe.kind) || foe.flying || foe.downed || !foe.status.alive) continue;
+      const d = dist(actor.position, foe.position);
+      if (d > reach) continue;
+      const dir = normalize({ x: foe.position.x - actor.position.x, z: foe.position.z - actor.position.z });
+      let doomed = false;
+      for (let t = 1.5; t <= 8 && !doomed; t += 1) {
+        const p = { x: foe.position.x + dir.x * t, z: foe.position.z + dir.z * t };
+        const c = clampToArena(p);
+        doomed = pointInWater(p) || c.x !== p.x || c.z !== p.z;
+      }
+      // (meleeFailureReason is the PLAYER's check and refuses any foe of the player's; the bot's own: weapon, and in rush reach)
+      if (!doomed || !hasIntactMeleeWeapon(actor) || d > meleeRange(actor) + actor.radius + foe.radius || !spendCommandPoint(actor)) continue;
+      const part = preferredPart(foe, "center");
+      this.addOrder({ actorId: actor.id, kind: "melee", shove: true, targetId: foe.id, targetPartId: part.id, aim: "center", duration: 0.78 });
+      return true;
+    }
+    return false;
+  }
+
+  /** Hard brain: a field hand lays its item where it will hurt: a barrier in front of the line, oil across the foe's lane, a charge ahead of them. */
+  private aiPlaceAct(actor: CombatEntity, foes: CombatEntity[]): boolean {
+    const spec = placeSpecFor(actor.kind);
+    if (!spec || spec.kind === "pad" || actor.commandPoints <= 0) return false;
+    if (this.money(actor.team) < spec.cost + 120) return false; // troops first
+    const ground = foes.filter((f) => !f.flying && !isBuildingKind(f.kind) && f.status.alive);
+    if (!ground.length) return false;
+    const foe = ground.reduce((a, b) => (dist(a.position, actor.position) <= dist(b.position, actor.position) ? a : b));
+    const d = dist(foe.position, actor.position);
+    const maxD = spec.kind === "barrier" ? 16 : spec.kind === "charge" ? 14 : 20;
+    if (d > maxD || d < 4) return false;
+    const dir = normalize({ x: foe.position.x - actor.position.x, z: foe.position.z - actor.position.z });
+    const out = Math.min(spec.reach * 0.9, d * 0.45);
+    const at = clampToArena({ x: actor.position.x + dir.x * out, z: actor.position.z + dir.z * out });
+    // One of each in an area is plenty, and never on top of its own side.
+    const own = (p: Vec2, r: number): boolean => this.entities.some((e) => e.team === actor.team && e.id !== actor.id && e.status.alive && e.kind !== "cover" && dist(e.position, p) < r);
+    if (spec.kind === "oil" && (own(at, OIL_RADIUS) || this.oilSlicks.some((o) => dist(o, at) < 8))) return false;
+    if (spec.kind === "charge" && (own(at, CHARGE_BLAST_RADIUS + 0.5) || this.entities.some((e) => e.coverKind === "charge" && e.status.alive && dist(e.position, at) < 9))) return false;
+    if (spec.kind === "barrier" && this.entities.some((e) => e.coverKind === "barrier" && e.status.alive && dist(e.position, at) < 8)) return false;
+    if (this.placeFailureReason(actor, at)) return false;
+    return this.placeFor(actor, at, Math.atan2(dir.x, dir.z));
   }
 
   /** Hard brain: the part of `target` whose hit does the most -- a kill first, then a disarm. */
@@ -5537,6 +5600,10 @@ export class TacticalSim {
       // EASY hesitates: about a third of its units sit a turn out. It is the bot a new player
       // learns on, and at full activity it out-raced the "smart" brains in self-play.
       if (easyBrain && !dryRun && this.rng.chance(0.3)) continue;
+      // Push: a foe with water or the edge behind it is a free kill (Hard only).
+      if (profile.tactical && this.aiShoveAct(enemy, players)) continue;
+      // A field hand lays its item where it hurts before anything else (Hard only).
+      if (profile.tactical && placeSpecFor(enemy.kind) && enemy.commandPoints > 0 && this.aiPlaceAct(enemy, players)) continue;
       // A trooper near a free emplacement with a foe in its reach goes and crews it (a Mortar Pit wants a mortarman).
       if (profile.tactical && enemy.commandPoints > 0 && isInfantryKind(enemy.kind) && enemy.kind !== "medic" && enemy.kind !== "engineer" && enemy.kind !== "droneop") {
         // ...but only a trooper with nothing to shoot yet: one already in the fight keeps fighting.
@@ -7032,7 +7099,7 @@ function makeTroopBase(kind: TroopKind, id: string, name: string, team: Team, po
 export const MOVE_RANGE_SCALE = 2.0;
 
 function moveRange(entity: CombatEntity): number {
-  return baseMoveRange(entity) * MOVE_RANGE_SCALE;
+  return baseMoveRange(entity) * MOVE_RANGE_SCALE * (entity.mods?.move ?? 1);
 }
 
 function baseMoveRange(entity: CombatEntity): number {
@@ -7291,7 +7358,7 @@ function projectileKind(entity: CombatEntity, attackMode: AttackMode = "weapon")
 }
 
 function moveSpeed(entity: CombatEntity): number {
-  return baseMoveSpeed(entity) * MOVE_RANGE_SCALE; // match the range boost so moves resolve as fast
+  return baseMoveSpeed(entity) * MOVE_RANGE_SCALE * (entity.mods?.move ?? 1); // match the range boost so moves resolve as fast
 }
 
 function baseMoveSpeed(entity: CombatEntity): number {
@@ -7305,7 +7372,7 @@ function projectileSpeed(entity: CombatEntity, attackMode: AttackMode = "weapon"
 
 function projectileRange(entity: CombatEntity, attackMode: AttackMode = "weapon"): number {
   if (attackMode === "grenade") return grenadeThrowRange(entity);
-  return unitStats(entity.kind).weaponRange;
+  return unitStats(entity.kind).weaponRange * (entity.mods?.range ?? 1);
 }
 
 function projectileMaxAge(maxTravel: number, speed: number): number {

@@ -1728,6 +1728,8 @@ export class WorldRenderer {
       const jitter = 0.89 + ((variety >> 9) % 23) / 100;
       group.scale.set(jitter, 0.92 + ((variety >> 14) % 19) / 100, jitter);
       // A charge or barrier somebody just set down drops in with a little overshoot, not a pop.
+      // A fused charge pulses faster as the fuse burns down.
+      if (entity.coverKind === "charge" && entity.fuse !== undefined && entity.status.alive) group.scale.multiplyScalar(1 + 0.06 * Math.sin(performance.now() * 0.001 * (14 - entity.fuse * 3)));
       if (entity.ownerTeam) group.scale.multiplyScalar(popIn((performance.now() - ((group.userData.born as number | undefined) ?? 0)) / 260));
     } else {
       group.scale.setScalar(entity.status.alive ? 1 : 0.94);

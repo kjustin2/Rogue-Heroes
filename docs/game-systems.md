@@ -145,6 +145,20 @@ How the factions, the three AI brains and Local 2 Players work, with the measure
   axis across the throw; a pad launch is an upright leap. Treating plays the `aid` pose (tool lifts, body leans in); a placed
   charge/barrier drops in with a small overshoot and kicks dust, pads and oil fade up. A queued shot's line ends on the aimed PART (`orderAimPoint`).
 
+## FACTION TRAITS and smarter field play (2026-10-03, second pass)
+
+- **Unit traits** (`FactionDef.unitMods`, `applyFactionMods`, `CombatEntity.mods`, `unitModText`): the same unit is not the same
+  unit. Vanguard is quick and light (troopers +12% speed, -5% HP; corpsman +20% speed; tank +10% speed, -8% HP; gunship +8% damage),
+  Syndicate hard-hitting and brittle (raider +1 grenade, -8% HP; striker / sapper / flamer +10% damage; -8% HP on the glass), Bastion
+  tough, slow and long-ranged (guardsman +12% HP, -8% speed; mortar and artillery +10% range; tank +12% HP). Multipliers are held to
+  0.88-1.2 by `factionMods.test.ts`; the Deploy card names the faction's trait for each unit.
+- **Bot, Hard brain only** (Normal is untouched so the balance band holds): field hands lay their item where it hurts (`aiPlaceAct`: oil
+  across the foe's lane, a barrier ahead of the line, a charge in front of them, only with $120 to spare); a trooper with a foe at the
+  water's edge or the map edge behind it shoves it (`aiShoveAct`, finally); and bots treat a charge, a foe's oil and a foe's pad as
+  danger and path around them (`aiDangerAt`).
+- **Ambience** (`Sfx.setAmbience`): each map has its own air (dry desert wind, furnace roar and a distant clank, leaf breeze and the
+  odd bird, cold gusts, a hollow temple drone, far-off guns); cash caches chime.
+
 ## THREE AI BRAINS (2026-09-22) — difficulty is intelligence first, stats second
 
 `aiProfile()` in sim.ts. Before this, Normal and Hard ran the SAME brain and differed only in stats.

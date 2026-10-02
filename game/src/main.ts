@@ -2099,6 +2099,8 @@ function frameBody(now: number): void {
     : inBattle ? "command" : "menu",
   );
   music.setScene(inBattle ? sim.mapDef.id : "menu");
+  sfx.setAmbience(inBattle ? sim.mapDef.id : "");
+  sfx.tickAmbience();
   music.update();
   handleEndState();
   syncCameraAssist();
@@ -2283,6 +2285,8 @@ function processBattleEvents(): void {
       if (effect.color === 0xffe27a) sfx.boing(); else sfx.place(heard); // a bounce pad, or a jump trooper / a placed item touching down
     } else if (effect.type === "ping" && effect.color === 0x8effa6) {
       sfx.heal();
+    } else if (effect.type === "ping" && effect.color === 0xffe08a) {
+      sfx.coin(heard); // a cash cache grabbed
     } else if (effect.type === "ping" && effect.color === 0xff3b30) {
       sfx.fuse();
     } else if (effect.type === "ping" && effect.color === 0x8de4ff && (effect.radius ?? 0) < 4) {

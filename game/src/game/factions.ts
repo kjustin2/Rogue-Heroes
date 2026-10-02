@@ -9,6 +9,8 @@ import type { DefenseKind, EntityKind, SupportPowerKind, TroopKind } from "./uni
 
 export type FactionId = "vanguard" | "syndicate" | "bastion";
 
+export interface UnitMod { hp?: number; move?: number; range?: number; damage?: number; grenades?: number }
+
 /**
  * A faction's DOCTRINE: the one rule that changes how it plays, always on. Each field is read by
  * exactly one place in sim.ts, so a doctrine is data here and a single clause there.
@@ -56,6 +58,13 @@ export interface FactionDef {
   doctrine: FactionDoctrine;
   /** Faction names for the SHARED units, so a Recruit is a Trooper / Raider / Guardsman. */
   labels?: Partial<Record<TroopKind, string>>;
+  /**
+   * UNIT TRAITS (owner 2026-10-03: "how each faction plays and what units they have should have more variety"). The same
+   * unit is not the same unit: each faction tilts its shared troops one way (Vanguard quick and light, Syndicate hard-hitting
+   * and brittle, Bastion tough, slow and long-ranged). hp / move / range / damage are multipliers, grenades a flat extra.
+   * Stamped on the unit at deploy (`CombatEntity.mods`); the Deploy card names them.
+   */
+  unitMods?: Partial<Record<TroopKind, UnitMod>>;
   /** A built-in combat modifier, always on (same shape as a specialization's effect). */
   passive?: TechEffect;
   /** Per-faction target priority overrides on top of UNIT_STATS.aiValue. */
@@ -98,6 +107,12 @@ export const FACTIONS: readonly FactionDef[] = [
       deployReach: 4,
     },
     labels: { soldier: "Trooper", medic: "Corpsman", flak: "Skyguard", engineer: "Mechanic" },
+    // Quick and light: it gets there first and pays for it in armour.
+    unitMods: {
+      soldier: { move: 1.12, hp: 0.95 }, scout: { move: 1.1 }, sniper: { range: 1.08 }, jumper: { move: 1.1, hp: 0.95 },
+      heavy: { move: 1.12 }, medic: { move: 1.2 }, engineer: { move: 1.12 }, springer: { move: 1.12 }, bazooka: { move: 1.1 },
+      tank: { move: 1.1, hp: 0.92 }, flak: { range: 1.06 }, gunship: { damage: 1.08, hp: 0.92 }, interceptor: { move: 1.06 },
+    },
   },
   {
     id: "syndicate",
@@ -119,6 +134,12 @@ export const FACTIONS: readonly FactionDef[] = [
     // Kept from the first faction pass: the Syndicate's wider splash is its answer to dug-in lines.
     passive: { splashRadius: 1.15 },
     labels: { soldier: "Raider", medic: "Patcher", sniper: "Longshot", flak: "Flak Technical", demo: "Blaster", oiler: "Slickster", bazooka: "Tank Hunter" },
+    // Hard-hitting and brittle: it wins the first exchange or loses the war.
+    unitMods: {
+      soldier: { grenades: 1, hp: 0.92 }, striker: { damage: 1.1 }, heavy: { damage: 1.08, hp: 0.92 }, grenadier: { range: 1.06, hp: 0.92 },
+      flamer: { damage: 1.1, hp: 0.92 }, sapper: { damage: 1.1 }, droneop: { range: 1.1 }, sniper: { damage: 1.06, hp: 0.92 },
+      bazooka: { damage: 1.06 }, apc: { hp: 1.1 }, medic: { hp: 0.95 }, demo: { hp: 0.95 }, oiler: { hp: 0.95 },
+    },
   },
   {
     id: "bastion",
@@ -138,6 +159,12 @@ export const FACTIONS: readonly FactionDef[] = [
       digIn: 0.8,
     },
     labels: { soldier: "Guardsman", medic: "Surgeon", sniper: "Sentinel", builder: "Mason", demo: "Demolisher" },
+    // Tough, slow and long-ranged: nothing it fields is quick, and everything outlasts its price.
+    unitMods: {
+      soldier: { hp: 1.12, move: 0.92 }, heavy: { hp: 1.1, move: 0.92 }, sniper: { range: 1.06, move: 0.95 }, mortar: { range: 1.1, move: 0.9 },
+      medic: { hp: 1.1 }, engineer: { hp: 1.15, move: 0.92 }, builder: { hp: 1.15 }, demo: { hp: 1.1 },
+      tank: { hp: 1.12, move: 0.94 }, artillery: { range: 1.1, hp: 1.1 }, flak: { hp: 1.1 }, bomber: { hp: 1.1 },
+    },
   },
 ];
 
@@ -156,4 +183,12 @@ export function factionTroopLabel(id: FactionId, kind: TroopKind, catalogLabel: 
 export function signatureUnits(id: FactionId): TroopKind[] {
   const others = FACTIONS.filter((f) => f.id !== id);
   return factionDef(id).roster.filter((kind) => !others.some((f) => f.roster.includes(kind)));
+}
+
+/** "+12% speed, -5% HP": what this faction does to a unit, for the Deploy card. Empty when it does nothing. */
+export function unitModText(id: FactionId, kind: TroopKind): string {
+  const m = factionDef(id).unitMods?.[kind];
+  if (!m) return "";
+  const pct = (v: number | undefined, name: string): string => (v && v !== 1 ? `${v > 1 ? "+" : "-"}${Math.round(Math.abs(v - 1) * 100)}% ${name}` : "");
+  return [pct(m.damage, "damage"), pct(m.hp, "HP"), pct(m.move, "speed"), pct(m.range, "range"), m.grenades ? `+${m.grenades} grenade` : ""].filter(Boolean).join(", ");
 }

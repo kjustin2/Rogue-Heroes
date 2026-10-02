@@ -24,6 +24,7 @@ import {
   type DefenseKind,
   type SupportPowerKind,
 } from "../game/sim";
+import { unitModText } from "../game/factions";
 import type { Intent, ShotPreview, TacticalOrder, TacticalSim, TurnDamageEntry, TurnReport } from "../game/sim";
 
 // Discovery pacing state: which doctrines we've already seen researched, and when each
@@ -1823,7 +1824,7 @@ function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
       ? `${withoutLabel(reason, spec.label)}.`
       : active
         ? "Click a spot inside the green ring near your base, or click again to deploy beside the base."
-        : `${spec.role} · ${troopSheet(spec.kind).hp} HP · ${troopSheet(spec.kind).hit} damage a shot${unitStats(spec.kind).burst ? " (burst)" : ""}. ${spec.tip} 1 AP · $${spec.cost} · ${cooldownTurns}-turn cooldown.`;
+        : `${spec.role} · ${troopSheet(spec.kind).hp} HP · ${troopSheet(spec.kind).hit} damage a shot${unitStats(spec.kind).burst ? " (burst)" : ""}. ${spec.tip}${unitModText(sim.factionOf("player").id, spec.kind) ? ` ${sim.factionOf("player").name}: ${unitModText(sim.factionOf("player").id, spec.kind)}.` : ""} 1 AP · $${spec.cost} · ${cooldownTurns}-turn cooldown.`;
     return `<button class="btn confirm ${active ? "active" : ready ? "" : "disabled"}" data-spawn="${spec.kind}" data-disabled="${!ready}" data-tip="${escapeAttr(tip)}">
       ${escapeHtml(spec.label)}${isNew ? `<em class="new-badge">NEW</em>` : ""}
       <span>${active ? "Placing…" : sub}</span>
