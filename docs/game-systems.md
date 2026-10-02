@@ -75,6 +75,23 @@ How the factions, the three AI brains and Local 2 Players work, with the measure
 - Locked troops in the Deploy tab are NAMED, grouped by the doctrine that unlocks them ("Scout ·
   Marksman / 🔒 Recon Doctrine") — never a "▮▮▮ ×2" count.
 
+## OWNER BATCH 2026-10-02 (rules that came out of it)
+
+- **Air.** A gunship's BOMB is a bomb RUN: pick ground or a foe, it flies over (a move, so 2 AP) and drops straight
+  down; 4.4m blast, 96 dmg, throws troops up to 9m. The Bomber's carpet is 3.4m x3. The gunship's autocannon hits
+  ground AND air; the interceptor's only air. Nothing fires unasked (the auto strafe is gone). Expensive units hit
+  harder: artillery 3.0m/62, mortar turret 2.6m/50 (`explosiveBlast` in sim.ts). Tank $680, Striker $440 (balance band).
+- **High ground.** Spread x0.7 from a 0.45m rise, x0.5 from a mesa step (1.2m+); shooting UP x1.6 / x2.2. Aircraft fire down.
+- **Mid-air collisions.** Opposed rounds closer than 0.42m in 3D meet: plain rounds cancel; a hit grenade/shell goes
+  off there. Aircraft bombs are exempt. (Staged smokes must stop the target firing back.)
+- **Base systems.** Comms Mast dead: every unit refills 1 AP (both sides). Blast Gate dead: deploy ring shrinks to
+  beside the base, reinforcement cooldown +1. Reactor: income by health. The base panel shows chips for each.
+- **Bots.** Ground units plan an A* route (1.2m grid, wall clearance = `spawnClearance`) instead of the greedy
+  sidestep; no two end a move on top of each other (`spreadDestination`); Hard seeks high ground and builds a gun
+  emplacement toward closing foes (`enemyDefenseAct`).
+- **Achievements** are four pages (Campaign / Kills / Skill / Range), 46 medals with higher tiers; `commander.test.ts`
+  asserts a long perfect career earns every one.
+
 ## THREE AI BRAINS (2026-09-22) — difficulty is intelligence first, stats second
 
 `aiProfile()` in sim.ts. Before this, Normal and Hard ran the SAME brain and differed only in stats.

@@ -366,6 +366,28 @@ app.whenReady().then(async () => {
         })()`));
         continue;
       }
+      if (s === "airghost") {
+        // Deploy ghosts at true size (a Skyguard, a Gunship hanging in the air) and the gunship bomb run preview.
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal", "vanguard")`);
+        await sleep(2200);
+        for (const kind of ["flak", "gunship", "tank"]) {
+          await js(`(() => { const sim = window.__rht.sim; sim.economy.set("player", 9000); const hq = sim.entities.find(e => e.team === "player" && e.kind === "base"); hq.unlockedTech = window.__rht.techIds(); sim.select(hq.id); sim.setPendingDeploy(${JSON.stringify(kind)}); window.__rht.hoverGround({ x: hq.position.x + 6, z: hq.position.z + 2 }); window.__rht.setView({ x: hq.position.x + 5, z: hq.position.z + 1, zoom: 0.8, pitch: 0.7, yaw: 0.3 }); })()`);
+          await sleep(1100); await shot("airghost-" + kind);
+        }
+        await js(`(() => { const sim = window.__rht.sim; sim.setPendingDeploy(undefined); window.__rht.deselect(); const g = sim.debugSpawn("gunship", "player", { x: -4, z: 0 }); sim.debugSpawn("heavy", "enemy", { x: 4, z: 1 }); sim.debugSpawn("soldier", "enemy", { x: 5.2, z: -0.5 }); sim.debugSelect(g.id); window.__rht.setIntent("grenade"); window.__rht.hoverGround({ x: 4, z: 1 }); window.__rht.setView({ x: 0, z: 0, zoom: 0.8, pitch: 0.8, yaw: 0.2 }); })()`);
+        await sleep(1200); await shot("airghost-bombrun");
+        continue;
+      }
+      if (s === "movefield") {
+        // Move armed beside water / a mesa / a prop on three maps: red = cannot stand, cyan ring = reach.
+        for (const [map, spot] of [["karak", { x: -8, z: 4 }], ["causeway", { x: -6, z: 0 }], ["ironworks", { x: -2, z: -6 }]]) {
+          await js(`window.__rht.startBattle(${JSON.stringify(map)}, "destroy", "normal")`);
+          await sleep(2200);
+          await js(`(() => { const sim = window.__rht.sim; const u = sim.debugSpawn("soldier", "player", ${JSON.stringify(spot)}, { clearTerrain: true }); sim.debugSelect(u.id); window.__rht.setIntent("move"); window.__rht.setView({ x: u.position.x, z: u.position.z, zoom: 0.8, pitch: 0.85, yaw: 0.2 }); })()`);
+          await sleep(1200); await shot("movefield-" + map);
+        }
+        continue;
+      }
       if (s === "basesel") {
         // The REAL flow, camera untouched: battle opens on the player's base, the player picks it and a
         // unit to deploy. The whole deploy circle must be on screen and clear of the HUD panels.

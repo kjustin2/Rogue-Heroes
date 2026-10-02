@@ -34,6 +34,10 @@ tokens are remapped there so the older layers inherit it. Rules that fall out of
   a step already reached. Smokes walk the flow: click `[data-step-go="next"]` until the step, then act
   (the `page.evaluate` walker in each set-up smoke; `toStep(n)` in `shots-gpu.cjs`). Every STEP fits 1280×720
   (`smoke:ui-audit` one-screen check per step). Settings is three tabs: Display & Sound / Gameplay / Controls.
+- **Right-click is Back** everywhere (armed attack, placement, strike): it calls the same handler as Escape.
+  Queued-order chips never repeat their title as detail text; every chip meets the 12px floor; long map names wrap in
+  the top-right stack; the end screen's medal toasts sit at the very top. `smoke:ui-audit` covers every map's battle
+  HUD, the gunship bomb panel and every Achievements page.
 - **The base's Defenses / Support decks show everything the faction can ever field there**: research-locked
   pieces stay visible with 🔒 and the doctrine that opens them (never a dead button that arms and then
   refuses), in the faction's own order (starter first). A refused pick or placement click says WHY in a

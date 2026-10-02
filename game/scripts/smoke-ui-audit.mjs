@@ -80,6 +80,7 @@ const SCREENS = [
   }],
   ["armory", async (page) => { await page.evaluate(() => window.__rht.toMenu()); await delay(400); await page.click('[data-menu="armory"]'); await delay(500); }],
   ["achievements", async (page) => { await page.evaluate(() => window.__rht.toMenu()); await delay(400); await page.click('[data-menu="achievements"]'); await delay(500); }],
+  ...["Kills", "Skill", "Range"].map((tab) => [`achievements-${tab.toLowerCase()}`, async (page) => { await page.click(`[data-medal-page="${tab}"]`); await delay(400); }]),
   // EVERY CARD IN EVERY FACTION'S DECK (2026-09-23: a unit's price was pushed wholly out of its card
   // and nothing caught it). All doctrines researched so every card shows, some on cooldown (the
   // longer "N turns" label), and the longest-named card ARMED ("Placing…").

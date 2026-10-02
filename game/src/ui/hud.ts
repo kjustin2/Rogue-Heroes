@@ -1656,7 +1656,9 @@ function baseSummary(base: CombatEntity, sim: TacticalSim): string {
   const field = sim.fieldUnitCount(base.team);
   const researched = (base.unlockedTech ?? []).length;
   const doctrine = sim.factionOf(base.team).doctrine;
+  const damage = sim.baseSystemEffects(base).map((fx) => `<span class="base-damage__chip" data-tip="${escapeAttr(fx.tip)}">${escapeHtml(fx.label)}</span>`).join("");
   return `
+    ${damage ? `<div class="base-damage">${damage}</div>` : ""}
     <div class="detail-statline building-statline base-summary">
       <div data-tip="Money paid each turn, scaled by reactor health. Upgrade income to raise it."><span>Income</span><strong>$${baseIncome(base)}/turn</strong></div>
       <div data-tip="Doctrines researched on the tech tree, unlocking new troop types."><span>Tech</span><strong>${researched} researched</strong></div>

@@ -52,7 +52,7 @@ const CASES = [
   { name: "interceptor-gun", actor: "interceptor", target: "interceptor", dist: 8, order: "shoot", limb: "weapon", round: true },
   { name: "gunship-bomb", actor: "gunship", target: "heavy", dist: 0.4, order: "bomb", limb: null, round: true },
   { name: "bomber-carpet", actor: "bomber", target: "heavy", dist: 0.4, order: "bomb", limb: null, round: true },
-  { name: "gunship-strafe", actor: "gunship", target: "heavy", dist: 5, order: "strafe", limb: null, round: false, air: true },
+  { name: "gunship-gun", actor: "gunship", target: "heavy", dist: 8, order: "shoot", limb: "weapon", round: true },
   { name: "tank-ram", actor: "tank", target: "heavy", dist: 4, order: "ram", limb: null, round: false },
 ];
 const only = process.argv.slice(2);

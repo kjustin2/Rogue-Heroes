@@ -10,7 +10,7 @@ on purpose — see `CLAUDE.md`). A Skirmish: six themed maps (each with sections
 its own light), three modes (Annihilation, Capture the Flag, Hold the Hill), three factions that look, play
 and research differently, three AI brains (Easy / Normal / Hard differ in intelligence), or Local 2 Players.
 
-State of `main`: `npm run verify` green (561 vitest incl. chaos, balance self-play and the movement +
+State of `main`: `npm run verify` green (574 vitest incl. chaos, balance self-play and the movement +
 projectile oracle), `npm run smoke:core` green (11 smokes), `npm run probe:terrain` 0 offenders,
 `npm run measure:factions` GOAL MET, `npm run soak:gpu` with no mid-resolve shader compiles, perf gate OK.
 
@@ -22,6 +22,9 @@ projectile oracle and the seven bugs it found; a perf pass (no per-frame materia
 blends, static scenery keeps its paint, warmed debris program); base circles whole and on the board (the
 board grows behind the bases, spawn spacing, flat zone rings drawn over props); bullets as burning streaks;
 a toon rim on units and a lit lip on mesas; a picked base frames its deploy circle above the command panel.
+Then (2026-10-02, owner batch): the air round (bomb run, gunship gun, no strafe), mid-air collisions, big high-ground
+accuracy, right-click Back, base systems with real costs, A* bots that spread out and dig in, flat deploy rings on every
+map, the no-go tile overlay, four Achievements pages, and a pile of UI fixes (see `docs/game-systems.md`).
 Then (2026-10-01): no Deploy-now shortcut in set-up; the PLAY LOG (`game/logs/latest.log`); the locked-turret
 placement fix (decks show locks, picks refuse up front, every refusal toasts its reason, every defense has a
 placement ghost); Defenses decks of 5-6 and Support decks of 3 per faction (starters, tech pieces, faction-own);

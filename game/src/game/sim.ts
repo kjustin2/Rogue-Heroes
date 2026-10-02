@@ -1568,13 +1568,35 @@ export class TacticalSim {
 
   // How far from its base a troop can be fielded (radius around the base centre).
   deployPlacementRadius(base: CombatEntity): number {
+    // A shattered Blast Gate: troops can only be set down right beside the base.
+    if (this.gateDown(base)) return base.radius + 2.4;
     // RAPID RESPONSE (Vanguard doctrine) reaches further out from the base.
     return base.radius + 6 + (this.factionOf(base.team).doctrine.deployReach ?? 0);
   }
 
+  // ---- BASE SYSTEMS (owner 2026-10-02: "some kind of impact if you destroy part of someone's base ...
+  // otherwise no point of attacking it besides the main command core"). Each base part now costs its
+  // owner something real, and the base panel says what.
+  private gateDown(base: CombatEntity): boolean {
+    return base.kind === "base" && base.parts.some((p) => p.id === "gate" && p.hp <= 0);
+  }
+  private commsDown(team: Team): boolean {
+    return this.entities.some((e) => e.kind === "base" && e.team === team && e.status.alive && e.parts.some((p) => p.id === "comms" && p.hp <= 0));
+  }
+  /** What a base's damaged parts are costing it right now, as short labels (the base panel's chips). */
+  baseSystemEffects(base: CombatEntity): { label: string; tip: string }[] {
+    const out: { label: string; tip: string }[] = [];
+    if (base.parts.some((p) => p.id === "comms" && p.hp <= 0)) out.push({ label: "Comms down · 1 AP per unit", tip: "The Comms Mast is destroyed: every unit refills at most 1 action point a turn" });
+    if (this.gateDown(base)) out.push({ label: "Gate down · deploy beside base", tip: "The Blast Gate is destroyed: troops can only be set down right beside the base, and every reinforcement waits a turn longer." });
+    const eff = generatorEfficiency(base);
+    if (eff < 0.999) out.push({ label: `Reactor ${Math.round(eff * 100)}% · income cut`, tip: "The Reactor Core is damaged: income is scaled by its health." });
+    return out;
+  }
+
   /** A troop's deploy cooldown for this side, after its doctrine (Rapid Response cuts a turn). */
   troopCooldownFor(team: Team, kind: TroopKind): number {
-    return Math.max(1, troopSpec(kind).cooldown - (this.factionOf(team).doctrine.cooldownCut ?? 0));
+    const gate = this.entities.some((e) => e.kind === "base" && e.team === team && this.gateDown(e)) ? 1 : 0;
+    return Math.max(1, troopSpec(kind).cooldown - (this.factionOf(team).doctrine.cooldownCut ?? 0)) + gate;
   }
 
   /** A support power's cooldown for this side, after its doctrine. */
@@ -3884,8 +3906,14 @@ export class TacticalSim {
       const fx = (seed >> 8) % 1000 / 1000;
       seed = (seed * 1103515245 + 12345) & 0x7fffffff;
       const fz = (seed >> 8) % 1000 / 1000;
-      const point = { x: b.minX + w * (0.12 + fx * 0.76), z: b.minZ + d * (0.12 + fz * 0.76) };
+      let point = { x: b.minX + w * (0.12 + fx * 0.76), z: b.minZ + d * (0.12 + fz * 0.76) };
       const amount = 45 + (seed % 4) * 15; // 45..90
+      // A cache on a ledge edge reads as half-buried (owner 2026-10-02): nudge to open flat ground.
+      for (let attempt = 0; attempt < 8 && !this.pickupSpotClear(point); attempt += 1) {
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+        const a = ((seed >> 8) % 360) * (Math.PI / 180);
+        point = clampToArena({ x: point.x + Math.cos(a) * (1.5 + attempt), z: point.z + Math.sin(a) * (1.5 + attempt) });
+      }
       if (this.pickupSpotClear(point)) this.pickups.push({ id: `pickup-${i}`, x: point.x, z: point.z, amount });
     }
   }
@@ -3893,8 +3921,9 @@ export class TacticalSim {
   // A cache must sit on open ground a unit can actually reach — not inside a base/defense/solid
   // cover, and not adjacent to a base (loot is earned by taking ground, not handed out at spawn).
   private pickupSpotClear(p: Vec2): boolean {
+    if (pointInWater(p) || onTerrainEdge(p, 1.6)) return false; // flat, dry, whole ring on one level
     for (const e of this.entities) {
-      if (e.kind === "base" && dist(p, e.position) < 8.5) return false;
+      if (e.kind === "base" && dist(p, e.position) < 14) return false; // outside every deploy ring
       if ((e.kind === "cover" || e.kind === "base" || isDefenseKind(e.kind)) && dist(p, e.position) < e.radius + 1.3) return false;
     }
     return true;
@@ -4097,7 +4126,11 @@ export class TacticalSim {
     if (landed.x === entity.position.x && landed.z === entity.position.z && !drowned && !slammedInto && !ringOut) return;
     // Thrown OFF a ledge, the body can land with its hull against the face it fell from; slide it to
     // the nearest ground its whole footprint fits on (movement.test.ts, 2026-10-01).
-    if (!drowned && !ringOut && !this.groundFits(entity, landed)) landed = this.nearestFittingGround(entity, landed);
+    if (!drowned && !ringOut && !this.groundFits(entity, landed)) {
+      const fit = this.nearestFittingGround(entity, landed);
+      // No room to land beside the ledge: stay where it stood rather than sink into the face.
+      landed = fit ?? { ...entity.position };
+    }
     entity.position = landed;
     entity.dugIn = undefined; // thrown out of its foxhole
     entity.digging = undefined;
@@ -4127,11 +4160,17 @@ export class TacticalSim {
   private groundFits(body: CombatEntity, at: Vec2): boolean {
     if (pointInWater(at) || this.bodyAt(body, at) || this.solidPropAt(body, at)) return false;
     const here = terrainHeightAt(at);
-    return !discSamples(at, body.radius * 0.9).some((p) => terrainHeightAt(p) - here > TERRAIN_STEP * 0.9);
+    if (discSamples(at, body.radius * 0.9).some((p) => terrainHeightAt(p) - here > TERRAIN_STEP * 0.9)) return false;
+    // ...and a 16-way ring too: the 12-way disc can slip between a block's corner and a sample (0.4m slivers).
+    for (let i = 0; i < 16; i += 1) {
+      const a = (i / 16) * Math.PI * 2;
+      if (terrainHeightAt({ x: at.x + Math.sin(a) * body.radius * 0.92, z: at.z + Math.cos(a) * body.radius * 0.92 }) - here > TERRAIN_STEP * 0.9) return false;
+    }
+    return true;
   }
 
   /** The nearest point (within 3m) where `groundFits`; `at` itself when nothing nearer fits. */
-  private nearestFittingGround(body: CombatEntity, at: Vec2): Vec2 {
+  private nearestFittingGround(body: CombatEntity, at: Vec2): Vec2 | undefined {
     for (let r = 0.25; r <= 3; r += 0.25) {
       for (let i = 0; i < 16; i += 1) {
         const a = (i / 16) * Math.PI * 2;
@@ -4139,7 +4178,7 @@ export class TacticalSim {
         if (this.groundFits(body, c)) return c;
       }
     }
-    return at;
+    return undefined;
   }
 
   /** The unit standing where a thrown body wants to go, if any (cover is not a body). */
@@ -4665,7 +4704,8 @@ export class TacticalSim {
     const margin = spawnClearance(actor.radius);
     const solids = this.entities.filter((e) => e.id !== actor.id && e.status.alive && !e.flying && !e.carriedById &&
       ((e.kind === "cover" && e.coverKind !== "ridge") || e.kind === "base" || isDefenseKind(e.kind)));
-    const clear = (p: Vec2): boolean => !risesNear(p, margin) && !solids.some((e) => dist(e.position, p) < e.radius + actor.radius);
+    const bodies = this.entities.filter((e) => e.id !== actor.id && e.status.alive && !e.flying && !e.carriedById && e.kind !== "cover" && !isBuildingKind(e.kind) && !isDefenseKind(e.kind));
+    const clear = (p: Vec2): boolean => !risesNear(p, margin) && !solids.some((e) => dist(e.position, p) < e.radius + actor.radius) && !bodies.some((e) => dist(e.position, p) < (e.radius + actor.radius) * 0.98);
     const stop = { ...actor.position };
     if (!risesNear(stop, margin)) return;
     const length = dist(start, stop);
@@ -4685,7 +4725,31 @@ export class TacticalSim {
   private separateFromUnits(actor: CombatEntity, destination?: Vec2): void {
     const before = { ...actor.position };
     this.separateFromUnitsRaw(actor, destination);
-    if (!actor.flying && hullInRise(actor.position, actor.radius * 0.9) && !hullInRise(before, actor.radius * 0.9)) actor.position = before;
+    if (actor.flying || !hullInRise(actor.position, actor.radius * 0.9) || hullInRise(before, actor.radius * 0.9)) return;
+    // The shove would sink the hull into rock. Try the same push turned aside before giving it up.
+    const pushed = { ...actor.position };
+    const dx = pushed.x - before.x, dz = pushed.z - before.z;
+    for (const turn of [0.9, -0.9, 1.8, -1.8, 2.7, -2.7]) {
+      const c = Math.cos(turn), sn = Math.sin(turn);
+      const cand = { x: before.x + dx * c - dz * sn, z: before.z + dx * sn + dz * c };
+      if (!hullInRise(cand, actor.radius * 0.9) && !pointInWater(cand)) { actor.position = cand; return; }
+    }
+    // Still no: the largest PART of the push that keeps the hull clear (a sliver of overlap beats a rock).
+    for (const frac of [0.85, 0.7, 0.5, 0.3, 0.15]) {
+      const part = { x: before.x + dx * frac, z: before.z + dz * frac };
+      if (!hullInRise(part, actor.radius * 0.9)) { actor.position = part; return; }
+    }
+    actor.position = before;
+    // Nowhere for the actor to go: the neighbour steps aside instead, if it has the room.
+    for (const other of this.entities) {
+      if (other.id === actor.id || !other.status.alive || other.flying || other.carriedById || other.kind === "cover" || isBuildingKind(other.kind) || isDefenseKind(other.kind)) continue;
+      const gap = actor.radius + other.radius;
+      const d = dist(actor.position, other.position);
+      if (d >= gap * 0.98 || d < 0.0001) continue;
+      const push = gap - d;
+      const cand = { x: other.position.x + ((other.position.x - actor.position.x) / d) * push, z: other.position.z + ((other.position.z - actor.position.z) / d) * push };
+      if (!hullInRise(cand, other.radius * 0.9) && !pointInWater(cand)) other.position = cand;
+    }
   }
 
   private separateFromUnitsRaw(actor: CombatEntity, destination?: Vec2): void {
@@ -4982,6 +5046,7 @@ export class TacticalSim {
   // purchases — so enemyIntents() can undo everything it touched.
   private queueEnemyOrders(dryRun = false): void {
     const profile = this.aiProfile();
+    this.aiClaims = [];
     if (!dryRun) {
       for (const entity of this.living("enemy")) repairForNewTurn(entity);
       const enemyCommsOnline = this.entities.some((e) =>
@@ -5168,7 +5233,9 @@ export class TacticalSim {
             }
             if (this.aiDangerAt(destination)) destination = enemy.position; // hold rather than walk in
           }
+          destination = this.spreadDestination(enemy, destination);
           if (dist(enemy.position, destination) > 0.2) {
+            this.aiClaims.push({ at: { ...destination }, radius: enemy.radius });
             spendCommandPoint(enemy);
             this.addOrder({
               actorId: enemy.id,
@@ -5283,7 +5350,9 @@ export class TacticalSim {
       // Small pull toward the target's exposed rear — enough to circle when it costs little
       // progress, never enough to march the long way around.
       const flankBias = this.flankFactorAt(c, target) * 1.2;
-      const score = progress + sheltered + flankBias;
+      // HARD: high ground is worth a detour now that it halves a shooter's spread.
+      const heightBias = this.aiProfile().tactical && !isMeleeKind(actor.kind) ? clamp(terrainHeightAt(c) - terrainHeightAt(actor.position), -1, 1.6) * 2.2 : 0;
+      const score = progress + sheltered + flankBias + heightBias;
       if (score > bestScore) {
         bestScore = score;
         best = c;
@@ -5351,6 +5420,8 @@ export class TacticalSim {
     // clump of hostiles when it can spare the money, so the three factions also FEEL different from
     // the other side of the board. Never onto its own troops: strikes hit both teams.
     if (smart && this.fieldUnitCount(base.team) >= 2 && this.enemyStrikeAct(base)) return;
+    // HARD: dig in -- a gun emplacement between the base and an approaching foe (owner 2026-10-02: smarter bots).
+    if (this.aiProfile().tactical && this.enemyDefenseAct(base)) return;
     // SIGNATURE ARC: a smart bot works down its faction's research path, and SAVES for the next step
     // once it has a few units out -- otherwise it spent every turn's money on Recruits and never
     // researched anything, so every faction's bot played the same.
@@ -5405,6 +5476,25 @@ export class TacticalSim {
       ? affordable[Math.floor(this.rng.next() * affordable.length)].kind
       : (wanted[0] ?? [...affordable].sort((a, b) => b.cost - a.cost)[0]).kind;
     this.spawnTroopFor(base, pick);
+  }
+
+  /** Hard brain: with hostiles closing on the base and money to spare, field one of its gun defenses toward them. */
+  private enemyDefenseAct(base: CombatEntity): boolean {
+    const foe: Team = base.team === "enemy" ? "player" : "enemy";
+    const near = this.fieldUnits(foe).filter((e) => !e.flying && dist(e.position, base.position) < 22);
+    if (!near.length || this.defenseCount(base.team) >= 2 || this.money(base.team) < 480) return false;
+    const kind = (["bunker", "exturret", "turret"] as const).find((k) => this.factionOf(base.team).defenses.includes(k) && !this.buildBlockedReason(base, k));
+    if (!kind) return false;
+    const closest = near.reduce((a, b) => (dist(a.position, base.position) <= dist(b.position, base.position) ? a : b));
+    const dir = normalize({ x: closest.position.x - base.position.x, z: closest.position.z - base.position.z });
+    for (let reach = base.radius + 3.5; reach <= this.defensePlacementRadius(base); reach += 1.2) {
+      for (const swing of [0, 0.5, -0.5, 1.0, -1.0]) {
+        const c = Math.cos(swing), sn = Math.sin(swing);
+        const at = clampToArena({ x: base.position.x + (dir.x * c - dir.z * sn) * reach, z: base.position.z + (dir.x * sn + dir.z * c) * reach });
+        if (!this.buildFailureReason(base, kind, at)) return this.buildStructureFor(base, kind, at, this.placementYaw(base.position, at));
+      }
+    }
+    return false;
   }
 
   private enemyStrikeAct(base: CombatEntity): boolean {
@@ -5485,8 +5575,148 @@ export class TacticalSim {
 
   // Collision-aware step for AI units: try the direct line, then sidestep around
   // obstacles, returning the reachable destination closest to the goal.
+  // NO STACKING (owner 2026-10-02: "I see 2 standing right on each other"). Where each AI unit has
+  // already claimed to END this turn; a later unit that would end within a body's width of a claim or
+  // a friendly standing still slides to the nearest free spot beside it.
+  private aiClaims: { at: Vec2; radius: number }[] = [];
+  private spreadDestination(actor: CombatEntity, destination: Vec2): Vec2 {
+    if (actor.flying) return destination;
+    const taken = (p: Vec2): boolean =>
+      this.aiClaims.some((c) => dist(c.at, p) < c.radius + actor.radius + SPAWN_GAP) ||
+      this.entities.some((e) => e.id !== actor.id && e.team === actor.team && e.status.alive && !e.flying && !e.carriedById && e.kind !== "cover" && e.kind !== "base" &&
+        !this.orders.some((o) => o.actorId === e.id && o.kind === "move" && !o.done) && dist(e.position, p) < e.radius + actor.radius + SPAWN_GAP);
+    if (!taken(destination)) return destination;
+    const start = actor.position;
+    for (let r = 1.2; r <= 4.8; r += 1.2) {
+      for (let i = 0; i < 12; i += 1) {
+        const a = (i / 12) * Math.PI * 2;
+        const cand = clampToArena({ x: destination.x + Math.sin(a) * r, z: destination.z + Math.cos(a) * r });
+        if (taken(cand)) continue;
+        const reachable = this.blockedMoveDestination(actor, start, cand, undefined, true);
+        if (dist(reachable, cand) < 0.4 && !taken(reachable)) return reachable;
+      }
+    }
+    return destination;
+  }
+
+  // ---- AI PATHFINDING (owner 2026-10-02: "it got stuck on something and then not know what to do at
+  // all rather than going around it"). The old greedy sidestep dead-ends on any concave obstacle (a
+  // mesa wall, a river bend). Ground units now plan a real A* route over a 1.2m grid of walkable
+  // cells (dry, no hull in a rise, clear of solid props) and walk its first `step` metres.
+  private aiGridCache?: { turn: number; sig: number; cells: Map<string, Uint8Array> };
+  private static readonly GRID = 1.2;
+
+  private aiWalkable(actor: CombatEntity): { cols: number; rows: number; x0: number; z0: number; ok: (c: number, r: number) => boolean } {
+    const g = TacticalSim.GRID;
+    const x0 = ARENA_BOUNDS.minX, z0 = ARENA_BOUNDS.minZ;
+    const cols = Math.ceil((ARENA_BOUNDS.maxX - x0) / g), rows = Math.ceil((ARENA_BOUNDS.maxZ - z0) / g);
+    const sig = this.entities.length * 31 + this.projectiles.length; // wrecks/defenses appearing changes the grid
+    if (!this.aiGridCache || this.aiGridCache.turn !== this.turn || this.aiGridCache.sig !== sig) this.aiGridCache = { turn: this.turn, sig, cells: new Map() };
+    const big = actor.radius >= 1;
+    const key = `${this.mapDef.id}|${big}|${cols}x${rows}|${x0}`;
+    let cells = this.aiGridCache.cells.get(key);
+    if (!cells) { cells = new Uint8Array(cols * rows); this.aiGridCache.cells.set(key, cells); } // 0 unknown, 1 ok, 2 blocked
+    const solids = this.entities.filter((e) => e.status.alive && !e.flying && (e.kind === "base" || isDefenseKind(e.kind) || (e.kind === "cover" && e.coverKind !== "ridge")));
+    const reach = actor.radius * 0.9;
+    const ok = (c: number, r: number): boolean => {
+      if (c < 0 || r < 0 || c >= cols || r >= rows) return false;
+      const i = r * cols + c;
+      if (cells![i]) return cells![i] === 1;
+      const p = { x: x0 + (c + 0.5) * g, z: z0 + (r + 0.5) * g };
+      // Clear of any wall-height face by the same margin movement itself keeps (spawnClearance): a route
+      // hugging a mesa foot is one blockedBySteepTerrain refuses to walk.
+      const here = terrainHeightAt(p);
+      let walk = !pointInWater(p) && !hullInRise(p, reach) && !discSamples(p, spawnClearance(actor.radius) * 0.85).some((q) => terrainHeightAt(q) - here > TERRAIN_STEP);
+      if (walk) for (const e of solids) if (e.id !== actor.id && dist(e.position, p) < e.radius + reach + 0.15) { walk = false; break; }
+      cells![i] = walk ? 1 : 2;
+      return walk;
+    };
+    return { cols, rows, x0, z0, ok };
+  }
+
+  /** The point `step` metres along a planned A* route to `goal`, or undefined when no route exists. */
+  private aiPathStep(actor: CombatEntity, goal: Vec2, step: number): Vec2 | undefined {
+    const grid = this.aiWalkable(actor);
+    const g = TacticalSim.GRID;
+    const cellOf = (p: Vec2): [number, number] => [Math.floor((p.x - grid.x0) / g), Math.floor((p.z - grid.z0) / g)];
+    const center = (c: number, r: number): Vec2 => ({ x: grid.x0 + (c + 0.5) * g, z: grid.z0 + (r + 0.5) * g });
+    const [sc, sr] = cellOf(actor.position);
+    let [gc, gr] = cellOf(clampToArena(goal));
+    if (!grid.ok(gc, gr)) {
+      // The goal itself is blocked (a unit's position, a prop): aim at the nearest open cell to it.
+      let found = false;
+      for (let rad = 1; rad <= 6 && !found; rad += 1) {
+        let bestD = Infinity;
+        for (let dc = -rad; dc <= rad; dc += 1) for (let dr = -rad; dr <= rad; dr += 1) {
+          if (Math.max(Math.abs(dc), Math.abs(dr)) !== rad || !grid.ok(gc + dc, gr + dr)) continue;
+          const d = dc * dc + dr * dr;
+          if (d < bestD) { bestD = d; found = true; var bc = gc + dc, br = gr + dr; }
+        }
+        if (found) { gc = bc!; gr = br!; }
+      }
+      if (!found) return undefined;
+    }
+    const cols = grid.cols;
+    const idx = (c: number, r: number): number => r * cols + c;
+    const open = new Map<number, number>(); // cell -> f
+    const came = new Map<number, number>();
+    const gScore = new Map<number, number>([[idx(sc, sr), 0]]);
+    open.set(idx(sc, sr), Math.hypot(gc - sc, gr - sr));
+    const h = (c: number, r: number): number => Math.hypot(gc - c, gr - r);
+    let reached = -1;
+    let guard = 0;
+    while (open.size && guard++ < 6000) {
+      let cur = -1, curF = Infinity;
+      for (const [k, f] of open) if (f < curF) { curF = f; cur = k; }
+      open.delete(cur);
+      const c = cur % cols, r = Math.floor(cur / cols);
+      if (c === gc && r === gr) { reached = cur; break; }
+      const hereH = terrainHeightAt(center(c, r));
+      for (let dc = -1; dc <= 1; dc += 1) for (let dr = -1; dr <= 1; dr += 1) {
+        if (!dc && !dr) continue;
+        const nc = c + dc, nr = r + dr;
+        if (!grid.ok(nc, nr)) continue;
+        if (dc && dr && (!grid.ok(c + dc, r) || !grid.ok(c, r + dr))) continue; // no corner cutting
+        if (Math.abs(terrainHeightAt(center(nc, nr)) - hereH) > TERRAIN_STEP) continue;
+        const ni = idx(nc, nr);
+        const tentative = (gScore.get(cur) ?? 0) + (dc && dr ? 1.414 : 1);
+        if (tentative < (gScore.get(ni) ?? Infinity)) {
+          gScore.set(ni, tentative);
+          came.set(ni, cur);
+          open.set(ni, tentative + h(nc, nr));
+        }
+      }
+    }
+    if (reached < 0) return undefined;
+    const route: Vec2[] = [];
+    for (let k = reached; k !== undefined; k = came.get(k) as number) {
+      route.push(center(k % cols, Math.floor(k / cols)));
+      if (k === idx(sc, sr)) break;
+    }
+    route.reverse();
+    route[0] = { ...actor.position };
+    let left = step;
+    for (let i = 1; i < route.length; i += 1) {
+      const seg = dist(route[i - 1], route[i]);
+      if (seg >= left) {
+        const t = left / Math.max(seg, 0.0001);
+        return { x: route[i - 1].x + (route[i].x - route[i - 1].x) * t, z: route[i - 1].z + (route[i].z - route[i - 1].z) * t };
+      }
+      left -= seg;
+    }
+    return route[route.length - 1];
+  }
+
   private navigateToward(actor: CombatEntity, goal: Vec2, step: number): Vec2 {
     const start = actor.position;
+    // Plan around obstacles first (ground units); fall back to the greedy sidestep when no route exists.
+    if (!actor.flying && !canJump(actor) && dist(start, goal) > 1.5) {
+      const waypoint = this.aiPathStep(actor, goal, step);
+      if (waypoint) {
+        const reachable = this.blockedMoveDestination(actor, start, clampToArena(waypoint), undefined, true);
+        if (dist(start, reachable) >= Math.min(step, dist(start, goal)) * 0.35) return reachable;
+      }
+    }
     const directDesired = clampToArena(moveToward(start, goal, step));
     const direct = this.blockedMoveDestination(actor, start, directDesired, undefined, true);
     if (dist(start, direct) >= step * 0.55) return direct;
@@ -5527,6 +5757,10 @@ export class TacticalSim {
     this.runDownedTick();
     for (const entity of this.entities) {
       repairForNewTurn(entity);
+      // A dead Comms Mast jams the whole force: one action point each (both sides, not just the bot).
+      if (entity.kind !== "base" && entity.status.alive && (entity.team === "player" || entity.team === "enemy") && this.commsDown(entity.team)) {
+        entity.commandPoints = Math.min(entity.commandPoints, 1);
+      }
       if (entity.markedUntilTurn !== undefined && entity.markedUntilTurn < this.turn) {
         entity.markedUntilTurn = undefined;
         entity.markedById = undefined;
@@ -6573,7 +6807,12 @@ function settleClearOfRises(start: Vec2, stop: Vec2, margin: number, hull?: numb
 }
 function hullInRise(point: Vec2, hull: number): boolean {
   const here = terrainHeightAt(point);
-  return discSamples(point, hull).some((p) => terrainHeightAt(p) - here > TERRAIN_STEP * 0.9);
+  if (discSamples(point, hull).some((p) => terrainHeightAt(p) - here > TERRAIN_STEP * 0.9)) return true;
+  for (let i = 0; i < 16; i += 1) { // 16-way ring: the 12-way disc can slip past a block corner
+    const a = (i / 16) * Math.PI * 2;
+    if (terrainHeightAt({ x: point.x + Math.sin(a) * hull * 1.02, z: point.z + Math.cos(a) * hull * 1.02 }) - here > TERRAIN_STEP * 0.9) return true;
+  }
+  return false;
 }
 
 /** The nearest dry point within 4m that is clear of every terrain step by `margin` (or `point`). */
@@ -6645,7 +6884,6 @@ function explosiveBlast(kind: ProjectileKind, source?: EntityKind): { radius: nu
   }
   if (kind === "shell") {
     if (source === "artillery") return { radius: 3.0, damage: 62, maxThrow: 6 };
-    if (source === "tank") return { radius: 2.5, damage: 52, maxThrow: 5.5 };
     if (source === "exturret") return { radius: 2.6, damage: 50, maxThrow: 5.5 };
     return { radius: 2.25, damage: 40 };
   }
@@ -6687,6 +6925,10 @@ function rangeSpreadPenalty(kind: EntityKind, attackMode: AttackMode, range: num
 function kindAccuracyLabel(kind: EntityKind, attackMode: AttackMode = "weapon"): string {
   if (attackMode === "grenade") return "thrown grenade";
   return unitStats(kind).accuracyLabel;
+}
+
+function isMeleeKind(kind: EntityKind): boolean {
+  return kind === "striker";
 }
 
 function isClimbableCover(entity: CombatEntity): boolean {

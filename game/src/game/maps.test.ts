@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { buildMapObjects, DEPLOY_RING_FIT, flagPositions, mapCenter, mapDef, MAPS, mapSize } from "./maps";
-import { DEFAULT_TERRAIN, pointInWater, setActiveTerrain } from "./terrain";
+import { DEFAULT_TERRAIN, pointInWater, setActiveTerrain, terrainHeightAt } from "./terrain";
 
 const area = (b: { minX: number; maxX: number; minZ: number; maxZ: number }): number => (b.maxX - b.minX) * (b.maxZ - b.minZ);
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }): number => Math.hypot(a.x - b.x, a.z - b.z);
@@ -93,4 +93,28 @@ describe("buildMapObjects", () => {
       expect(hasPartner, `${o.id} has no mirrored partner`).toBe(true);
     }
   });
+});
+
+describe("a base's deploy ring lies on flat, dry ground", () => {
+  for (const id of ["dustbowl", "ironworks", "verdant", "causeway", "karak", "crossfire"]) {
+    it(`${id}: no step, no water inside the widest ring around either base`, () => {
+      const def = mapDef(id);
+      setActiveTerrain(def.terrain);
+      try {
+        for (const base of [def.playerBase, def.enemyBase]) {
+          const h0 = terrainHeightAt(base);
+          for (let r = 0; r <= DEPLOY_RING_FIT; r += 0.5) {
+            for (let i = 0; i < 48; i += 1) {
+              const a = (i / 48) * Math.PI * 2;
+              const p = { x: base.x + Math.sin(a) * r, z: base.z + Math.cos(a) * r };
+              expect(Math.abs(terrainHeightAt(p) - h0), `${id} step at r=${r} (${p.x.toFixed(1)},${p.z.toFixed(1)})`).toBeLessThan(0.05);
+              expect(pointInWater(p), `${id} water in the ring`).toBe(false);
+            }
+          }
+        }
+      } finally {
+        setActiveTerrain(DEFAULT_TERRAIN);
+      }
+    });
+  }
 });

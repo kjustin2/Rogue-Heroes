@@ -46,7 +46,7 @@ import { sfx } from "./audio";
 import { music } from "./music";
 import { progression, COSMETICS, COSMETIC_CATEGORIES, type Cosmetic } from "./progression";
 import { battleReward } from "./progression";
-import { commander, MEDALS } from "./commander";
+import { commander, MEDALS, MEDAL_PAGES, type MedalPage } from "./commander";
 import { settings, ACTION_PACES, PACE_LABEL, RENDER_SCALES, RENDER_SCALE_LABEL, RENDER_SCALE_DPR, DEFAULT_KEYBINDS, KEYBIND_LABELS, keyDisplay, type ActionPace, type RenderScale, type BindableAction } from "./settings";
 import { applyScenario, scenarioInfo } from "./game/scenarios";
 import { ARENA_BOUNDS } from "./game/terrain";
@@ -1461,16 +1461,17 @@ function armoryCardHtml(c: Cosmetic): string {
 // ACHIEVEMENTS: the lifetime service record -- stats, every medal (earned lit, the rest ghosted
 // with how close they are), and doctrine mastery. Its own main-menu page; it used to be a strip
 // at the top of the Armory where nobody looked for it.
+let achievementsPage: MedalPage = "Campaign";
 function showAchievements(): void {
   closeAllMenus();
   const s = commander.stats;
   const top = commander.topUnitKind();
   const earnedCount = MEDALS.filter((m) => s.medals.includes(m.id)).length;
-  const medals = MEDALS.map((m) => {
+  const card = (m: (typeof MEDALS)[number]): string => {
     const earned = s.medals.includes(m.id);
     const [have, need] = m.progress?.(s) ?? [earned ? 1 : 0, 1];
     const meter = m.progress && !earned
-      ? `<span class="achievement__meter"><span style="width:${Math.round((Math.min(have, need) / need) * 100)}%"></span></span><em>${Math.min(have, need)} / ${need}</em>`
+      ? `<span class="achievement__meter"><span style="width:${Math.round((Math.min(have, need) / need) * 100)}%"></span></span><em>${Math.min(have, need).toLocaleString()} / ${need.toLocaleString()}</em>`
       : `<em>${earned ? "Earned" : "Locked"}</em>`;
     return `<div class="achievement ${earned ? "earned" : ""}">
       <span class="achievement__badge">${earned ? "✪" : "✧"}</span>
@@ -1478,7 +1479,13 @@ function showAchievements(): void {
       <span class="achievement__blurb">${escapeHtml(m.blurb)}</span>
       <span class="achievement__state">${meter}</span>
     </div>`;
+  };
+  const pageTabs = MEDAL_PAGES.map((page) => {
+    const all = MEDALS.filter((m) => m.page === page);
+    const got = all.filter((m) => s.medals.includes(m.id)).length;
+    return `<button class="menu-chip ${achievementsPage === page ? "on" : ""}" data-medal-page="${page}" type="button">${page} <em>${got}/${all.length}</em></button>`;
   }).join("");
+  const medals = MEDALS.filter((m) => m.page === achievementsPage).map(card).join("");
   const mastered = TECH_TREE.filter((n) => n.tier < 4 && commander.masteryTier(n.id) > 0)
     .map((n) => `<span class="medal earned">${escapeHtml(n.name)} ${"I".repeat(commander.masteryTier(n.id))}</span>`)
     .join("");
@@ -1493,17 +1500,22 @@ function showAchievements(): void {
       <div class="commander-profile__stats">
         <div><span>Battles</span><strong>${s.battles}</strong></div>
         <div><span>Wins / Losses</span><strong>${s.wins} / ${s.losses}</strong></div>
-        <div><span>Unit Kills</span><strong>${s.kills}</strong></div>
+        <div><span>Unit Kills</span><strong>${s.kills.toLocaleString()}</strong></div>
+        <div><span>Best Streak</span><strong>${s.bestStreak}</strong></div>
         <div><span>Deadliest Unit</span><strong>${top ? escapeHtml(top) : "—"}</strong></div>
       </div>
+      <div class="chip-row achievement-pages">${pageTabs}</div>
       <div class="achievement-grid">${medals}</div>
-      ${mastered ? `<div class="armory-category-title">Doctrine Mastery</div><div class="commander-profile__medals">${mastered}</div>` : ""}
+      ${mastered && achievementsPage === "Campaign" ? `<div class="armory-category-title">Doctrine Mastery</div><div class="commander-profile__medals">${mastered}</div>` : ""}
     </div>
   `,
     "menu-screen",
   );
   screen.addEventListener("click", (event) => {
-    if ((event.target as HTMLElement).closest("[data-back]")) showMainMenu();
+    const target = event.target as HTMLElement;
+    if (target.closest("[data-back]")) { showMainMenu(); return; }
+    const page = target.closest<HTMLElement>("[data-medal-page]")?.dataset.medalPage as MedalPage | undefined;
+    if (page) { achievementsPage = page; skipNextMenuEntrance = true; showAchievements(); }
   });
 }
 

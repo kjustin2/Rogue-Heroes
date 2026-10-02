@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CARPET_BOMBS, TacticalSim, mapDef } from "./sim";
+import { createBase, createSoldier } from "./damageModel";
+import { DEFAULT_TERRAIN, setActiveTerrain } from "./terrain";
 
 // Unit identity abilities, round four (unit-identity picks 5, 9, 10, 14, 15, 17, 18):
 // grenadier AIRBURST, flamer FEAR, drone op RECON, APC CARRY, artillery DEPLOY, gunship STRAFE,
@@ -326,5 +328,43 @@ describe("mid-air collisions", () => {
   it("a round that meets a grenade sets it off where it was hit", () => {
     const { log } = clash("grenade");
     expect(log.some((l) => l.includes("shoots down")), log.join(" | ")).toBe(true);
+  });
+});
+
+describe("AI pathfinding", () => {
+  it("a bot unit walks AROUND a long wall between it and its goal instead of pressing on it (owner 2026-10-02)", () => {
+    const sim = new TacticalSim([
+      createBase("pb", "Home Base", "player", { x: -38, z: 0 }),
+      createBase("eb", "Home Base", "enemy", { x: 38, z: 0 }),
+      createSoldier("e1", "Raider", "enemy", { x: 8, z: 0 }),
+    ]);
+    setActiveTerrain({ bounds: { minX: -42, maxX: 42, minZ: -12, maxZ: 12 }, maxHeight: 3.2, blocks: [{ minX: -1.5, maxX: 1.5, minZ: -8, maxZ: 8, height: 3 }] });
+    try {
+      const e1 = sim.entities.find((e) => e.id === "e1")!;
+      sim.economy.set("enemy", 0);
+      for (let turn = 0; turn < 12 && e1.position.x > -4; turn += 1) { sim.endTurn(); settle(sim); }
+      expect(e1.position.x, `stuck at (${e1.position.x.toFixed(1)}, ${e1.position.z.toFixed(1)})`).toBeLessThan(-2);
+    } finally {
+      setActiveTerrain(DEFAULT_TERRAIN);
+    }
+  });
+});
+
+describe("base systems cost their owner something", () => {
+  it("a dead Comms Mast leaves every unit 1 AP; a dead Blast Gate shrinks the deploy ring and slows reinforcements", () => {
+    const sim = staged();
+    const base = sim.entities.find((e) => e.team === "player" && e.kind === "base")!;
+    const trooper = sim.debugSpawn("soldier", "player", { x: base.position.x + 7, z: 3 });
+    trooper.maxCommandPoints = 2;
+    const ring = sim.deployPlacementRadius(base);
+    const cooldown = sim.troopCooldownFor("player", "soldier");
+    base.parts.find((p) => p.id === "comms")!.hp = 0;
+    base.parts.find((p) => p.id === "gate")!.hp = 0;
+    expect(sim.baseSystemEffects(base).map((e) => e.label.split(" ")[0])).toEqual(["Comms", "Gate"]);
+    expect(sim.deployPlacementRadius(base)).toBeLessThan(ring);
+    expect(sim.troopCooldownFor("player", "soldier")).toBe(cooldown + 1);
+    sim.endTurn();
+    settle(sim);
+    expect(trooper.commandPoints, "the jammed force refilled past 1 AP").toBeLessThanOrEqual(1);
   });
 });

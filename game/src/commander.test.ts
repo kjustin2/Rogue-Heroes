@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { Commander } from "./commander";
+import { Commander, MEDALS, MEDAL_PAGES } from "./commander";
+import { FACTIONS } from "./game/factions";
+import { MAPS } from "./game/maps";
+import { TECH_TREE } from "./game/tech";
+import { PLAYABLE_MODES } from "./game/modes";
 
 function fakeStorage(): void {
   const store = new Map<string, string>();
@@ -95,5 +99,40 @@ describe("Commander", () => {
     expect(c.stats.mapWins).toEqual(["verdant"]); // a loss and a repeat add nothing
     expect(c.stats.modeWins).toEqual(["ctf"]);
     expect(c.stats.factionWins).toEqual(["bastion"]);
+  });
+});
+
+describe("achievement pages (2026-10-02)", () => {
+  it("every medal has a unique id on a real page, and a long perfect career earns all of them", () => {
+    const ids = MEDALS.map((m) => m.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const page of MEDAL_PAGES) expect(MEDALS.filter((m) => m.page === page).length, page).toBeGreaterThanOrEqual(7);
+    const c = new Commander();
+    c.reset();
+    for (let i = 0; i < 260; i += 1) {
+      const map = MAPS[i % MAPS.length].id;
+      const faction = FACTIONS[i % FACTIONS.length].id;
+      c.recordBattle({
+        victory: true, turns: 3, losses: 0, killsByKind: { soldier: 8, tank: 1, gunship: 1 }, toppleHappened: true,
+        map, mode: PLAYABLE_MODES[i % PLAYABLE_MODES.length].id, faction, difficulty: "hard", baseHealth: 0.05,
+        arms: { infantry: true, vehicle: true, air: true },
+      });
+    }
+    for (let i = 0; i < 10; i += 1) for (const node of TECH_TREE) c.recordResearch(node.id);
+    c.recordBattle({ victory: true, turns: 3, losses: 0, killsByKind: {}, toppleHappened: false, difficulty: "hard", baseHealth: 0.05, arms: { infantry: true, vehicle: true, air: true } });
+    const missing = ids.filter((id) => !c.stats.medals.includes(id));
+    expect(missing).toEqual([]);
+  });
+
+  it("a loss breaks the win streak but keeps the best one", () => {
+    const c = new Commander();
+    c.reset();
+    const win = { victory: true, turns: 9, losses: 2, killsByKind: {}, toppleHappened: false } as const;
+    for (let i = 0; i < 4; i += 1) c.recordBattle(win);
+    c.recordBattle({ ...win, victory: false });
+    c.recordBattle(win);
+    expect(c.stats.bestStreak).toBe(4);
+    expect(c.stats.winStreak).toBe(1);
+    expect(c.stats.medals).toContain("streak3");
   });
 });

@@ -55,6 +55,9 @@ export class WorldRenderer {
   private readonly objectiveRoot = new THREE.Group();
   private readonly groundAimRoot = new THREE.Group();
   private readonly auraRoot = new THREE.Group();
+  // The NO-GO tiles drawn while Move is armed: everything inside the move reach a unit cannot stand on.
+  private readonly blockedRoot = new THREE.Group();
+  private lastBlockedSig = "";
   private readonly sceneryRoot = new THREE.Group();
   private readonly debrisRoot = new THREE.Group();
   // Resolve-phase juice: floating damage numbers and a brief white flash on a freshly-hit part.
@@ -161,7 +164,7 @@ export class WorldRenderer {
   private readonly flashLights: { light: THREE.PointLight; strength: number; until: number; duration: number }[] = [];
 
   constructor(private readonly scene: THREE.Scene) {
-    this.scene.add(this.sceneryRoot, this.craterRoot, this.debrisRoot, this.entityRoot, this.markerRoot, this.orderRoot, this.previewRoot, this.projectileRoot, this.effectRoot, this.objectiveRoot, this.groundAimRoot, this.auraRoot, this.damageNumberRoot, this.environmentRoot);
+    this.scene.add(this.sceneryRoot, this.craterRoot, this.debrisRoot, this.entityRoot, this.markerRoot, this.orderRoot, this.previewRoot, this.projectileRoot, this.effectRoot, this.objectiveRoot, this.groundAimRoot, this.auraRoot, this.blockedRoot, this.damageNumberRoot, this.environmentRoot);
     for (let i = 0; i < 3; i += 1) {
       // Tight radius + fast decay: a wide pool reads as a brown stain on the ground
       // rather than a flash.
@@ -358,6 +361,7 @@ export class WorldRenderer {
     this.syncSelection(sim);
     this.syncTarget(sim, targetId);
     this.syncActionRange(sim);
+    this.syncBlockedCells(sim);
     this.syncBuildPlacement(sim);
     this.syncAuras(sim);
     // The order/preview/ground-aim overlays only change on input during the command phase.
@@ -1110,6 +1114,8 @@ export class WorldRenderer {
     // The aura/objective overlays are now signature-gated — clear their roots and reset the cached
     // signatures so a new battle always rebuilds them (never keeps the prior battle's flags/rings).
     this.disposeAndClear(this.auraRoot);
+    this.disposeAndClear(this.blockedRoot);
+    this.lastBlockedSig = "";
     this.disposeAndClear(this.objectiveRoot);
     this.lastAurasSig = "";
     this.lastObjectivesSig = "";
@@ -4654,6 +4660,54 @@ export class WorldRenderer {
     mat.color.setHex(range.kind === "melee" ? 0xd28cff : range.kind === "grenade" ? 0xff7f67 : range.kind === "move" ? 0x9dfcff : 0xffbf4d);
     // A field carries far more ink than a hairline did, so it sits lower in opacity.
     mat.opacity = 0.46 + pulse * 0.12;
+  }
+
+  /**
+   * NO-GO TILES (owner 2026-10-02: "a player can't tell clearly AT ALL where they can walk, where they
+   * can't"). While Move is armed, every 1m cell inside the move reach that the selected unit could not
+   * stand on -- water, a wall-height face or the strip hugging it, a solid prop -- is tinted red with an
+   * X-less flat fill, over the drawn ground; the cyan reach ring shows the limit. One merged mesh,
+   * rebuilt only when the unit, its projected spot or its reach changes.
+   */
+  private syncBlockedCells(sim: TacticalSim): void {
+    const range = sim.phase === "command" && sim.intent === "move" ? sim.selectedActionRange() : undefined;
+    const actor = sim.selected;
+    if (!range || range.kind !== "move" || !actor) {
+      if (this.lastBlockedSig) { this.disposeAndClear(this.blockedRoot); this.lastBlockedSig = ""; }
+      return;
+    }
+    const sig = `${actor.id}|${range.position.x.toFixed(1)}|${range.position.z.toFixed(1)}|${range.radius.toFixed(1)}|${sim.entities.length}`;
+    if (sig === this.lastBlockedSig) return;
+    this.lastBlockedSig = sig;
+    this.disposeAndClear(this.blockedRoot);
+    if (actor.flying || actor.kind === "jumper") return; // they overfly everything
+    const cell = 1;
+    const reach = range.radius;
+    const clearance = actor.radius < 1 ? 1.4 : actor.radius * 0.95 + 0.3;
+    const solids = sim.entities.filter((e) => e.status.alive && e.id !== actor.id && !e.flying && (e.kind === "base" || isDefenseKind(e.kind) || (e.kind === "cover" && e.coverKind !== "ridge")));
+    const positions: number[] = [];
+    for (let dx = -reach; dx <= reach; dx += cell) {
+      for (let dz = -reach; dz <= reach; dz += cell) {
+        if (Math.hypot(dx, dz) > reach) continue;
+        const p = { x: range.position.x + dx, z: range.position.z + dz };
+        if (p.x < ARENA_BOUNDS.minX || p.x > ARENA_BOUNDS.maxX || p.z < ARENA_BOUNDS.minZ || p.z > ARENA_BOUNDS.maxZ) continue;
+        const here = terrainHeightAt(p);
+        const water = pointInWater(p);
+        const wall = !water && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([ox, oz]) => terrainHeightAt({ x: p.x + ox * clearance * 0.6, z: p.z + oz * clearance * 0.6 }) - here > TERRAIN_STEP);
+        const prop = solids.some((e) => Math.hypot(e.position.x - p.x, e.position.z - p.z) < e.radius + actor.radius * 0.8);
+        if (!water && !wall && !prop) continue;
+        const y = Math.max(drawnGroundAt(p), here) + 0.075;
+        const h = cell * 0.5;
+        positions.push(p.x - h, y, p.z - h, p.x - h, y, p.z + h, p.x + h, y, p.z + h, p.x - h, y, p.z - h, p.x + h, y, p.z + h, p.x + h, y, p.z - h);
+      }
+    }
+    if (!positions.length) return;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xff4d5e, transparent: true, opacity: 0.34, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+    mesh.renderOrder = 17;
+    mesh.frustumCulled = false;
+    this.blockedRoot.add(mesh);
   }
 
   // Faint rings showing the reach of support/spotter auras (medic, engineer, scout, sniper),

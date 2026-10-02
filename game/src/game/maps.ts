@@ -175,12 +175,30 @@ function fitBases(bounds: TerrainRect, bases: Vec2[]): TerrainRect {
   return out;
 }
 
+/** Terrain must stay at least this far from a base centre: the widest deploy ring plus its outline. */
+export const DEPLOY_RING_CLEAR = DEPLOY_RING_FIT + 0.4;
+/** How far (m) a base whose ring touches terrain slides toward its back edge. */
+const RING_SHIFT = 3;
+
+function rectDistance(r: TerrainRect, p: Vec2): number {
+  return Math.hypot(Math.max(r.minX - p.x, p.x - r.maxX, 0), Math.max(r.minZ - p.z, p.z - r.maxZ, 0));
+}
+
 function scaleMapDef(def: MapDef): MapDef {
   const size = tierFromArea(def.terrain.bounds);
   const f = SCALE_BY_SIZE[size];
   const t = def.terrain;
-  const playerBase = { x: def.playerBase.x * f, z: def.playerBase.z * f };
-  const enemyBase = { x: def.enemyBase.x * f, z: def.enemyBase.z * f };
+  const scaledBlocks = t.blocks?.map((b) => ({ ...scaleRect(b, f), height: b.height })) ?? [];
+  // A base whose deploy ring touches terrain steps is slid OUTWARD (the board grows behind it, see
+  // fitBases) by RING_SHIFT; what still touches after that is dropped below. (Ironworks' overpass ramp
+  // stays; its catwalk goes.)
+  const outward = (base: Vec2): Vec2 => {
+    const raw = { x: base.x * f, z: base.z * f };
+    const touches = scaledBlocks.some((b) => rectDistance(b, raw) < DEPLOY_RING_CLEAR);
+    return touches ? { x: raw.x + Math.sign(raw.x || 1) * RING_SHIFT, z: raw.z } : raw;
+  };
+  const playerBase = outward(def.playerBase);
+  const enemyBase = outward(def.enemyBase);
   const bounds = fitBases(scaleRect(t.bounds, f), [playerBase, enemyBase]);
   return {
     ...def,
@@ -188,7 +206,10 @@ function scaleMapDef(def: MapDef): MapDef {
     terrain: {
       ...t,
       bounds,
-      blocks: t.blocks?.map((b) => ({ ...scaleRect(b, f), height: b.height })), // footprints scale, height fixed
+      // footprints scale, height fixed; a block whose footprint touches a base's deploy ring is DROPPED
+      // (owner 2026-10-02: a mesa beside the base bent the ring up over its step; the whole ring must lie
+      // on the base's own flat ground)
+      blocks: scaledBlocks.filter((b) => ![playerBase, enemyBase].some((base) => rectDistance(b, base) < DEPLOY_RING_CLEAR)),
       water: t.water?.map((r) => scaleRect(r, f)),
       bridges: t.bridges?.map((r) => scaleRect(r, f)),
     },
@@ -453,7 +474,8 @@ export function pinchesTerrain(p: Vec2, r: number, bounds: TerrainRect): boolean
 }
 
 function steepHere(p: Vec2): boolean {
-  return onTerrainEdge(p, 0.7) || terrainHeightAt(p) > 1.2;
+  // 1.0m: most of a prop radius, so almost nothing is ever half on a ledge and half off it (owner 2026-10-02).
+  return onTerrainEdge(p, 1.0) || terrainHeightAt(p) > 1.2;
 }
 
 // ---------------------------------------------------------------------------

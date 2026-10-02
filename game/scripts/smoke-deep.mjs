@@ -48,7 +48,8 @@ try {
     sim.economy.set("player", 3000);
     const g = sim.debugSpawn("gunship", "player", { x: -4, z: 0 });
     const e = sim.debugSpawn("interceptor", "enemy", { x: 5, z: 0 });
-    e.parts.forEach((p) => { if (p.role === "mobility") p.hp = 0; }); // hold it for a clean shot
+    e.parts.forEach((p) => { if (p.role === "mobility" || p.role === "weapon") p.hp = 0; }); // hold it AND stop it firing back: opposed rounds now collide in mid-air
+    e.status.canShoot = false; e.status.canMove = false;
     sim.select(g.id);
     const queued = sim.queueShoot(e.id);
     return { foe: e.id, foeHp: e.parts.reduce((s, p) => s + p.hp, 0), queued };

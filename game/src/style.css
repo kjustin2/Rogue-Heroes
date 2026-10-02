@@ -5946,3 +5946,7 @@ body:has(.hotseat-handoff) .battle-loading { display: none; }
 .queued-chip em { font-size: var(--fs-micro); }
 .log-line { overflow-wrap: anywhere; }
 .compact-log .log-line { white-space: normal; text-overflow: clip; }
+.base-damage { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
+.base-damage__chip { padding: 3px 9px; border: var(--ink-w, 2px) solid var(--ink); border-radius: 6px; background: #4a1f1a; color: #ffd9cf; font-size: var(--fs-micro); font-weight: 800; letter-spacing: 0.04em; }
+.achievement-pages { margin: 4px 0 10px; } .achievement-pages em { font-style: normal; opacity: 0.8; margin-left: 4px; }
+body:has(.endscreen) #toasts { top: 10px; } /* medals earned on the result screen sit in the strip above the card, never over its title */

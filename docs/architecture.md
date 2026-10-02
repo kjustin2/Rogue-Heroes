@@ -252,6 +252,15 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   `smoothstep` fresnel rim (`applyToonRim`, program key "toon-rim", its own pool so scenery parts never get
   it: on big flat props it bleached the faces). Mesa caps wear a lighter vertex tone on their rounded rim
   (bevel CAP*0.45) so each rise is outlined in light at its top, in dark ink at its foot.
+- **A base's ring lies on flat, dry ground** (2026-10-02): a base whose widest deploy ring touches terrain slides
+  `RING_SHIFT` (3m) toward its back edge; blocks still touching are dropped (`DEPLOY_RING_CLEAR`); `maps.test.ts`
+  asserts every map's ring has no step and no water. Pickups avoid water, ledge edges and every ring; props keep
+  1.0m off a ledge (`steepHere`).
+- **NO-GO tiles**: while Move is armed `syncBlockedCells` tints every 1m cell inside the reach the unit cannot stand
+  on (water, wall-height faces and the strip hugging them, solid props) red, over the drawn ground.
+- **Movement hardening** (oracle-found): a unit pressed on a face cannot walk its hull in; push-out never sinks a hull
+  into rock (turned aside, partial, or the neighbour steps aside); a thrown body lands on ground its whole footprint
+  fits (`groundFits`, 16-way ring) or stays put; a timed-out move halts clear of rises AND bodies (`settleHalt`).
 - **The board grows behind the bases** (`fitBases` in `maps.ts`): every base keeps `DEPLOY_RING_FIT` (the
   Vanguard's deploy ring + 0.8m) of board on every side, so the whole deploy ring is placeable. The bases did
   not move (moving them in shrank Ironworks' no-man's land by 17m); `scale.test.ts` measures crossings base to

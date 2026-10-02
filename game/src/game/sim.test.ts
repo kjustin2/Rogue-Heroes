@@ -1044,6 +1044,7 @@ describe("tactical simulation loop", () => {
     shooter.stance = "prone";
     const enemy = createSoldier("enemy", "Cutlass", "enemy", { x: 7, z: 0 });
     applyDamage(enemy, "rifle", 99);
+    enemy.status.canMove = false; // the AI would otherwise step out of the sniper's line (path planning changed who walks where)
     const sim = new TacticalSim([shooter, enemy]);
 
     sim.select("sniper");
