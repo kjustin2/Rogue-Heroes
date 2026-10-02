@@ -27,6 +27,8 @@ export type CoverKind =
   | "depot"
   | "span"
   | "gas"
+  | "charge" // a demolitionist's satchel bomb (volatile, fused)
+  | "barrier" // a fortifier's wall segment
   | "stump" | "log" | "bush" | "cactus" | "tent" | "pipe" | "silo" | "statue"
   // Biome props (2026-09-23): the furniture that says WHICH map this is, so no kind is shared by
   // accident (a Roman column in a foundry, a sandbag wall in a hay field).
@@ -151,6 +153,11 @@ export interface CombatEntity {
   // accurate against it until the turn stamped here has passed.
   markedUntilTurn?: number;
   markedById?: string;
+  // A demolition charge: turns left on its fuse (it blows at 0), and who set it (for the log).
+  fuse?: number;
+  ownerTeam?: Team;
+  // A manned emplacement (gun post, mortar pit): the trooper crewing it. It fires only while crewed.
+  occupantId?: string;
 }
 
 export interface CoverOptions {
@@ -661,6 +668,24 @@ export function createSapper(id: string, name: string, team: Team, position: Vec
   });
 }
 
+// FIELD HANDS (2026-10-03). Soldier-sized, sidearm only: each is worth its one placing verb (PLACEABLES).
+function createFieldHand(id: string, name: string, kind: "builder" | "demo" | "oiler" | "springer", team: Team, position: Vec2, weaponLabel: string, packLabel: string, bodyHp: number): CombatEntity {
+  return createInfantry(id, name, kind, team, position, {
+    radius: 0.64, height: 1.64, bodyHp, headHp: 15, weaponHp: 18, legsHp: 24, packHp: 24, weaponLabel, packLabel, packRole: "utility", grenades: 0,
+  });
+}
+export const createBuilder = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createFieldHand(id, name, "builder", team, position, "Sidearm", "Barrier Kit", 50);
+export const createDemo = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createFieldHand(id, name, "demo", team, position, "Sidearm", "Charge Satchel", 44);
+export const createOiler = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createFieldHand(id, name, "oiler", team, position, "Sidearm", "Oil Drum", 44);
+export const createSpringer = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createFieldHand(id, name, "springer", team, position, "Sidearm", "Pad Roll", 40);
+
+export function createBazooka(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  return createInfantry(id, name, "bazooka", team, position, {
+    radius: 0.66, height: 1.66, bodyHp: 42, headHp: 14, weaponHp: 26, legsHp: 22, packHp: 24,
+    weaponLabel: "Rocket Launcher", packLabel: "Rocket Pack", packRole: "volatile", grenades: 0,
+  });
+}
+
 export function createEngineer(id: string, name: string, team: Team, position: Vec2): CombatEntity {
   return createInfantry(id, name, "engineer", team, position, {
     radius: 0.64,
@@ -765,7 +790,7 @@ export function createBase(id: string, name: string, team: Team, position: Vec2)
 function createDefense(
   id: string,
   name: string,
-  kind: "turret" | "exturret" | "aaturret" | "bunker" | "sensor" | "wall",
+  kind: "turret" | "exturret" | "aaturret" | "bunker" | "sensor" | "wall" | "gunpost" | "mortarpit",
   team: Team,
   position: Vec2,
   config: { radius: number; height: number; parts: DamagePart[]; canAct: boolean }
@@ -833,6 +858,24 @@ export function createAaTurret(id: string, name: string, team: Team, position: V
     ],
   });
 }
+
+// MANNED EMPLACEMENTS (2026-10-03): a weapon on a sandbag ring that acts only while a trooper crews it.
+// Born uncrewed with no action points; the sim hands it one a turn while its crew stands beside it.
+function createMount(id: string, name: string, kind: "gunpost" | "mortarpit", team: Team, position: Vec2): CombatEntity {
+  const mount = createDefense(id, name, kind, team, position, {
+    radius: 1.0,
+    height: 1.0,
+    canAct: true,
+    parts: [
+      part("ring", "Sandbag Ring", "core", 90, { critical: true }),
+      part("gun", kind === "gunpost" ? "Heavy MG" : "Mortar Tube", "weapon", 36),
+    ],
+  });
+  mount.commandPoints = 0;
+  return mount;
+}
+export const createGunPost = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createMount(id, name, "gunpost", team, position);
+export const createMortarPit = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createMount(id, name, "mortarpit", team, position);
 
 // A concrete machine-gun nest: low, wide and very tough; its gun pokes through a slit.
 export function createBunker(id: string, name: string, team: Team, position: Vec2): CombatEntity {
@@ -925,6 +968,9 @@ export const COVER_PROFILES: Record<CoverKind, CoverProfile> = {
   gate: { hp: 170, radius: 2.3, height: 2.55, volatile: false, label: "Checkpoint Gate" },
   radar: { hp: 160, radius: 1.5, height: 3.5, volatile: false, label: "Radar Station" },
   ammo: { hp: 34, radius: 0.7, height: 1.2, volatile: true, label: "Ammo Cache" },
+  // Field placements (units.ts PLACEABLES). The satchel is volatile: kill it (or let the fuse run) and it blows.
+  charge: { hp: 14, radius: 0.5, height: 0.5, volatile: true, label: "Charge" },
+  barrier: { hp: 80, radius: 1.0, height: 1.35, volatile: false, label: "Barrier" },
   conduit: { hp: 44, radius: 0.7, height: 1.2, volatile: true, label: "Power Conduit" },
   ridge: { hp: 95, radius: 1.2, height: 1.85, volatile: false, label: "High Ground" },
   cliff: { hp: 160, radius: 1.28, height: 2.15, volatile: false, label: "Cliff Face" },
@@ -1131,7 +1177,7 @@ export function isBuildingKind(kind: EntityKind): boolean {
 
 // Player/enemy-built defensive emplacements (turret, explosive turret, wall).
 export function isDefenseKind(kind: EntityKind): boolean {
-  return kind === "turret" || kind === "exturret" || kind === "aaturret" || kind === "bunker" || kind === "sensor" || kind === "wall";
+  return kind === "turret" || kind === "exturret" || kind === "aaturret" || kind === "bunker" || kind === "sensor" || kind === "wall" || kind === "gunpost" || kind === "mortarpit";
 }
 
 function utilityMessages(entity: CombatEntity, part: DamagePart): string[] {

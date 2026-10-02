@@ -814,6 +814,7 @@ describe("tactical simulation loop", () => {
     const sim = new TacticalSim([
       createSniper("sniper", "Vesper", "player", { x: 0, z: 0 }),
       enemy,
+      createSoldier("enemy2", "Backup", "enemy", { x: 30, z: 5 }), // the marksman's round now kills Cutlass; the battle must go on
     ]);
     sim.entity("sniper")!.stance = "crouched";
 

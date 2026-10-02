@@ -29,7 +29,8 @@ describe("faction-aware AI build logic", () => {
     // Was: tank | artillery | heavy | grenadier | mortar. A role predicate that quietly widened
     // this would make the AI think it already counters your tanks and stop building answers.
     const got = kinds.filter(answersArmor).sort();
-    expect(got).toEqual(["artillery", "grenadier", "heavy", "mortar", "tank"]);
+    // + the Rocketeer (2026-10-03): a rocket launcher IS an armour answer; the point of this pin is that nothing widens by accident.
+    expect(got).toEqual(["artillery", "bazooka", "grenadier", "heavy", "mortar", "tank"]);
   });
 
   it("still classifies exactly the old anti-air set", () => {

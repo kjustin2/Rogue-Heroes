@@ -25,6 +25,9 @@ a toon rim on units and a lit lip on mesas; a picked base frames its deploy circ
 Then (2026-10-02, owner batch): the air round (bomb run, gunship gun, no strafe), mid-air collisions, big high-ground
 accuracy, right-click Back, base systems with real costs, A* bots that spread out and dig in, flat deploy rings on every
 map, the no-go tile overlay, four Achievements pages, and a pile of UI fixes (see `docs/game-systems.md`).
+Then (2026-10-03, owner batch): field hands (Heal / Repair, Charge, Bounce Pad, Oil, Barrier, Rocketeer), manned Gun Posts and
+Mortar Pits (map-placed and base-built), continuous height advantage, the shove stagger, shot lines that end on the aimed part,
+recorded CC0 sound effects and three music tracks per map (`docs/game-systems.md`, "FIELD HANDS").
 Then (2026-10-01): no Deploy-now shortcut in set-up; the PLAY LOG (`game/logs/latest.log`); the locked-turret
 placement fix (decks show locks, picks refuse up front, every refusal toasts its reason, every defense has a
 placement ghost); Defenses decks of 5-6 and Support decks of 3 per faction (starters, tech pieces, faction-own);
@@ -58,6 +61,10 @@ three movement bugs the oracle found; the per-frame GL depth-blit error (postpro
    that blocks air movement (needs a new persistent, serialized line object).
 9. **Elites / bosses** survive in code (`debugSpawn` options + the boss bar) for a possible set piece — only
    when asked.
+
+10. **The bot and the field hands.** It treats (medic / engineer) and crews posts (Hard), but never places a charge, pad, oil
+    or barrier, and never builds a post. Add only after the owner has played them.
+11. **Crew animation.** A crewed post is a trooper crouched behind the gun; there is no dedicated firing pose for the crew.
 
 ## Known and deliberately deferred (do not re-chase without new evidence)
 

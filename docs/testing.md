@@ -85,6 +85,9 @@ drive headless Chromium via `window.__rht`.
   pins the map), or waits on `sim.mapDef.id === <map>` as well as the phase.
 - **`?lowfx=1`** forces the composer-free render path — functional smokes and perf use it
   (SwiftShader stalls on the bloom chain); `vision`/gallery run full-FX.
+- `npm run shots:gpu -- fieldhands mounts audioprobe`: the 2026-10-03 units and placements, crewing a gun post (Man armed,
+  walk-up, crewed), and a probe that each map picks one of its own three tracks and every audio file is served (200).
+  `src/game/fieldhands.test.ts` covers heal / repair, charges, pads (incl. ring-out), oil, barriers, the rocket and the posts.
 - **Audio is auto-muted under automation** (`navigator.webdriver`/`?mute` gate in `main.ts`, mirrored
   by Chromium `--mute-audio` and the Electron smoke's `setAudioMuted(true)`) so background runs never
   blare. `window.__rht.audioMuted()` asserts it; `smoke:flow` guards it.

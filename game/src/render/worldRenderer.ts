@@ -9,7 +9,7 @@ import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec
 import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isVehicleKind, type CombatEntity, type CoverKind, type DamagePart, type Team, type EntityKind, type PartRole } from "../game/damageModel";
 import { factionDef, type FactionId } from "../game/factions";
 import type { OrderKind, Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
-import { carpetDropPoints, minefieldPoints } from "../game/sim";
+import { CHARGE_BLAST_RADIUS, OIL_RADIUS, PAD_RADIUS, carpetDropPoints, minefieldPoints } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type GroundSurfaceKind, type SkylineKind } from "../game/maps";
 import type { TroopKind } from "../game/units";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, climbsAlong, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
@@ -357,6 +357,7 @@ export class WorldRenderer {
       this.resolving = sim.phase === "resolve";
       this.syncEntity(entity, sim.selectedId, targetId, targetPartId, sim.defending.has(entity.id), this.ghostedEntityIds.has(entity.id), crouchMovers.has(entity.id));
     }
+    this.padSpots = sim.pads;
     this.syncUnitMarkers(sim);
     this.syncSelection(sim);
     this.syncTarget(sim, targetId);
@@ -609,6 +610,60 @@ export class WorldRenderer {
         pip.position.set(mine.x, y + 0.09, mine.z);
         pip.scale.setScalar(1.4);
         this.environmentRoot.add(pip);
+      }
+    }
+    // MAN armed: every post this trooper can crew pulses green, so "click one of these" is not a guess.
+    if (sim.intent === "man" && sim.selected && sim.phase === "command") {
+      const pulse = (Math.sin(performance.now() * 0.008) + 1) * 0.5;
+      for (const post of sim.entities) {
+        if ((post.kind !== "gunpost" && post.kind !== "mortarpit") || sim.manFailureReason(sim.selected, post)) continue;
+        this.environmentRoot.add(new THREE.Mesh(
+          drapedDisc(post.position.x, post.position.z, post.radius + 0.35, post.radius + 0.6, 40, 0.09),
+          this.envMat(THREE.MeshBasicMaterial, { color: 0x2ee88a, transparent: true, opacity: 0.55 + pulse * 0.4, side: THREE.DoubleSide, depthWrite: false }),
+        ));
+      }
+    }
+    // OIL: a black glossy puddle with a violet rim and a few pale glints; it lights as a burn zone.
+    for (const slick of sim.oilSlicks) {
+      const body = new THREE.Mesh(
+        drapedDisc(slick.x, slick.z, 0, slick.radius, 40, 0.06),
+        this.envMat(THREE.MeshBasicMaterial, { color: 0x14111a, transparent: true, opacity: 0.88, side: THREE.DoubleSide, depthWrite: false }),
+      );
+      this.environmentRoot.add(body);
+      const rim = new THREE.Mesh(
+        drapedDisc(slick.x, slick.z, slick.radius - 0.16, slick.radius, 48, 0.07),
+        this.envMat(THREE.MeshBasicMaterial, { color: 0x6a4aa0, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }),
+      );
+      this.environmentRoot.add(rim);
+      for (let g = 0; g < 3; g += 1) {
+        const a = (hash(slick.id) % 6) + g * 2.1;
+        const glint = new THREE.Mesh(
+          drapedDisc(slick.x + Math.cos(a) * slick.radius * 0.45, slick.z + Math.sin(a) * slick.radius * 0.45, 0, 0.32 - g * 0.06, 14, 0.08),
+          this.envMat(THREE.MeshBasicMaterial, { color: 0x8a7ab0, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }),
+        );
+        this.environmentRoot.add(glint);
+      }
+    }
+    // BOUNCE PADS: a yellow disc with a dark rim and two chevrons pointing the way it launches.
+    for (const pad of sim.pads) {
+      const y = drawnGroundAt(pad) + 0.09;
+      const disc = new THREE.Mesh(
+        drapedDisc(pad.x, pad.z, 0, PAD_RADIUS, 28, 0.07),
+        this.envMat(THREE.MeshBasicMaterial, { color: 0xf0c828, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false }),
+      );
+      this.environmentRoot.add(disc);
+      const rim = new THREE.Mesh(
+        drapedDisc(pad.x, pad.z, PAD_RADIUS - 0.14, PAD_RADIUS, 32, 0.08),
+        this.envMat(THREE.MeshBasicMaterial, { color: pad.team === "player" ? 0x2b6a8a : 0x8a2b2b, transparent: true, opacity: 1, side: THREE.DoubleSide, depthWrite: false }),
+      );
+      this.environmentRoot.add(rim);
+      const bob = (Math.sin(performance.now() * 0.006 + (hash(pad.id) % 5)) + 1) * 0.5;
+      for (const k of [-0.28, 0.12]) {
+        const chevron = new THREE.Mesh(new THREE.CircleGeometry(0.3, 3), this.envMat(THREE.MeshBasicMaterial, { color: 0x2b2a33, transparent: true, opacity: 0.9 - bob * 0.2, side: THREE.DoubleSide, depthWrite: false }));
+        chevron.rotation.set(-Math.PI / 2, 0, 0);
+        chevron.rotation.z = pad.yaw - Math.PI / 2;
+        chevron.position.set(pad.x + Math.sin(pad.yaw) * k, y + 0.04, pad.z + Math.cos(pad.yaw) * k);
+        this.environmentRoot.add(chevron);
       }
     }
     // Cash caches: a spinning gold diamond bobbing over a warm ground glow — "run over this for money".
@@ -1656,12 +1711,13 @@ export class WorldRenderer {
       group.userData.shownYaw = shownYaw;
     }
     const flip = (group.userData.flightPitch as number | undefined) ?? 0;
-    const tilt = (group.userData.flightRoll as number | undefined) ?? 0;
     group.rotation.set(
-      sway * 0.45 + flip,
+      sway * 0.45,
       shownYaw + (scenery ? ((variety % 360) / 360) * Math.PI * 2 : 0),
-      (entity.kind === "tank" ? Math.sin(motionTime * 4.8) * 0.018 * walkWeight : 0) + sway + ((group.userData.gaitSway as number | undefined) ?? 0) + tilt
+      (entity.kind === "tank" ? Math.sin(motionTime * 4.8) * 0.018 * walkWeight : 0) + sway + ((group.userData.gaitSway as number | undefined) ?? 0)
     );
+    const flightAxis = group.userData.flightAxis as { x: number; z: number } | undefined;
+    if (flightAxis && flip !== 0) group.quaternion.premultiply(FLIGHT_Q.setFromAxisAngle(FLIGHT_AXIS.set(flightAxis.x, 0, flightAxis.z), flip));
     if (defending && isInfantryKind(entity.kind) && entity.status.alive) {
       group.scale.set(1.08, 1, 1.08);
     } else if (scenery) {
@@ -1952,6 +2008,9 @@ export class WorldRenderer {
     }
   }
 
+  /** Bounce pad positions this frame (a launch that starts on one is drawn as a leap). */
+  private padSpots: readonly { x: number; z: number }[] = [];
+
   private flyThrownBody(entity: CombatEntity, group: THREE.Group, groundY: number): void {
     const last = group.userData.lastSimPos as { x: number; z: number; y: number } | undefined;
     group.userData.lastSimPos = { x: entity.position.x, z: entity.position.z, y: groundY };
@@ -1963,22 +2022,32 @@ export class WorldRenderer {
       if (d > 0.8 && d < 20 && !this.commandPhase) { // only in a resolve: deploys and restores place, they do not throw
         const dx = (entity.position.x - last.x) / d;
         const dz = (entity.position.z - last.z) / d;
+        // A SHOVE (under ~2.2m) is a stagger: the body leans back with the blow, hops a step and
+        // recovers upright. A real throw is a full backwards tumble that lands on its feet. Both end at
+        // zero lean, so nothing pops upright on landing (the old half-flip did), and the lean is about
+        // the axis ACROSS the throw, not the world's X axis.
+        // Launched off a bounce pad: an upright leap, not a tumble.
+        const leap = infantry && this.padSpots.some((p) => dist(p, last) <= PAD_RADIUS + 0.7);
+        const stagger = infantry && !leap && d < 2.2;
         group.userData.flight = {
-          from: { ...last }, start: performance.now(), dur: infantry ? 380 + d * 70 : 320,
-          height: infantry ? Math.min(3, 0.6 + d * 0.35) : 0.35,
-          // Backwards along the throw: a pitch about the unit's own axis, signed by its facing.
-          spin: infantry ? (d > 3 ? Math.PI * 2 : Math.PI * 0.7) : 0.12,
-          side: -Math.sin(entity.yaw) * dz + Math.cos(entity.yaw) * dx,
+          from: { ...last }, start: performance.now(),
+          dur: infantry ? (leap ? 700 : stagger ? 480 + d * 110 : 420 + d * 70) : 320,
+          height: infantry ? (leap ? 2.6 + d * 0.12 : stagger ? 0.2 + d * 0.14 : Math.min(3, 0.6 + d * 0.35)) : 0.35,
+          spin: infantry ? (stagger || leap ? 0 : Math.PI * 2) : 0,
+          lean: infantry ? (leap ? -0.12 : stagger ? 0.62 : 0.3) : 0.12,
+          axis: { x: dz, z: -dx },
+          stagger,
+          leap,
         };
       }
     }
-    const f = group.userData.flight as { from: { x: number; z: number; y: number }; start: number; dur: number; height: number; spin: number; side: number } | undefined;
-    if (!f) { group.userData.flightPitch = 0; group.userData.flightRoll = 0; return; }
+    const f = group.userData.flight as { from: { x: number; z: number; y: number }; start: number; dur: number; height: number; spin: number; lean: number; axis: { x: number; z: number }; stagger: boolean; leap: boolean } | undefined;
+    if (!f) { group.userData.flightPitch = 0; group.userData.flightAxis = undefined; return; }
     const t = (performance.now() - f.start) / f.dur;
     if (t >= 1) {
       group.userData.flight = undefined;
       group.userData.flightPitch = 0;
-      group.userData.flightRoll = 0;
+      group.userData.flightAxis = undefined;
       // Landing: a puff of dust where it came down.
       this.particles?.burst({
         x: entity.position.x, y: groundY + 0.12, z: entity.position.z,
@@ -1987,12 +2056,15 @@ export class WorldRenderer {
       });
       return;
     }
-    const e = 1 - (1 - t) * (1 - t); // ease-out: fast off the ground, settling into the landing
+    const e = f.leap ? t : f.stagger ? 1 - Math.pow(1 - t, 3) : 1 - (1 - t) * (1 - t); // a shove skids off fast and settles
     group.position.x = f.from.x + (entity.position.x - f.from.x) * e;
     group.position.z = f.from.z + (entity.position.z - f.from.z) * e;
     group.position.y = f.from.y + (groundY - f.from.y) * e + Math.sin(Math.PI * t) * f.height;
-    group.userData.flightPitch = -f.spin * e;
-    group.userData.flightRoll = f.side * Math.sin(Math.PI * t) * 0.35;
+    // Angle about the across-throw axis: a tumble turns the whole way round (smoothstep, ends upright)
+    // plus a lean; a stagger is only the lean, rocking out and back (the second half dips with the landing).
+    const smooth = t * t * (3 - 2 * t);
+    group.userData.flightPitch = f.spin * smooth + f.lean * Math.sin(Math.PI * t) * (f.stagger ? 1 - 0.35 * t : 1);
+    group.userData.flightAxis = f.axis;
   }
 
   private syncDebris(entity: CombatEntity, part: DamagePart): void {
@@ -2874,6 +2946,49 @@ export class WorldRenderer {
       this.box(rig, entity, "body", [0.12, 0.1, 0.08], [0.06, 1.0, 0.26], 0xffca6b, { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.24 });
       this.box(rig, entity, "head", [0.346, 0.26, 0.072], [0, 1.34, 0.2], 0x3a342a, { accent: true, metalness: 0.24 });
       this.box(rig, entity, "head", [0.44, 0.42, 0.46], [0, 1.38, 0.0], helmetColor, { kit: "helmet-sapper" });
+    } else if (entity.kind === "bazooka") {
+      // Rocketeer: a long tube over the shoulder, flared at the back, a red-tipped rocket in the muzzle,
+      // and a rack of spare rounds behind the head.
+      this.cylinder(rig, entity, "rifle", 0.13, 1.5, [0.42, 1.08, 0.3], 0x4a4a32, [Math.PI / 2, 0, 0], { metalness: 0.3 });
+      this.cylinder(rig, entity, "rifle", 0.19, 0.2, [0.42, 1.08, -0.5], 0x2b2b22, [Math.PI / 2, 0, 0], { metalness: 0.3, radiusBottom: 0.26 });
+      this.cylinder(rig, entity, "rifle", 0.09, 0.22, [0.42, 1.08, 1.1], 0xd04a2a, [Math.PI / 2, 0, 0], { accent: true, radiusBottom: 0.05, emissive: 0xff5a2a, emissiveIntensity: 0.22 });
+      this.box(rig, entity, "rifle", [0.1, 0.16, 0.2], [0.42, 0.9, 0.2], 0x1d2025, { metalness: 0.3 });
+      for (const x of [-0.12, 0.12]) this.cylinder(rig, entity, "pack", 0.08, 0.7, [x, 1.2, -0.38], 0x6a6a4a, [0.2, 0, 0], { metalness: 0.3, accent: true });
+      this.box(rig, entity, "head", [0.44, 0.38, 0.46], [0, 1.4, 0.0], helmetColor, { kit: "helmet" });
+      this.box(rig, entity, "head", [0.3, 0.1, 0.09], [0, 1.4, 0.2], 0xff7a3a, { accent: true, emissive: 0xff5a2a, emissiveIntensity: 0.3 });
+    } else if (entity.kind === "builder") {
+      // Fortifier: a slab of barrier carried on the back like a shield, a lump hammer and a hard hat.
+      this.box(rig, entity, "pack", [0.7, 0.9, 0.12], [0, 1.0, -0.42], 0x8a8a84, { metalness: 0.2, accent: true, bevel: 0.2 });
+      this.box(rig, entity, "pack", [0.7, 0.12, 0.13], [0, 1.4, -0.42], 0xe8b030, { accent: true, emissive: 0xc88a1a, emissiveIntensity: 0.2 });
+      this.box(rig, entity, "rifle", [0.1, 0.1, 0.7], [0.46, 0.92, 0.2], 0x5a4a3a, { metalness: 0.2 });
+      this.box(rig, entity, "rifle", [0.26, 0.2, 0.2], [0.46, 0.92, 0.62], 0x6a6a70, { metalness: 0.5 });
+      this.box(rig, entity, "head", [0.48, 0.3, 0.5], [0, 1.44, 0.0], 0xffa23a, { emissive: 0xff7a1a, emissiveIntensity: 0.16, kit: "helmet-engineer" });
+    } else if (entity.kind === "demo") {
+      // Demolitionist: a fat satchel charge on the hip, red wiring over the chest, a plunger box and a goggle mask.
+      this.box(rig, entity, "rifle", [0.14, 0.2, 0.6], [0.45, 0.93, 0.2], trimColor, { metalness: 0.3, kit: "weapon-pistol" });
+      this.box(rig, entity, "pack", [0.56, 0.5, 0.4], [-0.34, 0.66, -0.08], 0x5a4a30, { accent: true, bevel: 0.2 });
+      this.box(rig, entity, "pack", [0.58, 0.1, 0.42], [-0.34, 0.7, -0.08], 0xd8d0b8, { accent: true });
+      this.box(rig, entity, "pack", [0.1, 0.1, 0.1], [-0.34, 0.97, -0.08], 0xff3b30, { accent: true, emissive: 0xff2a1a, emissiveIntensity: 0.5 });
+      this.box(rig, entity, "body", [0.5, 0.06, 0.06], [0, 1.0, 0.24], 0xd33a2a, { accent: true, rotation: [0, 0, 0.5] });
+      this.box(rig, entity, "legs", [0.2, 0.22, 0.2], [0.3, 0.5, 0.1], 0x3a3a3a, { accent: true, metalness: 0.3 });
+      this.box(rig, entity, "head", [0.44, 0.4, 0.46], [0, 1.4, 0.0], helmetColor, { kit: "helmet-sapper" });
+      this.box(rig, entity, "head", [0.34, 0.12, 0.09], [0, 1.38, 0.2], 0x1a1a1a, { accent: true });
+    } else if (entity.kind === "oiler") {
+      // Oil Rigger: a fat black drum on the back with a hose to a nozzle gun, an oil-stained apron.
+      this.cylinder(rig, entity, "pack", 0.3, 0.7, [0, 1.0, -0.44], 0x23232b, [0, 0, 0], { accent: true, metalness: 0.4 });
+      for (const y of [0.78, 1.0, 1.22]) this.cylinder(rig, entity, "pack", 0.315, 0.05, [0, y, -0.44], 0x6a4aa0, [0, 0, 0], { accent: true, emissive: 0x3a2a60, emissiveIntensity: 0.2 });
+      this.cylinder(rig, entity, "pack", 0.05, 0.8, [0.26, 0.9, -0.2], 0x1a1a20, [0.4, 0, 0.3]);
+      this.box(rig, entity, "rifle", [0.14, 0.2, 0.5], [0.45, 0.93, 0.3], 0x1f2026, { metalness: 0.4 });
+      this.cylinder(rig, entity, "rifle", 0.07, 0.3, [0.45, 0.93, 0.66], 0x8a7ab0, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.4 });
+      this.box(rig, entity, "head", [0.46, 0.4, 0.48], [0, 1.4, 0.0], helmetColor, { kit: "helmet-flamer" });
+    } else if (entity.kind === "springer") {
+      // Pad Tech: a rolled-up yellow bounce pad on the back, a coiled spring on each shin, a light visor.
+      this.cylinder(rig, entity, "pack", 0.3, 0.4, [0, 1.06, -0.44], 0xf0c828, [Math.PI / 2, 0, 0], { accent: true, emissive: 0xc8a010, emissiveIntensity: 0.2 });
+      this.cylinder(rig, entity, "pack", 0.31, 0.05, [0, 1.06, -0.3], 0x2b2a33, [Math.PI / 2, 0, 0], { accent: true });
+      for (const side of [-1, 1]) for (const y of [0.22, 0.32, 0.42]) this.cylinder(rig, entity, "legs", 0.14, 0.04, [side * 0.18, y, 0.02], 0xd8d8d8, [0, 0, 0], { metalness: 0.5 });
+      this.box(rig, entity, "rifle", [0.14, 0.2, 0.6], [0.45, 0.93, 0.2], trimColor, { metalness: 0.3, kit: "weapon-pistol" });
+      this.box(rig, entity, "head", [0.42, 0.36, 0.46], [0, 1.42, 0.0], helmetColor, { kit: "helmet-scout" });
+      this.box(rig, entity, "head", [0.3, 0.1, 0.09], [0, 1.4, 0.2], 0xffe040, { accent: true, emissive: 0xffc010, emissiveIntensity: 0.4 });
     } else {
       // Line infantry (soldier): standard bayoneted rifle, a brimmed helmet with a comms
       // bead, chest webbing/pouches and a slung frag — the plain baseline trooper.
@@ -3012,6 +3127,35 @@ export class WorldRenderer {
     for (const x of [-0.5, 0, 0.5]) this.box(group, entity, "gate", [0.26, 0.06, 0.06], [x, 1.02, 1.34], 0xffd9a0, { emissive: 0xffa04a, emissiveIntensity: 0.4, bevel: 0.4 });
   }
 
+  /** A manned emplacement: a ring of sandbags round a pit, with the weapon on a mount in the middle. Walk up and crew it. */
+  private buildMount(group: THREE.Group, entity: CombatEntity): void {
+    // The ring: ten sandbag blocks round the rim, open at the back (+z is the crew's side).
+    for (let i = 0; i < 10; i += 1) {
+      const a = (i / 10) * Math.PI * 2;
+      if (Math.cos(a) < -0.7) continue; // the gap behind the gun, where the crew stands
+      this.box(group, entity, "ring", [0.62, 0.34, 0.4], [Math.sin(a) * 0.88, 0.17, Math.cos(a) * 0.88], 0x8a7f66, { rotation: [0, a, 0], bevel: 0.42, metalness: 0.04 });
+      this.box(group, entity, "ring", [0.54, 0.26, 0.36], [Math.sin(a) * 0.88, 0.45, Math.cos(a) * 0.88], 0x6b6350, { rotation: [0, a + 0.3, 0], bevel: 0.42, metalness: 0.04 });
+    }
+    this.box(group, entity, "ring", [1.2, 0.08, 1.2], [0, 0.04, 0], 0x4a4232, { bevel: 0.2 });
+    if (entity.kind === "gunpost") {
+      // Heavy MG on a tripod, a gun shield in front, an ammo box and a belt.
+      for (const [x, z] of [[-0.3, 0.2], [0.3, 0.2], [0, -0.3]] as const) this.box(group, entity, "gun", [0.06, 0.62, 0.06], [x, 0.4, z], 0x2a2f34, { rotation: [z < 0 ? -0.3 : 0.25, 0, x * 0.5], metalness: 0.4 });
+      this.box(group, entity, "gun", [0.22, 0.24, 0.9], [0, 0.78, 0.1], 0x3a4048, { metalness: 0.4, bevel: 0.2 });
+      this.cylinder(group, entity, "gun", 0.05, 0.7, [0, 0.8, 0.78], 0x1d2226, [Math.PI / 2, 0, 0], { metalness: 0.5 });
+      this.box(group, entity, "gun", [0.7, 0.5, 0.06], [0, 0.85, 0.5], 0x59616a, { metalness: 0.3 });
+      this.box(group, entity, "gun", [0.26, 0.2, 0.3], [0.34, 0.56, -0.05], 0x5a5a3a, { accent: true });
+    } else {
+      // Mortar: baseplate, an angled tube and a shell stack at the crew's side.
+      this.box(group, entity, "gun", [0.7, 0.1, 0.7], [0, 0.12, 0], 0x2a2f34, { metalness: 0.4 });
+      this.cylinder(group, entity, "gun", 0.14, 1.3, [0, 0.75, 0.28], 0x3a4048, [0.7, 0, 0], { metalness: 0.4 });
+      this.cylinder(group, entity, "gun", 0.19, 0.12, [0, 0.3, -0.18], 0x1d2226, [0.7, 0, 0], { metalness: 0.4 });
+      for (let i = 0; i < 3; i += 1) this.cylinder(group, entity, "gun", 0.09, 0.4, [0.62, 0.3, -0.1 - i * 0.2], 0x6a6a4a, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.3 });
+    }
+    // A pennant on a stake in the team colour: from far away it reads as claimed, grey when free.
+    this.box(group, entity, "ring", [0.05, 1.3, 0.05], [0.9, 0.65, -0.5], 0x2a2f34);
+    this.box(group, entity, "ring", [0.4, 0.24, 0.04], [1.1, 1.15, -0.5], entity.team === "enemy" ? TEAMS.enemyAccent : entity.team === "player" ? 0x5fe6ff : 0x9a9a9a, { accent: true, emissive: entity.team === "enemy" ? TEAMS.enemyAccent : entity.team === "player" ? 0x5fe6ff : 0x333333, emissiveIntensity: 0.18 });
+  }
+
   private buildDefense(group: THREE.Group, entity: CombatEntity): void {
     const glow = entity.team === "enemy" ? TEAMS.enemyAccent : 0x5fe6ff;
     if (entity.kind === "exturret" && vehiclesKitReady()) {
@@ -3039,6 +3183,7 @@ export class WorldRenderer {
       }
       return;
     }
+    if (entity.kind === "gunpost" || entity.kind === "mortarpit") { this.buildMount(group, entity); return; }
     if (entity.kind === "bunker") { this.buildBunker(group, entity); return; }
     if (entity.kind === "sensor") { this.buildSensorMast(group, entity, glow); return; }
     // Shared emplacement base + traversing ring, dug in behind a sandbag berm.
@@ -3194,6 +3339,18 @@ export class WorldRenderer {
       for (const a of [0, 1, 2, 3]) {
         this.box(group, entity, part.id, [0.04, 1.1, 0.04], [Math.cos(a * Math.PI / 2) * 0.33, 0.6, Math.sin(a * Math.PI / 2) * 0.33], 0x2b3238, { metalness: 0.45 });
       }
+    } else if (entity.coverKind === "charge") {
+      // A demolition satchel: olive canvas, a taped band, red wires to a blinking cap. Small and unmistakable.
+      this.box(group, entity, part.id, [0.62, 0.34, 0.44], [0, 0.2, 0], 0x5b5a3a, { bevel: 0.25 });
+      this.box(group, entity, part.id, [0.64, 0.08, 0.46], [0, 0.22, 0], 0xd8d0b8);
+      this.box(group, entity, part.id, [0.5, 0.22, 0.34], [0, 0.46, 0], 0x4a4a30, { bevel: 0.25 });
+      this.box(group, entity, part.id, [0.14, 0.12, 0.14], [0.14, 0.64, 0], 0xff3b30, { accent: true, emissive: 0xff2a1a, emissiveIntensity: 0.6 });
+      this.box(group, entity, part.id, [0.05, 0.05, 0.5], [-0.1, 0.62, 0], 0xd33a2a, { rotation: [0, 0.3, 0] });
+    } else if (entity.coverKind === "barrier") {
+      // A jersey-style barrier slab: wide concrete foot, a tapered top, hazard chevrons on the face.
+      this.box(group, entity, part.id, [1.9, 0.5, 0.78], [0, 0.25, 0], 0x8c8a84, { bevel: 0.14 });
+      this.box(group, entity, part.id, [1.7, 0.85, 0.46], [0, 0.88, 0], 0x9a988f, { bevel: 0.12 });
+      for (const x of [-0.55, 0, 0.55]) this.box(group, entity, part.id, [0.3, 0.1, 0.06], [x, 0.9, 0.25], 0xe8b030, { accent: true, rotation: [0, 0, 0.5] });
     } else if (entity.coverKind === "conduit") {
       // A junction box on a post, with an insulator stack and cable runs going off both ways.
       this.box(group, entity, part.id, [0.28, 0.3, 0.28], [0, 0.14, 0], 0x2b3238, { bevel: 0.22 });
@@ -4806,17 +4963,21 @@ export class WorldRenderer {
       }
       const to = order.destination ?? sim.entity(order.targetId)?.position;
       if (!to) continue;
-      const color = order.kind === "move" ? 0x9dfcff : order.kind === "ram" ? 0xffbf4d : order.kind === "melee" ? 0xb48cff : 0xff7f67;
+      const color = order.kind === "move" ? 0x9dfcff : order.kind === "ram" ? 0xffbf4d : order.kind === "melee" ? 0xb48cff : order.kind === "treat" ? 0x8effa6 : 0xff7f67;
       if (order.kind === "move" && order.destination) {
         addDrapedMovePath(this.orderRoot, from, to, color, 0.32);
         this.orderRoot.add(makeEndpoint(to, color, actor.radius + 0.22, drawnGroundAt(to) + 0.26));
         projectedPositions.set(actor.id, order.destination);
         continue;
       }
-      const fromY = terrainHeightAt(from) + 0.24;
-      const toY = terrainHeightAt(to) + 0.24;
-      this.orderRoot.add(makeTubeLine(from, to, color, 0.32, fromY, 0.028, toY));
-      this.orderRoot.add(makeLine(from, to, color, 0.62, fromY + 0.05, toY + 0.05));
+      // A shot ends AT THE PART it was aimed at (head, weapon, tracks), rising from the muzzle, like the preview.
+      const aimed = order.kind === "shoot" || order.kind === "grenade" ? sim.orderAimPoint(order) : undefined;
+      const fromY = aimed ? terrainHeightAt(from) + 1 : terrainHeightAt(from) + 0.24;
+      const toY = aimed ? aimed.height : terrainHeightAt(to) + 0.24;
+      const end = aimed?.point ?? to;
+      this.orderRoot.add(makeTubeLine(from, end, color, 0.32, fromY, 0.028, toY));
+      this.orderRoot.add(makeLine(from, end, color, 0.62, fromY + 0.05, toY + 0.05));
+      if (aimed) this.orderRoot.add(makeEndpoint(end, color, 0.3, toY + 0.03));
     }
     // RECON PULSE: the enemy's next orders as ghost arrows — enemy red, thinner and fainter than the
     // player's own, with a hollow endpoint so they read as intent, not as an order you gave.
@@ -4885,6 +5046,36 @@ export class WorldRenderer {
         this.groundAimRoot.add(ghost);
       }
       this.groundAimRoot.add(makeEndpoint(point, ok ? 0x8de4ff : 0xff765f, kind === "minefield" ? 2 : kind === "bunker" ? 1.45 : 1.15, ground + 0.06));
+      return;
+    }
+    // Placing a field item (charge / pad / slick / barrier): where it will land, green when accepted.
+    if (sim.intent === "place" && sim.selected) {
+      const spec = sim.placeSpec();
+      if (spec) {
+        const ok = !sim.placeFailureReason(sim.selected, point);
+        const color = ok ? 0x2ee88a : 0xff3b5c;
+        const yaw = sim.placementYaw(sim.projectedSelected()?.position ?? sim.selected.position, point);
+        const ground = drawnGroundAt(point);
+        if (spec.kind === "oil") this.groundAimRoot.add(makeSplashDisc(point, color, OIL_RADIUS));
+        else if (spec.kind === "pad") {
+          this.groundAimRoot.add(makeSplashDisc(point, color, PAD_RADIUS));
+          this.groundAimRoot.add(makeLine(point, { x: point.x + Math.sin(yaw) * 2.4, z: point.z + Math.cos(yaw) * 2.4 }, color, 0.9, ground + 0.15));
+        } else if (spec.kind === "charge") {
+          const ghost = new THREE.Mesh(defenseGhostGeometry("mine"), wallGhostMaterial(ok));
+          ghost.position.set(point.x, ground + 0.2, point.z);
+          this.groundAimRoot.add(ghost);
+          this.groundAimRoot.add(makeSplashDisc(point, color, CHARGE_BLAST_RADIUS)); // the blast it will make
+        } else {
+          for (const side of [-1, 1]) {
+            const ghost = new THREE.Mesh(wallGhostGeometry(), wallGhostMaterial(ok));
+            ghost.scale.set(0.8, 0.6, 0.5);
+            ghost.position.set(point.x + Math.cos(yaw) * 0.95 * side, ground + 0.7, point.z - Math.sin(yaw) * 0.95 * side);
+            ghost.rotation.y = yaw;
+            this.groundAimRoot.add(ghost);
+          }
+        }
+        this.groundAimRoot.add(makeEndpoint(point, color, 0.5, ground + 0.06));
+      }
       return;
     }
     // Targeting a support power: draw the strike footprint instead of a weapon arc.
@@ -5935,6 +6126,8 @@ const DAMAGE_FLASH_MS = 320;
 // How long a whole-body hit flinch lasts (ms). Short + snappy — a strike, not a stumble.
 const FLINCH_MS = 300;
 // A dead unit stays on the board this long: the fall, a beat, then it sinks away.
+const FLIGHT_Q = new THREE.Quaternion();
+const FLIGHT_AXIS = new THREE.Vector3();
 type DeathStyle = "thrown" | "crumple" | "spin" | "wreck" | "spiral";
 /** How long a dead unit stays on the board, per family (wrecks and crashes need time to read). */
 function deathMs(entity: CombatEntity): number {
@@ -6454,6 +6647,11 @@ const INFANTRY_BUILDS: Partial<Record<EntityKind, Partial<InfantryBuild>>> = {
   medic: { girth: 0.86, stature: 1.06 },
   engineer: { girth: 1.08, stature: 0.96 },
   droneop: { girth: 0.84, stature: 1.08 },
+  bazooka: { girth: 1.04, stature: 1.0, lean: 0.1 },
+  builder: { girth: 1.14, stature: 0.94 },
+  demo: { girth: 0.96, stature: 0.98, lean: 0.12 },
+  oiler: { girth: 1.06, stature: 0.96 },
+  springer: { girth: 0.8, stature: 1.1, lean: 0.06 },
 };
 
 const DEFAULT_BUILD: InfantryBuild = { girth: 1, stature: 1, lean: 0 };
@@ -6521,7 +6719,8 @@ export function weaponFamily(kind: EntityKind): WeaponFamily {
   if (kind === "grenadier" || kind === "mortar") return "launcher";
   if (kind === "flamer") return "flamer";
   if (kind === "sapper") return "shotgun";
-  if (kind === "medic" || kind === "droneop") return "pistol";
+  if (kind === "medic" || kind === "droneop" || kind === "builder" || kind === "demo" || kind === "oiler" || kind === "springer") return "pistol";
+  if (kind === "bazooka") return "launcher";
   if (kind === "tank" || kind === "artillery" || kind === "exturret") return "cannon";
   return "rifle";
 }
@@ -6721,6 +6920,11 @@ function infantryPalette(kind: string): { body: number; trim: number; pack: numb
     case "droneop": return { body: 0x7f9fc4, trim: 0x3d4550, pack: 0x2c3f52 };
     case "jumper": return { body: 0x4e6b8c, trim: 0x2b3036, pack: 0x2f3a46 };
     case "sapper": return { body: 0x9c8c4c, trim: 0x46422f, pack: 0x4a3f1e };
+    case "bazooka": return { body: 0x5f7a4a, trim: 0x3a3a2e, pack: 0x4a4a32 };
+    case "builder": return { body: 0xd2792a, trim: 0x4a3c30, pack: 0x5a4632 };
+    case "demo": return { body: 0x8a2f2a, trim: 0x3b2c2c, pack: 0x5a1f1c };
+    case "oiler": return { body: 0x3a3f4a, trim: 0x25272e, pack: 0x1c1c22 };
+    case "springer": return { body: 0xe0c030, trim: 0x4a4528, pack: 0x7a6a1c };
     default: return { body: 0x6c7052, trim: 0x35424a, pack: 0x3a4438 };
   }
 }

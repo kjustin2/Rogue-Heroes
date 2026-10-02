@@ -348,6 +348,67 @@ app.whenReady().then(async () => {
         }
         continue;
       }
+      if (s === "fieldhands") {
+        // The 2026-10-03 units and objects: the roster close up, every placement standing, the place ghost,
+        // the command card of a field hand, an oil fire, and a shove filmstrip (stagger, not a half-flip).
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal", "vanguard")`);
+        await sleep(2200);
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("player", 9000);
+          ["bazooka","builder","demo","oiler","springer","medic","engineer"].forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -20 + i * 1.5, z: 0 }); u.yaw = Math.PI + 0.35; });
+          r.setView({ x: -17, z: -0.8, zoom: 0.22, pitch: 0.4, yaw: 0.5 }); })()`);
+        await sleep(2500); await shot("fieldhands-lineup");
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.setView({ x: -17, z: -0.8, zoom: 0.16, pitch: 0.34, yaw: -0.5 }); })()`);
+        await sleep(1200); await shot("fieldhands-lineup-back");
+        // Everything placed, in one frame.
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect();
+          const place = (kind, at, to) => { const u = sim.debugSpawn(kind, "player", at); sim.debugSelect(u.id); sim.queuePlace(to); return u; };
+          place("springer", { x: -4, z: 6 }, { x: -2, z: 6 }); sim.pads[0].yaw = Math.PI / 2; place("springer", { x: 8, z: 6 }, { x: 6, z: 6 }); sim.pads[1].yaw = -Math.PI / 2;
+          place("oiler", { x: -4, z: -2 }, { x: -1, z: -2 }); place("demo", { x: 6, z: -2 }, { x: 8, z: -2 }); place("builder", { x: 2, z: -8 }, { x: 4, z: -8 });
+          sim.debugStructure("mortarpit", "player", { x: 12, z: 4 });
+          r.setView({ x: 3, z: 0, zoom: 0.55, pitch: 0.75, yaw: 0.3 }); })()`);
+        await sleep(1500); await shot("fieldhands-placed");
+        // Place ghost + the field hand's card (HUD on).
+        await js(`(() => { const r = window.__rht, sim = r.sim; const u = sim.debugSpawn("springer", "player", { x: -8, z: 12 }); sim.debugSelect(u.id); r.setIntent("place"); r.hoverGround({ x: -6, z: 12 }); r.setView({ x: -7, z: 12, zoom: 0.7, pitch: 0.8, yaw: 0.25 }); })()`);
+        await sleep(1000); await shot("fieldhands-ghost");
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.setIntent("select"); r.hoverGround(undefined); })()`);
+        await sleep(600); await shot("fieldhands-card");
+        // Oil lit by a blast, then the fire.
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.effect("blast", { x: -1, z: -2 }, { x: -1, z: -2 }, 0xffffff, 0.5, 1); r.setView({ x: -1, z: -2, zoom: 0.5, pitch: 0.7, yaw: 0.3 }); })()`);
+        await sleep(900); await shot("fieldhands-oilfire");
+        // A shove, six frames: lean and recover.
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(2000);
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); const a = sim.debugSpawn("soldier", "player", { x: -3, z: 0 }); const b = sim.debugSpawn("soldier", "enemy", { x: -0.6, z: 0 }); for (const p of b.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0; b.status.canShoot = false; b.status.canMove = false; sim.debugSelect(a.id); sim.queueShove(b.id); r.setView({ x: 0, z: 0, zoom: 0.35, pitch: 0.5, yaw: 0.9 }); sim.endTurn(); })()`);
+        for (let i = 0; i < 6; i += 1) { await sleep(i === 0 ? 700 : 170); await shot("shove-" + i); }
+        continue;
+      }
+      if (s === "mounts") {
+        // Crewing a gun: Man armed (free posts pulse), the walk-up and seat, then the crewed post selected.
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(2200);
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); const post = sim.entities.find(e => e.kind === "gunpost"); const u = sim.debugSpawn("soldier", "player", { x: post.position.x - 7, z: post.position.z }); sim.debugSelect(u.id); r.setIntent("man"); r.setView({ x: post.position.x - 3, z: post.position.z, zoom: 0.55, pitch: 0.7, yaw: 0.3 }); window.__crew = u.id; window.__post = post.id; })()`);
+        await sleep(1100); await shot("mounts-man-armed");
+        await js(`(() => { const r = window.__rht, sim = r.sim; const post = sim.entity(window.__post); r.hud ? 0 : 0; sim.queueMan(post.id); r.setIntent("select"); sim.endTurn(); })()`);
+        for (let i = 0; i < 3; i += 1) { await sleep(i === 0 ? 900 : 700); await shot("mounts-walk-" + i); }
+        await sleep(3000);
+        await js(`(() => { const r = window.__rht, sim = r.sim; const post = sim.entity(window.__post); sim.debugSelect(post.id); r.setView({ x: post.position.x, z: post.position.z, zoom: 0.5, pitch: 0.7, yaw: 0.3 }); })()`);
+        await sleep(1000); await shot("mounts-crewed");
+        continue;
+      }
+      if (s === "audioprobe") {
+        // Every map picks one of ITS three tracks, and every sample + track file is served (no 404s).
+        const pools = { dustbowl: ["desert_loop","negev_desert","negev_fight"], ironworks: ["factory","wowchapter1","wowchapter3"], verdant: ["harvest_season","fantasy_orchestral","wowchapter2"], causeway: ["long_winter","november_snow","crystal_cave"], karak: ["epic_boss","battleThemeA","crystal_cave"], crossfire: ["march2","battleThemeA","wowchapter2"] };
+        for (const map of Object.keys(pools)) {
+          await js(`window.__rht.startBattle(${JSON.stringify(map)}, "destroy", "normal")`);
+          await sleep(1500);
+          const track = await js(`window.__rht.musicTrack()`);
+          const ok = await js(`fetch(new URL("audio/music/" + window.__rht.musicTrack() + ".ogg", document.baseURI)).then((r) => r.status)`);
+          console.log("audioprobe", map, track, pools[map].includes(track) ? "in-pool" : "WRONG POOL", "http", ok);
+        }
+        const missing = await js(`(async () => { const names = ["rifle","carbine","pistol","pellet","bolt_01","cannon_01","blast_01","boom_01","hitmetal_000","hitpunch_000","hitsoft_000","hitplate_000","hitwood_000"]; const bad = []; for (const n of names) { const r = await fetch(new URL("audio/sfx/" + n + ".ogg", document.baseURI)); if (!r.ok) bad.push(n); } return JSON.stringify(bad); })()`);
+        console.log("audioprobe missing sfx:", missing);
+        continue;
+      }
       if (s === "glprobe") {
         // GL ERRORS PER FRAME (2026-10-01): wraps blitFramebuffer and polls getError over 2s of a battle.
         // A depth blit failed 144 times a second for weeks unseen (see stage.ts, NO DEPTH BLIT); any

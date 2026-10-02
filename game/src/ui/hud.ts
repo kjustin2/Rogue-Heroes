@@ -17,6 +17,7 @@ import {
   isTechUnlocked,
   troopSheet,
   unitStats,
+  placeSpecFor,
   modeDef,
   type TroopKind,
   type TechNode,
@@ -80,6 +81,10 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "unload", label: "Unload", tip: "Transport / APC. Click ground to set passengers down (a transport flies there; an APC drops the ramp beside itself). 1 AP." },
   { id: "deploy", label: "Deploy", tip: "Artillery only. Outriggers down (whole turn): the gun fires only deployed, deploys itself any turn it holds still, and packing up to move costs a turn." },
   { id: "recon", label: "Recon", tip: "Drone Operator only. Whole turn: next turn every enemy unit's planned order is shown on the board." },
+  { id: "treat", label: "Heal", tip: "Medic: walk up to a hurt infantry unit and restore every part to full (wrecked parts to a third). Engineer: the same for machines, emplacements and the base. 1 AP." },
+  { id: "man", label: "Man", tip: "Walk up to a free Gun Post or Mortar Pit and crew it. It fires from next turn, with your trooper's turn spent on it. 1 AP." },
+  { id: "dismount", label: "Leave", tip: "Let the crew step away from this emplacement. It stops firing until someone crews it again." },
+  { id: "place", label: "Place", tip: "Set this unit's item down within reach. T turns it. 1 AP and its cost." },
 ];
 
 // WHAT THE CARD DOES, AS AN INSTRUCTION. The catalog tips above are reference text (what the
@@ -96,6 +101,9 @@ const ACTION_HOW: Partial<Record<Intent, string>> = {
   defend: "Crouch where you stand: better accuracy, harder to head-shot, slower next move. 1 AP.",
   mine: "Plant a hidden mine at the sapper's feet; enemies that step on it take a blast. $15 + 1 AP.",
   load: "Select Load, then click a friendly ground unit to lift it aboard. 1 AP.",
+  man: "Select Man, then click a Gun Post or Mortar Pit in reach. It fires from next turn.",
+  treat: "Select it, then click a hurt ally in reach: the unit walks over and restores every part. 1 AP.",
+  place: "Select it, click ground within reach (T turns it). Set down at once; costs 1 AP and money.",
   unload: "Select Unload, then click ground to fly there and set passengers down. 1 AP.",
 };
 
@@ -114,6 +122,10 @@ export interface HudCallbacks {
   queueGrenadePart(id: string, partId: string): boolean;
   queueGrenadeAt(destination: Vec2): boolean;
   queueSmokeAt(destination: Vec2): boolean;
+  queueTreat(id: string): boolean;
+  queueMan(id: string): boolean;
+  queueDismount(): boolean;
+  queuePlace(destination: Vec2): boolean;
   queueBombDrop(at?: Vec2): boolean;
   queueLoad(passengerId: string): boolean;
   queueUnload(destination: Vec2): boolean;
@@ -209,6 +221,22 @@ export class Hud {
       }
       return;
     }
+    // Man: clicking an emplacement sends the trooper to crew it.
+    if (this.action === "man" && this.sim.phase === "command") {
+      if (this.callbacks.queueMan(entity.id)) {
+        this.action = "select";
+        this.callbacks.setIntent("select");
+      }
+      return;
+    }
+    // Heal / Repair: clicking a friendly sends the medic or engineer to it.
+    if (this.action === "treat" && this.sim.phase === "command") {
+      if (this.callbacks.queueTreat(entity.id)) {
+        this.action = "select";
+        this.callbacks.setIntent("select");
+      }
+      return;
+    }
     if (entity.kind === "cover" && this.action === "move" && this.sim.selected?.kind === "tank") {
       if (this.callbacks.queueMoveToCover(entity.id)) {
         this.action = "select";
@@ -230,7 +258,9 @@ export class Hud {
       return;
     }
     if (entity.team === "player") {
-      this.chooseUnit(id);
+      // Clicking a crewman picks the GUN it is crewing: that is the thing with the turn to spend.
+      const gun = this.sim.entities.find((e) => e.occupantId === id && e.team === "player" && e.status.alive);
+      this.chooseUnit(gun ? gun.id : id);
     } else {
       this.chooseTarget(id);
     }
@@ -287,6 +317,12 @@ export class Hud {
   }
 
   setAction(action: Intent): void {
+    // Leave is instant: the crew steps out and the card closes.
+    if (action === "dismount") {
+      this.callbacks.queueDismount();
+      this.update();
+      return;
+    }
     // Picking any unit action cancels an in-progress defense placement or strike call.
     if (this.sim.pendingBuild) this.callbacks.cancelBuild();
     if (this.sim.pendingDeploy) this.callbacks.cancelDeploy();
@@ -354,6 +390,14 @@ export class Hud {
         this.action = "select";
         this.targetId = undefined;
         this.targetPartId = undefined;
+        this.callbacks.setIntent("select");
+      }
+      return;
+    }
+    // Place: the unit sets its item down at the clicked spot (inside its reach ring).
+    if (this.action === "place" && this.sim.phase === "command") {
+      if (this.callbacks.queuePlace(destination)) {
+        this.action = "select";
         this.callbacks.setIntent("select");
       }
       return;
@@ -1150,6 +1194,8 @@ function orderPlanner(
     action === "mine" ? mineState(actor, sim) : "",
     action === "recon" ? reconState(actor, sim) : "",
     action === "deploy" ? deployState(actor, sim) : "",
+    action === "treat" ? treatState(actor, sim) : "",
+    action === "place" ? placeState(actor, sim) : "",
     // With nothing selected the bar used to say the same thing three times over ("No unit
     // selected" / "Select a unit" / "Pick squad") across a full-height panel. The header already
     // carries that state, so the body only appears when there is something to say about a target.
@@ -1180,9 +1226,11 @@ function orderPlanner(
               // An aircraft's "grenade" verb is a bomb drop; relabel it so the air unit reads right.
               // ...and a jump trooper's move is a JUMP: the verb on the button is the unit's identity.
               const jumps = option.id === "move" && actor?.kind === "jumper";
-              const label = option.id === "grenade" ? bombVerb(actor) : jumps ? "Jump" : option.label;
+              const placing = option.id === "place" && actor ? placeSpecFor(actor.kind) : undefined;
+              const label = option.id === "grenade" ? bombVerb(actor) : jumps ? "Jump" : placing ? placing.label : option.id === "treat" && actor?.kind === "engineer" ? "Repair" : option.label;
               const tip = option.id === "grenade" && actor?.flying
                 ? "Select Bomb, then Confirm to drop straight down on whatever is beneath the aircraft. Cannot hit aircraft."
+                : placing ? PLACE_TIP[placing.kind]
                 : jumps ? "Select Jump, then click any dry ground in range — over cliffs, water and walls. Airborne for the leap, so flak can catch it. 1 AP."
                 : ACTION_HOW[option.id] ?? option.tip;
               // A disabled card states the REASON. Silently dead buttons are how a player concludes
@@ -1212,9 +1260,13 @@ function orderHint(actor: CombatEntity | undefined, focusedAction: boolean, sim:
       ? "Resolving…"
       : !actor.status.alive
         ? "Out of action."
-        : actor.commandPoints <= 0 && !focusedAction
-          ? "Done. Space ends the turn."
-          : "";
+        : (actor.kind === "gunpost" || actor.kind === "mortarpit") && !actor.occupantId
+          ? "No crew. Pick a trooper, choose Man, click this."
+          : (actor.kind === "gunpost" || actor.kind === "mortarpit") && actor.commandPoints > 0 && !focusedAction
+            ? "Crewed. Shoot, or Leave."
+            : actor.commandPoints <= 0 && !focusedAction
+              ? "Done. Space ends the turn."
+              : "";
   return text ? `<p class="order-hint">${escapeHtml(text)}</p>` : "";
 }
 
@@ -1584,6 +1636,34 @@ function mineState(actor: CombatEntity | undefined, sim: TacticalSim): string {
       Plant Mine
       <span>$15</span>
     </button>
+  `;
+}
+
+const PLACE_TIP: Record<string, string> = {
+  charge: "Select Charge, click ground in reach. Sets a satchel bomb: it blows after 3 turns, or the instant anything shoots it. Huge blast, hurts everyone. $45 + 1 AP.",
+  pad: "Select Pad, click ground in reach (T turns it). Infantry that step or land on it are launched 8m the way it points. $40 + 1 AP.",
+  oil: "Select Slick, click ground in reach. A wide oil puddle: any blast, fire or round that lands in it sets it ablaze for 3 turns. $50 + 1 AP.",
+  barrier: "Select Barrier, click ground in reach (T turns it). Raises a short, tough wall. $40 + 1 AP.",
+};
+
+function treatState(actor: CombatEntity | undefined, sim: TacticalSim): string {
+  const reason = actor ? sim.treatFailureReason(actor) : "Select a medic or engineer first";
+  return `
+    <div class="target-summary ${reason ? "blocked" : ""}">
+      <strong>${reason ? "Unavailable" : actor?.kind === "engineer" ? "Pick a machine to repair" : "Pick an ally to heal"}</strong>
+      <span>${reason ? escapeHtml(reason) : "Click a hurt ally inside the ring."}</span>
+    </div>
+  `;
+}
+
+function placeState(actor: CombatEntity | undefined, sim: TacticalSim): string {
+  const spec = actor ? placeSpecFor(actor.kind) : undefined;
+  const reason = actor ? sim.placeFailureReason(actor) : "Select a unit first";
+  return `
+    <div class="target-summary ${reason ? "blocked" : ""}">
+      <strong>${reason ? "Unavailable" : `Place ${escapeHtml(spec?.label ?? "item")}`}</strong>
+      <span>${reason ? escapeHtml(reason) : `Click ground inside the ring.${spec?.rotatable ? " T turns it." : ""}`}</span>
+    </div>
   `;
 }
 
@@ -2201,6 +2281,10 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
   if (action === "defend") return !isInfantryKind(actor.kind) || !actor.status.canMove;
   if (action === "mine") return Boolean(sim.mineFailureReason(actor));
   if (action === "smoke") return Boolean(sim.smokeFailureReason(actor));
+  if (action === "dismount") return !actor.occupantId;
+  if (action === "man") return !actor.status.canMove || !sim.entities.some((e) => (e.kind === "gunpost" || e.kind === "mortarpit") && !sim.manFailureReason(actor, e));
+  if (action === "treat") return Boolean(sim.treatFailureReason(actor));
+  if (action === "place") return Boolean(sim.placeFailureReason(actor));
   if (action === "load") return !isCarrier(actor) || !actor.status.canMove || (actor.passengerIds?.length ?? 0) >= 2;
   if (action === "unload") return !isCarrier(actor) || !(actor.passengerIds?.length);
   if (action === "recon") return Boolean(sim.reconFailureReason(actor));
@@ -2232,10 +2316,15 @@ function hasStrikeWeapon(actor: CombatEntity): boolean {
  */
 function actionApplicable(action: Intent, actor: CombatEntity | undefined): boolean {
   if (!actor) return false;
+  if (action === "move" && isDefenseKind(actor.kind)) return false; // emplacements never move: no dead card
   if (action === "ram") return actor.kind === "tank";
   if (action === "melee" || action === "push" || action === "defend") return isInfantryKind(actor.kind);
   if (action === "mine") return actor.kind === "sapper";
   if (action === "smoke") return actor.kind === "mortar";
+  if (action === "dismount") return actor.kind === "gunpost" || actor.kind === "mortarpit";
+  if (action === "treat") return actor.kind === "medic" || actor.kind === "engineer";
+  if (action === "man") return isInfantryKind(actor.kind) && actor.kind !== "medic" && actor.kind !== "engineer";
+  if (action === "place") return Boolean(placeSpecFor(actor.kind));
   if (action === "load" || action === "unload") return isCarrier(actor);
   if (action === "recon") return actor.kind === "droneop";
   if (action === "deploy") return actor.kind === "artillery";
@@ -2257,6 +2346,10 @@ function actionDisabledReason(action: Intent, actor: CombatEntity | undefined, s
   if (action === "grenade" && actor.grenades <= 0) return `${actor.name} is out of grenades.`;
   if (action === "mine") return sim.mineFailureReason(actor) ?? undefined;
   if (action === "smoke") return sim.smokeFailureReason(actor) ?? undefined;
+  if (action === "dismount") return "No crew to send away";
+  if (action === "man") return !actor.status.canMove ? `${actor.name} cannot move` : "No free Gun Post or Mortar Pit in reach";
+  if (action === "treat") return sim.treatFailureReason(actor) ?? undefined;
+  if (action === "place") return sim.placeFailureReason(actor) ?? undefined;
   if (action === "load" && (actor.passengerIds?.length ?? 0) >= 2) return `${actor.kind === "apc" ? "The APC" : "The transport"} is full.`;
   if (action === "unload" && !(actor.passengerIds?.length)) return `${actor.kind === "apc" ? "The APC" : "The transport"} is empty.`;
   if (action === "recon") return sim.reconFailureReason(actor) ?? undefined;
@@ -2272,6 +2365,9 @@ function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: Tac
   if (action === "defend") return isInfantryKind(actor.kind) && actor.status.canMove;
   if (action === "mine") return actor.kind === "sapper";
   if (action === "smoke") return actor.kind === "mortar" && actor.status.canShoot;
+  if (action === "man") return isInfantryKind(actor.kind) && actor.kind !== "medic" && actor.kind !== "engineer";
+  if (action === "treat") return actor.kind === "medic" || actor.kind === "engineer";
+  if (action === "place") return Boolean(placeSpecFor(actor.kind));
   if (action === "load" || action === "unload") return isCarrier(actor);
   if (action === "recon") return actor.kind === "droneop";
   if (action === "deploy") return actor.kind === "artillery";
@@ -2288,6 +2384,8 @@ function orderSummary(order: TacticalOrder, sim: TacticalSim): string {
   if (order.kind === "ram") return `Queued: ram ${target?.name ?? "target"}`;
   if (order.kind === "load") return `Queued: ${sim.entity(order.actorId)?.kind === "apc" ? "board" : "airlift"} ${target?.name ?? "unit"}`;
   if (order.kind === "unload") return "Queued: unload";
+  if (order.kind === "man") return `Queued: man ${target?.name ?? "post"}`;
+  if (order.kind === "treat") return `Queued: ${sim.entity(order.actorId)?.kind === "medic" ? "heal" : "repair"} ${target?.name ?? "ally"}`;
   if (order.kind === "recon") return "Queued: recon pulse";
   if (order.kind === "deploy") return "Queued: deploy";
   if (order.kind === "melee" && order.shove) return `Queued: push ${target?.name ?? "target"}`;
@@ -2308,6 +2406,8 @@ function cpPips(entity: CombatEntity): string {
 
 function actionCostLabel(action: Intent, actor: CombatEntity | undefined): string {
   if (action === "grenade" && actor) return `${actor.grenades}/${actor.maxGrenades} G`;
+  const spec = action === "place" && actor ? placeSpecFor(actor.kind) : undefined;
+  if (spec) return `$${spec.cost}`;
   return "1 AP";
 }
 

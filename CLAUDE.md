@@ -119,4 +119,7 @@ always run muted. Scratch diagnostics go in `game/scripts/_*.mjs` and are delete
   must equal the TS union in `models.ts` (`KitPart` / `PropsPart` / `VehiclesPart`).
 - **Saves**: localStorage keys `rht.*` (`docs/architecture.md`, persistence). Electron serves `dist/` over
   `app://rht`: never a random-port server (origin-keyed saves would vanish).
+- **Audio**: recorded CC0 sound effects and map music live in `game/public/audio` (credits in its `ATTRIBUTION.md`; rebuild with
+  `npm run art:audio`, needs ffmpeg). Every sound keeps its synthesized voice and the music keeps its procedural layers, so the game
+  runs with the folder empty. Effects and music are separate buses/sliders (`docs/game-systems.md`).
 - **`window.__rht` is the test surface**: keep it in sync when a smoke needs a new sim feature.

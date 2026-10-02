@@ -4,6 +4,7 @@ import { TROOP_CATALOG, SUPPORT_POWERS } from "../game/units";
 import {
   createApc, createArtillery, createBomber, createDroneOp, createEngineer, createExTurret, createFlak,
   createBase, createFlamer, createGrenadier, createGunship, createHeavy, createInterceptor, createJumper, createMedic, createMortar,
+  createBazooka, createBuilder, createDemo, createOiler, createSpringer,
   createSapper, createScout, createSniper, createSoldier, createStriker, createTank, createTransport, createTurret,
   type CombatEntity,
 } from "../game/damageModel";
@@ -29,11 +30,12 @@ const MAKERS: Record<TroopKind, Maker> = {
   jumper: createJumper, flamer: createFlamer, sapper: createSapper, tank: createTank, apc: createApc,
   artillery: createArtillery, flak: createFlak, gunship: createGunship, interceptor: createInterceptor,
   bomber: createBomber, transport: createTransport,
+  bazooka: createBazooka, builder: createBuilder, demo: createDemo, oiler: createOiler, springer: createSpringer,
 };
 
 /** How each troop's main gun is exercised. `null` = the kind has no gun, and says why. */
 const GUN: Record<TroopKind, { dist?: number; air?: boolean } | { none: string }> = {
-  soldier: {}, scout: {}, sniper: {}, heavy: {}, engineer: {}, droneop: {}, jumper: {},
+  soldier: {}, scout: {}, sniper: {}, heavy: {}, engineer: {}, droneop: {}, jumper: {}, bazooka: {}, builder: {}, demo: {}, oiler: {}, springer: {},
   medic: { dist: 6 }, flamer: { dist: 5 }, sapper: { dist: 5 }, grenadier: {}, mortar: {},
   tank: {}, apc: {}, artillery: { dist: 14 }, flak: { air: true },
   gunship: { air: true }, interceptor: { air: true },

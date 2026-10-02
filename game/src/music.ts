@@ -1,5 +1,9 @@
-// 100% procedural ambient music, layered by game state (no asset files, matching the
-// synthesized SFX layer). A slow detuned drone + filtered wind runs everywhere; a sparse
+// MUSIC. Recorded CC0 tracks (public/audio/music, see ATTRIBUTION.md) play per scene: the menus draw
+// from one pool, and each map from its own three (one is picked at random when the battle starts, the
+// next follows when it ends). With the folder empty or a file missing the procedural layers below take
+// over, so the game always has music. Layer notes follow.
+//
+// The procedural layers: 100% procedural ambient music, layered by game state. A slow detuned drone + filtered wind runs everywhere; a sparse
 // pentatonic pulse joins during the command phase; kick/hat/bass percussion drives the
 // resolve phase; everything fades for the victory/defeat stingers.
 //
@@ -10,6 +14,17 @@
 import { sfx } from "./audio";
 
 export type MusicState = "menu" | "command" | "resolve" | "end";
+
+/** The track pools. Three per map, themed to it; the menus share one pool. File stems under audio/music. */
+export const MENU_TRACKS = ["wowmenu", "fantasy_orchestral", "negev_desert"];
+export const MAP_TRACKS: Record<string, string[]> = {
+  dustbowl: ["desert_loop", "negev_desert", "negev_fight"],
+  ironworks: ["factory", "wowchapter1", "wowchapter3"],
+  verdant: ["harvest_season", "fantasy_orchestral", "wowchapter2"],
+  causeway: ["long_winter", "november_snow", "crystal_cave"],
+  karak: ["epic_boss", "battleThemeA", "crystal_cave"],
+  crossfire: ["march2", "battleThemeA", "wowchapter2"],
+};
 
 // A-minor pentatonic pool for the command-phase pulse.
 const PULSE_NOTES = [220, 261.63, 293.66, 329.63, 392];
@@ -28,6 +43,63 @@ export class MusicDirector {
   private nextPulseAt = 0;
   private nextStepAt = 0;
   private step = 0;
+  // ---- recorded music ----
+  private scene = "";
+  private pool: string[] = MENU_TRACKS;
+  private current = "";
+  private el: HTMLAudioElement | undefined;
+  private fileGain: GainNode | undefined;
+  private filesBroken = false;
+
+  /** Name the scene ("menu" or a map id): a new scene picks a fresh random track from its pool. */
+  setScene(scene: string): void {
+    if (scene === this.scene) return;
+    this.scene = scene;
+    this.pool = scene === "menu" ? MENU_TRACKS : MAP_TRACKS[scene] ?? MENU_TRACKS;
+    this.current = "";
+    this.nextTrack(true);
+  }
+
+  private nextTrack(force = false): void {
+    if (this.filesBroken) return;
+    const options = this.pool.filter((t) => t !== this.current);
+    const pick = options[Math.floor(Math.random() * options.length)] ?? this.pool[0];
+    this.current = pick;
+    if (this.el) {
+      this.el.src = new URL(`audio/music/${pick}.ogg`, document.baseURI).href;
+      if (force || !this.el.paused) void this.el.play().catch(() => undefined);
+    }
+  }
+
+  /** The track now playing (for the debug seam). */
+  get nowPlaying(): string { return this.filesBroken ? "" : this.current; }
+
+  private buildFiles(ctx: AudioContext): void {
+    if (this.el || typeof Audio === "undefined") return;
+    const el = new Audio();
+    el.preload = "auto";
+    el.crossOrigin = "anonymous";
+    this.fileGain = ctx.createGain();
+    this.fileGain.gain.value = 1;
+    this.fileGain.connect(this.out!);
+    ctx.createMediaElementSource(el).connect(this.fileGain);
+    el.addEventListener("ended", () => this.nextTrack(true));
+    el.addEventListener("error", () => {
+      // A missing file: stop trying and let the procedural layers carry the music.
+      this.filesBroken = true;
+      this.setProceduralLevel(1);
+    });
+    el.addEventListener("playing", () => this.setProceduralLevel(0));
+    this.el = el;
+    this.nextTrack(true);
+  }
+
+  /** The procedural drone/wind/pulse/drums are the fallback: silent while a recorded track plays. */
+  private proceduralLevel = 1;
+  private setProceduralLevel(level: number): void {
+    this.proceduralLevel = level;
+    this.applyLayers();
+  }
 
   setVolume(volume: number): void {
     this.volume = Math.max(0, Math.min(1, volume));
@@ -37,27 +109,38 @@ export class MusicDirector {
   setState(state: MusicState): void {
     if (state === this.state) return;
     this.state = state;
+    this.applyLayers();
+  }
+
+  private applyLayers(): void {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
+    const state = this.state;
+    const k = this.proceduralLevel;
     // Cross-fade the layers to the new state over ~1.2s.
-    this.droneGain?.gain.setTargetAtTime(state === "end" ? 0 : 1, t, 0.5);
-    this.windGain?.gain.setTargetAtTime(state === "end" ? 0 : 1, t, 0.5);
-    this.pulseGain?.gain.setTargetAtTime(state === "command" || state === "menu" ? 1 : 0, t, 0.4);
-    this.drumGain?.gain.setTargetAtTime(state === "resolve" ? 1 : 0, t, 0.3);
+    this.droneGain?.gain.setTargetAtTime(state === "end" ? 0 : k, t, 0.5);
+    this.windGain?.gain.setTargetAtTime(state === "end" ? 0 : k, t, 0.5);
+    this.pulseGain?.gain.setTargetAtTime(state === "command" || state === "menu" ? k : 0, t, 0.4);
+    this.drumGain?.gain.setTargetAtTime(state === "resolve" ? k : 0, t, 0.3);
     // Resolve pushes the drone filter open a touch — more edge under fire.
     this.droneFilter?.frequency.setTargetAtTime(state === "resolve" ? 620 : 360, t, 0.8);
+    // A recorded track ducks under the result stinger and rides a little lower while orders resolve.
+    this.fileGain?.gain.setTargetAtTime(state === "end" ? 0.22 : state === "resolve" ? 0.8 : 1, t, 0.6);
   }
 
   /** Called every frame: builds the graph once audio is unlocked, then schedules ahead. */
   update(): void {
     if (!this.ctx) {
       const ctx = sfx.audioContext;
-      const master = sfx.masterGain;
-      if (!ctx || !master) return;
-      this.build(ctx, master);
+      const bus = sfx.musicBus;
+      if (!ctx || !bus) return;
+      this.build(ctx, bus);
     }
     const ctx = this.ctx!;
     if (ctx.state !== "running") return;
+    // Recorded music waits for the unlock + an unmuted session (automation never plays a track).
+    if (this.el && this.el.paused && !sfx.isMuted && !this.filesBroken && this.el.src) void this.el.play().catch(() => undefined);
+    if (this.el && !this.el.paused && sfx.isMuted) this.el.pause();
     const horizon = ctx.currentTime + 0.6;
     while (this.nextPulseAt < horizon) this.schedulePulse();
     while (this.nextStepAt < horizon) this.scheduleStep();
@@ -68,6 +151,7 @@ export class MusicDirector {
     this.out = ctx.createGain();
     this.out.gain.value = this.volume;
     this.out.connect(master);
+    this.buildFiles(ctx);
 
     // Drone: two saws an octave apart, detuned, through a slow-moving lowpass.
     this.droneGain = ctx.createGain();

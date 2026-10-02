@@ -66,13 +66,13 @@ export function projectileFamily(p: Projectile): ProjectileFamily {
   // aircraft cannon and flak fire warm MG tracers now; the base relay throws a real shell.
   if (p.kind === "bolt") return src === "base" ? "tank" : "mg";
   if (p.kind === "grenade") {
-    if (src === "mortar") return p.smoke ? "smoke" : "mortar";
+    if (src === "mortar" || src === "mortarpit") return p.smoke ? "smoke" : "mortar";
     if (src === "grenadier") return "launcher";
     if (src && isAirKind(src)) return "bomb";
     return "grenade";
   }
   if (src === "sniper") return "sniper";
-  if (src === "heavy") return "mg";
+  if (src === "heavy" || src === "gunpost") return "mg";
   if (src === "sapper") return "pellet";
   if (src === "medic" || src === "droneop" || src === "striker") return "pistol";
   if (src === "flamer") return "flame";

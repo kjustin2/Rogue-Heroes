@@ -1,8 +1,27 @@
-// A tiny WebAudio sound-effects layer. Everything is synthesized at runtime (no asset files)
-// so it stays self-contained. All calls are safe no-ops until the AudioContext is unlocked by
-// a user gesture, and respect the mute/volume settings.
+// A tiny WebAudio sound-effects layer. Real recorded samples (public/audio/sfx, CC0, see
+// public/audio/ATTRIBUTION.md) play when they have loaded; every sound still has its synthesized
+// voice underneath, so the game is complete (and silent-safe) with the folder empty. All calls are
+// safe no-ops until the AudioContext is unlocked by a user gesture, and respect the mute/volume settings.
+//
+// Two buses, so the settings are independent: `master` is SOUND EFFECTS (the Volume slider), and
+// `musicBus` goes straight to the speakers (the Music slider lives inside the music layer). Mute gates both.
 
 type ShotKind = "rifle" | "shell" | "bolt" | "grenade";
+
+/** Sample groups: file stems under audio/sfx, numbered 01.. (or 000..) per group. */
+const SAMPLE_GROUPS: Record<string, string[]> = {
+  rifle: ["rifle"], carbine: ["carbine"], pistol: ["pistol"], pellet: ["pellet"],
+  bolt: ["bolt_01", "bolt_02", "bolt_03"],
+  cannon: ["cannon_01", "cannon_02", "cannon_03", "cannon_04", "cannon_05"],
+  blast: ["blast_01", "blast_02", "blast_03", "blast_04", "blast_05", "blast_06", "blast_07", "blast_08", "blast_09", "blast_10"],
+  boom: ["boom_01", "boom_02", "boom_03", "boom_04", "boom_05", "boom_06"],
+  hitmetal: ["hitmetal_000", "hitmetal_001", "hitmetal_002"],
+  hitpunch: ["hitpunch_000", "hitpunch_001", "hitpunch_002"],
+  hitsoft: ["hitsoft_000", "hitsoft_001", "hitsoft_002"],
+  hitplate: ["hitplate_000", "hitplate_001", "hitplate_002"],
+  hitwood: ["hitwood_000", "hitwood_001", "hitwood_002"],
+};
+const MAX_VOICES = 10;
 
 export class Sfx {
   private ctx: AudioContext | undefined;
@@ -10,6 +29,10 @@ export class Sfx {
   private muted = false;
   private volume = 0.6;
   private lastAt = 0;
+  private musicGate: GainNode | undefined;
+  private readonly samples = new Map<string, AudioBuffer[]>();
+  private voices = 0;
+  private lastPlayed = new Map<string, number>();
 
   // Create the audio graph on the first user gesture (browsers block autoplay otherwise).
   unlock(): void {
@@ -24,6 +47,10 @@ export class Sfx {
       this.master = this.ctx.createGain();
       this.master.gain.value = this.muted ? 0 : this.volume;
       this.master.connect(this.ctx.destination);
+      this.musicGate = this.ctx.createGain();
+      this.musicGate.gain.value = this.muted ? 0 : 1;
+      this.musicGate.connect(this.ctx.destination);
+      void this.loadSamples();
     } catch {
       this.ctx = undefined;
     }
@@ -32,6 +59,49 @@ export class Sfx {
   setMuted(muted: boolean): void {
     this.muted = muted;
     if (this.master) this.master.gain.value = muted ? 0 : this.volume;
+    if (this.musicGate) this.musicGate.gain.value = muted ? 0 : 1;
+  }
+
+  /** Fetch + decode every sample group in the background; a missing file just leaves that sound synthesized. */
+  private async loadSamples(): Promise<void> {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    for (const [group, stems] of Object.entries(SAMPLE_GROUPS)) {
+      const buffers: AudioBuffer[] = [];
+      for (const stem of stems) {
+        try {
+          const response = await fetch(new URL(`audio/sfx/${stem}.ogg`, document.baseURI).href);
+          if (!response.ok) continue;
+          buffers.push(await ctx.decodeAudioData(await response.arrayBuffer()));
+        } catch { /* synthesized fallback */ }
+      }
+      if (buffers.length) this.samples.set(group, buffers);
+    }
+  }
+
+  /** Play a random sample of a group (pitch-jittered, voice-capped). False when the group has not loaded. */
+  private sample(group: string, gain = 1, rate = 1): boolean {
+    const buffers = this.samples.get(group);
+    if (!buffers || !this.ctx || !this.master || this.muted) return buffers ? true : false;
+    const now = this.ctx.currentTime;
+    // A burst of the same sound inside a few ms is one sound (a heavy gunner's ten rounds stay a rattle, not a wall).
+    if (now - (this.lastPlayed.get(group) ?? -1) < 0.035 || this.voices >= MAX_VOICES) return true;
+    this.lastPlayed.set(group, now);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffers[Math.floor(Math.random() * buffers.length)];
+    src.playbackRate.value = rate * (0.93 + Math.random() * 0.14);
+    const env = this.ctx.createGain();
+    env.gain.value = gain;
+    src.connect(env).connect(this.master);
+    this.voices += 1;
+    src.onended = () => { this.voices -= 1; };
+    src.start();
+    return true;
+  }
+
+  /** The bus the music layer plays into (the Music slider lives inside it; mute gates it). */
+  get musicBus(): GainNode | undefined {
+    return this.musicGate;
   }
 
   // Exposed via window.__rht.audioMuted() so smokes can assert test runs are actually silent.
@@ -54,7 +124,17 @@ export class Sfx {
     if (this.master && !this.muted) this.master.gain.value = this.volume;
   }
 
-  shot(kind: ShotKind): void {
+  /** A round leaving a barrel. `source` (the shooter's kind) picks the gun: a marksman's rifle, a pistol, a scattergun, a cannon. */
+  shot(kind: ShotKind, source?: string): void {
+    const group = kind === "shell" ? "cannon"
+      : kind === "bolt" ? "bolt"
+      : kind === "grenade" ? ""
+      : source === "sniper" ? "rifle"
+      : source === "sapper" ? "pellet"
+      : source === "medic" || source === "droneop" || source === "builder" || source === "demo" || source === "oiler" || source === "springer" || source === "striker" ? "pistol"
+      : source === "heavy" || source === "gunpost" ? "bolt"
+      : "carbine";
+    if (group && this.sample(group, kind === "shell" ? 0.85 : 0.7, source === "artillery" || source === "exturret" ? 0.8 : 1)) return;
     if (kind === "shell") this.boom(150, 0.16, 0.5);
     else if (kind === "grenade") this.thunk(220, 0.12);
     else if (kind === "bolt") this.zap(620, 0.09);
@@ -62,17 +142,39 @@ export class Sfx {
   }
 
   impact(): void {
+    const group = ["hitsoft", "hitmetal", "hitplate"][Math.floor(Math.random() * 3)];
+    if (this.sample(group, 0.5)) return;
     this.crack(0.04, 0.35);
   }
 
-  explosion(): void {
+  /** A blow landing (melee). */
+  strike(): void {
+    if (this.sample("hitpunch", 0.75)) return;
+    this.crack(0.05, 0.4);
+  }
+
+  explosion(big = false): void {
+    if (this.sample(big || Math.random() < 0.4 ? "boom" : "blast", big ? 0.95 : 0.75)) return;
     this.boom(90, 0.28, 0.7);
   }
 
   // A heavy object slamming into the ground — toppling pillars/trees.
   crash(): void {
+    if (this.sample("hitwood", 0.9, 0.7)) return;
     this.boom(58, 0.42, 0.62);
     this.crack(0.09, 0.5);
+  }
+
+  /** A bounce pad: a rising spring "boing". */
+  boing(): void {
+    this.blip(260, 0.22, "sine", 0.22);
+    this.blip(520, 0.2, "sine", 0.16, 0.06);
+  }
+
+  /** A treat order landing: a soft two-note chime. */
+  heal(): void {
+    this.blip(660, 0.18, "sine", 0.16);
+    this.blip(880, 0.24, "sine", 0.14, 0.1);
   }
 
   // Strike aircraft flyby: a long filtered-noise sweep that rises then falls.

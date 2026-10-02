@@ -100,6 +100,40 @@ How the factions, the three AI brains and Local 2 Players work, with the measure
 - **Achievements** are four pages (Battles / Kills / Skill / Range), 46 medals with higher tiers; `commander.test.ts`
   asserts a long perfect career earns every one.
 
+## FIELD HANDS, MOUNTED GUNS, HEIGHT, AUDIO (owner batch 2026-10-03)
+
+- **Height is continuous** (`accuracyForShot`): shooter above the target by `d` metres scales the spread by
+  `1/(1+1.1*(d-0.3))` (floor 0.2): 1.2m = half, 3m = a fifth. Below: `1+1.3*(|d|-0.3)` (cap 4): 1.2m = 2x,
+  3m = 3.7x. Aircraft shoot down at no penalty. No tiers.
+- **Heal / Repair** (order `treat`, `sim.queueTreat`): the Medic walks to within 3.2m of a hurt infantry unit and
+  restores EVERY part to full, wrecked non-critical parts to a third; the Engineer ("Mechanic" for Vanguard) does
+  the same for vehicles, aircraft, emplacements and the base. Medic $220, Engineer $220 (the passive aura stays as
+  a trickle). The bot's medics/engineers treat the most valuable wounded ally first (`aiTreatTarget`).
+- **Placing** (`PLACEABLES` in `units.ts`, `sim.queuePlace`, instant, 1 AP + cost, within `reach`, T turns the
+  rotatable ones): Demolitionist **Charge** $45 (a `cover` of kind `charge`: fused 3 turns, blows when shot, huge
+  throwing blast, hurts everyone), Pad Tech **Pad** $40 (zone `sim.pads`: infantry that stop or land on it are launched 8m
+  along its yaw, chains up to 3, ring-out kills), Oil Rigger **Slick** $50 (zone `sim.oilSlicks`: any blast/fire/round
+  ending in it lights it: a burn zone of 18 a turn for 3 turns), Fortifier **Barrier** $40 (two tough `cover` blocks across
+  the facing). Caps per side: 4 charges, 4 pads, 3 slicks, 3 barriers. Pads, slicks and charges ride `serialize()`.
+- **Rocketeer** (`bazooka`, $300): flat rocket, 64 damage, x1.5 against vehicles (`UnitStats.antiArmor`).
+- **Manned emplacements** (`gunpost`, `mortarpit`; defenses $90 / $140): an emplacement acts only while a trooper
+  crews it (`sim.queueMan`; order `man`: walk up, crew; `queueDismount` = the Leave card). A crewed post gets 1 AP a turn,
+  its crew none (`refreshMounts`); a post belongs to whoever crews it; it frees itself if the crew dies or is thrown
+  clear. Every map starts with a mirrored pair of neutral Gun Posts on the flanks (`placeFieldMounts`). Bots crew a free
+  post with a foe inside its reach (`aiMountTarget`); they never build one.
+- **Who gets what:** Vanguard: Mechanic, Pad Tech, Rocketeer, Gun Post. Syndicate: Blaster (demo), Slickster (oil),
+  Rocketeer ("Tank Hunter"), Mortar Pit. Bastion: Engineer, Mason (barriers), Demolisher (demo), Gun Post.
+  The bot does not yet place charges, pads, oil or barriers (deferred, `docs/next-steps.md`).
+- **Balance:** the self-play damage-per-dollar band cannot see a utility unit's worth, so the four field hands are
+  `UNGATED` in `balance.test.ts` (printed, not gated); the Rocketeer is gated.
+- **Audio:** recorded CC0 samples (`public/audio/sfx`) play for gunfire, cannons, blasts and hits, each over its
+  synthesized voice; music is per scene (menus share a pool; each map has three tracks, one picked at random when the
+  battle starts, the next follows when it ends: `MAP_TRACKS` in `music.ts`). Two independent sliders: Sound effects and
+  Music (separate buses, mute gates both). Every file has a procedural fallback. Sources: `public/audio/ATTRIBUTION.md`;
+  rebuild with `npm run art:audio` (needs ffmpeg).
+- **Visuals:** a shove is a stagger (lean and recover, upright on landing); a real throw is a full tumble about the
+  axis across the throw; a pad launch is an upright leap. A queued shot's line ends on the aimed PART (`orderAimPoint`).
+
 ## THREE AI BRAINS (2026-09-22) — difficulty is intelligence first, stats second
 
 `aiProfile()` in sim.ts. Before this, Normal and Hard ran the SAME brain and differed only in stats.

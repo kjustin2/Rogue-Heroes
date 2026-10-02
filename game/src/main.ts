@@ -225,6 +225,10 @@ const hud = new Hud(uiRoot, sim, {
   queueGrenadePart: (id: string, partId: string) => sim.queueGrenadePart(id, partId),
   queueGrenadeAt: (destination) => sim.queueGrenadeAt(destination),
   queueSmokeAt: (destination) => sim.queueSmokeAt(destination),
+  queueTreat: (id: string) => { const ok = sim.queueTreat(id); if (!ok) refused(); return ok; },
+  queueMan: (id: string) => { const ok = sim.queueMan(id); if (!ok) refused(); return ok; },
+  queueDismount: () => { const ok = sim.queueDismount(); if (!ok) refused(); return ok; },
+  queuePlace: (destination) => { const ok = sim.queuePlace(destination); if (!ok) refused(); return ok; },
   queueBombDrop: (at) => { const ok = sim.queueBombDrop(at); if (!ok) refused(); return ok; },
   queueLoad: (passengerId: string) => sim.queueLoad(passengerId),
   queueUnload: (destination) => sim.queueUnload(destination),
@@ -483,7 +487,7 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   // T turns a wall or a line strike while it is being placed (the Rotate button in the placement bar).
-  if (event.code === "KeyT" && ((sim.pendingBuild && ROTATABLE_BUILDS.has(sim.pendingBuild)) || (sim.pendingSupport && LINE_SUPPORTS.has(sim.pendingSupport)))) {
+  if (event.code === "KeyT" && ((sim.pendingBuild && ROTATABLE_BUILDS.has(sim.pendingBuild)) || (sim.pendingSupport && LINE_SUPPORTS.has(sim.pendingSupport)) || (sim.intent === "place" && sim.placeSpec()?.rotatable))) {
     sim.rotatePlacement();
     hud.update();
     return;
@@ -1298,7 +1302,7 @@ function showSettings(): void {
         <button class="menu-toggle ${settings.muted ? "" : "on"}" data-set="mute" type="button">${settings.muted ? "Muted" : "On"}</button>
       </div>
       <div class="settings-row">
-        <label>Volume</label>
+        <label>Sound effects</label>
         <input type="range" min="0" max="100" value="${Math.round(settings.volume * 100)}" data-set="volume" />
       </div>
       <div class="settings-row">
@@ -2094,6 +2098,7 @@ function frameBody(now: number): void {
     : sim.phase === "victory" || sim.phase === "defeat" ? "end"
     : inBattle ? "command" : "menu",
   );
+  music.setScene(inBattle ? sim.mapDef.id : "menu");
   music.update();
   handleEndState();
   syncCameraAssist();
@@ -2188,7 +2193,7 @@ function processBattleEvents(): void {
   for (const projectile of sim.projectiles) {
     if (seenProjectileIds.has(projectile.id)) continue;
     seenProjectileIds.add(projectile.id);
-    sfx.shot(projectile.kind);
+    sfx.shot(projectile.kind, projectile.sourceKind);
     resolveCam.note(projectile.origin.x, projectile.origin.z, POI_WEIGHT.shot, 0.7);
     const onScreen = stage.isInView(projectile.origin) ? 1 : 0.3;
     const heavy = projectile.kind === "shell" || projectile.kind === "grenade";
@@ -2203,7 +2208,7 @@ function processBattleEvents(): void {
     if (seenEffectIds.has(effect.id)) continue;
     seenEffectIds.add(effect.id);
     if (effect.type === "blast") {
-      sfx.explosion();
+      sfx.explosion((effect.radius ?? 1) >= 3);
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.blast, 1.5);
       const onScreen = stage.isInView(effect.to) ? 1 : 0.3;
       const size = Math.min(1, (effect.radius ?? 1) / 3);
@@ -2226,7 +2231,7 @@ function processBattleEvents(): void {
     } else if (effect.type === "strike") {
       // A landed blow: the camera kicks away from the impact and the director looks at it. Same
       // sound as an impact for now -- the visual pass comes first.
-      sfx.impact();
+      sfx.strike();
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.impact, 1.2);
       const onScreen = stage.isInView(effect.to) ? 1 : 0.3;
       feel.addTrauma(0.12 * onScreen);
@@ -2241,6 +2246,10 @@ function processBattleEvents(): void {
       sfx.jet();
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.strike, 2);
       feel.addTrauma(0.08);
+    } else if (effect.type === "land") {
+      if (effect.color === 0xffe27a) sfx.boing(); else sfx.impact(); // a bounce pad, or a jump trooper touching down
+    } else if (effect.type === "ping" && effect.color === 0x8effa6) {
+      sfx.heal();
     } else if (effect.type === "beam") {
       sfx.beam();
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.strike, 2);
@@ -2347,6 +2356,10 @@ declare global {
       queueGrenadePart(id: string, partId: string): boolean;
       queueGrenadeAt(destination: Vec2): boolean;
       queueSmokeAt(destination: Vec2): boolean;
+      queueTreat(id: string): boolean;
+      queueMan(id: string): boolean;
+      queueDismount(): boolean;
+      queuePlace(destination: Vec2): boolean;
       queueBombDrop(at?: Vec2): boolean;
       queueLoad(passengerId: string): boolean;
       queueUnload(destination: Vec2): boolean;
@@ -2432,6 +2445,7 @@ declare global {
       save(): boolean;
       // True when audio is silenced (settings mute or running under test automation).
       audioMuted(): boolean;
+      musicTrack(): string;
     };
   }
 }
@@ -2457,6 +2471,10 @@ window.__rht = {
   queueGrenadePart: (id, partId) => sim.queueGrenadePart(id, partId),
   queueGrenadeAt: (destination) => sim.queueGrenadeAt(destination),
   queueSmokeAt: (destination) => sim.queueSmokeAt(destination),
+  queueTreat: (id: string) => sim.queueTreat(id),
+  queueMan: (id: string) => sim.queueMan(id),
+  queueDismount: () => sim.queueDismount(),
+  queuePlace: (destination) => sim.queuePlace(destination),
   queueBombDrop: (at) => sim.queueBombDrop(at),
   queueLoad: (passengerId: string) => sim.queueLoad(passengerId),
   queueUnload: (destination) => sim.queueUnload(destination),
@@ -2541,6 +2559,7 @@ window.__rht = {
   forceEvent: (kind) => sim.debugForceEvent(kind),
   save: () => saveBattle(),
   audioMuted: () => sfx.isMuted,
+  musicTrack: () => music.nowPlaying,
 };
 
 // Text-content escaping reuses the attribute escaper (it already neutralizes < > & " ').
