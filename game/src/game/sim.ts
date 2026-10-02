@@ -3921,7 +3921,7 @@ export class TacticalSim {
   // A cache must sit on open ground a unit can actually reach — not inside a base/defense/solid
   // cover, and not adjacent to a base (loot is earned by taking ground, not handed out at spawn).
   private pickupSpotClear(p: Vec2): boolean {
-    if (pointInWater(p) || onTerrainEdge(p, 1.6)) return false; // flat, dry, whole ring on one level
+    if (pointInWater(p) || onTerrainEdge(p, 1.6) || discSamples(p, 1.6).some(pointInWater)) return false; // flat, dry, the whole ring on one level and clear of the shore
     for (const e of this.entities) {
       if (e.kind === "base" && dist(p, e.position) < 14) return false; // outside every deploy ring
       if ((e.kind === "cover" || e.kind === "base" || isDefenseKind(e.kind)) && dist(p, e.position) < e.radius + 1.3) return false;

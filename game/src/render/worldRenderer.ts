@@ -8131,7 +8131,10 @@ function makeWaterAndBridges(theme: MapTheme, surface: GroundSurface): THREE.Gro
     }
   }
 
-  const deckMat = new THREE.MeshStandardMaterial({ color: 0x6b5136, roughness: 0.82, metalness: 0.04 });
+  // A pale timber deck with a cream lit edge: it must read as THE way across against brown ground and
+  // blue water (owner 2026-10-02: "a player can't tell where they can walk"), not brown on brown.
+  const deckMat = new THREE.MeshStandardMaterial({ color: 0xb08d5c, roughness: 0.82, metalness: 0.04 });
+  const edgeMat = new THREE.MeshBasicMaterial({ color: 0xf4e2b0 });
   const railMat = new THREE.MeshStandardMaterial({ color: 0x4a3722, roughness: 0.85, metalness: 0.04 });
   const pileMat = new THREE.MeshStandardMaterial({ color: 0x3d2c1b, roughness: 0.9, metalness: 0.03 });
   for (const r of terrainBridges()) {
@@ -8167,6 +8170,12 @@ function makeWaterAndBridges(theme: MapTheme, surface: GroundSurface): THREE.Gro
       }
     }
 
+    for (const side of [-1, 1]) { // the cream walkway edge, just inside each rail
+      const lip = new THREE.Mesh(new THREE.BoxGeometry(along ? span : 0.12, 0.02, along ? 0.12 : span), edgeMat);
+      const off = (along ? d : w) / 2 - 0.34;
+      lip.position.set(cx + (along ? 0 : side * off), 0.175, cz + (along ? side * off : 0));
+      group.add(lip);
+    }
     // Low side rails along the bridge's long axis so it reads as a crossing, not just a plank.
     const railThick = 0.14;
     for (const side of [-1, 1]) {
