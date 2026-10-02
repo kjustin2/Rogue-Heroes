@@ -378,6 +378,14 @@ app.whenReady().then(async () => {
         await sleep(1200); await shot("airghost-bombrun");
         continue;
       }
+      if (s === "turnbanner") {
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(2200);
+        await js(`window.__rht.endTurn()`);
+        for (let i = 0; i < 80; i += 1) { await sleep(250); if (await js(`document.querySelector(".round-transition.show") ? true : false`)) break; }
+        await sleep(500); await shot("turnbanner");
+        continue;
+      }
       if (s === "movefield") {
         // Move armed beside water / a mesa / a prop on three maps: red = cannot stand, cyan ring = reach.
         for (const [map, spot] of [["karak", { x: -8, z: 4 }], ["causeway", { x: -6, z: 0 }], ["ironworks", { x: -2, z: -6 }]]) {

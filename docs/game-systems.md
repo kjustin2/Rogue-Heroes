@@ -89,6 +89,14 @@ How the factions, the three AI brains and Local 2 Players work, with the measure
 - **Bots.** Ground units plan an A* route (1.2m grid, wall clearance = `spawnClearance`) instead of the greedy
   sidestep; no two end a move on top of each other (`spreadDestination`); Hard seeks high ground and builds a gun
   emplacement toward closing foes (`enemyDefenseAct`).
+- **Bot economy (2026-10-02 AI pass).** Measured with a Hard-vs-Normal self-play harness (36 games, surviving-HP
+  share): the old Hard bot researched every turn (the base has ONE order a turn) and sat on $800 with two troops
+  (share 0.485 = worse than Normal). `smartEconomyAct` (Normal + Hard): parity first (>= 3 troops and the foe's
+  count), the AP upgrade (two base orders; the bot now spends every base order), early income, the next doctrine
+  on its path only with 4+ troops out, else the most-wanted troop. Share -> 0.58 vs the old Normal; Hard's tactics
+  on top (stand-off at ~0.55 range instead of 6m) add ~0.04. Tried and REMOVED (no gain or negative): army
+  cohesion (-0.02), weak-target pressing (-0.01), wounded-retreat threshold, threat-weighted A* (+0.005).
+  Hard also runs gunship/bomber BOMB RUNS on clusters (2 AP) and sends the crippled to a medic.
 - **Achievements** are four pages (Battles / Kills / Skill / Range), 46 medals with higher tiers; `commander.test.ts`
   asserts a long perfect career earns every one.
 

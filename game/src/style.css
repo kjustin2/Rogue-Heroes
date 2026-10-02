@@ -5937,3 +5937,44 @@ body:has(.hotseat-handoff) .battle-loading { display: none; }
 .base-damage__chip { padding: 3px 9px; border: var(--ink-w, 2px) solid var(--ink); border-radius: 6px; background: #4a1f1a; color: #ffd9cf; font-size: var(--fs-micro); font-weight: 800; letter-spacing: 0.04em; }
 .achievement-pages { margin: 4px 0 10px; } .achievement-pages em { font-style: normal; opacity: 0.8; margin-left: 4px; }
 body:has(.endscreen) #toasts { top: 10px; } /* medals earned on the result screen sit in the strip above the card, never over its title */
+
+/* ---- Turn banner, redone (2026-10-02, owner: the full-width bar with hairline edges read cramped) ----
+   A compact toon plate centred on the board: ink outline, flat cyan, hard offset shadow, real padding,
+   a small NEXT tag over a big TURN N with a clear gap between them. The full-width bar is gone. */
+.round-transition__bar { display: none; }
+.round-transition__label {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 14px 44px 16px;
+  min-width: 260px;
+  background: var(--cyan);
+  border: var(--ink-w-panel, 3px) solid var(--ink);
+  border-radius: 10px;
+  box-shadow: 6px 6px 0 var(--ink);
+}
+.round-transition__label span {
+  padding: 2px 12px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--cyan);
+  font-size: var(--fs-small);
+  line-height: 1.3;
+  letter-spacing: 0.32em;
+  text-indent: 0.32em; /* the trailing letter-space must not push the word off-centre */
+}
+.round-transition__label strong {
+  font-size: 2.3rem;
+  line-height: 1.1;
+  letter-spacing: 0.12em;
+  text-indent: 0.12em;
+  color: var(--ink);
+  -webkit-text-stroke: 0;
+  text-shadow: none;
+}
+
+/* Forecast row: my 2026-10-02 "wrap long map names" rule also wrapped these cells ("Next / turn", icon over
+   its name). Each cell is a tidy two-line column again: the when-label, then the glyph and name on ONE line. */
+.compact-top .forecast-chip { white-space: nowrap; border-radius: 12px; display: flex; justify-content: space-between; gap: 10px; text-align: left; }
+.forecast-cell { display: grid; gap: 2px; justify-items: start; white-space: nowrap; }
+.forecast-cell i { white-space: nowrap; }

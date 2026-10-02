@@ -54,7 +54,8 @@ describe("faction-aware AI build logic", () => {
       sim.endTurn();
       for (let t = 0; t < 30 && sim.phase === "resolve"; t += 0.05) sim.update(0.05);
     }
-    const fielded = sim.entities.filter((e) => e.team === "enemy" && e.kind !== "base" && e.kind !== "cover");
+    // (A captured derelict turret is the enemy's now but was never fielded from the roster.)
+    const fielded = sim.entities.filter((e) => e.team === "enemy" && e.kind !== "base" && e.kind !== "cover" && !e.capturable && !["turret", "exturret", "aaturret", "bunker", "sensor", "wall"].includes(e.kind));
     expect(fielded.length, "enemy never deployed anything").toBeGreaterThan(0);
     for (const unit of fielded) {
       expect(roster.includes(unit.kind as never), `${unit.kind} is off-roster`).toBe(true);

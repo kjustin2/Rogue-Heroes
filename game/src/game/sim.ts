@@ -5008,6 +5008,8 @@ export class TacticalSim {
    * `brainOverride` lets self-play pit one brain against another at equal stats.
    */
   brainOverride?: Difficulty;
+  /** Self-play A/B switches for the Hard brain's newer behaviours (all on by default). */
+  aiX: { standoff: boolean; bomb: boolean; medic: boolean; econ: boolean } = { standoff: true, bomb: true, medic: true, econ: true };
   /** Self-play knob: force individual brain traits on/off to measure what each one is worth. */
   debugAiTraits?: Partial<{ focusFire: boolean; useCover: boolean; retreat: boolean; smartEconomy: boolean; tactical: boolean }>;
   private aiProfile(): { focusFire: boolean; useCover: boolean; retreat: boolean; smartEconomy: boolean; tactical: boolean } {
@@ -5063,7 +5065,13 @@ export class TacticalSim {
       // The enemy Home Base reinforces or upgrades before its units act. Newly deployed
       // troops have 0 CP, so they simply hold position until the next turn.
       for (const base of this.living("enemy")) {
-        if (base.kind === "base") this.enemyBaseAct(base);
+        if (!(base.kind === "base")) continue;
+        this.enemyBaseAct(base);
+        // HARD spends EVERY base order: with the AP upgrade the base has two a turn, and the old single
+        // call left the second idle (a Hard bot sat on $800 with two units, researching the whole tree).
+        if (profile.smartEconomy && this.aiX.econ) {
+          for (let extra = 0; extra < 2 && base.commandPoints > 0; extra += 1) this.enemyBaseAct(base);
+        }
       }
     }
     // Carried passengers are aboard a transport — not targetable and not on the ground.
@@ -5108,6 +5116,17 @@ export class TacticalSim {
         if (airTgt && enemy.status.canShoot && dist(enemy.position, airTgt.position) <= range && this.queueShootFor(enemy, airTgt, "center")) continue;
         // Bombers drop STRAIGHT DOWN (like the player's), so they only bomb when a ground foe is
         // roughly beneath them — otherwise they fall through to the move block to fly over one.
+        if (profile.tactical && this.aiX.bomb && enemy.grenades > 0 && isAirBomber(enemy) && enemy.commandPoints >= 2 && enemy.status.canMove) {
+          const run = this.aiBombTarget(enemy, players);
+          if (run) {
+            spendCommandPoint(enemy);
+            spendCommandPoint(enemy);
+            enemy.grenades = Math.max(0, enemy.grenades - 1);
+            this.addOrder({ actorId: enemy.id, kind: "move", destination: run, aim: "center", duration: 2.05 });
+            this.addOrder({ actorId: enemy.id, kind: "grenade", destination: { ...run }, aim: "center", duration: 1.15 });
+            continue;
+          }
+        }
         if (enemy.grenades > 0 && isAirBomber(enemy)) {
           const beneath = (players.length ? players : allPlayers).find((p) => !p.flying && p.status.alive && !isBuildingKind(p.kind) && dist(enemy.position, p.position) <= 2.6);
           if (beneath) {
@@ -5171,7 +5190,8 @@ export class TacticalSim {
         const fire = isInfantryKind(enemy.kind) && !carrying ? this.nearestBurnZone(enemy.position, FLAMER_FEAR_RADIUS) : undefined;
         // Shooters hold at weapon range; melee always close; carriers run the flag home;
         // in objective modes, idle units push the hill/flag rather than over-extending.
-        const wantsTarget = Boolean(target) && (isMelee || separation > Math.min(range * 0.8, 6));
+        const stand = profile.tactical && this.aiX.standoff ? Math.min(range * 0.8, Math.max(6, range * 0.55)) : Math.min(range * 0.8, 6);
+        const wantsTarget = Boolean(target) && (isMelee || separation > stand);
         let goal: Vec2 | undefined;
         let advancing = false;
         // HARD: an intruder near our base pulls the nearby defenders back onto it.
@@ -5200,7 +5220,10 @@ export class TacticalSim {
           goal = clampToArena({ x: enemy.position.x + away.x * flee, z: enemy.position.z + away.z * flee });
           this.pushLog(`${enemy.name} runs from the fire`);
         } else if (crippled) {
-          goal = home;
+          const medic = profile.tactical && this.aiX.medic
+            ? this.living("enemy").filter((m) => m.id !== enemy.id && m.kind === "medic" && !m.downed && dist(m.position, enemy.position) < 22).sort((a, b) => dist(a.position, enemy.position) - dist(b.position, enemy.position))[0]
+            : undefined;
+          goal = medic ? medic.position : home;
         } else if (wantsTarget) {
           goal = target!.position;
           advancing = true;
@@ -5248,6 +5271,22 @@ export class TacticalSim {
         }
       }
     }
+  }
+
+  /** Hard brain: the ground cluster worth a bomb run (fly over, drop): most foes (armour double) within the
+   *  blast of a point the aircraft can reach, never with its own troops under it. */
+  private aiBombTarget(actor: CombatEntity, foes: CombatEntity[]): Vec2 | undefined {
+    const blast = explosiveBlast("grenade", actor.kind).radius;
+    const friends = this.entities.filter((e) => e.team === actor.team && e.status.alive && !e.flying && e.kind !== "cover" && e.id !== actor.id);
+    let best: Vec2 | undefined;
+    let bestScore = 0;
+    for (const f of foes) {
+      if (f.flying || isBuildingKind(f.kind) || dist(f.position, actor.position) > moveRange(actor)) continue;
+      if (friends.some((u) => dist(u.position, f.position) < blast + 0.8)) continue;
+      const score = foes.reduce((sum, o) => sum + (!o.flying && dist(o.position, f.position) <= blast ? (isVehicleKind(o.kind) ? 2 : 1) : 0), 0);
+      if (score > bestScore) { bestScore = score; best = f.position; }
+    }
+    return bestScore >= 2 ? { ...best! } : undefined;
   }
 
   /** Hard brain: the reachable point that gets furthest out of every danger this turn. */
@@ -5422,6 +5461,7 @@ export class TacticalSim {
     if (smart && this.fieldUnitCount(base.team) >= 2 && this.enemyStrikeAct(base)) return;
     // HARD: dig in -- a gun emplacement between the base and an approaching foe (owner 2026-10-02: smarter bots).
     if (this.aiProfile().tactical && this.enemyDefenseAct(base)) return;
+    if (smart && this.aiX.econ && this.smartEconomyAct(base, desired)) return;
     // SIGNATURE ARC: a smart bot works down its faction's research path, and SAVES for the next step
     // once it has a few units out -- otherwise it spent every turn's money on Recruits and never
     // researched anything, so every faction's bot played the same.
@@ -5476,6 +5516,43 @@ export class TacticalSim {
       ? affordable[Math.floor(this.rng.next() * affordable.length)].kind
       : (wanted[0] ?? [...affordable].sort((a, b) => b.cost - a.cost)[0]).kind;
     this.spawnTroopFor(base, pick);
+  }
+
+  /**
+   * SMART ECONOMY (Normal and Hard). Army first, tempo second, tech last. The old rule researched whenever money allowed and the
+   * base has ONE order a turn, so a Hard bot researched nine doctrines while fielding two troops. Now:
+   * build to parity (and at least 3), take the AP upgrade (two base orders a turn) early, then income, then the
+   * next doctrine on its path only with an army out, and otherwise buy the most-wanted troop.
+   * Returns true when it spent the order.
+   */
+  private smartEconomyAct(base: CombatEntity, desired: TroopKind[] | undefined): boolean {
+    const mine = this.fieldUnitCount(base.team);
+    const theirs = this.fieldUnitCount(base.team === "enemy" ? "player" : "enemy");
+    const money = this.money(base.team);
+    const cheapest = Math.min(...TROOP_CATALOG.filter((t) => !this.spawnFailureReason(base, t.kind) || this.spawnFailureReason(base, t.kind)?.startsWith("Not enough money")).map((t) => t.cost), 999);
+    const buy = (): boolean => {
+      const options = TROOP_CATALOG.filter((spec) => !this.spawnFailureReason(base, spec.kind));
+      if (!options.length) return false;
+      const rank = (kind: TroopKind): number => Math.max(0.2, 1 - 0.3 * (desired?.indexOf(kind) ?? 0));
+      const wanted = options.filter((spec) => desired?.includes(spec.kind)).sort((a, b) => b.cost * rank(b.kind) - a.cost * rank(a.kind));
+      return this.spawnTroopFor(base, (wanted[0] ?? [...options].sort((a, b) => b.cost - a.cost)[0]).kind);
+    };
+    if (this.fieldUnitCount(base.team) >= POP_CAP) return false;
+    // 1. Never fall behind: parity with the foe, and at least three.
+    if (mine < Math.max(3, theirs) && buy()) return true;
+    // 2. Two base orders a turn, once there is an army to use them on.
+    if (base.maxCommandPoints < 2 && mine >= 3 && money >= COMMAND_UPGRADE_COST + 100 && this.upgradeCommandFor(base)) return true;
+    // 3. Compounding income early.
+    const incomeCost = incomeUpgradeCost(base);
+    if (incomeCost !== undefined && this.turn <= 9 && mine >= 3 && money >= incomeCost + cheapest && this.upgradeIncomeFor(base)) return true;
+    // 4. The next doctrine on its path, only with an army out and money to spare.
+    if (mine >= 4) {
+      const next = this.factionOf(base.team).aiTechPath.find((id) => !this.researchFailureReason(base, id));
+      const node = next ? techNode(next) : undefined;
+      if (node && money >= node.cost + cheapest && this.researchTechFor(base, node.id)) return true;
+    }
+    // 5. Otherwise field the most-wanted troop.
+    return buy();
   }
 
   /** Hard brain: with hostiles closing on the base and money to spare, field one of its gun defenses toward them. */

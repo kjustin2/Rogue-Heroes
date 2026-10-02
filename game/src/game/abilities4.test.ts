@@ -384,3 +384,19 @@ describe("cash caches sit on solid ground", () => {
     setActiveTerrain(DEFAULT_TERRAIN);
   });
 });
+
+describe("smart bot economy (owner 2026-10-02: smarter AI)", () => {
+  it("a Hard bot turns its money into an army instead of hoarding it or researching the whole tree", () => {
+    const sim = new TacticalSim();
+    sim.configure(mapDef("verdant"), "destroy", "hard", { player: "vanguard", enemy: "syndicate" });
+    const ebase = sim.entities.find((e) => e.team === "enemy" && e.kind === "base")!;
+    for (let turn = 1; turn <= 10; turn += 1) {
+      sim.endTurn();
+      settle(sim);
+    }
+    const army = sim.entities.filter((e) => e.team === "enemy" && e.status.alive && e.kind !== "cover" && e.kind !== "base" && !e.capturable).length;
+    expect(army, "the bot never built an army").toBeGreaterThanOrEqual(5);
+    expect(sim.money("enemy"), "the bot is sitting on its money").toBeLessThan(700);
+    expect((ebase.unlockedTech ?? []).length, "it researched instead of fielding troops").toBeLessThanOrEqual(5);
+  });
+});
