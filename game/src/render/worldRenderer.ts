@@ -4878,7 +4878,11 @@ export class WorldRenderer {
     const color = ok ? 0x2ee88a : 0xff3b5c;
     const pulse = (Math.sin(performance.now() * 0.008) + 1) * 0.5;
     const y = terrainHeightAt(spot.point) + 0.12;
-    const footprint = 0.7 + pulse * 0.08;
+    // The ghost is the unit's own VOLUME at its true size (a Skyguard ghost was the same 0.7m ring as a
+    // rifleman, so "where will it go" read as only a circle), and a flyer's hangs in the air at its
+    // altitude with a tether to the ground spot under it (owner 2026-10-02).
+    const body = sim.deployBody(kind);
+    const footprint = Math.max(0.7, body.radius) + pulse * 0.08;
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(footprint - 0.2, footprint, 48),
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1, side: THREE.DoubleSide, depthWrite: false })
@@ -4886,6 +4890,22 @@ export class WorldRenderer {
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(spot.point.x, y, spot.point.z);
     this.groundAimRoot.add(ring);
+    const volume = new THREE.Mesh(
+      new THREE.CylinderGeometry(body.radius * 0.9, body.radius * 0.9, Math.max(0.8, body.height), 20),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.38, depthWrite: false })
+    );
+    volume.position.set(spot.point.x, y + body.agl + Math.max(0.8, body.height) / 2, spot.point.z);
+    this.groundAimRoot.add(volume);
+    if (body.agl > 0) {
+      const outline = new THREE.Mesh(
+        new THREE.TorusGeometry(body.radius * 1.2, 0.07, 8, 32),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthWrite: false })
+      );
+      outline.rotation.x = Math.PI / 2;
+      outline.position.set(spot.point.x, y + body.agl, spot.point.z);
+      this.groundAimRoot.add(outline);
+      this.groundAimRoot.add(makeLine(spot.point, spot.point, color, 0.7, y, y + body.agl)); // tether up to it
+    }
     this.groundAimRoot.add(makeEndpoint(spot.point, color, 0.22, y));
     // A snapped spot keeps a thin tether back to the cursor so the slide reads as deliberate.
     if (spot.snapped) this.groundAimRoot.add(makeLine(point, spot.point, color, 0.6, y));

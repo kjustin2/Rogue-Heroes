@@ -82,7 +82,7 @@ describe("every projectile family flies and lands as expected", () => {
 });
 
 describe("gunships", () => {
-  it("fly, hit aircraft with the gun, refuse ground targets with it, and bomb straight down", () => {
+  it("fly, gun aircraft AND ground troops, and bomb straight down", () => {
     const gunship = createGunship("g", "Hawk", "player", { x: -4, z: 0 });
     const enemyAir = pinned(createInterceptor("i", "Bandit", "enemy", { x: 4, z: 0 }));
     enemyAir.status.alive = true;
@@ -92,8 +92,7 @@ describe("gunships", () => {
     expect(gunship.elevation).toBeGreaterThan(3); // it is up in the air, not on the ground
 
     sim.select("g");
-    expect(sim.queueShoot("s")).toBe(false); // the gun is air-to-air only
-    expect(sim.queueShoot("i")).toBe(true);
+    expect(sim.queueShoot("i")).toBe(true); // (the gunship's gun also rakes ground troops: see the strafe-free test below)
     const airHp = enemyAir.parts.reduce((s, p) => s + p.hp, 0);
     sim.endTurn();
     for (let t = 0; t < 30 && sim.phase === "resolve"; t += 0.05) sim.update(0.05);
@@ -109,7 +108,7 @@ describe("gunships", () => {
     expect(ground.parts.reduce((s, p) => s + p.hp, 0)).toBeLessThan(groundHp);
   });
 
-  it("move to a new spot and stay airborne; strafe the ground units under their path", () => {
+  it("move to a new spot and stay airborne, firing nothing unasked", () => {
     const gunship = createGunship("g", "Hawk", "player", { x: -8, z: 0 });
     const victim = pinned(createSoldier("v", "Grunt", "enemy", { x: -2, z: 0.5 }));
     const sim = new TacticalSim([gunship, victim]);
@@ -120,7 +119,7 @@ describe("gunships", () => {
     for (let t = 0; t < 30 && sim.phase === "resolve"; t += 0.05) sim.update(0.05);
     expect(gunship.position.x).toBeGreaterThan(0);
     expect(gunship.flying).toBe(true);
-    expect(victim.parts.reduce((s, p) => s + p.hp, 0)).toBeLessThan(hp0); // the gun run
+    expect(victim.parts.reduce((s, p) => s + p.hp, 0)).toBe(hp0); // no auto gun run (owner 2026-10-02)
   });
 
   it("can be shot down from the ground by flak", () => {

@@ -122,6 +122,34 @@ const SCREENS = [
     });
     await delay(600);
   }],
+  // EVERY MAP'S NAME in the top-right status stack (2026-10-02: "Ruins of Karak · Annihilatio" was
+  // clipped at the owner's window), with a unit selected and an order queued so the order log row shows.
+  ...["dustbowl", "ironworks", "verdant", "causeway", "karak", "crossfire"].map((map) => [`battle-${map}`, async (page) => {
+    await page.evaluate((m) => {
+      const r = window.__rht;
+      r.startBattle(m, "hill", "normal", "bastion");
+      const sim = r.sim;
+      sim.economy.set("player", 9000);
+      const u = sim.debugSpawn("soldier", "player", { x: sim.entities.find((e) => e.team === "player" && e.kind === "base").position.x + 6, z: 2 });
+      sim.debugSelect(u.id);
+      sim.queueMove({ x: u.position.x + 3, z: u.position.z });
+    }, map);
+    await delay(700);
+  }]),
+  // THE AIR UNIT PANELS: gunship with Bomb armed and a hostile picked ("Drops straight down." sat tight
+  // against its box edge), and the gunship's target card.
+  ["gunship-bomb", async (page) => {
+    await page.evaluate(() => {
+      const r = window.__rht;
+      r.startBattle("dustbowl", "destroy", "normal", "vanguard");
+      const sim = r.sim;
+      const g = sim.debugSpawn("gunship", "player", { x: -6, z: 0 });
+      sim.debugSpawn("heavy", "enemy", { x: 3, z: 1 });
+      sim.debugSelect(g.id);
+      r.setIntent("grenade");
+    });
+    await delay(700);
+  }],
   // LOCAL 2 PLAYERS: the set-up page with the Opponent row switched, and the handoff card.
   ["versus-setup", async (page) => {
     await page.evaluate(() => window.__rht.toMenu()); await delay(400);

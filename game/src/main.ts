@@ -216,7 +216,7 @@ const hud = new Hud(uiRoot, sim, {
   queueGrenadePart: (id: string, partId: string) => sim.queueGrenadePart(id, partId),
   queueGrenadeAt: (destination) => sim.queueGrenadeAt(destination),
   queueSmokeAt: (destination) => sim.queueSmokeAt(destination),
-  queueBombDrop: () => sim.queueBombDrop(),
+  queueBombDrop: (at) => { const ok = sim.queueBombDrop(at); if (!ok) refused(); return ok; },
   queueLoad: (passengerId: string) => sim.queueLoad(passengerId),
   queueUnload: (destination) => sim.queueUnload(destination),
   queueRam: (id: string) => sim.queueRam(id),
@@ -394,10 +394,9 @@ canvas.addEventListener("auxclick", (event) => {
 });
 canvas.addEventListener("contextmenu", (event) => {
   event.preventDefault();
-  if (sim.pendingDeploy && sim.phase === "command") {
-    sim.setPendingDeploy(undefined);
-    hud.update();
-  }
+  // Right-click is Back, everywhere (owner 2026-10-02): an armed placement, strike or attack steps back
+  // exactly like the Back button / Escape does; nothing armed does nothing.
+  if (sim.phase === "command" && !anyOverlayOpen()) hud.handleEscape();
 });
 
 // A click anywhere in the HUD plays a soft UI blip (the deploy/build/turn cues layer on top).
@@ -1948,7 +1947,7 @@ function hintKey(action: BindableAction): string {
 // They cover the gap the tutorial leaves: what to do once the base and the troops are on the field.
 const HINT_IDS = ["base", "controls", "in-range", "cover", "unspent", "unit-jumper", "unit-mortar", "unit-sniper"] as const;
 const UNIT_HINTS: Partial<Record<TroopKind, (name: string) => string>> = {
-  jumper: (name) => `${name} jumps: ${hintKey("move")} over cliffs and water, or onto an enemy.`,
+  jumper: (name) => `${name}: press ${hintKey("move")}, then click ground to leap over cliffs and water.`,
   mortar: (name) => `${name} lobs over walls: ${hintKey("shoot")}.`,
   sniper: (name) => `${name} shoots through bodies — line them up.`,
 };
@@ -2324,7 +2323,7 @@ declare global {
       queueGrenadePart(id: string, partId: string): boolean;
       queueGrenadeAt(destination: Vec2): boolean;
       queueSmokeAt(destination: Vec2): boolean;
-      queueBombDrop(): boolean;
+      queueBombDrop(at?: Vec2): boolean;
       queueLoad(passengerId: string): boolean;
       queueUnload(destination: Vec2): boolean;
       queueShootAt(destination: Vec2): boolean;
@@ -2434,7 +2433,7 @@ window.__rht = {
   queueGrenadePart: (id, partId) => sim.queueGrenadePart(id, partId),
   queueGrenadeAt: (destination) => sim.queueGrenadeAt(destination),
   queueSmokeAt: (destination) => sim.queueSmokeAt(destination),
-  queueBombDrop: () => sim.queueBombDrop(),
+  queueBombDrop: (at) => sim.queueBombDrop(at),
   queueLoad: (passengerId: string) => sim.queueLoad(passengerId),
   queueUnload: (destination) => sim.queueUnload(destination),
   queueShootAt: (destination) => sim.queueShootAt(destination),

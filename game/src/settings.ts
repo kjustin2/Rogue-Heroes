@@ -8,7 +8,7 @@ const KEY = "rht.settings.v1";
 // Resolve-phase pacing: how fast queued orders play out. 1 = default; <1 slower, >1 faster.
 export type ActionPace = "slow" | "normal" | "fast";
 export const ACTION_PACES: readonly ActionPace[] = ["slow", "normal", "fast"];
-export const PACE_SPEED: Record<ActionPace, number> = { slow: 0.6, normal: 1, fast: 1.8 };
+export const PACE_SPEED: Record<ActionPace, number> = { slow: 0.42, normal: 0.68, fast: 1.2 } // slowed 2026-10-02 (owner: "so people can keep up with what occurs");
 export const PACE_LABEL: Record<ActionPace, string> = { slow: "Slow", normal: "Default", fast: "Fast" };
 
 // Graphics quality = how many pixels we render. Each tier caps the device-pixel-ratio:

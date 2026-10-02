@@ -168,7 +168,7 @@ describe("sniper mark", () => {
     expect(sim.isMarkedFor(sniper, target)).toBe(false); // the marker gets nothing from its own mark
     const marked = sim.previewShot(rifle.id, target.id, core(target).id)!;
     expect(marked.spreadDegrees).toBeLessThan(unmarked.spreadDegrees);
-    expect(marked.hitChance).toBeGreaterThan(unmarked.hitChance);
+    expect(marked.hitChance).toBeGreaterThanOrEqual(unmarked.hitChance); // (both can sit on the 98% cap)
     expect(marked.accuracyNotes).toContain("marked target");
     // It clears at the turn after.
     sim.endTurn();

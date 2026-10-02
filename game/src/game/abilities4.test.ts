@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CARPET_BOMBS, STRAFE_RADIUS, TacticalSim, mapDef } from "./sim";
+import { CARPET_BOMBS, TacticalSim, mapDef } from "./sim";
 
 // Unit identity abilities, round four (unit-identity picks 5, 9, 10, 14, 15, 17, 18):
 // grenadier AIRBURST, flamer FEAR, drone op RECON, APC CARRY, artillery DEPLOY, gunship STRAFE,
@@ -19,13 +19,14 @@ const hp = (e: { parts: { hp: number }[] }): number => e.parts.reduce((s, p) => 
 describe("grenadier airburst", () => {
   it("a round that bursts on cover still lands half its damage on the trooper behind it", () => {
     const sim = staged();
-    const grenadier = sim.debugSpawn("grenadier", "player", { x: -18, z: 0 });
+    const grenadier = sim.debugSpawn("grenadier", "player", { x: -5, z: 0 }); // same 0.7 plateau as the target: no uphill penalty
     const wall = sim.debugCover("pillar", { x: 0, z: 0 });
     const target = sim.debugSpawn("soldier", "enemy", { x: wall.radius + 0.8, z: 0 });
     disarm(target);
     // The bot shares the sim's rng: with research cheap it now buys tech on turn 1, which shifts the
     // accuracy roll this test depends on. Broke bot = the same draw every run.
     sim.economy.set("enemy", 0);
+    sim.entities.filter((e) => e.team === "enemy" && e.kind === "base").forEach(disarm); // its relay shot would otherwise shoot the grenade down mid-air
     target.stance = "crouched";
     const before = hp(target);
     sim.debugSelect(grenadier.id);
@@ -210,33 +211,18 @@ describe("artillery deploy", () => {
   });
 });
 
-describe("gunship strafe", () => {
-  it("a move guns each hostile within STRAFE_RADIUS of the path once, and leaves the one off the path alone", () => {
+describe("gunship does not fire unasked", () => {
+  it("a move over hostiles harms none of them (owner 2026-10-02: no auto strafe)", () => {
     const sim = staged();
     const gunship = sim.debugSpawn("gunship", "player", { x: -12, z: 0 });
-    const onPath = sim.debugSpawn("soldier", "enemy", { x: -4, z: 2 });
-    const alsoOnPath = sim.debugSpawn("soldier", "enemy", { x: 2, z: -2 });
-    const offPath = sim.debugSpawn("soldier", "enemy", { x: -4, z: STRAFE_RADIUS + 3 });
-    for (const e of [onPath, alsoOnPath, offPath]) disarm(e);
-    const before = [onPath, alsoOnPath, offPath].map(hp);
+    const foes = [sim.debugSpawn("soldier", "enemy", { x: -4, z: 2 }), sim.debugSpawn("soldier", "enemy", { x: 2, z: -2 })];
+    for (const e of foes) disarm(e);
+    const before = foes.map(hp);
     sim.debugSelect(gunship.id);
     expect(sim.queueMove({ x: 8, z: 0 })).toBe(true);
     sim.endTurn();
     settle(sim);
-    expect(sim.log.filter((l) => l.includes("strafes")).length).toBe(2);
-    expect(hp(onPath)).toBeLessThan(before[0]);
-    expect(hp(alsoOnPath)).toBeLessThan(before[1]);
-    expect(hp(offPath)).toBe(before[2]);
-    // A transport flying the same line is unarmed and strafes nothing.
-    const sim2 = staged();
-    const transport = sim2.debugSpawn("transport", "player", { x: -12, z: 0 });
-    const bystander = sim2.debugSpawn("soldier", "enemy", { x: -4, z: 2 });
-    disarm(bystander);
-    sim2.debugSelect(transport.id);
-    expect(sim2.queueMove({ x: 8, z: 0 })).toBe(true);
-    sim2.endTurn();
-    settle(sim2);
-    expect(sim2.log.some((l) => l.includes("strafes"))).toBe(false);
+    expect(foes.map(hp)).toEqual(before);
   });
 });
 
@@ -271,5 +257,74 @@ describe("bomber carpet", () => {
     expect(carpet.log.some((l) => l.includes("carpets the line"))).toBe(true);
     const single = run("gunship");
     expect(single.bombs).toBe(1);
+  });
+});
+
+describe("gunship bomb run", () => {
+  it("flies to a picked spot before dropping, throws troops flying, and needs 2 AP for a run", () => {
+    const sim = staged();
+    const gunship = sim.debugSpawn("gunship", "player", { x: -12, z: 0 });
+    const foe = sim.debugSpawn("heavy", "enemy", { x: -1.4, z: 0 }); // 2.6m from the point: caught in the rim
+    disarm(foe);
+    sim.debugSelect(gunship.id);
+    expect(sim.queueBombDrop({ x: -4, z: 0 }), sim.log[0]).toBe(true);
+    expect(sim.orders.filter((o) => o.actorId === gunship.id).map((o) => o.kind)).toEqual(["move", "grenade"]);
+    const before = hp(foe);
+    const start = { ...foe.position };
+    sim.endTurn();
+    settle(sim);
+    expect(hp(foe), "the bomb did little").toBeLessThan(before * 0.85);
+    expect(Math.hypot(foe.position.x - start.x, foe.position.z - start.z), "nobody was thrown").toBeGreaterThan(1.5);
+    // Out of reach, or a single AP: refused with the reason.
+    const far = staged();
+    const g2 = far.debugSpawn("gunship", "player", { x: -20, z: 0 });
+    far.debugSelect(g2.id);
+    expect(far.queueBombDrop({ x: 10, z: 0 })).toBe(false);
+    g2.commandPoints = 1;
+    expect(far.queueBombDrop({ x: -12, z: 0 })).toBe(false);
+    expect(far.log[0]).toContain("2 AP");
+  });
+});
+
+describe("mid-air collisions", () => {
+  // Fire a real round from a player sniper, then inject an enemy round flying straight back at it.
+  const clash = (kind: "plain" | "grenade"): { sim: TacticalSim; log: string[]; left: number } => {
+    const sim = staged();
+    sim.entities.filter((e) => e.team === "enemy" && e.kind === "base").forEach(disarm);
+    const a = sim.debugSpawn("sniper", "player", { x: -10, z: 0 });
+    const b = sim.debugSpawn("soldier", "enemy", { x: 14, z: 0 });
+    disarm(b);
+    sim.debugSelect(a.id);
+    expect(sim.queueShoot(b.id), sim.log[0]).toBe(true);
+    sim.endTurn();
+    let mine: (typeof sim.projectiles)[number] | undefined;
+    for (let t = 0; t < 10 && !mine; t += 0.02) { sim.update(0.02); mine = sim.projectiles[0]; }
+    expect(mine, "no round was fired").toBeDefined();
+    const ahead = 3;
+    const o = { x: mine!.position.x + mine!.direction.x * ahead, z: mine!.position.z + mine!.direction.z * ahead };
+    const h = mine!.height;
+    const other = structuredClone(mine!);
+    Object.assign(other, {
+      id: "injected", actorId: b.id, orderId: "none", targetId: undefined,
+      kind: kind === "grenade" ? "grenade" : mine!.kind, sourceKind: "soldier",
+      direction: { x: -mine!.direction.x, z: -mine!.direction.z },
+      origin: o, position: { ...o }, previous: { ...o }, travel: 0, maxTravel: 30, age: 0, maxAge: 10,
+      height: h, previousHeight: h, originHeight: kind === "grenade" ? 1.2 : h, verticalSlope: 0, arcHeight: 0,
+    });
+    sim.projectiles.push(other);
+    const mark = sim.logTotal;
+    for (let t = 0; t < 3; t += 0.02) sim.update(0.02);
+    return { sim, log: sim.log.slice(0, sim.logTotal - mark), left: sim.projectiles.filter((p) => p.id === "injected" || p.id === mine!.id).length };
+  };
+
+  it("two opposed plain rounds meeting in the air cancel each other", () => {
+    const { log, left } = clash("plain");
+    expect(log.some((l) => l.includes("collide in mid-air")), log.join(" | ")).toBe(true);
+    expect(left).toBe(0);
+  });
+
+  it("a round that meets a grenade sets it off where it was hit", () => {
+    const { log } = clash("grenade");
+    expect(log.some((l) => l.includes("shoots down")), log.join(" | ")).toBe(true);
   });
 });

@@ -4294,7 +4294,16 @@ body.intro-cam #ui, body.intro-cam #toasts, body.intro-cam .hint-toast { visibil
    unrelated boxes. A fixed column width makes it one control panel.
    --------------------------------------------------------------------------- */
 .topbar.compact-top {
-  width: 182px;
+  width: max-content;
+  min-width: 182px;
+  max-width: 280px;
+}
+/* A long map name ("Ruins of Karak · Annihilation") wraps to a second line instead of clipping. */
+.compact-top .mode-chip {
+  white-space: normal;
+  text-align: center;
+  line-height: 1.2;
+  border-radius: 14px;
 }
 .compact-top > * { width: 100%; }
 .compact-top .end-turn { min-width: 0; }
@@ -5926,3 +5935,14 @@ body:has(.hotseat-handoff) .battle-loading { display: none; }
 /* Step 1 fits one screen at 720p: the list scrolls inside itself, the preview shrinks to fit. */
 .start-flow .start-step--map .map-list { max-height: clamp(180px, calc(100vh - 300px), 640px); }
 .start-flow .start-step--map .map-preview-canvas { max-height: clamp(140px, calc(100vh - 380px), 520px); }
+
+/* ---- 2026-10-02 owner pass: padding on in-bar notes, a truly centred log icon ---- */
+.order-body > .order-note,
+.detail-deck .order-note { padding: 8px 12px; }
+.log-toggle-icon svg { width: 10px; height: 10px; display: block; }
+.log-toggle-icon { padding: 0; }
+.unit-select .queued-order,
+.queued-chip span,
+.queued-chip em { font-size: var(--fs-micro); }
+.log-line { overflow-wrap: anywhere; }
+.compact-log .log-line { white-space: normal; text-overflow: clip; }

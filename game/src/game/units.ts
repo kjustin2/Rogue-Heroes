@@ -183,7 +183,7 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   artillery: u({ moveRange: 4.2, moveSpeed: 4.4, shotDamage: 88, weaponRange: 42, projectile: "shell", projectileSpeed: 2.45, spread: 4.6, accurateFraction: 0.55, accuracyLabel: "siege gun", groundShell: true, hpMultiplier: 1.2, aiValue: 9 }),
   flak: u({ moveRange: 6.0, moveSpeed: 6.2, shotDamage: 16, weaponRange: 32, accurateFraction: 0.3, projectile: "bolt", accuracyLabel: "flak cannon", aiValue: 6 }),
 
-  // --- Aircraft. Guns are air-to-air; bombs use the grenade path and fall straight down. ---
+  // --- Aircraft. The gunship's gun hits ground and air, the interceptor's only air; bombs use the grenade path and fall straight down. ---
   gunship: u({ moveRange: 12.5, moveSpeed: 9.5, shotDamage: 22, weaponRange: 22, accurateFraction: 0.41, projectile: "bolt", accuracyLabel: "gunship autocannon", grenadeRange: 11, aiValue: 8 }),
   interceptor: u({ moveRange: 14, moveSpeed: 11.5, shotDamage: 26, projectile: "bolt", accuracyLabel: "interceptor cannon", aiValue: 4 }),
   bomber: u({ moveRange: 8, moveSpeed: 6.4, grenadeRange: 12, aiValue: 4 }),
@@ -220,7 +220,7 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "soldier", label: "Recruit", role: "Rifle", cost: 150, cooldown: 1, tip: "Versatile rifle infantry with hand grenades. Always available." },
   { kind: "scout", label: "Scout", role: "Recon", cost: 100, cooldown: 1, tech: "recon", tip: "Fast, cheap eyes; its optic relay sharpens nearby allies' fire." },
   { kind: "sniper", label: "Marksman", role: "Sniper", cost: 220, cooldown: 2, tech: "recon", tip: "Rail rifle that pierces every body on its line (cover still stops it). Whatever it fires at is MARKED: allies hit it easier this turn." },
-  { kind: "striker", label: "Striker", role: "Melee", cost: 340, cooldown: 2, tech: "assault", tip: "CHARGE: the strike order closes up to 6.5m for free before the blade lands, so anything within a lunge is already in reach." },
+  { kind: "striker", label: "Striker", role: "Melee", cost: 400, cooldown: 2, tech: "assault", tip: "CHARGE: the strike order closes up to 6.5m for free before the blade lands, so anything within a lunge is already in reach." },
   { kind: "heavy", label: "Heavy Gunner", role: "Suppression", cost: 250, cooldown: 2, tech: "assault", tip: "Machine-gun bursts SUPPRESS whoever they hit: one action point and a forced crouch next turn. Strays rake nearby targets." },
   { kind: "grenadier", label: "Grenadier", role: "Splash", cost: 250, cooldown: 3, tech: "ordnance", tip: "Arcing launcher with splash that clears cover and clusters. AIRBURST: a round that bursts on cover still lands half its hit on whoever hides behind it." },
   { kind: "mortar", label: "Mortar Team", role: "Indirect", cost: 280, cooldown: 3, tech: "ordnance", tip: "High-arc fire over walls and ridges. SMOKE order: a 3-turn cloud that swallows flat shots; arcing rounds sail over." },
@@ -234,7 +234,7 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "apc", label: "APC", role: "Vehicle", cost: 250, cooldown: 2, tech: "armor", tip: "Fast armored flanker; durable and quick, shrugs off small arms. CARRY: two foot troops board from beside the hull and unload beside it." },
   { kind: "artillery", label: "Artillery", role: "Siege", cost: 380, cooldown: 3, tech: "siege", tip: "Long-range siege gun; devastating at distance and tough, but helpless up close. DEPLOY: fires only with outriggers down (a turn, or any turn it holds still); packing up to move costs a turn." },
   { kind: "flak", label: "Flak Track", role: "Anti-Air", cost: 260, cooldown: 2, tech: "armor", tip: "Anti-air specialist: shreds aircraft at range. Weak against ground armour." },
-  { kind: "gunship", label: "Gunship", role: "Air", cost: 420, cooldown: 3, tech: "airwing", tip: "Overflies all terrain. Autocannon duels aircraft; bombs drop straight down on ground targets. STRAFE: every move guns each hostile within 4m of its path. Fragile to flak; cannot capture." },
+  { kind: "gunship", label: "Gunship", role: "Air", cost: 420, cooldown: 3, tech: "airwing", tip: "Overflies all terrain. Its autocannon rakes ground troops and aircraft alike; BOMB flies over the target and drops a huge blast that throws troops flying. Fragile to flak; cannot capture." },
   { kind: "interceptor", label: "Interceptor", role: "Air Superiority", cost: 320, cooldown: 2, tech: "airwing", tip: "Gun-only fighter that wins the dogfight. No bombs. Fragile to ground flak." },
   { kind: "bomber", label: "Bomber", role: "Heavy Bomber", cost: 470, cooldown: 4, tech: "airwing", tip: "Slow, tough heavy bomber. CARPET: each drop is three bombs in a line along its heading. No gun at all — helpless against interceptors, so send an escort." },
   { kind: "transport", label: "Transport", role: "Airlift", cost: 240, cooldown: 3, tech: "airwing", tip: "Unarmed airlift: Load a ground unit, fly anywhere, Unload it. Shot down, its passengers fall out where it dies." },

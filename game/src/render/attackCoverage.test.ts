@@ -248,23 +248,28 @@ describe("every non-gun attack has an animation", () => {
     expect(fx.has("strike")).toBe(true);
   });
 
-  it("gunship strafe: every burst is a real round drawn from the aircraft, not a ground line", () => {
+  it("gunship gun: aimed fire at a ground target is a real round from the aircraft; nothing fires unasked", () => {
     const gunship = createGunship("g", "G", "player", { x: -8, z: 0 });
     const sim = new TacticalSim([gunship, pinned(createSoldier("v", "V", "enemy", { x: -2, z: 0.5 }))]);
     sim.select("g");
+    // A move past a hostile must NOT gun it (owner 2026-10-02: "gunship auto shot at targets below me").
     expect(sim.queueMove({ x: 4, z: 0 })).toBe(true);
     sim.endTurn();
-    const shots: VisualEvent[] = [];
+    const idle: VisualEvent[] = [];
     for (let t = 0; t < 30 && sim.phase === "resolve"; t += 0.05) {
       sim.update(0.05);
-      for (const e of sim.effects) if (e.type === "shot" && !shots.some((s) => s.id === e.id)) shots.push({ ...e });
+      for (const e of sim.effects) if (e.type === "shot" && !idle.some((s) => s.id === e.id)) idle.push({ ...e });
+      expect(sim.projectiles.length, "the move fired a round").toBe(0);
     }
-    expect(shots.length, "the gun run drew nothing").toBeGreaterThan(0);
-    for (const s of shots) {
-      // The strafe tracer starts at the aircraft's gun, up in the air -- a from-height of zero is
-      // the old flat line drawn along the ground.
-      expect(s.fromHeight ?? 0, "strafe tracer must start at the aircraft").toBeGreaterThan(2);
-    }
+    expect(idle.length, "a gun run happened without being ordered").toBe(0);
+    // Ordered, it fires from up in the air.
+    const g2 = createGunship("g", "G", "player", { x: -8, z: 0 });
+    const sim2 = new TacticalSim([g2, pinned(createSoldier("v", "V", "enemy", { x: -2, z: 0.5 }))]);
+    sim2.select("g");
+    expect(sim2.queueShootPart("v", "body"), sim2.log[0]).toBe(true);
+    const trace = resolve(sim2, [sim2.entity("v")!]);
+    expect(trace.rounds.length, "the ordered burst fired nothing").toBeGreaterThan(0);
+    expect(trace.rounds[0].originHeight, "the round must leave the aircraft").toBeGreaterThan(2);
   });
 
   it("bombs: a gunship's bomb falls as a round; a bomber's carpet of three is drawn falling onto its blasts", () => {

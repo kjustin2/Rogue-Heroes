@@ -1998,16 +1998,18 @@ describe("tactical enemy AI", () => {
     expect(flakDmg).toBeGreaterThan(rifleDmg * 3); // dedicated AA vs a rifle barely scratching air
   });
 
-  it("plane attack modes: gunship guns are air-to-air, bombs are ground-only", () => {
+  it("plane attack modes: a gunship gun hits ground and air, an interceptor only air; bombs are ground-only", () => {
     const sim = new TacticalSim([
       createGunship("g", "Hawk", "player", { x: 0, z: 0 }),
       createGunship("air", "Bandit", "enemy", { x: 4, z: 0 }),
       createSoldier("ground", "Grunt", "enemy", { x: 2.4, z: 0 }),
     ]);
     sim.select("g");
-    // Autocannon (shoot) only engages aircraft: a ground target is rejected, a flyer is allowed.
-    expect(sim.queueShoot("ground")).toBe(false);
-    expect(sim.queueShoot("air")).toBe(true);
+    // The gunship's autocannon engages ground troops AND aircraft; the interceptor's only aircraft.
+    expect(sim.queueShoot("ground")).toBe(true);
+    const fighter = new TacticalSim([createInterceptor("f", "Hawk", "player", { x: 0, z: 0 }), createSoldier("g2", "Grunt", "enemy", { x: 2.4, z: 0 })]);
+    fighter.select("f");
+    expect(fighter.queueShoot("g2")).toBe(false);
 
     // Bombs drop straight DOWN as a ground blast beneath the aircraft — they can't be lobbed up at a
     // flyer. Dropping a bomb just plants a ground-target detonation under the plane (x≈0), never at

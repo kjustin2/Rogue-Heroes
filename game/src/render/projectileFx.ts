@@ -463,7 +463,7 @@ function chips(count: number, cx: number, cy: number, cz: number, reach: number,
 // ---------------------------------------------------------------------------------------------
 // In-flight models. Local +Y = direction of travel (set by orientAlongVelocity).
 
-function tracerModel(family: ProjectileFamily, age: number, seed: number): THREE.Group {
+function tracerModel(family: ProjectileFamily, age: number, seed: number, travel = 99): THREE.Group {
   const group = new THREE.Group();
   // COMET: a hot round head leading a short ink-rimmed streak. The streak is three hulls — white
   // core, colour sleeve, ink — so the middle always shows through.
@@ -484,8 +484,11 @@ function tracerModel(family: ProjectileFamily, age: number, seed: number): THREE
   rim.scale.set(2.95, 1.1, 2.95);
   const streak = new THREE.Group();
   streak.add(rim, burn, sleeve, core);
-  streak.scale.y = 2.7;
-  streak.position.y = -0.36;
+  // The burning tail GROWS out of the muzzle: it can never reach farther back than the round has flown,
+  // or the fire trails out behind the shooter (owner 2026-10-02: "the fire is behind the unit").
+  const grow = Math.max(0.04, Math.min(1, travel / 2.4));
+  streak.scale.y = 2.7 * grow;
+  streak.position.y = -0.36 * grow;
   // Tapered tail: the streak runs out to a point behind the round instead of a rounded cap.
   const tail = solid("spike", TRACER_DEEP, 1.25);
   tail.rotation.x = Math.PI; // point backwards (down the -y the streak trails along)
@@ -701,8 +704,8 @@ export function makeProjectileModel(p: Projectile, family: ProjectileFamily): TH
     case "bomb": return bombModel(team, p.age);
     case "flame": return flameHead(p.age);
     case "pellet": return pelletModel(team, seed);
-    case "sniper": return p.age < SNIPER_PAUSE ? new THREE.Group() : tracerModel(family, p.age, seed);
-    default: return tracerModel(family, p.age, seed);
+    case "sniper": return p.age < SNIPER_PAUSE ? new THREE.Group() : tracerModel(family, p.age, seed, p.travel);
+    default: return tracerModel(family, p.age, seed, p.travel);
   }
 }
 
@@ -1110,7 +1113,7 @@ export function makeGroundChew(x: number, z: number, t: number, ground: number, 
 /** The largest radius a blast is DRAWN at. A vehicle kill fires a ~4m blast, and drawn at full size its
  *  fireball covered half a squad and its shockwave swept 10m (the rule: no FX fills the screen). The sim's
  *  damage radius is untouched; only the picture is capped. */
-const BLAST_DRAW_MAX = 2.0;
+const BLAST_DRAW_MAX = 3.6; // the gunship bomb (4.4m) is meant to be huge; still a disc on the ground, never screen-filling
 
 export function makeBlast(effect: VisualEvent, t: number, ground: number, hint?: LandingHint): THREE.Object3D[] {
   const out: THREE.Object3D[] = [];

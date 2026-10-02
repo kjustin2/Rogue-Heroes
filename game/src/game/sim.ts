@@ -170,9 +170,6 @@ const AIRBURST_SHARE = 0.5;
 const AIRBURST_REACH = 2.7;
 // FEAR (flamer): enemy infantry this close to burning ground at turn start run from it.
 export const FLAMER_FEAR_RADIUS = 6;
-// STRAFE (gunship): a move also fires one burst at every hostile within this much of the path.
-export const STRAFE_RADIUS = 4;
-const STRAFE_DAMAGE_SHARE = 0.75;
 // CARPET (bomber): three bombs in a line along the heading, this far apart.
 export const CARPET_BOMBS = 3;
 const CARPET_SPACING = 2.2;
@@ -290,8 +287,6 @@ export interface TacticalOrder {
   /** A melee order that SHOVES instead of striking (the Push ability): same rush, a big throw. */
   shove?: boolean;
   projectileId?: string;
-  // STRAFE: hostiles this gunship move has already gunned (one burst each).
-  strafed?: string[];
 }
 
 /** One enemy unit's planned order for the coming resolve, as revealed by a drone op's recon pulse. */
@@ -474,6 +469,10 @@ function pairAngle(a: string, b: string): number {
  * anything bolted to the ground is Infinity and does not move at all. Tuned so a grenade shoves a
  * trooper about two metres and a tank a few centimetres.
  */
+/** Two opposed rounds closer than this (metres, in 3D) meet in the air. */
+const PROJECTILE_COLLIDE_RADIUS = 0.42;
+/** A bomb run closer than this drops where it hovers (no move to queue). */
+const BOMB_RUN_TOLERANCE = 1.4;
 const KNOCKBACK_SCALE = 2.4;
 const KNOCKBACK_MAX = 4.5;
 // PUSH (owner 2026-09-24): an infantry shove throws a body "super far" -- into water it drowns, over
@@ -1009,8 +1008,12 @@ export class TacticalSim {
 
   queueGrenade(targetId: string): boolean {
     const actor = this.requirePlayerActor();
-    if (actor && isAirBomber(actor)) return this.queueGrenadeAt(actor.position); // a plane just drops straight down
     const target = this.entity(targetId);
+    if (actor && target && isAirBomber(actor)) {
+      if (target.team === actor.team) return this.reject("Cannot bomb friendly units");
+      if (target.flying) return this.reject("Bombs can't hit aircraft — use guns on flyers");
+      return this.queueBombRun(actor, target.position);
+    }
     if (!actor || !target || actor.id === target.id) return false;
     if (target.team === "player") return this.reject("Cannot target friendly units");
     return this.queueGrenadeFor(actor, target, this.aim);
@@ -1018,7 +1021,7 @@ export class TacticalSim {
 
   queueGrenadePart(targetId: string, partId: string): boolean {
     const actor = this.requirePlayerActor();
-    if (actor && isAirBomber(actor)) return this.queueGrenadeAt(actor.position);
+    if (actor && isAirBomber(actor)) return this.queueGrenade(targetId); // a bomb has no part to pick
     const target = this.entity(targetId);
     if (!actor || !target || actor.id === target.id) return false;
     if (target.team === "player") return this.reject("Cannot target friendly units");
@@ -1028,8 +1031,10 @@ export class TacticalSim {
   queueGrenadeAt(destination: Vec2): boolean {
     const actor = this.requirePlayerActor();
     if (!actor) return false;
-    // An aircraft bombs straight down beneath itself; ground units lob to the clicked spot.
-    const point = isAirBomber(actor) ? { x: actor.position.x, z: actor.position.z } : clampToArena(destination);
+    // An aircraft bombs straight down, so it FLIES to the clicked spot first (a bomb run) and drops
+    // there; ground units lob to the clicked spot.
+    if (isAirBomber(actor)) return this.queueBombRun(actor, clampToArena(destination));
+    const point = clampToArena(destination);
     const failure = this.grenadeLocationFailureReason(actor, point);
     if (failure) return this.reject(failure);
     if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
@@ -1044,12 +1049,37 @@ export class TacticalSim {
     return true;
   }
 
-  // An aircraft drops a bomb straight down beneath itself — no target needed, aimed by position.
-  queueBombDrop(): boolean {
+  // The Confirm Bomb button: bomb the picked spot / target, or straight down where it hovers.
+  queueBombDrop(at?: Vec2): boolean {
     const actor = this.requirePlayerActor();
     if (!actor) return false;
     if (!isAirBomber(actor)) return this.reject(`${actor.name} can't drop bombs`);
-    return this.queueGrenadeAt(actor.position);
+    return this.queueBombRun(actor, at ? clampToArena(at) : this.projectedActorForPreview(actor).position);
+  }
+
+  /** Why a bomb run at `point` cannot be queued (reach, bombs, action points), or undefined. */
+  bombRunFailure(actor: CombatEntity, point: Vec2): string | undefined {
+    if (actor.grenades <= 0) return `${actor.name} is out of bombs`;
+    if (!actor.status.alive) return `${actor.name} is disabled`;
+    if (actor.commandPoints <= 0) return `${actor.name} has no action points`;
+    const from = this.projectedActorForPreview(actor).position;
+    const d = dist(from, point);
+    if (d <= BOMB_RUN_TOLERANCE) return undefined;
+    if (!actor.status.canMove) return `${actor.name} cannot fly`;
+    if (d > moveRange(actor) + 0.5) return `Out of reach: ${actor.name} flies ${moveRange(actor)}m to bomb`;
+    if (actor.commandPoints < 2) return `A bomb run needs 2 AP: fly over, then drop`;
+    return undefined;
+  }
+
+  /** BOMB RUN: fly over the point (one move), then drop straight down there (one bomb). */
+  private queueBombRun(actor: CombatEntity, point: Vec2): boolean {
+    const failure = this.bombRunFailure(actor, point);
+    if (failure) return this.reject(failure);
+    if (dist(this.projectedActorForPreview(actor).position, point) > BOMB_RUN_TOLERANCE && !this.queueMoveToDestination(point)) return false;
+    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
+    actor.grenades = Math.max(0, actor.grenades - 1);
+    this.addOrder({ actorId: actor.id, kind: "grenade", destination: { ...point }, aim: "center", duration: 1.15 });
+    return true;
   }
 
   // ---- Transport / APC carry: load a friendly ground unit, carry it, and unload it ----
@@ -1322,7 +1352,7 @@ export class TacticalSim {
     if (!grenade && !shell) return undefined;
     // An aircraft's bomb always lands directly beneath it — the disc previews the drop, not a lob.
     const airDrop = grenade && isAirBomber(actor);
-    const to = airDrop ? { x: actor.position.x, z: actor.position.z } : clampToArena(point);
+    const to = clampToArena(point);
     const projected = this.projectedActorForPreview(actor);
     projected.yaw = Math.atan2(to.x - projected.position.x, to.z - projected.position.z);
     const attackMode: AttackMode = grenade ? "grenade" : "weapon";
@@ -1330,13 +1360,14 @@ export class TacticalSim {
     const fromHeight = muzzleHeight(projected, attackMode);
     const kind = grenade ? "grenade" : projectileKind(actor, "weapon");
     const horizontal = dist(from, to);
-    const reachable = airDrop || horizontal <= (grenade ? grenadeThrowRange(actor) : projectileRange(actor, "weapon"));
+    const reachable = airDrop ? !this.bombRunFailure(actor, to) : horizontal <= (grenade ? grenadeThrowRange(actor) : projectileRange(actor, "weapon"));
     const toHeight = terrainHeightAt(to) + 0.14;
     const arcHeight = airDrop ? 0 : grenade ? projectileArcHeight("grenade", horizontal) : Math.max(projectileArcHeight(kind, horizontal, actor.kind), 0.6);
-    const radius = explosiveBlast(kind).radius;
-    const ground = firstGroundBetweenShot(from, to, fromHeight, toHeight, arcHeight);
-    const obstacle = ground ? undefined : this.firstEntityBetweenShot(from, to, fromHeight, toHeight, actor.id, "", arcHeight);
-    const cover = ground || obstacle ? undefined : this.firstCoverBetweenShot(from, to, fromHeight, toHeight, undefined, arcHeight);
+    const radius = explosiveBlast(kind, actor.kind).radius;
+    // A bomb falls straight down on its point: nothing between "from" and "to" can intercept it.
+    const ground = airDrop ? undefined : firstGroundBetweenShot(from, to, fromHeight, toHeight, arcHeight);
+    const obstacle = ground || airDrop ? undefined : this.firstEntityBetweenShot(from, to, fromHeight, toHeight, actor.id, "", arcHeight);
+    const cover = ground || obstacle || airDrop ? undefined : this.firstCoverBetweenShot(from, to, fromHeight, toHeight, undefined, arcHeight);
     const hit = ground
       ? { point: ground.point, height: ground.height }
       : obstacle
@@ -1575,6 +1606,12 @@ export class TacticalSim {
   private troopFootprint(kind: TroopKind, team: Team): { radius: number; flying: boolean } {
     const probe = makeTroop(kind, "probe", "probe", team, { x: 0, z: 0 });
     return { radius: probe.radius, flying: Boolean(probe.flying) };
+  }
+
+  /** The body a deploy ghost draws: footprint radius, height, and altitude for a flyer. */
+  deployBody(kind: TroopKind): { radius: number; height: number; agl: number } {
+    const probe = makeTroop(kind, "probe", "probe", "player", { x: 0, z: 0 });
+    return { radius: probe.radius, height: probe.height, agl: probe.flying ? probe.agl ?? 5 : 0 };
   }
 
   // Same clearance rules as `freeSpawnNear`: clear of the base and every living body (sized to
@@ -2588,9 +2625,9 @@ export class TacticalSim {
     if (actor.kind === "artillery" && !actor.deployed) return this.reject(`${actor.name} must deploy before it can fire`);
     if (target.downed) return this.reject(`${target.name} is down — out of the fight unless a medic reaches them`);
     if (this.isPowerCut(actor)) return this.reject(`${actor.name} has no power — the conduit is cut`);
-    // Plane guns are air-to-air: a gunship's autocannon only engages other flyers (it drops bombs
-    // on the ground instead). Ground units CAN shoot up at flyers — that is the anti-air.
-    if (isAirKind(actor.kind) && !target.flying) return this.reject(`${actor.name}'s autocannon only engages aircraft — drop bombs on ground targets`);
+    // The interceptor's gun is air-to-air. Ground units CAN shoot up at flyers — that is the anti-air.
+    // (A gunship's autocannon also rakes ground targets; the interceptor is air-only and the bomber has no gun.)
+    if (actor.kind === "interceptor" && !target.flying) return this.reject(`${actor.name}'s cannon only engages aircraft`);
     const requestedPart = partId ? this.targetableParts(target).find((part) => part.id === partId) : undefined;
     if (partId && !requestedPart) return this.reject(`${target.name} does not have that targetable part`);
     const targetPart = requestedPart ?? preferredPart(target, aim);
@@ -2736,7 +2773,6 @@ export class TacticalSim {
       actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
       this.checkMines(actor);
       this.checkPickups(actor);
-      if (actor.kind === "gunship") this.strafeAlongPath(order, actor);
       if (dist(actor.position, order.destination) < 0.08) order.done = true;
       else if (order.elapsed >= order.duration) {
         // Out of time SHORT of the stop (shoved, or the move began late): that halt point was never
@@ -2898,28 +2934,6 @@ export class TacticalSim {
       }
     }
     if (order.elapsed >= order.duration) order.done = true;
-  }
-
-  // STRAFE. A gunship on the move guns everything hostile it passes: one burst per unit within
-  // STRAFE_RADIUS of its path, resolved as direct damage the moment it comes into reach (the
-  // autocannon's air-to-air rule is for aimed fire; a gun run is the exception).
-  private strafeAlongPath(order: TacticalOrder, actor: CombatEntity): void {
-    if (!actor.status.canShoot) return;
-    const strafed = (order.strafed ??= []);
-    for (const target of this.entities) {
-      if (target.team === actor.team || target.team === "neutral" || !target.status.alive || target.downed || target.carriedById) continue;
-      if (target.kind === "cover" || isBuildingKind(target.kind) || strafed.includes(target.id)) continue;
-      if (dist(target.position, actor.position) > STRAFE_RADIUS + target.radius) continue;
-      strafed.push(target.id);
-      const part = preferredPart(target, "center");
-      const amount = Math.max(1, Math.round(this.estimateShotDamage(actor, target, part, "center", false) * STRAFE_DAMAGE_SHARE));
-      const result = applyDamage(target, part.id, amount);
-      this.pushLog(`${actor.name} strafes ${target.name}`);
-      // Warm MG tracers from the gun under the nose (ONE BALLISTIC LANGUAGE: no team-colour lines).
-      this.effect("shot", actor.position, target.position, 0xffc070, 0.36, undefined, actor.elevation - 0.35);
-      this.effect("impact", target.position, target.position, result.destroyed ? 0xffd166 : 0xffffff, 0.42, target.radius);
-      this.afterDamage(actor, target, result, "Strafe");
-    }
   }
 
   private hasActivePriorOrder(order: TacticalOrder): boolean {
@@ -3113,6 +3127,7 @@ export class TacticalSim {
     // Already touching a face (spawned there, or thrown there)? Fall back to the centre line so the
     // unit can always walk away from it.
     const useFootprint = !footprintRise(start, footing);
+    const startHullIn = hullInRise(start, actor.radius * 0.9);
     let lastClear = start;
 
     for (let i = 1; i <= samples; i += 1) {
@@ -3135,6 +3150,12 @@ export class TacticalSim {
         return stopped;
       }
 
+      // A unit already pressed against a face may walk AWAY or along it (the centre-line fallback), but
+      // never walk its hull INTO the rock (movement.test.ts, 2026-10-02).
+      if (!useFootprint && !startHullIn && hullInRise(point, actor.radius * 0.9)) {
+        if (!silent) this.pushLog(`${actor.name} must use a cliff ascent`);
+        return lastClear;
+      }
       if (useFootprint && height - footing <= TERRAIN_STEP && footprintRise(point, Math.max(footing, height))) {
         if (!silent) this.pushLog(`${actor.name} must use a cliff ascent`);
         return lastClear;
@@ -3391,6 +3412,59 @@ export class TacticalSim {
 
   private updateProjectiles(dt: number): void {
     for (const projectile of [...this.projectiles]) this.updateProjectile(projectile, dt);
+    this.collideProjectilesInAir();
+  }
+
+  // MID-AIR COLLISIONS (owner 2026-10-02): rounds from OPPOSED sides that cross each other this step
+  // meet in the air. A grenade or shell that is hit goes off where it was hit; two plain rounds cancel.
+  // (Bombs dropped from aircraft fall too steeply and fast to be shot down, and smoke rounds are inert.)
+  private collideProjectilesInAir(): void {
+    if (this.projectiles.length < 2) return;
+    const team = (p: Projectile): Team | undefined => this.entity(p.actorId)?.team;
+    const live = this.projectiles.filter((p) => p.state === "flying" && !p.smoke && !(p.kind === "grenade" && p.originHeight > 2));
+    const gone = new Set<string>();
+    for (let i = 0; i < live.length; i += 1) {
+      for (let j = i + 1; j < live.length; j += 1) {
+        const a = live[i], b = live[j];
+        if (gone.has(a.id) || gone.has(b.id)) continue;
+        const ta = team(a), tb = team(b);
+        if (!ta || !tb || ta === tb) continue;
+        // Closest approach over this step, sampled (both rounds advanced by the same dt).
+        let closest = Infinity;
+        let meet: Vec2 = a.position;
+        let meetHeight = a.height;
+        for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+          const ax = a.previous.x + (a.position.x - a.previous.x) * t, az = a.previous.z + (a.position.z - a.previous.z) * t;
+          const bx = b.previous.x + (b.position.x - b.previous.x) * t, bz = b.previous.z + (b.position.z - b.previous.z) * t;
+          const ah = a.previousHeight + (a.height - a.previousHeight) * t, bh = b.previousHeight + (b.height - b.previousHeight) * t;
+          const d = Math.hypot(ax - bx, az - bz, ah - bh);
+          if (d < closest) { closest = d; meet = { x: (ax + bx) / 2, z: (az + bz) / 2 }; meetHeight = (ah + bh) / 2; }
+        }
+        if (closest > PROJECTILE_COLLIDE_RADIUS) continue;
+        gone.add(a.id); gone.add(b.id);
+        this.collideProjectiles(a, b, meet, meetHeight);
+      }
+    }
+  }
+
+  private collideProjectiles(a: Projectile, b: Projectile, meet: Vec2, height: number): void {
+    const nameOf = (p: Projectile): string => this.entity(p.actorId)?.name ?? "A shot";
+    const explosive = (p: Projectile): boolean => p.kind === "grenade" || p.kind === "shell";
+    this.effect("ping", { ...meet }, { ...meet }, 0xfff1a6, 0.4, 0.7, height);
+    for (const p of [a, b]) {
+      const actor = this.entity(p.actorId);
+      const order = this.orders.find((o) => o.id === p.orderId);
+      if (explosive(p) && actor) {
+        const other = p === a ? b : a;
+        this.pushLog(`${nameOf(other)}'s round shoots down ${nameOf(p)}'s ${p.kind === "grenade" ? "grenade" : "shell"} in mid-air`);
+        // It goes off where it was hit: the same blast, at the point below the meeting.
+        this.detonateGroundTarget(p, actor, order, { ...meet });
+      } else {
+        this.removeProjectile(p.id);
+        if (order) order.done = true;
+      }
+    }
+    if (!explosive(a) && !explosive(b)) this.pushLog(`${nameOf(a)}'s and ${nameOf(b)}'s rounds collide in mid-air`);
   }
 
   private updateProjectile(projectile: Projectile, dt: number): void {
@@ -3557,8 +3631,9 @@ export class TacticalSim {
   private detonateRollingGrenade(projectile: Projectile, actor: CombatEntity, intendedTarget: CombatEntity | undefined, order: TacticalOrder | undefined): void {
     const point = { ...projectile.position };
     this.pushLog(`${actor.name}'s grenade rolls and explodes${intendedTarget ? ` near ${intendedTarget.name}` : ""}`);
-    this.effect("blast", point, point, 0xffbf69, 0.78, 2.35);
-    this.applyExplosiveRadius(actor, point, 2.55, 34, `${actor.name}'s rolling blast`);
+    const rolling = explosiveBlast("grenade", actor.kind);
+    this.effect("blast", point, point, 0xffbf69, 0.78, rolling.radius - 0.2);
+    this.applyExplosiveRadius(actor, point, rolling.radius, rolling.damage, `${actor.name}'s rolling blast`, rolling.maxThrow);
     this.removeProjectile(projectile.id);
     if (order) order.done = true;
   }
@@ -3570,12 +3645,12 @@ export class TacticalSim {
       if (order) order.done = true;
       return;
     }
-    const blast = explosiveBlast(projectile.kind);
-    const word = projectile.kind === "grenade" ? "grenade" : "shell";
+    const blast = explosiveBlast(projectile.kind, actor.kind);
+    const word = projectile.kind === "grenade" ? (isAirBomber(actor) ? "bomb" : "grenade") : "shell";
     const blastPoint = { ...point };
     this.pushLog(`${actor.name}'s ${word} explodes at the marked spot`);
     this.effect("blast", blastPoint, blastPoint, 0xffbf69, 0.78, blast.radius);
-    this.applyExplosiveRadius(actor, blastPoint, blast.radius, blast.damage, `${actor.name}'s ${word} blast`);
+    this.applyExplosiveRadius(actor, blastPoint, blast.radius, blast.damage, `${actor.name}'s ${word} blast`, blast.maxThrow);
     this.removeProjectile(projectile.id);
     if (order) order.done = true;
   }
@@ -3588,9 +3663,11 @@ export class TacticalSim {
       if (order) order.done = true;
       return;
     }
-    this.pushLog(`${actor.name}'s ${projectile.kind === "grenade" ? "grenade" : "shell"} bursts near ${trigger.name}`);
-    this.effect("blast", point, point, projectile.kind === "grenade" ? 0xffbf69 : 0xffd166, 0.72, projectile.kind === "grenade" ? 2.25 : 1.6);
-    this.applyExplosiveRadius(actor, point, projectile.kind === "grenade" ? 2.55 : 1.75, projectile.kind === "grenade" ? 34 : 26, `${trigger.name} is caught in the blast`);
+    const burst = explosiveBlast(projectile.kind, actor.kind);
+    const big = projectile.kind === "grenade";
+    this.pushLog(`${actor.name}'s ${big ? (isAirBomber(actor) ? "bomb" : "grenade") : "shell"} bursts near ${trigger.name}`);
+    this.effect("blast", point, point, big ? 0xffbf69 : 0xffd166, 0.72, big ? burst.radius - 0.3 : 1.6);
+    this.applyExplosiveRadius(actor, point, big ? burst.radius : 1.75, big ? burst.damage : 26, `${trigger.name} is caught in the blast`, big ? burst.maxThrow : undefined);
     if (trigger.kind === "cover") this.airburstBehindCover(actor, projectile, trigger);
     this.removeProjectile(projectile.id);
     if (order) order.done = true;
@@ -3941,7 +4018,7 @@ export class TacticalSim {
     }
   }
 
-  private applyExplosiveRadius(actor: CombatEntity, point: Vec2, radius: number, baseDamage: number, message: string): void {
+  private applyExplosiveRadius(actor: CombatEntity, point: Vec2, radius: number, baseDamage: number, message: string, maxThrow?: number): void {
     for (const entity of this.entities) {
       // Flyers ride above the blast plane — a GROUND explosion never reaches them (anti-air is
       // direct-fire only, not splash). The 2D distance below would otherwise hit them at altitude.
@@ -3958,7 +4035,7 @@ export class TacticalSim {
         this.effect("impact", entity.position, entity.position, 0xffbf69, 0.42, entity.radius);
         this.afterDamage(actor, entity, result);
       }
-      this.applyKnockback(actor, entity, point, baseDamage, falloff);
+      this.applyKnockback(actor, entity, point, baseDamage, falloff, maxThrow ? { maxThrow } : {});
     }
   }
 
@@ -4481,9 +4558,14 @@ export class TacticalSim {
     }
 
     const elevationDelta = actor.elevation - target.elevation;
+    // HIGH GROUND IS A BIG DEAL (owner 2026-10-02): fire from above is far tighter, fire up a slope
+    // far wilder. A full mesa step (1.2m+) halves / more than doubles the spread. Aircraft fire down.
     if (elevationDelta > 0.45) {
-      spreadDegrees *= 0.86;
-      notes.push("high-ground angle");
+      spreadDegrees *= elevationDelta >= 1.2 ? 0.5 : 0.7;
+      notes.push("high ground");
+    } else if (elevationDelta < -0.45 && !actor.flying) {
+      spreadDegrees *= elevationDelta <= -1.2 ? 2.2 : 1.6;
+      notes.push("shooting uphill");
     }
 
     // Flanking: a shot into the target's exposed side/rear is tighter (it isn't dodging/covering
@@ -4598,7 +4680,15 @@ export class TacticalSim {
     }
   }
 
+  /** Push-out of overlapping bodies, but never INTO a rock face: a shove that would sink the hull into a
+   *  step is undone (a brief overlap with a neighbour is the lesser evil; movement.test.ts 2026-10-02). */
   private separateFromUnits(actor: CombatEntity, destination?: Vec2): void {
+    const before = { ...actor.position };
+    this.separateFromUnitsRaw(actor, destination);
+    if (!actor.flying && hullInRise(actor.position, actor.radius * 0.9) && !hullInRise(before, actor.radius * 0.9)) actor.position = before;
+  }
+
+  private separateFromUnitsRaw(actor: CombatEntity, destination?: Vec2): void {
     if (actor.flying) return; // a flyer sits above the ground plane — it never jostles ground units
     // Relax over a few passes: pushing off one neighbour can shove the mover into another, so a
     // single pass leaves residual overlaps (units visually merged) in a crowd. Iterate until settled.
@@ -4946,9 +5036,7 @@ export class TacticalSim {
         spendCommandPoint(enemy);
         continue;
       }
-      // Air units: the autocannon is air-to-air ONLY, so a gunship guns enemy flyers but drops
-      // BOMBS on ground targets (aimed at the spot, like a grenade). Deterministic — a gunship
-      // commits rather than rolling for it.
+      // Air units: the gunship guns flyers first; a bomber drops bombs when a ground foe is beneath it.
       if (isAirKind(enemy.kind) && enemy.commandPoints > 0) {
         const flyers = (players.length ? players : allPlayers).filter((p) => p.flying && p.status.alive);
         const airTgt = flyers.length ? nearest(enemy, flyers) : undefined;
@@ -6547,9 +6635,20 @@ function canGroundShellAttack(entity: CombatEntity): boolean {
 }
 
 // Blast radius and base damage for an explosive round detonating on the ground.
-function explosiveBlast(kind: ProjectileKind): { radius: number; damage: number } {
-  if (kind === "grenade") return { radius: 2.55, damage: 34 };
-  if (kind === "shell") return { radius: 2.25, damage: 40 };
+// EXPENSIVE UNITS HIT HARDER (owner 2026-10-02): a $420 gunship's bomb is a huge blast that throws
+// troops flying; the Bomber's three-bomb carpet, the tank and the siege guns also out-hit a grenade.
+function explosiveBlast(kind: ProjectileKind, source?: EntityKind): { radius: number; damage: number; maxThrow?: number } {
+  if (kind === "grenade") {
+    if (source === "gunship") return { radius: 4.4, damage: 96, maxThrow: 9 };
+    if (source === "bomber") return { radius: 3.4, damage: 78, maxThrow: 7 };
+    return { radius: 2.55, damage: 34 };
+  }
+  if (kind === "shell") {
+    if (source === "artillery") return { radius: 3.0, damage: 62, maxThrow: 6 };
+    if (source === "tank") return { radius: 2.5, damage: 52, maxThrow: 5.5 };
+    if (source === "exturret") return { radius: 2.6, damage: 50, maxThrow: 5.5 };
+    return { radius: 2.25, damage: 40 };
+  }
   return { radius: 1.6, damage: 22 };
 }
 

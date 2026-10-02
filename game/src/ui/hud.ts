@@ -114,7 +114,7 @@ export interface HudCallbacks {
   queueGrenadePart(id: string, partId: string): boolean;
   queueGrenadeAt(destination: Vec2): boolean;
   queueSmokeAt(destination: Vec2): boolean;
-  queueBombDrop(): boolean;
+  queueBombDrop(at?: Vec2): boolean;
   queueLoad(passengerId: string): boolean;
   queueUnload(destination: Vec2): boolean;
   queueRam(id: string): boolean;
@@ -214,6 +214,11 @@ export class Hud {
         this.action = "select";
         this.callbacks.setIntent("select");
       }
+      return;
+    }
+    // Move armed and a hostile clicked: go TO it (a gunship flies on top of it; a trooper closes in).
+    if (this.action === "move" && this.sim.phase === "command" && this.sim.selected && this.sim.selected.kind !== "base" && entity.team === "enemy") {
+      this.chooseGround(entity.position);
       return;
     }
     if (entity.kind === "cover" && this.action !== "shoot" && this.action !== "grenade" && this.action !== "ram" && this.action !== "melee") {
@@ -440,7 +445,7 @@ export class Hud {
 
       <aside class="panel roster ${allOrdersSet ? "all-set" : ""}">
         <div class="panel-title">Squad${allOrdersSet ? `<span class="all-orders-chip">All set</span>` : ""}</div>
-        ${playerUnits.map((unit) => unitCard(unit, unit.id === actor?.id, playerOrders.get(unit.id) ?? [], this.sim)).join("")}
+        ${playerUnits.filter((unit) => unit.status.alive || unit.downed || unit.kind === "base").map((unit) => unitCard(unit, unit.id === actor?.id, playerOrders.get(unit.id) ?? [], this.sim)).join("")}
       </aside>
 
       ${targetPanelOpen ? `
@@ -474,7 +479,7 @@ export class Hud {
 
       <section class="log compact-log ${this.logExpanded ? "expanded" : ""}" data-tip="${escapeAttr(this.sim.log.join(" / "))}">
         <button class="log-toggle" data-command="toggle-log" aria-label="${this.logExpanded ? "Close battle log" : "Open battle log"}" data-tip="${this.logExpanded ? "Collapse action log. Hotkey: L or Esc." : "Expand recent hits, misses, and system damage. Hotkey: L."}">
-          <span class="log-toggle-icon">${this.logExpanded ? "×" : "+"}</span>
+          <span class="log-toggle-icon"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="${this.logExpanded ? "M1.5 1.5L8.5 8.5M8.5 1.5L1.5 8.5" : "M5 1V9M1 5H9"}" stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"/></svg></span>
           <strong>${this.logExpanded ? "Close Log" : "Log"}</strong>
         </button>
         ${this.logExpanded ? battleLogPanel(this.sim) : `<span class="log-line">${escapeHtml(this.sim.log[0] ?? "No events")}</span>`}
@@ -595,7 +600,9 @@ export class Hud {
       if (this.callbacks.queueGrenadePart(this.targetId, this.targetPartId)) this.afterConfirmedOrder();
     }
     if (confirm === "bomb") {
-      if (this.callbacks.queueBombDrop()) this.afterConfirmedOrder();
+      // Bomb the picked target (flying over it first), or straight down where it hovers.
+      const picked = this.targetId ? this.sim.entity(this.targetId) : undefined;
+      if (this.callbacks.queueBombDrop(picked ? picked.position : undefined)) this.afterConfirmedOrder();
     }
     if (confirm === "ram" && this.targetId) {
       if (this.callbacks.queueRam(this.targetId)) this.afterConfirmedOrder();
@@ -1289,11 +1296,11 @@ function shootState(
   }
   // An aircraft's autocannon is air-to-air ONLY — targeting a ground unit reads as "why can't I
   // confirm?", so say it plainly and offer no confirm button.
-  if (actor.flying && actor.status.canShoot && !target.flying) {
+  if (actor.kind === "interceptor" && !target.flying) {
     return `
       <div class="target-summary blocked">
         <strong>${escapeHtml(target.name)} is a ground target</strong>
-        <span>The autocannon only engages AIRCRAFT — use ${bombVerb(actor)} on ground targets.</span>
+        <span>The interceptor's cannon only engages AIRCRAFT.</span>
       </div>
     `;
   }
@@ -1346,15 +1353,14 @@ function grenadeState(
 ): string {
   if (!actor) return `<div class="order-note">Click a trooper first.</div>`;
   if (actor.flying) {
-    // Aircraft bomb straight down beneath themselves — no target or aim, just confirm.
-    const canDrop = actor.grenades > 0 && actor.commandPoints > 0 && actor.status.alive && sim.phase === "command";
-    const note = !actor.status.alive ? `${actor.name} is disabled`
-      : actor.grenades <= 0 ? "Out of bombs"
-      : actor.commandPoints <= 0 ? "No action points"
-      : "Drops straight down.";
+    // A BOMB RUN: pick a ground spot or a hostile; the aircraft flies over it, then drops straight down.
+    const spot = target && target.team !== actor.team && !target.flying ? target.position : actor.position;
+    const reason = sim.phase !== "command" ? "Not now" : sim.bombRunFailure(actor, spot);
+    const canDrop = !reason;
+    const note = reason ?? (target && spot === target.position ? `Fly over ${target.name} and drop.` : "Click ground or a foe to bomb it.");
     return `
       <div class="order-note">${escapeHtml(note)}</div>
-      <button class="btn confirm ${canDrop ? "" : "disabled"}" data-confirm="bomb" data-disabled="${!canDrop}" data-tip="Drop a bomb straight down beneath the aircraft. Cannot hit aircraft.">
+      <button class="btn confirm ${canDrop ? "" : "disabled"}" data-confirm="bomb" data-disabled="${!canDrop}" data-tip="${escapeAttr(reason ?? "Fly over the target and drop a bomb straight down: a huge blast that throws troops flying. Cannot hit aircraft.")}">
         Confirm Bomb
         <span>${actor.grenades}/${actor.maxGrenades} left</span>
       </button>
@@ -1523,12 +1529,12 @@ function inspectTargetState(actor: CombatEntity | undefined, target: CombatEntit
     ${blurb ? `<div class="cover-blurb capture">${escapeHtml(blurb)}</div>` : ""}
     <div class="inspect-target-actions">
       ${capture ? captureButton(actor, target, sim) : ""}
-      ${actor?.status.canShoot ? `<button class="btn confirm" data-order-action="shoot" data-tip="Aim at a specific part.">
+      ${actor?.status.canShoot && actor.kind !== "base" ? `<button class="btn confirm" data-order-action="shoot" data-tip="Aim at a specific part.">
         Shoot
         <span>aim</span>
       </button>` : ""}
-      ${actor && actor.maxGrenades > 0 ? `<button class="btn confirm ${actor.grenades > 0 ? "" : "disabled"}" data-order-action="grenade" data-disabled="${actor.grenades <= 0}" data-tip="Throw a limited-supply hand grenade in a short arc.">
-        Grenade
+      ${actor && actor.kind !== "base" && actor.maxGrenades > 0 ? `<button class="btn confirm ${actor.grenades > 0 ? "" : "disabled"}" data-order-action="grenade" data-disabled="${actor.grenades <= 0}" data-tip="${actor.flying ? "Fly over and drop a bomb: a huge blast." : "Throw a limited-supply hand grenade in a short arc."}">
+        ${bombVerb(actor)}
         <span>${actor.grenades}/${actor.maxGrenades}</span>
       </button>` : ""}
       ${actor && isInfantryKind(actor.kind) ? `<button class="btn confirm" data-order-action="melee" data-tip="${escapeAttr(actor.kind === "striker" ? "Arc Blade strike — Strikers hit hardest in melee." : "Bayonet/rifle-butt strike when adjacent. Riflemen hit for less than a Striker.")}">
@@ -1949,7 +1955,7 @@ function queuedOrdersState(orders: TacticalOrder[], sim: TacticalSim): string {
       ${orders.map((order, index) => `
         <button class="queued-chip undo-order" data-cancel-order="${order.id}" data-tip="Undo step ${index + 1}: ${escapeAttr(orderSummary(order, sim).replace("Queued: ", ""))}. Refunds 1 AP.">
           <strong>${index + 1}. ${escapeHtml(title(order.kind))}</strong>
-          <span>${escapeHtml(orderSummary(order, sim).replace("Queued: ", ""))}</span>
+          ${(() => { const detail = orderSummary(order, sim).replace("Queued: ", ""); return detail.toLowerCase() === title(order.kind).toLowerCase() ? "" : `<span>${escapeHtml(detail)}</span>`; })()}
           <em>undo</em>
         </button>
       `).join("")}
