@@ -590,6 +590,38 @@ app.whenReady().then(async () => {
         await js(`window.__rht.setTimeScale(1)`);
         continue;
       }
+      if (s === "hopflow") {
+        // The real flow on Karak: pick a scout, press Hop (button), hover the far bank (arc preview), click, end turn, film it. Lands on the far bank, never in the river.
+        await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("karak", "destroy", "normal")`);
+        await sleep(1800);
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("enemy", 0); const u = sim.debugSpawn("scout", "player", { x: -12.4, z: 3 }); sim.debugSelect(u.id); window.__hopUnit = u.id; r.setView({ x: -10, z: 3, zoom: 0.3, pitch: 0.7, yaw: 0.5 }); })()`);
+        await sleep(500);
+        const hasBtn = await js(`Boolean(document.querySelector('[data-order-action="leap"]'))`);
+        console.log("hopflow hop button", hasBtn);
+        if (!hasBtn) throw new Error("no Hop button for an infantry unit");
+        await js(`window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyJ" }))`); // the hotkey, not the button
+        await sleep(200);
+        const armed = await js(`window.__rht.sim.intent`);
+        console.log("hopflow J arms", armed);
+        if (armed !== "leap") throw new Error("the J hotkey did not arm Hop: " + armed);
+        await js(`window.__rht.hoverGround({ x: -7.9, z: 3 })`);
+        await sleep(700); await shot("hopflow-preview");
+        await js(`window.__rht.clickWorld({ x: -7.9, z: 3 }, 0)`);
+        await sleep(300);
+        const queued = await js(`JSON.stringify(window.__rht.sim.orders.filter((o) => o.actorId === window.__hopUnit).map((o) => ({ k: o.kind, leap: o.leap, d: o.destination })))`);
+        console.log("hopflow queued", queued);
+        if (!/"leap":true/.test(queued)) throw new Error("clicking the far bank did not queue a hop: " + queued);
+        await js(`window.__rht.setTimeScale(0.3); window.__rht.sim.endTurn()`);
+        const heights = [];
+        for (let i = 0; i < 8; i += 1) { await sleep(i === 0 ? 500 : 220); await shot("hopflow-" + i); heights.push(await js(`(() => { const e = window.__rht.sim.entity(window.__hopUnit); return JSON.stringify({ x: +e.position.x.toFixed(2), agl: +(e.agl || 0).toFixed(2), fly: !!e.flying }); })()`)); }
+        await js(`window.__rht.setTimeScale(1)`);
+        console.log("hopflow track", heights.join(" "));
+        for (let i = 0; i < 40; i += 1) { if (await js(`window.__rht.sim.phase === "command"`)) break; await sleep(250); }
+        const end = JSON.parse(await js(`(() => { const e = window.__rht.sim.entity(window.__hopUnit); return JSON.stringify({ x: e.position.x, z: e.position.z, fly: !!e.flying }); })()`));
+        console.log("hopflow end", JSON.stringify(end));
+        if (end.fly || end.x < -8.5) throw new Error("the hop did not land on the far bank: " + JSON.stringify(end));
+        continue;
+      }
       if (s === "glprobe") {
         // GL ERRORS PER FRAME (2026-10-01): wraps blitFramebuffer and polls getError over 2s of a battle.
         // A depth blit failed 144 times a second for weeks unseen (see stage.ts, NO DEPTH BLIT); any

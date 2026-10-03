@@ -499,7 +499,7 @@ export class Hud {
     const cover = this.sim.entities.filter((entity) => entity.team === "neutral").sort(byRange);
     // Only open the target drawer when the selected actor can actually perform the armed
     // attack — never for the Home Base (which has its own command deck and cannot attack).
-    const targetPanelOpen = !target && Boolean(actor) && actionVisible(this.action, actor, this.sim);
+    const targetPanelOpen = !target && Boolean(actor) && this.action !== "leap" && this.action !== "place" && actionVisible(this.action, actor, this.sim); // a hop or a placement is a ground click: no hostile list
     // "All set" reflects squad maneuvering, so ignore the base's economy command point.
     const squadUnits = playerUnits.filter((unit) => unit.status.alive && !isBuildingKind(unit.kind) && !isDefenseKind(unit.kind));
     const allOrdersSet = this.sim.phase === "command" && squadUnits.length > 0 && squadUnits.every((unit) => unit.commandPoints <= 0);

@@ -2225,7 +2225,8 @@ function groundAimHover(): Vec2 | undefined {
   // A lob or ground shell is aimed at the PICKED spot (click, then Confirm), never the moving cursor.
   const lob = sim.intent === "grenade" && !sim.selected?.flying;
   if (lob || (sim.intent === "shoot" && sim.selectedCanGroundTarget())) return hud.groundPick;
-  return sim.intent === "grenade" || sim.intent === "move" ? hoverWorld : undefined;
+  // Move, Hop and Place all preview where they would end up under the cursor.
+  return sim.intent === "grenade" || sim.intent === "move" || sim.intent === "leap" || sim.intent === "place" ? hoverWorld : undefined;
 }
 
 // Diff freshly-spawned projectiles/effects against the seen-sets and fire the one-shot

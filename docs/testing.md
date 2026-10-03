@@ -88,6 +88,7 @@ drive headless Chromium via `window.__rht`.
 - `npm run shots:gpu -- fieldhands mounts audioprobe`: the 2026-10-03 units and placements, crewing a gun post (Man armed,
   walk-up, crewed), and a probe that each map picks one of its own three tracks and every audio file is served (200).
   `src/game/fieldhands.test.ts` covers heal / repair, charges, pads (incl. ring-out), oil, barriers, the rocket and the posts.
+- `npm run shots:gpu -- hopflow` is the real Hop flow on Karak: J arms it, hovering the far bank draws the arc and landing ring, a click queues it, and the scout must end standing on the far bank (not in the ravine); `leap.test.ts` covers ledges, water, save/restore, cancel and landing collisions on the map's real (scaled) terrain.
 - `npm run shots:gpu -- groundaim` arms Shoot on a tank, clicks a ground spot, moves the cursor away and checks the line stays and Confirm queues that spot.
 - `npm run shots:gpu -- projectiles circles controls3 treatanim`: every round in flight, rings across ledges on all six maps, the base deck numbers /
   Tab / hop preview / all-set button, and a medic's aid pose.
