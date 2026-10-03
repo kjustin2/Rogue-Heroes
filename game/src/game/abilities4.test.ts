@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CARPET_BOMBS, TacticalSim, mapDef } from "./sim";
+import { CARPET_BOMBS, CLASH_BLAST, CLASH_BOLT, TacticalSim, mapDef } from "./sim";
 import { createBase, createSoldier } from "./damageModel";
 import { DEFAULT_TERRAIN, discSamples, onTerrainEdge, pointInWater, setActiveTerrain } from "./terrain";
 
@@ -290,7 +290,7 @@ describe("gunship bomb run", () => {
 
 describe("mid-air collisions", () => {
   // Fire a real round from a player sniper, then inject an enemy round flying straight back at it.
-  const clash = (kind: "plain" | "grenade"): { sim: TacticalSim; log: string[]; left: number } => {
+  const clash = (kind: "plain" | "grenade"): { sim: TacticalSim; log: string[]; left: number; families: number[] } => {
     const sim = staged();
     sim.entities.filter((e) => e.team === "enemy" && e.kind === "base").forEach(disarm);
     const a = sim.debugSpawn("sniper", "player", { x: -10, z: 0 });
@@ -315,14 +315,20 @@ describe("mid-air collisions", () => {
     });
     sim.projectiles.push(other);
     const mark = sim.logTotal;
-    for (let t = 0; t < 3; t += 0.02) sim.update(0.02);
-    return { sim, log: sim.log.slice(0, sim.logTotal - mark), left: sim.projectiles.filter((p) => p.id === "injected" || p.id === mine!.id).length };
+    const families: number[] = [];
+    for (let t = 0; t < 3; t += 0.02) { sim.update(0.02); for (const e of sim.effects) if (e.type === "clash" && !families.includes(e.color)) families.push(e.color); }
+    return { sim, families, log: sim.log.slice(0, sim.logTotal - mark), left: sim.projectiles.filter((p) => p.id === "injected" || p.id === mine!.id).length };
   };
 
   it("two opposed plain rounds meeting in the air cancel each other", () => {
     const { log, left } = clash("plain");
     expect(log.some((l) => l.includes("collide in mid-air")), log.join(" | ")).toBe(true);
     expect(left).toBe(0);
+  });
+
+  it("the meeting is a clash effect named for what met: a bolt's ring, or a fireball when a grenade is shot down", () => {
+    expect(clash("plain").families).toEqual([CLASH_BOLT]); // the sniper's round is a bolt
+    expect(clash("grenade").families).toEqual([CLASH_BLAST]);
   });
 
   it("a round that meets a grenade sets it off where it was hit", () => {

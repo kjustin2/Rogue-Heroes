@@ -268,14 +268,51 @@ describe("manned emplacements", () => {
     const rel = { x: gunner.position.x - gp.position.x, z: gunner.position.z - gp.position.z };
     expect(rel.x * gx + rel.z * gz).toBeLessThan(0);
     expect(Math.hypot(rel.x, rel.z)).toBeLessThan(gp.radius + gunner.radius + 0.4);
-    expect(gunner.commandPoints).toBe(0); // the crew's turn is the gun's
-    expect(sim.entity(gp.id)!.commandPoints).toBe(1);
+    expect(gunner.commandPoints).toBe(1); // the crew keeps one action, only for leaving
+    expect(sim.entity(gp.id)!.commandPoints).toBe(2); // the gun gets two shots
     sim.debugSelect(gp.id);
     const before = hp(target);
     expect(sim.queueShoot(target.id)).toBe(true);
     sim.endTurn();
     settle(sim);
     expect(hp(sim.entity(target.id)!)).toBeLessThan(before);
+  });
+
+  it("a crewed post hits a foe right beside it, from every side (the crew is never in the way)", () => {
+    for (const [dx, dz] of [[1.7, 0], [-1.7, 0], [0, 1.7], [0, -1.7], [2.5, 0], [-2.5, 0], [0, 2.5], [0, -2.5]] as const) {
+      const sim = staged();
+      for (const e of sim.entities.filter((x) => x.kind === "gunpost")) e.status.alive = false;
+      const gp = post(sim, -8, 0);
+      const gunner = sim.debugSpawn("soldier", "player", { x: -8 - 1.1, z: 0 });
+      sim.debugSelect(gunner.id);
+      expect(sim.queueMan(gp.id)).toBe(true);
+      sim.endTurn(); settle(sim);
+      const target = sim.debugSpawn("soldier", "enemy", { x: gp.position.x + dx, z: gp.position.z + dz });
+      disarm(target);
+      sim.debugSelect(gp.id);
+      expect(sim.previewShot(gp.id, target.id, target.parts[0].id)?.warningText, `no friendly-fire warning ${dx},${dz}`).toBeUndefined();
+      const before = hp(target);
+      expect(sim.queueShoot(target.id), `queue ${dx},${dz}`).toBe(true);
+      sim.endTurn(); settle(sim);
+      expect(hp(sim.entity(target.id)!), `damage ${dx},${dz}`).toBeLessThan(before);
+      expect(hp(sim.entity(gunner.id)!), `crew untouched ${dx},${dz}`).toBe(hp(gunner));
+    }
+    setActiveTerrain(DEFAULT_TERRAIN);
+  });
+
+  it("a crewed post gets two actions a turn and the crew keeps one, spent only on leaving", () => {
+    const sim = staged();
+    const gp = post(sim, -8, 0);
+    const gunner = sim.debugSpawn("soldier", "player", { x: -9.1, z: 0 });
+    sim.debugSelect(gunner.id);
+    sim.queueMan(gp.id);
+    sim.endTurn(); settle(sim);
+    expect(sim.entity(gp.id)!.commandPoints).toBe(2);
+    expect(gunner.commandPoints).toBe(1);
+    sim.debugSelect(gp.id);
+    expect(sim.queueDismount()).toBe(true);
+    expect(gunner.commandPoints).toBe(0); // leaving costs the crew's one action
+    expect(sim.entity(gp.id)!.occupantId).toBeUndefined();
   });
 
   it("an uncrewed post cannot act; Leave sends the crew away and the post goes quiet", () => {

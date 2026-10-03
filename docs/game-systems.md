@@ -162,6 +162,16 @@ How the factions, the three AI brains and Local 2 Players work, with the measure
   Syndicate hard-hitting and brittle (raider +1 grenade, -8% HP; striker / sapper / flamer +10% damage; -8% HP on the glass), Bastion
   tough, slow and long-ranged (guardsman +12% HP, -8% speed; mortar and artillery +10% range; tank +12% HP). Multipliers are held to
   0.88-1.2 by `factionMods.test.ts`; the Deploy card names the faction's trait for each unit.
+- **Round 1 of batch 3 (2026-10-03)**: a crewed post gets TWO actions a turn and its crew keeps ONE, spent only to climb out (leaving costs 1,
+  not the whole turn); the crew is never a blocker or a casualty of its own post's line of fire (`crewId` exclusions in
+  `firstEntityBetweenShot` / `firstEntityHitBySegment` / `firstExplosiveProximity`; the "Friendly fire risk" warning at 2.5m was the
+  crew standing in the line), and the barrel starts 0.7m out of the ring. `isMountKind` replaces the hard-coded gun-post / mortar-pit
+  pairs. Selecting a target always shows its part health (More / Less is gone), the base panel lost "One base order a turn." and the
+  faction **doctrine name** is no longer shown anywhere (the rule stays in the card tooltip). Recon Sweep: $60, 2-turn cooldown, and it
+  marks every foe for the next turn. Two rounds meeting in mid-air now draw a `clash` effect by family (`CLASH_SPARK` / `CLASH_BOLT` /
+  `CLASH_BLAST`: spark star, sniper shock ring, fireball and smoke) with sound and a camera nudge. A real throw (blast or direct hit,
+  2.2m+) flies on a true arc with the head leading, lands flat on its back with dust, skids, and gets up (a 4.5m+ throw turns a
+  backflip first); knockback reach went up (`KNOCKBACK_MAX` 6, direct hit 7m).
 - **Bot, Hard brain: the whole toolkit** (2026-10-03, round 3; `aiX.moves` switches it off). Every order a player has, with the rule for when it pays:
   HOP (`aiHopAct`: across a gap or up a ledge too tall to walk, or onto a perch beside the fight, only when it clearly beats the walk);
   PUSH (`aiShoveAct`: a foe with water or the edge behind it, or one of our own mines / burning ground / gas / charges a shove away);

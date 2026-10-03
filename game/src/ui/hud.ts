@@ -1,5 +1,5 @@
 import { dist, type Vec2 } from "../core/math";
-import { isBuildingKind, isDefenseKind, isInfantryKind, type CombatEntity, type DamagePart, type InfantryStance } from "../game/damageModel";
+import { isBuildingKind, isDefenseKind, isInfantryKind, isMountKind, type CombatEntity, type DamagePart, type InfantryStance } from "../game/damageModel";
 import {
   POP_CAP,
   TROOP_CATALOG,
@@ -1246,17 +1246,13 @@ function orderPlanner(
     action === "ram" ? ramState(target, canRam, ramStatus?.reason, ramTip) : "",
     action === "melee" ? meleeState(target, targetPartId, canMelee, meleeStatus?.reason, sim) : "",
     action === "interact" ? coverInteractionState(actor, target, sim) : "",
-    action === "inspect" || action === "inspect-detail" ? inspectTargetState(actor, target, action === "inspect-detail", sim) : "",
+    action === "inspect" ? inspectTargetState(actor, target, sim) : "",
     action === "defend" ? defendState(canDefend, defendTip) : "",
     action === "mine" ? mineState(actor, sim) : "",
     action === "recon" ? reconState(actor, sim) : "",
     action === "deploy" ? deployState(actor, sim) : "",
     action === "treat" ? treatState(actor, sim) : "",
     action === "place" ? placeState(actor, sim) : "",
-    // With nothing selected the bar used to say the same thing three times over ("No unit
-    // selected" / "Select a unit" / "Pick squad") across a full-height panel. The header already
-    // carries that state, so the body only appears when there is something to say about a target.
-    !actor && target ? orderSummaryState(actor, target) : "",
   ].filter(Boolean).join("");
 
   return `
@@ -1317,9 +1313,9 @@ function orderHint(actor: CombatEntity | undefined, focusedAction: boolean, sim:
       ? "Resolving…"
       : !actor.status.alive
         ? "Out of action."
-        : (actor.kind === "gunpost" || actor.kind === "mortarpit") && !actor.occupantId
+        : isMountKind(actor.kind) && !actor.occupantId
           ? "No crew. Pick a trooper, choose Man, click this."
-          : (actor.kind === "gunpost" || actor.kind === "mortarpit") && actor.commandPoints > 0 && !focusedAction
+          : isMountKind(actor.kind) && actor.commandPoints > 0 && !focusedAction
             ? "Crewed. Shoot, or Leave."
             : actor.commandPoints <= 0 && !focusedAction
               ? "Done. Space ends the turn."
@@ -1642,7 +1638,7 @@ function coverInteractionState(actor: CombatEntity | undefined, target: CombatEn
   `;
 }
 
-function inspectTargetState(actor: CombatEntity | undefined, target: CombatEntity | undefined, expanded: boolean, sim: TacticalSim): string {
+function inspectTargetState(actor: CombatEntity | undefined, target: CombatEntity | undefined, sim: TacticalSim): string {
   if (!target) return `<div class="order-note">Pick a target.</div>`;
   const parts = sim.targetableParts(target);
   // A derelict turret is kind "turret", not "cover", so it lands here rather than in the cover
@@ -1669,12 +1665,8 @@ function inspectTargetState(actor: CombatEntity | undefined, target: CombatEntit
         Strike
         <span>close</span>
       </button>` : ""}
-      <button class="btn confirm" data-order-action="${expanded ? "inspect" : "inspect-detail"}" data-tip="Toggle detailed target parts.">
-        ${expanded ? "Less" : "More"}
-        <span>detail</span>
-      </button>
     </div>
-    ${expanded ? `<div class="compact-target-parts">${target.parts.map((part) => partRow(part, false)).join("")}</div>` : ""}
+    <div class="compact-target-parts">${target.parts.map((part) => partRow(part, false)).join("")}</div>
   `;
 }
 
@@ -1811,7 +1803,6 @@ function baseCommandPanel(base: CombatEntity, sim: TacticalSim): string {
 function baseSummary(base: CombatEntity, sim: TacticalSim): string {
   const field = sim.fieldUnitCount(base.team);
   const researched = (base.unlockedTech ?? []).length;
-  const doctrine = sim.factionOf(base.team).doctrine;
   const damage = sim.baseSystemEffects(base).map((fx) => `<span class="base-damage__chip" data-tip="${escapeAttr(fx.tip)}">${escapeHtml(fx.label)}</span>`).join("");
   return `
     ${damage ? `<div class="base-damage">${damage}</div>` : ""}
@@ -1819,7 +1810,6 @@ function baseSummary(base: CombatEntity, sim: TacticalSim): string {
       <div data-tip="Money paid each turn, scaled by reactor health. Upgrade income to raise it."><span>Income</span><strong>$${baseIncome(base)}/turn</strong></div>
       <div data-tip="Doctrines researched on the tech tree, unlocking new troop types."><span>Tech</span><strong>${researched} researched</strong></div>
       <div data-tip="Combat units you have on the field. Hard cap of ${POP_CAP}."><span>Troops</span><strong>${field}/${POP_CAP}</strong></div>
-      <div data-tip="${escapeAttr(`${doctrine.name}: ${doctrine.text}`)}"><span>Doctrine</span><strong>${escapeHtml(doctrine.name)}</strong></div>
     </div>
   `;
 }
@@ -1829,13 +1819,6 @@ function baseSummary(base: CombatEntity, sim: TacticalSim): string {
 // section renders. activeBaseTab is module state (there is one HUD).
 function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
   if (!base.status.alive) return `<div class="order-note">Out of action.</div>`;
-  const hasCp = base.commandPoints > 0;
-  // Same voice as the order bar's "what now" line: the next click, then the rule it obeys.
-  const note = sim.pendingDeploy
-    ? "Place in the green ring."
-    : hasCp
-      ? "One base order a turn."
-      : "Base order used.";
   syncRevealTracking(base);
 
   // An armed support strike snaps to its tab so the targeting note stays visible. (A pending
@@ -1862,7 +1845,6 @@ function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
     : `${deployNoteHtml(sim)}<div class="spawn-options part-options">${troopDeckHtml(base, sim)}</div>`;
 
   return `
-    <p class="order-hint base-hint">${escapeHtml(note)}</p>
     ${baseSummary(base, sim)}
     ${tabBar}
     <div class="base-tab-body base-tab-body--${activeBaseTab}">${section}</div>
@@ -2094,15 +2076,6 @@ function moveState(actor: CombatEntity | undefined): string {
     <div class="target-summary ${ready ? "" : "blocked"}">
       <strong>${ready ? "Move order armed" : "Move unavailable"}</strong>
       <span>${ready ? "Click ground to move, or click an object for cover/climb options." : "No movement or AP."}</span>
-    </div>
-  `;
-}
-
-function orderSummaryState(actor: CombatEntity | undefined, target: CombatEntity | undefined): string {
-  return `
-    <div class="target-summary compact-ready">
-      <strong>${actor ? escapeHtml(actor.name) : "Select a unit"}</strong>
-      <span>${target ? `Inspecting ${escapeHtml(target.name)}.` : actor ? `${actor.commandPoints}/${actor.maxCommandPoints} AP ready` : "Pick squad"}</span>
     </div>
   `;
 }
@@ -2359,7 +2332,7 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
   if (action === "smoke") return Boolean(sim.smokeFailureReason(actor));
   if (action === "leap") return !actor.status.canMove;
   if (action === "dismount") return !actor.occupantId;
-  if (action === "man") return !actor.status.canMove || !sim.entities.some((e) => (e.kind === "gunpost" || e.kind === "mortarpit") && !sim.manFailureReason(actor, e));
+  if (action === "man") return !actor.status.canMove || !sim.entities.some((e) => isMountKind(e.kind) && !sim.manFailureReason(actor, e));
   if (action === "treat") return Boolean(sim.treatFailureReason(actor));
   if (action === "place") return Boolean(sim.placeFailureReason(actor));
   if (action === "load") return !isCarrier(actor) || !actor.status.canMove || (actor.passengerIds?.length ?? 0) >= 2;
@@ -2399,7 +2372,7 @@ function actionApplicable(action: Intent, actor: CombatEntity | undefined): bool
   if (action === "mine") return actor.kind === "sapper";
   if (action === "smoke") return actor.kind === "mortar";
   if (action === "leap") return isInfantryKind(actor.kind) && actor.kind !== "jumper";
-  if (action === "dismount") return actor.kind === "gunpost" || actor.kind === "mortarpit";
+  if (action === "dismount") return isMountKind(actor.kind);
   if (action === "treat") return actor.kind === "medic" || actor.kind === "engineer";
   if (action === "man") return isInfantryKind(actor.kind) && actor.kind !== "medic" && actor.kind !== "engineer";
   if (action === "place") return Boolean(placeSpecFor(actor.kind));

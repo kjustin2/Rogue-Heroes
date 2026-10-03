@@ -521,6 +521,37 @@ app.whenReady().then(async () => {
         console.log("karakclip", await js(`JSON.stringify(window.__rht.auditTerrainClip())`));
         continue;
       }
+      if (s === "knockfilm") {
+        // The fly-back, isolated: a trooper is jumped 2.5m, 5m and 7m by teleport during a resolve (the renderer animates any such jump as a throw).
+        for (const d of [2.5, 5, 7]) {
+          await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+          await sleep(1500);
+          await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("enemy", 0); const t = sim.debugSpawn("soldier", "enemy", { x: -4, z: 0 }); for (const p of t.parts) if (p.role === "weapon") p.hp = 0; t.status.canShoot = false; t.status.canMove = false; window.__thrown = t.id; const a = sim.debugSpawn("soldier", "player", { x: -14, z: 6 }); sim.debugSelect(a.id); sim.queueMove({ x: -13, z: 6 }); r.deselect(); r.setView({ x: -4 + ${d} / 2, z: 0, zoom: 0.4, pitch: 0.55, yaw: 0.5 }); sim.endTurn(); })()`);
+          await sleep(500);
+          await js(`(() => { const e = window.__rht.sim.entity(window.__thrown); window.__rht.setTimeScale(0.5); e.position = { x: e.position.x + ${d}, z: e.position.z }; })()`);
+          for (let i = 0; i < 12; i += 1) { await sleep(i === 0 ? 40 : 110); await shot("knock-" + d + "-" + i); }
+        }
+        await js(`window.__rht.setTimeScale(1)`);
+        continue;
+      }
+      if (s === "clash") {
+        // Rounds meeting in the air: rifles, a sniper pair, two tank shells. The enemy round is injected head-on (natural meetings are rare), slow motion.
+        for (const [label, kindA, kindB, shotKind] of [["rifle", "soldier", "soldier", "plain"], ["sniper", "sniper", "sniper", "plain"], ["shell", "tank", "tank", "plain"], ["grenade", "soldier", "soldier", "grenade"]]) {
+          await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+          await sleep(1400);
+          await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("enemy", 0); const a = sim.debugSpawn(${JSON.stringify(kindA)}, "player", { x: -9, z: 0 }); const b = sim.debugSpawn(${JSON.stringify(kindB)}, "enemy", { x: 9, z: 0 }); for (const p of b.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0; b.status.canShoot = false; b.status.canMove = false; window.__clashEnemy = b.id; sim.debugSelect(a.id); sim.queueShoot(b.id); r.setView({ x: 0, z: 0, zoom: 0.3, pitch: 0.55, yaw: 0.35 }); r.setTimeScale(0.2); sim.endTurn(); })()`);
+          let injected = false;
+          for (let i = 0; i < 260 && !injected; i += 1) {
+            await sleep(60);
+            injected = await js(`(() => { const sim = window.__rht.sim; const mine = sim.projectiles[0]; if (!mine) return false; const ahead = 3.2; const o = { x: mine.position.x + mine.direction.x * ahead, z: mine.position.z + mine.direction.z * ahead }; const other = structuredClone(mine); Object.assign(other, { id: "injected", actorId: window.__clashEnemy, orderId: "none", targetId: undefined, kind: ${JSON.stringify(shotKind)} === "grenade" ? "grenade" : mine.kind, sourceKind: ${JSON.stringify(kindB)}, direction: { x: -mine.direction.x, z: -mine.direction.z }, origin: o, position: { ...o }, previous: { ...o }, travel: 0, maxTravel: 30, age: 0, maxAge: 10, height: mine.height, previousHeight: mine.height, originHeight: ${JSON.stringify(shotKind)} === "grenade" ? 1.2 : mine.height, verticalSlope: 0, arcHeight: 0 }); sim.projectiles.push(other); return true; })()`);
+          }
+          console.log("clash", label, "injected", injected);
+          for (let i = 0; i < 10; i += 1) { await sleep(i === 0 ? 150 : 330); await shot("clash-" + label + "-" + i); }
+          console.log("clash", label, JSON.stringify(await js(`window.__rht.sim.log.slice(0, 6)`)));
+        }
+        await js(`window.__rht.setTimeScale(1)`);
+        continue;
+      }
       if (s === "projgallery") {
         // One shooter at a time, tight camera on the round in flight: three frames each. Rifle, carbine, pistol, MG, marksman, rocket, scattergun, grenade.
         const kinds = ["soldier", "scout", "striker", "heavy", "sniper", "bazooka", "sapper", "grenadier"];

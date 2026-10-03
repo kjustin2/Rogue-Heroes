@@ -1178,6 +1178,11 @@ export function isBuildingKind(kind: EntityKind): boolean {
 }
 
 // Player/enemy-built defensive emplacements (turret, explosive turret, wall).
+/** A defense a trooper crews to make it fire: it acts only while someone stands at the gun. */
+export function isMountKind(kind: string): boolean {
+  return kind === "gunpost" || kind === "mortarpit";
+}
+
 export function isDefenseKind(kind: EntityKind): boolean {
   return kind === "turret" || kind === "exturret" || kind === "aaturret" || kind === "bunker" || kind === "sensor" || kind === "wall" || kind === "gunpost" || kind === "mortarpit";
 }

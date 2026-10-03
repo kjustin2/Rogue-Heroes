@@ -6,10 +6,10 @@ import { hasMotionBank, sampleMotion } from "./infantryMotion";
 import { ANKLE_Y, CROUCH_GAIT, GAIT_TIERS, HIP_Y, HIP_Z, KNEE_Y, bodyAt, footAt, gaitTier, solveLeg, type GaitParams, type LegPose } from "./gait";
 import { splitAtKnee } from "./legSplit";
 import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec2 } from "../core/math";
-import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isVehicleKind, type CombatEntity, type CoverKind, type DamagePart, type Team, type EntityKind, type PartRole } from "../game/damageModel";
+import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isMountKind, isVehicleKind, type CombatEntity, type CoverKind, type DamagePart, type Team, type EntityKind, type PartRole } from "../game/damageModel";
 import { factionDef, type FactionId } from "../game/factions";
 import type { OrderKind, Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
-import { CHARGE_BLAST_RADIUS, OIL_RADIUS, PAD_RADIUS, carpetDropPoints, minefieldPoints } from "../game/sim";
+import { CHARGE_BLAST_RADIUS, CLASH_BLAST, CLASH_BOLT, OIL_RADIUS, PAD_RADIUS, carpetDropPoints, minefieldPoints } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type GroundSurfaceKind, type SkylineKind } from "../game/maps";
 import type { TroopKind } from "../game/units";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, climbsAlong, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
@@ -601,7 +601,7 @@ export class WorldRenderer {
     if (sim.intent === "man" && sim.selected && sim.phase === "command") {
       const pulse = (Math.sin(performance.now() * 0.008) + 1) * 0.5;
       for (const post of sim.entities) {
-        if ((post.kind !== "gunpost" && post.kind !== "mortarpit") || sim.manFailureReason(sim.selected, post)) continue;
+        if (!isMountKind(post.kind) || sim.manFailureReason(sim.selected, post)) continue;
         this.environmentRoot.add(new THREE.Mesh(
           drapedDisc(post.position.x, post.position.z, post.radius + 0.35, post.radius + 0.6, 40, 0.09),
           this.envMat(THREE.MeshBasicMaterial, { color: 0x2ee88a, transparent: true, opacity: 0.55 + pulse * 0.4, side: THREE.DoubleSide, depthWrite: false }),
@@ -2037,41 +2037,90 @@ export class WorldRenderer {
         // Launched off a bounce pad: an upright leap, not a tumble.
         const leap = infantry && this.padSpots.some((p) => dist(p, last) <= PAD_RADIUS + 0.7);
         const stagger = infantry && !leap && d < 2.2;
+        // A real throw (blast, direct hit): airborne on a true arc with the head leading the way it flies, laid out on its
+        // back on landing, a skid with a dust trail, then up on its feet. Long throws turn a full backflip first.
+        const real = infantry && !leap && !stagger;
         group.userData.flight = {
           from: { ...last }, start: performance.now(),
-          dur: infantry ? (leap ? 700 : stagger ? 480 + d * 110 : 420 + d * 70) : 320,
-          height: infantry ? (leap ? 2.6 + d * 0.12 : stagger ? 0.2 + d * 0.14 : Math.min(3, 0.6 + d * 0.35)) : 0.35,
-          spin: infantry ? (stagger || leap ? 0 : Math.PI * 2) : 0,
+          dur: infantry ? (leap ? 700 : stagger ? 480 + d * 110 : 760 + d * 150) : 320,
+          height: infantry ? (leap ? 2.6 + d * 0.12 : stagger ? 0.2 + d * 0.14 : Math.min(3.6, 0.7 + d * 0.42)) : 0.35,
+          spin: 0,
           lean: infantry ? (leap ? -0.12 : stagger ? 0.62 : 0.3) : 0.12,
           axis: { x: dz, z: -dx },
           stagger,
           leap,
+          real,
+          flips: real && d >= 4.5 ? 1 : 0,
+          nextPuff: 0,
+          landed: false,
         };
       }
     }
-    const f = group.userData.flight as { from: { x: number; z: number; y: number }; start: number; dur: number; height: number; spin: number; lean: number; axis: { x: number; z: number }; stagger: boolean; leap: boolean } | undefined;
+    const f = group.userData.flight as { from: { x: number; z: number; y: number }; start: number; dur: number; height: number; spin: number; lean: number; axis: { x: number; z: number }; stagger: boolean; leap: boolean; real: boolean; flips: number; nextPuff: number; landed: boolean } | undefined;
     if (!f) { group.userData.flightPitch = 0; group.userData.flightAxis = undefined; return; }
     const t = (performance.now() - f.start) / f.dur;
     if (t >= 1) {
       group.userData.flight = undefined;
       group.userData.flightPitch = 0;
       group.userData.flightAxis = undefined;
-      // Landing: a puff of dust where it came down.
-      this.particles?.burst({
-        x: entity.position.x, y: groundY + 0.12, z: entity.position.z,
-        count: infantry ? 14 : 8, color: [0xa89e92, 0xcfc4b4], speed: [1.2, 3.2], up: 0.3, size: [0.25, 0.5],
-        life: [0.4, 0.9], gravity: -0.2, drag: 2.2, jitter: 0.3,
-      });
+      if (!f.real) {
+        // Landing: a puff of dust where it came down.
+        this.particles?.burst({
+          x: entity.position.x, y: groundY + 0.12, z: entity.position.z,
+          count: infantry ? 14 : 8, color: [0xa89e92, 0xcfc4b4], speed: [1.2, 3.2], up: 0.3, size: [0.25, 0.5],
+          life: [0.4, 0.9], gravity: -0.2, drag: 2.2, jitter: 0.3,
+        });
+      }
+      return;
+    }
+    if (f.real) {
+      const AIR = 0.6, SKID_END = 0.84, REACH = 0.82; // fractions of the whole: in the air, sliding; share of the distance the air covers
+      const full = Math.PI / 2 + Math.PI * 2 * f.flips; // flat on its back, after any backflips
+      const dx = entity.position.x - f.from.x;
+      const dz = entity.position.z - f.from.z;
+      const smoothstep = (u: number): number => u * u * (3 - 2 * u);
+      let share: number;
+      let y: number;
+      let pitch: number;
+      let lift = 0;
+      if (t < AIR) {
+        const u = t / AIR;
+        share = REACH * u;
+        y = f.from.y + (groundY - f.from.y) * share + 4 * f.height * u * (1 - u);
+        pitch = full * smoothstep(Math.min(1, u * 1.15));
+        if (performance.now() >= f.nextPuff) { f.nextPuff = performance.now() + 90; this.particles?.burst({ x: group.position.x, y: y + 0.4, z: group.position.z, count: 2, color: [0xcfc4b4, 0xa89e92], speed: [0.2, 0.7], up: 0.1, size: [0.12, 0.26], life: [0.3, 0.6], gravity: -0.1, drag: 2, jitter: 0.1 }); }
+      } else if (t < SKID_END) {
+        if (!f.landed) {
+          f.landed = true;
+          const lx = f.from.x + dx * REACH, lz = f.from.z + dz * REACH;
+          this.particles?.burst({ x: lx, y: groundY + 0.15, z: lz, count: 22, color: [0xa89e92, 0xcfc4b4, 0x8a8078], speed: [1.6, 4], up: 0.4, size: [0.3, 0.6], life: [0.5, 1.1], gravity: -0.2, drag: 2.2, jitter: 0.35 });
+        }
+        const w = (t - AIR) / (SKID_END - AIR);
+        share = REACH + (1 - REACH) * (1 - (1 - w) * (1 - w));
+        lift = 0.24;
+        y = groundY + lift;
+        pitch = full;
+        if (performance.now() >= f.nextPuff) { f.nextPuff = performance.now() + 70; this.particles?.burst({ x: group.position.x, y: groundY + 0.12, z: group.position.z, count: 3, color: [0xa89e92, 0xcfc4b4], speed: [0.4, 1.2], up: 0.2, size: [0.2, 0.4], life: [0.4, 0.8], gravity: -0.15, drag: 2.4, jitter: 0.2 }); }
+      } else {
+        const v = (t - SKID_END) / (1 - SKID_END);
+        share = 1;
+        lift = 0.24 * (1 - smoothstep(v));
+        y = groundY + lift;
+        pitch = full - (Math.PI / 2) * smoothstep(v); // up onto its feet: ends a whole number of turns, i.e. upright
+      }
+      group.position.x = f.from.x + dx * share;
+      group.position.z = f.from.z + dz * share;
+      group.position.y = y;
+      group.userData.flightPitch = pitch;
+      group.userData.flightAxis = f.axis;
       return;
     }
     const e = f.leap ? t : f.stagger ? 1 - Math.pow(1 - t, 3) : 1 - (1 - t) * (1 - t); // a shove skids off fast and settles
     group.position.x = f.from.x + (entity.position.x - f.from.x) * e;
     group.position.z = f.from.z + (entity.position.z - f.from.z) * e;
     group.position.y = f.from.y + (groundY - f.from.y) * e + Math.sin(Math.PI * t) * f.height;
-    // Angle about the across-throw axis: a tumble turns the whole way round (smoothstep, ends upright)
-    // plus a lean; a stagger is only the lean, rocking out and back (the second half dips with the landing).
-    const smooth = t * t * (3 - 2 * t);
-    group.userData.flightPitch = f.spin * smooth + f.lean * Math.sin(Math.PI * t) * (f.stagger ? 1 - 0.35 * t : 1);
+    // Angle about the across-throw axis: a stagger is only the lean, rocking out and back (the second half dips with the landing).
+    group.userData.flightPitch = f.lean * Math.sin(Math.PI * t) * (f.stagger ? 1 - 0.35 * t : 1);
     group.userData.flightAxis = f.axis;
   }
 
@@ -3234,7 +3283,7 @@ export class WorldRenderer {
       }
       return;
     }
-    if (entity.kind === "gunpost" || entity.kind === "mortarpit") { this.buildMount(group, entity); return; }
+    if (isMountKind(entity.kind)) { this.buildMount(group, entity); return; }
     if (entity.kind === "bunker") { this.buildBunker(group, entity); return; }
     if (entity.kind === "sensor") { this.buildSensorMast(group, entity, glow); return; }
     // Shared emplacement base + traversing ring, dug in behind a sandbag berm.
@@ -5561,6 +5610,26 @@ export class WorldRenderer {
           size: [0.05, 0.11], life: [0.3, 0.7], gravity: 7, drag: 0.5, jitter: 0.16,
           shape: ParticleShape.shard,
         });
+      } else if (effect.type === "clash") {
+        // TWO ROUNDS MEET IN THE AIR. Small arms: a spark star and two ricochet streaks glancing off; a sniper bolt: a hard
+        // white crack with long thin streaks along its line; a shell / rocket / grenade: a fireball, a smoke ring and falling
+        // debris. Warm and ink-shaded like every other hit, never a white additive ball.
+        const y = effect.fromHeight ?? ground + 1.4;
+        if (effect.color === CLASH_BLAST) {
+          fx.burst({ x: effect.to.x, y, z: effect.to.z, count: 22, color: [0xffd07a, 0xff9a3a, 0xff6a1c], speed: [1.2, 3.4], up: 0.2, vertical: 0.4, size: [0.2, 0.46], life: [0.28, 0.6], gravity: -0.4, drag: 1.6, jitter: 0.25 });
+          fx.burst({ x: effect.to.x, y, z: effect.to.z, count: 12, color: [0x4a4038, 0x6b5f52, 0x8a8078], speed: [0.8, 2.0], up: 0.5, size: [0.3, 0.6], life: [0.8, 1.5], gravity: -0.5, drag: 1.2, jitter: 0.3 });
+          fx.burst({ x: effect.to.x, y, z: effect.to.z, count: 10, color: [0x3a322b, 0x6b5f52, 0xffe0b0], speed: [2, 5], up: 0.8, size: [0.05, 0.12], life: [0.5, 1.0], gravity: 9, drag: 0.6, shape: ParticleShape.shard });
+        } else if (effect.color === CLASH_BOLT) {
+          for (const sign of [-1, 1]) {
+            fx.directionalBurst({ x: effect.to.x, y, z: effect.to.z, dirX: sign, dirY: 0.1, dirZ: sign * 0.35, count: 4, color: [0xffffff, 0xd8ecff], speed: [7, 12], spread: 0.12, size: [0.04, 0.1], life: [0.12, 0.26], gravity: 0, drag: 3, shape: ParticleShape.streak });
+          }
+          fx.burst({ x: effect.to.x, y, z: effect.to.z, count: 10, color: [0xffe9b0, 0xffb257], speed: [2, 5], up: 0.2, size: [0.04, 0.09], life: [0.14, 0.3], gravity: 4, drag: 1.5, shape: ParticleShape.streak });
+        } else {
+          fx.burst({ x: effect.to.x, y, z: effect.to.z, count: 14, color: [0xffe9b0, 0xffb257, 0xff8a2a], speed: [2.5, 6], up: 0.1, size: [0.04, 0.1], life: [0.14, 0.34], gravity: 5, drag: 1.2, shape: ParticleShape.streak });
+          for (const sign of [-1, 1]) {
+            fx.directionalBurst({ x: effect.to.x, y, z: effect.to.z, dirX: sign * 0.7, dirY: 0.6, dirZ: sign * -0.7, count: 3, color: [0xfff2c8, 0xffc27a], speed: [4, 8], spread: 0.2, size: [0.05, 0.12], life: [0.16, 0.32], gravity: 6, drag: 1, shape: ParticleShape.streak });
+          }
+        }
       } else if (effect.type === "strike") {
         // A blade or butt landing: a bright arc of streaks sweeping across the target at chest
         // height, a spray of dark shards flying ON through it, and a puff of dust at the feet.
@@ -5840,6 +5909,19 @@ export class WorldRenderer {
         ring.rotation.x = -Math.PI / 2;
         ring.position.set(effect.to.x, terrainHeightAt(effect.to) + 0.1, effect.to.z);
         this.effectRoot.add(ring);
+      } else if (effect.type === "clash") {
+        // The shock ring: a thin inked circle that opens around the meeting point, upright to the camera's side-on view.
+        const size = effect.radius ?? 0.8;
+        const ringMat = new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: opacity * 0.85, side: THREE.DoubleSide, depthWrite: false });
+        const ring = new THREE.Mesh(new THREE.RingGeometry(0.12 + t * size * 0.7, 0.16 + t * size * 0.7 + (1 - t) * 0.05, 28), ringMat);
+        ring.position.set(effect.to.x, effect.fromHeight ?? terrainHeightAt(effect.to) + 1.4, effect.to.z);
+        ring.rotation.x = -Math.PI / 2 + 0.9; // tilted toward the tactical camera so it reads as a ring, not a line
+        this.effectRoot.add(ring);
+        if (t < 0.25) {
+          const flash = new THREE.Mesh(new THREE.OctahedronGeometry(0.16 + (1 - t * 4) * size * 0.2, 0), new THREE.MeshBasicMaterial({ color: 0xfff1c8, transparent: true, opacity: 0.95, depthWrite: false }));
+          flash.position.copy(ring.position);
+          this.effectRoot.add(flash);
+        }
       } else if (effect.type === "impact") {
         for (const part of makeImpact(effect, t, terrainHeightAt(effect.to), this.hintFor(effect))) this.effectRoot.add(part);
       } else {

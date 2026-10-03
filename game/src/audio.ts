@@ -357,6 +357,13 @@ export class Sfx {
     this.thunk(200, 0.08);
   }
 
+  /** Two rounds meeting in the air: a bright metal ping for small arms, a ringing crack for a sniper bolt, a bang for a shell. */
+  clash(family: "spark" | "bolt" | "blast", gain = 1): void {
+    if (family === "blast") { this.explosion(1.3, 0.75 * gain); return; }
+    if (this.sample("hitmetal", GROUP_GAIN.hitmetal * (family === "bolt" ? 1.15 : 0.8) * gain, family === "bolt" ? 1.25 : 1.35)) return;
+    this.thunk(family === "bolt" ? 320 : 460, 0.06);
+  }
+
   // ---- the bed under movement: footfalls, engines, rotors (quiet, and only for what is in view) ----
   private bed: { engine: GainNode; rotor: GainNode } | undefined;
   private lastStepAt = 0;

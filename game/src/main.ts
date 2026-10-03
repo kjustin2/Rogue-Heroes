@@ -36,6 +36,8 @@ import {
   type SupportPowerKind,
   FACTIONS,
   type FactionId,
+  CLASH_BLAST,
+  CLASH_BOLT,
 } from "./game/sim";
 import type { AimMode, CombatEntity, Team } from "./game/damageModel";
 import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isVehicleKind } from "./game/damageModel";
@@ -1087,17 +1089,16 @@ function showStartScreen(versus = false, keep?: { map: string; mode: ModeId; ste
   ).join("");
   // Each card states the faction's IDENTITY and, explicitly, what it gives up. BOTH sides pick from
   // the same full-size cards (Player 2 used to get a row of small chips beside Player 1's cards).
-  // The doctrine NAME sits beside the faction name; the rule itself, the signature units and the
-  // trade-off live in the tooltip (the 720p budget allows two lines per card).
+  // The card is the faction name and its one-line blurb; the doctrine rule, the signature units and the
+  // trade-off live in the tooltip. (The doctrine NAME is not shown anywhere: it meant nothing to players.)
   const factionTip = (f: (typeof FACTIONS)[number]): string => {
     const own = signatureUnits(f.id).map((kind) => factionTroopLabel(f.id, kind, troopSpec(kind).label));
     const strike = f.supports.map((k) => supportPowerSpec(k).label).join(", ");
-    return `${f.doctrine.name}: ${f.doctrine.text} Only ${f.name}: ${own.join(", ")}. Strike: ${strike}.`;
+    return `${f.doctrine.text} Only ${f.name}: ${own.join(", ")}. Strike: ${strike}.`;
   };
   const factionCard = (f: (typeof FACTIONS)[number], attr: string, on: boolean): string =>
     `<button class="menu-card faction-card ${on ? "selected" : ""}" ${attr}="${f.id}" data-tip="${escapeAttr(factionTip(f))}" type="button">
       <strong><span class="faction-pip" style="background:#${f.accent.toString(16).padStart(6, "0")}"></span>${escapeAttr(f.name)}</strong>
-      <em class="faction-roster">${escapeAttr(f.doctrine.name)}</em>
       <span>${escapeAttr(f.blurb)}</span>
     </button>`;
   const factionCards = FACTIONS.map((f) => factionCard(f, "data-faction", f.id === selectedFaction)).join("");
@@ -2343,6 +2344,14 @@ function processBattleEvents(): void {
       feel.addTrauma(0.08);
     } else if (effect.type === "land") {
       if (effect.color === 0xffe27a) sfx.boing(); else sfx.place(heard); // a bounce pad, or a jump trooper / a placed item touching down
+    } else if (effect.type === "clash") {
+      // Two rounds meeting in mid-air: the sound and a nudge, bigger for a shell than for a bullet.
+      const family = effect.color === CLASH_BLAST ? "blast" : effect.color === CLASH_BOLT ? "bolt" : "spark";
+      sfx.clash(family, heard);
+      resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.impact, 1);
+      const onScreen = stage.isInView(effect.to) ? 1 : 0.3;
+      feel.addTrauma((family === "blast" ? 0.14 : family === "bolt" ? 0.07 : 0.03) * onScreen);
+      world.flashLight(effect.to, family === "blast" ? 0xffa24d : 0xffe2a8, (family === "blast" ? 4 : 2) * onScreen, 120, 1.4);
     } else if (effect.type === "ping" && effect.color === 0x8effa6) {
       sfx.heal();
     } else if (effect.type === "ping" && effect.color === 0xffe08a) {

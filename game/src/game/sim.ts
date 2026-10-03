@@ -57,6 +57,7 @@ import {
   isToppleKind,
   isAirKind,
   isInfantryKind,
+  isMountKind,
   isPartIntact,
   isVehicleKind,
   preferredPart,
@@ -92,7 +93,7 @@ export type Phase = "command" | "resolve" | "victory" | "defeat";
 // (measured from the click to the edge of the unit's footprint).
 export const DEPLOY_SNAP = 1.5;
 
-export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "push" | "mine" | "interact" | "inspect" | "inspect-detail" | "build" | "support" | "load" | "unload" | "smoke" | "recon" | "deploy" | "treat" | "place" | "man" | "dismount" | "leap";
+export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "push" | "mine" | "interact" | "inspect" | "build" | "support" | "load" | "unload" | "smoke" | "recon" | "deploy" | "treat" | "place" | "man" | "dismount" | "leap";
 export type OrderKind = "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "load" | "unload" | "smoke" | "recon" | "deploy" | "treat" | "man";
 
 // Orders that carry a unit off its spot this resolve -- anything else leaves it dug in.
@@ -338,7 +339,8 @@ export interface VisualEvent {
   // "bolt" = lightning striking `to` from the sky; "land" = a jump trooper touching down at `to`.
   // "shot" = a gun-run burst (gunship strafe): tracers from the aircraft's gun at `fromHeight`
   // down into `to`. It is resolved as direct damage, so it carries no Projectile of its own.
-  type: "shot" | "impact" | "blast" | "ping" | "jet" | "beam" | "topple" | "strike" | "bolt" | "land";
+  // "clash" = two rounds meeting in mid-air at `fromHeight`; its colour names the family (CLASH_SPARK / CLASH_BOLT / CLASH_BLAST).
+  type: "shot" | "impact" | "blast" | "ping" | "jet" | "beam" | "topple" | "strike" | "bolt" | "land" | "clash";
   from: Vec2;
   to: Vec2;
   color: number;
@@ -503,11 +505,15 @@ function pairAngle(a: string, b: string): number {
  * trooper about two metres and a tank a few centimetres.
  */
 /** Two opposed rounds closer than this (metres, in 3D) meet in the air. */
+/** What met in the air: small-arms sparks, a sniper bolt's shock ring, or a shell / rocket / grenade fireball. */
+export const CLASH_SPARK = 0xffd27a;
+export const CLASH_BOLT = 0xd8ecff;
+export const CLASH_BLAST = 0xff9a3a;
 const PROJECTILE_COLLIDE_RADIUS = 0.42;
 /** A bomb run closer than this drops where it hovers (no move to queue). */
 const BOMB_RUN_TOLERANCE = 1.4;
 const KNOCKBACK_SCALE = 2.4;
-const KNOCKBACK_MAX = 4.5;
+const KNOCKBACK_MAX = 6;
 // PUSH (owner 2026-09-24): an infantry shove throws a body "super far" -- into water it drowns, over
 // the arena edge it falls off the map. A vehicle's mass makes it budge a little and no more.
 const SHOVE_FORCE = 90;
@@ -2032,6 +2038,12 @@ export class TacticalSim {
         this.revealedOrders = true;
         this.revealedTeam = call.team ?? "player";
         this.enemyIntentCache = undefined;
+        // ...and every foe the spotter plane saw is MARKED for the next turn: the caller's shooters hit them straighter.
+        for (const foe of this.entities) {
+          if (foe.team === (call.team ?? "player") || foe.team === "neutral" || !foe.status.alive || foe.kind === "cover" || isBuildingKind(foe.kind)) continue;
+          foe.markedUntilTurn = this.turn + 1;
+          foe.markedById = `recon-${call.team ?? "player"}`;
+        }
         const from = clampToArena({ x: point.x - dir.x * 16, z: point.z - dir.z * 16 });
         const to = clampToArena({ x: point.x + dir.x * 16, z: point.z + dir.z * 16 });
         this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: 0x9dd8ff, duration: 1.6 });
@@ -3671,7 +3683,8 @@ export class TacticalSim {
   private collideProjectiles(a: Projectile, b: Projectile, meet: Vec2, height: number): void {
     const nameOf = (p: Projectile): string => this.entity(p.actorId)?.name ?? "A shot";
     const explosive = (p: Projectile): boolean => p.kind === "grenade" || p.kind === "shell";
-    this.effect("ping", { ...meet }, { ...meet }, 0xfff1a6, 0.4, 0.7, height);
+    const family = explosive(a) || explosive(b) ? CLASH_BLAST : a.kind === "bolt" || b.kind === "bolt" || a.sourceKind === "sniper" || b.sourceKind === "sniper" ? CLASH_BOLT : CLASH_SPARK;
+    this.effect("clash", { ...meet }, { ...meet }, family, 0.7, family === CLASH_BLAST ? 1.6 : family === CLASH_BOLT ? 1.1 : 0.7, height);
     for (const p of [a, b]) {
       const actor = this.entity(p.actorId);
       const order = this.orders.find((o) => o.id === p.orderId);
@@ -3947,7 +3960,7 @@ export class TacticalSim {
       this.resolveShellSplash(actor, target, targetPart, amount, projectile.position);
       this.airburstBehindCover(actor, projectile, target);
       // A rocket or shell that HITS a trooper throws it backwards, away from the shooter (a tank, a wall or a gun does not budge).
-      if (!cover && target.status.alive && isInfantryKind(target.kind)) this.applyKnockback(actor, target, projectile.origin, Math.max(amount, 36) * 1.2, 1, { maxThrow: 5.5 });
+      if (!cover && target.status.alive && isInfantryKind(target.kind)) this.applyKnockback(actor, target, projectile.origin, Math.max(amount, 36) * 1.2, 1, { maxThrow: 7 });
     } else {
       this.effect("impact", target.position, target.position, result.destroyed ? 0xffd166 : 0xffffff, 0.42, target.radius);
     }
@@ -4050,7 +4063,7 @@ export class TacticalSim {
     if (!isInfantryKind(actor.kind)) return "Only infantry can crew an emplacement";
     if (actor.commandPoints <= 0) return `${actor.name} has no action points`;
     if (!actor.status.canMove) return `${actor.name} cannot move`;
-    if (!mount || (mount.kind !== "gunpost" && mount.kind !== "mortarpit")) return "Pick a Gun Post or Mortar Pit";
+    if (!mount || !isMountKind(mount.kind)) return "Pick a manned emplacement";
     if (!mount.status.alive) return `${mount.name} is wrecked`;
     if (mount.team !== "neutral" && mount.team !== actor.team) return `${mount.name} belongs to the enemy`;
     const crew = this.entity(mount.occupantId);
@@ -4082,8 +4095,11 @@ export class TacticalSim {
   /** Player API: the selected, crewed emplacement lets its crew go (free; the crew rests this turn). */
   queueDismount(): boolean {
     const mount = this.selected;
-    if (!mount || mount.team !== "player" || (mount.kind !== "gunpost" && mount.kind !== "mortarpit")) return this.reject("Select a crewed emplacement");
+    if (!mount || mount.team !== "player" || !isMountKind(mount.kind)) return this.reject("Select a crewed emplacement");
     if (!mount.occupantId) return this.reject(`${mount.name} has no crew`);
+    const crew = this.entity(mount.occupantId);
+    if (crew && crew.commandPoints <= 0) return this.reject(`${crew.name} has no action left to climb out`);
+    if (crew) crew.commandPoints = Math.max(0, crew.commandPoints - 1); // leaving costs the crew one action
     this.freeMount(mount, true);
     return true;
   }
@@ -4092,20 +4108,22 @@ export class TacticalSim {
     const crew = this.entity(mount.occupantId);
     mount.occupantId = undefined;
     mount.commandPoints = 0;
+    mount.maxCommandPoints = 1;
     if (crew && log) this.pushLog(`${crew.name} leaves ${mount.name}`);
   }
 
   /** Crews that died, fled or were thrown clear leave their post; a crewed post acts, its crew rests. Runs at turn start. */
   private refreshMounts(): void {
     for (const mount of this.entities) {
-      if (mount.kind !== "gunpost" && mount.kind !== "mortarpit") continue;
+      if (!isMountKind(mount.kind)) continue;
       const crew = this.entity(mount.occupantId);
       const here = crew && crew.status.alive && !crew.downed && !crew.carriedById
         && dist(crew.position, mount.position) <= mount.radius + crew.radius + MOUNT_CREW_REACH;
       if (!mount.status.alive || !here) { mount.occupantId = undefined; mount.commandPoints = 0; continue; }
       mount.team = crew!.team; // a post belongs to whoever crews it
-      crew!.commandPoints = 0; // the crew's turn is the gun's
-      mount.commandPoints = mount.status.canShoot ? 1 : 0;
+      crew!.commandPoints = 1; // the crew keeps ONE action, for leaving; the gun's turn is its own
+      mount.maxCommandPoints = 2; // a crewed post fires twice a turn
+      mount.commandPoints = mount.status.canShoot ? 2 : 0;
     }
   }
 
@@ -4113,7 +4131,7 @@ export class TacticalSim {
   private placeFieldMounts(): void {
     for (let i = this.entities.length - 1; i >= 0; i -= 1) {
       const e = this.entities[i];
-      if (e.team === "neutral" && (e.kind === "gunpost" || e.kind === "mortarpit")) this.entities.splice(i, 1);
+      if (e.team === "neutral" && isMountKind(e.kind)) this.entities.splice(i, 1);
     }
     const c = mapCenter(this.mapDef);
     const a = this.entities.find((e) => e.kind === "base" && e.team === "player");
@@ -4183,7 +4201,7 @@ export class TacticalSim {
     let best: CombatEntity | undefined;
     let bestD = 12;
     for (const e of this.entities) {
-      if ((e.kind !== "gunpost" && e.kind !== "mortarpit") || this.manFailureReason(actor, e)) continue;
+      if (!isMountKind(e.kind) || this.manFailureReason(actor, e)) continue;
       const reach = projectileRange(e);
       if (!foes.some((f) => !f.flying && dist(f.position, e.position) <= reach)) continue;
       const d = dist(actor.position, e.position);
@@ -4612,7 +4630,7 @@ export class TacticalSim {
     const dirZ = len > 0.001 ? dz / len : Math.sin(angle);
     let throwDistance = Math.min(opts.maxThrow ?? KNOCKBACK_MAX, (baseDamage / 30) * falloff * KNOCKBACK_SCALE / mass);
     // A trooper in any real explosion is blown back a visible way (owner 2026-10-03), at least a hop; armour (mass 5.5) barely moves.
-    if (isInfantryKind(entity.kind) && baseDamage >= 18 && falloff >= 0.22) throwDistance = Math.max(throwDistance, Math.min(opts.maxThrow ?? KNOCKBACK_MAX, 0.9 + falloff * 1.6));
+    if (isInfantryKind(entity.kind) && baseDamage >= 18 && falloff >= 0.22) throwDistance = Math.max(throwDistance, Math.min(opts.maxThrow ?? KNOCKBACK_MAX, 1.2 + falloff * 2.4));
     if (throwDistance < 0.12) return;
 
     const steps = Math.max(4, Math.ceil(throwDistance * 6));
@@ -5016,8 +5034,9 @@ export class TacticalSim {
 
   private firstEntityHitBySegment(projectile: Projectile, from: Vec2, to: Vec2, fromHeight: number, toHeight: number): ProjectileHit | undefined {
     const hits: ProjectileHit[] = [];
+    const crewId = this.entity(projectile.actorId)?.occupantId; // a post's crew is never in its own line of fire
     for (const entity of this.entities) {
-      if (entity.id === projectile.actorId || projectile.ignoredEntityIds.includes(entity.id) || !entity.status.alive || entity.carriedById || entity.downed) continue;
+      if (entity.id === projectile.actorId || entity.id === crewId || projectile.ignoredEntityIds.includes(entity.id) || !entity.status.alive || entity.carriedById || entity.downed) continue;
       this.syncEntityElevation(entity);
       const parts = impactPartOrder(entity, projectile);
       for (const part of parts) {
@@ -5067,8 +5086,9 @@ export class TacticalSim {
   private firstExplosiveProximity(projectile: Projectile, from: Vec2, to: Vec2, fromHeight: number, toHeight: number): { entity: CombatEntity; point: Vec2; progress: number } | undefined {
     const radius = projectileProximityRadius(projectile.kind);
     if (radius <= 0) return undefined;
+    const crewId = this.entity(projectile.actorId)?.occupantId;
     const candidates = this.entities
-      .filter((entity) => entity.id !== projectile.actorId && !projectile.ignoredEntityIds.includes(entity.id) && entity.status.alive && !entity.downed)
+      .filter((entity) => entity.id !== projectile.actorId && entity.id !== crewId && !projectile.ignoredEntityIds.includes(entity.id) && entity.status.alive && !entity.downed)
       .map((entity) => {
         const progress = segmentProgress(entity.position, from, to);
         const point = {
@@ -5497,8 +5517,9 @@ export class TacticalSim {
   }
 
   private firstEntityBetweenShot(from: Vec2, to: Vec2, fromHeight: number, toHeight: number, actorId: string, targetId: string, arcHeight = 0): CombatEntity | undefined {
+    const crewId = this.entity(actorId)?.occupantId;
     const candidates = this.entities
-      .filter((entity) => entity.kind !== "cover" && entity.status.alive && !entity.downed && entity.id !== actorId && entity.id !== targetId)
+      .filter((entity) => entity.kind !== "cover" && entity.status.alive && !entity.downed && entity.id !== actorId && entity.id !== targetId && entity.id !== crewId)
       .map((entity) => {
         const part = preferredPart(entity, "center");
         const point = aimPointFor(entity, part);
@@ -7409,7 +7430,7 @@ function defenseRadius(kind: DefenseKind): number {
   if (kind === "wall") return 1.15;
   if (kind === "exturret") return 1.0;
   if (kind === "bunker") return 1.2;
-  if (kind === "gunpost" || kind === "mortarpit") return 1.0;
+  if (isMountKind(kind)) return 1.0;
   if (kind === "sensor") return 0.7;
   if (kind === "sandbag") return COVER_PROFILES.sandbag.radius;
   if (kind === "minefield") return 1.4; // the triangle's reach
@@ -7496,6 +7517,7 @@ function muzzlePoint(entity: CombatEntity, attackMode: AttackMode = "weapon"): V
   if (entity.kind === "turret" || entity.kind === "exturret" || entity.kind === "aaturret") return localPoint(entity, { x: 0, z: 0.62 });
   if (entity.kind === "bunker") return localPoint(entity, { x: 0, z: 1.05 });
   if (entity.kind === "base") return localPoint(entity, { x: 0.2, z: 1.28 });
+  if (isMountKind(entity.kind)) return localPoint(entity, { x: 0, z: 0.7 }); // the barrel sticks out of the ring
   return { ...entity.position };
 }
 
