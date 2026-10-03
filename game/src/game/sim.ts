@@ -951,6 +951,11 @@ export class TacticalSim {
   leapPreview(point: Vec2, actorOverride?: CombatEntity): { from: Vec2; to: Vec2; ok: boolean; reason?: string } | undefined {
     const actor = actorOverride ?? this.selected;
     if (!actor || actor.team !== "player" || this.phase !== "command" || !isInfantryKind(actor.kind) || canJump(actor)) return undefined;
+    return this.leapPlan(actor, point);
+  }
+
+  /** The hop itself, for either side: where it lands and whether the trooper may make it. */
+  private leapPlan(actor: CombatEntity, point: Vec2): { from: Vec2; to: Vec2; ok: boolean; reason?: string } {
     const from = this.projectedActorForPreview(actor).position;
     const range = this.leapRange(actor);
     const d = dist(from, point);
@@ -5536,7 +5541,7 @@ export class TacticalSim {
    */
   brainOverride?: Difficulty;
   /** Self-play A/B switches for the Hard brain's newer behaviours (all on by default). */
-  aiX: { standoff: boolean; bomb: boolean; medic: boolean; econ: boolean; post: boolean; posture: boolean } = { standoff: true, bomb: true, medic: true, econ: true, post: true, posture: true };
+  aiX: { standoff: boolean; bomb: boolean; medic: boolean; econ: boolean; post: boolean; posture: boolean; moves: boolean } = { standoff: true, bomb: true, medic: true, econ: true, post: true, posture: true, moves: true };
   /** Self-play knob: force individual brain traits on/off to measure what each one is worth. */
   debugAiTraits?: Partial<{ focusFire: boolean; useCover: boolean; retreat: boolean; smartEconomy: boolean; tactical: boolean }>;
   private aiProfile(): { focusFire: boolean; useCover: boolean; retreat: boolean; smartEconomy: boolean; tactical: boolean } {
@@ -5559,6 +5564,120 @@ export class TacticalSim {
     return false;
   }
 
+  // ---- Hard brain: the whole toolkit, not just move and shoot. Each helper is one move and the rule for when it pays. ----
+
+  /** HOP: across a gap or up a ledge a walk cannot manage (or a high perch beside the fight), for 1 AP. */
+  private aiHopAct(actor: CombatEntity, goal: Vec2 | undefined, foes: CombatEntity[], range: number): boolean {
+    if (!isInfantryKind(actor.kind) || canJump(actor) || actor.commandPoints <= 0 || !actor.status.canMove) return false;
+    const from = actor.position;
+    const reach = this.leapRange(actor);
+    const here = terrainHeightAt(from);
+    const hereExposure = this.aiExposureAt(from, foes);
+    const walk = goal ? this.navigateToward(actor, goal, moveRange(actor)) : from;
+    const walkGain = goal ? dist(from, goal) - dist(walk, goal) : 0;
+    let best: Vec2 | undefined;
+    let bestScore = 2.5; // a hop has to clearly beat walking
+    for (const r of [0.55, 1]) {
+      for (let i = 0; i < 12; i += 1) {
+        const a = (i / 12) * Math.PI * 2;
+        const plan = this.leapPlan(actor, clampToArena({ x: from.x + Math.sin(a) * reach * r, z: from.z + Math.cos(a) * reach * r }));
+        if (!plan.ok || this.aiDangerAt(plan.to)) continue;
+        const gain = goal ? dist(from, goal) - dist(plan.to, goal) : 0;
+        const rise = terrainHeightAt(plan.to) - here;
+        let score = 0;
+        if (gain >= 2.2 && gain > walkGain + 1.5) score += gain - walkGain; // the walk detours; the hop closes the ground
+        if (rise > TERRAIN_STEP && foes.some((f) => dist(f.position, plan.to) <= range * 1.3) && this.aiExposureAt(plan.to, foes) <= hereExposure + 1) score += 2 + rise * 2; // a ledge no walk climbs
+        if (score > bestScore) { bestScore = score; best = plan.to; }
+      }
+    }
+    if (!best || !spendCommandPoint(actor)) return false;
+    this.addOrder({ actorId: actor.id, kind: "move", destination: best, leap: true, aim: "center", duration: 1.6 });
+    this.aiClaims.push({ at: { ...best }, radius: actor.radius });
+    return true;
+  }
+
+  /** RAM: a tank with a soft target against its hull, or whose gun is gone, runs it down (72 damage, 14 to its own front plate). */
+  private aiRamAct(actor: CombatEntity, foes: CombatEntity[]): boolean {
+    if (actor.kind !== "tank" || actor.commandPoints <= 0 || !actor.status.canMove) return false;
+    for (const f of foes) {
+      if (f.flying || f.downed || !f.status.alive || isBuildingKind(f.kind) || isDefenseKind(f.kind)) continue;
+      if (dist(actor.position, f.position) > ramRange(actor) + actor.radius + f.radius) continue;
+      const soft = isInfantryKind(f.kind) || f.parts.reduce((sum, p) => sum + Math.max(0, p.hp), 0) <= 90;
+      if (!soft && actor.status.canShoot) continue;
+      if (!spendCommandPoint(actor)) return false;
+      this.addOrder({ actorId: actor.id, kind: "ram", targetId: f.id, aim: "center", duration: 1.85 });
+      return true;
+    }
+    return false;
+  }
+
+  /** SMOKE: a mortar screens a friend that two or more guns are working over, a third of the way to the shooters. */
+  private aiSmokeAct(actor: CombatEntity, foes: CombatEntity[], behind: boolean): boolean {
+    if (actor.kind !== "mortar" || actor.commandPoints <= 0 || !actor.status.canShoot || this.smokeClouds.length >= 2) return false;
+    let front: CombatEntity | undefined;
+    let worst = behind ? 2 : 3;
+    for (const u of this.fieldUnits("enemy")) {
+      if (u.id === actor.id || u.flying || u.kind === "mortar") continue;
+      const exposure = this.aiExposureAt(u.position, foes);
+      if (exposure >= worst) { worst = exposure; front = u; }
+    }
+    if (!front) return false;
+    const foe = nearest(front, foes);
+    if (!foe || dist(front.position, foe.position) < 5) return false;
+    const point = clampToArena({ x: front.position.x + (foe.position.x - front.position.x) * 0.35, z: front.position.z + (foe.position.z - front.position.z) * 0.35 });
+    if (this.smokeClouds.some((c) => dist(c, point) < SMOKE_RADIUS * 1.2) || this.smokeFailureReason(actor, point)) return false;
+    if (!spendCommandPoint(actor)) return false;
+    this.addOrder({ actorId: actor.id, kind: "smoke", destination: point, aim: "center", duration: 1.35 });
+    return true;
+  }
+
+  /** MINE: a sapper holding a spot with foes closing sows a mine at its feet before it fires ($15, 1 AP). */
+  private aiMineAct(actor: CombatEntity, foes: CombatEntity[]): boolean {
+    if (actor.kind !== "sapper" || this.mineFailureReason(actor) || this.money(actor.team) < MINE_COST + 150) return false;
+    const foe = nearest(actor, foes);
+    if (!foe) return false;
+    const d = dist(actor.position, foe.position);
+    if (d > 14 || d < 3) return false;
+    spendCommandPoint(actor);
+    this.addMoney(actor.team, -MINE_COST);
+    this.mines.push({ id: `mine-${++this.effectSeq}`, x: actor.position.x, z: actor.position.z, team: actor.team });
+    return true;
+  }
+
+  /** CROUCH: a trooper standing its ground under fire, with an action point to spare, drops low (tighter aim, no head shots). */
+  private aiCrouchAct(actor: CombatEntity, foes: CombatEntity[]): boolean {
+    if (!isInfantryKind(actor.kind) || actor.stance === "crouched" || actor.commandPoints <= 0 || !actor.status.canMove) return false;
+    if (this.aiExposureAt(actor.position, foes) < 1 || this.orders.some((o) => o.actorId === actor.id && o.kind === "defend")) return false;
+    if (!spendCommandPoint(actor)) return false;
+    this.addOrder({ actorId: actor.id, kind: "defend", aim: "center", stance: "crouched", duration: 0.52 });
+    return true;
+  }
+
+  /** CARRY: an APC or transport sets its troops down when the fight is close, and boards idle foot troops while it is far. */
+  private aiCarryAct(actor: CombatEntity, foes: CombatEntity[]): boolean {
+    if (!isCarrierKind(actor.kind) || actor.commandPoints <= 0 || !actor.status.canMove) return false;
+    const foe = nearest(actor, foes);
+    if (!foe) return false;
+    const gap = dist(actor.position, foe.position);
+    if (actor.passengerIds?.length) {
+      if (gap > 15) return false; // still driving in
+      const dir = normalize({ x: foe.position.x - actor.position.x, z: foe.position.z - actor.position.z });
+      const out = actor.radius + APC_UNLOAD_REACH * 0.8;
+      const point = actor.kind === "apc" ? clampToArena({ x: actor.position.x + dir.x * out, z: actor.position.z + dir.z * out }) : { ...actor.position };
+      if (!spendCommandPoint(actor)) return false;
+      this.addOrder({ actorId: actor.id, kind: "unload", destination: point, aim: "center", duration: actor.kind === "apc" ? 1.2 : 2.4 });
+      return true;
+    }
+    if (gap < 18) return false;
+    const rider = this.fieldUnits("enemy").find((u) => u.id !== actor.id && !u.carriedById && !this.aiBoarding.has(u.id) && u.status.canMove && isInfantryKind(u.kind)
+      && !this.orders.some((o) => o.actorId === u.id) && !this.loadFailureReason(actor, u));
+    if (!rider || !spendCommandPoint(actor)) return false;
+    this.aiBoarding.add(rider.id);
+    this.addOrder({ actorId: actor.id, kind: "load", targetId: rider.id, aim: "center", duration: actor.kind === "apc" ? 1.2 : 2.6 });
+    return true;
+  }
+  private aiBoarding = new Set<string>();
+
   /** Hard brain: shove a trooper that stands with water or the map edge behind it (the throw does the killing). */
   private aiShoveAct(actor: CombatEntity, foes: CombatEntity[]): boolean {
     if (!isInfantryKind(actor.kind) || actor.commandPoints <= 0 || !actor.status.canMove) return false;
@@ -5573,6 +5692,12 @@ export class TacticalSim {
         const p = { x: foe.position.x + dir.x * t, z: foe.position.z + dir.z * t };
         const c = clampToArena(p);
         doomed = pointInWater(p) || c.x !== p.x || c.z !== p.z;
+      }
+      // ...or into our own trap: a mine, a burning patch, a gas cloud or a charge a shove or two away.
+      for (let t = 1.5; t <= 4 && !doomed; t += 1) {
+        const p = { x: foe.position.x + dir.x * t, z: foe.position.z + dir.z * t };
+        doomed = this.mines.some((m) => m.team === actor.team && dist(m, p) < 1.2) || this.burnZones.some((z) => dist(z, p) <= z.radius) || this.gasClouds.some((z) => dist(z, p) <= z.radius)
+          || this.entities.some((c) => c.coverKind === "charge" && c.status.alive && dist(c.position, p) <= CHARGE_BLAST_RADIUS);
       }
       // (meleeFailureReason is the PLAYER's check and refuses any foe of the player's; the bot's own: weapon, and in rush reach)
       if (!doomed || !hasIntactMeleeWeapon(actor) || d > meleeRange(actor) + actor.radius + foe.radius || !spendCommandPoint(actor)) continue;
@@ -5627,6 +5752,7 @@ export class TacticalSim {
   private queueEnemyOrders(dryRun = false): void {
     const profile = this.aiProfile();
     this.aiClaims = [];
+    this.aiBoarding.clear();
     if (!dryRun) {
       for (const entity of this.living("enemy")) repairForNewTurn(entity);
       const enemyCommsOnline = this.entities.some((e) =>
@@ -5662,15 +5788,25 @@ export class TacticalSim {
     // it so shooters pile onto one target until it's predicted dead, then spill to the next.
     const committed = new Map<string, number>();
     // HARD reads the balance of forces: well behind, it holds a defensive line and lets the player walk into its guns.
-    const holding = profile.tactical && this.aiX.posture && this.turn >= 2 && this.aiStrengthRatio() < 0.75;
+    const ratio = profile.tactical ? this.aiStrengthRatio() : 1;
+    const behind = ratio < 1;
+    const holding = profile.tactical && this.aiX.posture && this.turn >= 2 && ratio < 0.75;
     const easyBrain = (this.brainOverride ?? this.difficulty) === "easy";
     for (const enemy of this.living("enemy")) {
       if (isBuildingKind(enemy.kind) || enemy.carriedById) continue; // carried units can't act
+      if (this.aiBoarding.has(enemy.id)) continue; // told to board a carrier this turn
       // EASY hesitates: about a third of its units sit a turn out. It is the bot a new player
       // learns on, and at full activity it out-raced the "smart" brains in self-play.
       if (easyBrain && !dryRun && this.rng.chance(0.3)) continue;
       // Push: a foe with water or the edge behind it is a free kill (Hard only).
       if (profile.tactical && this.aiShoveAct(enemy, players)) continue;
+      // The rest of the toolkit (Hard only): carry troops, ram, screen with smoke, sow a mine.
+      if (profile.tactical && this.aiX.moves) {
+        if (this.aiCarryAct(enemy, players)) continue;
+        if (this.aiRamAct(enemy, players)) continue;
+        if (this.aiSmokeAct(enemy, players, behind)) continue;
+        this.aiMineAct(enemy, players); // free of the unit's turn beyond 1 AP: it still shoots after
+      }
       // A field hand lays its item where it hurts before anything else (Hard only).
       if (profile.tactical && placeSpecFor(enemy.kind) && enemy.commandPoints > 0 && this.aiPlaceAct(enemy, players)) continue;
       // A trooper near a free emplacement with a foe in its reach goes and crews it (a Mortar Pit wants a mortarman).
@@ -5699,7 +5835,7 @@ export class TacticalSim {
         continue;
       }
       // Melee units strike when adjacent instead of relying on a (nonexistent) gun.
-      if (target && enemy.kind === "striker" && enemy.commandPoints > 0 && separation <= meleeRange(enemy) + enemy.radius + target.radius) {
+      if (target && (enemy.kind === "striker" || (profile.tactical && this.aiX.moves && isInfantryKind(enemy.kind) && !enemy.status.canShoot && hasIntactMeleeWeapon(enemy))) && enemy.commandPoints > 0 && separation <= meleeRange(enemy) + enemy.radius + target.radius) {
         const part = preferredPart(target, target.kind === "cover" ? "center" : "weakest");
         this.addOrder({ actorId: enemy.id, kind: "melee", targetId: target.id, targetPartId: part.id, aim: aimForPart(part), duration: 0.78 });
         spendCommandPoint(enemy);
@@ -5787,7 +5923,9 @@ export class TacticalSim {
         // Shooters hold at weapon range; melee always close; carriers run the flag home;
         // in objective modes, idle units push the hill/flag rather than over-extending.
         const stand = profile.tactical && this.aiX.standoff ? Math.min(range * 0.8, Math.max(6, range * 0.55)) : Math.min(range * 0.8, 6);
-        const wantsTarget = Boolean(target) && (isMelee || separation > stand);
+        // HULL DOWN: a tank that has fired and still has the target in reach stays put (30% less damage taken until it moves).
+        const hullHold = profile.tactical && this.aiX.moves && enemy.kind === "tank" && fired && Boolean(target) && separation <= range && ratio < 1.5;
+        const wantsTarget = Boolean(target) && !hullHold && (isMelee || separation > stand);
         let goal: Vec2 | undefined;
         let advancing = false;
         // HARD: an intruder near our base pulls the nearby defenders back onto it.
@@ -5853,6 +5991,9 @@ export class TacticalSim {
           const pick = this.aiBestPost(enemy, goal, stepP, allPlayers, target, range, true);
           if (dist(pick, enemy.position) > 0.6) posted = pick;
         }
+        // HOP: across a gap or up a ledge the walk cannot manage.
+        if (profile.tactical && this.aiX.moves && !carrying && !crippled && !fire && isInfantryKind(enemy.kind) && enemy.commandPoints > 0 && allPlayers.length
+          && this.aiHopAct(enemy, goal, allPlayers, range)) goal = undefined;
         if (goal) {
           const step = isVehicleKind(enemy.kind) ? Math.max(3.2, moveRange(enemy)) : moveRange(enemy);
           // When pushing toward a threat, prefer a tile that ends sheltered behind cover.
@@ -5890,6 +6031,8 @@ export class TacticalSim {
             });
           }
         }
+        // CROUCH: holding a spot under fire with an action point to spare.
+        if (profile.tactical && this.aiX.moves && enemy.commandPoints > 0 && allPlayers.length && !this.orders.some((o) => o.actorId === enemy.id && o.kind === "move")) this.aiCrouchAct(enemy, allPlayers);
       }
     }
   }

@@ -162,6 +162,19 @@ How the factions, the three AI brains and Local 2 Players work, with the measure
   Syndicate hard-hitting and brittle (raider +1 grenade, -8% HP; striker / sapper / flamer +10% damage; -8% HP on the glass), Bastion
   tough, slow and long-ranged (guardsman +12% HP, -8% speed; mortar and artillery +10% range; tank +12% HP). Multipliers are held to
   0.88-1.2 by `factionMods.test.ts`; the Deploy card names the faction's trait for each unit.
+- **Bot, Hard brain: the whole toolkit** (2026-10-03, round 3; `aiX.moves` switches it off). Every order a player has, with the rule for when it pays:
+  HOP (`aiHopAct`: across a gap or up a ledge too tall to walk, or onto a perch beside the fight, only when it clearly beats the walk);
+  PUSH (`aiShoveAct`: a foe with water or the edge behind it, or one of our own mines / burning ground / gas / charges a shove away);
+  RAM (a tank with infantry or a nearly dead vehicle on its hull, or with its gun gone); SMOKE (a mortar screens a friend that three
+  guns, or two when behind, are working over); MINE (a sapper holding with foes 3-14m off); CROUCH (a trooper standing its ground
+  under fire with an action point spare); HULL DOWN (a tank that has fired and holds the target in reach stays put, unless it is
+  winning 1.5x); CARRY (an APC or transport boards an idle rifleman while far from the fight and sets its troops down within 15m);
+  BAYONET (a disarmed trooper adjacent to a foe strikes); plus the older ones: heal / repair, man a post, lay field items, strikes,
+  bomb runs, defenses, research. Not used on purpose: the Drone Op's recon pulse (the bot sees everything already) and the artillery
+  deploy (the sim plants it by itself). Normal and Easy keep their old toolkit so the tiers stay apart. Over 48 seeded games the full
+  set changed nothing against the Normal bot (33 wins / 5 losses either way): it is behaviour, not a power spike. In those games the bot
+  crouched 740 times, hopped 152 and shoved 104 (up from 59); ram / smoke / mine / carry did not come up because the bot rarely buys those
+  units, so `aiBrains.test.ts` stages each one.
 - **Bot, Hard brain: posts and posture** (2026-10-03, round 2). When it pushes in, `aiBestPost` scores every spot within one move
   (height over the nearest foe, cover toward it, foes that can reach the spot minus friends standing by, whether it can still
   shoot from there, progress to the goal) and walks to the best, only if clearly better than staying. Measured over 48 seeded
