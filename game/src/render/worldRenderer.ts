@@ -9,7 +9,7 @@ import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec
 import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isMountKind, isVehicleKind, type CombatEntity, type CoverKind, type DamagePart, type Team, type EntityKind, type PartRole } from "../game/damageModel";
 import { factionDef, type FactionId } from "../game/factions";
 import type { OrderKind, Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
-import { CHARGE_BLAST_RADIUS, CLASH_BLAST, CLASH_BOLT, OIL_RADIUS, PAD_RADIUS, carpetDropPoints, minefieldPoints } from "../game/sim";
+import { CHARGE_BLAST_RADIUS, CLASH_BLAST, CLASH_BOLT, OIL_RADIUS, PULSE_EMP, PULSE_SMOKE, isPulseBlast, PAD_RADIUS, carpetDropPoints, minefieldPoints } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type GroundSurfaceKind, type SkylineKind } from "../game/maps";
 import type { TroopKind } from "../game/units";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, climbsAlong, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
@@ -17,7 +17,7 @@ import { kitGeometry, modelsVersion, propGeometry, toonGradient, vehicleGeometry
 import { VEHICLE_LAYOUT } from "./vehiclesLayout";
 import { damageLabel } from "./damageLabel";
 import {
-  blastAfterlife, GROUND_CHEW_S, isSmallArms, makeBlast, makeBlastAfterlife, makeGroundChew, makeImpact,
+  blastAfterlife, GROUND_CHEW_S, isSmallArms, makeBlast, makeBlastAfterlife, makePulse, makeGroundChew, makeImpact,
   isLobbed, makeLightning, makeMuzzleFlash, makePing, makeProjectileModel, makeProjectileShadow, makeProjectileTrail,
   makeScorchStar, makeStrikeFlash, orientAlongVelocity, prewarmProjectileFx, projectileFamily,
   projectileFxWarmUpMaterials, projectileGeometry, projectileMaterial, pushTrailPoint, setFxViewer,
@@ -5783,7 +5783,7 @@ export class WorldRenderer {
       // recorded damage for it: a shell bursting at a trooper's feet, a burn tick, a bomb — the body
       // lurches away from the point of impact (rifle/melee already flinch through the damage report;
       // this is the same spring, keyed off the visual event so no family can land silently).
-      if (effect.type === "blast" || effect.type === "impact" || effect.type === "bolt") {
+      if ((effect.type === "blast" && !isPulseBlast(effect.color)) || effect.type === "impact" || effect.type === "bolt") {
         const radius = (effect.radius ?? 0.5) + (effect.type === "blast" ? 0.6 : 0.2);
         // A long-lived impact is a SHOVE (sim resolveShove): a heavy blow, so its victim's death is thrown.
         const power = effect.type === "blast" ? Math.min(1.4, 0.5 + (effect.radius ?? 1) * 0.3) : effect.type === "impact" && effect.duration >= 0.9 ? 1.1 : 0.55;
@@ -5868,6 +5868,16 @@ export class WorldRenderer {
             rec.dz = dz / len;
           }
         }
+      } else if (effect.type === "blast" && isPulseBlast(effect.color)) {
+        // A pulse throws light motes, not fire: a ring of small bright flecks lifting off the ground.
+        const smoke = effect.color === PULSE_SMOKE;
+        const cold = effect.color === PULSE_EMP;
+        fx.burst({
+          x: effect.to.x, y: ground + 0.3, z: effect.to.z,
+          count: Math.round(14 + (effect.radius ?? 2) * 5), color: smoke ? [0xdfe5e8, 0xb8c0c4, 0x9aa3a8] : cold ? [0xbfeeff, 0x8de4ff, 0x5fb8e8] : [0xd4ffe0, 0x8effa6, 0x5fd884],
+          speed: [1.5, 4.5], up: 0.9, size: [0.06, 0.16], life: [0.4, 1.0], gravity: -0.6, drag: 1.6, jitter: (effect.radius ?? 2) * 0.5,
+          shape: ParticleShape.streak,
+        });
       } else if (effect.type === "blast") {
         const radius = effect.radius ?? 2;
         // Fireball: fast, hot, short. Embers: slower, gravity-bound, longer -- the two together are
@@ -6038,6 +6048,8 @@ export class WorldRenderer {
           dust.position.set(effect.to.x, terrainHeightAt(effect.to) + 0.08, effect.to.z);
           this.effectRoot.add(dust);
         }
+      } else if (effect.type === "blast" && isPulseBlast(effect.color)) {
+        for (const part of makePulse(effect, t, terrainHeightAt(effect.to))) this.effectRoot.add(part);
       } else if (effect.type === "blast") {
         // Battle scar: the first frame of every blast burns a scorch decal into the ground
         // that persists for the whole battle (FIFO-capped so long sieges stay cheap).

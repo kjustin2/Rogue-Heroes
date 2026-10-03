@@ -87,7 +87,7 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "recon", label: "Recon", tip: "Drone Operator only. Whole turn: next turn every enemy unit's planned order is shown on the board." },
   { id: "treat", label: "Heal", tip: "Medic: walk up to a hurt infantry unit and restore every part to full (wrecked parts to a third). Engineer: the same for machines, emplacements and the base. 1 AP." },
   { id: "leap", label: "Jump", tip: "Infantry: hop a few metres, over a crate or a low wall, up onto a ledge, across a gap. Light, quick troopers go farther and higher. 1 AP." },
-  { id: "man", label: "Man", tip: "Walk up to a free Gun Post or Mortar Pit and crew it. It fires from next turn, with your trooper's turn spent on it. 1 AP." },
+  { id: "man", label: "Man", tip: "Walk up to a free post (Gun, Mortar, Rocket or Flame) and crew it. It fires from next turn, twice a turn. 1 AP." },
   { id: "dismount", label: "Leave", tip: "Let the crew step away from this emplacement. It stops firing until someone crews it again." },
   { id: "place", label: "Place", tip: "Set this unit's item down within reach. T turns it. 1 AP and its cost." },
   { id: "slam", label: "Slam", tip: "Sledge only. Swing the hammer in a circle: every foe within 3m is hurt and flung far. 1 AP." },
@@ -109,7 +109,7 @@ const ACTION_HOW: Partial<Record<Intent, string>> = {
   mine: "Plant a hidden mine at the sapper's feet; enemies that step on it take a blast. $15 + 1 AP.",
   load: "Select Load, then click a friendly ground unit to lift it aboard. 1 AP.",
   leap: "Select Jump, then click ground within the ring: the trooper arcs there, over low cover and up onto a ledge. 1 AP.",
-  man: "Select Man, then click a Gun Post or Mortar Pit in reach. It fires from next turn.",
+  man: "Select Man, then click a post in reach.",
   treat: "Select it, then click a hurt ally in reach: the unit walks over and restores every part. 1 AP.",
   place: "Select it, click ground within reach (T turns it). Set down at once; costs 1 AP and money.",
   unload: "Select Unload, then click ground to fly there and set passengers down. 1 AP.",
@@ -2443,7 +2443,7 @@ function actionDisabledReason(action: Intent, actor: CombatEntity | undefined, s
   if (action === "smoke") return sim.smokeFailureReason(actor) ?? undefined;
   if (action === "leap") return `${actor.name} cannot jump: its legs are destroyed.`;
   if (action === "dismount") return "No crew to send away";
-  if (action === "man") return !actor.status.canMove ? `${actor.name} cannot move` : "No free Gun Post or Mortar Pit in reach";
+  if (action === "man") return !actor.status.canMove ? `${actor.name} cannot move` : "No free post in reach";
   if (action === "treat") return sim.treatFailureReason(actor) ?? undefined;
   if (action === "place") return sim.placeFailureReason(actor) ?? undefined;
   if (action === "load" && (actor.passengerIds?.length ?? 0) >= 2) return `${actor.kind === "apc" ? "The APC" : "The transport"} is full.`;

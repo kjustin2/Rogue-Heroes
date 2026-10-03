@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { TacticalSim, mapDef, unitStats } from "./sim";
 import { FACTIONS } from "./factions";
 import { recomputeStatus } from "./damageModel";
+import { PULSE_EMP, PULSE_HEAL, isPulseBlast } from "./sim";
 import { DEFAULT_TERRAIN, setActiveTerrain } from "./terrain";
 
 // BATCH 3 (owner 2026-10-03): the new troopers, posts and strikes, each proven through the real sim.
@@ -396,5 +397,41 @@ describe("support troopers worth fielding", () => {
     expect(sim.queueTreat(tank.id), sim.log[0]).toBe(true);
     sim.endTurn(); settle(sim);
     expect(sim.entity(tank.id)!.commandPoints).toBe(sim.entity(tank.id)!.maxCommandPoints + 1);
+  });
+});
+
+describe("pulses are not explosions (2026-10-03 review)", () => {
+  afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
+
+  it("an EMP burst and a medic's aura draw as pulses, never as a fire blast", () => {
+    const sim = staged();
+    const blasts: number[] = [];
+    const seen = new Set<string>();
+    const watch = (): void => { for (const e of sim.effects) if (e.type === "blast" && !seen.has(e.id)) { seen.add(e.id); blasts.push(e.color); } };
+    sim.debugSpawn("tank", "enemy", { x: 2, z: 0 });
+    (sim as unknown as { queuedSupport: unknown[] }).queuedSupport.push({ kind: "emp", point: { x: 2, z: 0 }, dir: { x: 1, z: 0 }, team: "player" });
+    const medic = sim.debugSpawn("medic", "player", { x: -12, z: 14 });
+    const hurt = sim.debugSpawn("soldier", "player", { x: -11, z: 14 });
+    for (const p of hurt.parts) p.hp = Math.ceil(p.maxHp * 0.5);
+    void medic;
+    sim.endTurn(); watch();
+    for (let t = 0; t < 40 && sim.phase === "resolve"; t += 0.05) { sim.update(0.05); watch(); }
+    sim.endTurn(); watch(); // the aura ticks as the next turn begins
+    for (let t = 0; t < 40 && sim.phase === "resolve"; t += 0.05) { sim.update(0.05); watch(); }
+    expect(blasts).toContain(PULSE_EMP);
+    expect(blasts).toContain(PULSE_HEAL);
+    expect(isPulseBlast(0xff7a2a), "a fire blast is not a pulse").toBe(false);
+  });
+
+  it("a burst of rounds meeting in the air is one log line a turn per pair", () => {
+    const sim = staged();
+    const a = sim.debugSpawn("heavy", "player", { x: -6, z: 0 });
+    const b = sim.debugSpawn("heavy", "enemy", { x: 4, z: 0 });
+    sim.debugSelect(a.id);
+    sim.queueShoot(b.id);
+    sim.endTurn();
+    // The enemy answers on its own; run the whole resolve and count the lines.
+    for (let t = 0; t < 40 && sim.phase === "resolve"; t += 0.05) sim.update(0.05);
+    expect(sim.log.filter((l) => l.includes("collide in mid-air")).length).toBeLessThanOrEqual(1);
   });
 });

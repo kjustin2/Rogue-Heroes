@@ -37,6 +37,9 @@ import {
   FACTIONS,
   type FactionId,
   CLASH_BLAST,
+  PULSE_EMP,
+  PULSE_SMOKE,
+  isPulseBlast,
   CLASH_BOLT,
 } from "./game/sim";
 import type { AimMode, CombatEntity, Team } from "./game/damageModel";
@@ -2352,6 +2355,8 @@ function processBattleEvents(): void {
     if (effect.type === "blast" && effect.color === 0xff7a2a && (effect.radius ?? 0) >= 3) {
       sfx.ignite(heard); // a puddle of oil catching
       feel.addTrauma(0.06 * heard);
+    } else if (effect.type === "blast" && isPulseBlast(effect.color)) {
+      if (effect.color === PULSE_EMP) { sfx.clank(heard); feel.addTrauma(0.05 * heard); } else if (effect.color === PULSE_SMOKE) sfx.place(heard); else sfx.heal(); // a pulse, not a bang
     } else if (effect.type === "blast") {
       sfx.explosion(effect.radius ?? 1.5, heard);
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.blast, 1.5);

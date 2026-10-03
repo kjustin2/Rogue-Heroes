@@ -183,6 +183,7 @@ How the factions, the three AI brains and Local 2 Players work, with the measure
   in `sim.stats` (slams, thrown, burned, sentries, ricochets, bounties, clashes, cannon shots, hops, deployed kinds, researched nodes, calls ...);
   `commander.liveCheck` unlocks counted medals the moment their tally is met, mid-battle, with a corner toast (`announceMedal`, `.achieve-toast`).
 - **Round 1 of batch 3 (2026-10-03)**: a crewed post gets TWO actions a turn and its crew keeps ONE, spent only to climb out (leaving costs 1,
+- **Pulses are not explosions (review, 2026-10-03)**: an EMP burst, a medic or engineer aura and a smoke shell used to draw as a full fireball with a scorch, a shove and an explosion sound (a medic healing next to a friend looked like a shell landing). `PULSE_EMP` / `PULSE_HEAL` / `PULSE_SMOKE` blasts (`isPulseBlast`) now draw ring(s) and flecks in cold blue, healing green or soft grey (`makePulse`), with no scorch, no shove and a quiet sound. The "rounds collide in mid-air" log line is one per shooter pair per turn, and the "sandstorm / barrage next turn" banners are gone (the forecast chip says it).
   not the whole turn); the crew is never a blocker or a casualty of its own post's line of fire (`crewId` exclusions in
   `firstEntityBetweenShot` / `firstEntityHitBySegment` / `firstExplosiveProximity`; the "Friendly fire risk" warning at 2.5m was the
   crew standing in the line), and the barrel starts 0.7m out of the ring. `isMountKind` replaces the hard-coded gun-post / mortar-pit

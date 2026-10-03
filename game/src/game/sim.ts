@@ -531,6 +531,11 @@ function pairAngle(a: string, b: string): number {
 export const CLASH_SPARK = 0xffd27a;
 export const CLASH_BOLT = 0xd8ecff;
 export const CLASH_BLAST = 0xff9a3a;
+/** Utility "blasts" that are a pulse, not an explosion: an EMP burst, a healing aura and a smoke shell opening. They draw a ring of light or a puff, never a fireball, a scorch or a shove. */
+export const PULSE_EMP = 0x8de4ff;
+export const PULSE_HEAL = 0x8effa6;
+export const PULSE_SMOKE = 0x9aa3a8; // SMOKE_COLOR
+export const isPulseBlast = (color: number | undefined): boolean => color === PULSE_EMP || color === PULSE_HEAL || color === PULSE_SMOKE;
 const PROJECTILE_COLLIDE_RADIUS = 0.42;
 /** A bomb run closer than this drops where it hovers (no move to queue). */
 const BOMB_RUN_TOLERANCE = 1.4;
@@ -634,6 +639,7 @@ export class TacticalSim {
 
   private orderSeq = 0;
   private effectSeq = 0;
+  private readonly clashLogTurn = new Map<string, number>(); // pair -> turn of its last "rounds collide" log line
   private projectileSeq = 0;
   private damageSeq = 0;
   private troopSeq = 0;
@@ -3882,7 +3888,14 @@ export class TacticalSim {
         if (order) order.done = true;
       }
     }
-    if (!explosive(a) && !explosive(b)) this.pushLog(`${nameOf(a)}'s and ${nameOf(b)}'s rounds collide in mid-air`);
+    if (!explosive(a) && !explosive(b)) {
+      // A burst of rounds meeting is one line a turn per pair, not one line per bullet.
+      const key = [a.actorId, b.actorId].sort().join("|");
+      if (this.clashLogTurn.get(key) !== this.turn) {
+        this.clashLogTurn.set(key, this.turn);
+        this.pushLog(`${nameOf(a)}'s and ${nameOf(b)}'s rounds collide in mid-air`);
+      }
+    }
   }
 
   private updateProjectile(projectile: Projectile, dt: number): void {
@@ -6778,7 +6791,9 @@ export class TacticalSim {
     if (mine >= 4) {
       const next = this.factionOf(base.team).aiTechPath.find((id) => !this.researchFailureReason(base, id));
       const node = next ? techNode(next) : undefined;
-      if (node && money >= node.cost + cheapest && this.researchTechFor(base, node.id)) return true;
+      // The first doctrines are cheap and open the roster (a bot that never tops $300 sat on Assault for eleven turns): no spare-cash pad for them.
+      const early = (base.unlockedTech?.length ?? 0) < 3 && this.aiProfile().tactical;
+      if (node && money >= node.cost + (early ? 0 : cheapest) && this.researchTechFor(base, node.id)) return true;
     }
     // 5. Otherwise field the most-wanted troop.
     return buy();
@@ -7299,10 +7314,7 @@ export class TacticalSim {
       this.pushLog("The storm is building — lightning will strike the marked point this turn.");
       notice = notice ?? "⚠ Lightning strikes the marked point this turn — stay clear of it.";
     }
-    if (!notice) {
-      if (this.sandstormActive(t + 1) && !stormNow) notice = "A sandstorm is approaching next turn.";
-      else if (this.eventZonesForTurn(t + 1).some((z) => z.kind === "barrage")) notice = "Artillery is ranging in — a barrage hits next turn.";
-    }
+    // No "next turn" banner: the forecast chip already shows a coming storm or barrage (fewest words on screen).
     this.eventNotice = notice;
   }
 
@@ -7388,7 +7400,7 @@ export class TacticalSim {
         this.effect("ping", { ...e.position }, { ...e.position }, 0x8de4ff, 0.9, e.radius + 0.8);
         hit += 1;
       }
-      this.effect("blast", strike.point, strike.point, 0x8de4ff, 0.7, strike.radius);
+      this.effect("blast", strike.point, strike.point, PULSE_EMP, 0.7, strike.radius);
       this.tally(strike.team ?? "player", "empHits", hit);
       this.pushLog(hit ? `The EMP burst kills the power on ${hit} machine${hit === 1 ? "" : "s"}` : "The EMP burst fizzles on empty ground");
       return;
@@ -7628,7 +7640,7 @@ export class TacticalSim {
         }
       }
       if (mended > 0) {
-        this.effect("blast", source.position, source.position, 0x8effa6, 0.7, 4.5);
+        this.effect("blast", source.position, source.position, PULSE_HEAL, 0.9, 4.5);
         this.pushLog(`${source.name}'s ${heals ? "field aura heals" : "repair rig mends"} ${mended} ${mended === 1 ? "ally" : "allies"}`);
       }
     }

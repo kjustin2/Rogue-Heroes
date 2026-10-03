@@ -578,6 +578,52 @@ app.whenReady().then(async () => {
         await js(`document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = ""))`);
         continue;
       }
+      if (s === "review") {
+        // Harsh review: each new kind selected with the real HUD up (order panel), plus base upgrades, burning and sentries at play zoom.
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal", "syndicate", "vanguard")`);
+        await sleep(1500);
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("player", 9000); sim.economy.set("enemy", 0);
+          const kinds = ["sledge", "bounty", "runabout", "turrettech", "flamer", "medic", "builder", "springer", "trencher", "ironclad", "lancer", "hornet"];
+          kinds.forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -20 + i * 2.6, z: 4 }); u.yaw = 0.3; });
+          const foe = sim.debugSpawn("soldier", "enemy", { x: -6, z: -4 }); foe.burning = { turns: 3, dmg: 8 };
+          const f2 = sim.debugSpawn("tank", "enemy", { x: -2, z: -3 });
+          r.setView({ x: -6, z: 2, zoom: 0.5, pitch: 0.6, yaw: 0.2 }); })()`);
+        await sleep(1000);
+        for (const k of ["sledge", "bounty", "runabout", "turrettech", "flamer", "medic", "builder", "springer", "trencher", "ironclad", "lancer", "hornet"]) {
+          await js(`(() => { const sim = window.__rht.sim; const u = sim.entities.find((e) => e.team === "player" && e.kind === ${JSON.stringify(k)}); sim.select(u.id); })()`);
+          await sleep(500);
+          await shot("review-" + k);
+        }
+        await js(`(() => { const sim = window.__rht.sim; const base = sim.entities.find((e) => e.team === "player" && e.kind === "base"); sim.select(base.id); })()`);
+        await sleep(400);
+        await js(`(() => { const b = document.querySelector('[data-base-tab="upgrade"]'); if (b) b.click(); })()`);
+        await sleep(500); await shot("review-base-upgrade");
+        continue;
+      }
+      if (s === "strikes") {
+        // The five new support strikes, filmed: EMP, minefield, medevac, sentry drop, rail strike.
+        for (const [fac, kind] of [["syndicate", "smokescreen"], ["syndicate", "minedrop"], ["syndicate", "railstrike"], ["vanguard", "sentrydrop"]]) {
+          await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal", ${JSON.stringify(fac)}, "vanguard")`);
+          await sleep(1500);
+          const info = await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("player", 9000); sim.economy.set("enemy", 0);
+            const base = sim.entities.find((e) => e.team === "player" && e.kind === "base"); base.unlockedTech = sim.techIds ? sim.techIds() : ["recon","assault","armor","support","radar","motorpool","siege","airwing","shock","ordnance","incendiary","demolition","triage","welding","fieldworks","fieldhospital","optics","marksman","breach","bulwark","thermobarics","cluster","plating","hunter","ghillie"];
+            const bx = base.position.x;
+            const tgt = { x: bx + 14, z: 0 };
+            const foes = [];
+            for (const [dx, dz, k] of [[0, 0, "soldier"], [1.6, 1.2, "soldier"], [-1.4, 1.4, "heavy"], [0.4, -1.8, "tank"]]) { const e = sim.debugSpawn(k, "enemy", { x: tgt.x + dx, z: tgt.z + dz }); for (const p of e.parts) if (p.role === "weapon") p.hp = 0; e.status.canShoot = false; foes.push(e.id); }
+            const mate = sim.debugSpawn("soldier", "player", { x: bx + 9, z: 3 }); mate.parts[0].hp = Math.max(1, mate.parts[0].hp * 0.3); mate.status.alive = true;
+            sim.select(base.id); sim.pendingSupport = ${JSON.stringify(kind)};
+            const ok = sim.queueSupportAt(${kind === "medevac" ? "{ x: bx + 9, z: 3 }" : "tgt"});
+            r.setView({ x: ${kind === "medevac" ? "bx + 9" : "tgt.x"}, z: 1, zoom: 0.3, pitch: 0.6, yaw: 0.3 }); r.deselect();
+            const log = sim.log.slice(-3).map((l) => l.text ?? l);
+            if (ok) { sim.endTurn(); r.setTimeScale(0.8); }
+            return JSON.stringify({ ok, log }); })()`);
+          console.log("strike", kind, info);
+          for (let i = 0; i < 14; i += 1) { await sleep(i === 0 ? 250 : 300); await shot("strike-" + kind + "-" + i); if (process.env.PROBE && i === 3) console.log("cubes", await js(`(() => { const out = {}; window.__rht.sceneObject().traverse((o) => { if (!o.isMesh && !o.isInstancedMesh) return; const c = o.material && o.material.color; if (!c) return; const h = c.getHexString(); if (c.r > 0.7 && c.g < 0.5 && c.b < 0.45) { let p = o, chain = []; while (p && chain.length < 5) { chain.push(p.name || p.type); p = p.parent; } const k = h + " " + chain.join("<"); out[k] = (out[k] || 0) + (o.isInstancedMesh ? o.count : 1); } }); return JSON.stringify(out); })()`)); }
+          await js(`window.__rht.setTimeScale(1)`);
+        }
+        continue;
+      }
       if (s === "techui") {
         // The rebuilt tech tree on each faction's board, nothing researched, and mid-game.
         for (const f of ["vanguard", "syndicate", "bastion"]) {
