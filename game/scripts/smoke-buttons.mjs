@@ -114,6 +114,7 @@ try {
   await refreshBaseCp(page, baseId);
   // The base deck is now split into subcategory tabs — open each tab before its buttons.
   await page.click('[data-base-tab="tech"]');
+  await page.click('[data-tech-lane="recon"]'); // one lane shows at a time
   await page.waitForSelector('[data-tech="recon"]');
   await page.click('[data-tech="recon"]');
   if (!(await page.evaluate(() => (window.__rht.sim.entities.find((e) => e.kind === "base" && e.team === "player").unlockedTech ?? []).includes("recon")))) fail("Tech button did not research");

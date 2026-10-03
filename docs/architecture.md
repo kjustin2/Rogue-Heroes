@@ -30,10 +30,10 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
 - **Unit move distances carry a global `MOVE_RANGE_SCALE`** (`sim.ts`, on both `moveRange` and
   `moveSpeed`) so the bigger maps don't slog. Changing it shifts move-distance test expectations.
 - **Air layer** (`flying`/`agl` on the entity; `isAirKind` lists the flyers): gunship (helicopter,
-  air-to-air gun + straight-down bombs), interceptor (jet, air-to-air gun only), bomber (jet, bombs
+  air-to-air gun + bombs), interceptor (jet, air-to-air gun only), bomber (jet, bombs
   only, no gun), transport (helicopter, unarmed airlift). Aircraft GUNS are air-to-air ONLY
-  (`isAirKind(actor) && !target.flying` rejects); BOMBS drop straight down beneath the plane
-  (`isAirBomber` → `queueBombDrop`/`launchGrenadeAtPoint` re-targets to the actor's XZ). Ground units
+  (`isAirKind(actor) && !target.flying` rejects); BOMBS fall from the rack onto any ground point in
+  bomb reach, no flight (`isAirBomber` → `queueBombRun`/`launchGrenadeAtPoint`; docs/game-systems.md, Air bombing). Ground units
   CAN hit flyers (that's the anti-air). The enemy `enemyTroopPreference` scrambles air when the
   player flies, which is what gives a player gunship air-to-air targets. New flyer = the full
   add-air-unit checklist (create*, `isAirKind`/`isVehicleKind`, catalog, per-kind fns, `build*`

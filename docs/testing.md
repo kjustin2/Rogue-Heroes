@@ -234,3 +234,4 @@ RANGE was the limit. It used to accept a zero-length order and charge a CP — a
 order at the Ironworks ramp. `edgecases.test.ts` walks climbing and order edge cases end to end on the
 real maps (mesa steps, the overpass deck, climb-on/off cover, floating/sunk units after 5 AI turns on
 every map, cancel refunds, dead-before-order, shared destinations, water).
+- `npm run shots:gpu -- airaim muzzlecheck` (2026-10-03): `airaim` = gunship Bomb armed, ground spot picked 6m off (line + splash stay put as the cursor wanders, no move queued), Confirm, the fall filmed; `muzzlecheck` prints, per shooter, the gap between its round origin and its drawn weapon mesh. `muzzles.test.ts` pins the aircraft values; `orderLabel.test.ts` pins every order's name.

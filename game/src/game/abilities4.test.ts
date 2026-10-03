@@ -229,17 +229,16 @@ describe("gunship does not fire unasked", () => {
 });
 
 describe("bomber carpet", () => {
-  it("drops three bombs in a line along its heading (a gunship still drops one)", () => {
-    const run = (kind: "bomber" | "gunship"): { bombs: number; spread: number; log: string[] } => {
+  it("drops three bombs in a line across the spot (a gunship still drops one), without flying there", () => {
+    const run = (kind: "bomber" | "gunship"): { bombs: number; spread: number; log: string[]; orders: string[]; moved: number } => {
       const sim = staged();
       const plane = sim.debugSpawn(kind, "player", { x: 0, z: 0 });
-      plane.yaw = Math.PI / 2; // heading +x
       plane.grenades = plane.maxGrenades = 2;
       sim.debugSelect(plane.id);
-      expect(sim.queueBombDrop()).toBe(true);
+      expect(sim.queueBombDrop({ x: 0, z: 7 }), sim.log[0]).toBe(true);
       expect(plane.grenades).toBe(1); // one load per run, however many bombs it is
+      const orders = sim.orders.filter((o) => o.actorId === plane.id).map((o) => o.kind);
       sim.endTurn();
-      // Bombs fall straight down and land within a tick, so count the blasts they leave.
       const seen = new Set<string>();
       const points: { x: number; z: number }[] = [];
       for (let t = 0; t < 80 && sim.phase === "resolve"; t += 0.05) {
@@ -251,40 +250,38 @@ describe("bomber carpet", () => {
         }
       }
       const xs = points.map((p) => p.x);
-      return { bombs: points.length, spread: Math.max(...xs) - Math.min(...xs), log: sim.log };
+      return { bombs: points.length, spread: Math.max(...xs) - Math.min(...xs), log: sim.log, orders, moved: Math.hypot(plane.position.x, plane.position.z) };
     };
     const carpet = run("bomber");
+    expect(carpet.orders, "one action, no flight").toEqual(["grenade"]);
     expect(carpet.bombs).toBe(CARPET_BOMBS);
-    expect(carpet.spread).toBeGreaterThan(4); // strung out along +x, not stacked
     expect(carpet.log.some((l) => l.includes("carpets the line"))).toBe(true);
     const single = run("gunship");
     expect(single.bombs).toBe(1);
   });
 });
 
-describe("gunship bomb run", () => {
-  it("flies to a picked spot before dropping, throws troops flying, and needs 2 AP for a run", () => {
+describe("gunship bomb", () => {
+  it("bombs a spot in reach from where it hovers (1 AP, no move), throws troops, and refuses what is out of reach", () => {
     const sim = staged();
     const gunship = sim.debugSpawn("gunship", "player", { x: -12, z: 0 });
-    const foe = sim.debugSpawn("heavy", "enemy", { x: -1.4, z: 0 }); // 2.6m from the point: caught in the rim
+    const foe = sim.debugSpawn("heavy", "enemy", { x: -4.4, z: 0 }); // 2.6m from the point: caught in the rim
     disarm(foe);
     sim.debugSelect(gunship.id);
-    expect(sim.queueBombDrop({ x: -4, z: 0 }), sim.log[0]).toBe(true);
-    expect(sim.orders.filter((o) => o.actorId === gunship.id).map((o) => o.kind)).toEqual(["move", "grenade"]);
+    expect(sim.queueBombDrop({ x: -7, z: 0 }), sim.log[0]).toBe(true);
+    expect(sim.orders.filter((o) => o.actorId === gunship.id).map((o) => o.kind)).toEqual(["grenade"]);
+    expect(gunship.commandPoints, "one action spent").toBe(gunship.maxCommandPoints - 1);
     const before = hp(foe);
-    const start = { ...foe.position };
     sim.endTurn();
     settle(sim);
+    expect(Math.hypot(gunship.position.x + 12, gunship.position.z), "the gunship stayed put").toBeLessThan(0.5);
     expect(hp(foe), "the bomb did little").toBeLessThan(before * 0.85);
-    expect(Math.hypot(foe.position.x - start.x, foe.position.z - start.z), "nobody was thrown").toBeGreaterThan(1.5);
-    // Out of reach, or a single AP: refused with the reason.
+    // Out of reach: refused with the reason.
     const far = staged();
     const g2 = far.debugSpawn("gunship", "player", { x: -20, z: 0 });
     far.debugSelect(g2.id);
     expect(far.queueBombDrop({ x: 10, z: 0 })).toBe(false);
-    g2.commandPoints = 1;
-    expect(far.queueBombDrop({ x: -12, z: 0 })).toBe(false);
-    expect(far.log[0]).toContain("2 AP");
+    expect(far.log[0]).toContain("Out of reach");
   });
 });
 

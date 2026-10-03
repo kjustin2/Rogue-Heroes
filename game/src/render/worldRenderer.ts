@@ -9,7 +9,7 @@ import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec
 import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isMountKind, isVehicleKind, type CombatEntity, type CoverKind, type DamagePart, type Team, type EntityKind, type PartRole } from "../game/damageModel";
 import { factionDef, type FactionId } from "../game/factions";
 import type { OrderKind, Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
-import { CHARGE_BLAST_RADIUS, CLASH_BLAST, CLASH_BOLT, OIL_RADIUS, PULSE_EMP, PULSE_SMOKE, isPulseBlast, PAD_RADIUS, carpetDropPoints, minefieldPoints } from "../game/sim";
+import { CHARGE_BLAST_RADIUS, CLASH_BLAST, CLASH_BOLT, OIL_RADIUS, PULSE_EMP, PULSE_SMOKE, isPulseBlast, PAD_RADIUS, minefieldPoints, muzzleFor } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type GroundSurfaceKind, type SkylineKind } from "../game/maps";
 import type { TroopKind } from "../game/units";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, climbsAlong, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
@@ -21,7 +21,7 @@ import {
   isLobbed, makeLightning, makeMuzzleFlash, makePing, makeProjectileModel, makeProjectileShadow, makeProjectileTrail,
   makeScorchStar, makeStrikeFlash, orientAlongVelocity, prewarmProjectileFx, projectileFamily,
   projectileFxWarmUpMaterials, projectileGeometry, projectileMaterial, pushTrailPoint, setFxViewer,
-  carpetFallU, makeCarpetFall, makeChimneySmoke, makeGunRun, type LandingHint, type ProjectileFamily, type TrailPoint,
+  makeChimneySmoke, makeGunRun, type LandingHint, type ProjectileFamily, type TrailPoint,
 } from "./projectileFx";
 
 // Cover kinds built by buildBiomeProp (the per-map furniture added 2026-09-23).
@@ -382,7 +382,6 @@ export class WorldRenderer {
     // to know where it is, and it changes once a frame.
     if (camera) setFxViewer(camera.position);
     this.syncProjectiles(sim.projectiles);
-    this.syncCarpetFalls(sim);
     this.syncEffects(sim.effects);
     this.syncFlashLights();
     this.syncDamageNumbers(sim);
@@ -1724,6 +1723,18 @@ export class WorldRenderer {
       const t = performance.now() * 0.0018 + (hash(entity.id) % 63);
       group.position.y += Math.sin(t) * 0.18;
       group.rotation.x += Math.sin(t * 0.8) * 0.03;
+      // The ground shadow is a child of the bobbing, pitching group six metres above it: left alone it sank under the terrain for half of
+      // every bob and slid with the pitch (the circle that "kept flashing back and forth"). Pin it to the ground in WORLD space instead.
+      let shadow = group.userData.flyShadow as THREE.Object3D | null | undefined;
+      if (shadow === undefined) {
+        shadow = group.children.find((c) => c.userData.contactShadow) ?? null;
+        group.userData.flyShadow = shadow;
+      }
+      if (shadow) {
+        _shInv.copy(group.quaternion).invert();
+        shadow.position.set(0, terrainHeightAt(entity.position) + 0.05 - group.position.y, 0).applyQuaternion(_shInv);
+        shadow.quaternion.copy(_shInv).multiply(_shFlat);
+      }
     }
     // WHOLE-BODY IDLE, readable at tactical zoom. The per-part breathing in paintPart is real but
     // a centimetre of chest rise vanishes at this camera. What the eye catches from up here is the
@@ -5091,14 +5102,16 @@ export class WorldRenderer {
     // radius), not per frame — 3k terrain samples is not a per-frame cost.
     const sig = `${range.kind}|${range.position.x.toFixed(2)}|${range.position.z.toFixed(2)}|${range.radius.toFixed(2)}`;
     if (shoot) {
-      this.shootRangeRing.position.set(range.position.x, range.elevation, range.position.z);
+      // A flyer's reach is shown ON THE GROUND beneath it, not laid flat in the air at its altitude.
+      const ringY = selected.flying ? terrainHeightAt(range.position) : range.elevation;
+      this.shootRangeRing.position.set(range.position.x, ringY, range.position.z);
       this.shootRangeRing.scale.setScalar(range.radius);
-      if (sig !== this.lastRangeSig) drapeToTerrain(this.shootRangeRing, 0.07, range.elevation);
+      if (sig !== this.lastRangeSig) drapeToTerrain(this.shootRangeRing, 0.07, ringY);
       this.lastRangeSig = sig;
       (this.shootRangeRing.material as THREE.MeshBasicMaterial).opacity = 0.55 + pulse * 0.2;
       return;
     }
-    this.actionRangeRing.position.set(range.position.x, range.elevation, range.position.z);
+    this.actionRangeRing.position.set(range.position.x, selected.flying ? terrainHeightAt(range.position) : range.elevation, range.position.z);
     this.actionRangeRing.scale.setScalar(range.radius);
     if (sig !== this.lastRangeSig) drapeToTerrain(this.actionRangeRing, 0.062);
     this.lastRangeSig = sig;
@@ -5262,11 +5275,13 @@ export class WorldRenderer {
       }
       // A shot ends AT THE PART it was aimed at (head, weapon, tracks), rising from the muzzle, like the preview.
       const aimed = order.kind === "shoot" || order.kind === "grenade" ? sim.orderAimPoint(order) : undefined;
-      const fromY = aimed ? terrainHeightAt(from) + 1 : terrainHeightAt(from) + 0.24;
+      const muzzle = aimed ? muzzleFor({ ...actor, position: from }, order.kind === "grenade" ? "grenade" : "weapon") : undefined;
+      const fromY = muzzle ? muzzle.height : terrainHeightAt(from) + 0.24;
       const toY = aimed ? aimed.height : terrainHeightAt(to) + 0.24;
       const end = aimed?.point ?? to;
-      this.orderRoot.add(makeTubeLine(from, end, color, 0.32, fromY, 0.028, toY));
-      this.orderRoot.add(makeLine(from, end, color, 0.62, fromY + 0.05, toY + 0.05));
+      const lineFrom = muzzle ? muzzle.point : from;
+      this.orderRoot.add(makeTubeLine(lineFrom, end, color, 0.32, fromY, 0.028, toY));
+      this.orderRoot.add(makeLine(lineFrom, end, color, 0.62, fromY + 0.05, toY + 0.05));
       if (aimed) this.orderRoot.add(makeEndpoint(end, color, 0.3, toY + 0.03));
     }
     // RECON PULSE: the enemy's next orders as ghost arrows — enemy red, thinner and fainter than the
@@ -5570,21 +5585,6 @@ export class WorldRenderer {
     } else {
       this.previewRoot.add(makeTubeLine(from, to, color, opacity, fromHeight, radius, toHeight));
       this.previewRoot.add(makeLine(from, to, color, Math.min(0.98, opacity + 0.34), fromHeight, toHeight));
-    }
-  }
-
-  /** Bombers mid-carpet: draw the fall the sim resolves in a single tick (makeCarpetFall). Runs
-   *  after syncProjectiles, which clears the root this adds to. */
-  private syncCarpetFalls(sim: TacticalSim): void {
-    if (sim.phase !== "resolve") return;
-    for (const order of sim.orders) {
-      if (order.done || order.fired || order.kind !== "grenade") continue;
-      const actor = sim.entity(order.actorId);
-      if (!actor || actor.kind !== "bomber" || !actor.status.alive) continue;
-      const u = carpetFallU(order.elapsed);
-      if (u <= 0) continue;
-      const top = actor.elevation - 0.6; // the bay, under the fuselage
-      for (const part of makeCarpetFall(carpetDropPoints(actor), u, top, actor.team === "player" ? 0x75d8ff : 0xff765f)) this.projectileRoot.add(part);
     }
   }
 
@@ -6506,6 +6506,8 @@ function popIn(t: number): number {
   return 0.6 + 0.4 * (1 + 2.2 * Math.pow(k - 1, 3) + 1.2 * Math.pow(k - 1, 2));
 }
 const FLIGHT_Q = new THREE.Quaternion();
+const _shInv = new THREE.Quaternion();
+const _shFlat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2); // a disc lying flat
 const FLIGHT_AXIS = new THREE.Vector3();
 type DeathStyle = "thrown" | "crumple" | "spin" | "wreck" | "spiral";
 /** How long a dead unit stays on the board, per family (wrecks and crashes need time to read). */
@@ -8973,7 +8975,7 @@ function makeContactShadow(radius: number): THREE.Mesh {
       ctx.fillRect(0, 0, 64, 64);
     }
     const texture = new THREE.CanvasTexture(canvas);
-    _contactShadowMaterial = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false });
+    _contactShadowMaterial = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     _contactShadowMaterial.userData.shared = true;
   }
   if (!_contactShadowGeometry) {

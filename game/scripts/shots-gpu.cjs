@@ -624,6 +624,78 @@ app.whenReady().then(async () => {
         }
         continue;
       }
+      if (s === "airaim") {
+        // Air bombing: arm Bomb on a gunship, click a ground spot 6m off (the line from the rack + the splash stay put, no move is queued), Confirm, film the fall.
+        await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(1800);
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("enemy", 0);
+          const g = sim.debugSpawn("gunship", "player", { x: -12, z: 0 }); g.yaw = Math.PI / 2;
+          for (const [x, z] of [[-6, 1], [-5, -1.4], [-7.4, -0.6]]) { const e = sim.debugSpawn("soldier", "enemy", { x, z }); e.status.canShoot = false; e.status.canMove = false; }
+          sim.debugSelect(g.id); r.setView({ x: -8.5, z: 0, zoom: 0.4, pitch: 0.7, yaw: 0.35 }); })()`);
+        await sleep(600);
+        await js(`document.querySelector('[data-order-action="grenade"]').click()`);
+        await sleep(300);
+        await js(`window.__rht.clickWorld({ x: -6, z: 0 }, 0)`);
+        await sleep(300);
+        await js(`window.__rht.hoverGround({ x: 3, z: -6 })`);
+        await sleep(800); await shot("airaim-picked");
+        console.log("airaim confirm", await js(`JSON.stringify({ btn: Boolean(document.querySelector('[data-confirm="ground"]')), note: document.querySelector(".target-summary")?.textContent?.replace(/\s+/g, " ") })`));
+        await js(`document.querySelector('[data-confirm="ground"]').click()`);
+        await sleep(300);
+        console.log("airaim orders", await js(`JSON.stringify(window.__rht.sim.orders.map((o) => ({ k: o.kind, d: o.destination })))`));
+        await shot("airaim-queued");
+        await js(`window.__rht.sim.endTurn(); window.__rht.setTimeScale(0.5)`);
+        for (let i = 0; i < 8; i += 1) { await sleep(i === 0 ? 300 : 220); await shot("airaim-fall-" + i); }
+        await js(`window.__rht.setTimeScale(1)`);
+        continue;
+      }
+      if (s === "muzzles") {
+        // One shooter per kind, mid-flight of its first round, tight on the muzzle: the round must leave the gun, not float above it.
+        const kinds = ["gunship", "interceptor", "soldier", "sniper", "bazooka", "flamer", "tank", "apc", "hornet", "runabout", "flak", "artillery"];
+        for (const kind of kinds) {
+          await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+          await sleep(1300);
+          await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("enemy", 0); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = "hidden"));
+            const a = sim.debugSpawn(${JSON.stringify(kind)}, "player", { x: -10, z: 0 }); a.yaw = Math.PI / 2;
+            const t = sim.debugSpawn("tank", "enemy", { x: -1, z: 0 }); for (const p of t.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0; t.status.canShoot = false; t.status.canMove = false;
+            sim.debugSelect(a.id); sim.queueShoot(t.id); sim.endTurn(); r.setTimeScale(0.35);
+            const h = a.elevation; r.setView({ x: -9.2, z: 0, zoom: 0.16, pitch: 0.35, yaw: 0.9 }); })()`);
+          await sleep(900);
+          await shot("muzzle-" + kind);
+        }
+        await js(`window.__rht.setTimeScale(1); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = ""))`);
+        continue;
+      }
+      if (s === "muzzlecheck") {
+        // DATA, not pictures: for every shooter, fire one round and measure how far the sim's round origin is from the nearest drawn weapon-part box.
+        const kinds = ["gunship", "interceptor", "soldier", "sniper", "heavy", "scout", "striker", "grenadier", "mortar", "bazooka", "flamer", "lancer", "bounty", "ironclad", "turrettech", "trencher", "tank", "apc", "hornet", "runabout", "flak", "artillery"];
+        const rows = [];
+        for (const kind of kinds) {
+          await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+          await sleep(900);
+          const id = await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("enemy", 0);
+            const a = sim.debugSpawn(${JSON.stringify(kind)}, "player", { x: -10, z: 0 });
+            const t = sim.debugSpawn("tank", "enemy", { x: -2, z: 0 }); for (const p of t.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0; t.status.canShoot = false; t.status.canMove = false;
+            sim.debugSelect(a.id); const ok = sim.queueShoot(t.id) || (sim.setIntent && 0); sim.endTurn();
+            for (let i = 0; i < 400 && sim.projectiles.length === 0; i += 1) sim.update(0.02);
+            return a.id; })()`);
+          await sleep(400);
+          const row = await js(`(() => { const r = window.__rht, sim = r.sim; const a = sim.entity(${JSON.stringify(id)}); const p = sim.projectiles[0];
+            if (!p) return JSON.stringify({ kind: ${JSON.stringify(kind)}, note: "no round" });
+            const weaponIds = new Set(a.parts.filter((x) => x.role === "weapon").map((x) => x.id));
+            const THREE_Box = (r.sceneObject().constructor && null);
+            let best = Infinity, count = 0, names = [];
+            const o = p.origin, oy = p.originHeight;
+            r.sceneObject().traverse((m) => { if (!m.isMesh || m.userData.entityId !== a.id || !weaponIds.has(m.userData.partId)) return; count += 1;
+              m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld);
+              const dx = Math.max(b.min.x - o.x, 0, o.x - b.max.x), dy = Math.max(b.min.y - oy, 0, oy - b.max.y), dz = Math.max(b.min.z - o.z, 0, o.z - b.max.z);
+              const d = Math.hypot(dx, dy, dz); if (d < best) best = d; });
+            return JSON.stringify({ kind: ${JSON.stringify(kind)}, weaponMeshes: count, gapToWeapon: count ? +best.toFixed(2) : null, originH: +(oy - a.elevation).toFixed(2) }); })()`);
+          rows.push(row);
+        }
+        console.log("MUZZLECHECK " + rows.join(" ;; "));
+        continue;
+      }
       if (s === "techui") {
         // The rebuilt tech tree on each faction's board, nothing researched, and mid-game.
         for (const f of ["vanguard", "syndicate", "bastion"]) {

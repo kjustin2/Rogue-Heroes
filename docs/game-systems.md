@@ -296,3 +296,12 @@ treasury, factions, mode scores / hill holders / flag owners). The sim always RE
 unswapped (`serialize` flips back around the write), so victory = Player 1, defeat = Player 2.
 No medals or points from hotseat games. Tests: `hotseat.test.ts`; `npm run smoke:hotseat` (in
 `smoke:core`); `shots:gpu versus`.
+- **Air bombing (2026-10-03)**: a gunship or bomber bombs any ground point within its bomb reach (11 / 12m) from where it hovers: 1 AP,
+  NO flight. Click picks the spot (or the ground under a foe), the line from the rack and the splash are drawn, Confirm queues it
+  (same pick-then-confirm as lobs and shells). The bomb leaves the rack under the airframe and falls steeply; it ignores aircraft. A bomber's
+  carpet is three bombs across the spot along the line to it. The Hard bot bombs a clump in reach without moving.
+- **Muzzles (2026-10-03)**: `MUZZLE_LOCAL` in sim.ts is the one table of where each gun really is (x right, z forward, y above `elevation`;
+  an aircraft's `elevation` is its body centre). Every round, preview line, queued-order line and flash starts there (`muzzleFor`).
+  `npm run shots:gpu -- muzzlecheck` measures the gap from each shooter's round origin to its drawn weapon mesh (should be ~0).
+- **Intro**: the title pan owns the camera (`guideTo` is off while `menuDrift`); a boot veil hides the canvas until the model kits are in
+  and warmed, then fades it in once; `probe:intro` fails on a camera jump, a veil that never lifts, or a snap when opening Play.

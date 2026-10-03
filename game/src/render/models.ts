@@ -33,6 +33,11 @@ export function modelsVersion(): number {
   return version;
 }
 
+/** True once every kit has finished loading (or failed): nothing more will pop in and rebuild the scene. */
+export function modelsSettled(): boolean {
+  return kitState !== "idle" && kitState !== "loading" && propsState !== "idle" && propsState !== "loading" && vehiclesState !== "idle" && vehiclesState !== "loading";
+}
+
 /** Kick off every kit load (call once at boot, behind the loading veil). */
 export function preloadAll(): void {
   if (kitState === "idle") loadInfantryKit();

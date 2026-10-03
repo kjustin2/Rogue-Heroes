@@ -60,6 +60,13 @@ tokens are remapped there so the older layers inherit it. Rules that fall out of
   on every battle start / main menu, and the deploy veil gives way to the hotseat handoff card.
   `smoke:ui-audit` walks battle → Settings/Controls → Back → Resume and asserts `__rht.menuState()`
   is clean (fault-injection proven). `AUDIT_ONLY=a,b AUDIT_VIEWPORT=1280` re-checks one screen fast.
-- **Deck cards are two rows** (`.part-options > .btn.confirm`): name (wraps, NEW badge beside it), then
-  price/status. One nowrap row pushed prices wholly out of the card; the audit's `clipped` rule now
+- **Deck cards are two rows** (`.part-options > .btn.confirm`): the name on ONE line (never broken mid-word: "Intercept/or" was
+  a bug; the card floor is 150px), then price/status with the NEW badge beside the price. The audit has a `mid-word-wrap` rule
+  (reads where each character landed; `data-allow-wrap` opts prose out; fault-injected with a 46px "Interceptor"). One nowrap row pushed prices wholly out of the card; the audit's `clipped` rule now
   reports a WHOLLY clipped element too (it skipped them before) and is fault-injected with a pushed price.
+- **The Tech tab is one lane at a time** (2026-10-03): Recon / Assault / Armor / Support tabs with researched counts, the active
+  lane drawn left to right (a column is a layer that needs the one before it), either-or choices in ONE "pick one" bracket (from
+  `excludes`), a prerequisite from another lane named on the card, only this faction's nodes, and its `aiTechPath` numbered 1-4.
+  The tab opens on the lane of the faction's next suggested step. Smokes click `[data-tech-lane]` before `[data-tech]`.
+- **Orders are named in one place** (`src/game/orderLabel.ts`): the queue chip, the Undo tooltip and the sim log all use it, so a bomb
+  is "Bomb", a push "Push", a jump "Jump" (never the raw enum). Aircraft supply reads bombs, not grenades.

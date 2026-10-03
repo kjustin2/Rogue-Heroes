@@ -9,7 +9,7 @@ import {
   createSapper, createScout, createSniper, createSoldier, createStriker, createTank, createTransport, createTurret,
   type CombatEntity,
 } from "../game/damageModel";
-import { carpetFallU, makeCarpetFall, makeProjectileModel, projectileFamily, SNIPER_PAUSE, type ProjectileFamily } from "./projectileFx";
+import { makeProjectileModel, projectileFamily, SNIPER_PAUSE, type ProjectileFamily } from "./projectileFx";
 import { attackFamilyForOrder, attackPose, WEAPON_FAMILIES } from "./worldRenderer";
 import { hasMotionBank, sampleMotion } from "./infantryMotion";
 
@@ -290,34 +290,27 @@ describe("every non-gun attack has an animation", () => {
     expect(drawsSomething(trace.rounds[0])).toBe(true);
     expect(trace.effects.has("blast")).toBe(true);
 
-    // The carpet lands on the tick it is released, so the sim never has a bomb in flight; the
-    // renderer draws the fall off the order's clock (makeCarpetFall) onto carpetDropPoints. That
-    // fall must be drawn for a good stretch of frames, reach the ground, and end where the blasts are.
-    const bomber = createBomber("b", "B", "player", { x: -2, z: 0 });
+    // The carpet: a bomber bombs a spot 6m off without flying there. Three bombs leave its rack, fall steeply on a line across the
+    // spot, and each blasts where carpetDropPoints says.
+    const bomber = createBomber("b", "B", "player", { x: -8, z: 0 });
     sim = new TacticalSim([bomber, pinned(createSoldier("v", "V", "enemy", { x: -2, z: 0.3 }))]);
     sim.select("b");
-    expect(sim.queueBombDrop(), sim.log[0]).toBe(true);
-    const drawn: number[] = [];
-    let points = carpetDropPoints(bomber);
+    const spot = { x: -2, z: 0 };
+    expect(sim.queueBombDrop(spot), sim.log[0]).toBe(true);
+    expect(sim.orders.filter((o) => o.actorId === "b").map((o) => o.kind), "no auto-move").toEqual(["grenade"]);
+    const points = carpetDropPoints(bomber, spot);
     const blasts: { x: number; z: number }[] = [];
     const seen = new Set<string>();
+    let inFlight = 0;
     sim.endTurn();
     for (let t = 0; t < 30 && sim.phase === "resolve"; t += 0.02) {
-      const order = sim.orders.find((o) => o.actorId === "b" && o.kind === "grenade" && !o.done && !o.fired);
-      if (order && carpetFallU(order.elapsed) > 0) {
-        points = carpetDropPoints(bomber);
-        let meshes = 0;
-        for (const o of makeCarpetFall(points, carpetFallU(order.elapsed), bomber.elevation - 0.6, 0xffffff)) o.traverse((c) => { if ((c as { isMesh?: boolean }).isMesh) meshes += 1; });
-        expect(meshes, "three bombs and their shadows").toBeGreaterThan(CARPET_BOMBS * 2);
-        drawn.push(carpetFallU(order.elapsed));
-      }
       sim.update(0.02);
+      inFlight = Math.max(inFlight, sim.projectiles.filter((p) => p.sourceKind === "bomber").length);
       for (const e of sim.effects) if (e.type === "blast" && !seen.has(e.id)) { seen.add(e.id); blasts.push({ ...e.to }); }
     }
-    expect(drawn.length, "the carpet's fall is on screen for a good stretch of frames").toBeGreaterThan(10);
-    expect(Math.max(...drawn), "the drawn fall reaches the ground").toBeGreaterThan(0.9);
+    expect(inFlight, "three bombs fall from the rack").toBe(CARPET_BOMBS);
     expect(blasts.length).toBeGreaterThanOrEqual(CARPET_BOMBS);
-    for (const p of points) expect(Math.min(...blasts.map((b) => Math.hypot(b.x - p.x, b.z - p.z))), "a blast where each drawn bomb lands").toBeLessThan(0.05);
+    for (const p of points) expect(Math.min(...blasts.map((b) => Math.hypot(b.x - p.x, b.z - p.z))), "a blast where each bomb lands (a bomb may burst early beside a unit)").toBeLessThan(1.5);
   });
 
   it("mines: a planted mine bursts under the unit that steps on it", () => {

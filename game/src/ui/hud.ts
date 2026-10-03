@@ -28,6 +28,7 @@ import {
   type SupportPowerKind,
 } from "../game/sim";
 import { unitModText } from "../game/factions";
+import { orderLabel } from "../game/orderLabel";
 import type { Intent, ShotPreview, TacticalOrder, TacticalSim, TurnDamageEntry, TurnReport } from "../game/sim";
 
 // Discovery pacing state: which doctrines we've already seen researched, and when each
@@ -138,7 +139,6 @@ export interface HudCallbacks {
   queueSlam(): boolean;
   queueDig(): boolean;
   queuePlace(destination: Vec2): boolean;
-  queueBombDrop(at?: Vec2): boolean;
   queueLoad(passengerId: string): boolean;
   queueUnload(destination: Vec2): boolean;
   queueRam(id: string): boolean;
@@ -427,9 +427,9 @@ export class Hud {
       this.update();
       return;
     }
-    // A lob or a ground-aimed shell: the click PICKS the spot (the arc, blast and any block are drawn
-    // from it) and Confirm fires. An aircraft's bomb run still goes straight to the click.
-    const lobbing = this.action === "grenade" && !this.sim.selected?.flying;
+    // A lob, a bomb or a ground-aimed shell: the click PICKS the spot (the line, blast and any block are drawn
+    // from it) and Confirm fires.
+    const lobbing = this.action === "grenade";
     const shelling = this.action === "shoot" && this.sim.selectedCanGroundTarget();
     if ((lobbing || shelling) && this.sim.phase === "command") {
       this.groundPick = destination;
@@ -550,7 +550,7 @@ export class Hud {
 
       ${targetPanelOpen ? `
         <aside class="panel target-panel">
-          ${target ? inspectEntity(target, "Target", this.targetPartId, "close-target") : emptyTargetPanel(this.action)}
+          ${target ? inspectEntity(target, "Target", this.targetPartId, "close-target") : emptyTargetPanel(this.action, Boolean(this.sim.selected?.flying))}
           <div class="target-list">
             <div class="panel-title">Hostiles</div>
             ${enemies.map((unit) => targetChip(unit, unit.id === this.targetId, actor, this.sim)).join("")}
@@ -665,6 +665,8 @@ export class Hud {
 
     const baseTab = target.closest<HTMLElement>("[data-base-tab]")?.dataset.baseTab as BaseTab | undefined;
     if (baseTab) activeBaseTab = baseTab;
+    const techLaneId = target.closest<HTMLElement>("[data-tech-lane]")?.dataset.techLane;
+    if (techLaneId) activeTechLane = techLaneId;
 
     const baseUpgrade = target.closest<HTMLElement>("[data-base-upgrade]")?.dataset.baseUpgrade;
     if (baseUpgrade === "income") {
@@ -712,11 +714,6 @@ export class Hud {
     }
     if (confirm === "grenade" && this.targetId && this.targetPartId) {
       if (this.callbacks.queueGrenadePart(this.targetId, this.targetPartId)) this.afterConfirmedOrder();
-    }
-    if (confirm === "bomb") {
-      // Bomb the picked target (flying over it first), or straight down where it hovers.
-      const picked = this.targetId ? this.sim.entity(this.targetId) : undefined;
-      if (this.callbacks.queueBombDrop(picked ? picked.position : undefined)) this.afterConfirmedOrder();
     }
     if (confirm === "ram" && this.targetId) {
       if (this.callbacks.queueRam(this.targetId)) this.afterConfirmedOrder();
@@ -791,6 +788,15 @@ export class Hud {
   private chooseTarget(id: string): void {
     const target = this.sim.entity(id);
     if (!target) return;
+    // An aircraft bombs a SPOT: clicking a foe just picks the ground under it.
+    const bomber = this.sim.selected;
+    if (this.action === "grenade" && bomber?.flying && target.team !== bomber.team && !target.flying) {
+      this.groundPick = { ...target.position };
+      this.targetId = undefined;
+      this.targetPartId = undefined;
+      this.update();
+      return;
+    }
     this.targetId = id;
     this.targetPartId = this.firstTargetablePart(target);
     if (this.action === "grenade") this.callbacks.explainGrenadeTarget(id);
@@ -1038,14 +1044,14 @@ function targetChip(entity: CombatEntity, selected: boolean, actor: CombatEntity
 }
 
 // Same voice as the order bar's "what now" line: one imperative sentence naming the next click.
-function emptyTargetPanel(action: Intent): string {
+function emptyTargetPanel(action: Intent, flying = false): string {
   const titleText = action === "move" ? "Pick a destination" : "Pick a target";
   const body = action === "move"
     ? "Click ground inside the cyan ring, or a cover card below."
     : action === "ram"
       ? "Click an enemy or cover beside the tank, or a card below."
       : action === "grenade"
-        ? "Click ground to throw there, or an enemy card below."
+        ? `Click ground to ${flying ? "bomb" : "throw"} there, or an enemy card below.`
         : action === "load"
           ? "Click a friendly ground unit to lift it aboard."
           : action === "unload"
@@ -1469,7 +1475,7 @@ function groundPickState(sim: TacticalSim, pick: Vec2 | undefined, verb: string)
       <strong>Ground</strong>
       <span>${note}</span>
     </div>
-    <button class="btn confirm ${bad ? "disabled" : ""}" data-confirm="ground" data-disabled="${bad}" data-tip="${escapeAttr(bad ? "Too far: move closer or pick a nearer spot." : "Fire at the marked spot. Click elsewhere to re-aim.")}">
+    <button class="btn confirm ${bad ? "disabled" : ""}" data-confirm="ground" data-disabled="${bad}" data-tip="${escapeAttr(bad ? "Too far: pick a nearer spot." : verb === "Bomb" ? "Drop a bomb on the marked spot. Click elsewhere to re-aim." : verb === "Grenade" ? "Throw at the marked spot. Click elsewhere to re-aim." : "Fire at the marked spot. Click elsewhere to re-aim.")}">
       Confirm ${verb}
     </button>
   `;
@@ -1493,20 +1499,7 @@ function grenadeState(
   groundPick?: Vec2
 ): string {
   if (!actor) return `<div class="order-note">Click a trooper first.</div>`;
-  if (actor.flying) {
-    // A BOMB RUN: pick a ground spot or a hostile; the aircraft flies over it, then drops straight down.
-    const spot = target && target.team !== actor.team && !target.flying ? target.position : actor.position;
-    const reason = sim.phase !== "command" ? "Not now" : sim.bombRunFailure(actor, spot);
-    const canDrop = !reason;
-    const note = reason ?? (target && spot === target.position ? `Fly over ${target.name} and drop.` : "Click ground or a foe to bomb it.");
-    return `
-      <div class="order-note">${escapeHtml(note)}</div>
-      <button class="btn confirm ${canDrop ? "" : "disabled"}" data-confirm="bomb" data-disabled="${!canDrop}" data-tip="${escapeAttr(reason ?? "Fly over the target and drop a bomb straight down: a huge blast that throws troops flying. Cannot hit aircraft.")}">
-        Confirm Bomb
-        <span>${actor.grenades}/${actor.maxGrenades} left</span>
-      </button>
-    `;
-  }
+  if (actor.flying) return groundPickState(sim, groundPick, "Bomb"); // pick a spot, then Confirm: the line and the blast are drawn from it
   if (!target) return groundPickState(sim, groundPick, "Grenade");
   if (target.team === "player") {
     return `
@@ -1674,7 +1667,7 @@ function inspectTargetState(actor: CombatEntity | undefined, target: CombatEntit
         Shoot
         <span>aim</span>
       </button>` : ""}
-      ${actor && actor.kind !== "base" && actor.maxGrenades > 0 ? `<button class="btn confirm ${actor.grenades > 0 ? "" : "disabled"}" data-order-action="grenade" data-disabled="${actor.grenades <= 0}" data-tip="${actor.flying ? "Fly over and drop a bomb: a huge blast." : "Throw a limited-supply hand grenade in a short arc."}">
+      ${actor && actor.kind !== "base" && actor.maxGrenades > 0 && (actor.kind === "soldier" || actor.flying) ? `<button class="btn confirm ${actor.grenades > 0 ? "" : "disabled"}" data-order-action="grenade" data-disabled="${actor.grenades <= 0}" data-tip="${actor.flying ? "Drop a bomb on a spot in reach: a huge blast." : "Throw a limited-supply hand grenade in a short arc."}">
         ${bombVerb(actor)}
         <span>${actor.grenades}/${actor.maxGrenades}</span>
       </button>` : ""}
@@ -1900,7 +1893,7 @@ function troopDeckHtml(base: CombatEntity, sim: TacticalSim): string {
         ? "Click a spot inside the green ring near your base, or click again to deploy beside the base."
         : `${spec.role} · ${troopSheet(spec.kind).hp} HP · ${troopSheet(spec.kind).hit} damage a shot${unitStats(spec.kind).burst ? " (burst)" : ""}. ${spec.tip}${unitModText(sim.factionOf("player").id, spec.kind) ? ` ${sim.factionOf("player").name}: ${unitModText(sim.factionOf("player").id, spec.kind)}.` : ""} 1 AP · $${spec.cost} · ${cooldownTurns}-turn cooldown.`;
     return `<button class="btn confirm ${active ? "active" : ready ? "" : "disabled"}" data-spawn="${spec.kind}" data-disabled="${!ready}" data-tip="${escapeAttr(tip)}">
-      ${escapeHtml(spec.label)}${isNew ? `<em class="new-badge">NEW</em>` : ""}
+      <b class="deck-name">${escapeHtml(spec.label)}</b>${isNew ? `<em class="new-badge">NEW</em>` : ""}
       <span>${active ? "Placing…" : sub}</span>
     </button>`;
   }).join("") + locked;
@@ -2027,77 +2020,89 @@ function upgradeDeckHtml(base: CombatEntity, sim: TacticalSim): string {
     </div>`;
 }
 
-// THE RESEARCH TABLE (2026-09-22). The tree used to be nested cards in a scrolling box: the
-// "pick one of two" rule was invisible, every specialization just said "Upgrade", and a
-// researched doctrine looked disabled. Now each DOCTRINE is one row, indented under the doctrine
-// it needs: left, what it unlocks; right, its two specializations side by side with an OR between
-// them and their real effect on the card. Everything is always visible -- nothing encrypted.
+// THE TECH TREE (2026-10-03 redesign). One lane per branch, read left to right: each column is a layer that needs the one before it.
+// Only THIS faction's nodes are shown (a faction without an Air Wing never sees it). Either-or choices sit in ONE bracket marked "pick one"
+// (driven by `excludes`, so every pair draws the same way), a prerequisite from another lane is named on the card, and the faction's own
+// suggested order is numbered on the nodes. The state of a card is its edge and its footer; why it is blocked lives in the tooltip.
+// The lane the Tech tab is showing (one at a time keeps a lane readable at a glance); undefined = the faction's next suggested step.
+let activeTechLane: string | undefined;
+
 function techTreePanel(base: CombatEntity, sim: TacticalSim): string {
-  // Only this faction's nodes: a faction without an Air Wing to buy does not see the row. Four branch columns, each a
-  // chain of layers read top to bottom; every layer has the upgrades beside it (pick one of a pair) and some layers
-  // fork into an either-or of their own (Fire Discipline OR Demolitions, Field Works OR Field Hospital).
-  const doctrine = sim.factionOf(base.team).tech;
-  const branches: Array<{ id: TechNode["branch"]; label: string }> = [
+  const faction = sim.factionOf(base.team);
+  const shown = TECH_TREE.filter((n) => faction.tech.includes(n.id));
+  const shownIds = new Set(shown.map((n) => n.id));
+  const lanes: Array<{ id: TechNode["branch"]; label: string }> = [
     { id: "recon", label: "Recon" }, { id: "assault", label: "Assault" }, { id: "armor", label: "Armor" }, { id: "support", label: "Support" },
   ];
-  const column = (branch: TechNode["branch"]): string => {
-    const rows: string[] = [];
-    const walk = (node: TechNode, depth: number): void => {
-      rows.push(researchRow(node, depth, base, sim));
-      for (const child of TECH_TREE) if (!child.effect && child.requires[0] === node.id && doctrine.includes(child.id)) walk(child, depth + 1);
-    };
-    const parentBranch = (n: TechNode): string | undefined => (n.requires[0] ? techNode(n.requires[0])?.branch : undefined);
-    for (const root of TECH_TREE) if (!root.effect && root.branch === branch && parentBranch(root) !== branch && doctrine.includes(root.id)) walk(root, 0);
-    return rows.length ? `<div class="research__col"><div class="research__col-title">${escapeHtml(branches.find((b) => b.id === branch)!.label)}</div>${rows.join("")}</div>` : "";
+  // Layer inside a lane: one more than the deepest prerequisite that sits in the same lane.
+  const layerOf = (node: TechNode): number => 1 + Math.max(0, ...node.requires.map((id) => {
+    const req = techNode(id);
+    return req && req.branch === node.branch && shownIds.has(id) ? layerOf(req) : 0;
+  }));
+  const order = new Map(faction.aiTechPath.filter((id) => shownIds.has(id)).slice(0, 4).map((id, i) => [id, i + 1] as const));
+  const lane = (laneDef: { id: TechNode["branch"]; label: string }): string => {
+    const nodes = shown.filter((n) => n.branch === laneDef.id);
+    if (!nodes.length) return "";
+    const columns = Math.max(...nodes.map(layerOf));
+    const cells = Array.from({ length: columns }, (_, i) => {
+      const inColumn = nodes.filter((n) => layerOf(n) === i + 1);
+      const done = new Set<string>();
+      const items = inColumn.map((node) => {
+        if (done.has(node.id)) return "";
+        const group = [node, ...inColumn.filter((o) => o.id !== node.id && (node.excludes?.includes(o.id) || o.excludes?.includes(node.id)))];
+        for (const g of group) done.add(g.id);
+        const cards = group.map((g) => researchCard(g, base, sim, order.get(g.id))).join("");
+        return group.length > 1 ? `<div class="tech-pick"><span class="tech-pick__label">Pick one</span>${cards}</div>` : cards;
+      }).join("");
+      return `<div class="tech-col">${items}</div>`;
+    }).join("");
+    return `<div class="tech-lane" style="--cols:${columns}">${cells}</div>`;
   };
+  const present = lanes.filter((l) => shown.some((n) => n.branch === l.id));
+  const next = faction.aiTechPath.find((id) => shownIds.has(id) && !isTechUnlocked(base, id));
+  const current = present.find((l) => l.id === activeTechLane)?.id ?? techNode(next ?? "")?.branch ?? present[0]?.id;
+  const tabs = present.map((l) => {
+    const nodes = shown.filter((n) => n.branch === l.id);
+    const have = nodes.filter((n) => isTechUnlocked(base, n.id)).length;
+    return `<button class="tech-tab ${l.id === current ? "active" : ""}" data-tech-lane="${l.id}">${escapeHtml(l.label)}<em>${have}/${nodes.length}</em></button>`;
+  }).join("");
   return `
-    <div class="research">
-      <div class="research__head">
-        <span><em class="research-tag research-tag--unlock">NEW UNITS</em> Layers add units, defenses and strikes</span>
-        <span><em class="research-tag research-tag--upgrade">UPGRADE</em> Boosts what you have — pick ONE of each pair</span>
+    <div class="tech">
+      <div class="tech__bar">
+        <div class="tech-tabs">${tabs}</div>
+        <div class="tech__legend">
+          <span><i class="tech-key tech-key--unlock"></i>Units</span>
+          <span><i class="tech-key tech-key--upgrade"></i>Upgrade</span>
+          <span><i class="tech-step">1</i>${escapeHtml(faction.name)} path</span>
+        </div>
       </div>
-      <div class="research--tree">${branches.map((b) => column(b.id)).join("")}</div>
+      ${present.filter((l) => l.id === current).map(lane).join("")}
     </div>
   `;
 }
 
-function researchRow(node: TechNode, depth: number, base: CombatEntity, sim: TacticalSim): string {
-  const doctrine = sim.factionOf(base.team).tech;
-  const specs = TECH_TREE.filter((n) => n.effect && n.requires.includes(node.id) && doctrine.includes(n.id));
-  const pair = specs.length ? `<div class="research__specs">${specs.map((spec) => researchCard(spec, base, sim)).join(`<span class="research__or">OR</span>`)}</div>` : "";
-  return `<div class="research__row" style="--depth:${Math.min(depth, 3)}">
-    <div class="research__doctrine">${researchCard(node, base, sim)}</div>
-    ${pair}
-  </div>`;
-}
-
-function researchCard(node: TechNode, base: CombatEntity, sim: TacticalSim): string {
+function researchCard(node: TechNode, base: CombatEntity, sim: TacticalSim, step?: number): string {
   const unlocked = isTechUnlocked(base, node.id);
   const reason = unlocked ? undefined : sim.researchFailureReason(base, node.id);
   const lockedOut = Boolean(reason && /locked out/i.test(reason));
-  const needs = node.requires.find((id) => !isTechUnlocked(base, id));
   // Only what THIS faction fields from the node, by its own names (Armor Bay unlocks the APC for
-  // the Syndicate and the Tank for Bastion).
-  // A DOCTRINE lists everything it opens for this faction -- troops, defenses AND support powers
-  // (owner 2026-09-24: "which are upgrades and which unlock more units, it's confusing").
+  // the Syndicate and the Tank for Bastion): troops, defenses AND support powers.
   const faction = sim.factionOf(base.team);
   const troops = troopsUnlockedBy(node.id).filter((kind) => faction.roster.includes(kind)).map((kind) => sim.troopLabel(base.team, kind));
   const defenses = DEFENSE_CATALOG.filter((d) => d.tech === node.id && faction.defenses.includes(d.kind)).map((d) => d.label);
   const supports = SUPPORT_POWERS.filter((p) => p.tech === node.id && faction.supports.includes(p.kind)).map((p) => p.label);
   const unlocks = [...troops, ...defenses, ...supports];
   const isUpgrade = Boolean(node.effect);
-  // A specialization's blurb ends "Locks out X." -- the OR between the pair already says that.
+  // A pair's blurb ends "Locks out X." -- the bracket around the pair already says that.
   const what = !isUpgrade && unlocks.length ? unlocks.join(" · ") : node.blurb.replace(/\s*Locks out [^.]*\.?\s*$/, "");
   const state = unlocked ? "done" : lockedOut ? "locked" : !reason ? "ready" : "blocked";
-  const foot = unlocked ? "✓ Researched"
-    : lockedOut ? "Locked — other pick taken"
-    : needs ? `Needs ${escapeHtml(TECH_TREE.find((n) => n.id === needs)?.name ?? "prerequisite")}`
-    : !reason ? `Research · $${node.cost}`
-    : `$${node.cost} · ${escapeHtml(reason ?? "")}`;
-  return `<button class="research-card ${state}" data-tech="${node.id}" data-disabled="${unlocked || Boolean(reason)}" data-tip="${escapeAttr(unlocked ? node.blurb : reason ? `${reason}.` : `Costs the base's order this turn and $${node.cost}.`)}">
-    <strong>${escapeHtml(node.name)}</strong>
-    <em class="research-tag research-tag--${isUpgrade ? "upgrade" : "unlock"}">${isUpgrade ? "UPGRADE" : "NEW UNITS"}</em>
-    <span class="research-card__what">${escapeHtml(what)}</span>
+  // A prerequisite from ANOTHER lane is easy to miss: name it on the card while it is still missing.
+  const crossLane = node.requires.map((id) => techNode(id)).filter((r): r is TechNode => Boolean(r && r.branch !== node.branch && !isTechUnlocked(base, r.id)));
+  const foot = unlocked ? "✓ Done" : lockedOut ? "Locked out" : `$${node.cost}`;
+  return `<button class="research-card research-card--${isUpgrade ? "upgrade" : "unlock"} ${state}" data-tech="${node.id}" data-disabled="${unlocked || Boolean(reason)}" data-tip="${escapeAttr(unlocked ? node.blurb : reason ? `${reason}.` : `${node.blurb} Costs the base's order this turn and $${node.cost}.`)}">
+    <span class="research-card__top"><strong>${escapeHtml(node.name)}</strong>${step ? `<i class="tech-step" data-tip="${escapeAttr(`${faction.name}'s suggested order`)}">${step}</i>` : ""}</span>
+    <span class="research-card__what" data-allow-wrap>${escapeHtml(what)}</span>
+    ${crossLane.length ? `<span class="research-card__needs">+ ${escapeHtml(crossLane.map((r) => r.name).join(", "))}</span>` : ""}
     <span class="research-card__foot">${foot}</span>
   </button>`;
 }
@@ -2113,12 +2118,13 @@ function moveState(actor: CombatEntity | undefined): string {
 }
 
 function queuedOrdersState(orders: TacticalOrder[], sim: TacticalSim): string {
+  const label = (order: TacticalOrder) => orderLabel(order, sim.entity(order.actorId), sim.entity(order.targetId));
   return `
     <div class="queued-list">
       ${orders.map((order, index) => `
         <button class="queued-chip undo-order" data-cancel-order="${order.id}" data-tip="Undo step ${index + 1}: ${escapeAttr(orderSummary(order, sim).replace("Queued: ", ""))}. Refunds 1 AP.">
-          <strong>${index + 1}. ${escapeHtml(title(order.kind))}</strong>
-          ${(() => { const detail = orderSummary(order, sim).replace("Queued: ", ""); return detail.toLowerCase() === title(order.kind).toLowerCase() ? "" : `<span>${escapeHtml(detail)}</span>`; })()}
+          <strong>${index + 1}. ${escapeHtml(label(order).title)}</strong>
+          ${label(order).detail ? `<span>${escapeHtml(label(order).detail)}</span>` : ""}
           <em>undo</em>
         </button>
       `).join("")}
@@ -2377,12 +2383,14 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
 }
 
 // Transport and APC both carry (the sim's isCarrierKind).
-/** What a unit's finite supply is called: a Turret Tech carries sentries, everyone else grenades. */
+/** What a unit's finite supply is called: a Turret Tech carries sentries, aircraft bombs, everyone else grenades. */
 function supply(entity: CombatEntity): { tip: string; chip: string; stat: string } {
   const n = entity.grenades;
   return entity.kind === "turrettech"
     ? { tip: "Sentries left this battle", chip: `${n} ${n === 1 ? "sentry" : "sentries"}`, stat: "Sentries" }
-    : { tip: "Grenades left this battle", chip: `${n} grenade${n === 1 ? "" : "s"}`, stat: "Grenades" };
+    : entity.flying
+      ? { tip: "Bombs left this battle", chip: `${n} bomb${n === 1 ? "" : "s"}`, stat: "Bombs" }
+      : { tip: "Grenades left this battle", chip: `${n} grenade${n === 1 ? "" : "s"}`, stat: "Grenades" };
 }
 
 function isCarrier(actor: CombatEntity): boolean {
@@ -2438,7 +2446,7 @@ function actionDisabledReason(action: Intent, actor: CombatEntity | undefined, s
   if (action === "shoot" && !actor.status.canShoot) return `${actor.name} cannot shoot — its weapon is destroyed.`;
   if (action === "shoot" && actor.kind === "artillery" && !actor.deployed) return `${actor.name} must deploy before it can fire (Deploy, or hold still for a turn).`;
   if (action === "melee" && !hasStrikeWeapon(actor)) return `${actor.name} has no intact weapon to strike with.`;
-  if (action === "grenade" && actor.grenades <= 0) return `${actor.name} is out of grenades.`;
+  if (action === "grenade" && actor.grenades <= 0) return `${actor.name} is out of ${actor.flying ? "bombs" : "grenades"}.`;
   if (action === "mine") return sim.mineFailureReason(actor) ?? undefined;
   if (action === "smoke") return sim.smokeFailureReason(actor) ?? undefined;
   if (action === "leap") return `${actor.name} cannot jump: its legs are destroyed.`;
@@ -2475,23 +2483,7 @@ function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: Tac
 }
 
 function orderSummary(order: TacticalOrder, sim: TacticalSim): string {
-  const target = sim.entity(order.targetId);
-  const part = target?.parts.find((candidate) => candidate.id === order.targetPartId);
-  if (order.kind === "move") return "Queued: move";
-  if (order.kind === "ram") return `Queued: ram ${target?.name ?? "target"}`;
-  if (order.kind === "load") return `Queued: ${sim.entity(order.actorId)?.kind === "apc" ? "board" : "airlift"} ${target?.name ?? "unit"}`;
-  if (order.kind === "unload") return "Queued: unload";
-  if (order.kind === "man") return `Queued: man ${target?.name ?? "post"}`;
-  if (order.kind === "treat") return `Queued: ${sim.entity(order.actorId)?.kind === "medic" ? "heal" : "repair"} ${target?.name ?? "ally"}`;
-  if (order.kind === "recon") return "Queued: recon pulse";
-  if (order.kind === "deploy") return "Queued: deploy";
-  if (order.kind === "melee" && order.shove) return `Queued: push ${target?.name ?? "target"}`;
-  if (order.kind === "melee") return `Queued: strike ${target?.name ?? "target"}${part ? ` / ${part.label}` : ""}`;
-  const verb = bombVerb(sim.entity(order.actorId)).toLowerCase();
-  if (order.kind === "grenade" && order.destination && !target) return `Queued: ${verb} ${verb === "bomb" ? "drop" : "ground"}`;
-  if (order.kind === "grenade") return `Queued: ${verb} ${target?.name ?? "target"}${part ? ` / ${part.label}` : ""}`;
-  if (order.kind === "defend") return "Queued: crouch";
-  return `Queued: shoot ${target?.name ?? "target"}${part ? ` / ${part.label}` : ""}`;
+  return `Queued: ${orderLabel(order, sim.entity(order.actorId), sim.entity(order.targetId)).text}`;
 }
 
 function cpPips(entity: CombatEntity): string {
@@ -2502,7 +2494,7 @@ function cpPips(entity: CombatEntity): string {
 }
 
 function actionCostLabel(action: Intent, actor: CombatEntity | undefined): string {
-  if (action === "grenade" && actor) return `${actor.grenades}/${actor.maxGrenades} G`;
+  if (action === "grenade" && actor) return `${actor.grenades}/${actor.maxGrenades} ${actor.flying ? "B" : "G"}`;
   const spec = action === "place" && actor ? placeSpecFor(actor.kind) : undefined;
   if (spec) return `$${spec.cost}`;
   return "1 AP";
@@ -2510,7 +2502,7 @@ function actionCostLabel(action: Intent, actor: CombatEntity | undefined): strin
 
 function cpTip(entity: CombatEntity): string {
   const limited = entity.status.commandLimited ? " Damaged systems reduce this unit's refill." : "";
-  const grenades = entity.maxGrenades > 0 ? ` Grenades are finite; ${entity.name} has ${entity.grenades} of ${entity.maxGrenades} left.` : "";
+  const grenades = entity.maxGrenades > 0 ? ` ${supply(entity).stat} are finite; ${entity.name} has ${entity.grenades} of ${entity.maxGrenades} left.` : "";
   return `Action Points. Most orders cost 1 AP. ${entity.name} has ${entity.commandPoints} of ${entity.maxCommandPoints} AP this turn.${limited}${grenades}`;
 }
 

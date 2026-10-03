@@ -300,6 +300,20 @@ try {
   }
   if (readable.after !== 0) { console.error("FAULT INJECTION: readability findings persisted after the plants were removed"); failures += 1; }
   else console.log(`  ok   fault injection — readability rules fired: ${readable.found.join(", ")}`);
+  // FAULT INJECTION 3 — a word broken across lines ("Intercept / or") hides from every overflow rule; the wrap rule must name it.
+  const wrapped = await page.evaluate(() => {
+    const card = document.querySelector(".menu-screen > .menu-content");
+    const el = document.createElement("div");
+    el.id = "audit-fault-wrap";
+    el.textContent = "Interceptor";
+    el.style.cssText = "position:absolute;left:20px;top:80px;width:46px;font-size:16px;line-height:1.2;color:#fff;background:#223;overflow-wrap:anywhere";
+    card?.appendChild(el);
+    const found = window.__rht.auditUI().filter((f) => f.rule === "mid-word-wrap" && f.sel.includes("audit-fault-wrap")).length;
+    el.remove();
+    return found;
+  });
+  if (!wrapped) { console.error("FAULT INJECTION: a word broken across lines produced no 'mid-word-wrap' finding — the gate is decorative"); failures += 1; }
+  else console.log("  ok   fault injection — a mid-word line break was named");
   const summary = Object.entries(byRule).map(([r, n]) => `${r}=${n}`).join(" ");
   if (summary) console.log(`  by rule: ${summary}  (${seen.size} distinct offenders)`);
   if (process.env.AUDIT_LIST) for (const [k, n] of [...seen.entries()].sort((a, b) => b[1] - a[1])) console.log(`    x${n} ${k}`);

@@ -559,10 +559,13 @@ export class Stage {
     if (this.menuDrift) {
       // A slow sway across a pleasant front arc (about +-17 degrees), a breath of zoom and a drift of focus: the diorama
       // stays alive without ever swinging round behind the squad or off the edge of the world.
-      if (this.menuBase === undefined) this.menuBase = { yaw: this.orbitYaw, zoom: this.zoom, x: this.focus.x, z: this.focus.z };
+      if (this.menuBase === undefined) {
+        this.menuBase = { yaw: this.orbitYaw, zoom: this.zoom, x: this.focus.x, z: this.focus.z };
+        this.menuClock = 0; // every title starts at rest: no phase offset to jump to on the first frame
+      }
       this.menuClock += dt;
       this.orbitYaw = this.menuBase.yaw + Math.sin(this.menuClock * 0.09) * 0.3;
-      this.zoom = this.menuBase.zoom + Math.sin(this.menuClock * 0.06 + 1) * 0.025;
+      this.zoom = this.menuBase.zoom + (Math.sin(this.menuClock * 0.06 + 1) - Math.sin(1)) * 0.025;
       this.focus.x = this.menuBase.x + Math.sin(this.menuClock * 0.05) * 0.9;
       this.focus.z = this.menuBase.z + Math.cos(this.menuClock * 0.04) * 0.5;
       this.updateCamera();
@@ -630,7 +633,7 @@ export class Stage {
   }
 
   guideTo(target: CameraGuideTarget, options: { mode?: CameraGuideMode; strength?: number; durationMs?: number; unclamped?: boolean } = {}): boolean {
-    if (performance.now() < this.guideSuppressUntil) return false;
+    if (performance.now() < this.guideSuppressUntil || this.menuDrift) return false; // the title diorama pans on its own: a guide fighting the sway was the boot "shift"
     this.guide = {
       focus: options.unclamped ? { ...target.focus } : this.clampFocus(target.focus),
       zoom: target.zoom === undefined ? undefined : clamp(target.zoom, 0.62, 2.6), // the wheel's range

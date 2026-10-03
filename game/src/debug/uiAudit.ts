@@ -14,7 +14,7 @@
 
 export interface UiFinding {
   /** Which check failed. */
-  rule: "truncated" | "overlap" | "offscreen" | "clipped" | "occluded" | "small-text" | "contrast" | "no-owned-surface";
+  rule: "truncated" | "mid-word-wrap" | "overlap" | "offscreen" | "clipped" | "occluded" | "small-text" | "contrast" | "no-owned-surface";
   /** A CSS-ish path to the offending element, for the failure message. */
   sel: string;
   detail: string;
@@ -24,6 +24,7 @@ export interface UiFinding {
 /** Elements opted out of the audit (transient pools, deliberately stacked chrome). */
 const IGNORE = "[data-audit-ignore]";
 const ALLOW_OVERLAP = "data-allow-overlap";
+const ALLOW_WRAP = "[data-allow-wrap]";
 
 function describe(el: Element): string {
   const id = el.id ? `#${el.id}` : "";
@@ -219,6 +220,39 @@ export function auditUI(root: Element = document.body): UiFinding[] {
   const viewport = { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
 
   const leaves = textLeaves(root);
+
+  // --- mid-word-wrap: a word broken across two lines ("Intercept" / "or"). overflow-wrap:anywhere hides it from the
+  //     truncated rule (nothing overflows), so read where each character actually landed. ---
+  for (const el of leaves) {
+    if (el.closest(ALLOW_WRAP)) continue;
+    const text = (el.textContent ?? "").trim();
+    if (text.length < 4 || text.length > 160) continue;
+    const style = getComputedStyle(el);
+    const lh = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.2;
+    if (el.getBoundingClientRect().height < lh * 1.5) continue; // one line: nothing to break
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let prevTop: number | undefined;
+    let prevChar = " ";
+    let broke = "";
+    const range = document.createRange();
+    for (let node = walker.nextNode(); node && !broke; node = walker.nextNode()) {
+      const value = node.textContent ?? "";
+      prevChar = " "; // a new text node is a new element or a new run: never the middle of one word
+      for (let i = 0; i < value.length; i += 1) {
+        const ch = value[i];
+        if (/\s/.test(ch)) { prevChar = " "; continue; }
+        range.setStart(node, i);
+        range.setEnd(node, i + 1);
+        const rects = range.getClientRects();
+        if (!rects.length) continue;
+        const top = rects[0].top;
+        if (prevTop !== undefined && prevChar !== " " && top - prevTop > lh * 0.5) { broke = value.slice(Math.max(0, i - 6), i + 6); break; }
+        prevTop = top;
+        prevChar = ch;
+      }
+    }
+    if (broke) findings.push({ rule: "mid-word-wrap", sel: describe(el), detail: `a word breaks across lines near "${broke}"`, rect: boxOf(el) });
+  }
 
   // --- truncated: an ellipsis that actually fired, or text overflowing a clipped box ---
   for (const el of leaves) {

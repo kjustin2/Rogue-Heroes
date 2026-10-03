@@ -5586,7 +5586,7 @@ kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
 .pause-card { max-width: min(680px, 92vw); }
 
 /* Wider bars get MORE columns, not wider cards: every card grid is auto-fit on a floor. */
-.part-options { grid-template-columns: repeat(auto-fit, minmax(clamp(132px, 9vw, 170px), 1fr)); }
+.part-options { grid-template-columns: repeat(auto-fit, minmax(clamp(150px, 9vw, 180px), 1fr)); }
 .action-grid { grid-template-columns: repeat(auto-fit, minmax(clamp(118px, 8vw, 160px), 1fr)); }
 /* The tech tree lays its doctrine branches side by side once there is room for two. */
 
@@ -5720,42 +5720,6 @@ kbd { font-size: var(--fs-micro); letter-spacing: 0.02em; }
 
 /* ---- Research table (base Tech tab): one row per doctrine, its two specializations beside it ---- */
 .base-tab-body--tech { max-height: clamp(44vh, calc(100vh - 420px), 640px); }
-.research { display: grid; gap: 8px; }
-.research__head, .research__row { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr); gap: 14px; align-items: stretch; }
-.research__head span { font-size: var(--fs-micro); font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
-.research__row { padding-top: 8px; border-top: 2px solid var(--paper-lo); }
-.research__doctrine { display: flex; flex-direction: column; gap: 3px; padding-left: calc(var(--depth, 0) * 18px); position: relative; }
-.research__row[style*="--depth:1"] .research__doctrine,
-.research__row[style*="--depth:2"] .research__doctrine { border-left: 3px solid var(--ink); margin-left: 6px; }
-.research__specs { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; align-items: stretch; }
-.research__or { align-self: center; font-weight: 900; font-size: var(--fs-micro); letter-spacing: 0.1em; color: var(--amber); padding: 3px 6px; border: 2px solid var(--ink); border-radius: 4px; background: var(--paper-deep); }
-.research__none { grid-column: 1 / -1; align-self: center; font-size: var(--fs-small, 0.74rem); color: var(--text-muted); }
-.research-card {
-  display: grid;
-  gap: 3px;
-  text-align: left;
-  padding: 8px 10px;
-  border: var(--ink-w, 2px) solid var(--ink);
-  border-radius: 6px;
-  background: var(--paper-lo);
-  color: var(--cream);
-  box-shadow: var(--drop-sm, 3px 3px 0 #0b0e12);
-  cursor: pointer;
-  font: inherit;
-}
-.research-card strong { font-size: var(--fs-name); }
-.research-card__what { font-size: var(--fs-small, 0.74rem); color: var(--text-muted); line-height: 1.3; }
-.research-card__foot { font-size: var(--fs-micro); font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); }
-.research-card.ready { background: var(--paper-hi); border-color: var(--ink); }
-.research-card.ready .research-card__foot { color: var(--amber-ink); background: var(--amber); justify-self: start; padding: 2px 8px; border-radius: 3px; }
-.research-card.ready:hover { background: var(--paper-hi-2); transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
-.research-card.done { background: var(--cyan-ink); }
-.research-card.done strong { color: var(--cyan); }
-.research-card.done .research-card__foot { color: var(--green); }
-.research-card.blocked { opacity: 0.72; box-shadow: none; cursor: default; }
-.research-card.locked { opacity: 0.45; box-shadow: none; cursor: default; }
-.research-card.locked strong { text-decoration: line-through; }
-.research-card[data-disabled="true"] { cursor: default; }
 
 /* ---- Local 2 Players: the handoff card between planners ---- */
 /* The handoff card: whose turn (big), what to do (one paragraph), what changed (boxed list), go.
@@ -5820,20 +5784,21 @@ body:has(.unit-detail-panel) #toasts { left: calc(50% + clamp(344px, 22vw, 520px
    name wraps inside its column, the NEW badge sits beside it, and the price owns row two. */
 .part-options > .btn.confirm {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   grid-template-rows: auto auto;
   align-content: center;
   justify-items: start;
   gap: 2px 8px;
   white-space: normal;
   text-align: left;
-  overflow-wrap: anywhere;
   line-height: 1.15;
   min-width: 0;
   min-height: 52px;
 }
-.part-options > .btn.confirm > em { grid-column: 2; grid-row: 1; align-self: start; }
-.part-options > .btn.confirm > span { grid-column: 1 / -1; grid-row: 2; white-space: nowrap; }
+/* Round 4 (2026-10-03): a name is one line, never broken mid-word ("Intercept/or"); the NEW badge rides the price row. */
+.part-options > .btn.confirm > .deck-name { grid-column: 1 / -1; grid-row: 1; white-space: nowrap; font-weight: inherit; }
+.part-options > .btn.confirm > em { grid-column: 2; grid-row: 2; align-self: center; justify-self: start; }
+.part-options > .btn.confirm > span { grid-column: 1; grid-row: 2; white-space: nowrap; }
 /* A locked doctrine group spans two cells and lists several names: let its sub-line wrap too. */
 .part-options > .btn.locked-troop > span { white-space: normal; }
 /* The placement bar's quick actions are real buttons: body-size text, not the 10.9px icon size. */
@@ -5854,10 +5819,6 @@ body:has(.pause-overlay) .mission-intro { display: none; }
 body:has(.hotseat-handoff) .battle-loading { display: none; }
 /* Tech tree: every card says what KIND of research it is (owner 2026-09-24: "which are upgrades and
    which unlock more units"). Cyan = new units / defenses / strikes; amber = an upgrade to what you have. */
-.research-tag { justify-self: start; font-style: normal; font-weight: 800; font-size: var(--fs-micro); letter-spacing: 0.08em; padding: 1px 6px; border: 2px solid var(--ink); border-radius: 3px; }
-.research-tag--unlock { background: var(--cyan); color: var(--cyan-ink); }
-.research-tag--upgrade { background: var(--amber); color: var(--amber-ink); }
-.research__head span { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 /* THE MONEY IS THE LOUDEST THING IN ITS CORNER (owner 2026-09-24: "users keep not seeing their money
    amount"). A big number on an amber plate, with next turn's income under it. */
 .money-bar {
@@ -6037,23 +5998,51 @@ body.reduced-motion .compact-top .end-turn.ready { animation: none; outline: 3px
 .upgrade-options { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); }
 
 /* ===== TECH TREE, rebuilt (owner 2026-10-03): four branch columns, layers read downward, upgrades sit under their layer ===== */
-.research--tree { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: start; }
-.research__col { display: grid; gap: 8px; min-width: 0; }
-.research__col-title { font-family: var(--font-display); font-size: var(--fs-micro); letter-spacing: 0.16em; text-transform: uppercase; color: var(--amber); padding-bottom: 3px; border-bottom: 2px solid var(--ink); }
-.research--tree .research__row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; padding-top: 0; border-top: 0; margin-left: calc(var(--depth, 0) * 10px); }
-.research--tree .research__doctrine { padding-left: 0; margin-left: 0; border-left: 0; }
-.research--tree .research__row[style*="--depth:1"] .research__doctrine,
-.research--tree .research__row[style*="--depth:2"] .research__doctrine,
-.research--tree .research__row[style*="--depth:3"] .research__doctrine { border-left: 3px solid var(--ink); padding-left: 6px; margin-left: 0; }
-.research--tree .research__specs { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 4px; padding-left: 9px; }
-.research--tree .research-card { padding: 6px 8px; }
-.research--tree .research-card strong { font-size: var(--fs-small, 0.78rem); }
-.research--tree .research-card__what { font-size: 13px; }
-.research--tree .research__specs .research-card .research-tag { display: none; }
-.research--tree .research__or { padding: 2px 4px; }
-@media (max-width: 1100px) { .research--tree { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.research--tree .research__specs { grid-template-columns: minmax(0, 1fr); gap: 3px; padding-left: 9px; }
-.research--tree .research__or { justify-self: center; padding: 0 6px; font-size: var(--fs-micro); line-height: 1.3; }
-.research--tree .research-card { overflow: hidden; }
-.research--tree .research-card__foot { overflow-wrap: anywhere; }
 .base-tab-body--tech { overflow-x: hidden; }
+
+/* The boot veil (owner 2026-10-03): the canvas stays hidden until the model kits have landed, then fades in once (main.ts liftBootVeil). */
+#game { transition: opacity 0.7s ease-out; }
+body.booting #game { opacity: 0; }
+.reduced-motion #game { transition: none; }
+
+/* ---- THE TECH TREE (2026-10-03): one lane per branch, layers left to right, either-or pairs in one bracket ---- */
+.tech { display: grid; gap: 10px; }
+.tech__bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; }
+.tech-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.tech-tab { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; background: var(--paper); color: var(--text); border: 2px solid var(--ink); border-radius: 6px; font-weight: 800; font-size: var(--fs-small, 0.78rem); text-transform: uppercase; letter-spacing: 0.08em; cursor: pointer; box-shadow: 2px 2px 0 var(--ink); }
+.tech-tab em { font-style: normal; font-size: var(--fs-micro); color: var(--text-muted); }
+.tech-tab.active { background: var(--amber); color: var(--amber-ink); }
+.tech-tab.active em { color: var(--amber-ink); }
+.tech__legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; font-size: var(--fs-micro); font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+.tech__legend span { display: inline-flex; align-items: center; gap: 6px; }
+.tech-key { width: 12px; height: 12px; border: 2px solid var(--ink); border-radius: 2px; display: inline-block; }
+.tech-key--unlock { background: var(--cyan); }
+.tech-key--upgrade { background: var(--amber); }
+.tech-step { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border: 2px solid var(--ink); border-radius: 9px; background: var(--paper-hi); color: var(--text); font-style: normal; font-size: var(--fs-micro); font-weight: 900; line-height: 1; }
+.tech-lane { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 0 24px; align-items: start; padding-top: 8px; }
+.tech-col { display: grid; gap: 8px; min-width: 0; position: relative; }
+/* The arrow into a layer: the previous column leads here. */
+.tech-col + .tech-col::before { content: "▶"; position: absolute; left: -17px; top: 16px; font-size: 11px; line-height: 1; color: var(--amber); }
+.tech-pick { display: grid; gap: 4px; padding: 4px; border: 2px dashed var(--paper-lo); border-radius: 6px; }
+.tech-pick__label { font-size: var(--fs-micro); font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; color: var(--amber); }
+.research-card {
+  display: grid; gap: 3px; width: 100%; min-width: 0; text-align: left; padding: 7px 9px;
+  background: var(--paper); color: var(--text); border: 2px solid var(--ink); border-left-width: 6px; border-radius: 6px; box-shadow: 2px 2px 0 var(--ink); cursor: pointer;
+}
+.research-card--unlock { border-left-color: var(--cyan); }
+.research-card--upgrade { border-left-color: var(--amber); }
+.research-card__top { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
+.research-card strong { font-size: var(--fs-name); white-space: nowrap; }
+.research-card__what { font-size: 13px; color: var(--text-muted); line-height: 1.3; }
+.research-card__needs { font-size: var(--fs-micro); font-weight: 800; color: var(--amber); }
+.research-card__foot { font-size: var(--fs-micro); font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); }
+.research-card.ready { background: var(--paper-hi); }
+.research-card.ready .research-card__foot { color: var(--amber-ink); background: var(--amber); justify-self: start; padding: 2px 8px; border-radius: 3px; }
+.research-card.ready:hover { background: var(--paper-hi-2); transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
+.research-card.done { background: var(--cyan-ink); }
+.research-card.done strong { color: var(--cyan); }
+.research-card.done .research-card__foot { color: var(--green); }
+.research-card.blocked { opacity: 0.8; box-shadow: none; cursor: default; }
+.research-card.locked { opacity: 0.45; box-shadow: none; cursor: default; }
+.research-card.locked strong { text-decoration: line-through; }
+.research-card[data-disabled="true"] { cursor: default; }

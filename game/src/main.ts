@@ -14,7 +14,7 @@ import "@fontsource/inter/600.css";
 import { dist, type Vec2 } from "./core/math";
 import { Stage } from "./render/stage";
 import { WorldRenderer, type WorldRenderDebug } from "./render/worldRenderer";
-import { preloadAll as preloadModels, modelsVersion } from "./render/models";
+import { preloadAll as preloadModels, modelsVersion, modelsSettled } from "./render/models";
 import { FeelDirector } from "./render/feel";
 import { POI_WEIGHT, ResolveDirector } from "./render/resolveDirector";
 import { Hud, LINE_SUPPORTS, ROTATABLE_BUILDS } from "./ui/hud";
@@ -239,7 +239,6 @@ const hud = new Hud(uiRoot, sim, {
   queueSlam: () => { const ok = sim.queueSlam(); if (!ok) refused(); else sfx.turn(); return ok; },
   queueDig: () => { const ok = sim.queueDig(); if (!ok) refused(); else sfx.turn(); return ok; },
   queuePlace: (destination) => { const ok = sim.queuePlace(destination); if (!ok) refused(); return ok; },
-  queueBombDrop: (at) => { const ok = sim.queueBombDrop(at); if (!ok) refused(); return ok; },
   queueLoad: (passengerId: string) => sim.queueLoad(passengerId),
   queueUnload: (destination) => sim.queueUnload(destination),
   queueRam: (id: string) => sim.queueRam(id),
@@ -908,15 +907,22 @@ function anyOverlayOpen(): boolean {
 // battlefield behind the translucent menu — the "flash to a map" between screens. The very
 // first menu shown after page load still fades in for a polished entrance.
 let skipNextMenuEntrance = false;
+let savedMenuView: ReturnType<typeof stage.viewState> | undefined;
 
 function closeAllMenus(): void {
+  liftBootVeil(); // starting anything from the title shows the scene at once
   for (const el of document.querySelectorAll(".menu-screen, .pause-overlay, .edit-overlay")) {
     if (el.classList.contains("menu-screen")) skipNextMenuEntrance = true;
     el.remove();
   }
   // Only the diorama's drifting low view gets reset -- closing the pause menu mid-battle must
-  // leave the player's camera exactly where they put it.
-  if (stage.menuDrift) stage.resetView();
+  // leave the player's camera exactly where they put it. The view is remembered, so a menu that replaces this one in the same breath
+  // (title -> Play -> Back) puts the diorama's camera back instead of snapping to the tactical default behind it.
+  if (stage.menuDrift) {
+    savedMenuView = stage.viewState();
+    stage.resetView();
+    queueMicrotask(() => { savedMenuView = undefined; }); // good for this tick only: a battle that starts instead must keep its own camera
+  }
   syncHudInert();
 }
 
@@ -987,9 +993,11 @@ function mountScreen(html: string, className: string): HTMLDivElement {
   if (className.includes("menu-screen")) {
     if (skipNextMenuEntrance) screen.classList.add("menu-screen--instant");
     skipNextMenuEntrance = false;
+    if (savedMenuView) { stage.debugSetView(savedMenuView); stage.menuDrift = true; } // the diorama's camera stays where it was
     document.body.classList.add("menus-open"); // reveal the persistent radar backdrop
     stage.setLowCost(true); // lean post chain + shadows off while menus cover the field
   }
+  if (className.includes("menu-screen")) savedMenuView = undefined;
   screen.innerHTML = html;
   document.body.appendChild(screen);
   // AFTER the append: syncHudInert reads the DOM, so calling it while the screen is still detached
@@ -2132,6 +2140,13 @@ function updateOnboardingHints(): void {
 }
 
 if (settings.reducedMotion) document.body.classList.add("reduced-motion");
+// BOOT VEIL (owner 2026-10-03: "the intro scene shifts around weird and looks broken at start"). The model kits arrive a beat after the first
+// frame and each one rebuilds every unit and re-warms the shaders, so the diorama visibly popped and stuttered. The canvas stays hidden (the
+// title is already up over it) until every kit is in and warmed, then fades in once and only pans. A timeout lifts it if a load hangs.
+document.body.classList.add("booting");
+const bootStartedAt = performance.now();
+let bootSettledFrames = 0;
+function liftBootVeil(): void { document.body.classList.remove("booting"); }
 showMainMenu();
 // Pre-compile every shader variant (both shadow states × both post chains) behind the
 // first menu, so battle start / menu flips never stall on a synchronous GLSL link.
@@ -2231,6 +2246,11 @@ function frameBody(now: number): void {
   if (modelsVersion() !== warmedModelsVersion) {
     warmedModelsVersion = modelsVersion();
     stage.warmUp(world.warmUpSamplers());
+    bootSettledFrames = 0;
+  } else if (document.body.classList.contains("booting")) {
+    // Settled = every kit in, warmed, and three quiet frames since. The timeout is a fallback for a load that hangs.
+    if (modelsSettled()) bootSettledFrames += 1;
+    if (bootSettledFrames >= 3 || now - bootStartedAt > 4500) liftBootVeil();
   }
 
   // Perf instrumentation — sample the inter-frame delta (skip first frame + tab-switch
@@ -2276,7 +2296,7 @@ function groundAimHover(): Vec2 | undefined {
   if (sim.pendingBuild) return hoverWorld; // the defense's ghost, turned the way it will be built
   // Grenade/shell aim a landing arc at the cursor; Move previews the path it would walk.
   // A lob or ground shell is aimed at the PICKED spot (click, then Confirm), never the moving cursor.
-  const lob = sim.intent === "grenade" && !sim.selected?.flying;
+  const lob = sim.intent === "grenade";
   if (lob || (sim.intent === "shoot" && sim.selectedCanGroundTarget())) return hud.groundPick;
   // Move, Hop and Place all preview where they would end up under the cursor.
   return sim.intent === "grenade" || sim.intent === "move" || sim.intent === "leap" || sim.intent === "place" ? hoverWorld : undefined;

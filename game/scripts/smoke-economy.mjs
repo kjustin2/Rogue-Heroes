@@ -96,6 +96,7 @@ try {
   await endTurnAndSettle(page);
   await page.click(`[data-select="${baseId}"]`);
   await page.click('[data-base-tab="tech"]');
+  await page.click('[data-tech-lane="assault"]'); // one lane shows at a time
   await page.waitForSelector('[data-tech="assault"]', { timeout: 4000 });
   await page.click('[data-tech="assault"]');
   const techAfter = await page.evaluate(() => (window.__rht.sim.entities.find((e) => e.kind === "base" && e.team === "player").unlockedTech ?? []).includes("assault"));
