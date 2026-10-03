@@ -5,6 +5,8 @@
 import { FACTIONS } from "./game/factions";
 import { MAPS } from "./game/maps";
 import { PLAYABLE_MODES } from "./game/modes";
+import { SUPPORT_POWERS, TROOP_KINDS } from "./game/units";
+import { TECH_TREE } from "./game/tech";
 
 export interface CommanderStats {
   battles: number;
@@ -26,10 +28,12 @@ export interface CommanderStats {
   mapWinCount: Record<string, number>;
   factionWinCount: Record<string, number>;
   fastestWin: number;
+  /** Lifetime battle tallies behind the Arsenal medals (sim.stats keys: slams, thrown, burned, deploy:<kind> ...). */
+  counters: Record<string, number>;
 }
 
-export type MedalPage = "Battles" | "Kills" | "Skill" | "Range";
-export const MEDAL_PAGES: readonly MedalPage[] = ["Battles", "Kills", "Skill", "Range"];
+export type MedalPage = "Battles" | "Kills" | "Skill" | "Range" | "Arsenal";
+export const MEDAL_PAGES: readonly MedalPage[] = ["Battles", "Kills", "Skill", "Range", "Arsenal"];
 
 export interface MedalDef {
   id: string;
@@ -39,6 +43,24 @@ export interface MedalDef {
   page: MedalPage;
   /** [have, need] for a counted medal, so the page can show how close it is. */
   progress?: (s: CommanderStats) => [number, number];
+  /** Armory points paid once, the moment it is earned. */
+  points: number;
+}
+
+function EMPTY(): CommanderStats {
+  return {
+  battles: 0, wins: 0, losses: 0, kills: 0, killsByKind: {}, doctrineUse: {}, medals: [], mapWins: [], modeWins: [], factionWins: [],
+  winStreak: 0, bestStreak: 0, flawlessWins: 0, hardWins: 0, mapWinCount: {}, factionWinCount: {}, fastestWin: 0, counters: {},
+  };
+}
+
+type MedalSeed = Omit<MedalDef, "points"> & { points?: number };
+
+/** Points when a medal does not say: bigger numbers pay more, one-off feats pay 40. */
+function defaultPoints(m: MedalSeed): number {
+  if (m.points !== undefined) return m.points;
+  const need = m.progress ? m.progress({ ...EMPTY(), wins: 0 })[1] : 0;
+  return need > 0 ? Math.max(10, Math.min(120, Math.round(Math.sqrt(need) * 5))) : 40;
 }
 
 const AIR_KINDS = ["gunship", "interceptor", "bomber", "transport"];
@@ -46,7 +68,7 @@ const VEHICLE_KINDS = ["tank", "apc", "artillery", "flak"];
 const killsOf = (s: CommanderStats, kinds: string[]): number => kinds.reduce((sum, k) => sum + (s.killsByKind[k] ?? 0), 0);
 const INFANTRY_KILLS = (s: CommanderStats): number => s.kills - killsOf(s, AIR_KINDS) - killsOf(s, VEHICLE_KINDS);
 
-export const MEDALS: readonly MedalDef[] = [
+const MEDAL_SEEDS: readonly MedalSeed[] = [
   // ---- CAMPAIGN: wins and battles fought, each a bigger number than the last ----
   { id: "first-victory", page: "Battles", name: "First Blood", blurb: "Win your first battle." },
   { id: "warlord", page: "Battles", name: "Warlord", blurb: "Win 10 battles.", progress: (s) => [s.wins, 10] },
@@ -96,7 +118,60 @@ export const MEDALS: readonly MedalDef[] = [
   { id: "banners5", page: "Range", name: "Loyal Banner", blurb: "Win 5 times with every faction.", progress: (s) => [FACTIONS.filter((f) => (s.factionWinCount[f.id] ?? 0) >= 5).length, FACTIONS.length] },
   { id: "banners15", page: "Range", name: "Faction Master", blurb: "Win 15 times with every faction.", progress: (s) => [FACTIONS.filter((f) => (s.factionWinCount[f.id] ?? 0) >= 15).length, FACTIONS.length] },
   { id: "combined-arms", page: "Range", name: "Combined Arms", blurb: "Win with infantry, a vehicle and an aircraft all still on the field." },
+  // ---- ARSENAL: what the new units, posts, strikes and base upgrades can do (live: they unlock mid-battle) ----
+  ...[
+    ["slam10", "Hammer Time", "Fling 10 foes with the Sledge's slam.", "slams", 10, 20],
+    ["slam100", "Wrecking Ball", "Fling 100 foes with the Sledge's slam.", "slams", 100, 60],
+    ["thrown25", "Fly, Little Guy", "Throw 25 foes 2 metres or more.", "thrown", 25, 20],
+    ["thrown150", "Launch Pad", "Throw 150 foes 2 metres or more.", "thrown", 150, 60],
+    ["ringout5", "Over the Edge", "Send 5 foes off the map or into the water.", "ringouts", 5, 35],
+    ["burn25", "Pyromaniac", "Set 25 troopers alight.", "burned", 25, 25],
+    ["burn150", "Firestarter", "Set 150 troopers alight.", "burned", 150, 65],
+    ["sentry10", "Perimeter Guard", "Deploy 10 sentries.", "sentries", 10, 20],
+    ["sentry50", "Automatic Defense", "Deploy 50 sentries.", "sentries", 50, 55],
+    ["ricochet20", "Bank Shot", "Ricochet a round on to a second foe 20 times.", "ricochets", 20, 25],
+    ["ricochet100", "Pool Shark", "Ricochet a round on to a second foe 100 times.", "ricochets", 100, 60],
+    ["bounty500", "Cashing In", "Collect $500 in bounties.", "bountyPaid", 500, 30],
+    ["bounty5000", "Most Wanted", "Collect $5,000 in bounties.", "bountyPaid", 5000, 75],
+    ["clash10", "Bullet Meets Bullet", "See 10 rounds meet in mid-air.", "clashes", 10, 30],
+    ["clash50", "Point Defense", "See 50 rounds meet in mid-air.", "clashes", 50, 70],
+    ["cannon10", "Big Gun", "Fire the Fortress Cannon 10 times.", "cannon", 10, 30],
+    ["cannon50", "Fortress Doctrine", "Fire the Fortress Cannon 50 times.", "cannon", 50, 75],
+    ["dug50", "Dig Deep", "Dig in 50 troopers with a Trencher.", "dug", 50, 25],
+    ["fullcar", "Clown Car", "Fill a Runabout with five aboard.", "fullcar", 1, 30],
+    ["hops50", "Hopper", "Make 50 hops.", "hops", 50, 20],
+    ["hops300", "Kangaroo", "Make 300 hops.", "hops", 300, 55],
+    ["emp25", "Lights Out", "Kill the power on 25 machines with EMP.", "empHits", 25, 30],
+    ["calls25", "Air Mail", "Call in 25 support strikes.", "supportCalls", 25, 30],
+    ["calls100", "Rain of Steel", "Call in 100 support strikes.", "supportCalls", 100, 70],
+    ["rails10", "Tungsten Rain", "Call 10 Rail Strikes.", "support:railstrike", 10, 35],
+    ["medevac10", "Dust Off", "Call 10 Medevacs.", "support:medevac", 10, 35],
+    ["fieldwork", "Both Schools", "Research both Fire Discipline and Demolitions (in different battles).", "", 2, 40],
+  ].map(([id, name, blurb, key, need, points]) => ({
+    id: id as string, page: "Arsenal" as const, name: name as string, blurb: blurb as string, points: points as number,
+    progress: (st: CommanderStats): [number, number] => id === "fieldwork"
+      ? [(st.counters["research:incendiary"] ? 1 : 0) + (st.counters["research:demolition"] ? 1 : 0), 2]
+      : [st.counters[key as string] ?? 0, need as number],
+  })),
+  { id: "tried8", page: "Arsenal", name: "Try Them All", blurb: "Field every one of the 8 newest troop types.", points: 60, progress: (st) => [triedKinds(st, NEW_KINDS), NEW_KINDS.length] },
+  { id: "roster", page: "Arsenal", name: "Full Roster", blurb: "Field every troop type in the game at least once.", points: 100, progress: (st) => [triedKinds(st, TROOP_KINDS), TROOP_KINDS.length] },
+  { id: "tech10", page: "Arsenal", name: "Branching Out", blurb: "Research 10 different tech nodes (across battles).", points: 30, progress: (st) => [triedTech(st), 10] },
+  { id: "tech20", page: "Arsenal", name: "Fully Tooled", blurb: "Research 20 different tech nodes (across battles).", points: 80, progress: (st) => [triedTech(st), 20] },
+  { id: "allcalls", page: "Arsenal", name: "Full Arsenal", blurb: "Call in every kind of support strike at least once.", points: 90, progress: (st) => [SUPPORT_POWERS.filter((p) => (st.counters[`support:${p.kind}`] ?? 0) > 0).length, SUPPORT_POWERS.length] },
+  { id: "armored", page: "Arsenal", name: "Fortified", blurb: "Build Base Armor II.", points: 30, progress: (st) => [st.counters["upgrade:armor2"] ? 1 : 0, 1] },
+  { id: "cannonbuilt", page: "Arsenal", name: "Heavy Metal", blurb: "Build the Fortress Cannon.", points: 50, progress: (st) => [st.counters["upgrade:cannon"] ? 1 : 0, 1] },
+  { id: "radarbuilt", page: "Arsenal", name: "Eyes Open", blurb: "Build the Watch Radar.", points: 25, progress: (st) => [st.counters["upgrade:radar"] ? 1 : 0, 1] },
+  { id: "sledgekills", page: "Arsenal", name: "Sledge Hunter", blurb: "Kill 25 foes with Sledges (hammer or sidearm).", points: 40, progress: (st) => [st.counters["killer:sledge"] ?? 0, 25] },
+  { id: "bountykills", page: "Arsenal", name: "Bounty Collector", blurb: "Kill 25 foes with Bounty Hunters.", points: 40, progress: (st) => [st.counters["killer:bounty"] ?? 0, 25] },
+  { id: "flamekills", page: "Arsenal", name: "Burn Notice", blurb: "Kill 25 foes with Flamers or Flame Posts.", points: 40, progress: (st) => [(st.counters["killer:flamer"] ?? 0) + (st.counters["killer:flamepost"] ?? 0), 25] },
+  { id: "rocketkills", page: "Arsenal", name: "Post Haste", blurb: "Kill 15 vehicles' worth of foes from Rocket Posts.", points: 40, progress: (st) => [st.counters["killer:rocketpost"] ?? 0, 15] },
 ];
+
+const NEW_KINDS = ["runabout", "turrettech", "hornet", "lancer", "sledge", "bounty", "ironclad", "trencher"];
+const triedKinds = (st: CommanderStats, kinds: readonly string[]): number => kinds.filter((k) => (st.counters[`deploy:${k}`] ?? 0) > 0).length;
+const triedTech = (st: CommanderStats): number => TECH_TREE.filter((n) => (st.counters[`research:${n.id}`] ?? 0) > 0).length;
+
+export const MEDALS: readonly MedalDef[] = MEDAL_SEEDS.map((m) => ({ ...m, points: defaultPoints(m) }));
 
 function masteryStars(s: CommanderStats): number {
   return Object.values(s.doctrineUse).reduce((sum, uses) => sum + (uses >= 10 ? 3 : uses >= 6 ? 2 : uses >= 3 ? 1 : 0), 0);
@@ -117,13 +192,12 @@ export interface BattleRecord {
   baseHealth?: number;
   /** Which arms the player still had on the field at the end. */
   arms?: { infantry: boolean; vehicle: boolean; air: boolean };
+  /** The sim's player tallies for this battle (see sim.stats). */
+  counters?: Record<string, number>;
 }
 
 const KEY = "rht.commander.v1";
-const EMPTY = (): CommanderStats => ({
-  battles: 0, wins: 0, losses: 0, kills: 0, killsByKind: {}, doctrineUse: {}, medals: [], mapWins: [], modeWins: [], factionWins: [],
-  winStreak: 0, bestStreak: 0, flawlessWins: 0, hardWins: 0, mapWinCount: {}, factionWinCount: {}, fastestWin: 0,
-});
+
 
 export class Commander {
   stats: CommanderStats = EMPTY();
@@ -193,6 +267,7 @@ export class Commander {
       s.killsByKind[kind] = (s.killsByKind[kind] ?? 0) + n;
       s.kills += n;
     }
+    for (const [key, n] of Object.entries(input.counters ?? {})) s.counters[key] = (s.counters[key] ?? 0) + n;
     const fresh: MedalDef[] = [];
     const earn = (id: string, condition: boolean): void => {
       if (!condition || s.medals.includes(id)) return;
@@ -231,7 +306,29 @@ export class Commander {
     earn("world-tour8", MAPS.every((m) => (s.mapWinCount[m.id] ?? 0) >= 8));
     earn("banners5", FACTIONS.every((f) => (s.factionWinCount[f.id] ?? 0) >= 5));
     earn("banners15", FACTIONS.every((f) => (s.factionWinCount[f.id] ?? 0) >= 15));
+    // Every counted medal (the Arsenal page, and the old ones too) is earned the moment its counter is met.
+    for (const def of MEDALS) if (def.progress) { const [have, need] = def.progress(s); earn(def.id, have >= need); }
     this.save();
+    return fresh;
+  }
+
+  /**
+   * LIVE medals: called mid-battle with the battle's tallies so far. Any counted medal that this battle's progress
+   * (lifetime + so far) already meets is earned NOW, saved, and returned, so the toast fires when it happens. The end
+   * of the battle merges the same tallies once; medals already held are skipped, so nothing pays twice.
+   */
+  liveCheck(counters: Record<string, number>, killsByKind: Record<string, number> = {}): MedalDef[] {
+    const real = this.stats;
+    const merged: CommanderStats = { ...real, counters: { ...real.counters }, killsByKind: { ...real.killsByKind }, kills: real.kills };
+    for (const [key, n] of Object.entries(counters)) merged.counters[key] = (merged.counters[key] ?? 0) + n;
+    for (const [kind, n] of Object.entries(killsByKind)) { merged.killsByKind[kind] = (merged.killsByKind[kind] ?? 0) + n; merged.kills += n; }
+    const fresh: MedalDef[] = [];
+    for (const def of MEDALS) {
+      if (!def.progress || real.medals.includes(def.id)) continue;
+      const [have, need] = def.progress(merged);
+      if (have >= need) { real.medals.push(def.id); fresh.push(def); }
+    }
+    if (fresh.length) this.save();
     return fresh;
   }
 

@@ -71,11 +71,11 @@ export function projectileFamily(p: Projectile): ProjectileFamily {
     if (src && isAirKind(src)) return "bomb";
     return "grenade";
   }
-  if (src === "sniper") return "sniper";
-  if (src === "heavy" || src === "gunpost") return "mg";
+  if (src === "sniper" || src === "bounty") return "sniper";
+  if (src === "heavy" || src === "gunpost" || src === "runabout") return "mg";
   if (src === "sapper") return "pellet";
-  if (src === "medic" || src === "droneop" || src === "striker") return "pistol";
-  if (src === "flamer") return "flame";
+  if (src === "medic" || src === "droneop" || src === "striker" || src === "turrettech" || src === "trencher" || src === "sledge") return "pistol";
+  if (src === "flamer" || src === "flamepost") return "flame";
   if (src === "scout" || src === "jumper") return "carbine";
   return "rifle";
 }

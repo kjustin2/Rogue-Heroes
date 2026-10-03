@@ -30,14 +30,16 @@ describe("faction-aware AI build logic", () => {
     // this would make the AI think it already counters your tanks and stop building answers.
     const got = kinds.filter(answersArmor).sort();
     // + the Rocketeer (2026-10-03): a rocket launcher IS an armour answer; the point of this pin is that nothing widens by accident.
-    expect(got).toEqual(["artillery", "bazooka", "grenadier", "heavy", "mortar", "tank"]);
+    // + the Hornet (2026-10-03): a light tank gun is an armour answer.
+    expect(got).toEqual(["artillery", "bazooka", "grenadier", "heavy", "hornet", "mortar", "tank"]);
   });
 
   it("still classifies exactly the old anti-air set", () => {
     // Was: flak | heavy | sniper. vsAir only exists on three units, so a naive "has vsAir" rewrite
     // silently drops heavy and sniper and the AI over-builds flak.
     const got = kinds.filter(answersAir).sort();
-    expect(got).toEqual(["flak", "heavy", "sniper"]);
+    // + the Bounty Hunter (2026-10-03): a 36m, 50-damage rifle can track a flyer like the Marksman.
+    expect(got).toEqual(["bounty", "flak", "heavy", "sniper"]);
   });
 
   it("fields only on-roster units, and still fields something", () => {

@@ -25,6 +25,7 @@ export interface TechNode {
   id: string;
   name: string;
   branch: "recon" | "assault" | "support" | "armor";
+  /** Layer in the tree (1 = a root). Upgrades sit on layer 4 and carry an `effect` instead of units. */
   cost: number;
   requires: string[]; // all of these node ids must be researched first
   tier: number; // for layout / ordering only
@@ -38,30 +39,35 @@ export interface TechNode {
 //  • Specializations (tier 4) are mutually-exclusive side-grades behind each doctrine: a real
 //    decision (you can never have both halves of a pair), with a concrete combat payoff.
 export const TECH_TREE: readonly TechNode[] = [
+  // ===== RECON: eyes, precision, the answer to air =====
   { id: "recon", name: "Recon Doctrine", branch: "recon", cost: 100, requires: [], tier: 1, blurb: "Scouts, Marksmen, Drone Ops and the Flak Track: eyes, precision, and the answer to air." },
-  { id: "assault", name: "Assault Doctrine", branch: "assault", cost: 100, requires: [], tier: 1, blurb: "Strikers, Heavy Gunners, Jump Troopers and the Rocketeer: pressure, and the answer to armour." },
-  { id: "support", name: "Support Wing", branch: "support", cost: 150, requires: ["recon"], tier: 2, blurb: "Medics, Engineers, Pad Techs and Fortifiers: keep your force in the fight." },
-  { id: "ordnance", name: "Ordnance Lab", branch: "assault", cost: 160, requires: ["assault"], tier: 2, blurb: "Grenadiers, Mortars, Flamers and Demolitionists: area denial." },
-  { id: "armor", name: "Armor Bay", branch: "armor", cost: 200, requires: ["assault"], tier: 2, blurb: "Tanks and APCs: rolling steel." },
-  { id: "siege", name: "Siege Works", branch: "armor", cost: 240, requires: ["armor", "recon"], tier: 3, blurb: "Artillery: needs armour to haul it and Recon to spot for it." },
-  { id: "airwing", name: "Air Wing", branch: "armor", cost: 260, requires: ["armor", "recon"], tier: 3, blurb: "Aircraft: needs Armor Bay for the airfield and Recon for the radar." },
-  // Specializations are the "go deep" choice: one base order and ~$140 buys a team-wide edge worth more than a unit
-  // once you field five or six (owner 2026-10-03: upgrades must beat simply buying another unit).
-  // Assault specialization — offense vs. durability.
-  { id: "breach", name: "Breaching Rounds", branch: "assault", cost: 140, requires: ["assault"], tier: 4, excludes: ["bulwark"], effect: { infantryDamage: 1.25 }, blurb: "+25% infantry weapon damage. Locks out Bulwark Training." },
-  { id: "bulwark", name: "Bulwark Training", branch: "assault", cost: 140, requires: ["assault"], tier: 4, excludes: ["breach"], effect: { infantryHp: 1.25 }, blurb: "Infantry deploy with +25% HP. Locks out Breaching Rounds." },
-  // Armor specialization — tank survivability vs. anti-armor punch.
-  { id: "plating", name: "Reactive Plating", branch: "armor", cost: 160, requires: ["armor"], tier: 4, excludes: ["hunter"], effect: { vehicleHp: 1.25 }, blurb: "Vehicles deploy with +25% HP. Locks out Hunter Rounds." },
-  { id: "hunter", name: "Hunter Rounds", branch: "armor", cost: 160, requires: ["armor"], tier: 4, excludes: ["plating"], effect: { vsVehicleDamage: 1.3 }, blurb: "+30% damage dealt to vehicles. Locks out Reactive Plating." },
-  // Support specialization — keep infantry alive vs. keep armor rolling.
-  { id: "triage", name: "Triage Protocol", branch: "support", cost: 130, requires: ["support"], tier: 4, excludes: ["welding"], effect: { healBonus: 8 }, blurb: "Medic auras heal double each round. Locks out Field Welding." },
-  { id: "welding", name: "Field Welding", branch: "support", cost: 130, requires: ["support"], tier: 4, excludes: ["triage"], effect: { repairBonus: 10 }, blurb: "Engineer rigs repair nearly double each round. Locks out Triage Protocol." },
-  // Recon specialization — sharper eyes vs. staying unseen.
+  { id: "marksman", name: "Sharpshooters", branch: "recon", cost: 140, requires: ["recon"], tier: 2, blurb: "Arc Lancers and Bounty Hunters, plus the Rail Strike: kill what is worth killing." },
+  { id: "radar", name: "Radar Net", branch: "recon", cost: 150, requires: ["recon"], tier: 2, blurb: "The EMP Burst, and the Watch Radar base upgrade: see the enemy's orders every turn." },
   { id: "optics", name: "Optics Array", branch: "recon", cost: 130, requires: ["recon"], tier: 4, excludes: ["ghillie"], effect: { spotterBoost: 1 }, blurb: "Scout/Marksman/Drone relays sharpen nearby allied fire far more. Locks out Ghillie Doctrine." },
   { id: "ghillie", name: "Ghillie Doctrine", branch: "recon", cost: 130, requires: ["recon"], tier: 4, excludes: ["optics"], effect: { evasion: 1.4 }, blurb: "Shots fired at your units scatter much wider. Locks out Optics Array." },
-  // Ordnance specialization — bigger blasts vs. wider blasts.
+  // ===== ASSAULT: pressure, shock, the answer to armour =====
+  { id: "assault", name: "Assault Doctrine", branch: "assault", cost: 100, requires: [], tier: 1, blurb: "Strikers, Heavy Gunners and the Gun Turret: pressure." },
+  { id: "shock", name: "Shock Troops", branch: "assault", cost: 150, requires: ["assault"], tier: 2, blurb: "Jump Troopers, Rocketeers, Sledges, Ironclads and the Rocket Post: the answer to armour, and a fist for the front." },
+  { id: "breach", name: "Breaching Rounds", branch: "assault", cost: 140, requires: ["assault"], tier: 4, excludes: ["bulwark"], effect: { infantryDamage: 1.25 }, blurb: "+25% infantry weapon damage. Locks out Bulwark Training." },
+  { id: "bulwark", name: "Bulwark Training", branch: "assault", cost: 140, requires: ["assault"], tier: 4, excludes: ["breach"], effect: { infantryHp: 1.25 }, blurb: "Infantry deploy with +25% HP. Locks out Breaching Rounds." },
+  { id: "ordnance", name: "Ordnance Lab", branch: "assault", cost: 160, requires: ["assault"], tier: 2, blurb: "Grenadiers, Mortars, the Mortar Pit and Turret, Minefields, Cluster Strike: area denial." },
+  { id: "incendiary", name: "Fire Discipline", branch: "assault", cost: 170, requires: ["ordnance"], tier: 3, excludes: ["demolition"], blurb: "Flamers, Oil Riggers, the Flame Post and Napalm: set them alight. Locks out Demolitions." },
+  { id: "demolition", name: "Demolitions", branch: "assault", cost: 170, requires: ["ordnance"], tier: 3, excludes: ["incendiary"], blurb: "Demolitionists, Scatterguns and the Minefield Drop: break and bury. Locks out Fire Discipline." },
   { id: "thermobarics", name: "Thermobarics", branch: "assault", cost: 160, requires: ["ordnance"], tier: 4, excludes: ["cluster"], effect: { splashDamage: 1.4 }, blurb: "+40% explosive and grenade splash damage. Locks out Cluster Munitions." },
   { id: "cluster", name: "Cluster Munitions", branch: "assault", cost: 160, requires: ["ordnance"], tier: 4, excludes: ["thermobarics"], effect: { splashRadius: 1.5 }, blurb: "Explosive blasts cover 50% more ground. Locks out Thermobarics." },
+  // ===== ARMOR: wheels, steel, then the deep end =====
+  { id: "motorpool", name: "Motor Pool", branch: "armor", cost: 140, requires: ["assault"], tier: 2, blurb: "Runabouts, Hornets and APCs: fast light machines that carry the fight." },
+  { id: "armor", name: "Armor Bay", branch: "armor", cost: 200, requires: ["motorpool"], tier: 3, blurb: "Tanks, the MG Bunker and the Orbital Lance: rolling steel." },
+  { id: "plating", name: "Reactive Plating", branch: "armor", cost: 160, requires: ["armor"], tier: 4, excludes: ["hunter"], effect: { vehicleHp: 1.25 }, blurb: "Vehicles deploy with +25% HP. Locks out Hunter Rounds." },
+  { id: "hunter", name: "Hunter Rounds", branch: "armor", cost: 160, requires: ["armor"], tier: 4, excludes: ["plating"], effect: { vsVehicleDamage: 1.3 }, blurb: "+30% damage dealt to vehicles. Locks out Reactive Plating." },
+  { id: "siege", name: "Siege Works", branch: "armor", cost: 240, requires: ["armor", "recon"], tier: 4, blurb: "Artillery: needs armour to haul it and Recon to spot for it." },
+  { id: "airwing", name: "Air Wing", branch: "armor", cost: 260, requires: ["armor", "recon"], tier: 4, blurb: "Aircraft: needs Armor Bay for the airfield and Recon for the radar." },
+  // ===== SUPPORT: keep them fighting, then pick a school =====
+  { id: "support", name: "Support Wing", branch: "support", cost: 150, requires: ["recon"], tier: 2, blurb: "Medics, Engineers, Pad Techs, Fortifiers and the Airstrike: keep your force in the fight." },
+  { id: "triage", name: "Triage Protocol", branch: "support", cost: 130, requires: ["support"], tier: 4, excludes: ["welding"], effect: { healBonus: 8 }, blurb: "Medic auras heal double each round. Locks out Field Welding." },
+  { id: "welding", name: "Field Welding", branch: "support", cost: 130, requires: ["support"], tier: 4, excludes: ["triage"], effect: { repairBonus: 10 }, blurb: "Engineer rigs repair nearly double each round. Locks out Triage Protocol." },
+  { id: "fieldworks", name: "Field Works", branch: "support", cost: 150, requires: ["support"], tier: 3, excludes: ["fieldhospital"], blurb: "Turret Techs, Trenchers and the Sentry Drop: dig in and hold. Locks out Field Hospital." },
+  { id: "fieldhospital", name: "Field Hospital", branch: "support", cost: 150, requires: ["support"], tier: 3, excludes: ["fieldworks"], effect: { healBonus: 4 }, blurb: "The Medevac, and medics heal more each round. Locks out Field Works." },
 ];
 
 

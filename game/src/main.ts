@@ -48,7 +48,7 @@ import { sfx } from "./audio";
 import { music } from "./music";
 import { progression, COSMETICS, COSMETIC_CATEGORIES, type Cosmetic } from "./progression";
 import { battleReward } from "./progression";
-import { commander, MEDALS, MEDAL_PAGES, type MedalPage } from "./commander";
+import { commander, MEDALS, MEDAL_PAGES, type MedalDef, type MedalPage } from "./commander";
 import { settings, ACTION_PACES, PACE_LABEL, RENDER_SCALES, RENDER_SCALE_LABEL, RENDER_SCALE_DPR, DEFAULT_KEYBINDS, KEYBIND_LABELS, keyDisplay, type ActionPace, type RenderScale, type BindableAction } from "./settings";
 import { applyScenario, scenarioInfo } from "./game/scenarios";
 import { ARENA_BOUNDS } from "./game/terrain";
@@ -233,6 +233,8 @@ const hud = new Hud(uiRoot, sim, {
   onAllSet: () => sfx.allSet(),
   queueMan: (id: string) => { const ok = sim.queueMan(id); if (!ok) refused(); return ok; },
   queueDismount: () => { const ok = sim.queueDismount(); if (!ok) refused(); return ok; },
+  queueSlam: () => { const ok = sim.queueSlam(); if (!ok) refused(); else sfx.turn(); return ok; },
+  queueDig: () => { const ok = sim.queueDig(); if (!ok) refused(); else sfx.turn(); return ok; },
   queuePlace: (destination) => { const ok = sim.queuePlace(destination); if (!ok) refused(); return ok; },
   queueBombDrop: (at) => { const ok = sim.queueBombDrop(at); if (!ok) refused(); return ok; },
   queueLoad: (passengerId: string) => sim.queueLoad(passengerId),
@@ -260,6 +262,7 @@ const hud = new Hud(uiRoot, sim, {
   },
   upgradeBaseIncome: () => sim.upgradeBaseIncome(),
   upgradeBaseCommand: () => sim.upgradeBaseCommand(),
+  upgradeBase: (id) => sim.upgradeBaseWith(id),
   beginBuild: (kind: DefenseKind) => {
     if (sim.setPendingBuild(kind)) sfx.ui();
     else refused();
@@ -305,7 +308,7 @@ const hud = new Hud(uiRoot, sim, {
     if (ok) {
       // Reveal flourish: declassify the doctrine's units by name the moment it lands.
       const revealed = troopsUnlockedBy(nodeId).map((kind) => troopSpec(kind).label);
-      const decrypted = TECH_TREE.filter((n) => n.tier === 4 && n.requires.includes(nodeId)).length;
+      const decrypted = TECH_TREE.filter((n) => n.effect && n.requires.includes(nodeId)).length;
       if (revealed.length) {
         showToast(`Declassified: ${revealed.join(" + ")} now deployable`);
         sfx.deploy();
@@ -1533,6 +1536,7 @@ function showAchievements(): void {
     return `<div class="achievement ${earned ? "earned" : ""}">
       <span class="achievement__badge">${earned ? "✪" : "✧"}</span>
       <strong>${escapeHtml(m.name)}</strong>
+      <em class="achievement__pts" data-tip="Armory points paid when you earn it">+${m.points}</em>
       <span class="achievement__blurb">${escapeHtml(m.blurb)}</span>
       <span class="achievement__state">${meter}</span>
     </div>`;
@@ -1543,7 +1547,7 @@ function showAchievements(): void {
     return `<button class="menu-chip ${achievementsPage === page ? "on" : ""}" data-medal-page="${page}" type="button">${page} <em>${got}/${all.length}</em></button>`;
   }).join("");
   const medals = MEDALS.filter((m) => m.page === achievementsPage).map(card).join("");
-  const mastered = TECH_TREE.filter((n) => n.tier < 4 && commander.masteryTier(n.id) > 0)
+  const mastered = TECH_TREE.filter((n) => !n.effect && commander.masteryTier(n.id) > 0)
     .map((n) => `<span class="medal earned">${escapeHtml(n.name)} ${"I".repeat(commander.masteryTier(n.id))}</span>`)
     .join("");
   const screen = mountScreen(
@@ -1552,7 +1556,7 @@ function showAchievements(): void {
       <div class="menu-head">
         <button class="menu-back" data-overlay-close data-back type="button">&lsaquo; Back</button>
         <h2 class="menu-heading">Achievements</h2>
-        <div class="menu-points"><span>✪</span> ${earnedCount} / ${MEDALS.length}</div>
+        <div class="menu-points" data-tip="Medals earned, and the Armory points they paid"><span>✪</span> ${earnedCount} / ${MEDALS.length} · ${MEDALS.filter((m) => s.medals.includes(m.id)).reduce((sum, m) => sum + m.points, 0).toLocaleString()} pts</div>
       </div>
       <div class="commander-profile__stats">
         <div><span>Battles</span><strong>${s.battles}</strong></div>
@@ -1932,6 +1936,51 @@ function watchEnemyIntel(): void {
   }
 }
 
+// ACHIEVEMENT TOAST (owner 2026-10-03): a medal earned in the middle of a battle drops into the top-centre corner for a few
+// seconds, one at a time, with its Armory points; the points are paid the moment it unlocks.
+const achievementQueue: MedalDef[] = [];
+let achievementShowing = false;
+function announceMedal(def: MedalDef): void {
+  progression.award(def.points);
+  achievementQueue.push(def);
+  if (!achievementShowing) nextAchievementToast();
+}
+function nextAchievementToast(): void {
+  const def = achievementQueue.shift();
+  if (!def) { achievementShowing = false; return; }
+  achievementShowing = true;
+  sfx.achievement();
+  play(`achievement "${def.name}" +${def.points}`);
+  const toast = document.createElement("div");
+  toast.className = "achieve-toast";
+  toast.setAttribute("data-audit-ignore", ""); // a transient corner notice (sliding in from above the screen), drawn over whatever is there
+  toast.setAttribute("role", "status");
+  toast.innerHTML = `<span class="achieve-toast__badge">✪</span>
+    <span class="achieve-toast__text"><em>Achievement unlocked</em><strong>${escapeHtml(def.name)}</strong></span>
+    <span class="achieve-toast__pts">+${def.points}</span>`;
+  document.body.appendChild(toast);
+  window.setTimeout(() => toast.classList.add("show"), 16);
+  window.setTimeout(() => {
+    toast.classList.remove("show");
+    window.setTimeout(() => { toast.remove(); nextAchievementToast(); }, 380);
+  }, 3600);
+}
+
+/** Once a second in a real battle: any medal the battle's tallies have already earned unlocks now. */
+let lastMedalCheck = 0;
+function liveMedals(): void {
+  if (tutorialActive || sim.hotseat || !inBattle) return;
+  const now = performance.now();
+  if (now - lastMedalCheck < 1000) return;
+  lastMedalCheck = now;
+  const killsByKind: Record<string, number> = {};
+  for (const [id, count] of sim.killsBy) {
+    const kind = sim.entity(id)?.kind ?? "unknown";
+    killsByKind[kind] = (killsByKind[kind] ?? 0) + count;
+  }
+  for (const medal of commander.liveCheck(sim.stats, killsByKind)) announceMedal(medal);
+}
+
 function showToast(text: string, lifeMs = 2600): void {
   play(`toast "${text}"`);
   // Toasts stack in a shared column above the order panel — concurrent toasts
@@ -2263,6 +2312,7 @@ function updateMoveBed(): void {
 
 function processBattleEvents(): void {
   updateMoveBed();
+  liveMedals();
   // A killing blow is the moment of a turn worth watching, and the only one that earns a freeze.
   // Without the hold, a unit that dies in the same frame as everything else simply vanishes: the
   // eye never registers what happened to it.
@@ -2413,13 +2463,14 @@ function handleEndState(): void {
       faction: sim.factionIdOf("player"),
       difficulty: sim.difficulty,
       baseHealth: hp,
+      counters: { ...sim.stats },
       arms: {
         infantry: mine.some((e) => isInfantryKind(e.kind)),
         vehicle: mine.some((e) => isVehicleKind(e.kind) && !isAirKind(e.kind)),
         air: mine.some((e) => isAirKind(e.kind)),
       },
     });
-    for (const medal of freshMedals) showToast(`🎖 Medal earned — ${medal.name}: ${medal.blurb}`);
+    for (const medal of freshMedals) announceMedal(medal);
   }
   // Kill-cam: a 1.6s letterboxed zoom onto the decisive spot before the end screens land.
   if (!settings.reducedMotion) {
@@ -2473,6 +2524,8 @@ declare global {
       onAllSet?(): void;
       queueMan(id: string): boolean;
       queueDismount(): boolean;
+      queueSlam(): boolean;
+      queueDig(): boolean;
       queuePlace(destination: Vec2): boolean;
       queueBombDrop(at?: Vec2): boolean;
       queueLoad(passengerId: string): boolean;
@@ -2486,6 +2539,8 @@ declare global {
       queueDeployAt(kind: TroopKind, point: Vec2): boolean;
       hoverGround(point: Vec2 | undefined): void;
       clickWorld(point: Vec2, height?: number): void;
+      /** Capture seam: pop the achievement toast for a medal (and pay its points). */
+      toastMedal(id: string): void;
       setTimeScale(scale: number): void;
       queueBuildStructure(point: Vec2): boolean;
       beginBuild(kind: DefenseKind): void;
@@ -2497,6 +2552,7 @@ declare global {
       queueDeploy(): boolean;
       upgradeBaseIncome(): boolean;
       upgradeBaseCommand(): boolean;
+      upgradeBase(id: string): boolean;
       researchTech(nodeId: string): boolean;
       startBattle(mapId: string, modeId: ModeId, difficulty?: Difficulty, faction?: FactionId, enemyFaction?: FactionId): void;
       inspectPickup(id: string): void;
@@ -2591,6 +2647,8 @@ window.__rht = {
   queueLeap: (destination) => sim.queueLeap(destination),
   queueMan: (id: string) => sim.queueMan(id),
   queueDismount: () => sim.queueDismount(),
+  queueSlam: () => sim.queueSlam(),
+  queueDig: () => sim.queueDig(),
   queuePlace: (destination) => sim.queuePlace(destination),
   queueBombDrop: (at) => sim.queueBombDrop(at),
   queueLoad: (passengerId: string) => sim.queueLoad(passengerId),
@@ -2605,6 +2663,7 @@ window.__rht = {
   // Park the cursor over a ground point (what pointermove does) so shots can show the hover ghost.
   hoverGround: (point) => { hoverWorld = point; },
   /** A real left click on the canvas at a world point (through the same pointerdown handler a player's click takes). */
+  toastMedal: (id) => { const m = MEDALS.find((x) => x.id === id); if (m) announceMedal(m); },
   clickWorld: (point, height = 0.5) => {
     const at = stage.projectToScreen(point, height);
     canvas.dispatchEvent(new PointerEvent("pointerdown", { clientX: at.x, clientY: at.y, button: 0, bubbles: true, pointerId: 1 }));
@@ -2619,6 +2678,7 @@ window.__rht = {
   queueDeploy: () => sim.queueDeploy(),
   upgradeBaseIncome: () => sim.upgradeBaseIncome(),
   upgradeBaseCommand: () => sim.upgradeBaseCommand(),
+  upgradeBase: (id) => sim.upgradeBaseWith(id as never),
   researchTech: (nodeId) => sim.researchTech(nodeId),
   startBattle: (mapId, modeId, difficulty, faction, enemyFaction) => startBattle(mapId, modeId, difficulty, faction, undefined, enemyFaction),
   inspectPickup: (id: string) => inspectPickup(id),

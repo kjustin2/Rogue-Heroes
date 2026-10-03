@@ -47,18 +47,20 @@ describe("faction rosters differ", () => {
     }
   });
 
-  it("gives every faction three support powers of its own: a starter, then two by its own research", () => {
-    const all = FACTIONS.flatMap((f) => f.supports);
-    for (const f of FACTIONS) expect(f.supports.length).toBe(3);
-    expect(new Set(all).size).toBe(all.length); // nothing shared
-    for (const f of FACTIONS) for (const [i, kind] of f.supports.entries()) {
-      const spec = SUPPORT_POWERS.find((p) => p.kind === kind);
-      expect(spec, kind).toBeDefined();
-      // Owner 2026-10-01: every deck starts with something. The first power is tech-free; the rest
-      // need a doctrine this faction can research.
-      if (i === 0) { expect(spec!.tech, `${kind} is the starter`).toBeUndefined(); continue; }
-      expect(spec!.tech, `${kind} has no tech gate`).toBeDefined();
-      expect(f.tech.includes(spec!.tech!), `${f.id} cannot research ${spec!.tech} for ${kind}`).toBe(true);
+  it("gives every faction five or six support powers: a tech-free starter, the rest by research it can reach, and at least one nobody else has", () => {
+    for (const f of FACTIONS) {
+      expect(f.supports.length, `${f.id} supports`).toBeGreaterThanOrEqual(5);
+      expect(f.supports.length, `${f.id} supports`).toBeLessThanOrEqual(6);
+      for (const [i, kind] of f.supports.entries()) {
+        const spec = SUPPORT_POWERS.find((p) => p.kind === kind);
+        expect(spec, kind).toBeDefined();
+        // Owner 2026-10-01: every deck starts with something. The first power is tech-free; the rest need a node this faction can research.
+        if (i === 0) { expect(spec!.tech, `${kind} is the starter`).toBeUndefined(); continue; }
+        expect(spec!.tech, `${kind} has no tech gate`).toBeDefined();
+        expect(f.tech.includes(spec!.tech!), `${f.id} cannot research ${spec!.tech} for ${kind}`).toBe(true);
+      }
+      const others = FACTIONS.filter((o) => o.id !== f.id).flatMap((o) => o.supports);
+      expect(f.supports.some((k) => !others.includes(k)), `${f.id} has no strike of its own`).toBe(true);
     }
   });
 

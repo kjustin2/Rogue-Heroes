@@ -27,14 +27,13 @@ describe("TECH_TREE structure", () => {
     }
   });
 
-  it("doctrines unlock troops; specializations carry an effect and unlock none", () => {
+  it("an upgrade (a node with an effect) unlocks no troops; every other node opens troops, a defense or a strike", () => {
     for (const node of TECH_TREE) {
       if (node.effect) {
-        // A tier-4 specialization: a combat modifier, not a troop unlock.
         expect(troopsUnlockedBy(node.id), `${node.id} should unlock no troops`).toHaveLength(0);
       } else {
-        // A doctrine: must field at least one troop, or it's dead weight.
-        expect(troopsUnlockedBy(node.id).length, `${node.id} unlocks nothing`).toBeGreaterThan(0);
+        const opens = troopsUnlockedBy(node.id).length + DEFENSE_CATALOG.filter((d) => d.tech === node.id).length + SUPPORT_POWERS.filter((p) => p.tech === node.id).length;
+        expect(opens, `${node.id} opens nothing`).toBeGreaterThan(0);
       }
     }
   });
@@ -73,32 +72,36 @@ describe("tech tree design", () => {
     const node = techNode(id)!;
     return node.cost + node.requires.reduce((sum, req) => sum + pathCost(req), 0);
   };
+  const opens = (id: string): number => troopsUnlockedBy(id).length + DEFENSE_CATALOG.filter((d) => d.tech === id).length + SUPPORT_POWERS.filter((p) => p.tech === id).length;
 
-  it("every doctrine opens something, so no branch is a dead end", () => {
-    for (const node of TECH_TREE.filter((n) => n.tier < 4)) {
-      const opens = troopsUnlockedBy(node.id).length
-        + DEFENSE_CATALOG.filter((d) => d.tech === node.id).length
-        + SUPPORT_POWERS.filter((p) => p.tech === node.id).length
-        + TECH_TREE.filter((n) => n.requires.includes(node.id)).length;
-      expect(opens, node.id).toBeGreaterThan(0);
-    }
+  it("every node opens something or carries an effect, so no branch is a dead end", () => {
+    for (const node of TECH_TREE) expect(opens(node.id) + (node.effect ? 1 : 0) + TECH_TREE.filter((n) => n.requires.includes(node.id)).length, node.id).toBeGreaterThan(0);
   });
 
-  it("recon answers air and assault answers armour, so neither threat needs the armour road", () => {
+  it("recon answers air and shock troops answer armour, so neither threat needs the armour road", () => {
     expect(troopsUnlockedBy("recon")).toContain("flak");
-    expect(troopsUnlockedBy("assault")).toContain("bazooka");
+    expect(troopsUnlockedBy("shock")).toContain("bazooka");
   });
 
-  it("aircraft and artillery are the deep end: they cost more to reach than anything else", () => {
+  it("the tree is deep: four branches, five layers, and a real choice (an exclusive pair) on most of them", () => {
+    const depth = (id: string): number => 1 + Math.max(0, ...techNode(id)!.requires.map(depth));
+    expect(Math.max(...TECH_TREE.map((n) => depth(n.id)))).toBeGreaterThanOrEqual(4);
+    expect(TECH_TREE.length).toBeGreaterThanOrEqual(24);
+    expect(TECH_TREE.filter((n) => (n.excludes ?? []).length > 0).length).toBeGreaterThanOrEqual(10);
+    // The pairs that unlock units, not just numbers: Fire Discipline vs Demolitions, Field Works vs Field Hospital.
+    expect(techNode("incendiary")!.excludes).toContain("demolition");
+    expect(techNode("fieldworks")!.excludes).toContain("fieldhospital");
+  });
+
+  it("aircraft and artillery are the deep end: they cost more to reach than any doctrine on its own", () => {
     for (const id of ["airwing", "siege"]) {
-      for (const other of TECH_TREE.filter((n) => n.tier < 3)) expect(pathCost(id), id).toBeGreaterThan(pathCost(other.id));
+      for (const other of TECH_TREE.filter((n) => !n.effect && n.id !== id && n.id !== "airwing" && n.id !== "siege")) expect(pathCost(id), id).toBeGreaterThan(pathCost(other.id));
     }
     expect(techNode("airwing")!.requires).toContain("recon");
+    expect(techNode("armor")!.requires).toContain("motorpool"); // tanks sit behind the light vehicles
   });
 
   it("an upgrade costs no more than a trooper and a half (it also spends the base order)", () => {
-    for (const spec of TECH_TREE.filter((n) => n.tier === 4)) {
-      expect(spec.cost, spec.id).toBeLessThanOrEqual(160);
-    }
+    for (const spec of TECH_TREE.filter((n) => n.effect)) expect(spec.cost, spec.id).toBeLessThanOrEqual(160);
   });
 });

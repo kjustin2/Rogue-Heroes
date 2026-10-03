@@ -115,6 +115,17 @@ export const GUN_VOICES: Record<string, Voice> = {
   turret: { group: "marlin", alt: ["lever1894"], rate: 0.9, m: 1 },
   bunker: { group: "ak47burst", rate: 0.8, m: 1, burst: true },
   gunpost: { group: "ppshburst", rate: 0.9, m: 1, burst: true },
+  rocketpost: { group: "crack", rate: 0.62, m: 1, synth: "rocket" },
+  flamepost: { group: "", rate: 0.9, m: 1, synth: "flame" },
+  sentry: { group: "marlin", rate: 1.35, m: 0.75 },
+  turrettech: { group: "sw642", rate: 1.05, m: 0.9 },
+  sledge: { group: "singlesix", rate: 0.8, m: 0.9 },
+  lancer: { group: "sks", alt: ["ar15"], rate: 1.18, m: 1 },
+  bounty: { group: "tikka", alt: ["marlin"], rate: 0.78, m: 1.05 },
+  ironclad: { group: "lever1894", rate: 0.85, m: 1 },
+  trencher: { group: "ruger22", rate: 1.1, m: 0.9 },
+  runabout: { group: "ppshburst", rate: 1.12, m: 0.9, burst: true },
+  hornet: { group: "cannon", rate: 1.18, m: 0.85 },
 };
 /** A hand grenade leaving a hand, and a bomb leaving a bay. */
 const THROW_VOICE: Voice = { group: "", rate: 1, m: 1, synth: "whoosh" };
@@ -130,13 +141,13 @@ export function voiceFor(kind: ShotKind, source?: string): Voice {
 
 /** Which impact material a hit lands on, from what was hit. Pure. */
 export function impactClass(kind: string, coverKind?: string): "hitsoft" | "hitmetal" | "hitplate" | "hitwood" {
-  const SOFT = new Set(["soldier", "scout", "sniper", "striker", "heavy", "grenadier", "mortar", "medic", "engineer", "flamer", "droneop", "sapper", "jumper", "bazooka", "builder", "demo", "oiler", "springer"]);
+  const SOFT = new Set(["soldier", "scout", "sniper", "striker", "heavy", "grenadier", "mortar", "medic", "engineer", "flamer", "droneop", "sapper", "jumper", "bazooka", "builder", "demo", "oiler", "springer", "turrettech", "sledge", "lancer", "bounty", "ironclad", "trencher"]);
   if (SOFT.has(kind)) return "hitsoft";
   if (kind === "cover") {
     const wood = new Set(["tree", "crate", "log", "stump", "bush", "haybale", "fence", "rack", "tent", "hut", "boat", "barricade", "sandbag", "bones", "grave"]);
     return coverKind && wood.has(coverKind) ? "hitwood" : "hitplate";
   }
-  if (kind === "base" || kind === "wall" || kind === "bunker" || kind === "gunpost" || kind === "mortarpit") return "hitplate";
+  if (kind === "base" || kind === "wall" || kind === "bunker" || kind === "gunpost" || kind === "mortarpit" || kind === "rocketpost" || kind === "flamepost") return "hitplate";
   return "hitmetal"; // vehicles, aircraft, turrets
 }
 
@@ -355,6 +366,13 @@ export class Sfx {
   clank(gain = 1): void {
     if (this.sample("hitmetal", GROUP_GAIN.hitmetal * 0.9 * gain, 0.85)) return;
     this.thunk(200, 0.08);
+  }
+
+  /** An achievement unlocking: a short rising three-note chime, bright and clean. */
+  achievement(): void {
+    this.blip(660, 0.09, "triangle", 0.16);
+    this.blip(880, 0.09, "triangle", 0.16, 0.09);
+    this.blip(1320, 0.2, "triangle", 0.18, 0.18);
   }
 
   /** Two rounds meeting in the air: a bright metal ping for small arms, a ringing crack for a sniper bolt, a bang for a shell. */

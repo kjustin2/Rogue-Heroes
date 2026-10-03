@@ -34,7 +34,9 @@ const MIN_SAMPLE = 10; // units of a kind fielded across the run before its rati
 // and pricing it under 2x would push the tank past the artillery.
 const BAND_LOW = 0.5;
 const BAND_HIGH = 2.5;
-// Listed, not gated: support kinds earn their keep another way; the interceptor can only hit
+// Listed, not gated: the Sledge's hammer and the Runabout's gunner seat are Hard-bot behaviour (Slam, ferrying); the Normal brain this
+// self-play uses never swings a hammer or seats a gunner, so their rows measure the AI, not the unit (same story as the bomber below).
+// Support kinds earn their keep another way; the interceptor can only hit
 // flyers; the flamer's burning-ground ticks are unattributed (no actor on a burn zone); the
 // scout is eyes + capture + dash, and as the fastest unit the AI runs it in first and alone, so
 // its damage row is 0-or-a-little depending on which two games draw it (see the seat table).
@@ -43,7 +45,7 @@ const BAND_HIGH = 2.5;
 // ~27 damage a game and the row swung 0.42x-0.56x on a map layout change alone. Given a bombing
 // run (move over a group, release on arrival) the same aircraft measured 1.8x-2.3x -- see
 // docs/next-steps.md. Re-gate it when the AI flies real bombing runs.
-const UNGATED: readonly TroopKind[] = ["medic", "engineer", "builder", "demo", "oiler", "springer", "droneop", "transport", "interceptor", "flamer", "scout", "bomber"];
+const UNGATED: readonly TroopKind[] = ["medic", "engineer", "builder", "demo", "oiler", "springer", "droneop", "transport", "interceptor", "flamer", "scout", "bomber", "sledge", "runabout"];
 
 interface Tally { damage: number; spent: number; fielded: number }
 

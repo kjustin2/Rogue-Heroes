@@ -1531,7 +1531,7 @@ export class WorldRenderer {
     let group = this.groups.get(entity.id);
     // Captured structures change team: rebuild so team-colored trim/glow follows the flag -- and a
     // faction change (new battle, a hotseat swap) rebuilds too, because the faction DRESS is geometry.
-    const teamKey = `${entity.team}:${factionOfEntity(entity) ?? ""}`;
+    const teamKey = `${entity.team}:${factionOfEntity(entity) ?? ""}${entity.kind === "base" ? `:${entity.armorLevel ?? 0}${entity.parts.some((p) => p.id === "cannon") ? "c" : ""}${entity.radarOnline ? "r" : ""}` : ""}`;
     if (group && group.userData.team !== teamKey) {
       disposeSubtree(group);
       this.entityRoot.remove(group);
@@ -1667,6 +1667,7 @@ export class WorldRenderer {
     // and tumble backwards (a full flip on a long throw), vehicles only hop and rock -- with a dust
     // puff on landing. Renderer-only: the sim position is already final.
     this.flyThrownBody(entity, group, renderElevation - bob);
+    if (entity.burning && entity.status.alive) this.burnFx(group);
     // PER-INSTANCE VARIETY on scenery. Every rock, tree and crate was the same mesh at the same
     // size on the same bearing, so a map read as stamped rather than grown — the single most
     // obvious "placeholder" tell left on the board once the shapes themselves were fixed. Cover
@@ -2019,6 +2020,18 @@ export class WorldRenderer {
     return Math.min(1, (performance.now() - born) / 300);
   }
 
+  /** A burning trooper trails flames and smoke while it burns (throttled; the particles outlive the frame). */
+  private burnFx(group: THREE.Group): void {
+    const now = performance.now();
+    const next = (group.userData.nextBurnFx as number | undefined) ?? 0;
+    if (now < next) return;
+    group.userData.nextBurnFx = now + 110;
+    const fx = this.particles;
+    if (!fx) return;
+    fx.burst({ x: group.position.x, y: group.position.y + 0.9, z: group.position.z, count: 3, color: [0xffd07a, 0xff9a3a, 0xff6a1c], speed: [0.2, 0.7], up: 1.4, size: [0.16, 0.34], life: [0.3, 0.55], gravity: -1.2, drag: 1.2, jitter: 0.3 });
+    fx.burst({ x: group.position.x, y: group.position.y + 1.5, z: group.position.z, count: 1, color: [0x3a322b, 0x5a4f46], speed: [0.2, 0.5], up: 1.0, size: [0.22, 0.4], life: [0.6, 1.0], gravity: -0.6, drag: 1.0, jitter: 0.2 });
+  }
+
   private flyThrownBody(entity: CombatEntity, group: THREE.Group, groundY: number): void {
     const last = group.userData.lastSimPos as { x: number; z: number; y: number } | undefined;
     group.userData.lastSimPos = { x: entity.position.x, z: entity.position.z, y: groundY };
@@ -2147,6 +2160,8 @@ export class WorldRenderer {
     else if (entity.kind === "bomber") this.buildBomber(group, entity);
     else if (entity.kind === "transport") this.buildTransport(group, entity);
     else if (entity.kind === "flak") this.buildFlak(group, entity);
+    else if (entity.kind === "runabout") this.buildRunabout(group, entity);
+    else if (entity.kind === "hornet") this.buildHornet(group, entity);
     else if (isVehicleKind(entity.kind)) { if (kit) this.buildVehicleKit(group, entity); else this.buildTank(group, entity); }
     if (isInfantryKind(entity.kind)) this.buildSoldier(group, entity);
     if (entity.kind === "base") { if (kit) this.buildBaseKit(group, entity); else this.buildBase(group, entity); }
@@ -2543,6 +2558,33 @@ export class WorldRenderer {
       }
     }
     this.baseYardDetails(group, entity, f ?? "");
+    this.baseUpgradeDress(group, entity);
+  }
+
+  /** What the owner has built onto the HQ: armour plating per level, the Fortress Cannon on the roof, the Watch Radar dish. */
+  private baseUpgradeDress(group: THREE.Group, entity: CombatEntity): void {
+    const glow = entity.team === "enemy" ? TEAMS.enemyAccent : this.playerAccent;
+    for (let level = 1; level <= (entity.armorLevel ?? 0); level += 1) {
+      const grow = (level - 1) * 0.16;
+      for (const side of [-1, 1]) {
+        this.box(group, entity, "core", [0.2, 1.0 + level * 0.16, 1.7], [side * (1.42 + grow), 0.62 + level * 0.1, 0.0], 0x6c7480, { metalness: 0.5, roughness: 0.6, bevel: 0.15, rotation: [0, 0, side * -0.14] });
+        this.box(group, entity, "core", [0.22, 0.1, 1.74], [side * (1.42 + grow), 1.2 + level * 0.18, 0.0], glow, { accent: true, emissive: glow, emissiveIntensity: 0.25, rotation: [0, 0, side * -0.14] });
+      }
+      this.box(group, entity, "core", [2.6, 0.5 + level * 0.14, 0.2], [0, 0.45 + level * 0.1, -1.18 - grow], 0x5f6773, { metalness: 0.5, bevel: 0.15 });
+    }
+    if (entity.parts.some((p) => p.id === "cannon")) {
+      // FORTRESS CANNON: a squat armoured turret on the roof with a long barrel, muzzle brake and ammunition racks.
+      this.box(group, entity, "cannon", [1.0, 0.44, 1.0], [0.1, 3.5, -0.3], 0x59616c, { metalness: 0.45, bevel: 0.14 });
+      this.box(group, entity, "cannon", [0.64, 0.3, 0.64], [0.1, 3.84, -0.4], 0x6a727e, { metalness: 0.45, bevel: 0.14 });
+      this.cylinder(group, entity, "cannon", 0.16, 2.8, [0.1, 3.84, 1.2], 0x2a2f36, [Math.PI / 2, 0, 0], { metalness: 0.5 });
+      this.cylinder(group, entity, "cannon", 0.24, 0.3, [0.1, 3.84, 2.5], 0x1a1d22, [Math.PI / 2, 0, 0], { metalness: 0.5 });
+      this.box(group, entity, "cannon", [0.4, 0.26, 0.5], [0.1, 3.7, -0.95], 0xffb14a, { accent: true, emissive: 0xff7d1e, emissiveIntensity: 0.3 });
+    }
+    if (entity.radarOnline) {
+      this.cylinder(group, entity, "comms", 0.05, 0.9, [-1.0, 3.05, 0.5], 0x9aa096, [0, 0, 0], { metalness: 0.4 });
+      this.cylinder(group, entity, "comms", 0.5, 0.06, [-1.0, 3.6, 0.5], 0xdfe8ee, [1.1, 0, 0], { metalness: 0.4 }).userData.spinY = 0.0016;
+      this.box(group, entity, "comms", [0.1, 0.1, 0.1], [-1.0, 3.62, 0.5], 0x9dfcff, { accent: true, emissive: glow, emissiveIntensity: 0.6 }).userData.blink = 0.007;
+    }
   }
 
   /** The small stuff that makes a base look lived in: hazard-striped gate sill, stacked crates, drums, a windsock,
@@ -3056,6 +3098,70 @@ export class WorldRenderer {
       for (const x of [-0.12, 0.12]) this.cylinder(rig, entity, "pack", 0.08, 0.7, [x, 1.2, -0.38], 0x6a6a4a, [0.2, 0, 0], { metalness: 0.3, accent: true });
       this.box(rig, entity, "head", [0.44, 0.38, 0.46], [0, 1.4, 0.0], helmetColor, { kit: "helmet" });
       this.box(rig, entity, "head", [0.3, 0.1, 0.09], [0, 1.4, 0.2], 0xff7a3a, { accent: true, emissive: 0xff5a2a, emissiveIntensity: 0.3 });
+    } else if (entity.kind === "turrettech") {
+      // Turret Tech: a flat-pack SENTRY CASE on the back with its tripod legs folded up past the head (the silhouette),
+      // an orange hard hat with a lamp, and a belt pouch of spare barrels. Sidearm only: its worth is the case.
+      this.box(rig, entity, "rifle", [0.16, 0.24, 0.52], [0.45, 0.92, 0.22], 0x3a4a48, { metalness: 0.3, kit: "weapon-pistol" });
+      this.box(rig, entity, "pack", [0.56, 0.74, 0.3], [0, 0.98, -0.4], 0x3b6a62, { accent: true, metalness: 0.3 });
+      for (const x of [-0.2, 0, 0.2]) this.cylinder(rig, entity, "pack", 0.035, 1.0, [x, 1.78, -0.42], 0x9aa6a0, [-0.12 + x * 0.3, 0, x * 0.4], { accent: true, metalness: 0.4 });
+      this.box(rig, entity, "pack", [0.2, 0.14, 0.2], [0, 1.58, -0.36], 0xffb02e, { accent: true, emissive: 0xff8a2a, emissiveIntensity: 0.3 });
+      this.box(rig, entity, "legs", [0.3, 0.2, 0.2], [0.32, 0.52, 0.1], 0x2f3b39, { accent: true, metalness: 0.3 });
+      this.box(rig, entity, "head", [0.5, 0.3, 0.52], [0, 1.44, 0.0], 0xff8a2a, { metalness: 0.2 });
+      this.box(rig, entity, "head", [0.12, 0.1, 0.1], [0, 1.52, 0.26], 0xfff3b0, { accent: true, emissive: 0xffd24a, emissiveIntensity: 0.5 });
+    } else if (entity.kind === "sledge") {
+      // Sledge: the HAMMER is the unit. A huge head on a long haft carried up over the shoulder, a spiked pauldron,
+      // a counterweight chain on the back and a horned helm: wide, tall and top-heavy against the roster.
+      this.cylinder(rig, entity, "rifle", 0.07, 1.7, [0.48, 1.02, 0.2], 0x5a4a38, [0.35, 0, -0.25], { metalness: 0.2 });
+      this.box(rig, entity, "rifle", [0.62, 0.46, 0.42], [0.18, 1.86, 0.62], 0x6a6f78, { metalness: 0.5, rotation: [0.35, 0, -0.25], bevel: 0.15 });
+      this.box(rig, entity, "rifle", [0.64, 0.12, 0.44], [0.18, 1.86, 0.62], 0xffb14a, { accent: true, emissive: 0xff7d1e, emissiveIntensity: 0.25, rotation: [0.35, 0, -0.25] });
+      this.box(rig, entity, "body", [0.4, 0.2, 0.46], [-0.36, 1.26, 0.0], 0x4a2f44, { accent: true, metalness: 0.3 });
+      for (const x of [-0.5, -0.36, -0.22]) this.cylinder(rig, entity, "body", 0.04, 0.2, [x, 1.46, 0.0], 0x9aa0a8, [0, 0, 0], { accent: true, radiusBottom: 0.075, metalness: 0.4 });
+      this.box(rig, entity, "pack", [0.5, 0.36, 0.22], [0, 0.96, -0.34], 0x4a2440, { accent: true, metalness: 0.3 });
+      this.cylinder(rig, entity, "pack", 0.16, 0.2, [0, 0.62, -0.5], 0x7a8088, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.5 });
+      this.box(rig, entity, "head", [0.46, 0.4, 0.48], [0, 1.42, 0.0], 0x5a2f4a, { metalness: 0.2 });
+      for (const side of [-1, 1]) this.cylinder(rig, entity, "head", 0.03, 0.34, [side * 0.26, 1.68, 0.0], 0xe8e0c8, [0, 0, side * -0.5], { accent: true, radiusBottom: 0.07 });
+    } else if (entity.kind === "lancer") {
+      // Ricochet Gunner: a long carbine whose muzzle splits into two angled deflector fins (the round glances on to the next
+      // body), a bright drum under the stock, a scarf streaming back and a slit visor. Slim, fast-looking.
+      this.box(rig, entity, "rifle", [0.14, 0.2, 1.0], [0.46, 0.96, 0.32], 0x2a3538, { metalness: 0.36 });
+      for (const side of [-1, 1]) this.box(rig, entity, "rifle", [0.04, 0.2, 0.3], [0.46 + side * 0.07, 0.96, 0.86], 0xffc27a, { accent: true, rotation: [0, side * 0.5, 0], metalness: 0.4, emissive: 0xff9e2b, emissiveIntensity: 0.2 });
+      this.cylinder(rig, entity, "rifle", 0.1, 0.16, [0.46, 0.76, 0.18], 0x3fa9b8, [0, 0, Math.PI / 2], { accent: true, metalness: 0.4 });
+      this.box(rig, entity, "pack", [0.34, 0.5, 0.2], [0, 1.0, -0.34], 0x1f4a52, { accent: true, metalness: 0.3 });
+      this.box(rig, entity, "body", [0.12, 0.7, 0.06], [-0.2, 1.1, -0.42], 0xff9e2b, { accent: true, rotation: [0.3, 0, 0.18] });
+      this.box(rig, entity, "head", [0.42, 0.4, 0.46], [0, 1.42, 0.0], helmetColor, { metalness: 0.3 });
+      this.box(rig, entity, "head", [0.34, 0.07, 0.08], [0, 1.44, 0.2], 0xffe2a8, { accent: true, emissive: 0xffc27a, emissiveIntensity: 0.45 });
+    } else if (entity.kind === "bounty") {
+      // Bounty Hunter: a WIDE-BRIM HAT and a long duster, a long rifle with a fat scope, and a rack of tokens on the back.
+      this.box(rig, entity, "rifle", [0.12, 0.16, 1.5], [0.46, 1.0, 0.5], 0x2b2f30, { metalness: 0.4 });
+      this.cylinder(rig, entity, "rifle", 0.07, 0.4, [0.46, 1.16, 0.4], 0x1a1c1d, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.5 });
+      this.box(rig, entity, "rifle", [0.06, 0.06, 0.06], [0.46, 1.16, 0.62], 0xff5a4d, { accent: true, emissive: 0xff3b30, emissiveIntensity: 0.45 });
+      this.box(rig, entity, "legs", [0.62, 0.7, 0.14], [0, 0.46, -0.28], 0x5a4a30, { accent: true, rotation: [0.18, 0, 0] }); // coat tails
+      for (const [x, y] of [[-0.16, 1.12], [0.04, 1.2], [0.2, 1.08]] as const) this.box(rig, entity, "pack", [0.1, 0.14, 0.08], [x, y, -0.4], 0xe8e0c8, { accent: true });
+      this.box(rig, entity, "pack", [0.5, 0.5, 0.2], [0, 0.98, -0.34], 0x4e4128, { accent: true });
+      this.cylinder(rig, entity, "head", 0.46, 0.05, [0, 1.62, 0.02], 0x3a2f1e, [0, 0, 0]);
+      this.cylinder(rig, entity, "head", 0.24, 0.26, [0, 1.74, 0.02], 0x4a3c26, [0, 0, 0]);
+      this.box(rig, entity, "head", [0.36, 0.1, 0.1], [0, 1.42, 0.2], 0x1a1c1d, { accent: true });
+    } else if (entity.kind === "ironclad") {
+      // Ironclad: the TOWER SHIELD, a man-high slab carried on the left arm and angled across the front; a barrel helm with a
+      // slit; broad bolted pauldrons. From the front it is a wall with a head.
+      this.box(rig, entity, "rifle", [0.16, 0.22, 0.6], [0.5, 0.92, 0.26], 0x3a4048, { metalness: 0.34 });
+      this.box(rig, entity, "pack", [0.95, 1.5, 0.14], [-0.28, 0.98, 0.46], 0x6a7586, { metalness: 0.5, bevel: 0.1, rotation: [0, 0.25, 0] });
+      this.box(rig, entity, "pack", [0.8, 0.14, 0.16], [-0.28, 1.3, 0.5], 0xffc27a, { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.22, rotation: [0, 0.25, 0] });
+      this.box(rig, entity, "pack", [0.12, 1.3, 0.16], [-0.28, 0.98, 0.5], 0x2a303a, { accent: true, rotation: [0, 0.25, 0] });
+      for (const side of [-1, 1]) this.box(rig, entity, "body", [0.36, 0.22, 0.46], [side * 0.46, 1.26, 0.0], 0x4a5262, { accent: true, metalness: 0.4 });
+      this.box(rig, entity, "head", [0.5, 0.5, 0.52], [0, 1.4, 0.0], 0x5a6474, { metalness: 0.4 });
+      this.box(rig, entity, "head", [0.36, 0.06, 0.08], [0, 1.44, 0.26], 0x0e1216, { accent: true });
+    } else if (entity.kind === "trencher") {
+      // Trencher: a folding SHOVEL on the back (long haft, big blade over the head), a pickaxe on the belt, a rolled sandbag
+      // across the shoulders, and a hard hat with a lamp: a digger, plainly.
+      this.box(rig, entity, "rifle", [0.16, 0.24, 0.5], [0.45, 0.92, 0.22], 0x4a4232, { metalness: 0.3 });
+      this.cylinder(rig, entity, "pack", 0.04, 1.5, [-0.18, 1.2, -0.38], 0x7a5a38, [0.1, 0, 0.1], { accent: true });
+      this.box(rig, entity, "pack", [0.34, 0.44, 0.06], [-0.1, 2.0, -0.4], 0xaab0b8, { accent: true, metalness: 0.5, rotation: [0.1, 0, 0.1] });
+      this.cylinder(rig, entity, "pack", 0.1, 0.66, [0, 1.36, -0.26], 0x8a7a52, [0, 0, Math.PI / 2], { accent: true });
+      this.box(rig, entity, "legs", [0.1, 0.5, 0.1], [0.34, 0.5, 0.1], 0x6a4a30, { accent: true, rotation: [0, 0, 0.3] });
+      this.box(rig, entity, "legs", [0.34, 0.1, 0.08], [0.42, 0.78, 0.1], 0x9aa0a8, { accent: true, metalness: 0.5, rotation: [0, 0, 0.3] });
+      this.box(rig, entity, "head", [0.5, 0.3, 0.52], [0, 1.44, 0.0], 0xe0b030, { metalness: 0.2 });
+      this.box(rig, entity, "head", [0.12, 0.1, 0.1], [0, 1.52, 0.26], 0xfff3b0, { accent: true, emissive: 0xffd24a, emissiveIntensity: 0.5 });
     } else if (entity.kind === "builder") {
       // Fortifier: a slab of barrier carried on the back like a shield, a lump hammer and a hard hat.
       this.box(rig, entity, "pack", [0.7, 0.9, 0.12], [0, 1.0, -0.42], 0x8a8a84, { metalness: 0.2, accent: true, bevel: 0.2 });
@@ -3228,6 +3334,68 @@ export class WorldRenderer {
   }
 
   /** A manned emplacement: a ring of sandbags round a pit, with the weapon on a mount in the middle. Walk up and crew it. */
+  // RUNABOUT: a light open car. Low chassis, a roll bar, four fat wheels, a bench for four riders and a pintle MG at the
+  // back that only fires with a gunner seated. Sand paint, team lamps: unmistakably not a tank, not an APC.
+  private buildRunabout(group: THREE.Group, entity: CombatEntity): void {
+    const glow = entity.team === "enemy" ? TEAMS.enemyAccent : (entity.accent ?? this.playerAccent);
+    const lamp = { accent: true, emissive: glow, emissiveIntensity: 0.4, bevel: 0.3 } as const;
+    this.box(group, entity, "hull", [1.5, 0.4, 2.3], [0, 0.58, 0], 0xc9a35a, { metalness: 0.2, bevel: 0.12 });
+    this.box(group, entity, "front-plate", [1.34, 0.32, 0.82], [0, 0.84, 0.92], 0xb88e48, { metalness: 0.2, bevel: 0.14 });
+    for (const x of [-0.44, 0.44]) this.box(group, entity, "front-plate", [0.28, 0.16, 0.08], [x, 0.78, 1.34], 0xffe2a8, lamp);
+    this.box(group, entity, "hull", [1.3, 0.14, 0.92], [0, 0.88, -0.78], 0x6a5a3a, { bevel: 0.2 }); // the riders' bench
+    this.box(group, entity, "hull", [1.3, 0.34, 0.1], [0, 1.1, -1.18], 0x6a5a3a, { bevel: 0.2 }); // seat back
+    for (const side of [-1, 1]) {
+      this.cylinder(group, entity, "turret", 0.04, 0.95, [side * 0.62, 1.24, 0.1], 0x2a2f34, [0, 0, 0], { metalness: 0.4 });
+      this.cylinder(group, entity, "turret", 0.04, 0.95, [side * 0.62, 1.36, -1.0], 0x2a2f34, [0, 0, 0], { metalness: 0.4 });
+    }
+    this.cylinder(group, entity, "turret", 0.04, 1.2, [0, 1.72, 0.1], 0x2a2f34, [0, 0, Math.PI / 2], { metalness: 0.4 });
+    this.cylinder(group, entity, "turret", 0.04, 1.1, [0, 1.84, -1.0], 0x2a2f34, [0, 0, Math.PI / 2], { metalness: 0.4 });
+    for (const side of [-1, 1]) for (const z of [-0.8, 0.8]) {
+      this.cylinder(group, entity, side < 0 ? "left-tread" : "right-tread", 0.4, 0.3, [side * 0.86, 0.4, z], 0x1d2124, [0, 0, Math.PI / 2], { metalness: 0.1 });
+      this.cylinder(group, entity, side < 0 ? "left-tread" : "right-tread", 0.16, 0.32, [side * 0.86, 0.4, z], 0x9aa0a8, [0, 0, Math.PI / 2], { accent: true, metalness: 0.4 });
+    }
+    this.box(group, entity, "turret", [0.34, 0.3, 0.34], [0, 1.12, -0.56], 0x2b3036, { metalness: 0.3 });
+    this.box(group, entity, "cannon", [0.12, 0.12, 1.0], [0, 1.4, 0.0], 0x8e9c98, { metalness: 0.4 });
+    this.box(group, entity, "cannon", [0.2, 0.2, 0.18], [0, 1.4, 0.56], 0x1d2226, { metalness: 0.5 });
+    this.box(group, entity, "cannon", [0.22, 0.2, 0.3], [0.3, 1.24, -0.4], 0x5a5a3a, { accent: true });
+    this.cylinder(group, entity, "hull", 0.025, 1.4, [0.7, 1.6, -1.1], 0xdfeaf2, [0, 0, 0], { accent: true });
+    this.box(group, entity, "hull", [0.3, 0.2, 0.04], [0.86, 2.2, -1.1], glow, { accent: true, emissive: glow, emissiveIntensity: 0.4 });
+    this.factionVehicleDress(group, entity);
+  }
+
+  // HORNET: a light tank. A low wedge hull with a steep glacis, a small flat turret set far back and a LONG thin gun with a
+  // muzzle brake: all length and no height next to the Tank's brick.
+  private buildHornet(group: THREE.Group, entity: CombatEntity): void {
+    const glow = entity.team === "enemy" ? TEAMS.enemyAccent : (entity.accent ?? this.playerAccent);
+    const lamp = { accent: true, emissive: glow, emissiveIntensity: 0.4, bevel: 0.3 } as const;
+    this.box(group, entity, "hull", [1.8, 0.46, 2.1], [0, 0.56, -0.1], 0x7fa3c9, { metalness: 0.2, bevel: 0.12 });
+    this.box(group, entity, "front-plate", [1.7, 0.46, 0.7], [0, 0.62, 1.05], 0xa6bdd4, { metalness: 0.2, rotation: [-0.55, 0, 0], bevel: 0.1 });
+    for (const x of [-0.5, 0.5]) this.box(group, entity, "front-plate", [0.32, 0.12, 0.08], [x, 0.74, 1.4], 0xfff4ca, lamp);
+    for (const side of [-1, 1]) {
+      this.box(group, entity, side < 0 ? "left-tread" : "right-tread", [0.3, 0.44, 2.2], [side * 1.04, 0.3, -0.05], 0x22282a, { bevel: 0.15 });
+      for (const z of [-0.7, 0, 0.7]) this.cylinder(group, entity, side < 0 ? "left-tread" : "right-tread", 0.24, 0.14, [side * 1.1, 0.3, z], 0x0d1112, [0, 0, Math.PI / 2]);
+      this.box(group, entity, side < 0 ? "left-tread" : "right-tread", [0.1, 0.3, 1.9], [side * 0.9, 0.58, -0.05], 0x2a3236, { metalness: 0.24 });
+    }
+    this.box(group, entity, "turret", [1.0, 0.3, 0.96], [0, 0.98, -0.34], 0x5f86ad, { metalness: 0.22, bevel: 0.2 });
+    this.box(group, entity, "turret", [0.5, 0.24, 0.5], [-0.18, 1.2, -0.4], 0x4a6f94, { bevel: 0.2 });
+    this.box(group, entity, "cannon", [0.12, 0.12, 1.7], [0.1, 1.02, 0.7], 0x8e9c98, { metalness: 0.4 });
+    this.box(group, entity, "cannon", [0.22, 0.18, 0.2], [0.1, 1.02, 1.55], 0x1d2226, { metalness: 0.5 });
+    this.box(group, entity, "turret", [0.06, 0.1, 0.9], [-0.46, 1.1, -0.3], glow, { accent: true, emissive: glow, emissiveIntensity: 0.3, bevel: 0.3 });
+    this.box(group, entity, "hull", [0.34, 0.2, 0.2], [0, 0.62, -1.16], 0x151b1d, { emissive: 0xff7d26, emissiveIntensity: 0.18 });
+    this.cylinder(group, entity, "turret", 0.02, 1.0, [0.5, 1.6, -0.8], 0xdfeaf2, [0, 0, 0], { accent: true });
+    this.factionVehicleDress(group, entity);
+  }
+
+  // SENTRY: a squat tripod gun with a lit sensor eye: small, obviously temporary.
+  private buildSentry(group: THREE.Group, entity: CombatEntity, glow: number): void {
+    for (const [x, z] of [[-0.3, 0.2], [0.3, 0.2], [0, -0.32]] as const) this.box(group, entity, "mount", [0.06, 0.56, 0.06], [x, 0.3, z], 0x2a2f34, { rotation: [z < 0 ? -0.4 : 0.3, 0, x * 0.7], metalness: 0.4 });
+    this.box(group, entity, "mount", [0.5, 0.1, 0.5], [0, 0.06, 0], 0x1d2226, { metalness: 0.3 });
+    this.box(group, entity, "gun", [0.3, 0.26, 0.6], [0, 0.64, 0.05], 0x3a4650, { metalness: 0.4, bevel: 0.2 });
+    this.cylinder(group, entity, "gun", 0.045, 0.6, [0, 0.66, 0.5], 0x1d2226, [Math.PI / 2, 0, 0], { metalness: 0.5 });
+    this.box(group, entity, "gun", [0.1, 0.08, 0.08], [0, 0.84, 0.0], 0xdaf7ff, { accent: true, emissive: glow, emissiveIntensity: 0.6 }).userData.blink = 0.008;
+    this.box(group, entity, "gun", [0.2, 0.16, 0.2], [0.24, 0.52, -0.1], 0x5a5a3a, { accent: true });
+  }
+
   private buildMount(group: THREE.Group, entity: CombatEntity): void {
     // The ring: ten sandbag blocks round the rim, open at the back (+z is the crew's side).
     for (let i = 0; i < 10; i += 1) {
@@ -3244,6 +3412,21 @@ export class WorldRenderer {
       this.cylinder(group, entity, "gun", 0.05, 0.7, [0, 0.8, 0.78], 0x1d2226, [Math.PI / 2, 0, 0], { metalness: 0.5 });
       this.box(group, entity, "gun", [0.7, 0.5, 0.06], [0, 0.85, 0.5], 0x59616a, { metalness: 0.3 });
       this.box(group, entity, "gun", [0.26, 0.2, 0.3], [0.34, 0.56, -0.05], 0x5a5a3a, { accent: true });
+    } else if (entity.kind === "rocketpost") {
+      // Rocket post: a fat launch tube on a pivot with a red-tipped rocket in the muzzle and a rack of spares.
+      this.box(group, entity, "gun", [0.5, 0.14, 0.5], [0, 0.14, 0], 0x2a2f34, { metalness: 0.4 });
+      this.cylinder(group, entity, "gun", 0.16, 1.6, [0, 0.82, 0.36], 0x4a4a32, [Math.PI / 2 - 0.25, 0, 0], { metalness: 0.3 });
+      this.cylinder(group, entity, "gun", 0.24, 0.2, [0, 0.54, -0.42], 0x2b2b22, [Math.PI / 2 - 0.25, 0, 0], { metalness: 0.3, radiusBottom: 0.3 });
+      this.cylinder(group, entity, "gun", 0.1, 0.3, [0, 1.12, 1.16], 0xd04a2a, [Math.PI / 2 - 0.25, 0, 0], { accent: true, radiusBottom: 0.05, emissive: 0xff5a2a, emissiveIntensity: 0.25 });
+      for (let i = 0; i < 3; i += 1) this.cylinder(group, entity, "gun", 0.09, 0.6, [0.62, 0.3, -0.1 - i * 0.22], 0x6a6a4a, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.3 });
+    } else if (entity.kind === "flamepost") {
+      // Flame post: twin fuel drums, a hose and a squat nozzle with a pilot flame.
+      this.box(group, entity, "gun", [0.5, 0.14, 0.5], [0, 0.14, 0], 0x2a2f34, { metalness: 0.4 });
+      for (const x of [-0.3, 0.3]) this.cylinder(group, entity, "gun", 0.22, 0.7, [x, 0.5, -0.32], 0xd84a14, [0, 0, 0], { accent: true, emissive: 0xff5a1a, emissiveIntensity: 0.25, metalness: 0.3 });
+      this.cylinder(group, entity, "gun", 0.1, 1.0, [0, 0.62, 0.4], 0x3a3230, [Math.PI / 2, 0, 0], { metalness: 0.4 });
+      this.cylinder(group, entity, "gun", 0.14, 0.2, [0, 0.62, 0.94], 0x1d1a18, [Math.PI / 2, 0, 0], { metalness: 0.4, radiusBottom: 0.09 });
+      this.sphere(group, entity, "gun", 0.07, [0, 0.62, 1.08], 0xffb02e, { accent: true, emissive: 0xff6b1a, emissiveIntensity: 0.5 });
+      this.box(group, entity, "gun", [0.1, 0.1, 0.9], [0, 0.82, 0.1], 0x2a2422, { accent: true });
     } else {
       // Mortar: baseplate, an angled tube and a shell stack at the crew's side.
       this.box(group, entity, "gun", [0.7, 0.1, 0.7], [0, 0.12, 0], 0x2a2f34, { metalness: 0.4 });
@@ -3284,6 +3467,7 @@ export class WorldRenderer {
       return;
     }
     if (isMountKind(entity.kind)) { this.buildMount(group, entity); return; }
+    if (entity.kind === "sentry") { this.buildSentry(group, entity, glow); return; }
     if (entity.kind === "bunker") { this.buildBunker(group, entity); return; }
     if (entity.kind === "sensor") { this.buildSensorMast(group, entity, glow); return; }
     // Shared emplacement base + traversing ring, dug in behind a sandbag berm.
@@ -5311,6 +5495,21 @@ export class WorldRenderer {
       // Where the two troopers land: a small drop zone, team blue, no blast.
       this.groundAimRoot.add(makeSplashDisc(point, 0xbfe8ff, 2.2));
       this.groundAimRoot.add(makeEndpoint(point, 0xbfe8ff, 0.7 + pulse * 0.2, y));
+    } else if (kind === "emp") {
+      this.groundAimRoot.add(makeSplashDisc(point, 0x8de4ff, 4)); // EMP_RADIUS
+      this.groundAimRoot.add(makeEndpoint(point, 0x8de4ff, 0.6, y));
+    } else if (kind === "minedrop") {
+      this.groundAimRoot.add(makeSplashDisc(point, 0xffb02e, 3));
+      this.groundAimRoot.add(makeEndpoint(point, 0xffb02e, 0.6, y));
+    } else if (kind === "medevac") {
+      this.groundAimRoot.add(makeSplashDisc(point, 0x8effa6, 5));
+      this.groundAimRoot.add(makeEndpoint(point, 0x8effa6, 0.6, y));
+    } else if (kind === "sentrydrop") {
+      this.groundAimRoot.add(makeSplashDisc(point, 0xbfe9ff, 1.1));
+      this.groundAimRoot.add(makeEndpoint(point, 0xbfe9ff, 0.5 + pulse * 0.2, y));
+    } else if (kind === "railstrike") {
+      for (let i = 0; i < 3; i += 1) this.groundAimRoot.add(makeSplashDisc({ x: point.x + dir.x * (i - 1) * 1.5, z: point.z + dir.z * (i - 1) * 1.5 }, 0xc9d3dc, 1.25));
+      this.groundAimRoot.add(makeLine({ x: point.x - dir.x * 5, z: point.z - dir.z * 5 }, { x: point.x + dir.x * 5, z: point.z + dir.z * 5 }, 0xc9d3dc, 0.5 + pulse * 0.3, y));
     } else if (kind === "reconsweep") {
       // No footprint: it maps the whole enemy army. Just mark the click.
       this.groundAimRoot.add(makeEndpoint(point, 0x9dd8ff, 0.8 + pulse * 0.2, y));
@@ -6820,6 +7019,12 @@ const INFANTRY_BUILDS: Partial<Record<EntityKind, Partial<InfantryBuild>>> = {
   demo: { girth: 0.96, stature: 0.98, lean: 0.12 },
   oiler: { girth: 1.06, stature: 0.96 },
   springer: { girth: 0.8, stature: 1.1, lean: 0.06 },
+  turrettech: { girth: 1.08, stature: 0.96 },
+  sledge: { girth: 1.3, stature: 1.12, lean: 0.2 },
+  lancer: { girth: 0.84, stature: 1.1, lean: 0.08 },
+  bounty: { girth: 0.82, stature: 1.1, lean: 0.14 },
+  ironclad: { girth: 1.42, stature: 1.0 },
+  trencher: { girth: 1.1, stature: 0.94, lean: 0.08 },
 };
 
 const DEFAULT_BUILD: InfantryBuild = { girth: 1, stature: 1, lean: 0 };
@@ -6887,7 +7092,8 @@ export function weaponFamily(kind: EntityKind): WeaponFamily {
   if (kind === "grenadier" || kind === "mortar") return "launcher";
   if (kind === "flamer") return "flamer";
   if (kind === "sapper") return "shotgun";
-  if (kind === "medic" || kind === "droneop" || kind === "builder" || kind === "demo" || kind === "oiler" || kind === "springer") return "pistol";
+  if (kind === "medic" || kind === "droneop" || kind === "builder" || kind === "demo" || kind === "oiler" || kind === "springer" || kind === "turrettech" || kind === "trencher" || kind === "sledge") return "pistol";
+  if (kind === "bounty") return "marksman";
   if (kind === "bazooka") return "launcher";
   if (kind === "tank" || kind === "artillery" || kind === "exturret") return "cannon";
   return "rifle";
@@ -6900,7 +7106,9 @@ export function weaponFamily(kind: EntityKind): WeaponFamily {
  * mortar's smoke round fired from a motionless tube that way).
  */
 export function attackFamilyForOrder(kind: EntityKind, orderKind: OrderKind): WeaponFamily | undefined {
-  if (orderKind === "melee") return "melee";
+  if (orderKind === "melee" || orderKind === "slam") return "melee";
+  // A Trencher digging in a squad: the tool comes down and the body leans in.
+  if (orderKind === "dig") return isInfantryKind(kind) ? "aid" : undefined;
   // A medic or engineer treating: the tool comes up toward the patient and the body leans in (no round, no recoil).
   if (orderKind === "treat") return isInfantryKind(kind) ? "aid" : undefined;
   if (orderKind === "shoot" || orderKind === "smoke") return weaponFamily(kind);
@@ -7096,6 +7304,12 @@ function infantryPalette(kind: string): { body: number; trim: number; pack: numb
     case "demo": return { body: 0x8a2f2a, trim: 0x3b2c2c, pack: 0x5a1f1c };
     case "oiler": return { body: 0x3a3f4a, trim: 0x25272e, pack: 0x1c1c22 };
     case "springer": return { body: 0xe0c030, trim: 0x4a4528, pack: 0x7a6a1c };
+    case "turrettech": return { body: 0x4aa38c, trim: 0x2f3f3c, pack: 0x2a4a44 };
+    case "sledge": return { body: 0x9a3f78, trim: 0x3d2a38, pack: 0x4a2440 };
+    case "lancer": return { body: 0x2fb7c9, trim: 0x2a3a40, pack: 0x1f4a52 };
+    case "bounty": return { body: 0x9a8656, trim: 0x3a3226, pack: 0x4e4128 };
+    case "ironclad": return { body: 0x5f6b7d, trim: 0x2c333d, pack: 0x3a4250 };
+    case "trencher": return { body: 0x8a6a42, trim: 0x3d3224, pack: 0x5a4630 };
     default: return { body: 0x6c7052, trim: 0x35424a, pack: 0x3a4438 };
   }
 }

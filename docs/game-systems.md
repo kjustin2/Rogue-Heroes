@@ -162,6 +162,26 @@ How the factions, the three AI brains and Local 2 Players work, with the measure
   Syndicate hard-hitting and brittle (raider +1 grenade, -8% HP; striker / sapper / flamer +10% damage; -8% HP on the glass), Bastion
   tough, slow and long-ranged (guardsman +12% HP, -8% speed; mortar and artillery +10% range; tank +12% HP). Multipliers are held to
   0.88-1.2 by `factionMods.test.ts`; the Deploy card names the faction's trait for each unit.
+- **Batch 3, content (2026-10-03).** Eight new troop types: the **Runabout** (light car: 13m a move, four riders and a gunner seat, its MG
+  fires only with a gunner aboard; `carrierCapacity`) and the **Turret Tech** (two **sentries** a sortie: small auto-turrets that shoot the nearest
+  foe by themselves each turn and pack up after 4) are shared by every faction; each faction owns two more: Vanguard the **Hornet** (light
+  tank, no ram) and the **Ricochet Gunner** (a hit glances on to two more foes within 3.2m, a warm bullet, never a beam); Syndicate the
+  **Sledge** (Slam: every foe within 3m is hurt and flung up to 8m, can ring out) and the **Bounty Hunter** ($50 a kill); Bastion the
+  **Ironclad** (tower shield: bullets from the front 150 degrees do 40%, blasts go round) and the **Trencher** (Dig: every trooper within 4m
+  digs in). **Burning** is now a status (`entity.burning`): flamers, flame posts, napalm and burning ground set INFANTRY alight for three
+  turns of 8, machines and aircraft do not burn, water or a medic puts it out. **Posts**: Rocket Posts and Flame Posts join Gun Posts as map
+  pairs (`placeFieldMounts`, one band of the board each) and as base defenses (`isMountKind`). **Strikes**: EMP Burst (vehicles and defenses lose
+  next turn), Minefield Drop, Medevac (full heal, up), Sentry Drop, Rail Strike (3 rods, 95 each). **Base options** (`BASE_UPGRADES`): Armor I/II
+  (+30% health each), the **Fortress Cannon** (a `cannon` weapon part: 120-damage shell every second turn at the dearest ground foe in 40m, costs
+  no base order), the **Watch Radar** (enemy orders revealed every turn). The bot buys armour then the cannon with an army out.
+- **The tech tree (2026-10-03)**: 29 nodes in four branch columns, each layer opening units / defenses / strikes, six exclusive pairs that
+  change what you can field (Fire Discipline vs Demolitions, Field Works vs Field Hospital) and five upgrade pairs. Recon -> Sharpshooters (Ricochet,
+  Bounty, Rail Strike), Radar Net (EMP, Watch Radar), the flak and spotter line. Assault -> Shock Troops (Jump, Rocketeer, Sledge, Ironclad, Rocket Post),
+  Ordnance -> Fire Discipline | Demolitions. Motor Pool (Runabout, Hornet, APC) -> Armor Bay (Tank, Bunker, Lance) -> Siege / Air Wing (also need
+  Recon). Support Wing -> Field Works | Field Hospital. `tech.test.ts` pins the shape (depth, exclusive pairs, deep end costs most).
+- **Achievements (2026-10-03)**: every medal has Armory `points` (shown on the card, paid once on unlock); the **Arsenal** page counts what the sim tallies
+  in `sim.stats` (slams, thrown, burned, sentries, ricochets, bounties, clashes, cannon shots, hops, deployed kinds, researched nodes, calls ...);
+  `commander.liveCheck` unlocks counted medals the moment their tally is met, mid-battle, with a corner toast (`announceMedal`, `.achieve-toast`).
 - **Round 1 of batch 3 (2026-10-03)**: a crewed post gets TWO actions a turn and its crew keeps ONE, spent only to climb out (leaving costs 1,
   not the whole turn); the crew is never a blocker or a casualty of its own post's line of fire (`crewId` exclusions in
   `firstEntityBetweenShot` / `firstEntityHitBySegment` / `firstExplosiveProximity`; the "Friendly fire risk" warning at 2.5m was the

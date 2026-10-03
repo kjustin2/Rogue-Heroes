@@ -5,6 +5,7 @@ import {
   createApc, createArtillery, createBomber, createDroneOp, createEngineer, createExTurret, createFlak,
   createBase, createFlamer, createGrenadier, createGunship, createHeavy, createInterceptor, createJumper, createMedic, createMortar,
   createBazooka, createBuilder, createDemo, createOiler, createSpringer,
+  createTurretTech, createSledge, createLancer, createBounty, createIronclad, createTrencher, createRunabout, createHornet,
   createSapper, createScout, createSniper, createSoldier, createStriker, createTank, createTransport, createTurret,
   type CombatEntity,
 } from "../game/damageModel";
@@ -31,6 +32,8 @@ const MAKERS: Record<TroopKind, Maker> = {
   artillery: createArtillery, flak: createFlak, gunship: createGunship, interceptor: createInterceptor,
   bomber: createBomber, transport: createTransport,
   bazooka: createBazooka, builder: createBuilder, demo: createDemo, oiler: createOiler, springer: createSpringer,
+  turrettech: createTurretTech, sledge: createSledge, lancer: createLancer, bounty: createBounty, ironclad: createIronclad, trencher: createTrencher,
+  runabout: createRunabout, hornet: createHornet,
 };
 
 /** How each troop's main gun is exercised. `null` = the kind has no gun, and says why. */
@@ -39,6 +42,8 @@ const GUN: Record<TroopKind, { dist?: number; air?: boolean } | { none: string }
   medic: { dist: 6 }, flamer: { dist: 5 }, sapper: { dist: 5 }, grenadier: {}, mortar: {},
   tank: {}, apc: {}, artillery: { dist: 14 }, flak: { air: true },
   gunship: { air: true }, interceptor: { air: true },
+  turrettech: {}, sledge: {}, lancer: {}, bounty: {}, ironclad: {}, trencher: {}, hornet: {},
+  runabout: { none: "its MG needs a gunner aboard (covered by the seats test)" },
   striker: { none: "melee only (its strike is covered below)" },
   bomber: { none: "bombs only (carpet covered below)" },
   transport: { none: "unarmed airlift" },
@@ -344,9 +349,9 @@ describe("every non-gun attack has an animation", () => {
         .queuedSupport.push({ kind: power.kind, point: { x: 2, z: 0 }, dir: { x: 1, z: 0 } });
       const trace = resolve(sim, [sim.entity("t")!]);
       const delivery = trace.effects.has("jet") || trace.effects.has("beam") || trace.rounds.length > 0;
-      const seen = delivery || trace.effects.has("blast") || trace.effects.has("ping");
+      const seen = delivery || trace.effects.has("blast") || trace.effects.has("ping") || trace.effects.has("land");
       expect(seen, `${power.kind}: nothing on screen (${[...trace.effects].join(",")})`).toBe(true);
-      if (["airstrike", "cluster", "laser", "napalm", "barrage"].includes(power.kind)) {
+      if (["airstrike", "cluster", "laser", "napalm", "barrage", "railstrike"].includes(power.kind)) {
         // The barrage is off-map guns: its shells arrive, nothing flies over.
         if (power.kind !== "barrage") expect(delivery, `${power.kind}: nothing flies in (${[...trace.effects].join(",")})`).toBe(true);
         expect(trace.effects.has("blast"), `${power.kind}: nothing lands`).toBe(true);

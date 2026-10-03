@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { Commander, MEDALS, MEDAL_PAGES } from "./commander";
 import { FACTIONS } from "./game/factions";
+import { SUPPORT_POWERS, TROOP_KINDS } from "./game/units";
 import { MAPS } from "./game/maps";
 import { TECH_TREE } from "./game/tech";
 import { PLAYABLE_MODES } from "./game/modes";
@@ -119,7 +120,16 @@ describe("achievement pages (2026-10-02)", () => {
       });
     }
     for (let i = 0; i < 10; i += 1) for (const node of TECH_TREE) c.recordResearch(node.id);
-    c.recordBattle({ victory: true, turns: 3, losses: 0, killsByKind: {}, toppleHappened: false, difficulty: "hard", baseHealth: 0.05, arms: { infantry: true, vehicle: true, air: true } });
+    // The Arsenal page counts what the sim tallies; give it a long career of everything.
+    const counters: Record<string, number> = {
+      slams: 1000, thrown: 1000, ringouts: 10, burned: 1000, sentries: 100, ricochets: 1000, bountyPaid: 10000, clashes: 100, cannon: 100, dug: 100,
+      fullcar: 1, hops: 1000, empHits: 100, supportCalls: 1000, "upgrade:armor2": 1, "upgrade:cannon": 1, "upgrade:radar": 1,
+      "killer:sledge": 100, "killer:bounty": 100, "killer:flamer": 100, "killer:rocketpost": 100,
+    };
+    for (const kind of TROOP_KINDS) counters[`deploy:${kind}`] = 1;
+    for (const power of SUPPORT_POWERS) counters[`support:${power.kind}`] = 30;
+    for (const node of TECH_TREE) counters[`research:${node.id}`] = 1;
+    c.recordBattle({ victory: true, turns: 3, losses: 0, killsByKind: {}, toppleHappened: false, difficulty: "hard", baseHealth: 0.05, arms: { infantry: true, vehicle: true, air: true }, counters });
     const missing = ids.filter((id) => !c.stats.medals.includes(id));
     expect(missing).toEqual([]);
   });
@@ -134,5 +144,28 @@ describe("achievement pages (2026-10-02)", () => {
     expect(c.stats.bestStreak).toBe(4);
     expect(c.stats.winStreak).toBe(1);
     expect(c.stats.medals).toContain("streak3");
+  });
+});
+
+describe("achievement points and live unlocks (2026-10-03)", () => {
+  it("every medal pays points, bigger goals pay more, and the Arsenal page is full", () => {
+    for (const m of MEDALS) expect(m.points, m.id).toBeGreaterThan(0);
+    const find = (id: string) => MEDALS.find((m) => m.id === id)!;
+    expect(find("legend").points).toBeGreaterThan(find("warlord").points);
+    expect(find("kills2500").points).toBeGreaterThan(find("kills25").points);
+    expect(MEDALS.length).toBeGreaterThanOrEqual(80);
+    expect(MEDALS.filter((m) => m.page === "Arsenal").length).toBeGreaterThanOrEqual(30);
+  });
+
+  it("a medal unlocks the moment its tally is met, mid-battle, and is not paid twice at the end", () => {
+    const c = new Commander();
+    c.reset();
+    expect(c.liveCheck({ slams: 9 })).toHaveLength(0);
+    const fresh = c.liveCheck({ slams: 10 });
+    expect(fresh.map((m) => m.id)).toContain("slam10");
+    expect(c.liveCheck({ slams: 10 }), "once only").toHaveLength(0);
+    const end = c.recordBattle({ victory: true, turns: 9, losses: 1, killsByKind: {}, toppleHappened: false, counters: { slams: 10 } });
+    expect(end.map((m) => m.id), "the end of the battle does not announce it again").not.toContain("slam10");
+    expect(c.stats.counters.slams).toBe(10);
   });
 });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { TECH_TREE } from "./tech";
 import { dist } from "../core/math";
 import { applyDamage, createBase, createBomber, createCover, createFlak, createFlamer, createGrenadier, createGunship, createHeavy, createInterceptor, createMedic, createSapper, createScout, createSniper, createSoldier, createStriker, createTank, createTransport, createWall } from "./damageModel";
 import {
@@ -1540,7 +1541,7 @@ describe("defenses, difficulty, and base upgrades", () => {
           return out;
         };
         for (const unlocked of [false, true]) {
-          base.unlockedTech = unlocked ? ["recon", "assault", "support", "ordnance", "armor", "siege", "airwing"] : [];
+          base.unlockedTech = unlocked ? TECH_TREE.map((n) => n.id) : [];
           for (const kind of sim.factionOf("player").defenses) {
             fresh();
             const locked = Boolean(defenseSpec(kind).tech) && !unlocked;

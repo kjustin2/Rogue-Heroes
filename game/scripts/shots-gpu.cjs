@@ -552,6 +552,69 @@ app.whenReady().then(async () => {
         await js(`window.__rht.setTimeScale(1)`);
         continue;
       }
+      if (s === "newunits") {
+        // The eight newest troop types, each faction's own four, on the line: both teams, close, one frame per faction.
+        for (const f of ["vanguard", "syndicate", "bastion"]) {
+          const kinds = { vanguard: ["runabout", "turrettech", "hornet", "lancer"], syndicate: ["runabout", "turrettech", "sledge", "bounty"], bastion: ["runabout", "turrettech", "ironclad", "trencher"] }[f];
+          await js(`window.__rht.startBattle("dustbowl", "destroy", "normal", ${JSON.stringify(f)}, ${JSON.stringify(f)})`);
+          await sleep(1500);
+          await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("enemy", 0); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = "hidden"));
+            ${JSON.stringify(kinds)}.forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -6 + i * 3.4, z: 2 }); u.yaw = 0.4; const e = sim.debugSpawn(k, "enemy", { x: -6 + i * 3.4, z: -3.5 }); e.yaw = Math.PI + 0.4; for (const p of e.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0; e.status.canShoot = false; e.status.canMove = false; });
+            r.setView({ x: 0, z: -0.8, zoom: 0.3, pitch: 0.55, yaw: 0.25 }); })()`);
+          await sleep(1200);
+          await shot("newunits-" + f);
+        }
+        await js(`document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = ""))`);
+        continue;
+      }
+      if (s === "techui") {
+        // The rebuilt tech tree on each faction's board, nothing researched, and mid-game.
+        for (const f of ["vanguard", "syndicate", "bastion"]) {
+          await js(`window.__rht.startBattle("dustbowl", "destroy", "normal", ${JSON.stringify(f)}, "vanguard")`);
+          await sleep(1500);
+          const open = async (tab) => { await js(`(() => { const sim = window.__rht.sim; sim.economy.set("player", 9000); const base = sim.entities.find((e) => e.team === "player" && e.kind === "base"); sim.select(base.id); })()`); await sleep(400); await js(`(() => { const b = document.querySelector('[data-base-tab="${tab}"]'); if (b) b.click(); })()`); await sleep(500); };
+          await open("tech");
+          await shot("techui-" + f);
+          if (f === "syndicate") {
+            await js(`(() => { const base = window.__rht.sim.entities.find((e) => e.team === "player" && e.kind === "base"); base.unlockedTech = ["recon", "assault", "ordnance", "incendiary", "shock", "motorpool"]; })()`);
+            await open("tech"); await shot("techui-syndicate-mid");
+            await open("upgrade"); await shot("baseupgrades-syndicate");
+            await open("support"); await shot("supports-syndicate");
+            await open("defenses"); await shot("defenses-syndicate");
+            await open("deploy"); await shot("deploy-syndicate");
+          }
+        }
+        continue;
+      }
+      if (s === "posts") {
+        // The map's field posts: gun, rocket and flame, close.
+        await js(`window.__rht.startBattle("karak", "destroy", "normal")`);
+        await sleep(1500);
+        for (const kind of ["gunpost", "rocketpost", "flamepost"]) {
+          await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = "hidden")); const p = sim.entities.find((e) => e.kind === ${JSON.stringify(kind)}); r.setView({ x: p.position.x, z: p.position.z, zoom: 0.2, pitch: 0.55, yaw: 0.4 }); })()`);
+          await sleep(900);
+          await shot("post-" + kind);
+        }
+        await js(`document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = ""))`);
+        continue;
+      }
+      if (s === "slamfilm") {
+        // The hammer: a Sledge amid three foes, slow motion, the swing and the throw.
+        await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(1500);
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("enemy", 0); const s = sim.debugSpawn("sledge", "player", { x: -6, z: 0 }); for (const [x, z] of [[-4.6, 0.4], [-6.4, 1.8], [-7.4, -1.2]]) { const e = sim.debugSpawn("soldier", "enemy", { x, z }); for (const p of e.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0; e.status.canShoot = false; e.status.canMove = false; } sim.debugSelect(s.id); sim.queueSlam(); r.setView({ x: -6, z: 0.4, zoom: 0.24, pitch: 0.55, yaw: 0.5 }); r.deselect(); sim.endTurn(); r.setTimeScale(0.4); })()`);
+        for (let i = 0; i < 12; i += 1) { await sleep(i === 0 ? 300 : 160); await shot("slam-" + i); }
+        await js(`window.__rht.setTimeScale(1)`);
+        continue;
+      }
+      if (s === "toast") {
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(1500);
+        await js(`window.__rht.toastMedal("slam10")`);
+        await sleep(800);
+        await shot("achieve-toast");
+        continue;
+      }
       if (s === "projgallery") {
         // One shooter at a time, tight camera on the round in flight: three frames each. Rifle, carbine, pistol, MG, marksman, rocket, scattergun, grenade.
         const kinds = ["soldier", "scout", "striker", "heavy", "sniper", "bazooka", "sapper", "grenadier"];

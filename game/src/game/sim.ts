@@ -37,6 +37,17 @@ import {
   createGunPost,
   createMortarPit,
   createBazooka,
+  createTurretTech,
+  createSledge,
+  createLancer,
+  createBounty,
+  createIronclad,
+  createTrencher,
+  createRunabout,
+  createHornet,
+  createRocketPost,
+  createFlamePost,
+  createSentry,
   createBuilder,
   createDemo,
   createOiler,
@@ -76,13 +87,13 @@ import {
 } from "./damageModel";
 import { createScenario } from "./scenario";
 import { DEFAULT_TERRAIN, TERRAIN_STEP, ARENA_BOUNDS, clampToArena, discSamples, nearestDryPoint, onTerrainEdge, setActiveTerrain, terrainHeightAt, pointInWater } from "./terrain";
-import { TROOP_CATALOG, TROOP_KINDS, troopSpec, defenseSpec, supportPowerSpec, unitStats, placeSpecFor, type PlaceSpec, type TroopKind, type DefenseKind, type SupportPowerKind, type ProjectileKind } from "./units";
+import { TROOP_CATALOG, TROOP_KINDS, troopSpec, defenseSpec, supportPowerSpec, baseUpgradeSpec, unitStats, placeSpecFor, type BaseUpgradeId, type PlaceSpec, type TroopKind, type DefenseKind, type SupportPowerKind, type ProjectileKind } from "./units";
 import { TECH_TREE, techNode, aggregateTechEffect, type TechNode, type TechEffect } from "./tech";
 import { modeDef, type ModeId } from "./modes";
 import { DEFAULT_FACTION, factionDef, factionTroopLabel, type FactionDef, type FactionId } from "./factions";
 import { MAPS, mapDef, mapCenter, flagPositions, type MapDef, type MapEventConfig, type MapEventKind } from "./maps";
 
-export { TROOP_CATALOG, troopSpec, DEFENSE_CATALOG, defenseSpec, SUPPORT_POWERS, supportPowerSpec, UNIT_STATS, unitStats, placeSpecFor, PLACEABLES, type PlaceSpec, type PlaceKind, type TroopKind, type TroopSpec, type DefenseKind, type DefenseSpec, type SupportPowerKind, type SupportPowerSpec, type ProjectileKind, type UnitStats } from "./units";
+export { TROOP_CATALOG, troopSpec, DEFENSE_CATALOG, defenseSpec, SUPPORT_POWERS, supportPowerSpec, BASE_UPGRADES, baseUpgradeSpec, type BaseUpgradeId, UNIT_STATS, unitStats, placeSpecFor, PLACEABLES, type PlaceSpec, type PlaceKind, type TroopKind, type TroopSpec, type DefenseKind, type DefenseSpec, type SupportPowerKind, type SupportPowerSpec, type ProjectileKind, type UnitStats } from "./units";
 export { TECH_TREE, techNode, troopsUnlockedBy, type TechNode } from "./tech";
 export { MODES, PLAYABLE_MODES, modeDef, type ModeId, type ModeDef } from "./modes";
 export { FACTIONS, factionDef, DEFAULT_FACTION, type FactionId, type FactionDef } from "./factions";
@@ -93,11 +104,11 @@ export type Phase = "command" | "resolve" | "victory" | "defeat";
 // (measured from the click to the edge of the unit's footprint).
 export const DEPLOY_SNAP = 1.5;
 
-export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "push" | "mine" | "interact" | "inspect" | "build" | "support" | "load" | "unload" | "smoke" | "recon" | "deploy" | "treat" | "place" | "man" | "dismount" | "leap";
-export type OrderKind = "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "load" | "unload" | "smoke" | "recon" | "deploy" | "treat" | "man";
+export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "push" | "mine" | "interact" | "inspect" | "build" | "support" | "load" | "unload" | "smoke" | "recon" | "deploy" | "treat" | "place" | "man" | "dismount" | "leap" | "slam" | "dig";
+export type OrderKind = "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "load" | "unload" | "smoke" | "recon" | "deploy" | "treat" | "man" | "slam" | "dig";
 
 // Orders that carry a unit off its spot this resolve -- anything else leaves it dug in.
-const MOVING_ORDERS: ReadonlySet<OrderKind> = new Set<OrderKind>(["move", "ram", "melee", "load", "unload"]);
+const MOVING_ORDERS: ReadonlySet<OrderKind> = new Set<OrderKind>(["move", "ram", "melee", "load", "unload", "slam"]);
 const TROOP_KIND_SET: ReadonlySet<string> = new Set(TROOP_KINDS);
 const isTroopKind = (kind: EntityKind): boolean => TROOP_KIND_SET.has(kind);
 
@@ -165,6 +176,17 @@ export const DEPOT_INCOME = 25;
 // must get to grab it, and the min/spread of cash per cache.
 const PICKUP_REACH = 0.95;
 const TRANSPORT_CAPACITY = 2; // how many ground units an air transport (or an APC) can carry at once
+/** Seats per carrier: the Runabout seats four riders and a gunner. */
+const carrierCapacity = (kind: EntityKind): number => (kind === "runabout" ? 5 : TRANSPORT_CAPACITY);
+const SLAM_RADIUS = 3.0; // the Sledge's hammer circle
+const SLAM_DAMAGE = 30;
+const SLAM_THROW = 8;
+const DIG_RADIUS = 4; // the Trencher digs in everyone this close
+const BURN_STATUS_TURNS = 3; // a trooper set alight burns this many turns...
+const BURN_STATUS_DAMAGE = 8; // ...for this much a turn
+const CHAIN_RADIUS = 3.2; // the arc rifle jumps to foes this close to the one it hit
+const BOUNTY_PAY = 50; // a Bounty Hunter's kill pays this
+const SENTRY_COST_TURNS = 4;
 // APC carry: the ground lift needs the passenger beside the hull, and unloads beside it too.
 const APC_LOAD_REACH = 1.2;
 const APC_UNLOAD_REACH = 3;
@@ -190,7 +212,7 @@ const SLAM_LANDING_DAMAGE = 15;
 // Metres a piercing round carries on past a body it went through.
 const PIERCE_CARRY = 7;
 
-type StrikeKind = "barrage" | "collapse" | "airstrike" | "cluster" | "laser" | "lightning" | "slag" | "smokedrop" | "resupply" | "napalm" | "paradrop";
+type StrikeKind = "barrage" | "collapse" | "airstrike" | "cluster" | "laser" | "lightning" | "slag" | "smokedrop" | "resupply" | "napalm" | "paradrop" | "emp" | "minedrop" | "medevac" | "sentrydrop" | "railstrike";
 const LIGHTNING_RADIUS = 2.0;
 
 // Gas clouds (see runGasTick / igniteGasAt).
@@ -569,6 +591,12 @@ export class TacticalSim {
   // Battle bookkeeping for the Achievements medals: kills per player unit, and how
   // many player field units died this battle.
   readonly killsBy = new Map<string, number>();
+  /** The player's battle tallies for the live Achievements (deployed kinds, throws, slams, sentries ...). Not saved: a resumed battle counts from the resume. */
+  readonly stats: Record<string, number> = {};
+  private tally(team: Team, key: string, n = 1): void {
+    if (team !== "player" || this.hotseat || n <= 0) return;
+    this.stats[key] = (this.stats[key] ?? 0) + n;
+  }
   playerLosses = 0;
   private readonly countedDead = new Set<string>();
   readonly log: string[] = [];
@@ -764,6 +792,7 @@ export class TacticalSim {
     this.placePickups();
     this.placeFieldMounts();
     this.killsBy.clear();
+    for (const key of Object.keys(this.stats)) delete this.stats[key];
     this.playerLosses = 0;
     this.countedDead.clear();
     this.log.splice(0);
@@ -988,6 +1017,7 @@ export class TacticalSim {
     if (!preview.ok) return this.reject(preview.reason ?? "Cannot jump there");
     if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
     this.addOrder({ actorId: actor.id, kind: "move", destination: preview.to, leap: true, aim: this.aim, duration: 1.6 });
+    this.tally(actor.team, "hops");
     return true;
   }
 
@@ -1183,13 +1213,13 @@ export class TacticalSim {
     if (!actor || !isCarrierKind(actor.kind)) return "Only a transport or APC can carry units";
     if (!actor.status.alive || !actor.status.canMove) return `${actor.name} can't move`;
     if (actor.commandPoints <= 0) return `${actor.name} has no action points`;
-    if ((actor.passengerIds?.length ?? 0) >= TRANSPORT_CAPACITY) return `${actor.name} is full (${TRANSPORT_CAPACITY} aboard)`;
+    if ((actor.passengerIds?.length ?? 0) >= carrierCapacity(actor.kind)) return `${actor.name} is full (${carrierCapacity(actor.kind)} aboard)`;
     if (!passenger || !passenger.status.alive) return "Pick a friendly unit to airlift";
     if (passenger.id === actor.id || passenger.team !== actor.team) return "Can only airlift your own units";
     if (passenger.flying || isBuildingKind(passenger.kind) || isDefenseKind(passenger.kind) || passenger.kind === "cover") return "That unit can't be airlifted";
     if (passenger.carriedById) return `${passenger.name} is already aboard`;
-    if (actor.kind === "apc" && (!isInfantryKind(passenger.kind) || passenger.kind === "jumper")) return "An APC only carries foot troops";
-    if (actor.kind === "apc" && dist(actor.position, passenger.position) > actor.radius + passenger.radius + APC_LOAD_REACH) return `${passenger.name} must be beside the APC to board`;
+    if (isGroundCarrier(actor.kind) && (!isInfantryKind(passenger.kind) || passenger.kind === "jumper")) return `${actor.kind === "apc" ? "An APC" : "A Runabout"} only carries foot troops`;
+    if (isGroundCarrier(actor.kind) && dist(actor.position, passenger.position) > actor.radius + passenger.radius + APC_LOAD_REACH) return `${passenger.name} must be beside the APC to board`;
     return undefined;
   }
 
@@ -1204,7 +1234,7 @@ export class TacticalSim {
     const failure = this.loadFailureReason(actor, passenger);
     if (failure) return this.reject(failure);
     if (!spendCommandPoint(actor!)) return this.reject(`${actor!.name} has no action points`);
-    this.addOrder({ actorId: actor!.id, kind: "load", targetId: passengerId, aim: "center", duration: actor!.kind === "apc" ? 1.2 : 2.6 });
+    this.addOrder({ actorId: actor!.id, kind: "load", targetId: passengerId, aim: "center", duration: isGroundCarrier(actor!.kind) ? 1.2 : 2.6 });
     return true;
   }
 
@@ -1214,9 +1244,9 @@ export class TacticalSim {
     if (!isCarrierKind(actor.kind)) return this.reject(`${actor.name} can't carry units`);
     if (!(actor.passengerIds?.length)) return this.reject(`${actor.name} isn't carrying anyone`);
     const point = clampToArena(destination);
-    if (actor.kind === "apc" && dist(actor.position, point) > actor.radius + APC_UNLOAD_REACH) return this.reject("An APC sets its troops down beside itself — pick a spot next to it");
+    if (isGroundCarrier(actor.kind) && dist(actor.position, point) > actor.radius + APC_UNLOAD_REACH) return this.reject("A car sets its troops down beside itself — pick a spot next to it");
     if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
-    this.addOrder({ actorId: actor.id, kind: "unload", destination: point, aim: "center", duration: actor.kind === "apc" ? 1.2 : 2.4 });
+    this.addOrder({ actorId: actor.id, kind: "unload", destination: point, aim: "center", duration: isGroundCarrier(actor.kind) ? 1.2 : 2.4 });
     return true;
   }
 
@@ -1804,6 +1834,7 @@ export class TacticalSim {
     const spec = troopSpec(kind);
     spendCommandPoint(base);
     this.addMoney(base.team, -spec.cost);
+    this.tally(base.team, `deploy:${kind}`);
     const unit = this.createTroop(kind, base, at);
     this.entities.push(unit);
     this.syncEntityElevation(unit);
@@ -1870,6 +1901,68 @@ export class TacticalSim {
     const base = this.requirePlayerActor();
     if (!base) return false;
     return this.upgradeCommandFor(base);
+  }
+
+  /** Why the base cannot buy this upgrade right now (undefined when it can). */
+  baseUpgradeFailureReason(base: CombatEntity | undefined, id: BaseUpgradeId): string | undefined {
+    if (!base || base.kind !== "base") return "Select your Home Base";
+    if (!base.status.alive) return `${base.name} is disabled`;
+    const spec = baseUpgradeSpec(id);
+    if (this.baseUpgradeOwned(base, id)) return `${spec.label} is already built`;
+    if (spec.requires && !this.baseUpgradeOwned(base, spec.requires)) return `Needs ${baseUpgradeSpec(spec.requires).label} first`;
+    if (!isTechUnlocked(base, spec.tech)) return `Research ${techNode(spec.tech)?.name ?? spec.tech} to build ${spec.label}`;
+    if (this.money(base.team) < spec.cost) return `Not enough money for ${spec.label} ($${spec.cost})`;
+    if (base.commandPoints <= 0) return `${base.name} has no action points`;
+    return undefined;
+  }
+
+  baseUpgradeOwned(base: CombatEntity, id: BaseUpgradeId): boolean {
+    if (id === "armor1") return (base.armorLevel ?? 0) >= 1;
+    if (id === "armor2") return (base.armorLevel ?? 0) >= 2;
+    if (id === "cannon") return base.parts.some((p) => p.id === "cannon");
+    return Boolean(base.radarOnline);
+  }
+
+  /** Player API: buy a Home Base upgrade (1 base order + its cost). */
+  upgradeBaseWith(id: BaseUpgradeId): boolean {
+    const base = this.requirePlayerActor();
+    if (!base) return false;
+    return this.upgradeBaseFor(base, id);
+  }
+
+  upgradeBaseFor(base: CombatEntity, id: BaseUpgradeId): boolean {
+    const failure = this.baseUpgradeFailureReason(base, id);
+    if (failure) return this.reject(failure);
+    const spec = baseUpgradeSpec(id);
+    spendCommandPoint(base);
+    this.addMoney(base.team, -spec.cost);
+    if (id === "armor1" || id === "armor2") {
+      base.armorLevel = (base.armorLevel ?? 0) + 1;
+      for (const part of base.parts) { part.maxHp = Math.round(part.maxHp * 1.3); part.hp = Math.round(part.hp * 1.3); }
+      recomputeStatus(base);
+    } else if (id === "cannon") {
+      base.parts.push({ id: "cannon", label: "Fortress Cannon", role: "weapon", maxHp: 90, hp: 90, exposed: true });
+      base.cannonReadyTurn = this.turn + 1;
+      recomputeStatus(base);
+    } else {
+      base.radarOnline = true;
+    }
+    this.tally(base.team, `upgrade:${id}`);
+    this.pushLog(`${base.name} builds ${spec.label}`);
+    return true;
+  }
+
+  /** The Fortress Cannon fires by itself every second turn at the most valuable ground foe in reach. Costs the base no order. */
+  private queueBaseCannons(): void {
+    for (const base of this.entities) {
+      if (base.kind !== "base" || !base.status.alive || !base.status.canShoot || (base.cannonReadyTurn ?? Infinity) > this.turn) continue;
+      if (this.orders.some((o) => o.actorId === base.id && !o.done)) continue;
+      const range = projectileRange(base);
+      const foe = this.entities
+        .filter((e) => e.team !== base.team && e.team !== "neutral" && e.status.alive && !e.downed && !e.carriedById && !e.flying && e.kind !== "cover" && !isDefenseKind(e.kind) && !isBuildingKind(e.kind) && dist(e.position, base.position) <= range)
+        .sort((a, b) => troopSpec(b.kind as TroopKind).cost - troopSpec(a.kind as TroopKind).cost)[0];
+      if (foe && this.queueShootFor(base, foe, "center", undefined, true)) { base.cannonReadyTurn = this.turn + 2; this.tally(base.team, "cannon"); }
+    }
   }
 
   private upgradeCommandFor(base: CombatEntity): boolean {
@@ -1991,6 +2084,8 @@ export class TacticalSim {
     this.addMoney(base.team, -spec.cost);
     base.supportCooldowns = { ...(base.supportCooldowns ?? {}), [kind]: this.supportCooldownFor(base.team, kind) };
     this.queuedSupport.push({ kind, point: target, dir, team: base.team });
+    this.tally(base.team, `support:${kind}`);
+    this.tally(base.team, "supportCalls");
     if (base.team === "player") {
       this.pendingSupport = undefined;
       this.intent = "select";
@@ -2004,6 +2099,11 @@ export class TacticalSim {
       : kind === "paradrop" ? `${base.name} sends a paradrop — two troopers land on the next resolve`
       : kind === "napalm" ? `${base.name} orders napalm — the point burns on the next resolve`
       : kind === "barrage" ? `${base.name} calls a barrage — six shells on the next resolve`
+      : kind === "emp" ? `${base.name} charges an EMP burst — machines in the zone go dark on the next resolve`
+      : kind === "minedrop" ? `${base.name} seeds a minefield — mines drop on the next resolve`
+      : kind === "medevac" ? `${base.name} scrambles a medevac — the point is patched up on the next resolve`
+      : kind === "sentrydrop" ? `${base.name} drops a sentry — it lands on the next resolve`
+      : kind === "railstrike" ? `${base.name} lines up a rail strike — three rods on the next resolve`
       : `${base.name} calls a resupply drop — crates land on the next resolve`,
     );
     return true;
@@ -2070,6 +2170,28 @@ export class TacticalSim {
           const r = Math.sqrt(this.rng.range(0, 1)) * 4.5;
           const p = clampToArena({ x: point.x + Math.sin(angle) * r, z: point.z + Math.cos(angle) * r });
           this.pendingStrikes.push({ at: 0.9 + i * 0.32, point: p, radius: 1.6, damage: 38, kind: "barrage", team: call.team });
+        }
+      } else if (kind === "emp") {
+        const from = clampToArena({ x: point.x - dir.x * 14, z: point.z - dir.z * 14 });
+        const to = clampToArena({ x: point.x + dir.x * 14, z: point.z + dir.z * 14 });
+        this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: 0x8de4ff, duration: 1.5 });
+        this.pendingStrikes.push({ at: 1.0, point, radius: 4, damage: 0, kind: "emp", team: call.team });
+      } else if (kind === "minedrop") {
+        const from = clampToArena({ x: point.x - dir.x * 14, z: point.z - dir.z * 14 });
+        const to = clampToArena({ x: point.x + dir.x * 14, z: point.z + dir.z * 14 });
+        this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: 0xffb02e, duration: 1.5 });
+        this.pendingStrikes.push({ at: 1.0, point, radius: 3, damage: 0, kind: "minedrop", team: call.team });
+      } else if (kind === "medevac") {
+        this.pendingStrikes.push({ at: 1.0, point, radius: 5, damage: 0, kind: "medevac", team: call.team });
+      } else if (kind === "sentrydrop") {
+        this.pendingStrikes.push({ at: 1.0, point, radius: 1, damage: 0, kind: "sentrydrop", team: call.team });
+      } else if (kind === "railstrike") {
+        const from = clampToArena({ x: point.x - dir.x * 16, z: point.z - dir.z * 16 });
+        const to = clampToArena({ x: point.x + dir.x * 16, z: point.z + dir.z * 16 });
+        this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: 0xc9d3dc, duration: 1.4 });
+        for (let i = 0; i < 3; i += 1) {
+          const p = clampToArena({ x: point.x + dir.x * (i - 1) * 1.5, z: point.z + dir.z * (i - 1) * 1.5 });
+          this.pendingStrikes.push({ at: 1.0 + i * 0.18, point: p, radius: 1.25, damage: 95, kind: "railstrike", team: call.team });
         }
       } else if (kind === "resupply") {
         const from = clampToArena({ x: point.x - dir.x * 14, z: point.z - dir.z * 14 });
@@ -2214,6 +2336,7 @@ export class TacticalSim {
     spendCommandPoint(base);
     this.addMoney(base.team, -node.cost);
     base.unlockedTech = [...(base.unlockedTech ?? []), nodeId];
+    this.tally(base.team, `research:${nodeId}`);
     this.pushLog(`${base.name} researches ${node.name}`);
     return true;
   }
@@ -2355,6 +2478,8 @@ export class TacticalSim {
     } else {
       this.queueEnemyOrders();
     }
+    this.queueSentryOrders();
+    this.queueBaseCannons();
     this.revealedOrders = false; // the pulse covered exactly this one enemy command
     this.enemyIntentCache = undefined;
     // HULL DOWN. A tank with no move/ram order this resolve settles in and takes 30% less damage
@@ -2788,9 +2913,10 @@ export class TacticalSim {
     }
   }
 
-  private queueShootFor(actor: CombatEntity, target: CombatEntity, aim: AimMode, partId?: string): boolean {
+  private queueShootFor(actor: CombatEntity, target: CombatEntity, aim: AimMode, partId?: string, free = false): boolean {
     if (!actor.status.canShoot) return this.reject(`${actor.name} cannot shoot`);
     if (actor.kind === "artillery" && !actor.deployed) return this.reject(`${actor.name} must deploy before it can fire`);
+    if (actor.kind === "runabout" && !(actor.passengerIds?.length)) return this.reject(`${actor.name}'s gun needs a gunner aboard`);
     if (target.downed) return this.reject(`${target.name} is down — out of the fight unless a medic reaches them`);
     if (this.isPowerCut(actor)) return this.reject(`${actor.name} has no power — the conduit is cut`);
     // The interceptor's gun is air-to-air. Ground units CAN shoot up at flyers — that is the anti-air.
@@ -2800,7 +2926,7 @@ export class TacticalSim {
     if (partId && !requestedPart) return this.reject(`${target.name} does not have that targetable part`);
     const targetPart = requestedPart ?? preferredPart(target, aim);
     if (this.previewAttack(actor.id, target.id, targetPart.id, "weapon")?.blockedBySmoke) return this.reject(`${target.name} is hidden by smoke`);
-    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
+    if (!free && !spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
     this.addOrder({
       actorId: actor.id,
       kind: "shoot",
@@ -2857,6 +2983,49 @@ export class TacticalSim {
     if (order.kind === "defend") {
       actor.stance = order.stance ?? "crouched";
       this.defending.add(actor.id);
+      if (order.elapsed >= order.duration) order.done = true;
+      return;
+    }
+
+    if (order.kind === "slam") {
+      // THE HAMMER: at the top of the swing every foe within SLAM_RADIUS is hurt and flung (armour barely moves).
+      if (!order.fired && order.elapsed >= 0.35) {
+        order.fired = true;
+        this.effect("land", { ...actor.position }, { ...actor.position }, 0xd9cfbf, 0.7, SLAM_RADIUS);
+        this.effect("blast", { ...actor.position }, { ...actor.position }, 0xffc27a, 0.5, 1.4);
+        let hit = 0;
+        for (const e of this.entities) {
+          if (e.team === actor.team || e.team === "neutral" || !e.status.alive || e.downed || e.flying || e.carriedById || isBuildingKind(e.kind) || e.kind === "cover") continue;
+          if (dist(e.position, actor.position) > SLAM_RADIUS + e.radius) continue;
+          const part = preferredPart(e, "center");
+          const result = applyDamage(e, part.id, Math.round(SLAM_DAMAGE * this.teamDamageScale(actor) * (isInfantryKind(e.kind) ? 1 : 0.45) * (e.dugIn ?? 1)));
+          this.effect("strike", { ...actor.position }, { ...e.position }, 0xffd9a0, 0.5, e.radius + 0.4);
+          this.afterDamage(actor, e, result, "Slam");
+          this.applyKnockback(actor, e, actor.position, 150, 1, { ringOut: true, maxThrow: SLAM_THROW });
+          this.tally(actor.team, "slams");
+          hit += 1;
+        }
+        this.pushLog(hit ? `${actor.name} swings the hammer: ${hit} thrown` : `${actor.name} swings the hammer at the air`);
+      }
+      if (order.elapsed >= order.duration) order.done = true;
+      return;
+    }
+
+    if (order.kind === "dig") {
+      if (!order.fired && order.elapsed >= 0.3) {
+        order.fired = true;
+        const hold = this.factionOf(actor.team).doctrine.digIn ?? 0.78;
+        let dug = 0;
+        for (const e of this.entities) {
+          if (e.team !== actor.team || !e.status.alive || e.flying || e.carriedById || !isInfantryKind(e.kind) || dist(e.position, actor.position) > DIG_RADIUS + e.radius) continue;
+          e.dugIn = hold;
+          e.digging = true;
+          dug += 1;
+        }
+        this.effect("land", { ...actor.position }, { ...actor.position }, 0xb59a72, 0.6, DIG_RADIUS);
+        this.tally(actor.team, "dug", dug);
+        this.pushLog(`${actor.name} digs in ${dug} trooper${dug === 1 ? "" : "s"}`);
+      }
       if (order.elapsed >= order.duration) order.done = true;
       return;
     }
@@ -2943,7 +3112,19 @@ export class TacticalSim {
       actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
       this.checkMines(actor);
       this.checkPickups(actor);
-      if (dist(actor.position, order.destination) < 0.08) { order.done = true; this.bounceOffPad(actor); }
+      if (dist(actor.position, order.destination) < 0.08) {
+        order.done = true;
+        // A drop off a ledge can end flush against the face it dropped from (movement oracle, ironworks): back it off like a
+        // halt, and if there is no clear spot on the way, it never left (a trooper does not walk into a wall to finish a move).
+        if (!actor.flying && order.start) {
+          this.settleHalt(actor, order.start);
+          if (hullInRise(actor.position, actor.radius * 0.9) && !hullInRise(order.start, actor.radius * 0.9)) {
+            actor.position = { ...order.start };
+            this.syncEntityElevation(actor);
+          }
+        }
+        this.bounceOffPad(actor);
+      }
       else if (order.elapsed >= order.duration) {
         // Out of time SHORT of the stop (shoved, or the move began late): that halt point was never
         // checked, so back it off a rise like the planned stop was (an APC hull ended half inside an
@@ -3007,7 +3188,7 @@ export class TacticalSim {
     // Airlift: fly to a friendly ground unit and take it aboard.
     if (order.kind === "load") {
       const passenger = this.entity(order.targetId);
-      if (!passenger || !passenger.status.alive || passenger.carriedById || !actor.status.canMove || (actor.passengerIds?.length ?? 0) >= TRANSPORT_CAPACITY) {
+      if (!passenger || !passenger.status.alive || passenger.carriedById || !actor.status.canMove || (actor.passengerIds?.length ?? 0) >= carrierCapacity(actor.kind)) {
         order.done = true;
         return;
       }
@@ -3019,7 +3200,8 @@ export class TacticalSim {
         passenger.digging = undefined;
         passenger.position = { ...actor.position };
         this.syncEntityElevation(passenger);
-        this.pushLog(actor.kind === "apc" ? `${passenger.name} boards ${actor.name}` : `${actor.name} airlifts ${passenger.name} aboard`);
+        this.pushLog(isGroundCarrier(actor.kind) ? `${passenger.name} boards ${actor.name}` : `${actor.name} airlifts ${passenger.name} aboard`);
+        if (actor.kind === "runabout" && (actor.passengerIds?.length ?? 0) >= 5) this.tally(actor.team, "fullcar");
         order.done = true;
         return;
       }
@@ -3037,7 +3219,7 @@ export class TacticalSim {
       }
       actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
       // An APC does not drive to the point: the ramp drops where it stands, beside the hull.
-      if (actor.kind === "apc" || dist(actor.position, order.destination) <= actor.radius + 0.5 || order.elapsed >= order.duration) {
+      if (isGroundCarrier(actor.kind) || dist(actor.position, order.destination) <= actor.radius + 0.5 || order.elapsed >= order.duration) {
         this.dropPassengers(actor);
         order.done = true;
         return;
@@ -3110,6 +3292,7 @@ export class TacticalSim {
     }
 
     if (order.kind === "melee") {
+      if (!order.start) order.start = { ...actor.position };
       actor.yaw = Math.atan2(target.position.x - actor.position.x, target.position.z - actor.position.z);
       // CHARGE: a striker closes the gap first (a real move — mines apply) and the
       // swing clock only starts once the blade is in reach.
@@ -3135,7 +3318,7 @@ export class TacticalSim {
         if (order.shove) this.resolveShove(actor, target);
         else this.resolveMelee(actor, target, order.targetPartId);
       }
-      if (order.elapsed >= order.duration) order.done = true;
+      if (order.elapsed >= order.duration) { order.done = true; this.backOffRise(actor, order.start); }
       return;
     }
 
@@ -3682,6 +3865,7 @@ export class TacticalSim {
 
   private collideProjectiles(a: Projectile, b: Projectile, meet: Vec2, height: number): void {
     const nameOf = (p: Projectile): string => this.entity(p.actorId)?.name ?? "A shot";
+    if (this.entity(a.actorId)?.team === "player" || this.entity(b.actorId)?.team === "player") this.tally("player", "clashes");
     const explosive = (p: Projectile): boolean => p.kind === "grenade" || p.kind === "shell";
     const family = explosive(a) || explosive(b) ? CLASH_BLAST : a.kind === "bolt" || b.kind === "bolt" || a.sourceKind === "sniper" || b.sourceKind === "sniper" ? CLASH_BOLT : CLASH_SPARK;
     this.effect("clash", { ...meet }, { ...meet }, family, 0.7, family === CLASH_BLAST ? 1.6 : family === CLASH_BOLT ? 1.1 : 0.7, height);
@@ -3964,7 +4148,13 @@ export class TacticalSim {
     } else {
       this.effect("impact", target.position, target.position, result.destroyed ? 0xffd166 : 0xffffff, 0.42, target.radius);
     }
+    // FLAMES: a flamethrower hit sets a trooper alight (three turns of fire); machines shrug it off.
+    if (!cover && (actor.kind === "flamer" || actor.kind === "flamepost") && result.amount > 0) this.ignite(target, `${actor.name}'s flames`);
+    // RICOCHET: the round glances on to up to two more foes near the first (60% then 40% of the hit).
+    if (!cover && unitStats(actor.kind).chain && result.amount > 0) this.chainArc(actor, target, amount);
     this.afterDamage(actor, target, result);
+    // BOUNTY: a Bounty Hunter's kill pays cash.
+    if (!cover && actor.kind === "bounty" && result.killed) { this.addMoney(actor.team, BOUNTY_PAY); this.tally(actor.team, "bountyPaid", BOUNTY_PAY); this.pushLog(`${actor.name} collects a $${BOUNTY_PAY} bounty on ${target.name}`); }
     // SUPPRESSION. A machine-gun hit pins the target: one command point next turn, crouched.
     if (!cover && unitStats(actor.kind).suppresses && target.status.alive && isInfantryKind(target.kind) && result.amount > 0) {
       if ((target.suppressedUntilTurn ?? 0) <= this.turn) this.pushLog(`${target.name} is suppressed`);
@@ -3986,12 +4176,30 @@ export class TacticalSim {
     if (order) order.done = true;
   }
 
+  /** The ricochet rifle's chain: from the foe it hit to the nearest two others within CHAIN_RADIUS. */
+  private chainArc(actor: CombatEntity, first: CombatEntity, amount: number): void {
+    const shares = [0.6, 0.4];
+    const next = this.entities
+      .filter((e) => e.id !== first.id && e.team !== actor.team && e.team !== "neutral" && e.status.alive && !e.downed && !e.carriedById && e.kind !== "cover" && !isBuildingKind(e.kind) && dist(e.position, first.position) <= CHAIN_RADIUS + e.radius)
+      .sort((a, b) => dist(a.position, first.position) - dist(b.position, first.position))
+      .slice(0, 2);
+    let from = first;
+    next.forEach((e, i) => {
+      const result = applyDamage(e, preferredPart(e, "center").id, Math.max(4, Math.round(amount * shares[i])));
+      this.effect("impact", { ...from.position }, { ...e.position }, 0xffd27a, 0.4, e.radius); // sparks fly back along the glancing line
+      this.tally(actor.team, "ricochets");
+      this.pushLog(`${actor.name}'s round ricochets on to ${e.name}`);
+      this.afterDamage(actor, e, result);
+      from = e;
+    });
+  }
+
   private removeProjectile(id: string): void {
     const index = this.projectiles.findIndex((projectile) => projectile.id === id);
     if (index < 0) return;
     const projectile = this.projectiles[index];
     // Flamer rounds torch the ground where they end: burning terrain for the next turns.
-    if (projectile.sourceKind === "flamer") {
+    if (projectile.sourceKind === "flamer" || projectile.sourceKind === "flamepost") {
       const point = clampToArena({ ...projectile.position });
       this.burnZones.push({ id: `burn-${++this.effectSeq}`, x: point.x, z: point.z, radius: BURN_RADIUS, turnsLeft: BURN_TURNS });
       this.effect("blast", point, point, 0xff7a2a, 0.6, BURN_RADIUS);
@@ -4003,7 +4211,31 @@ export class TacticalSim {
 
   // Burning ground: at the start of each turn, everything standing in a burn zone takes
   // fire damage (both teams — fire doesn't check dog tags). Crouching doesn't help; move.
+  /** Sets a trooper alight (infantry only: machines, aircraft and structures do not burn). */
+  private ignite(e: CombatEntity, why: string): void {
+    if (!e.status.alive || e.downed || e.flying || !isInfantryKind(e.kind) || pointInWater(e.position)) return;
+    if (!e.burning) this.pushLog(`${e.name} is on fire (${why})`);
+    if (!e.burning && e.team === "enemy") this.tally("player", "burned");
+    e.burning = { turns: BURN_STATUS_TURNS, dmg: BURN_STATUS_DAMAGE };
+    this.effect("ping", { ...e.position }, { ...e.position }, 0xff7a2a, 0.6, e.radius + 0.4);
+  }
+
+  /** Each burning trooper takes its fire damage at turn start; water and a medic put it out. */
+  private runBurningTick(): void {
+    for (const e of this.entities) {
+      if (!e.burning || !e.status.alive) { if (e.burning) e.burning = undefined; continue; }
+      if (pointInWater(e.position)) { e.burning = undefined; this.pushLog(`${e.name} puts the fire out in the water`); continue; }
+      applyDamage(e, preferredPart(e, "center").id, e.burning.dmg);
+      this.effect("impact", { ...e.position }, { ...e.position }, 0xff7a2a, 0.5, e.radius + 0.3);
+      this.pushLog(`${e.name} burns (${e.burning.dmg})`);
+      e.burning.turns -= 1;
+      if (e.burning.turns <= 0) e.burning = undefined;
+      if (!e.status.alive) this.checkEndState();
+    }
+  }
+
   private runBurnTick(): void {
+    this.runBurningTick();
     if (!this.burnZones.length) return;
     for (const zone of this.burnZones) {
       for (const e of this.entities) {
@@ -4014,6 +4246,7 @@ export class TacticalSim {
         applyDamage(e, part.id, burn);
         this.effect("impact", { ...e.position }, { ...e.position }, 0xff7a2a, 0.5, e.radius + 0.3);
         this.pushLog(`${e.name} is burned by the fire (${burn})`);
+        this.ignite(e, "standing in flames");
         if (!e.status.alive) this.checkEndState();
       }
       zone.turnsLeft -= 1;
@@ -4141,20 +4374,30 @@ export class TacticalSim {
     const side = { x: -axis.z, z: axis.x };
     const clear = (p: Vec2): boolean => !pointInWater(p) && !onTerrainEdge(p, 2.4) && Math.abs(terrainHeightAt(p)) <= 0.5
       && !this.entities.some((e) => e.status.alive && dist(e.position, p) < e.radius + 2.2);
-    for (const lateral of [10, 8, 12, 6, 14, 5, 16, 18, 4, 3]) {
-      for (const along of [0, 3, -3, 6, -6, 12, -12, 18, -18, 24, -24]) {
-        const p = clampToArena({ x: c.x + side.x * lateral + axis.x * along, z: c.z + side.z * lateral + axis.z * along });
-        const q = clampToArena({ x: 2 * c.x - p.x, z: 2 * c.z - p.z });
-        if (!clear(p) || !clear(q) || dist(p, q) < 6) continue;
-        for (const [at, n] of [[p, 1], [q, 2]] as const) {
-          const post = createGunPost(`field-post-${n}`, "Gun Post", "neutral", { ...at });
-          post.yaw = Math.atan2(c.x - at.x, c.z - at.z) + Math.PI / 2; // facing along the front
-          this.entities.push(post);
-          this.syncEntityElevation(post);
+    // A mirrored pair of each kind, on its own band of the board so they never crowd: Gun Posts on the flanks, Rocket Posts
+    // far out where armour crosses, Flame Posts close to the centre line where infantry funnel.
+    const place = (kind: "gunpost" | "rocketpost" | "flamepost", label: string, tag: string, laterals: number[], alongs: number[]): void => {
+      for (const lateral of laterals) {
+        for (const along of alongs) {
+          const p = clampToArena({ x: c.x + side.x * lateral + axis.x * along, z: c.z + side.z * lateral + axis.z * along });
+          const q = clampToArena({ x: 2 * c.x - p.x, z: 2 * c.z - p.z });
+          if (!clear(p) || !clear(q) || dist(p, q) < 6) continue;
+          for (const [at, n] of [[p, 1], [q, 2]] as const) {
+            const post = kind === "gunpost" ? createGunPost(`field-${tag}-${n}`, label, "neutral", { ...at })
+              : kind === "rocketpost" ? createRocketPost(`field-${tag}-${n}`, label, "neutral", { ...at })
+              : createFlamePost(`field-${tag}-${n}`, label, "neutral", { ...at });
+            post.yaw = Math.atan2(c.x - at.x, c.z - at.z) + Math.PI / 2; // facing along the front
+            this.entities.push(post);
+            this.syncEntityElevation(post);
+          }
+          return;
         }
-        return;
       }
-    }
+    };
+    const alongs = [0, 3, -3, 6, -6, 12, -12, 18, -18, 24, -24];
+    place("gunpost", "Gun Post", "post", [10, 8, 12, 6, 14, 5, 16, 18, 4, 3], alongs);
+    place("rocketpost", "Rocket Post", "rocket", [15, 17, 13, 19, 11], [14, -14, 20, -20, 8, -8, 26, -26]);
+    place("flamepost", "Flame Post", "flame", [4, 5, 6, 3, 7, 8, 2, 9, 11], [8, -8, 4, -4, 12, -12, 16, -16, 20, -20, 0]);
   }
 
   // ---- Field hands: treat (medic / engineer), place (demolitionist / springer / oiler / fortifier) ----
@@ -4242,6 +4485,7 @@ export class TacticalSim {
     recomputeStatus(target);
     this.effect("ping", target.position, target.position, 0x8effa6, 1, target.radius + 0.9);
     this.effect("ping", actor.position, actor.position, 0x9dffb8, 0.7, actor.radius + 0.5); // the healer's side of the beam: no sound of its own
+    if (target.burning) { target.burning = undefined; this.pushLog(`${target.name}'s fire is put out`); }
     this.pushLog(`${actor.name} ${actor.kind === "medic" ? "treats" : "repairs"} ${target.name}: ${mended} ${mended === 1 ? "part" : "parts"} restored`);
   }
 
@@ -4259,8 +4503,9 @@ export class TacticalSim {
     if (Math.abs(terrainHeightAt(point) - terrainHeightAt(projected.position)) > TERRAIN_STEP) return "Not on level ground";
     if (this.placedCount(actor.team, spec.kind) >= (PLACE_CAP[spec.kind] ?? 3)) return `You already have ${PLACE_CAP[spec.kind]} ${spec.label.toLowerCase()}s down`;
     if (spec.kind === "pad" && this.pads.some((pad) => dist(pad, point) < PAD_RADIUS * 1.6)) return "There is already a pad here";
+    if (spec.kind === "sentry" && actor.grenades <= 0) return `${actor.name} has no sentries left`;
     if (spec.kind === "oil" || spec.kind === "pad") return undefined; // flat on the ground: bodies may stand on them
-    const room = spec.kind === "barrier" ? 1.9 : 0.5;
+    const room = spec.kind === "barrier" ? 1.9 : spec.kind === "sentry" ? 0.9 : 0.5;
     if (this.entities.some((e) => e.status.alive && !e.carriedById && !e.flying && e.id !== actor.id && dist(e.position, point) < e.radius + room)) return "Spot is blocked by another object";
     return undefined;
   }
@@ -4268,6 +4513,7 @@ export class TacticalSim {
   private placedCount(team: Team, kind: string): number {
     if (kind === "pad") return this.pads.filter((p) => p.team === team).length;
     if (kind === "oil") return this.oilSlicks.filter((o) => o.team === team).length;
+    if (kind === "sentry") return this.entities.filter((e) => e.kind === "sentry" && e.status.alive && e.team === team).length;
     const coverKind = kind === "charge" ? "charge" : "barrier";
     const n = this.entities.filter((e) => e.kind === "cover" && e.coverKind === coverKind && e.status.alive && e.ownerTeam === team).length;
     return kind === "barrier" ? Math.ceil(n / 2) : n;
@@ -4298,6 +4544,9 @@ export class TacticalSim {
     if (spec.kind === "pad") {
       this.pads.push({ id, x: at.x, z: at.z, yaw, team: actor.team });
       this.effect("land", at, at, 0xffe27a, 0.5, PAD_RADIUS * 1.4);
+    } else if (spec.kind === "sentry") {
+      actor.grenades = Math.max(0, actor.grenades - 1);
+      this.deploySentry(actor.team, at, yaw, `${actor.name}'s`);
     } else if (spec.kind === "oil") {
       this.oilSlicks.push({ id, x: at.x, z: at.z, radius: OIL_RADIUS, team: actor.team });
       this.effect("ping", at, at, 0x2b2430, 0.8, OIL_RADIUS);
@@ -4321,6 +4570,47 @@ export class TacticalSim {
     }
     this.pushLog(`${actor.name} sets down a ${spec.label.toLowerCase()}`);
     return true;
+  }
+
+  /** A sentry stands where it is set (by a Turret Tech or a drop): it shoots by itself each turn and packs up after SENTRY_COST_TURNS. */
+  private deploySentry(team: Team, at: Vec2, yaw: number, owner: string): CombatEntity {
+    const sentry = createSentry(`sentry-${++this.effectSeq}`, "Sentry", team, { ...at });
+    sentry.yaw = yaw;
+    sentry.ownerTeam = team;
+    sentry.sentryTtl = SENTRY_COST_TURNS;
+    this.entities.push(sentry);
+    this.syncEntityElevation(sentry);
+    this.effect("land", at, at, 0xbfe9ff, 0.5, 1.2);
+    this.tally(team, "sentries");
+    this.pushLog(`${owner} sentry deploys`);
+    return sentry;
+  }
+
+  /** Sentries pack up when their time is out. Runs at turn start. */
+  private runSentryTick(): void {
+    for (const e of this.entities) {
+      if (e.kind !== "sentry" || !e.status.alive || e.sentryTtl === undefined) continue;
+      e.sentryTtl -= 1;
+      if (e.sentryTtl <= 0) {
+        for (const part of e.parts) part.hp = 0;
+        recomputeStatus(e);
+        this.effect("land", e.position, e.position, 0xbfe9ff, 0.5, 1.2);
+        this.pushLog("A sentry packs up");
+      }
+    }
+  }
+
+  /** At end of turn every live sentry (both sides) shoots the nearest foe in reach, with no one to order it. */
+  private queueSentryOrders(): void {
+    for (const sentry of this.entities) {
+      if (sentry.kind !== "sentry" || !sentry.status.alive || !sentry.status.canShoot || sentry.commandPoints <= 0) continue;
+      if (this.orders.some((o) => o.actorId === sentry.id && !o.done)) continue;
+      const range = projectileRange(sentry);
+      const foe = this.entities
+        .filter((e) => e.team !== sentry.team && e.team !== "neutral" && e.status.alive && !e.downed && !e.carriedById && e.kind !== "cover" && !isDefenseKind(e.kind) && !e.flying && dist(e.position, sentry.position) <= range)
+        .sort((a, b) => dist(a.position, sentry.position) - dist(b.position, sentry.position))[0];
+      if (foe) this.queueShootFor(sentry, foe, "center");
+    }
   }
 
   /** Charge fuses count down at turn start; at zero the satchel goes off. */
@@ -4384,6 +4674,45 @@ export class TacticalSim {
   }
 
   /** Player API: the selected sapper plants a proximity mine at its feet (1 CP + $15). */
+  /** Why `actor` cannot swing its hammer (undefined when it can). */
+  slamFailureReason(actor: CombatEntity | undefined): string | undefined {
+    if (!actor) return "Select a unit first";
+    if (actor.kind !== "sledge") return "Only a Sledge swings a hammer";
+    if (actor.commandPoints <= 0) return `${actor.name} has no action points`;
+    if (!actor.status.canMove || !actor.parts.some((p) => p.id === "rifle" && p.hp > 0)) return `${actor.name} cannot swing`;
+    return undefined;
+  }
+
+  /** Player API: SLAM. Every foe within 3m of the Sledge is hurt and flung. 1 AP. */
+  queueSlam(): boolean {
+    const actor = this.requirePlayerActor();
+    if (!actor) return false;
+    const failure = this.slamFailureReason(actor);
+    if (failure) return this.reject(failure);
+    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
+    this.addOrder({ actorId: actor.id, kind: "slam", aim: "center", duration: 0.9 });
+    return true;
+  }
+
+  digFailureReason(actor: CombatEntity | undefined): string | undefined {
+    if (!actor) return "Select a unit first";
+    if (actor.kind !== "trencher") return "Only a Trencher digs a squad in";
+    if (actor.commandPoints <= 0) return `${actor.name} has no action points`;
+    if (!actor.parts.some((p) => p.id === "pack" && p.hp > 0)) return `${actor.name} has lost its tools`;
+    return undefined;
+  }
+
+  /** Player API: DIG. Every friendly trooper within 4m digs in (less damage until it moves). 1 AP. */
+  queueDig(): boolean {
+    const actor = this.requirePlayerActor();
+    if (!actor) return false;
+    const failure = this.digFailureReason(actor);
+    if (failure) return this.reject(failure);
+    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
+    this.addOrder({ actorId: actor.id, kind: "dig", aim: "center", duration: 0.8 });
+    return true;
+  }
+
   queueMine(): boolean {
     const actor = this.requirePlayerActor();
     if (!actor) return false;
@@ -4516,8 +4845,15 @@ export class TacticalSim {
     // most ground units barely scratch it. This single number IS the AA read on the shot preview.
     const vsAir = target.flying ? this.vsAirMultiplier(actor) : 1;
     const antiArmor = isVehicleKind(target.kind) ? unitStats(actor.kind).antiArmor ?? 1 : 1;
+    // SHIELD: a tower shield turns bullets from the front arc (blasts go round it).
+    const shieldStat = unitStats(target.kind).shield;
+    let shield = 1;
+    if (shieldStat && attackMode === "weapon" && !unitStats(actor.kind).groundShell && target.parts.some((p) => p.id === "pack" && p.hp > 0)) {
+      const toward = normalize({ x: actor.position.x - target.position.x, z: actor.position.z - target.position.z });
+      if (toward.x * Math.sin(target.yaw) + toward.z * Math.cos(target.yaw) > 0.26) shield = shieldStat; // inside ~75 degrees of its facing
+    }
     base *= actor.mods?.damage ?? 1;
-    return Math.round(base * antiArmor * falloff * (cover ? 1.05 : aimMultiplier) * vulnerability * shellObjectBoost * flank * vsAir * this.supportDamageMultiplier(actor) * this.teamDamageScale(actor) * this.techDamageScale(actor, target));
+    return Math.round(base * antiArmor * shield * falloff * (cover ? 1.05 : aimMultiplier) * vulnerability * shellObjectBoost * flank * vsAir * this.supportDamageMultiplier(actor) * this.teamDamageScale(actor) * this.techDamageScale(actor, target));
   }
 
   // Difficulty scaling: enemy units hit harder on higher difficulties.
@@ -4665,17 +5001,20 @@ export class TacticalSim {
     if (landed.x === entity.position.x && landed.z === entity.position.z && !drowned && !slammedInto && !ringOut) return;
     // Thrown OFF a ledge, the body can land with its hull against the face it fell from; slide it to
     // the nearest ground its whole footprint fits on (movement.test.ts, 2026-10-01).
-    if (!drowned && !ringOut && !this.groundFits(entity, landed)) {
-      const fit = this.nearestFittingGround(entity, landed);
+    // (A thrown body is a loose bundle of boxes, wider than its footprint: it needs a margin from the face it lands beside.)
+    if (!drowned && !ringOut && !this.groundFits(entity, landed, 1.3)) {
+      const fit = this.nearestFittingGround(entity, landed, 1.3);
       // No room to land beside the ledge: stay where it stood rather than sink into the face.
       landed = fit ?? { ...entity.position };
     }
+    if (actor.team === "player" && entity.team === "enemy" && travelled >= 2) this.tally("player", "thrown");
     entity.position = landed;
     entity.dugIn = undefined; // thrown out of its foxhole
     entity.digging = undefined;
     entity.elevation = terrainHeightAt(landed);
     this.effect("impact", landed, landed, 0xffd9a0, 0.3, entity.radius * 0.9);
     if (ringOut) {
+      if (actor.team === "player" && entity.team === "enemy") this.tally("player", "ringouts");
       for (const part of entity.parts) part.hp = 0;
       recomputeStatus(entity);
       this.pushLog(`${entity.name} is shoved clean off the battlefield!`);
@@ -4697,25 +5036,25 @@ export class TacticalSim {
   }
 
   /** Can this body stand here: dry, its hull clear of any taller-than-a-step rise, no unit or prop? */
-  private groundFits(body: CombatEntity, at: Vec2): boolean {
+  private groundFits(body: CombatEntity, at: Vec2, room = 1): boolean {
     if (pointInWater(at) || this.bodyAt(body, at) || this.solidPropAt(body, at)) return false;
     const here = terrainHeightAt(at);
-    if (discSamples(at, body.radius * 0.9).some((p) => terrainHeightAt(p) - here > TERRAIN_STEP * 0.9)) return false;
+    if (discSamples(at, body.radius * 0.9 * room).some((p) => terrainHeightAt(p) - here > TERRAIN_STEP * 0.9)) return false;
     // ...and a 16-way ring too: the 12-way disc can slip between a block's corner and a sample (0.4m slivers).
     for (let i = 0; i < 16; i += 1) {
       const a = (i / 16) * Math.PI * 2;
-      if (terrainHeightAt({ x: at.x + Math.sin(a) * body.radius * 0.92, z: at.z + Math.cos(a) * body.radius * 0.92 }) - here > TERRAIN_STEP * 0.9) return false;
+      if (terrainHeightAt({ x: at.x + Math.sin(a) * body.radius * 0.92 * room, z: at.z + Math.cos(a) * body.radius * 0.92 * room }) - here > TERRAIN_STEP * 0.9) return false;
     }
     return true;
   }
 
   /** The nearest point (within 3m) where `groundFits`; `at` itself when nothing nearer fits. */
-  private nearestFittingGround(body: CombatEntity, at: Vec2): Vec2 | undefined {
+  private nearestFittingGround(body: CombatEntity, at: Vec2, room = 1): Vec2 | undefined {
     for (let r = 0.25; r <= 3; r += 0.25) {
       for (let i = 0; i < 16; i += 1) {
         const a = (i / 16) * Math.PI * 2;
         const c = clampToArena({ x: at.x + Math.sin(a) * r, z: at.z + Math.cos(a) * r });
-        if (this.groundFits(body, c)) return c;
+        if (this.groundFits(body, c, room)) return c;
       }
     }
     return undefined;
@@ -5244,6 +5583,16 @@ export class TacticalSim {
   // slide past instead of stacking.
   /** A ground move that halted short: back off along its path to the first spot clear of rises AND
    *  of solid props / emplacements (keeps the halt where it is when the whole path is tight). */
+  /** A trooper that ended a charge with its body boxes against a step face backs off along the way it came (the blade and lean reach past the footprint). */
+  private backOffRise(actor: CombatEntity, start: Vec2 | undefined): void {
+    if (!start || actor.flying || !hullInRise(actor.position, actor.radius * 1.15) || hullInRise(start, actor.radius * 1.15)) return;
+    const end = { ...actor.position };
+    for (const f of [0.8, 0.6, 0.4, 0.2, 0]) {
+      const c = { x: start.x + (end.x - start.x) * f, z: start.z + (end.z - start.z) * f };
+      if (!hullInRise(c, actor.radius * 1.15) && !this.bodyAt(actor, c)) { actor.position = c; this.syncEntityElevation(actor); return; }
+    }
+  }
+
   private settleHalt(actor: CombatEntity, start: Vec2): void {
     const margin = spawnClearance(actor.radius);
     const solids = this.entities.filter((e) => e.id !== actor.id && e.status.alive && !e.flying && !e.carriedById &&
@@ -5652,6 +6001,26 @@ export class TacticalSim {
     return true;
   }
 
+  /** SLAM: a Sledge with foes inside the hammer's circle swings (two or more, or any trooper: it is a throw as much as a blow). */
+  private aiSlamAct(actor: CombatEntity, foes: CombatEntity[]): boolean {
+    if (actor.kind !== "sledge" || this.slamFailureReason(actor)) return false;
+    const inReach = foes.filter((f) => !f.flying && !f.downed && f.status.alive && !isBuildingKind(f.kind) && dist(f.position, actor.position) <= SLAM_RADIUS + f.radius);
+    if (!inReach.length) return false;
+    const worth = inReach.length >= 2 || inReach.some((f) => isInfantryKind(f.kind));
+    if (!worth || !spendCommandPoint(actor)) return false; // (the hammer only hits foes, so friends beside it are safe)
+    this.addOrder({ actorId: actor.id, kind: "slam", aim: "center", duration: 0.9 });
+    return true;
+  }
+
+  /** DIG: a Trencher with two or more friendly troopers around it and a foe in the field digs the squad in. */
+  private aiDigAct(actor: CombatEntity, foes: CombatEntity[]): boolean {
+    if (actor.kind !== "trencher" || this.digFailureReason(actor)) return false;
+    const squad = this.fieldUnits(actor.team).filter((u) => isInfantryKind(u.kind) && !u.dugIn && dist(u.position, actor.position) <= DIG_RADIUS);
+    if (squad.length < 2 || !foes.some((f) => dist(f.position, actor.position) <= 30) || !spendCommandPoint(actor)) return false;
+    this.addOrder({ actorId: actor.id, kind: "dig", aim: "center", duration: 0.8 });
+    return true;
+  }
+
   /** MINE: a sapper holding a spot with foes closing sows a mine at its feet before it fires ($15, 1 AP). */
   private aiMineAct(actor: CombatEntity, foes: CombatEntity[]): boolean {
     if (actor.kind !== "sapper" || this.mineFailureReason(actor) || this.money(actor.team) < MINE_COST + 150) return false;
@@ -5684,9 +6053,9 @@ export class TacticalSim {
       if (gap > 15) return false; // still driving in
       const dir = normalize({ x: foe.position.x - actor.position.x, z: foe.position.z - actor.position.z });
       const out = actor.radius + APC_UNLOAD_REACH * 0.8;
-      const point = actor.kind === "apc" ? clampToArena({ x: actor.position.x + dir.x * out, z: actor.position.z + dir.z * out }) : { ...actor.position };
+      const point = isGroundCarrier(actor.kind) ? clampToArena({ x: actor.position.x + dir.x * out, z: actor.position.z + dir.z * out }) : { ...actor.position };
       if (!spendCommandPoint(actor)) return false;
-      this.addOrder({ actorId: actor.id, kind: "unload", destination: point, aim: "center", duration: actor.kind === "apc" ? 1.2 : 2.4 });
+      this.addOrder({ actorId: actor.id, kind: "unload", destination: point, aim: "center", duration: isGroundCarrier(actor.kind) ? 1.2 : 2.4 });
       return true;
     }
     if (gap < 18) return false;
@@ -5694,7 +6063,7 @@ export class TacticalSim {
       && !this.orders.some((o) => o.actorId === u.id) && !this.loadFailureReason(actor, u));
     if (!rider || !spendCommandPoint(actor)) return false;
     this.aiBoarding.add(rider.id);
-    this.addOrder({ actorId: actor.id, kind: "load", targetId: rider.id, aim: "center", duration: actor.kind === "apc" ? 1.2 : 2.6 });
+    this.addOrder({ actorId: actor.id, kind: "load", targetId: rider.id, aim: "center", duration: isGroundCarrier(actor.kind) ? 1.2 : 2.6 });
     return true;
   }
   private aiBoarding = new Set<string>();
@@ -5748,6 +6117,7 @@ export class TacticalSim {
     if (spec.kind === "oil" && (own(at, OIL_RADIUS) || this.oilSlicks.some((o) => dist(o, at) < 8))) return false;
     if (spec.kind === "charge" && (own(at, CHARGE_BLAST_RADIUS + 0.5) || this.entities.some((e) => e.coverKind === "charge" && e.status.alive && dist(e.position, at) < 9))) return false;
     if (spec.kind === "barrier" && this.entities.some((e) => e.coverKind === "barrier" && e.status.alive && dist(e.position, at) < 8)) return false;
+    if (spec.kind === "sentry" && this.entities.some((e) => e.kind === "sentry" && e.team === actor.team && e.status.alive && dist(e.position, at) < 6)) return false;
     if (this.placeFailureReason(actor, at)) return false;
     return this.placeFor(actor, at, Math.atan2(dir.x, dir.z));
   }
@@ -5825,6 +6195,8 @@ export class TacticalSim {
       if (profile.tactical && this.aiX.moves) {
         if (this.aiCarryAct(enemy, players)) continue;
         if (this.aiRamAct(enemy, players)) continue;
+        if (this.aiSlamAct(enemy, players)) continue;
+        if (this.aiDigAct(enemy, players)) continue;
         if (this.aiSmokeAct(enemy, players, behind)) continue;
         this.aiMineAct(enemy, players); // free of the unit's turn beyond 1 AP: it still shoots after
       }
@@ -6390,6 +6762,13 @@ export class TacticalSim {
     // 3. Compounding income early.
     const incomeCost = incomeUpgradeCost(base);
     if (incomeCost !== undefined && this.turn <= 9 && mine >= 3 && money >= incomeCost + cheapest && this.upgradeIncomeFor(base)) return true;
+    // 3b. Armour, then the cannon, once it has an army and the money (never at the cost of falling behind).
+    if (mine >= 5 && mine >= theirs && this.turn >= 5) {
+      for (const id of ["armor1", "cannon", "armor2"] as const) {
+        const spec = baseUpgradeSpec(id);
+        if (!this.baseUpgradeFailureReason(base, id) && money >= spec.cost + cheapest * 2 && this.upgradeBaseFor(base, id)) return true;
+      }
+    }
     // 4. The next doctrine on its path, only with an army out and money to spare.
     if (mine >= 4) {
       const next = this.factionOf(base.team).aiTechPath.find((id) => !this.researchFailureReason(base, id));
@@ -6689,6 +7068,10 @@ export class TacticalSim {
         entity.markedUntilTurn = undefined;
         entity.markedById = undefined;
       }
+      if (entity.disabledUntilTurn !== undefined) {
+        if (entity.disabledUntilTurn >= this.turn && entity.status.alive) entity.commandPoints = 0;
+        else entity.disabledUntilTurn = undefined;
+      }
       if (entity.suppressedUntilTurn !== undefined) {
         if (entity.suppressedUntilTurn >= this.turn && entity.status.alive) {
           entity.commandPoints = Math.min(entity.commandPoints, 1);
@@ -6699,12 +7082,14 @@ export class TacticalSim {
       }
     }
     this.refreshMounts();
+    if (!this.hotseat && this.entities.some((e) => e.kind === "base" && e.team === "player" && e.status.alive && e.radarOnline)) { this.revealedOrders = true; this.revealedTeam = "player"; this.enemyIntentCache = undefined; }
     this.runEconomyTick();
     this.runSalvageTick();
     this.runCaptureTick();
     this.runBurnTick();
     this.runGasTick();
     this.runFuseTick();
+    this.runSentryTick();
     this.runSmokeTick();
     this.resolveSupportAuras();
     // Forced events are single-turn debug overrides; clear them, then announce the new turn's events.
@@ -6985,6 +7370,54 @@ export class TacticalSim {
       this.pushLog("The smoke screen blooms — flat shots through it are lost");
       return;
     }
+    if (strike.kind === "emp") {
+      let hit = 0;
+      for (const e of this.entities) {
+        if (!e.status.alive || e.team === strike.team || (!isVehicleKind(e.kind) && !isDefenseKind(e.kind)) || e.kind === "wall") continue;
+        if (dist(e.position, strike.point) > strike.radius + e.radius) continue;
+        e.disabledUntilTurn = this.turn + 1;
+        this.effect("ping", { ...e.position }, { ...e.position }, 0x8de4ff, 0.9, e.radius + 0.8);
+        hit += 1;
+      }
+      this.effect("blast", strike.point, strike.point, 0x8de4ff, 0.7, strike.radius);
+      this.tally(strike.team ?? "player", "empHits", hit);
+      this.pushLog(hit ? `The EMP burst kills the power on ${hit} machine${hit === 1 ? "" : "s"}` : "The EMP burst fizzles on empty ground");
+      return;
+    }
+    if (strike.kind === "minedrop") {
+      for (let i = 0; i < 5; i += 1) {
+        const angle = this.rng.range(0, Math.PI * 2);
+        const r = Math.sqrt(this.rng.range(0, 1)) * strike.radius;
+        const at = clampToArena({ x: strike.point.x + Math.sin(angle) * r, z: strike.point.z + Math.cos(angle) * r });
+        if (pointInWater(at)) continue;
+        this.mines.push({ id: `mine-${++this.effectSeq}`, x: at.x, z: at.z, team: strike.team ?? "player" });
+      }
+      this.effect("ping", strike.point, strike.point, 0xffb02e, 0.8, strike.radius);
+      this.pushLog("Mines scatter across the point");
+      return;
+    }
+    if (strike.kind === "medevac") {
+      let helped = 0;
+      for (const e of this.entities) {
+        if (!e.status.alive && !e.downed) continue;
+        if (e.team !== strike.team || !isInfantryKind(e.kind) || dist(e.position, strike.point) > strike.radius + e.radius) continue;
+        for (const part of e.parts) part.hp = part.maxHp;
+        e.downed = false;
+        e.burning = undefined;
+        recomputeStatus(e);
+        helped += 1;
+      }
+      this.effect("ping", strike.point, strike.point, 0x8effa6, 0.9, strike.radius);
+      this.pushLog(helped ? `Medevac: ${helped} trooper${helped === 1 ? "" : "s"} patched to full` : "Medevac lands on empty ground");
+      return;
+    }
+    if (strike.kind === "sentrydrop") {
+      const team = strike.team ?? "player";
+      const base = this.entities.find((e) => e.kind === "base" && e.team === team);
+      const yaw = base ? Math.atan2(strike.point.x - base.position.x, strike.point.z - base.position.z) : 0;
+      this.deploySentry(team, nearestDryPoint(this.freeSpotNear(strike.point, 0.6)), yaw, "A dropped");
+      return;
+    }
     if (strike.kind === "resupply") {
       let helped = 0;
       for (const e of this.entities) {
@@ -7023,6 +7456,7 @@ export class TacticalSim {
       : strike.kind === "collapse" ? 0xb59a72
       : strike.kind === "laser" ? 0xff5a4d
       : strike.kind === "cluster" ? 0xffb02e
+      : strike.kind === "railstrike" ? 0xc9d3dc
       : 0xff8c3a;
     this.effect("blast", strike.point, strike.point, color, 0.85, strike.radius);
     for (const e of this.entities) {
@@ -7281,6 +7715,7 @@ export class TacticalSim {
     // Veterancy: credit player units with enemy unit kills (structures/cover excluded).
     if (result.killed && actor.team === "player" && target.team === "enemy" && target.kind !== "cover" && !isBuildingKind(target.kind)) {
       this.killsBy.set(actor.id, (this.killsBy.get(actor.id) ?? 0) + 1);
+      this.tally("player", `killer:${actor.kind}`);
     }
     // SCAVENGERS (Syndicate doctrine): a destroyed enemy troop pays a share of its cost back.
     if (result.killed && isTroopKind(target.kind) && actor.team !== target.team && actor.team !== "neutral" && target.team !== "neutral") {
@@ -7409,6 +7844,14 @@ function makeTroopBase(kind: TroopKind, id: string, name: string, team: Team, po
     case "demo": return createDemo(id, name, team, position);
     case "oiler": return createOiler(id, name, team, position);
     case "springer": return createSpringer(id, name, team, position);
+    case "turrettech": return createTurretTech(id, name, team, position);
+    case "sledge": return createSledge(id, name, team, position);
+    case "lancer": return createLancer(id, name, team, position);
+    case "bounty": return createBounty(id, name, team, position);
+    case "ironclad": return createIronclad(id, name, team, position);
+    case "trencher": return createTrencher(id, name, team, position);
+    case "runabout": return createRunabout(id, name, team, position);
+    case "hornet": return createHornet(id, name, team, position);
     default: return createSoldier(id, name, team, position);
   }
 }
@@ -7447,6 +7890,8 @@ function makeEmplacement(kind: DefenseKind, id: string, name: string, team: Team
     case "sensor": return createSensor(id, name, team, at);
     case "gunpost": return createGunPost(id, name, team, at);
     case "mortarpit": return createMortarPit(id, name, team, at);
+    case "rocketpost": return createRocketPost(id, name, team, at);
+    case "flamepost": return createFlamePost(id, name, team, at);
     default: return createWall(id, name, team, at);
   }
 }
@@ -7495,7 +7940,12 @@ function canUseHandGrenade(entity: CombatEntity): boolean {
 // aircraft instead of being lobbed at a distant point, so it's aimed by flying over the target.
 /** Kinds that can take ground units aboard: the air transport and the APC. */
 function isCarrierKind(kind: EntityKind): boolean {
-  return kind === "transport" || kind === "apc";
+  return kind === "transport" || kind === "apc" || kind === "runabout";
+}
+
+/** A ground carrier (APC, Runabout): troops board from beside the hull and step off beside it. */
+function isGroundCarrier(kind: EntityKind): boolean {
+  return kind === "apc" || kind === "runabout";
 }
 
 function isAirBomber(entity: CombatEntity): boolean {
@@ -7531,6 +7981,9 @@ function muzzleHeight(entity: CombatEntity, attackMode: AttackMode = "weapon"): 
   if (entity.kind === "bunker") return entity.elevation + 0.75;
   if (entity.kind === "gunpost") return entity.elevation + 0.85;
   if (entity.kind === "mortarpit") return entity.elevation + 0.6;
+  if (entity.kind === "rocketpost") return entity.elevation + 0.85;
+  if (entity.kind === "flamepost") return entity.elevation + 0.7;
+  if (entity.kind === "sentry") return entity.elevation + 0.8;
   if (entity.kind === "base") return entity.elevation + 1.75;
   return entity.elevation + Math.max(0.22, entity.height * 0.55);
 }

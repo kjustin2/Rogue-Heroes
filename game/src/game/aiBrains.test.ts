@@ -165,6 +165,37 @@ describe("hard AI brain: the full move set", () => {
     expect(ordersOf(sim, striker.id).some((o) => o.kind === "melee" && o.shove)).toBe(true);
   });
 
+  it("a Sledge slams a clump it is standing in, and does nothing special at range", () => {
+    const sim = hard();
+    const sledge = arm(sim.debugSpawn("sledge", "enemy", { x: 4, z: 0 }));
+    sim.debugSpawn("soldier", "player", { x: 2.4, z: 0 });
+    sim.debugSpawn("soldier", "player", { x: 2.4, z: 1.4 });
+    settleCommand(sim);
+    expect(ordersOf(sim, sledge.id).some((o) => o.kind === "slam")).toBe(true);
+    const far = hard();
+    const s2 = arm(far.debugSpawn("sledge", "enemy", { x: 14, z: 0 }));
+    far.debugSpawn("soldier", "player", { x: -4, z: 0 });
+    settleCommand(far);
+    expect(ordersOf(far, s2.id).some((o) => o.kind === "slam")).toBe(false);
+  });
+
+  it("a Trencher digs in the squad around it; a Turret Tech sows a sentry toward the foe", () => {
+    const sim = hard();
+    const t = arm(sim.debugSpawn("trencher", "enemy", { x: 8, z: 0 }));
+    sim.debugSpawn("soldier", "enemy", { x: 9.5, z: 0 });
+    sim.debugSpawn("soldier", "enemy", { x: 9.5, z: 1.6 });
+    sim.debugSpawn("soldier", "player", { x: -10, z: 0 });
+    settleCommand(sim);
+    expect(ordersOf(sim, t.id).some((o) => o.kind === "dig")).toBe(true);
+    const s2 = hard();
+    s2.economy.set("enemy", 900);
+    const tt = arm(s2.debugSpawn("turrettech", "enemy", { x: 10, z: 0 }));
+    s2.debugSpawn("soldier", "player", { x: -4, z: 0 });
+    settleCommand(s2);
+    expect(s2.entities.some((e) => e.kind === "sentry" && e.team === "enemy"), "a sentry is down").toBe(true);
+    expect(tt.grenades).toBe(1);
+  });
+
   it("with every flag off it plays the old way (no hop, ram, smoke, mine or crouch)", () => {
     const sim = hard();
     sim.aiX.moves = false;
