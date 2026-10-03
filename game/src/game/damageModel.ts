@@ -166,6 +166,8 @@ export interface CombatEntity {
   burning?: { turns: number; dmg: number };
   // A sentry (set down by a Turret Tech or dropped): turns left before it packs up. It fires on its own each turn.
   sentryTtl?: number;
+  // STIMS / OVERCHARGE: one extra action on the turn stamped here (a medic's or mechanic's treat).
+  overchargeTurn?: number;
   // EMP: no actions for this entity until the turn stamped here has passed.
   disabledUntilTurn?: number;
   // FACTION TRAITS (factions.ts unitMods), stamped at deploy: the same Recruit is quicker for Vanguard and sturdier for Bastion.

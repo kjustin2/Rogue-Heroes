@@ -54,6 +54,17 @@ app.whenReady().then(async () => {
         win.setSize(1600, 900); await sleep(500);
         continue;
       }
+      if (s === "sides") {
+        // Set-up step 2: the faction cards (no doctrine names), at 1280x720 and 1600x900.
+        for (const [w, h] of [[1280, 720], [1600, 900]]) {
+          win.setSize(w, h); await sleep(500);
+          await toTitle(); await clickMenu('[data-menu="play"]');
+          await toStep(2);
+          await shot(`sides-${w}x${h}`);
+        }
+        win.setSize(1600, 900); await sleep(500);
+        continue;
+      }
       if (s === "viewports") {
         // Does the UI GROW into free space? Battle HUD, base command deck and the Skirmish page
         // at the four widths the owner plays at; the HUD must not be a strip in the middle at 2560.

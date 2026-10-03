@@ -4486,6 +4486,11 @@ export class TacticalSim {
     this.effect("ping", target.position, target.position, 0x8effa6, 1, target.radius + 0.9);
     this.effect("ping", actor.position, actor.position, 0x9dffb8, 0.7, actor.radius + 0.5); // the healer's side of the beam: no sound of its own
     if (target.burning) { target.burning = undefined; this.pushLog(`${target.name}'s fire is put out`); }
+    // STIMS / OVERCHARGE: a patient that was really hurt gets one extra action next turn (a medic's stims, a mechanic's overcharge).
+    if (mended > 0 && target.id !== actor.id) {
+      target.overchargeTurn = this.turn + 1;
+      this.pushLog(`${target.name} is ${actor.kind === "medic" ? "stimmed" : "overcharged"}: an extra action next turn`);
+    }
     this.pushLog(`${actor.name} ${actor.kind === "medic" ? "treats" : "repairs"} ${target.name}: ${mended} ${mended === 1 ? "part" : "parts"} restored`);
   }
 
@@ -7067,6 +7072,10 @@ export class TacticalSim {
       if (entity.markedUntilTurn !== undefined && entity.markedUntilTurn < this.turn) {
         entity.markedUntilTurn = undefined;
         entity.markedById = undefined;
+      }
+      if (entity.overchargeTurn !== undefined) {
+        if (entity.overchargeTurn === this.turn && entity.status.alive && entity.commandPoints > 0) { entity.commandPoints += 1; this.effect("ping", { ...entity.position }, { ...entity.position }, 0xffe27a, 0.6, entity.radius + 0.5); }
+        if (entity.overchargeTurn <= this.turn) entity.overchargeTurn = undefined;
       }
       if (entity.disabledUntilTurn !== undefined) {
         if (entity.disabledUntilTurn >= this.turn && entity.status.alive) entity.commandPoints = 0;

@@ -376,3 +376,25 @@ describe("Home Base upgrades", () => {
     expect(e.armorLevel ?? 0, "bought armour").toBeGreaterThanOrEqual(1);
   });
 });
+
+describe("support troopers worth fielding", () => {
+  afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
+
+  it("a medic's treat stims the patient (an extra action next turn), a mechanic's overcharges a machine", () => {
+    const sim = staged();
+    const medic = sim.debugSpawn("medic", "player", { x: -10, z: 4 });
+    const patient = sim.debugSpawn("soldier", "player", { x: -3, z: 4 });
+    for (const p of patient.parts) p.hp = Math.max(1, p.hp - 5);
+    sim.debugSelect(medic.id);
+    expect(sim.queueTreat(patient.id)).toBe(true);
+    sim.endTurn(); settle(sim);
+    expect(sim.entity(patient.id)!.commandPoints, "two actions and a stim").toBe(sim.entity(patient.id)!.maxCommandPoints + 1);
+    const eng = sim.debugSpawn("engineer", "player", { x: -10, z: -4 });
+    const tank = sim.debugSpawn("tank", "player", { x: -4, z: -4 });
+    for (const p of tank.parts) p.hp = Math.max(1, p.hp - 5);
+    sim.debugSelect(eng.id);
+    expect(sim.queueTreat(tank.id), sim.log[0]).toBe(true);
+    sim.endTurn(); settle(sim);
+    expect(sim.entity(tank.id)!.commandPoints).toBe(sim.entity(tank.id)!.maxCommandPoints + 1);
+  });
+});
