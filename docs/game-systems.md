@@ -162,6 +162,15 @@ How the factions, the three AI brains and Local 2 Players work, with the measure
   Syndicate hard-hitting and brittle (raider +1 grenade, -8% HP; striker / sapper / flamer +10% damage; -8% HP on the glass), Bastion
   tough, slow and long-ranged (guardsman +12% HP, -8% speed; mortar and artillery +10% range; tank +12% HP). Multipliers are held to
   0.88-1.2 by `factionMods.test.ts`; the Deploy card names the faction's trait for each unit.
+- **Bot, Hard brain: posts and posture** (2026-10-03, round 2). When it pushes in, `aiBestPost` scores every spot within one move
+  (height over the nearest foe, cover toward it, foes that can reach the spot minus friends standing by, whether it can still
+  shoot from there, progress to the goal) and walks to the best, only if clearly better than staying. Measured over 48 seeded
+  games against the Normal bot (hard as the enemy): plain marching 30 wins / 6 losses, posts on the way in 31 / 1; letting a
+  unit that has already fired scoot to a post lost ground (17 / 18), so firing units still hold and press, and that variant is
+  gone. `aiStrengthRatio` (cost x health) below 0.75 puts it on posture HOLD: it falls back to within 14m of home and only
+  engages what comes within 1.2x its range (neutral in the same games, it matters when the bot is genuinely behind).
+  `enemyTroopPreference` now answers armour with Rocketeers first and a dug-in player (2+ turrets / bunkers / posts) with
+  artillery and mortars. `aiX.post` / `aiX.posture` switch each off. A hull also never ends an AI move brushing a sheer face.
 - **Bot, Hard brain only** (Normal is untouched so the balance band holds): field hands lay their item where it hurts (`aiPlaceAct`: oil
   across the foe's lane, a barrier ahead of the line, a charge in front of them, only with $120 to spare); a trooper with a foe at the
   water's edge or the map edge behind it shoves it (`aiShoveAct`, finally); and bots treat a charge, a foe's oil and a foe's pad as

@@ -35,3 +35,31 @@ describe("hard AI brain", () => {
     expect(shot?.targetId).toBe(wounded.id);
   });
 });
+
+describe("hard AI brain: posture and posts", () => {
+  it("outnumbered, it holds its line near home instead of marching into the player's guns", () => {
+    const sim = new TacticalSim();
+    sim.configure(mapDef("dustbowl"), "destroy", "hard");
+    sim.turn = 3;
+    const lone = sim.debugSpawn("soldier", "enemy", { x: 8, z: 0 });
+    lone.commandPoints = lone.maxCommandPoints;
+    for (let i = 0; i < 6; i += 1) sim.debugSpawn("tank", "player", { x: -22, z: -10 + i * 3 });
+    settleCommand(sim);
+    const move = sim.orders.find((o) => o.actorId === lone.id && o.kind === "move");
+    // It may step to a better post, but it does not close on the six tanks 30m away.
+    expect(!move || move.destination!.x > 2).toBe(true);
+  });
+
+  it("pushing in with a pre-assigned post flag off still works (the flags are plain switches)", () => {
+    const sim = new TacticalSim();
+    sim.configure(mapDef("dustbowl"), "destroy", "hard");
+    sim.aiX.post = false;
+    sim.aiX.posture = false;
+    const grunt = sim.debugSpawn("soldier", "enemy", { x: 8, z: 0 });
+    grunt.commandPoints = grunt.maxCommandPoints;
+    sim.debugSpawn("soldier", "player", { x: -22, z: 0 });
+    settleCommand(sim);
+    const move = sim.orders.find((o) => o.actorId === grunt.id && o.kind === "move");
+    expect(move?.destination?.x).toBeLessThan(8);
+  });
+});

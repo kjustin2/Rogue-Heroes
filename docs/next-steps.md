@@ -32,8 +32,11 @@ Then (same day, owner round 2): splash aiming is PICK-then-CONFIRM (`hud.groundP
 state is drawn from that spot, Confirm fires at it; the cursor ray now lands on the real terrain, not the y=0 plane, so high
 ground picks the hill you see); the tech tree rebuilt so Recon, Assault and Armor each have a purpose (`docs/game-systems.md`,
 "Tech is cheap"); no default rings around bases or unselected units; custom cursors; quick-select numbers on the base deck.
-**Open finding**: `probe:terrain` shows one 0.2-0.5m tank tread clip on Karak around (-13, -14.8) after the bot's turn 3, timing
-dependent (the sim terrain there is flat, so it is a DRAWN ledge the sim does not know). Not yet bisected.
+**Fixed**: a Karak tank tread clipped 0.2-0.5m into the west tower stump (a 3.2m block, the drawn tread is wider than the clearance
+disc): AI vehicle moves now stop short of a sheer face. **Open**: `probe:terrain` still flags two borderline samples after the bot's
+turns, an infantry body 0.3m into a Verdant terrace riser at (2.6, -10.9) and a captured turret's mount 0.14m into an Ironworks step
+(-4.2, -10.5). Not yet bisected. Round 2 also added base yard details (hazard-striped gate, crates, drums, windsock, burning
+barrel, pennant, strobing roof beacon) and the Hard bot's posts / posture (`docs/game-systems.md`).
 Then (2026-10-01): no Deploy-now shortcut in set-up; the PLAY LOG (`game/logs/latest.log`); the locked-turret
 placement fix (decks show locks, picks refuse up front, every refusal toasts its reason, every defense has a
 placement ghost); Defenses decks of 5-6 and Support decks of 3 per faction (starters, tech pieces, faction-own);

@@ -513,6 +513,14 @@ app.whenReady().then(async () => {
         if (!d || Math.hypot(d.x + 3, d.z - 2) > 1.2) throw new Error("confirm did not fire at the picked spot: " + orders);
         continue;
       }
+      if (s === "karakclip") {
+        await js(`window.__rht.startBattle("karak", "destroy", "normal")`);
+        await sleep(1800);
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); const t = sim.debugSpawn("tank", "player", { x: -13, z: -14.8 }); r.setView({ x: -13, z: -14.8, zoom: 0.3, pitch: 0.6, yaw: 0.3 }); })()`);
+        await sleep(900); await shot("karakclip");
+        console.log("karakclip", await js(`JSON.stringify(window.__rht.auditTerrainClip())`));
+        continue;
+      }
       if (s === "projgallery") {
         // One shooter at a time, tight camera on the round in flight: three frames each. Rifle, carbine, pistol, MG, marksman, rocket, scattergun, grenade.
         const kinds = ["soldier", "scout", "striker", "heavy", "sniper", "bazooka", "sapper", "grenadier"];

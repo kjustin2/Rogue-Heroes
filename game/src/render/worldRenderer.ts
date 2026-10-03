@@ -2213,7 +2213,7 @@ export class WorldRenderer {
     this.box(group, entity, "core", [0.05, 0.46, 0.66], [1.06, 2.82, 0.99], factionGlow, { emissive: factionGlow, emissiveIntensity: 0.45 });
     this.box(group, entity, "core", [0.05, 0.46, 0.16], [1.06, 2.82, 1.4], factionGlow, { emissive: factionGlow, emissiveIntensity: 0.28 });
     for (const x of [-0.9, 0.9]) this.box(group, entity, "core", [0.12, 0.08, 0.12], [x, 1.82, -0.94], 0xffd9a0, { emissive: 0xffa04a, emissiveIntensity: 0.5 });
-    this.box(group, entity, "comms", [0.1, 0.1, 0.1], [-0.92, 3.58, -0.2], 0xffb08a, { emissive: 0xff6a4a, emissiveIntensity: 0.6, bevel: 0.4 });
+    this.box(group, entity, "comms", [0.1, 0.1, 0.1], [-0.92, 3.58, -0.2], 0xffb08a, { emissive: 0xff6a4a, emissiveIntensity: 0.6, bevel: 0.4 }).userData.blink = 0.006;
     this.box(group, entity, "power", [0.5, 0.16, 0.06], [1.0, 0.68, -0.34], 0xffb347, { emissive: 0xff8c1a, emissiveIntensity: 0.55, bevel: 0.35 });
     for (const x of [-0.5, 0, 0.5]) this.box(group, entity, "gate", [0.26, 0.06, 0.06], [x, 1.02, 1.4], 0xffd9a0, { emissive: 0xffa04a, emissiveIntensity: 0.4, bevel: 0.4 });
     this.factionBaseDress(group, entity);
@@ -2492,6 +2492,49 @@ export class WorldRenderer {
         this.cylinder(group, entity, "core", 0.07, 0.8, [x, 1.66, z + 0.62], 0x2a2e24, [Math.PI / 2, 0, 0], { metalness: 0.5 });
         this.box(group, entity, "core", [0.5, 0.05, 0.03], [x, 1.74, z + 0.66], 0xe0b12a, { accent: true });
       }
+    }
+    this.baseYardDetails(group, entity, f ?? "");
+  }
+
+  /** The small stuff that makes a base look lived in: hazard-striped gate sill, stacked crates, drums, a windsock,
+   *  a burning barrel, a flag. All on the HQ's own part ids (they ride the rig and take damage paint), all above the
+   *  ground, none inside the deploy ring's walkable space. */
+  private baseYardDetails(group: THREE.Group, entity: CombatEntity, f: string): void {
+    const glow = entity.team === "enemy" ? TEAMS.enemyAccent : this.playerAccent;
+    for (let i = 0; i < 6; i += 1) {
+      this.box(group, entity, "gate", [0.11, 0.12, 0.04], [-0.55 + i * 0.22, 0.28, 1.45], i % 2 ? 0x1a1a1a : 0xf2c230, { accent: true, rotation: [0, 0, 0.5] });
+    }
+    const crate = (x: number, z: number, y: number, w: number, h: number, d: number, color: number, yaw = 0): void => {
+      this.box(group, entity, "core", [w, h, d], [x, y + h / 2 + 0.02, z], color, { accent: true, roughness: 0.9, rotation: [0, yaw, 0], bevel: 0.2 });
+    };
+    const drum = (x: number, z: number, color: number): void => {
+      this.cylinder(group, entity, "core", 0.2, 0.56, [x, 0.3, z], color, [0, 0, 0], { metalness: 0.3 });
+      this.box(group, entity, "core", [0.42, 0.04, 0.42], [x, 0.4, z], 0x1a1a1a, { accent: true });
+    };
+    if (f === "vanguard") {
+      crate(2.6, 2.0, 0, 0.62, 0.46, 0.5, 0x6f8a5a, 0.2);
+      crate(2.55, 2.0, 0.46, 0.5, 0.4, 0.44, 0x8aa070, -0.15);
+      drum(3.3, 1.6, 0x3c5a78);
+      drum(3.3, 2.15, 0x3c5a78);
+      // Windsock: pole and a striped cone that points the way the wind blows.
+      this.cylinder(group, entity, "comms", 0.035, 2.2, [-3.5, 1.1, -0.7], 0x9aa096, [0, 0, 0], { metalness: 0.3 });
+      this.cylinder(group, entity, "comms", 0.06, 0.7, [-3.15, 2.1, -0.7], 0xff8a2a, [0, 0, Math.PI / 2], { accent: true, radiusBottom: 0.17 });
+      this.cylinder(group, entity, "comms", 0.1, 0.12, [-3.12, 2.1, -0.7], 0xf4f1e6, [0, 0, Math.PI / 2], { accent: true, radiusBottom: 0.13 });
+    } else if (f === "syndicate") {
+      drum(-1.0, -1.95, 0x7a3a22);
+      drum(-1.45, -1.7, 0x4e3a2a);
+      drum(-0.7, -1.55, 0x8a4a26);
+      // The burning barrel: a lit rim that gutters.
+      this.box(group, entity, "core", [0.3, 0.1, 0.3], [-1.45, 0.62, -1.7], 0xff9a3a, { accent: true, emissive: 0xff6a1c, emissiveIntensity: 0.9 }).userData.blink = 0.017;
+      crate(1.7, 1.55, 0, 0.7, 0.4, 0.55, 0x6e5a40, 0.5);
+      crate(1.15, 1.9, 0, 0.45, 0.34, 0.45, 0x5a4636, -0.3);
+    } else if (f === "bastion") {
+      crate(-1.4, -1.45, 0, 0.7, 0.42, 0.5, 0x5a6038, 0.1);
+      crate(-1.35, -1.45, 0.42, 0.55, 0.36, 0.44, 0x6a7040, -0.2);
+      crate(-0.6, -1.75, 0, 0.5, 0.36, 0.42, 0x4e5640, 0.3);
+      // A pennant on the dome's crown.
+      this.cylinder(group, entity, "core", 0.03, 1.2, [-0.35, 3.45, -0.2], 0x2a2e24, [0, 0, 0], { metalness: 0.3 });
+      this.box(group, entity, "core", [0.42, 0.24, 0.03], [-0.14, 3.9, -0.2], glow, { accent: true, emissive: glow, emissiveIntensity: 0.35 });
     }
   }
 
@@ -4728,6 +4771,12 @@ export class WorldRenderer {
     }
     const spinY = mesh.userData.spinY as number | undefined;
     if (spinY && entity.status.alive) mesh.rotation.y += performance.now() * spinY;
+    // BEACONS: a part tagged `blink` strobes its lamp (the HQ roof beacon, a burning barrel), phase-shifted per entity.
+    const blink = mesh.userData.blink as number | undefined;
+    if (blink && entity.status.alive && part.hp > 0 && flash <= 0) {
+      const phase = Math.sin(performance.now() * blink + (hash(entity.id) % 7));
+      spec.emissiveIntensity = phase > 0.55 ? 1.4 : 0.1;
+    }
     if (entity.kind === "tank" && part.role === "mobility" && mesh.geometry.type === "CylinderGeometry" && mesh.parent?.userData.moving) {
       mesh.rotation.y += ((mesh.parent.userData.motionTime as number | undefined) ?? 0) * 2.2;
     }

@@ -5536,7 +5536,7 @@ export class TacticalSim {
    */
   brainOverride?: Difficulty;
   /** Self-play A/B switches for the Hard brain's newer behaviours (all on by default). */
-  aiX: { standoff: boolean; bomb: boolean; medic: boolean; econ: boolean } = { standoff: true, bomb: true, medic: true, econ: true };
+  aiX: { standoff: boolean; bomb: boolean; medic: boolean; econ: boolean; post: boolean; posture: boolean } = { standoff: true, bomb: true, medic: true, econ: true, post: true, posture: true };
   /** Self-play knob: force individual brain traits on/off to measure what each one is worth. */
   debugAiTraits?: Partial<{ focusFire: boolean; useCover: boolean; retreat: boolean; smartEconomy: boolean; tactical: boolean }>;
   private aiProfile(): { focusFire: boolean; useCover: boolean; retreat: boolean; smartEconomy: boolean; tactical: boolean } {
@@ -5661,6 +5661,8 @@ export class TacticalSim {
     // Running tally of damage already committed to each player unit this turn. Focus-fire reads
     // it so shooters pile onto one target until it's predicted dead, then spill to the next.
     const committed = new Map<string, number>();
+    // HARD reads the balance of forces: well behind, it holds a defensive line and lets the player walk into its guns.
+    const holding = profile.tactical && this.aiX.posture && this.turn >= 2 && this.aiStrengthRatio() < 0.75;
     const easyBrain = (this.brainOverride ?? this.difficulty) === "easy";
     for (const enemy of this.living("enemy")) {
       if (isBuildingKind(enemy.kind) || enemy.carriedById) continue; // carried units can't act
@@ -5818,6 +5820,10 @@ export class TacticalSim {
             ? this.living("enemy").filter((m) => m.id !== enemy.id && m.kind === "medic" && !m.downed && dist(m.position, enemy.position) < 22).sort((a, b) => dist(a.position, enemy.position) - dist(b.position, enemy.position))[0]
             : undefined;
           goal = medic ? medic.position : home;
+        } else if (holding && !isMelee && !isAirKind(enemy.kind)) {
+          // Outnumbered: fall back toward the base and hold there; anything that comes into reach gets shot.
+          if (home && dist(enemy.position, home) > 14) goal = home;
+          else if (target && separation <= range * 1.2) { goal = target.position; advancing = true; }
         } else if (wantsTarget) {
           goal = target!.position;
           advancing = true;
@@ -5836,12 +5842,33 @@ export class TacticalSim {
             advancing = true;
           }
         }
+        // HARD: when pushing in, pick the post, not just the direction: height over the nearest foe, cover, how many guns
+        // can reach the spot against how many friends stand by, and whether it can still shoot from there. (Measured
+        // against the Normal bot: posts on the way in went 31-1 in wins/losses where plain marching went 30-6; letting a
+        // unit that already fired scoot to a post lost ground 17-18, so firing units still hold and press.)
+        const postable = profile.tactical && this.aiX.post && !carrying && !crippled && !fire && !isMelee && !isAirKind(enemy.kind) && !enemy.flying && !canJump(enemy);
+        let posted: Vec2 | undefined;
+        if (postable && advancing && !fired && allPlayers.length && !(this.aiDangerAt(enemy.position))) {
+          const stepP = isVehicleKind(enemy.kind) ? Math.max(3.2, moveRange(enemy)) : moveRange(enemy);
+          const pick = this.aiBestPost(enemy, goal, stepP, allPlayers, target, range, true);
+          if (dist(pick, enemy.position) > 0.6) posted = pick;
+        }
         if (goal) {
           const step = isVehicleKind(enemy.kind) ? Math.max(3.2, moveRange(enemy)) : moveRange(enemy);
           // When pushing toward a threat, prefer a tile that ends sheltered behind cover.
-          let destination = profile.useCover && advancing && target
+          let destination = posted ?? (profile.useCover && advancing && target
             ? this.coverBiasedDestination(enemy, goal, target, step)
-            : this.navigateToward(enemy, goal, step);
+            : this.navigateToward(enemy, goal, step));
+          // A hull never ends its move brushing a sheer face: the drawn tread is wider than the clearance disc
+          // (probe:terrain found a Karak tank 0.5m into a tower stump). Stop short instead.
+          if (isVehicleKind(enemy.kind) && !enemy.flying && hullInRise(destination, enemy.radius * 1.2) && !hullInRise(enemy.position, enemy.radius * 1.2)) {
+            let found: Vec2 | undefined;
+            for (const f of [0.75, 0.5, 0.25]) {
+              const shorter = { x: enemy.position.x + (destination.x - enemy.position.x) * f, z: enemy.position.z + (destination.z - enemy.position.z) * f };
+              if (!hullInRise(shorter, enemy.radius * 1.2)) { found = shorter; break; }
+            }
+            destination = found ?? enemy.position;
+          }
           // HARD: never END a move inside this turn's strike zone, fire or gas -- stop short instead.
           if (profile.tactical && this.aiDangerAt(destination) && !this.aiDangerAt(enemy.position)) {
             for (const f of [0.66, 0.33]) {
@@ -5992,6 +6019,66 @@ export class TacticalSim {
       }
     }
     return best;
+  }
+
+  /** Hard brain: how many of `foes` can shoot a unit standing at `pos` (height stretches or shrinks their reach). */
+  private aiExposureAt(pos: Vec2, foes: CombatEntity[]): number {
+    let n = 0;
+    const here = terrainHeightAt(pos);
+    for (const f of foes) {
+      if (!f.status.alive || !f.status.canShoot || isMeleeKind(f.kind)) continue;
+      const reach = projectileRange(f) + clamp((terrainHeightAt(f.position) - here) * 0.8, -2, 2);
+      if (dist(f.position, pos) <= reach) n += 1;
+    }
+    return n;
+  }
+
+  /**
+   * Hard brain: the best place to stand within one move. Scores height over the nearest foe (a shooter above its
+   * target keeps its spread tight; below, it hangs open), cover toward that foe, how many foes can hit the spot
+   * versus how many friends stand near to answer, whether the unit can still shoot from it, and (when pushing)
+   * progress toward the goal. It stays put unless the best spot is clearly better, so units do not dance.
+   */
+  private aiBestPost(actor: CombatEntity, goal: Vec2 | undefined, step: number, foes: CombatEntity[], target: CombatEntity | undefined, range: number, pushing: boolean): Vec2 {
+    const here = actor.position;
+    const cands: Vec2[] = [here];
+    for (const r of [0.5, 1]) {
+      for (let i = 0; i < 8; i += 1) {
+        const a = (i / 8) * Math.PI * 2;
+        const reach = this.blockedMoveDestination(actor, here, clampToArena({ x: here.x + Math.sin(a) * step * r, z: here.z + Math.cos(a) * step * r }), undefined, true);
+        if (dist(reach, here) > 0.6) cands.push(reach);
+      }
+    }
+    if (goal) cands.push(this.navigateToward(actor, goal, step));
+    const friends = this.entities.filter((e) => e.team === actor.team && e.id !== actor.id && e.status.alive && e.status.canShoot && !isBuildingKind(e.kind));
+    const score = (c: Vec2): number => {
+      if (this.aiDangerAt(c)) return -50;
+      const near = foes.filter((f) => f.status.alive && dist(f.position, c) <= range * 1.4).sort((a, b) => dist(a.position, c) - dist(b.position, c))[0];
+      const heightEdge = near ? clamp(terrainHeightAt(c) - terrainHeightAt(near.position), -1.5, 2) * 2.4 : 0;
+      const cover = near && this.isShelteredAt(c, near.position) ? 2.2 : 0;
+      const backup = friends.filter((f) => dist(f.position, c) <= 7).length;
+      const exposed = Math.max(0, this.aiExposureAt(c, foes) - backup * 0.8) * 0.9;
+      const canFire = target && dist(c, target.position) <= range * 0.95 ? 2.5 : 0;
+      const progress = goal ? (dist(here, goal) - dist(c, goal)) * (pushing ? 0.9 : 0.1) : 0;
+      return heightEdge + cover - exposed + canFire + progress;
+    };
+    let best = here;
+    let bestScore = score(here) + (pushing ? 1.2 : 2.5); // a new spot has to be clearly better; a unit already firing needs more reason to move
+    for (const c of cands) {
+      if (c === here) continue;
+      const sc = score(c);
+      if (sc > bestScore) { bestScore = sc; best = c; }
+    }
+    return best;
+  }
+
+  /** Hard brain: army strength against the player's (cost x health). Below ~0.75 it holds its ground instead of marching in. */
+  private aiStrengthRatio(): number {
+    const value = (team: Team): number => this.fieldUnits(team).reduce((sum, e) => {
+      const hp = e.parts.reduce((a, p) => a + p.hp, 0) / Math.max(1, e.parts.reduce((a, p) => a + p.maxHp, 0));
+      return sum + troopSpec(e.kind as TroopKind).cost * hp;
+    }, 0);
+    return (value("enemy") + 60) / (value("player") + 60);
   }
 
   // True if standing at `pos` puts sturdy cover between the unit and the threat.
@@ -6232,7 +6319,9 @@ export class TacticalSim {
     // enemy aircraft — this is also what finally gives a player gunship a real air-to-air target.
     if (playerFlyers > 0 && !haveAntiAir) pref.push("flak", "heavy", "sniper");
     if (playerFlyers > 0 && !haveAir) pref.push("interceptor", "flak");
-    if (playerVehicles > 0 && !haveAntiArmor) pref.push("tank", "heavy", "grenadier", "artillery");
+    if (playerVehicles > 0 && !haveAntiArmor) pref.push("bazooka", "tank", "heavy", "grenadier", "artillery");
+    // A dug-in player (turrets, bunkers, manned guns) is shelled, not charged.
+    if (this.entities.filter((e) => e.team === "player" && e.status.alive && isDefenseKind(e.kind) && e.kind !== "wall").length >= 2) pref.push("artillery", "mortar", "grenadier");
     if (playerInfantry >= 3) pref.push("grenadier", "mortar", "heavy");
     // Round out into a balanced force. The tail is the faction's own doctrine rather than a fixed
     // build order, so each side plays to its roster.
