@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { GROUP_GAIN, GUN_VOICES, SAMPLE_GROUPS, blastGroup, impactClass, voiceFor } from "./audio";
 import { MAP_TRACKS, MENU_TRACKS } from "./music";
 import { MAPS } from "./game/maps";
-import { UNIT_STATS, TROOP_KINDS } from "./game/units";
+import { UNIT_STATS, TROOP_KINDS, isInfantry } from "./game/units";
 
 // THE SOUND DESIGN, held to its promises (owner 2026-10-03: polished, balanced, with variety across units).
 const AUDIO = join(__dirname, "..", "public", "audio");
@@ -26,18 +26,29 @@ describe("weapon voices", () => {
     expect(set.size).toBeGreaterThanOrEqual(20);
   });
 
-  it("is loud where it should be: boom > cannon = blast > rifle > carbine > pistol, MG held back", () => {
+  it("is loud where it should be: boom > cannon = blast, marksman rifle > recruit rifle > scout SMG > pistols, siege gun > tank", () => {
     expect(GROUP_GAIN.boomdeep).toBeGreaterThan(GROUP_GAIN.cannon);
     expect(GROUP_GAIN.cannon).toBeGreaterThanOrEqual(GROUP_GAIN.blast);
-    expect(GROUP_GAIN.blast).toBeGreaterThan(GROUP_GAIN.rifle);
-    expect(GROUP_GAIN.rifle).toBeGreaterThan(GROUP_GAIN.carbine);
-    expect(GROUP_GAIN.carbine).toBeGreaterThan(GROUP_GAIN.pistol);
-    // Effective (group x weapon) loudness: the marksman out-shouts the recruit, the recruit the scout, the siege gun the tank.
     const loud = (k: string): number => (GROUP_GAIN[GUN_VOICES[k].group] ?? 0) * GUN_VOICES[k].m;
     expect(loud("sniper")).toBeGreaterThan(loud("soldier"));
     expect(loud("soldier")).toBeGreaterThan(loud("scout"));
+    expect(loud("scout")).toBeGreaterThan(loud("medic") * 0.8);
     expect(loud("artillery")).toBeGreaterThan(loud("tank"));
-    for (const g of Object.values(GROUP_GAIN)) expect(g).toBeLessThanOrEqual(1);
+    // headroom: every sample is peak-normalised to -3 dBFS, so a gain past ~1.41 clips
+    for (const g of Object.values(GROUP_GAIN)) expect(g).toBeLessThanOrEqual(1.4);
+  });
+
+  it("the marksman, the heavy gunner and the recruit are three different recorded guns (owner 2026-10-03)", () => {
+    const g = (k: string): string => voiceFor("rifle", k).group;
+    expect(new Set([g("soldier"), g("sniper"), g("heavy")]).size).toBe(3);
+    expect(voiceFor("rifle", "heavy").burst).toBe(true); // one burst clip per order, not ten overlapping shots
+    expect(voiceFor("rifle", "sniper").alt?.length).toBeGreaterThanOrEqual(2); // a marksman rotates between bolt rifles
+  });
+
+  it("every infantry kind owns a recording of its own: at least 14 distinct guns across the roster", () => {
+    const infantry = TROOP_KINDS.filter((k) => isInfantry(k) && UNIT_STATS[k].shotDamage > 0 && k !== "striker" || k === "striker");
+    const groups = new Set(infantry.map((k) => voiceFor("rifle", k).group).filter(Boolean));
+    expect(groups.size).toBeGreaterThanOrEqual(14);
   });
 
   it("heavier weapons play lower, lighter ones higher", () => {

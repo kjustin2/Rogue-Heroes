@@ -56,7 +56,7 @@ describe("tactical simulation loop", () => {
     expect(sim.log[0]).toBe("Cannot ram friendly units");
   });
 
-  it("cycles the player squad with Tab, wrapping both ways and skipping structures", () => {
+  it("cycles with Tab: the Home Base first, then every unit, wrapping both ways, skipping walls", () => {
     const sim = new TacticalSim([
       createBase("p-base-1", "HQ", "player", { x: -10, z: 0 }),
       createSoldier("p-a", "Able", "player", { x: 0, z: 0 }),
@@ -65,24 +65,25 @@ describe("tactical simulation loop", () => {
       createWall("p-wall", "Barrier", "player", { x: 4.8, z: 0 }),
     ]);
 
-    // Forward cycles in roster order, then wraps from the last unit back to the first
-    // (past the wall and base, which are never part of the squad cycle).
-    sim.select("p-a");
+    // Forward: base, Able, Baker, Charlie, then wraps to the base (owner 2026-10-03: Tab reaches the Home Base too).
+    sim.select("p-base-1");
+    sim.cyclePlayer(1);
+    expect(sim.selectedId).toBe("p-a");
     sim.cyclePlayer(1);
     expect(sim.selectedId).toBe("p-b");
     sim.cyclePlayer(1);
     expect(sim.selectedId).toBe("p-c");
     sim.cyclePlayer(1);
-    expect(sim.selectedId).toBe("p-a");
+    expect(sim.selectedId).toBe("p-base-1");
 
-    // Reverse (Shift+Tab) wraps the other direction: first unit -> last unit.
+    // Reverse (Shift+Tab) wraps the other way: base -> last unit.
     sim.cyclePlayer(-1);
     expect(sim.selectedId).toBe("p-c");
 
-    // Selecting a structure then pressing Tab steps onto a real unit, never stalling.
+    // Selecting a wall then pressing Tab steps onto a real selectable, never stalling.
     sim.select("p-wall");
     sim.cyclePlayer(1);
-    expect(sim.selectedId).toBe("p-a");
+    expect(sim.selectedId).toBe("p-base-1");
   });
 
   it("lets a unit spend multiple AP on queued orders and undo individual choices", () => {
@@ -1743,7 +1744,7 @@ describe("tactical enemy AI", () => {
       // be measuring the faction gate instead of the economy decision it is written to measure.
       sim.setFaction("enemy", "bastion");
       sim.difficulty = difficulty;
-      sim.economy.set("enemy", troopSpec("tank").cost); // affords a tank, grenadier (250), etc.
+      sim.economy.set("enemy", 680); // affords a tank, grenadier (250), etc. (a fixed purse: the tank price is tuned separately)
       sim.endTurn();
       return sim.entities.find((e) => e.team === "enemy" && e.id.startsWith("e-spawn-"))?.kind;
     };

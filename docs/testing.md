@@ -88,6 +88,9 @@ drive headless Chromium via `window.__rht`.
 - `npm run shots:gpu -- fieldhands mounts audioprobe`: the 2026-10-03 units and placements, crewing a gun post (Man armed,
   walk-up, crewed), and a probe that each map picks one of its own three tracks and every audio file is served (200).
   `src/game/fieldhands.test.ts` covers heal / repair, charges, pads (incl. ring-out), oil, barriers, the rocket and the posts.
+- `npm run shots:gpu -- groundaim` arms Shoot on a tank, clicks a ground spot, moves the cursor away and checks the line stays and Confirm queues that spot.
+- `npm run shots:gpu -- projectiles circles controls3 treatanim`: every round in flight, rings across ledges on all six maps, the base deck numbers /
+  Tab / hop preview / all-set button, and a medic's aid pose.
 - **Audio is auto-muted under automation** (`navigator.webdriver`/`?mute` gate in `main.ts`, mirrored
   by Chromium `--mute-audio` and the Electron smoke's `setAudioMuted(true)`) so background runs never
   blare. `window.__rht.audioMuted()` asserts it; `smoke:flow` guards it.

@@ -24,3 +24,11 @@ cd "$D/sfx"
 get "$O/sounds.zip" gunshots.zip
 get "$O/25-CC0-bang-sfx.zip" bangs.zip
 get "https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip" kenney_impact.zip
+# ---- second set: the real firearms (194 MB 7z; Windows' tar.exe / bsdtar / 7z can unpack it) and the Kenney interface sounds ----
+mkdir -p "$D/sfx2" && cd "$D/sfx2"
+get "https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip" ui.zip
+get "https://kenney.nl/media/pages/assets/ui-audio/490d233f68-1677590494/kenney_ui-audio.zip" uiaudio.zip
+get "$O/Prepared%20SFX%20Library.7z" firearms.7z
+mkdir -p ui uiaudio firearms
+(cd ui && unzip -oq ../ui.zip); (cd uiaudio && unzip -oq ../uiaudio.zip)
+tar -xf firearms.7z -C firearms 2>/dev/null || "$(command -v 7z || echo 7z)" x -y -ofirearms firearms.7z >/dev/null || echo "unpack firearms.7z with bsdtar or 7z, then run audio-slice.py"

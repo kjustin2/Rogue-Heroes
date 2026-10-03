@@ -1,6 +1,6 @@
 #!/bin/bash
 # Transcode the fetched CC0 audio (scripts/audio-fetch.sh) into public/audio. ffmpeg required.
-#   bash scripts/audio-fetch.sh <raw-dir> && bash scripts/audio-build.sh <raw-dir>
+#   bash scripts/audio-fetch.sh <raw-dir> && python scripts/audio-slice.py <raw>/sfx2/firearms/"Prepared SFX Library" <raw>/sfx2/slices && bash scripts/audio-build.sh <raw-dir>
 # SFX: every file is peak-normalised to -3 dBFS (the sources clip at +3 dB and differ by 10+ dB), so loudness is
 # decided in ONE place: the gain table in src/audio.ts (VOICES / IMPACT_GAIN). Music: loudness-matched to -20 LUFS
 # so no track jumps out, long tracks trimmed to 3:30 with a fade.
@@ -47,4 +47,27 @@ for i in 000 001 002; do
   norm "$K/impactPlate_heavy_$i.ogg" "hitplate_$i"
   norm "$K/impactWood_heavy_$i.ogg" "hitwood_$i"
 done
+# ---- real firearms (scripts/audio-slice.py cuts them from The Free Firearm Sound Library) ----
+if [ -d "$RAW/sfx2/slices" ]; then
+  for f in "$RAW"/sfx2/slices/*.wav; do n=$(basename "$f" .wav); norm "$f" "$n"; done
+fi
+# ---- interface sounds (Kenney Interface Sounds + UI Audio): chosen by tone (warm, short), one alias per job ----
+UI="$RAW/sfx2/ui/Audio"; UA="$RAW/sfx2/uiaudio/Audio"
+if [ -d "$UI" ]; then
+  uis() { local alias="$1"; shift; local n=1; for f in "$@"; do norm "$f" "ui_${alias}_0$n"; n=$((n+1)); done; }
+  uis hover "$UA/rollover4.ogg" "$UA/rollover5.ogg"
+  uis select "$UI/select_004.ogg" "$UI/select_005.ogg"
+  uis unit "$UI/select_005.ogg" "$UI/select_006.ogg"
+  uis confirm "$UI/confirmation_004.ogg"
+  uis deploy "$UI/confirmation_001.ogg"
+  uis turn "$UI/confirmation_002.ogg"
+  uis ready "$UI/confirmation_003.ogg"
+  uis back "$UI/back_002.ogg" "$UI/back_004.ogg"
+  uis error "$UI/error_005.ogg" "$UI/error_006.ogg"
+  uis toggle "$UI/toggle_001.ogg" "$UI/toggle_002.ogg"
+  uis open "$UI/drop_003.ogg"
+  uis drop "$UI/drop_002.ogg" "$UI/drop_004.ogg"
+  uis win "$UI/confirmation_004.ogg" "$UI/confirmation_002.ogg"
+  uis lose "$UI/question_004.ogg" "$UI/error_005.ogg"
+fi
 du -sh "$OUT/sfx" "$OUT/music"

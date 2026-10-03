@@ -14,7 +14,7 @@ import {
 } from "postprocessing";
 import { N8AOPostPass } from "n8ao";
 import { clamp, lerp, type Vec2 } from "../core/math";
-import { ARENA_BOUNDS } from "../game/terrain";
+import { ARENA_BOUNDS, terrainHeightAt } from "../game/terrain";
 import type { LightRig } from "../game/maps";
 import { GradeEffect } from "./gradeEffect";
 
@@ -93,10 +93,13 @@ export class Stage {
   private lowCost = false;
   /** Slow camera orbit behind the main menu: the diorama turns, the title does not. */
   menuDrift = false;
+  private menuClock = 0;
+  private menuBase: { yaw: number; zoom: number; x: number; z: number } | undefined;
 
   /** Back to the tactical default after the diorama's low, drifting view. */
   resetView(): void {
     this.menuDrift = false;
+    this.menuBase = undefined;
     this.zoom = 1;
     this.orbitYaw = 0;
     this.orbitPitch = Math.atan2(this.baseOffset.y, Math.hypot(this.baseOffset.x, this.baseOffset.z));
@@ -467,8 +470,29 @@ export class Stage {
     this.setPointer(clientX, clientY);
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const hit = new THREE.Vector3();
-    this.raycaster.ray.intersectPlane(this.ground, hit);
-    return { x: hit.x, z: hit.z };
+    if (!this.raycaster.ray.intersectPlane(this.ground, hit)) return { x: hit.x, z: hit.z };
+    // The flat plane is wrong on high ground (the click lands behind the spot you see): walk the ray
+    // down onto the real terrain instead, then refine, so a hill picks the hill.
+    const ray = this.raycaster.ray;
+    const total = ray.origin.distanceTo(hit);
+    const p = new THREE.Vector3();
+    const above = (t: number): boolean => {
+      ray.at(t, p);
+      return p.y > terrainHeightAt({ x: p.x, z: p.z });
+    };
+    const steps = 48;
+    let lo = 0;
+    let found = false;
+    for (let i = 1; i <= steps; i += 1) {
+      const t = (total * i) / steps;
+      if (above(t)) { lo = t; continue; }
+      let hi = t;
+      for (let k = 0; k < 8; k += 1) { const mid = (lo + hi) / 2; if (above(mid)) lo = mid; else hi = mid; }
+      ray.at(hi, p);
+      found = true;
+      break;
+    }
+    return found ? { x: p.x, z: p.z } : { x: hit.x, z: hit.z };
   }
 
   pick(clientX: number, clientY: number, objects: THREE.Object3D[]): PickResult | undefined {
@@ -533,7 +557,14 @@ export class Stage {
 
   update(dt: number, input: { up: boolean; down: boolean; left: boolean; right: boolean }): void {
     if (this.menuDrift) {
-      this.orbitYaw += dt * 0.045;
+      // A slow sway across a pleasant front arc (about +-17 degrees), a breath of zoom and a drift of focus: the diorama
+      // stays alive without ever swinging round behind the squad or off the edge of the world.
+      if (this.menuBase === undefined) this.menuBase = { yaw: this.orbitYaw, zoom: this.zoom, x: this.focus.x, z: this.focus.z };
+      this.menuClock += dt;
+      this.orbitYaw = this.menuBase.yaw + Math.sin(this.menuClock * 0.09) * 0.3;
+      this.zoom = this.menuBase.zoom + Math.sin(this.menuClock * 0.06 + 1) * 0.025;
+      this.focus.x = this.menuBase.x + Math.sin(this.menuClock * 0.05) * 0.9;
+      this.focus.z = this.menuBase.z + Math.cos(this.menuClock * 0.04) * 0.5;
       this.updateCamera();
     }
     // Screen-stress decay (blast vignette/aberration pulse).
@@ -621,6 +652,7 @@ export class Stage {
   // `overview` lifts the zoom clamp for whole-map screenshots (shots:gpu overview); play never does.
   debugSetView(view: { x?: number; z?: number; zoom?: number; yaw?: number; pitch?: number; overview?: boolean }): void {
     this.suppressGuide();
+    this.menuBase = undefined; // a new view re-anchors the title sway
     if (view.x !== undefined) this.focus.x = view.x;
     if (view.z !== undefined) this.focus.z = view.z;
     if (view.zoom !== undefined) this.zoom = Math.max(0.18, Math.min(view.overview ? 6 : 1.55, view.zoom));

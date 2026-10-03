@@ -196,6 +196,7 @@ const hud = new Hud(uiRoot, sim, {
   },
   hotseatTurn: () => (sim.hotseat && sim.phase === "command" ? { seat: hotseatSeat(), passes: hotseatSeatsDone === 0 } : undefined),
   select: (id: string) => {
+    sfx.unit();
     sim.select(id);
     const entity = sim.entity(id);
     // Only recenter if the unit is genuinely off-screen or hidden behind a panel; don't snap
@@ -226,6 +227,8 @@ const hud = new Hud(uiRoot, sim, {
   queueGrenadeAt: (destination) => sim.queueGrenadeAt(destination),
   queueSmokeAt: (destination) => sim.queueSmokeAt(destination),
   queueTreat: (id: string) => { const ok = sim.queueTreat(id); if (!ok) refused(); return ok; },
+  queueLeap: (destination) => { const ok = sim.queueLeap(destination); if (!ok) refused(); return ok; },
+  onAllSet: () => sfx.allSet(),
   queueMan: (id: string) => { const ok = sim.queueMan(id); if (!ok) refused(); return ok; },
   queueDismount: () => { const ok = sim.queueDismount(); if (!ok) refused(); return ok; },
   queuePlace: (destination) => { const ok = sim.queuePlace(destination); if (!ok) refused(); return ok; },
@@ -346,6 +349,9 @@ canvas.addEventListener("pointerdown", (event) => {
   const pick = stage.pick(event.clientX, event.clientY, world.pickables);
   if (pick) {
     if (pick.pickupId) {
+      // With Move armed a cache is a DESTINATION: the unit walks onto it and banks it. Otherwise it explains itself.
+      const cache = sim.pickups.find((c) => c.id === pick.pickupId);
+      if (cache && sim.intent === "move" && sim.phase === "command") { hud.chooseGround({ x: cache.x, z: cache.z }); hud.update(); return; }
       inspectPickup(pick.pickupId);
       return;
     }
@@ -409,14 +415,34 @@ canvas.addEventListener("contextmenu", (event) => {
   event.preventDefault();
   // Right-click is Back, everywhere (owner 2026-10-02): an armed placement, strike or attack steps back
   // exactly like the Back button / Escape does; nothing armed does nothing.
-  if (sim.phase === "command" && !anyOverlayOpen()) hud.handleEscape();
+  if (sim.phase === "command" && !anyOverlayOpen() && hud.handleEscape()) sfx.back();
 });
 
 // A click anywhere in the HUD plays a soft UI blip (the deploy/build/turn cues layer on top).
 uiRoot.addEventListener("pointerdown", (event) => {
   sfx.unlock();
   const el = event.target as HTMLElement;
-  if (el.closest("button, .menu-card, [data-select], [data-part]")) sfx.ui();
+  if (el.closest("button, .menu-card, [data-part]") && !el.closest("[data-select]")) sfx.ui();
+});
+
+// MENUS AND PANELS HAVE SOUND TOO: hover is a whisper, a press is a click, a toggle or a chip pick its own tick, and Back / Close step back.
+let lastHovered: Element | null = null;
+document.addEventListener("pointerover", (event) => {
+  const el = (event.target as Element | null)?.closest("button, .menu-card, .menu-chip, [data-select], .base-tab");
+  if (!el || el === lastHovered || el.matches(":disabled, [data-disabled='true']")) { if (!el) lastHovered = null; return; }
+  lastHovered = el;
+  if (el.closest(".menu-screen, .pause-overlay, #ui")) sfx.hover();
+});
+document.addEventListener("pointerdown", (event) => {
+  const el = event.target as Element | null;
+  if (!el || !el.closest(".menu-screen, .pause-overlay, .edit-overlay")) return;
+  sfx.unlock();
+  const btn = el.closest("button, .menu-card, .menu-chip, .menu-toggle");
+  if (!btn || btn.matches(":disabled")) return;
+  if (btn.matches("[data-back], [data-pause='resume'], [data-overlay-close], [data-step-go='back']")) sfx.back();
+  else if (btn.matches(".menu-toggle, .menu-chip")) sfx.toggle();
+  else if (btn.matches("[data-start], .title-start")) sfx.turn();
+  else sfx.ui();
 });
 
 const heldKeys = new Set<string>();
@@ -476,14 +502,32 @@ window.addEventListener("keydown", (event) => {
   }
   if (event.repeat) return;
   // Digits, Escape, and R are fixed; everything else routes through the rebindable map.
-  const digit = /^Digit([1-6])$/.exec(event.code);
+  const digit = /^Digit([1-9])$/.exec(event.code);
   if (digit) {
     hud.activateActionSlot(Number(digit[1]));
     return;
   }
+  // Fixed extras: H = Home Base, P = Push, Z = undo the last queued order, Q / E = turn the camera.
+  if (event.code === "KeyH" && sim.phase === "command") {
+    const base = sim.entities.find((e) => e.team === "player" && e.kind === "base" && e.status.alive);
+    if (base) { hud.chooseBoardEntity(base.id); stage.focusOn(base.position); hud.update(); }
+    return;
+  }
+  if (event.code === "KeyP") { hud.setAction("push"); return; }
+  if (event.code === "KeyJ") { hud.setAction("leap"); return; }
+  if (event.code === "BracketLeft" || event.code === "BracketRight") { hud.cycleBaseTab(event.code === "BracketLeft" ? -1 : 1); return; }
+  if (event.code === "KeyZ" && sim.phase === "command") {
+    const last = [...sim.orders].reverse().find((o) => !o.done && sim.entity(o.actorId)?.team === "player");
+    if (last && sim.cancelOrder(last.id)) { sfx.ui(); hud.update(); }
+    return;
+  }
+  if (event.code === "KeyQ" || event.code === "KeyE") {
+    stage.orbitBy(event.code === "KeyQ" ? -0.2 : 0.2, 0);
+    return;
+  }
   if (event.code === "Escape") {
     event.preventDefault();
-    if (!hud.handleEscape()) openPauseMenu();
+    if (hud.handleEscape()) sfx.back(); else openPauseMenu();
     return;
   }
   // T turns a wall or a line strike while it is being placed (the Rotate button in the placement bar).
@@ -1174,12 +1218,6 @@ function showStartScreen(versus = false, keep?: { map: string; mode: ModeId; ste
   };
   screen.classList.add("start-flow");
   showStep(step);
-  // Any pick on the Rules step (mode, difficulty) rewrites the summary right under it.
-  screen.addEventListener("click", () => {
-    const sum = screen.querySelector<HTMLElement>("[data-summary]");
-    if (sum && step === 3) sum.innerHTML = summary();
-  });
-
   screen.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
     if (target.closest("[data-back]")) {
@@ -1249,6 +1287,11 @@ function showStartScreen(versus = false, keep?: { map: string; mode: ModeId; ste
       const other = selectedFaction2 === "random" ? FACTIONS[Math.floor(Math.random() * FACTIONS.length)].id : selectedFaction2;
       deployWithLoadingScreen(selectedMap, selectedMode, selectedDifficulty, selectedFaction, versus ? other : undefined, versus ? undefined : other);
     }
+  });  // Any pick rewrites the summary AFTER the pick handler above has recorded it (listeners fire in order). Registered
+  // before the pick handler it showed the PREVIOUS choice: pick Capture the Flag and the summary still said Annihilation.
+  screen.addEventListener("click", () => {
+    const sum = screen.querySelector<HTMLElement>("[data-summary]");
+    if (sum) sum.innerHTML = summary();
   });
 }
 
@@ -1621,18 +1664,24 @@ function openPauseMenu(): void {
 
 function showControls(): void {
   const rows: Array<[string, string]> = [
-    ["Left click", "Select a unit / pick a target / order ground"],
+    ["Left click", "Select / target / order ground"],
+    ["Right click", "Back"],
     ["Middle-drag", "Orbit the camera"],
-    ["WASD", "Pan the camera"],
+    ["WASD  Q E", "Pan, turn the camera"],
     ["Scroll", "Zoom"],
     ["Space", "End turn"],
-    ["Tab", "Cycle squad units"],
-    ["1–6", "Command-deck action"],
+    ["Tab", "Next unit (Home Base first)"],
+    ["H", "Home Base"],
+    ["1–9", "Pick the numbered card"],
+    ["[  ]", "Base tabs"],
     ["M / F / G", "Move / Shoot / Grenade"],
+    ["J / P", "Jump / Push"],
     ["X / B / V", "Ram / Strike / Crouch"],
     ["C", "Quick crouch"],
-    ["Enter", "Confirm the armed order"],
-    ["L", "Toggle the battle log"],
+    ["T", "Turn a placement"],
+    ["Enter", "Confirm"],
+    ["Z", "Undo last order"],
+    ["L", "Battle log"],
     ["Esc", "Back / pause"],
     ["R", "Restart the battle"],
   ];
@@ -2086,7 +2135,7 @@ function frameBody(now: number): void {
   // Hitstop freezes the sim by SKIPPING the step, never by scaling dt: scaling would change the
   // step sequence the sim sees, while skipping delays everything uniformly and preserves ordering.
   // The action-pace setting only scales time while orders resolve; planning stays real-time.
-  if (shot.hitstop <= 0) sim.update(sim.phase === "resolve" ? dt * settings.resolveSpeed * resolveScale : dt);
+  if (shot.hitstop <= 0) sim.update(sim.phase === "resolve" ? dt * settings.resolveSpeed * resolveScale * debugTimeScale : dt);
   resolveFocus = shot.focus; // consumed by syncCameraAssist, the single camera authority
   if (DEBUG_UNLOCKED && inBattle && sim.phase === "command") applyDebugCheats();
   processBattleEvents();
@@ -2098,6 +2147,13 @@ function frameBody(now: number): void {
     : sim.phase === "victory" || sim.phase === "defeat" ? "end"
     : inBattle ? "command" : "menu",
   );
+  // The board cursor follows what is armed: a reticle for any attack (or an enemy under it), a footprint ring for a move or placement.
+  {
+    const attack = sim.intent === "shoot" || sim.intent === "grenade" || sim.intent === "melee" || sim.intent === "push" || sim.intent === "ram";
+    const hovered = sim.entity(hud.hoveredTargetId);
+    document.body.classList.toggle("cursor-aim", inBattle && sim.phase === "command" && (attack || hovered?.team === "enemy"));
+    document.body.classList.toggle("cursor-move", inBattle && sim.phase === "command" && !attack && (sim.intent === "move" || sim.intent === "place" || sim.intent === "man" || sim.intent === "treat" || Boolean(sim.pendingDeploy || sim.pendingBuild)));
+  }
   music.setScene(inBattle ? sim.mapDef.id : "menu");
   sfx.setAmbience(inBattle ? sim.mapDef.id : "");
   sfx.tickAmbience();
@@ -2166,8 +2222,10 @@ function groundAimHover(): Vec2 | undefined {
   if (sim.pendingDeploy) return hoverWorld; // placed-deploy ghost footprint
   if (sim.pendingBuild) return hoverWorld; // the defense's ghost, turned the way it will be built
   // Grenade/shell aim a landing arc at the cursor; Move previews the path it would walk.
-  const aiming = sim.intent === "grenade" || sim.intent === "move" || (sim.intent === "shoot" && sim.selectedCanGroundTarget());
-  return aiming ? hoverWorld : undefined;
+  // A lob or ground shell is aimed at the PICKED spot (click, then Confirm), never the moving cursor.
+  const lob = sim.intent === "grenade" && !sim.selected?.flying;
+  if (lob || (sim.intent === "shoot" && sim.selectedCanGroundTarget())) return hud.groundPick;
+  return sim.intent === "grenade" || sim.intent === "move" ? hoverWorld : undefined;
 }
 
 // Diff freshly-spawned projectiles/effects against the seen-sets and fire the one-shot
@@ -2185,6 +2243,7 @@ function entityAtPoint(at: { x: number; z: number }): { kind: string; coverKind?
   return best ? { kind: best.kind, coverKind: best.coverKind } : undefined;
 }
 
+let debugTimeScale = 1; // __rht.setTimeScale: slow-motion for filmstrips and close-ups
 const lastSpot = new Map<string, { x: number; z: number }>();
 /** Feed the movement bed: who is walking, driving or flying in view this frame. */
 function updateMoveBed(): void {
@@ -2224,7 +2283,7 @@ function processBattleEvents(): void {
     if (seenProjectileIds.has(projectile.id)) continue;
     seenProjectileIds.add(projectile.id);
     const onScreen = stage.isInView(projectile.origin) ? 1 : 0.3;
-    sfx.shot(projectile.kind, projectile.sourceKind, onScreen < 1 ? 0.35 : 1); // a shot off-screen is heard, not felt
+    sfx.shot(projectile.kind, projectile.sourceKind, onScreen < 1 ? 0.35 : 1, projectile.orderId); // a shot off-screen is heard, not felt
     resolveCam.note(projectile.origin.x, projectile.origin.z, POI_WEIGHT.shot, 0.7);
     const heavy = projectile.kind === "shell" || projectile.kind === "grenade";
     if (heavy) {
@@ -2400,6 +2459,8 @@ declare global {
       queueGrenadeAt(destination: Vec2): boolean;
       queueSmokeAt(destination: Vec2): boolean;
       queueTreat(id: string): boolean;
+      queueLeap(destination: Vec2): boolean;
+      onAllSet?(): void;
       queueMan(id: string): boolean;
       queueDismount(): boolean;
       queuePlace(destination: Vec2): boolean;
@@ -2414,6 +2475,8 @@ declare global {
       beginDeploy(kind: TroopKind): void;
       queueDeployAt(kind: TroopKind, point: Vec2): boolean;
       hoverGround(point: Vec2 | undefined): void;
+      clickWorld(point: Vec2, height?: number): void;
+      setTimeScale(scale: number): void;
       queueBuildStructure(point: Vec2): boolean;
       beginBuild(kind: DefenseKind): void;
       beginSupport(kind: SupportPowerKind): void;
@@ -2515,6 +2578,7 @@ window.__rht = {
   queueGrenadeAt: (destination) => sim.queueGrenadeAt(destination),
   queueSmokeAt: (destination) => sim.queueSmokeAt(destination),
   queueTreat: (id: string) => sim.queueTreat(id),
+  queueLeap: (destination) => sim.queueLeap(destination),
   queueMan: (id: string) => sim.queueMan(id),
   queueDismount: () => sim.queueDismount(),
   queuePlace: (destination) => sim.queuePlace(destination),
@@ -2530,6 +2594,11 @@ window.__rht = {
   queueDeployAt: (kind, point) => sim.queueDeployAt(kind, point),
   // Park the cursor over a ground point (what pointermove does) so shots can show the hover ghost.
   hoverGround: (point) => { hoverWorld = point; },
+  /** A real left click on the canvas at a world point (through the same pointerdown handler a player's click takes). */
+  clickWorld: (point, height = 0.5) => {
+    const at = stage.projectToScreen(point, height);
+    canvas.dispatchEvent(new PointerEvent("pointerdown", { clientX: at.x, clientY: at.y, button: 0, bubbles: true, pointerId: 1 }));
+  },
   queueBuildStructure: (point) => sim.queueBuildStructure(point),
   beginBuild: (kind) => sim.setPendingBuild(kind),
   beginSupport: (kind) => sim.setPendingSupport(kind),
@@ -2602,6 +2671,7 @@ window.__rht = {
   forceEvent: (kind) => sim.debugForceEvent(kind),
   save: () => saveBattle(),
   audioMuted: () => sfx.isMuted,
+  setTimeScale: (scale) => { debugTimeScale = Math.max(0.02, Math.min(4, scale)); },
   musicTrack: () => music.nowPlaying,
 };
 

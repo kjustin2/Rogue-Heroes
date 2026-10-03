@@ -10,18 +10,33 @@ type ShotKind = "rifle" | "shell" | "bolt" | "grenade";
 
 /** Sample groups: file stems under audio/sfx (every file peak-normalised to -3 dBFS by scripts/audio-build.sh). */
 export const SAMPLE_GROUPS: Record<string, string[]> = {
-  rifle: ["rifle"], carbine: ["carbine"], pistol: ["pistol"], pellet: ["pellet"],
+  // ---- real firearms ("The Free Firearm Sound Library", CC0): three takes each, cut by scripts/audio-slice.py ----
+  ar15: ["ar15_01", "ar15_02", "ar15_03"], ak47: ["ak47_01", "ak47_02", "ak47_03"], sks: ["sks_01", "sks_02", "sks_03"],
+  carlgustav: ["carlgustav_01", "carlgustav_02", "carlgustav_03"], tikka: ["tikka_01", "tikka_02", "tikka_03"],
+  marlin: ["marlin_01", "marlin_02", "marlin_03"], lever1894: ["lever1894_01", "lever1894_02", "lever1894_03"],
+  mosin: ["mosin_01", "mosin_02", "mosin_03"], savage: ["savage_01", "savage_02", "savage_03"], arisaka: ["arisaka_01", "arisaka_02", "arisaka_03"],
+  colt1911: ["colt1911_01", "colt1911_02", "colt1911_03"], ppq: ["ppq_01", "ppq_02", "ppq_03"], bersa: ["bersa_01", "bersa_02", "bersa_03"],
+  ruger22: ["ruger22_01", "ruger22_02", "ruger22_03"], sw642: ["sw642_01", "sw642_02", "sw642_03"], singlesix: ["singlesix_01", "singlesix_02", "singlesix_03"],
+  m1917: ["m1917_01", "m1917_02", "m1917_03"], mossberg: ["mossberg_01", "mossberg_02", "mossberg_03"], model12: ["model12_01", "model12_02", "model12_03"],
+  nova: ["nova_01", "nova_02", "nova_03"], ak47burst: ["ak47burst_01"], ppshburst: ["ppshburst_01"],
+  // ---- bangs, cannons and booms (fireworks, CC0) ----
   bolt: ["bolt_01", "bolt_02", "bolt_03"],
   cannon: ["cannon_01", "cannon_02", "cannon_03"],
   crack: ["crack_01", "crack_02"],
   boomdeep: ["boomdeep_01", "boomdeep_02", "boomdeep_03"],
   blast: ["blast_01", "blast_02", "blast_03", "blast_04", "blast_05", "blast_06", "blast_07"],
   pop: ["pop_01", "pop_02", "pop_03", "pop_04", "pop_05", "pop_06"],
+  // ---- hits ----
   hitmetal: ["hitmetal_000", "hitmetal_001", "hitmetal_002"],
   hitpunch: ["hitpunch_000", "hitpunch_001", "hitpunch_002"],
   hitsoft: ["hitsoft_000", "hitsoft_001", "hitsoft_002"],
   hitplate: ["hitplate_000", "hitplate_001", "hitplate_002"],
   hitwood: ["hitwood_000", "hitwood_001", "hitwood_002"],
+  // ---- interface (Kenney Interface Sounds + UI Audio, CC0) ----
+  ui_hover: ["ui_hover_01", "ui_hover_02"], ui_select: ["ui_select_01", "ui_select_02"], ui_unit: ["ui_unit_01", "ui_unit_02"],
+  ui_confirm: ["ui_confirm_01"], ui_deploy: ["ui_deploy_01"], ui_turn: ["ui_turn_01"], ui_ready: ["ui_ready_01"],
+  ui_back: ["ui_back_01", "ui_back_02"], ui_error: ["ui_error_01", "ui_error_02"], ui_toggle: ["ui_toggle_01", "ui_toggle_02"],
+  ui_open: ["ui_open_01"], ui_drop: ["ui_drop_01", "ui_drop_02"], ui_win: ["ui_win_01", "ui_win_02"], ui_lose: ["ui_lose_01", "ui_lose_02"],
 };
 const MAX_VOICES = 10;
 
@@ -33,14 +48,27 @@ const MAX_VOICES = 10;
  * with the machine gun held back (it fires ten rounds) and impacts under the guns that cause them.
  */
 export const GROUP_GAIN: Record<string, number> = {
-  boomdeep: 1, cannon: 0.8, blast: 0.8, crack: 0.75, pop: 0.7,
-  rifle: 0.45, carbine: 0.38, pellet: 0.38, pistol: 0.3, bolt: 0.8,
+  // explosions and cannons (fireworks): the loudest things on the field
+  boomdeep: 1, cannon: 0.8, blast: 0.8, crack: 0.75, pop: 0.7, bolt: 0.8,
+  // firearms, from each recording's measured energy (scripts/audio-stats.py) toward a target loudness per weapon class:
+  // marksman rifles loudest, shotguns next, then the machine guns (one clip per burst), rifles, SMGs, and pistols lightest
+  mosin: 1.3, savage: 1.35, arisaka: 1.35, mossberg: 1.25, model12: 1.25, nova: 1.2,
+  ak47burst: 0.72, ppshburst: 0.56, ar15: 1.1, tikka: 0.65, carlgustav: 0.84, sks: 1.0, ak47: 0.9, marlin: 1.0, lever1894: 0.93,
+  colt1911: 0.73, m1917: 0.65, ppq: 1.0, bersa: 0.74, ruger22: 0.72, sw642: 0.79, singlesix: 1.0,
+  // the synthesized-era groups some tests and fallbacks still name
+  rifle: 0.45, carbine: 0.38, pellet: 0.38, pistol: 0.3,
   hitsoft: 0.5, hitmetal: 0.55, hitplate: 0.55, hitpunch: 0.5, hitwood: 0.55,
+  ui_hover: 0.3, ui_select: 0.55, ui_unit: 0.55, ui_confirm: 0.6, ui_deploy: 0.6, ui_turn: 0.55, ui_ready: 0.5, ui_back: 0.5,
+  ui_error: 0.5, ui_toggle: 0.5, ui_open: 0.5, ui_drop: 0.55, ui_win: 0.7, ui_lose: 0.7,
 };
 
 export interface Voice {
   /** Sample group, or "" for a purely synthesized voice. */
   group: string;
+  /** Other takes of the same job: each shot picks one of `group` and these at random (three bolt rifles for a marksman). */
+  alt?: string[];
+  /** A recorded BURST: plays once per order (the first round), not once per round. */
+  burst?: boolean;
   /** Playback rate: lower = heavier and longer, higher = lighter. */
   rate: number;
   /** Multiplier on the group's gain: how big this particular weapon is within its group. */
@@ -55,20 +83,21 @@ export interface Voice {
  * are all distinguishable by ear. `voiceFor` is pure so a test can hold the table to that promise.
  */
 export const GUN_VOICES: Record<string, Voice> = {
-  soldier: { group: "carbine", rate: 1, m: 1 },
-  scout: { group: "carbine", rate: 1.22, m: 0.75 },
-  jumper: { group: "carbine", rate: 1.1, m: 0.85 },
-  sniper: { group: "rifle", rate: 0.92, m: 1 },
-  striker: { group: "pistol", rate: 1, m: 1 },
-  medic: { group: "pistol", rate: 1.12, m: 0.75 },
-  droneop: { group: "pistol", rate: 1.25, m: 0.75 },
-  engineer: { group: "pistol", rate: 0.98, m: 0.85 },
-  builder: { group: "pistol", rate: 0.9, m: 0.9 },
-  demo: { group: "pistol", rate: 0.82, m: 0.9 },
-  oiler: { group: "pistol", rate: 1.05, m: 0.85 },
-  springer: { group: "pistol", rate: 1.3, m: 0.8 },
-  sapper: { group: "pellet", rate: 1, m: 1 },
-  heavy: { group: "bolt", rate: 0.78, m: 1 },
+  // A recruit's rifle, and the other infantry, each its OWN gun (owner 2026-10-03: "snipe, heavy gunner and regular guy sound the same").
+  soldier: { group: "ar15", rate: 1, m: 1 },
+  scout: { group: "carlgustav", rate: 1.06, m: 1 },
+  jumper: { group: "tikka", rate: 1.1, m: 1 },
+  sniper: { group: "mosin", alt: ["savage", "arisaka"], rate: 0.95, m: 1 },
+  heavy: { group: "ak47burst", rate: 0.92, m: 1, burst: true },
+  striker: { group: "colt1911", rate: 1, m: 1 },
+  medic: { group: "ppq", rate: 1.1, m: 1 },
+  droneop: { group: "bersa", rate: 1.2, m: 1 },
+  engineer: { group: "ruger22", rate: 0.9, m: 1 },
+  builder: { group: "sw642", rate: 0.9, m: 1 },
+  demo: { group: "m1917", rate: 0.85, m: 1 },
+  oiler: { group: "singlesix", rate: 1, m: 1 },
+  springer: { group: "bersa", rate: 1.4, m: 0.9 },
+  sapper: { group: "mossberg", alt: ["model12", "nova"], rate: 1, m: 1 },
   flamer: { group: "", rate: 1, m: 1, synth: "flame" },
   bazooka: { group: "crack", rate: 0.7, m: 1, synth: "rocket" },
   grenadier: { group: "pop", rate: 0.7, m: 0.85, synth: "thunk" },
@@ -78,14 +107,14 @@ export const GUN_VOICES: Record<string, Voice> = {
   artillery: { group: "cannon", rate: 0.6, m: 1.15 },
   exturret: { group: "cannon", rate: 0.74, m: 0.9 },
   base: { group: "cannon", rate: 1.15, m: 0.7 },
-  apc: { group: "bolt", rate: 1, m: 0.9 },
+  apc: { group: "sks", alt: ["ak47"], rate: 0.95, m: 1 },
   flak: { group: "crack", rate: 1.35, m: 0.8 },
   aaturret: { group: "crack", rate: 1.2, m: 0.8 },
-  gunship: { group: "bolt", rate: 1.15, m: 0.8 },
+  gunship: { group: "ppshburst", rate: 1.1, m: 1, burst: true },
   interceptor: { group: "bolt", rate: 1.32, m: 0.8 },
-  turret: { group: "bolt", rate: 0.92, m: 0.9 },
-  bunker: { group: "bolt", rate: 0.8, m: 0.95 },
-  gunpost: { group: "bolt", rate: 0.84, m: 1 },
+  turret: { group: "marlin", alt: ["lever1894"], rate: 0.9, m: 1 },
+  bunker: { group: "ak47burst", rate: 0.8, m: 1, burst: true },
+  gunpost: { group: "ppshburst", rate: 0.9, m: 1, burst: true },
 };
 /** A hand grenade leaving a hand, and a bomb leaving a bay. */
 const THROW_VOICE: Voice = { group: "", rate: 1, m: 1, synth: "whoosh" };
@@ -173,12 +202,12 @@ export class Sfx {
   }
 
   /** Play a random sample of a group (pitch-jittered, voice-capped). False when the group has not loaded. */
-  private sample(group: string, gain = 1, rate = 1): boolean {
+  private sample(group: string, gain = 1, rate = 1, minGap = 0.035): boolean {
     const buffers = this.samples.get(group);
     if (!buffers || !this.ctx || !this.master || this.muted) return buffers ? true : false;
     const now = this.ctx.currentTime;
     // A burst of the same sound inside a few ms is one sound (a heavy gunner's ten rounds stay a rattle, not a wall).
-    if (now - (this.lastPlayed.get(group) ?? -1) < 0.035 || this.voices >= MAX_VOICES) return true;
+    if (now - (this.lastPlayed.get(group) ?? -1) < minGap || this.voices >= MAX_VOICES) return true;
     this.lastPlayed.set(group, now);
     const src = this.ctx.createBufferSource();
     src.buffer = buffers[Math.floor(Math.random() * buffers.length)];
@@ -218,15 +247,22 @@ export class Sfx {
   }
 
   /** A round leaving a barrel; `source` is the shooter's kind, `gain` the on-screen factor (1 in view, less out of it). */
-  shot(kind: ShotKind, source?: string, gain = 1): void {
+  shot(kind: ShotKind, source?: string, gain = 1, orderId?: string): void {
     const v = voiceFor(kind, source);
+    // A recorded burst is ONE clip per order: the other nine rounds of a machine gun's burst stay silent.
+    if (v.burst && orderId) {
+      if (this.lastBurstOrder === orderId) return;
+      this.lastBurstOrder = orderId;
+    }
     if (v.synth) this.synthVoice(v.synth, gain);
-    if (v.group && this.sample(v.group, (GROUP_GAIN[v.group] ?? 0.5) * v.m * gain, v.rate)) return;
+    const group = v.alt?.length ? [v.group, ...v.alt][Math.floor(Math.random() * (v.alt.length + 1))] : v.group;
+    if (group && this.sample(group, (GROUP_GAIN[group] ?? 0.5) * v.m * gain, v.rate, v.burst ? 0 : 0.035)) return;
     if (v.synth) return;
     if (kind === "shell") this.boom(150, 0.16, 0.5 * gain);
     else if (kind === "bolt") this.zap(620, 0.09);
     else this.crack(0.05);
   }
+  private lastBurstOrder = "";
 
   /** A hit landing on `what` (an entity kind, with its cover kind if it is cover): flesh, hull, concrete or wood. */
   impact(what = "soldier", coverKind?: string, gain = 1): void {
@@ -295,6 +331,13 @@ export class Sfx {
   place(gain = 1): void {
     if (this.sample("hitplate", GROUP_GAIN.hitplate * 0.9 * gain, 0.75)) return;
     this.thunk(140, 0.1);
+  }
+
+  /** Every unit's orders are in: a soft chime that says "end the turn". */
+  allSet(): void {
+    if (this.sample("ui_ready", GROUP_GAIN.ui_ready, 1, 0.2)) return;
+    this.blip(784, 0.12, "sine", 0.14);
+    this.blip(1175, 0.2, "sine", 0.12, 0.1);
   }
 
   /** Cash banked: two bright rising notes. */
@@ -483,40 +526,81 @@ export class Sfx {
     this.boom(70, 0.5, 0.5);
   }
 
+  // ---- the interface: recorded Kenney sounds (CC0), each job its own sound, the old synth blips only as the fallback ----
+
+  /** A plain button press. */
   ui(): void {
+    if (this.sample("ui_select", GROUP_GAIN.ui_select, 1, 0.03)) return;
     this.blip(540, 0.04, "triangle", 0.18);
   }
 
-  /** A refused order: a short falling dissonant pair. */
+  /** The pointer moving onto something clickable: barely there. */
+  hover(): void {
+    this.sample("ui_hover", GROUP_GAIN.ui_hover, 1, 0.05);
+  }
+
+  /** A unit picked on the board or in the roster. */
+  unit(): void {
+    if (this.sample("ui_unit", GROUP_GAIN.ui_unit, 1, 0.05)) return;
+    this.blip(720, 0.05, "sine", 0.2);
+  }
+
+  /** A refused order. */
   error(): void {
+    if (this.sample("ui_error", GROUP_GAIN.ui_error, 1, 0.08)) return;
     this.blip(220, 0.07, "square", 0.12);
     this.blip(196, 0.09, "square", 0.1, 0.06);
   }
 
+  /** An order accepted. */
   select(): void {
+    if (this.sample("ui_confirm", GROUP_GAIN.ui_confirm, 1, 0.05)) return;
     this.blip(720, 0.05, "sine", 0.2);
   }
 
+  /** Back / cancel / closing something. */
+  back(): void {
+    if (this.sample("ui_back", GROUP_GAIN.ui_back, 1, 0.05)) return;
+    this.blip(330, 0.06, "sine", 0.14);
+  }
+
+  toggle(): void {
+    if (this.sample("ui_toggle", GROUP_GAIN.ui_toggle, 1, 0.05)) return;
+    this.blip(640, 0.04, "triangle", 0.16);
+  }
+
+  /** A menu or panel opening. */
+  open(): void {
+    if (this.sample("ui_open", GROUP_GAIN.ui_open, 1, 0.1)) return;
+    this.blip(400, 0.06, "sine", 0.16);
+  }
+
   deploy(): void {
+    if (this.sample("ui_deploy", GROUP_GAIN.ui_deploy, 1, 0.1) && this.sample("ui_drop", GROUP_GAIN.ui_drop, 1, 0)) return;
     this.blip(330, 0.08, "sawtooth", 0.22);
     this.blip(440, 0.1, "sawtooth", 0.16, 0.06);
   }
 
   build(): void {
+    if (this.sample("ui_drop", GROUP_GAIN.ui_drop, 0.9, 0.08)) return;
     this.thunk(160, 0.14);
     this.blip(300, 0.06, "square", 0.16, 0.05);
   }
 
+  /** Ending the turn / a strike called. */
   turn(): void {
+    if (this.sample("ui_turn", GROUP_GAIN.ui_turn, 1, 0.1)) return;
     this.blip(420, 0.07, "sine", 0.22);
     this.blip(560, 0.09, "sine", 0.18, 0.07);
   }
 
   victory(): void {
+    if (this.sample("ui_win", GROUP_GAIN.ui_win, 1, 0)) { window.setTimeout(() => this.sample("ui_win", GROUP_GAIN.ui_win, 1.12, 0), 260); return; }
     [523, 659, 784, 1046].forEach((f, i) => this.blip(f, 0.16, "triangle", 0.24, i * 0.12));
   }
 
   defeat(): void {
+    if (this.sample("ui_lose", GROUP_GAIN.ui_lose, 0.85, 0)) return;
     [392, 330, 262].forEach((f, i) => this.blip(f, 0.22, "sawtooth", 0.22, i * 0.16));
   }
 

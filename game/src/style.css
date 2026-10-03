@@ -5978,3 +5978,32 @@ body:has(.endscreen) #toasts { top: 10px; } /* medals earned on the result scree
 .compact-top .forecast-chip { white-space: nowrap; border-radius: 12px; display: flex; justify-content: space-between; gap: 10px; text-align: left; }
 .forecast-cell { display: grid; gap: 2px; justify-items: start; white-space: nowrap; }
 .forecast-cell i { white-space: nowrap; }
+
+/* ===== CUSTOM CURSORS (owner 2026-10-03: "make the cursor cool"). Inked toon arrows; the board gets a reticle while a weapon is armed
+   or an enemy is under it, and a footprint ring while a move / place order is armed. ===== */
+html, body, #game { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath d='M5 3 L5 24 L10.5 19 L14.5 28 L19 26 L15 17.5 L22 17.5 Z' fill='%23fff3d6' stroke='%2314161c' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M8 9 L8 17' stroke='%23ffffff' stroke-width='1.6' stroke-linecap='round' opacity='.7'/%3E%3C/svg%3E") 5 3, default; }
+button, a, label, select, summary, [data-select], [data-order-action], [data-spawn], [data-build], [data-support], [data-tech], [data-command],
+.menu-card, .menu-chip, .menu-toggle, .title-start, .base-tab, .btn, .icon-btn, input[type="range"] { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath d='M5 3 L5 24 L10.5 19 L14.5 28 L19 26 L15 17.5 L22 17.5 Z' fill='%23ffc95a' stroke='%2314161c' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M8 9 L8 17' stroke='%23ffffff' stroke-width='1.6' stroke-linecap='round' opacity='.7'/%3E%3C/svg%3E") 5 3, pointer; }
+button:disabled, [data-disabled="true"] { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath d='M5 3 L5 24 L10.5 19 L14.5 28 L19 26 L15 17.5 L22 17.5 Z' fill='%238a8f99' stroke='%2314161c' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M8 9 L8 17' stroke='%23ffffff' stroke-width='1.6' stroke-linecap='round' opacity='.7'/%3E%3C/svg%3E") 5 3, not-allowed; }
+body.cursor-aim #game { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 36 36'%3E%3Ccircle cx='18' cy='18' r='9.5' fill='none' stroke='%2314161c' stroke-width='6'/%3E%3Ccircle cx='18' cy='18' r='9.5' fill='none' stroke='%23ff6a4d' stroke-width='2.6'/%3E%3Cpath d='M18 2 V10 M18 26 V34 M2 18 H10 M26 18 H34' stroke='%2314161c' stroke-width='6' stroke-linecap='round'/%3E%3Cpath d='M18 2 V10 M18 26 V34 M2 18 H10 M26 18 H34' stroke='%23ffd166' stroke-width='2.6' stroke-linecap='round'/%3E%3Ccircle cx='18' cy='18' r='2' fill='%23ffd166' stroke='%2314161c' stroke-width='1.2'/%3E%3C/svg%3E") 18 18, crosshair; }
+body.cursor-move #game { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 36 36'%3E%3Ccircle cx='18' cy='18' r='11' fill='none' stroke='%2314161c' stroke-width='6'/%3E%3Ccircle cx='18' cy='18' r='11' fill='none' stroke='%238de4ff' stroke-width='2.6' stroke-dasharray='5 3'/%3E%3Cpath d='M12 15 L18 22 L24 15' fill='none' stroke='%2314161c' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M12 15 L18 22 L24 15' fill='none' stroke='%23ffffff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 18 18, crosshair; }
+
+/* ===== END TURN: "all set" ===== */
+@keyframes end-turn-ready {
+  0%, 100% { transform: translate(0, 0); box-shadow: 4px 4px 0 0 var(--ink); }
+  50% { transform: translate(-2px, -2px); box-shadow: 7px 7px 0 0 var(--ink); }
+}
+.compact-top .end-turn.ready { animation: end-turn-ready 1.1s ease-in-out infinite; background: #ffd166; }
+.compact-top .end-turn.ready span { background: var(--ink); color: #ffd166; }
+body.reduced-motion .compact-top .end-turn.ready { animation: none; outline: 3px solid var(--ink); }
+@media (prefers-reduced-motion: reduce) { .compact-top .end-turn.ready { animation: none; outline: 3px solid var(--ink); } }
+
+/* ===== quick-select numbers on the base deck cards ===== */
+.order-body .btn.confirm { position: relative; }
+/* The quick-select number sits in the card's bottom-right corner (top-right collides with the NEW badge): it costs the card no width, so a deck never
+   wraps taller or pushes a label. */
+.slot-key {
+  position: absolute; bottom: 3px; right: 3px; z-index: 2; box-sizing: border-box; min-width: 15px; height: 15px; padding: 0 2px; text-align: center;
+  font: 800 12px/11px var(--font-body, system-ui); color: var(--bg); background: var(--amber); border: 2px solid var(--ink); border-radius: 4px;
+  pointer-events: none;
+}

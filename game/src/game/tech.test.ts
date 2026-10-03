@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { aggregateTechEffect, TECH_TREE, techNode, troopsUnlockedBy } from "./tech";
+import { DEFENSE_CATALOG, SUPPORT_POWERS } from "./units";
 
 describe("techNode", () => {
   it("looks up nodes and returns undefined for unknown ids", () => {
@@ -48,21 +49,56 @@ describe("aggregateTechEffect", () => {
   });
 
   it("applies a single specialization's payoff", () => {
-    expect(aggregateTechEffect(["breach"]).infantryDamage).toBeCloseTo(1.18);
-    expect(aggregateTechEffect(["hunter"]).vsVehicleDamage).toBeCloseTo(1.2);
-    expect(aggregateTechEffect(["cluster"]).splashRadius).toBeCloseTo(1.45);
+    expect(aggregateTechEffect(["breach"]).infantryDamage).toBeCloseTo(1.25);
+    expect(aggregateTechEffect(["hunter"]).vsVehicleDamage).toBeCloseTo(1.3);
+    expect(aggregateTechEffect(["cluster"]).splashRadius).toBeCloseTo(1.5);
     expect(aggregateTechEffect(["optics"]).spotterBoost).toBe(1);
   });
 
   it("sums flat bonuses and multiplies scalar bonuses across nodes", () => {
     const both = aggregateTechEffect(["triage", "welding"]);
-    expect(both.healBonus).toBe(6);
-    expect(both.repairBonus).toBe(8);
+    expect(both.healBonus).toBe(8);
+    expect(both.repairBonus).toBe(10);
     // Multiplicative stacking (contrived, but proves the aggregation math).
-    expect(aggregateTechEffect(["breach", "breach"]).infantryDamage).toBeCloseTo(1.18 * 1.18);
+    expect(aggregateTechEffect(["breach", "breach"]).infantryDamage).toBeCloseTo(1.25 * 1.25);
   });
 
   it("ignores unknown or effect-less ids", () => {
     expect(aggregateTechEffect(["assault", "bogus"])).toEqual(aggregateTechEffect([]));
+  });
+});
+
+describe("tech tree design", () => {
+  const pathCost = (id: string): number => {
+    const node = techNode(id)!;
+    return node.cost + node.requires.reduce((sum, req) => sum + pathCost(req), 0);
+  };
+
+  it("every doctrine opens something, so no branch is a dead end", () => {
+    for (const node of TECH_TREE.filter((n) => n.tier < 4)) {
+      const opens = troopsUnlockedBy(node.id).length
+        + DEFENSE_CATALOG.filter((d) => d.tech === node.id).length
+        + SUPPORT_POWERS.filter((p) => p.tech === node.id).length
+        + TECH_TREE.filter((n) => n.requires.includes(node.id)).length;
+      expect(opens, node.id).toBeGreaterThan(0);
+    }
+  });
+
+  it("recon answers air and assault answers armour, so neither threat needs the armour road", () => {
+    expect(troopsUnlockedBy("recon")).toContain("flak");
+    expect(troopsUnlockedBy("assault")).toContain("bazooka");
+  });
+
+  it("aircraft and artillery are the deep end: they cost more to reach than anything else", () => {
+    for (const id of ["airwing", "siege"]) {
+      for (const other of TECH_TREE.filter((n) => n.tier < 3)) expect(pathCost(id), id).toBeGreaterThan(pathCost(other.id));
+    }
+    expect(techNode("airwing")!.requires).toContain("recon");
+  });
+
+  it("an upgrade costs no more than a trooper and a half (it also spends the base order)", () => {
+    for (const spec of TECH_TREE.filter((n) => n.tier === 4)) {
+      expect(spec.cost, spec.id).toBeLessThanOrEqual(160);
+    }
   });
 });

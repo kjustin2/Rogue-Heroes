@@ -378,3 +378,23 @@ describe("bot push", () => {
     setActiveTerrain(DEFAULT_TERRAIN);
   });
 });
+
+describe("explosion knockback", () => {
+  it("a rocket that hits a trooper throws it backwards, away from the shooter; a tank hit stays put", () => {
+    const run = (targetKind: "soldier" | "tank"): number => {
+      const sim = staged();
+      const r = sim.debugSpawn("bazooka", "player", { x: -14, z: 0 });
+      const t = sim.debugSpawn(targetKind, "enemy", { x: -6, z: 0 });
+      disarm(t);
+      sim.debugSelect(r.id);
+      const part = t.parts.find((p) => p.role === "armor") ?? t.parts.find((p) => p.id === "body") ?? t.parts[0];
+      sim.queueShootPart(t.id, part.id);
+      sim.endTurn();
+      settle(sim);
+      const after = sim.entity(t.id)!;
+      return after.position.x - -6;
+    };
+    expect(run("soldier")).toBeGreaterThan(1.2); // thrown away from the shooter (+x)
+    expect(Math.abs(run("tank"))).toBeLessThan(0.8);
+  });
+});

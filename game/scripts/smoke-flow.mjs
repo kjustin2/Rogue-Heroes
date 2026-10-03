@@ -26,7 +26,18 @@ try {
   await page.evaluate((n) => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < n; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector(`[data-step-jump="${n}"]`).click(); }, 2);
   await page.click('[data-faction="syndicate"]');
   await page.evaluate((n) => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < n; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector(`[data-step-jump="${n}"]`).click(); }, 3); // Rules step of the set-up flow
-  await page.click('[data-mode="ctf"]');
+  // MENU CONSISTENCY (owner 2026-10-03: picked one mode, the summary at the bottom showed the other). After EVERY pick the
+  // highlighted chip, the blurb and the summary must name the same thing -- flip back and forth and read all three each time.
+  const modeIds = await page.evaluate(() => [...document.querySelectorAll("[data-mode]")].map((el) => el.dataset.mode));
+  for (const id of [...modeIds, ...modeIds.slice().reverse(), "ctf"]) {
+    await page.click(`[data-mode="${id}"]`);
+    const seen = await page.evaluate(() => {
+      const on = document.querySelector("[data-mode].on");
+      const dd = [...document.querySelectorAll("[data-summary] dt")].find((dt) => dt.textContent === "Mode")?.nextElementSibling;
+      return { chip: on?.textContent?.trim(), summary: dd?.textContent?.trim(), picks: document.querySelectorAll("[data-mode].on").length };
+    });
+    if (seen.picks !== 1 || seen.chip !== seen.summary) throw new Error(`Mode menu disagrees with itself after picking ${id}: ${JSON.stringify(seen)}`);
+  }
   await page.evaluate(() => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < 3; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector("[data-start]").click(); });
   await page.waitForSelector(".title-screen", { state: "detached", timeout: 4000 }).catch(() => {});
   await assertLit(page, "flow command");

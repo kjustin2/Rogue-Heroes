@@ -15,6 +15,7 @@ import type { TroopKind } from "../game/units";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, climbsAlong, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
 import { kitGeometry, modelsVersion, propGeometry, toonGradient, vehicleGeometry, vehiclesKitReady, type KitPart, type PropsKind, type VehiclesPart } from "./models";
 import { VEHICLE_LAYOUT } from "./vehiclesLayout";
+import { damageLabel } from "./damageLabel";
 import {
   blastAfterlife, GROUND_CHEW_S, isSmallArms, makeBlast, makeBlastAfterlife, makeGroundChew, makeImpact,
   isLobbed, makeLightning, makeMuzzleFlash, makePing, makeProjectileModel, makeProjectileShadow, makeProjectileTrail,
@@ -70,7 +71,6 @@ export class WorldRenderer {
   private readonly flinchByEntity = new Map<string, { at: number; mag: number; dx: number; dz: number }>();
   // PER-PART HIT REACTION (2026-09-24): the part a hit landed on reacts on its own -- the head snaps
   // back, a leg buckles, a pack spins -- on top of the whole-body flinch.
-  private readonly baseGlowMats = new Map<FactionId, THREE.MeshBasicMaterial>();
   private surfaceKind: GroundSurfaceKind = "cracked";
   private nextDustDevilAt = 0;
   private readonly partHitByEntity = new Map<string, { partId: string; at: number; mag: number }>();
@@ -222,7 +222,7 @@ export class WorldRenderer {
     // area that brightens into a defined rim — which is how a tactics board shows reach. Same one
     // mesh, one draw call; the shape lives in a 256px gradient texture instead of in geometry.
     this.actionRangeRing = new THREE.Mesh(
-      new THREE.PlaneGeometry(2, 2, 56, 56), // subdivided so drapeToTerrain can lay it over steps
+      new THREE.PlaneGeometry(2, 2, 120, 120), // subdivided so drapeToTerrain can lay it over steps; fine enough that a ledge is a clean break, not a ramp
       new THREE.MeshBasicMaterial({
         color: 0xffbf4d,
         map: rangeFieldTexture(),
@@ -238,7 +238,7 @@ export class WorldRenderer {
     // Weapon reach is a HAIRLINE, never a field: the move field is the only filled shape a
     // selected unit projects, so the two can never be mistaken for each other or stack into a blur.
     this.shootRangeRing = new THREE.Mesh(
-      new THREE.RingGeometry(0.985, 1.0, 160, 1),
+      new THREE.RingGeometry(0.985, 1.0, 420, 1),
       new THREE.MeshBasicMaterial({ color: 0xffa24d, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false })
     );
     this.shootRangeRing.rotation.x = -Math.PI / 2;
@@ -488,23 +488,8 @@ export class WorldRenderer {
         for (const o of makeChimneySmoke(prop.position.x, drawnGroundAt(prop.position) + prop.height * 0.98, prop.position.z, seconds, hash(prop.id), furnace ? 1 : 0.45, furnace)) this.environmentRoot.add(o);
       }
     }
-    // FACTION LIGHT POOL (2026-09-24): each living HQ throws its faction's light on the ground round it --
-    // a slow-breathing draped disc, not a real light (the rig stays at three). The base reads as WHOSE
-    // from across the board, and the colour matches the faction's engine burn and lamps.
-    for (const base of sim.entities) {
-      if (base.kind !== "base" || !base.status.alive) continue;
-      const f = factionOfEntity(base);
-      if (!f) continue;
-      const breathe = 0.5 + 0.5 * Math.sin(performance.now() * 0.0012 + (hash(base.id) % 7));
-      let mat = this.baseGlowMats.get(f);
-      if (!mat) {
-        mat = this.envMat(THREE.MeshBasicMaterial, { color: FACTION_GLOW[f], transparent: true, side: THREE.DoubleSide, depthWrite: false });
-        mat.userData.shared = true;
-        this.baseGlowMats.set(f, mat);
-      }
-      mat.opacity = 0.1 + breathe * 0.06;
-      this.environmentRoot.add(new THREE.Mesh(drapedDisc(base.position.x, base.position.z, 3.2, 7.5, 48, 0.09), mat));
-    }
+    // (The faction light pool round every HQ is gone, owner 2026-10-03: "default circles around ... bases ... doesn't seem to mean anything".
+    // A base shows a ring only when it is selected: its deploy / placement circle.)
     // Burning ground: flickering fire ring + rising flame cones + an orange ground glow.
     const flicker = (Math.sin(performance.now() * 0.02) + 1) * 0.5;
     for (const burn of sim.burnZones) {
@@ -771,9 +756,8 @@ export class WorldRenderer {
     const color = entry.targetTeam === "player" ? 0xff6b7a : entry.targetTeam === "enemy" ? 0xffd166 : 0xffbf69;
     // Serious military phrasing for a kill, by what died: personnel are K.I.A.,
     // vehicles/structures are DESTROYED, cover is DEMOLISHED.
-    const text = entry.destroyed
-      ? (isInfantryKind(target.kind) ? "K.I.A." : target.kind === "cover" ? "DEMOLISHED" : "DESTROYED")
-      : entry.killed ? `${entry.amount}!` : `${entry.amount}`;
+    // K.I.A. is for a unit that DIED. A part that broke (a weapon, a leg) is that part going down, with its damage.
+    const text = damageLabel({ killed: entry.killed, destroyed: entry.destroyed, amount: entry.amount, partLabel: target.parts.find((p) => p.id === entry.partId)?.label ?? "Part" }, { isInfantry: isInfantryKind(target.kind), isCover: target.kind === "cover" });
     const record = floatingNumberTexture(text, color);
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: record.texture, transparent: true, opacity: 0.96, depthWrite: false, depthTest: false }));
     const baseHeight = target.elevation + target.height * 0.6;
@@ -4899,10 +4883,10 @@ export class WorldRenderer {
     // Content only. The time term that used to sit here (performance.now() / 66) rebuilt every aura ring --
     // a 96-segment ring, a terrain drape and a material each -- 15 times a second just to pulse it. The
     // pulse is an opacity on the pooled material now (syncAuras).
-    let sig = `${sim.phase}`;
+    let sig = `${sim.phase}|sel:${sim.selectedId}`;
     if (sim.phase === "command") {
       for (const e of sim.entities) {
-        if (!e.status.alive || e.kind === "cover") continue;
+        if (!e.status.alive || e.kind === "cover" || e.id !== sim.selectedId) continue; // an aura ring means "this unit's reach": only for the one you picked
         let auraBits = "";
         for (const part of e.parts) {
           if (part.hp <= 0 || !part.tags) continue;
@@ -4923,7 +4907,7 @@ export class WorldRenderer {
     this.disposeAndClear(this.auraRoot);
     if (sim.phase !== "command") return;
     for (const entity of sim.entities) {
-      if (!entity.status.alive || entity.kind === "cover") continue;
+      if (!entity.status.alive || entity.kind === "cover" || entity.id !== sim.selectedId) continue;
       const tags = new Set<string>();
       for (const part of entity.parts) {
         if (part.hp > 0 && part.tags) for (const tag of part.tags) tags.add(tag);
@@ -5111,6 +5095,16 @@ export class WorldRenderer {
     // clear spot), green when the spot is accepted, red when the click would be rejected.
     if (sim.pendingDeploy && sim.deployPlacement()) {
       this.drawDeployGhost(sim, sim.pendingDeploy, point);
+      return;
+    }
+    // Choosing a hop: the arc it would fly and where it would land (green) or why it cannot (red).
+    if (sim.intent === "leap") {
+      const hop = sim.leapPreview(point);
+      if (!hop) return;
+      const color = hop.ok ? 0x2ee88a : 0xff3b5c;
+      const height = Math.min(1.9, 0.7 + dist(hop.from, hop.to) * 0.22);
+      this.groundAimRoot.add(makeArcTubeLine(hop.from, hop.to, color, 0.55, terrainHeightAt(hop.from) + 0.9, terrainHeightAt(hop.to) + 0.1, height, 0.05));
+      this.groundAimRoot.add(makeEndpoint(hop.to, color, 0.7, drawnGroundAt(hop.to) + 0.1));
       return;
     }
     // Choosing a move: the path it would really walk, draped on the ground, with a climb marker at
@@ -5857,7 +5851,9 @@ function makeUnitMarker(entity: CombatEntity, color: number): THREE.Group {
   // The ring alone: the white pip that sat inside it bloomed into a soft white blob over every
   // unit -- the brightest thing above an aircraft, and part of why the flyers read blurry.
   group.userData.ringMaterial = ringMaterial;
-  group.add(ring);
+  // NO RING (owner 2026-10-03: "the default circles around units and bases ... doesn't seem to mean anything"). The group stays:
+  // the sniper-mark bracket rides on it. Selection and targeting have their own markers.
+  void ring;
   // No floating type tag — each unit's distinct silhouette (built in buildSoldier /
   // buildTank) is what identifies its kind now, so the battlefield stays uncluttered.
   updateUnitMarker(group, entity, color, 0.5);
@@ -5983,11 +5979,16 @@ function drawnGroundAt(p: Vec2): number {
  */
 const drapedDiscs = new Map<string, THREE.BufferGeometry>();
 function drapedDisc(x: number, z: number, inner: number, outer: number, segments: number, lift: number): THREE.BufferGeometry {
+  // A ring that crosses a ledge needs vertices close enough that the lip is a CLEAN break, not a slanted ramp (the "teeth" and kinks
+  // reported on circles, 2026-10-03): at least one vertex every ~0.15m of rim, capped.
+  segments = Math.min(360, Math.max(segments, Math.ceil((Math.PI * 2 * outer) / 0.15)));
   const key = [x, z, inner, outer].map((n) => n.toFixed(2)).join(",") + `,${segments},${lift}`;
   let geo = drapedDiscs.get(key);
   if (geo) return geo;
   // Filled discs get radial rings too, so their interior follows a step instead of bridging it.
-  const rings = Math.max(1, Math.min(12, Math.ceil((outer - inner) / 0.45)));
+  // Dense radial rings too: where a fill crosses a ledge its edge follows the vertex lattice, so a coarse lattice is a visible
+  // zig-zag along the lip. ~0.14m cells make that edge read as a clean line (a thin band keeps its single ring).
+  const rings = Math.max(1, Math.min(60, Math.ceil((outer - inner) / (outer - inner > 0.6 ? 0.14 : 0.45))));
   geo = new THREE.RingGeometry(inner, outer, segments, rings).rotateX(-Math.PI / 2).translate(x, 0, z);
   const pos = geo.attributes.position as THREE.BufferAttribute;
   const b = ARENA_BOUNDS;
@@ -6010,7 +6011,7 @@ function drapedDisc(x: number, z: number, inner: number, outer: number, segments
   }
   pairRingHeights(geo, grounds);
   for (let i = 0; i < pos.count; i += 1) pos.setY(i, grounds[i] + lift);
-  clipToArena(geo, outside);
+  clipToArena(geo, outside, grounds);
   geo.computeBoundingSphere();
   geo.userData.shared = true;
   drapedDiscs.set(key, geo);
@@ -6062,7 +6063,7 @@ function drapeToTerrain(mesh: THREE.Mesh, lift: number, flatAt?: number): void {
   pairRingHeights(mesh.geometry, grounds);
   for (let i = 0; i < pos.count; i += 1) pos.setZ(i, (grounds[i] + lift - mesh.position.y) / s);
   pos.needsUpdate = true;
-  clipToArena(mesh.geometry, outside);
+  clipToArena(mesh.geometry, outside, flatAt === undefined ? grounds : undefined);
   mesh.geometry.computeBoundingSphere();
 }
 
@@ -6103,7 +6104,10 @@ function pairRingHeights(geometry: THREE.BufferGeometry, grounds: Float32Array):
   }
 }
 
-function clipToArena(geometry: THREE.BufferGeometry, outside: Uint8Array): void {
+/** A triangle whose corners sit on ground more than this far apart spans a LEDGE: drawn, it is a ramp / shard up the cliff face. */
+const LEDGE_SPAN = 0.35;
+
+function clipToArena(geometry: THREE.BufferGeometry, outside: Uint8Array, grounds?: ArrayLike<number>): void {
   const index = geometry.getIndex();
   if (!index) return;
   const full = (geometry.userData.fullIndex as ArrayLike<number> | undefined) ?? (geometry.userData.fullIndex = Array.from(index.array as ArrayLike<number>));
@@ -6111,6 +6115,9 @@ function clipToArena(geometry: THREE.BufferGeometry, outside: Uint8Array): void 
   for (let t = 0; t + 2 < full.length; t += 3) {
     const a = full[t], b = full[t + 1], c = full[t + 2];
     if (outside[a] && outside[b] && outside[c]) continue;
+    // CLEAN LEDGES (owner 2026-10-03: "glitches with circles"): a ring that crosses a step used to climb the cliff face as slanted
+    // shards. The triangles that span the lip are dropped, so each tier keeps its own arc and the ring simply breaks at the edge.
+    if (grounds && Math.max(grounds[a], grounds[b], grounds[c]) - Math.min(grounds[a], grounds[b], grounds[c]) > LEDGE_SPAN) continue;
     keep.push(a, b, c);
   }
   if (keep.length !== index.count) geometry.setIndex(keep);

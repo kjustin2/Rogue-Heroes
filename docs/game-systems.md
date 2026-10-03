@@ -68,10 +68,20 @@ How the factions, the three AI brains and Local 2 Players work, with the measure
 - Set-up page: "Your faction" and "Enemy faction" (with Random, rolled in the app, not the sim) are
   equal card rows; in Local 2 Players the second row is Player 2. Modes offered: `PLAYABLE_MODES` —
   Annihilation, Capture the Flag, Hold the Hill (Domination and Last Stand stay in the sim, unoffered).
-- **Tech is cheap and says what it is** (2026-09-24): doctrines $120 / ~$170-190 / ~$240, specializations
-  ~$150-180, so every game explores a path. Each research card carries a tag — cyan **NEW UNITS** (a doctrine:
+- **Tech is cheap and says what it is** (2026-09-24), **rebuilt 2026-10-03** so no branch is a dead end and the
+  armour road is not the only road. Doctrines $100 (Recon, Assault) / $150-200 (Support, Ordnance, Armor) / $240-260
+  (Siege, Air Wing); specializations $130-160. Each research card carries a tag — cyan **NEW UNITS** (a doctrine:
   lists every unit, defense and support power it opens for this faction) or amber **UPGRADE** (a
   specialization, pick one of each pair).
+  - **Every threat has an answer outside the road that makes it**: Recon owns the Flak Track, Flak Nest, Scout,
+    Marksman and Drone Op (air answer + eyes); Assault owns the Rocketeer, Striker, Heavy, Jump Trooper (armour answer
+    + pressure); Armor Bay is tanks/APC/bunker/Lance only.
+  - **Aircraft and artillery are the deep end**: Siege Works and Air Wing need Armor Bay AND Recon (radar / spotters),
+    so the plane rush costs ~$700 of tech before the first gunship. `tech.test.ts` pins that ordering.
+  - **Upgrades must beat buying another unit**: researching spends the base order (a deploy forgone) plus $130-160, so
+    each pays a team-wide +25% (infantry damage, infantry HP, vehicle HP), +30% vs vehicles, +40% splash / +50% radius,
+    double aura heal/repair, a sharper spotter, or +40% scatter on shots at you.
+  - The bot's `aiTechPath` now includes Recon where it needs it and ends in one upgrade.
 - Locked troops in the Deploy tab are NAMED, grouped by the doctrine that unlocks them ("Scout ·
   Marksman / 🔒 Recon Doctrine") — never a "▮▮▮ ×2" count.
 
@@ -158,6 +168,32 @@ How the factions, the three AI brains and Local 2 Players work, with the measure
   danger and path around them (`aiDangerAt`).
 - **Ambience** (`Sfx.setAmbience`): each map has its own air (dry desert wind, furnace roar and a distant clank, leaf breeze and the
   odd bird, cold gusts, a hollow temple drone, far-off guns); cash caches chime.
+
+## OWNER BATCH 2026-10-03, third pass (controls, rounds, sound)
+
+- **Hop** (`sim.queueLeap`, `leapRange`, `leapUp`, order `move` with `leap: true`, key J, card "Jump"): every trooper but the jump trooper
+  can arc a few metres over low cover and up onto a ledge (3.6m x sqrt(speed / 6.5): a scout ~4.9m and ~1.8m up, a heavy ~3.1m and ~1.2m).
+  It shares the jet-pack arc (airborne for the hop), lands softly (the slam is the jump trooper's), and refuses with a reason (too high,
+  no room, water). `leap.test.ts`.
+- **Blasts throw troopers**: any real explosion throws a trooper back at least a hop (0.9-2.5m by falloff), and a rocket or shell that HITS one
+  throws it away from the shooter (up to 5.5m); armour and structures do not move.
+- **Rounds** (`projectileFx.ts`): no long tail. Each weapon's round is its own compact shape (`ROUND`): warm dash (rifle), thin pale dart
+  (carbine), bead (pistol), fat alternating orange-red slugs (MG), a long white needle with a bright collar (marksman), a finned rocket with a
+  short jet (bazooka, family `rocket`). Small-arms ribbons are 0.3-1.3m and attached.
+- **Circles**: rings are densified (a vertex every ~0.15m) and the triangles that span a ledge are dropped (`LEDGE_SPAN`), so a ring breaks
+  cleanly at a lip instead of climbing the cliff as shards; the head-ring over every unit and the base is gone (the group stays for the sniper mark).
+- **KIA** is only for a unit that died; a broken part reads "<PART> DOWN".
+- **Menus**: the set-up summary refreshes AFTER the pick is recorded (it showed the previous pick); `smoke:flow` flips every mode both ways and
+  asserts chip, blurb and summary agree. Right-click is Back everywhere.
+- **Controls**: Tab walks Home Base then every unit; H = Home Base; 1-9 pick the numbered card of a unit's actions or the Home Base's open tab
+  (cards wear their number); [ and ] flip the base tabs; J hop, P push, Z undo the last order, Q / E turn the camera; clicking a field cache with
+  Move armed walks onto it. When every unit's AP is spent the End Turn button pulses "All set" with a chime.
+- **Cursor**: inked toon cursors (arrow, pointer, a reticle for attacks and enemies, a footprint ring for move / place orders), `body.cursor-aim` /
+  `cursor-move`. **Title screen**: a slow sway across a front arc, not a 360 orbit.
+- **Sound**: the real recorded firearms ("The Free Firearm Sound Library") replace the pitched-down fireworks for guns: one recording per kind (AR-15
+  recruit, SMG scout, Tikka jumper, rotating Mosin / Savage / Arisaka for the marksman, an AK burst for the heavy gunner (one clip per burst),
+  pistols and revolvers for the field hands, shotguns for the sapper, a lever rifle for turrets, a PPSh burst for the gun post). Interface sounds are
+  Kenney's: hover, press, unit pick, confirm, back, error, toggle, deploy, turn, all-set, win, lose. Menus have sound now too.
 
 ## THREE AI BRAINS (2026-09-22) — difficulty is intelligence first, stats second
 

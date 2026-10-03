@@ -420,6 +420,168 @@ app.whenReady().then(async () => {
         for (let i = 0; i < 3; i += 1) { await sleep(i === 0 ? 60 : 110); await shot("place-" + i); }
         continue;
       }
+      if (s === "projectiles") {
+        // Every small-arms round side by side, mid-flight: rifle, carbine, pistol, machine gun, marksman, rocket. No long detached tail.
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(2000);
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("enemy", 0);
+          const kinds = ["soldier", "scout", "striker", "heavy", "sniper", "bazooka"];
+          kinds.forEach((k, i) => { const z = -7.5 + i * 3; const a = sim.debugSpawn(k, "player", { x: -10, z }); const t = sim.debugSpawn("tank", "enemy", { x: 4, z }); for (const p of t.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0; t.status.canShoot = false; t.status.canMove = false; sim.debugSelect(a.id); sim.queueShoot(t.id); });
+          r.setView({ x: -3, z: 0, zoom: 0.5, pitch: 0.8, yaw: 0.0 }); sim.endTurn(); })()`);
+        for (let i = 0; i < 8; i += 1) { await sleep(i === 0 ? 900 : 230); await shot("proj-" + i); }
+        continue;
+      }
+      if (s === "circles") {
+        // Every ring that lies on the ground, across ledges: the Hill ring on all six maps, a cash cache and a depot beside a step.
+        for (const map of ["dustbowl", "ironworks", "verdant", "causeway", "karak", "crossfire"]) {
+          await js(`window.__rht.startBattle(${JSON.stringify(map)}, "hill", "normal")`);
+          await sleep(1800);
+          await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); const h = sim.modeState.hill; r.setView({ x: h.x, z: h.z, zoom: 0.5, pitch: 0.85, yaw: 0.2 }); })()`);
+          await sleep(700);
+          await shot("circle-hill-" + map);
+        }
+        continue;
+      }
+      if (s === "controls3") {
+        // Base deck quick-select numbers, Tab cycling to the Home Base, the all-set End Turn, the custom cursor classes and a hop preview.
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(2000);
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); const hq = sim.entities.find(e => e.team === "player" && e.kind === "base"); sim.select(hq.id); })()`);
+        await sleep(700); await shot("controls-basedeck");
+        await js(`window.dispatchEvent(new KeyboardEvent("keydown", { code: "BracketRight" }))`);
+        await sleep(500); await shot("controls-basedeck-tab2");
+        console.log("controls3 digits", await js(`document.querySelectorAll(".slot-key").length`));
+        // Tab from nothing selected lands on the Home Base first
+        await js(`(() => { const r = window.__rht; r.deselect(); window.dispatchEvent(new KeyboardEvent("keydown", { code: "Tab" })); })()`);
+        await sleep(300);
+        console.log("controls3 tab selected", await js(`window.__rht.sim.selected && window.__rht.sim.selected.kind`));
+        // a hop preview + the all-set button
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); const u = sim.debugSpawn("scout", "player", { x: -12, z: 6 }); sim.debugSelect(u.id); r.setIntent("leap"); r.hoverGround({ x: -9, z: 6 }); r.setView({ x: -11, z: 6, zoom: 0.5, pitch: 0.8, yaw: 0.2 }); })()`);
+        await sleep(900); await shot("controls-hop");
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.setIntent("select"); r.hoverGround(undefined); for (const e of sim.entities) if (e.team === "player" && e.kind !== "base") e.commandPoints = 0; })()`);
+        await sleep(900); await shot("controls-allset");
+        console.log("controls3 cursor", await js(`document.body.className`));
+        // THE CURSORS really apply and their SVGs decode: default, hover-a-button, attack reticle, move ring.
+        const cursors = await js(`(async () => {
+          const out = {};
+          const probe = async (label, el) => { const c = getComputedStyle(el).cursor; const a = c.indexOf('url("'), b = c.lastIndexOf('")'); const m = a >= 0 && b > a ? [0, c.slice(a + 5, b)] : null; let ok = false; if (m) { const img = new Image(); img.src = m[1]; try { await img.decode(); ok = img.naturalWidth > 0; } catch { ok = false; } } out[label] = { hasUrl: Boolean(m), decodes: ok, raw: m ? undefined : c.slice(0, 80) }; };
+          await probe("default", document.getElementById("game"));
+          const btn = document.querySelector("#ui button"); if (btn) await probe("button", btn);
+          document.body.classList.add("cursor-aim"); await probe("aim", document.getElementById("game")); document.body.classList.remove("cursor-aim");
+          document.body.classList.add("cursor-move"); await probe("move", document.getElementById("game")); document.body.classList.remove("cursor-move");
+          return JSON.stringify(out);
+        })()`);
+        console.log("controls3 cursors", cursors);
+        if (/"hasUrl":false|"decodes":false/.test(cursors)) throw new Error("a custom cursor does not apply or its SVG does not decode: " + cursors);
+        // FIELD CACHE AS A DESTINATION: with Move armed, a real click on a cache queues a move onto it, and the unit banks it.
+        const cache = await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); const c = sim.pickups[0]; const u = sim.debugSpawn("scout", "player", { x: c.x - 6, z: c.z }); sim.debugSelect(u.id); r.setView({ x: c.x - 3, z: c.z, zoom: 0.5, pitch: 0.85, yaw: 0 }); window.__cacheUnit = u.id; return JSON.stringify({ x: c.x, z: c.z, amount: c.amount, money: sim.money("player"), n: sim.pickups.length }); })()`);
+        await sleep(900);
+        await js(`document.querySelector('[data-order-action="move"]').click()`);
+        await sleep(300);
+        const c = JSON.parse(cache);
+        await js(`window.__rht.hud && 0; window.__rht.clickWorld({ x: ${c.x}, z: ${c.z} }, 0.5)`);
+        await sleep(300);
+        const queued = await js(`JSON.stringify(window.__rht.sim.orders.filter((o) => o.actorId === window.__cacheUnit).map((o) => ({ k: o.kind, d: o.destination })))`);
+        console.log("controls3 cache click queued", queued);
+        await js(`window.__rht.endTurn()`);
+        for (let i = 0; i < 60; i += 1) { await sleep(250); if (await js(`window.__rht.sim.phase === "command"`)) break; }
+        const after = JSON.parse(await js(`JSON.stringify({ money: window.__rht.sim.money("player"), n: window.__rht.sim.pickups.length })`));
+        console.log("controls3 cache banked", JSON.stringify({ before: c.money, after: after.money, gain: after.money - c.money, expected: c.amount, cachesLeft: after.n, was: c.n }));
+        if (!(after.n < c.n)) throw new Error("clicking a field cache with Move armed did not send the unit onto it");
+        continue;
+      }
+      if (s === "groundaim") {
+        // Splash aiming: arm Shoot on a tank, click a ground spot (preview line stays put, hover moves nothing), then Confirm queues exactly that spot.
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(1800);
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); const u = sim.debugSpawn("tank", "player", { x: -10, z: 0 }); sim.debugSelect(u.id); r.setView({ x: -5, z: 0, zoom: 0.5, pitch: 0.85, yaw: 0.2 }); })()`);
+        await sleep(500);
+        await js(`document.querySelector('[data-order-action="shoot"]').click()`);
+        await sleep(300);
+        await js(`window.__rht.clickWorld({ x: -3, z: 2 }, 0)`);
+        await sleep(300);
+        await js(`window.__rht.hoverGround({ x: 3, z: -4 })`); // the cursor wanders: the line must not follow
+        await sleep(700); await shot("groundaim-picked");
+        const has = await js(`Boolean(document.querySelector('[data-confirm="ground"]'))`);
+        console.log("groundaim confirm button", has, await js(`document.querySelector(".target-summary")?.textContent?.replace(/\\s+/g, " ")`));
+        if (!has) throw new Error("picking a ground spot did not offer Confirm");
+        await js(`document.querySelector('[data-confirm="ground"]').click()`);
+        await sleep(300);
+        const orders = await js(`JSON.stringify(window.__rht.sim.orders.map((o) => ({ k: o.kind, d: o.destination })))`);
+        console.log("groundaim orders", orders);
+        const d = JSON.parse(orders)[0]?.d;
+        if (!d || Math.hypot(d.x + 3, d.z - 2) > 1.2) throw new Error("confirm did not fire at the picked spot: " + orders);
+        continue;
+      }
+      if (s === "projgallery") {
+        // One shooter at a time, tight camera on the round in flight: three frames each. Rifle, carbine, pistol, MG, marksman, rocket, scattergun, grenade.
+        const kinds = ["soldier", "scout", "striker", "heavy", "sniper", "bazooka", "sapper", "grenadier"];
+        for (const kind of kinds) {
+          await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+          await sleep(1400);
+          await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("enemy", 0); document.body.classList.add("shots-hide-hud"); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = "hidden"));
+            const a = sim.debugSpawn(${JSON.stringify(kind)}, "player", { x: -12, z: 0 }); const t = sim.debugSpawn("tank", "enemy", { x: ${kind === "sapper" ? -6 : 2}, z: 0 }); for (const p of t.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0; t.status.canShoot = false; t.status.canMove = false;
+            sim.debugSelect(a.id); sim.queueShoot(t.id); r.setView({ x: -5, z: 0, zoom: 0.26, pitch: 0.65, yaw: 0.35 }); sim.endTurn(); })()`);
+          for (let i = 0; i < 4; i += 1) { await sleep(i === 0 ? 650 : 140); await shot(`pg-${kind}-${i}`); }
+        }
+        continue;
+      }
+      if (s === "projfollow") {
+        // The camera rides each round (tight, HUD hidden) and grabs the frame at mid-flight: the round itself, close.
+        const kinds = ["soldier", "scout", "striker", "heavy", "sniper", "bazooka", "sapper", "grenadier", "tank", "mortar"];
+        for (const kind of kinds) {
+          await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+          await sleep(1300);
+          await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("enemy", 0); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = "hidden"));
+            const a = sim.debugSpawn(${JSON.stringify(kind)}, "player", { x: -14, z: 0 }); const t = sim.debugSpawn("tank", "enemy", { x: ${kind === "sapper" ? -9 : 6}, z: 0 }); for (const p of t.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0; t.status.canShoot = false; t.status.canMove = false;
+            sim.debugSelect(a.id); sim.queueShoot(t.id); sim.endTurn(); window.__rht.setTimeScale(0.25); })()`);
+          let got = false;
+          for (let i = 0; i < 400 && !got; i += 1) {
+            await sleep(40);
+            const st = JSON.parse(await js(`JSON.stringify(window.__rht.sim.projectiles.slice(0, 1).map((p) => ({ x: p.position.x, z: p.position.z, t: p.travel })))`));
+            if (st.length) {
+              await js(`window.__rht.setView({ x: ${st[0].x}, z: ${st[0].z}, zoom: 0.14, pitch: 1.3, yaw: 0.0 })`);
+              if (st[0].t > 3.2) {
+                // re-centre on where the round is NOW (the first read is a frame old), then grab it
+                await sleep(25);
+                const now = JSON.parse(await js(`JSON.stringify(window.__rht.sim.projectiles.slice(0, 1).map((p) => ({ x: p.position.x, z: p.position.z })))`));
+                if (now.length) await js(`window.__rht.setView({ x: ${now[0].x + 0.35}, z: ${now[0].z}, zoom: 0.14, pitch: 1.3, yaw: 0.0 })`);
+                await shot("pf-" + kind); got = true;
+              }
+            }
+          }
+          if (!got) console.log("projfollow: no frame for", kind);
+        }
+        continue;
+      }
+      if (s === "unselected") {
+        // NOTHING selected, HUD hidden: every ring / disc still drawn around units and bases is a "default circle".
+        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal", "bastion")`);
+        await sleep(1800);
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = "hidden"));
+          ["soldier", "heavy", "medic", "tank"].forEach((k, i) => sim.debugSpawn(k, "player", { x: -42 + i * 2.2, z: 5 }));
+          sim.debugSpawn("soldier", "enemy", { x: -36, z: 9 });
+          const hq = sim.entities.find(e => e.team === "player" && e.kind === "base"); r.setView({ x: hq.position.x + 2, z: hq.position.z + 3, zoom: 0.4, pitch: 0.8, yaw: 0.3 }); })()`);
+        await sleep(1200); await shot("unselected-a");
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.setView({ x: -41, z: 5, zoom: 0.2, pitch: 0.7, yaw: 0.3 }); })()`);
+        await sleep(800); await shot("unselected-units");
+        continue;
+      }
+      if (s === "menupan") {
+        // The title diorama over 15 seconds: it must sway gently in a front arc, never swing round behind the squad.
+        await js(`window.__rht.toMenu()`);
+        for (let i = 0; i < 4; i += 1) { await sleep(i === 0 ? 1500 : 4500); await shot("menupan-" + i); }
+        continue;
+      }
+      if (s === "hopfilm") {
+        // A trooper hops over a pillar (slow motion): crouch, arc, soft landing.
+        await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(1500);
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("enemy", 0); const u = sim.debugSpawn("scout", "player", { x: -12, z: 0 }); sim.debugCover("pillar", { x: -10, z: 0 }); sim.debugSelect(u.id); sim.queueLeap({ x: -7.6, z: 0 }); r.setView({ x: -10, z: 0, zoom: 0.22, pitch: 0.45, yaw: 0.6 }); sim.endTurn(); window.__rht.setTimeScale(0.3); })()`);
+        for (let i = 0; i < 6; i += 1) { await sleep(i === 0 ? 700 : 260); await shot("hop-" + i); }
+        await js(`window.__rht.setTimeScale(1)`);
+        continue;
+      }
       if (s === "glprobe") {
         // GL ERRORS PER FRAME (2026-10-01): wraps blitFramebuffer and polls getError over 2s of a battle.
         // A depth blit failed 144 times a second for weeks unseen (see stage.ts, NO DEPTH BLIT); any

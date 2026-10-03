@@ -54,13 +54,13 @@ const ARC = 0xbfe9ff; // electric
 export type ProjectileFamily =
   | "rifle" | "carbine" | "sniper" | "mg" | "pellet" | "pistol" | "flame"
   | "grenade" | "launcher" | "mortar" | "smoke" | "bomb"
-  | "tank" | "artillery" | "siege";
+  | "tank" | "artillery" | "siege" | "rocket";
 
 /** Which visual family a round belongs to. The sim only knows four projectile kinds; the look
  *  comes from who fired it and how. */
 export function projectileFamily(p: Projectile): ProjectileFamily {
   const src: EntityKind | undefined = p.sourceKind;
-  if (p.kind === "shell") return src === "artillery" ? "artillery" : src === "exturret" ? "siege" : "tank";
+  if (p.kind === "shell") return src === "artillery" ? "artillery" : src === "exturret" ? "siege" : src === "bazooka" ? "rocket" : "tank";
   // ONE BALLISTIC LANGUAGE (2026-09-22): the sim's "bolt" rounds used to draw as cyan energy darts
   // with crackling arc impacts -- "laser beams" next to every other gun in the game. Autoguns,
   // aircraft cannon and flak fire warm MG tracers now; the base relay throws a real shell.
@@ -90,6 +90,7 @@ export function trailLength(family: ProjectileFamily): number {
   switch (family) {
     case "flame": return 9;
     case "mortar": case "smoke": case "artillery": case "siege": case "tank": return 8;
+    case "rocket": return 7;
     case "sniper": return 7;
     case "mg": return 7;
     case "pellet": case "pistol": return 4;
@@ -121,6 +122,7 @@ export function trailStep(family: ProjectileFamily): number {
     case "mortar": case "smoke": case "artillery": case "siege": case "bomb": return 0.42;
     case "launcher": case "grenade": return 0.36;
     case "tank": return 0.3;
+    case "rocket": return 0.3;
     case "sniper": return 0.34;
     case "mg": return 0.26;
     case "pellet": case "pistol": return 0.16;
@@ -463,61 +465,88 @@ function chips(count: number, cx: number, cy: number, cz: number, reach: number,
 // ---------------------------------------------------------------------------------------------
 // In-flight models. Local +Y = direction of travel (set by orientAlongVelocity).
 
+/**
+ * ONE ROUND PER WEAPON (owner 2026-10-03: "projectiles all look the same ... make them different", and "I HATE THE LONG ORANGE TAIL ...
+ * it doesn't look attached to the bullet"). The round is a compact inked capsule with a SHORT streak that is part of it; no spike, no
+ * burn sleeve, no ribbon trailing far behind. What differs is the SHAPE and COLOUR of the round itself:
+ *   rifle  a warm yellow dash          carbine a thin pale-gold dart       pistol  a small round bead
+ *   mg     fat orange-red slugs, alternating     sniper  a long white-hot needle with a bright collar
+ */
+const ROUND: Record<string, { w: number; len: number; head: number; core: number; sleeve: number; sleeveAlt?: number; collar?: boolean }> = {
+  rifle: { w: 1.0, len: 1.0, head: 1.0, core: HOT, sleeve: TRACER },
+  carbine: { w: 0.72, len: 0.85, head: 0.8, core: HOT, sleeve: 0xffefa8 },
+  pistol: { w: 1.05, len: 0.42, head: 0.9, core: HOT, sleeve: TRACER_ALT },
+  mg: { w: 1.25, len: 0.8, head: 1.15, core: 0xffe9b0, sleeve: TRACER_ALT, sleeveAlt: TRACER_DEEP },
+  sniper: { w: 0.85, len: 2.4, head: 0.85, core: HOT, sleeve: 0xfff0b8, collar: true },
+};
+
 function tracerModel(family: ProjectileFamily, age: number, seed: number, travel = 99): THREE.Group {
   const group = new THREE.Group();
-  // COMET: a hot round head leading a short ink-rimmed streak. The streak is three hulls — white
-  // core, colour sleeve, ink — so the middle always shows through.
-  const alt = family === "mg" && seed % 2 === 0;
+  const spec = ROUND[family] ?? ROUND.rifle;
+  const alt = spec.sleeveAlt !== undefined && seed % 2 === 0;
   // Warm, never team colour: a cyan comet read as a laser. The team read lives on the unit.
-  const sleeveColor = alt ? TRACER_ALT : TRACER;
-  const core = new THREE.Mesh(projectileGeometry("tracer"), fxSolid(HOT));
+  const sleeveColor = alt ? spec.sleeveAlt! : spec.sleeve;
+  const core = new THREE.Mesh(projectileGeometry("tracer"), fxSolid(spec.core));
   const sleeve = new THREE.Mesh(projectileGeometry("tracer"), fxSolid(sleeveColor, true));
   const rim = new THREE.Mesh(projectileGeometry("tracer"), fxSolid(INK, true));
   core.frustumCulled = sleeve.frustumCulled = rim.frustumCulled = false;
-  // BULLET UPGRADE (2026-09-24, owner: "the main bullet ones look not amazing"): a LONG burning dash in
-  // four layers -- white-hot core, tracer sleeve, a deep-orange burn sleeve, ink -- ending in a tapered
-  // tail, so a round reads as a streak of fire, not a pill. Still opaque and warm (one ballistic language).
-  const burn = new THREE.Mesh(projectileGeometry("tracer"), fxSolid(TRACER_DEEP, true));
-  burn.frustumCulled = false;
   sleeve.scale.set(1.7, 1.03, 1.7);
-  burn.scale.set(2.35, 1.06, 2.35);
-  rim.scale.set(2.95, 1.1, 2.95);
+  rim.scale.set(2.5, 1.1, 2.5);
   const streak = new THREE.Group();
-  streak.add(rim, burn, sleeve, core);
-  // The burning tail GROWS out of the muzzle: it can never reach farther back than the round has flown,
-  // or the fire trails out behind the shooter (owner 2026-10-02: "the fire is behind the unit").
-  const grow = Math.max(0.04, Math.min(1, travel / 2.4));
-  streak.scale.y = 2.7 * grow;
-  streak.position.y = -0.36 * grow;
-  // Tapered tail: the streak runs out to a point behind the round instead of a rounded cap.
-  const tail = solid("spike", TRACER_DEEP, 1.25);
-  tail.rotation.x = Math.PI; // point backwards (down the -y the streak trails along)
-  tail.position.y = -0.86;
-  tail.scale.set(0.75, 1.35, 0.75);
-  streak.add(tail);
-  const head = solid("ember", HOT, 1.7, sleeveColor);
-  head.scale.setScalar(1.05);
-  head.position.y = 0.2;
+  streak.add(rim, sleeve, core);
+  // The streak GROWS out of the muzzle over the first couple of metres, so a round never trails out behind its shooter.
+  const grow = Math.max(0.05, Math.min(1, travel / 2.0));
+  streak.scale.set(spec.w, 1.5 * spec.len * grow, spec.w);
+  streak.position.y = -0.1 * grow;
+  const head = solid("ember", spec.core, 1.7, sleeveColor);
+  head.scale.setScalar(spec.head * 1.05);
+  head.position.y = 0.2 * spec.len * Math.min(1.6, 1 + spec.len * 0.3);
   const headRim = new THREE.Mesh(projectileGeometry("ember"), fxSolid(INK, true));
   headRim.scale.setScalar(2.3);
   headRim.frustumCulled = false;
   head.add(headRim);
   group.add(streak, head);
-  switch (family) {
-    case "mg": group.scale.set(1.05, 1.3, 1.05); break;
-    case "carbine": group.scale.set(0.85, 0.9, 0.85); break;
-    case "pistol": group.scale.set(0.95, 0.62, 0.95); break;
-    case "sniper": group.scale.set(1.1, 2.1, 1.1); break;
-    default: group.scale.set(1, 1, 1);
+  if (spec.collar) {
+    // A marksman's round carries a bright collar a third of the way back: the one detail that says "this one is different".
+    const collar = new THREE.Mesh(projectileGeometry("crown"), fxSolid(HOT, true));
+    collar.rotation.x = Math.PI / 2;
+    collar.position.y = -0.05 * grow;
+    collar.scale.setScalar(0.34 + Math.sin(age * 30) * 0.02);
+    collar.frustumCulled = false;
+    group.add(collar);
   }
   // A short flicker in the core keeps a stationary-looking tracer alive across frames.
   core.scale.y = 1 + Math.sin(age * 40) * 0.06;
   return group;
 }
 
-function pelletModel(team: number, seed: number): THREE.Group {
+/** The bazooka's rocket: a fat olive body, red nose, three fins and a short jet of flame. */
+function rocketModel(age: number): THREE.Group {
   const group = new THREE.Group();
-  const p = solid("pellet", HOT, 1.6, team);
+  const body = rimmed("shell-body", OLIVE, [1.5, 1.5, 1.5]);
+  const nose = rimmed("shell-nose", 0xd9452a, [1.5, 1.2, 1.5]);
+  nose.position.y = 0.4;
+  group.add(body, nose);
+  for (let i = 0; i < 3; i += 1) {
+    const angle = (i / 3) * Math.PI * 2;
+    const fin = rimmed("shell-fin", 0x26302c, [1.7, 1.2, 1.1]);
+    fin.position.set(Math.cos(angle) * 0.15, -0.22, Math.sin(angle) * 0.15);
+    fin.rotation.y = Math.PI / 2 - angle;
+    group.add(fin);
+  }
+  const jet = solid("tongue", FIRE[1], 1.2, FIRE[3]);
+  jet.rotation.x = Math.PI; // base at the rocket, tip trailing back
+  jet.position.y = -0.34;
+  jet.scale.set(0.9, 0.9 + Math.sin(age * 44) * 0.25, 0.9);
+  group.add(jet);
+  group.scale.setScalar(1.05);
+  return group;
+}
+
+// Warm like every other round (one ballistic language): the pellets used to wear the TEAM colour and read as blue energy bubbles.
+function pelletModel(_team: number, seed: number): THREE.Group {
+  const group = new THREE.Group();
+  const p = solid("pellet", HOT, 1.6, TRACER_ALT);
   const rim = new THREE.Mesh(projectileGeometry("pellet"), fxSolid(INK, true));
   rim.scale.setScalar(2.2);
   rim.frustumCulled = false;
@@ -525,7 +554,7 @@ function pelletModel(team: number, seed: number): THREE.Group {
   p.scale.setScalar(1.05);
   // A smaller satellite pellet riding beside each round, offset by the round's own seed, so five
   // sim pellets read as a fan of ten and the fan has depth.
-  const sat = solid("pellet", HOT, 1.6, team);
+  const sat = solid("pellet", HOT, 1.6, TRACER_ALT);
   const satRim = new THREE.Mesh(projectileGeometry("pellet"), fxSolid(INK, true));
   satRim.scale.setScalar(2.2);
   satRim.frustumCulled = false;
@@ -698,6 +727,7 @@ export function makeProjectileModel(p: Projectile, family: ProjectileFamily): TH
   const seed = seedOf(p.id);
   switch (family) {
     case "tank": case "artillery": case "siege": return shellModel(family, team, p.age);
+    case "rocket": return rocketModel(p.age);
     case "grenade": return grenadeModel(team, p.age, p.state === "rolling");
     case "launcher": return launcherModel(team, p.age);
     case "mortar": case "smoke": return mortarModel(family, team, p.age);
@@ -782,13 +812,15 @@ export function makeProjectileTrail(p: Projectile, family: ProjectileFamily, his
     return out;
   }
   const tapered = family === "grenade" || family === "launcher" || family === "bomb" ? 0.45 : family === "pistol" || family === "carbine" ? 0.7 : 1;
-  const trailColor = family === "mg" ? (seedOf(p.id) % 2 === 0 ? TRACER_ALT : TRACER) : family === "grenade" || family === "mortar" || family === "smoke" || family === "bomb" ? SMOKE_LIGHT : family === "launcher" ? BRASS : family === "sniper" ? SMOKE_LIGHT : TRACER;
+  const trailColor = family === "mg" ? (seedOf(p.id) % 2 === 0 ? TRACER_ALT : TRACER) : family === "grenade" || family === "mortar" || family === "smoke" || family === "bomb" ? SMOKE_LIGHT : family === "launcher" ? BRASS : family === "sniper" || family === "rocket" ? SMOKE_LIGHT : TRACER;
   const lobbed = LOBBED.has(family);
   // Tapered ribbon from the HEAD back: fat and bright at the round, thin and faint at the tail.
   // The first segment runs head → newest sample, so it grows continuously instead of the ribbon
   // lagging a whole step behind the round; width and opacity follow distance, so a sample
   // rolling off the end is already invisible.
-  const ribbonReach = lobbed && family !== "tank" ? step * 3 : reach;
+  // Small arms trail only a SHORT attached streak (the round itself carries its look); nothing long hangs behind a bullet.
+  // ...and NO ribbon at all behind a small-arms round (owner 2026-10-03, again: a thin orange line behind a fat bullet reads as a detached tail).
+  const ribbonReach = isSmallArms(family) ? 0 : lobbed && family !== "tank" ? step * 3 : reach;
   const width = family === "tank" || family === "artillery" || family === "siege" ? 2.2 : family === "mg" ? 1.5 : 1;
   let from: Point3 = head;
   let fromBehind = 0;
@@ -819,12 +851,12 @@ export function makeProjectileTrail(p: Projectile, family: ProjectileFamily, his
     const streak = solidTube(tail, head, HOT, 0.03, 0.055);
     if (streak) out.push(streak);
   }
-  if (lobbed && family !== "grenade" && family !== "tank") {
+  if ((lobbed || family === "rocket") && family !== "grenade" && family !== "tank") {
     // Smoke ribbon behind a lobbed round: puffs hang where the round WAS, so they thin out behind
     // it in space rather than towing along. Every other SAMPLE (by its stable seq) carries a puff,
     // so the ribbon has gaps — a solid chain read as a caterpillar on the arc. A puff is born
     // small, swells with distance, rises with its age, and eases away by the reach.
-    const puffScale = family === "artillery" ? 1.35 : family === "launcher" ? 0.7 : family === "bomb" ? 0.8 : 1;
+    const puffScale = family === "artillery" ? 1.35 : family === "launcher" || family === "rocket" ? 0.7 : family === "bomb" ? 0.8 : 1;
     for (let i = n - 1; i >= 0; i -= 1) {
       const pt = history[i];
       if (pt.seq % 2) continue;

@@ -28,6 +28,12 @@ map, the no-go tile overlay, four Achievements pages, and a pile of UI fixes (se
 Then (2026-10-03, owner batch): field hands (Heal / Repair, Charge, Bounce Pad, Oil, Barrier, Rocketeer), manned Gun Posts and
 Mortar Pits (map-placed and base-built), continuous height advantage, the shove stagger, shot lines that end on the aimed part,
 recorded CC0 sound effects and three music tracks per map (`docs/game-systems.md`, "FIELD HANDS").
+Then (same day, owner round 2): splash aiming is PICK-then-CONFIRM (`hud.groundPick`: click a ground spot, the arc / blast / blocked
+state is drawn from that spot, Confirm fires at it; the cursor ray now lands on the real terrain, not the y=0 plane, so high
+ground picks the hill you see); the tech tree rebuilt so Recon, Assault and Armor each have a purpose (`docs/game-systems.md`,
+"Tech is cheap"); no default rings around bases or unselected units; custom cursors; quick-select numbers on the base deck.
+**Open finding**: `probe:terrain` shows one 0.2-0.5m tank tread clip on Karak around (-13, -14.8) after the bot's turn 3, timing
+dependent (the sim terrain there is flat, so it is a DRAWN ledge the sim does not know). Not yet bisected.
 Then (2026-10-01): no Deploy-now shortcut in set-up; the PLAY LOG (`game/logs/latest.log`); the locked-turret
 placement fix (decks show locks, picks refuse up front, every refusal toasts its reason, every defense has a
 placement ghost); Defenses decks of 5-6 and Support decks of 3 per faction (starters, tech pieces, faction-own);

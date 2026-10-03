@@ -99,7 +99,7 @@ export const FACTIONS: readonly FactionDef[] = [
     supports: ["reconsweep", "airstrike", "paradrop"],
     accent: 0x8cefff,
     aiPreference: ["tank", "gunship", "heavy", "jumper", "sniper", "scout"],
-    aiTechPath: ["assault", "armor", "airwing"],
+    aiTechPath: ["assault", "armor", "recon", "airwing", "breach"],
     doctrine: {
       name: "Rapid Response",
       text: "Every troop and strike cooldown is a turn shorter, and the deploy ring reaches 4m further.",
@@ -125,7 +125,7 @@ export const FACTIONS: readonly FactionDef[] = [
     supports: ["smokescreen", "napalm", "cluster"],
     accent: 0xffca6b,
     aiPreference: ["flamer", "striker", "grenadier", "sapper", "apc", "droneop"],
-    aiTechPath: ["assault", "ordnance", "armor"],
+    aiTechPath: ["assault", "ordnance", "armor", "recon", "thermobarics"],
     doctrine: {
       name: "Scavengers",
       text: "Every enemy unit it destroys pays back 30% of that unit's cost, and its blasts reach 15% wider.",
@@ -152,7 +152,7 @@ export const FACTIONS: readonly FactionDef[] = [
     supports: ["resupply", "laser", "barrage"],
     accent: 0x9ef0b8,
     aiPreference: ["tank", "heavy", "artillery", "mortar", "engineer"],
-    aiTechPath: ["assault", "armor", "siege"],
+    aiTechPath: ["assault", "armor", "recon", "siege", "plating"],
     doctrine: {
       name: "Dig In",
       text: "A ground unit that holds its ground for a full turn digs in: 20% less damage until it moves.",

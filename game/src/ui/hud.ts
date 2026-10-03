@@ -83,6 +83,7 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "deploy", label: "Deploy", tip: "Artillery only. Outriggers down (whole turn): the gun fires only deployed, deploys itself any turn it holds still, and packing up to move costs a turn." },
   { id: "recon", label: "Recon", tip: "Drone Operator only. Whole turn: next turn every enemy unit's planned order is shown on the board." },
   { id: "treat", label: "Heal", tip: "Medic: walk up to a hurt infantry unit and restore every part to full (wrecked parts to a third). Engineer: the same for machines, emplacements and the base. 1 AP." },
+  { id: "leap", label: "Jump", tip: "Infantry: hop a few metres, over a crate or a low wall, up onto a ledge, across a gap. Light, quick troopers go farther and higher. 1 AP." },
   { id: "man", label: "Man", tip: "Walk up to a free Gun Post or Mortar Pit and crew it. It fires from next turn, with your trooper's turn spent on it. 1 AP." },
   { id: "dismount", label: "Leave", tip: "Let the crew step away from this emplacement. It stops firing until someone crews it again." },
   { id: "place", label: "Place", tip: "Set this unit's item down within reach. T turns it. 1 AP and its cost." },
@@ -102,6 +103,7 @@ const ACTION_HOW: Partial<Record<Intent, string>> = {
   defend: "Crouch where you stand: better accuracy, harder to head-shot, slower next move. 1 AP.",
   mine: "Plant a hidden mine at the sapper's feet; enemies that step on it take a blast. $15 + 1 AP.",
   load: "Select Load, then click a friendly ground unit to lift it aboard. 1 AP.",
+  leap: "Select Jump, then click ground within the ring: the trooper arcs there, over low cover and up onto a ledge. 1 AP.",
   man: "Select Man, then click a Gun Post or Mortar Pit in reach. It fires from next turn.",
   treat: "Select it, then click a hurt ally in reach: the unit walks over and restores every part. 1 AP.",
   place: "Select it, click ground within reach (T turns it). Set down at once; costs 1 AP and money.",
@@ -124,6 +126,8 @@ export interface HudCallbacks {
   queueGrenadeAt(destination: Vec2): boolean;
   queueSmokeAt(destination: Vec2): boolean;
   queueTreat(id: string): boolean;
+  queueLeap(destination: Vec2): boolean;
+  onAllSet?(): void;
   queueMan(id: string): boolean;
   queueDismount(): boolean;
   queuePlace(destination: Vec2): boolean;
@@ -171,6 +175,8 @@ export class Hud {
   private friendlyDetailsId: string | undefined;
   private hoverEntityId: string | undefined;
   private logExpanded = false;
+  /** The ground spot picked for a splash shot / lob: the preview line and Confirm work off this, not the cursor. */
+  groundPick: Vec2 | undefined;
   private readonly tooltip: HTMLDivElement;
   private tooltipAnchor: HTMLElement | undefined;
 
@@ -206,6 +212,8 @@ export class Hud {
   get hoveredTargetId(): string | undefined {
     return this.hoverEntityId;
   }
+
+  private wasAllSet = false;
 
   chooseBoardEntity(id: string): void {
     const entity = this.sim.entity(id);
@@ -269,8 +277,27 @@ export class Hud {
 
   // Activate the Nth visible action in the command deck (keyboard number keys), so the
   // on-screen number always matches the key that triggers it for every unit type.
+  /** The numbered cards of the base's open tab, in print order (a locked-group card has no number). */
+  private baseDeckCards(): HTMLElement[] {
+    // Deploy, Defenses and Support cards only: the Tech tab is a tree you read, not a list you pick by number.
+    return [...this.root.querySelectorAll<HTMLElement>("[data-spawn]:not([data-spawn-quick]), [data-build], [data-support]")]
+      .filter((el) => !el.classList.contains("locked-troop--group") && el.closest(".order-body"));
+  }
+
+  /** [ and ] flip the base's tabs (Deploy / Tech / Defenses / Support / Base). */
+  cycleBaseTab(direction: number): void {
+    const order: BaseTab[] = ["deploy", "tech", "defenses", "support", "upgrade"];
+    const i = order.indexOf(activeBaseTab);
+    activeBaseTab = order[(i + direction + order.length) % order.length];
+    this.update();
+  }
+
   activateActionSlot(slot: number): void {
     const actor = this.sim.selected;
+    if (actor?.team === "player" && actor.kind === "base" && this.sim.phase === "command") {
+      this.baseDeckCards()[slot - 1]?.click(); // 1-9 pick the nth card of the open tab
+      return;
+    }
     if (!actor || actor.team !== "player" || actor.kind === "base") return;
     // Same list the card grid renders, so the printed number and the key always agree -- and keep
     // agreeing after the unit loses a leg.
@@ -386,11 +413,30 @@ export class Hud {
       this.update();
       return;
     }
+    // A lob or a ground-aimed shell: the click PICKS the spot (the arc, blast and any block are drawn
+    // from it) and Confirm fires. An aircraft's bomb run still goes straight to the click.
+    const lobbing = this.action === "grenade" && !this.sim.selected?.flying;
+    const shelling = this.action === "shoot" && this.sim.selectedCanGroundTarget();
+    if ((lobbing || shelling) && this.sim.phase === "command") {
+      this.groundPick = destination;
+      this.targetId = undefined;
+      this.targetPartId = undefined;
+      this.update();
+      return;
+    }
     if (this.action === "grenade" && this.sim.phase === "command") {
       if (this.callbacks.queueGrenadeAt(destination)) {
         this.action = "select";
         this.targetId = undefined;
         this.targetPartId = undefined;
+        this.callbacks.setIntent("select");
+      }
+      return;
+    }
+    // Jump: the trooper arcs to the clicked spot (inside its jump ring).
+    if (this.action === "leap" && this.sim.phase === "command") {
+      if (this.callbacks.queueLeap(destination)) {
+        this.action = "select";
         this.callbacks.setIntent("select");
       }
       return;
@@ -417,11 +463,6 @@ export class Hud {
         this.action = "select";
         this.callbacks.setIntent("select");
       }
-      return;
-    }
-    // Explosive shooters (tank, artillery, mortar, grenadier, mortar turret) can target a spot.
-    if (this.action === "shoot" && this.sim.phase === "command" && this.sim.selectedCanGroundTarget()) {
-      if (this.callbacks.queueShootAt(destination)) this.afterConfirmedOrder();
       return;
     }
     if (this.action !== "move" || this.sim.phase !== "command") {
@@ -476,9 +517,9 @@ export class Hud {
       : "Resolve every queued order. Hotkey: Space.";
     const nextHtml = `
       <div class="topbar compact-top">
-        <button class="btn primary end-turn" data-command="end" ${this.sim.phase !== "command" ? "disabled" : ""} data-tip="${escapeAttr(endTip)}">
-          ${endLabel}
-          <span>Space</span>
+        <button class="btn primary end-turn ${allOrdersSet ? "ready" : ""}" data-command="end" ${this.sim.phase !== "command" ? "disabled" : ""} data-tip="${escapeAttr(endTip)}">
+          ${allOrdersSet ? `${endLabel} ✓` : endLabel}
+          <span>${allOrdersSet ? "All set" : "Space"}</span>
         </button>
         <button class="btn ghost menu-btn" data-command="open-menu" data-tip="Open the in-battle menu: save, controls, or return to the main menu. Hotkey: Esc.">Menu <span>Esc</span></button>
         ${turnChip(this.sim, seatTurn?.seat)}
@@ -512,7 +553,7 @@ export class Hud {
       ` : ""}
 
       <section class="commandbar">
-        ${orderPlanner(actor, target, this.targetPartId, this.action, playerOrders.get(actor?.id ?? "") ?? [], this.sim)}
+        ${orderPlanner(actor, target, this.targetPartId, this.action, playerOrders.get(actor?.id ?? "") ?? [], this.sim, this.groundPick)}
       </section>
 
       <div class="money-bar" data-tip="Your money. The Home Base pays the income below at the start of every turn (less if its reactor is damaged). Spend it on troops, research, defenses and support.">
@@ -538,7 +579,14 @@ export class Hud {
       this.root.innerHTML = nextHtml;
       this.lastHtml = nextHtml;
       this.restoreScrollState(scrollState);
+      // The base deck's cards wear their quick-select number (1-9), the way a unit's action cards do.
+      this.baseDeckCards().slice(0, 9).forEach((el, i) => el.insertAdjacentHTML("afterbegin", `<kbd class="slot-key">${i + 1}</kbd>`));
     }
+    // ALL SET: the moment every unit's AP is spent, say so once (a soft chime) and let the End Turn button pulse.
+    const allSet = allOrdersSet;
+    if (allSet && !this.wasAllSet) this.callbacks.onAllSet?.();
+    this.wasAllSet = allSet;
+    this.root.querySelector(".end-turn")?.classList.toggle("ready", allSet);
     // The target panel starts below the right rail. The rail's height varies (an event notice can
     // wrap to three lines), so a fixed top collided with it the first time a storm was announced.
     const rail = this.root.querySelector<HTMLElement>(".topbar.compact-top");
@@ -637,7 +685,11 @@ export class Hud {
     const select = target.closest<HTMLElement>("[data-select]")?.dataset.select;
     if (select) this.chooseBoardEntity(select);
 
-    const confirm = target.closest<HTMLElement>("[data-confirm]")?.dataset.confirm; // "shoot"|"grenade"|"bomb"|"ram"|"melee"
+    const confirm = target.closest<HTMLElement>("[data-confirm]")?.dataset.confirm; // "shoot"|"grenade"|"bomb"|"ram"|"melee"|"ground"
+    if (confirm === "ground" && this.groundPick) {
+      const ok = this.action === "grenade" ? this.callbacks.queueGrenadeAt(this.groundPick) : this.callbacks.queueShootAt(this.groundPick);
+      if (ok) this.afterConfirmedOrder();
+    }
     if (confirm === "shoot" && this.targetId && this.targetPartId) {
       if (this.callbacks.queueShootPart(this.targetId, this.targetPartId)) this.afterConfirmedOrder();
     }
@@ -739,6 +791,7 @@ export class Hud {
   }
 
   private afterConfirmedOrder(): void {
+    this.groundPick = undefined;
     this.action = "select";
     this.targetId = undefined;
     this.targetPartId = undefined;
@@ -746,6 +799,8 @@ export class Hud {
   }
 
   private pruneInvalidFocus(): void {
+    // The picked spot only means something while the same unit still has Shoot/Grenade armed and no unit is targeted.
+    if (this.groundPick && (this.targetId || (this.action !== "shoot" && this.action !== "grenade") || !this.sim.selected || this.sim.phase !== "command")) this.groundPick = undefined;
     const friendly = this.friendlyDetailsId ? this.sim.entity(this.friendlyDetailsId) : undefined;
     if (!friendly || friendly.team !== "player" || !friendly.status.alive) this.friendlyDetailsId = undefined;
 
@@ -1156,7 +1211,8 @@ function orderPlanner(
   targetPartId: string | undefined,
   action: Intent,
   orders: TacticalOrder[],
-  sim: TacticalSim
+  sim: TacticalSim,
+  groundPick?: Vec2
 ): string {
   // The Home Base has its own command deck: deploy troops or upgrade itself.
   if (actor?.kind === "base") return baseCommandPanel(actor, sim);
@@ -1185,8 +1241,8 @@ function orderPlanner(
   const actionBody = [
     orders.length && !target && action === "select" ? queuedOrdersState(orders, sim) : "",
     action === "move" ? moveState(actor) : "",
-    action === "shoot" ? shootState(actor, target, targetPartId, preview, blocker, canShoot, sim) : "",
-    action === "grenade" ? grenadeState(actor, target, targetPartId, grenadePreview, grenadeBlocker, canGrenade, grenadeStatus?.reason, sim) : "",
+    action === "shoot" ? shootState(actor, target, targetPartId, preview, blocker, canShoot, sim, groundPick) : "",
+    action === "grenade" ? grenadeState(actor, target, targetPartId, grenadePreview, grenadeBlocker, canGrenade, grenadeStatus?.reason, sim, groundPick) : "",
     action === "ram" ? ramState(target, canRam, ramStatus?.reason, ramTip) : "",
     action === "melee" ? meleeState(target, targetPartId, canMelee, meleeStatus?.reason, sim) : "",
     action === "interact" ? coverInteractionState(actor, target, sim) : "",
@@ -1331,12 +1387,13 @@ function shootState(
   preview: ShotPreview | undefined,
   blocker: CombatEntity | undefined,
   canShoot: boolean,
-  sim: TacticalSim
+  sim: TacticalSim,
+  groundPick?: Vec2
 ): string {
   if (!actor) return `<div class="order-note">Click a trooper first.</div>`;
   if (!target) {
     return sim.selectedCanGroundTarget()
-      ? `<div class="order-note">Pick a target or a spot.</div>`
+      ? groundPickState(sim, groundPick, "Shoot")
       : `<div class="order-note">Pick a target.</div>`;
   }
   if (target.team === "player") {
@@ -1388,6 +1445,23 @@ function shootState(
   `;
 }
 
+// A picked ground spot for a lob / shell: what the line does, and a Confirm that fires at that exact spot.
+function groundPickState(sim: TacticalSim, pick: Vec2 | undefined, verb: string): string {
+  const aim = pick ? sim.groundAimPreview(pick) : undefined;
+  if (!pick || !aim) return `<div class="order-note">Pick a target or a spot.</div>`;
+  const note = !aim.reachable ? "Out of range" : aim.blocked ? "Blocked, lands short" : "Path clear";
+  const bad = !aim.reachable;
+  return `
+    <div class="target-summary ${bad || aim.blocked ? "blocked" : ""}">
+      <strong>Ground</strong>
+      <span>${note}</span>
+    </div>
+    <button class="btn confirm ${bad ? "disabled" : ""}" data-confirm="ground" data-disabled="${bad}" data-tip="${escapeAttr(bad ? "Too far: move closer or pick a nearer spot." : "Fire at the marked spot. Click elsewhere to re-aim.")}">
+      Confirm ${verb}
+    </button>
+  `;
+}
+
 // A flying bomb-dropper's "grenade" verb reads as "Bomb" everywhere in the UI (deck, confirm,
 // tooltip, queued summary); ground units keep "Grenade".
 function bombVerb(actor: CombatEntity | undefined): string {
@@ -1402,7 +1476,8 @@ function grenadeState(
   blocker: CombatEntity | undefined,
   canGrenade: boolean,
   reason: string | undefined,
-  sim: TacticalSim
+  sim: TacticalSim,
+  groundPick?: Vec2
 ): string {
   if (!actor) return `<div class="order-note">Click a trooper first.</div>`;
   if (actor.flying) {
@@ -1419,7 +1494,7 @@ function grenadeState(
       </button>
     `;
   }
-  if (!target) return `<div class="order-note">Pick a target or a spot.</div>`;
+  if (!target) return groundPickState(sim, groundPick, "Grenade");
   if (target.team === "player") {
     return `
       <div class="target-summary blocked">
@@ -1954,7 +2029,7 @@ function techTreePanel(base: CombatEntity, sim: TacticalSim): string {
   const rows: string[] = [];
   const walk = (node: TechNode, depth: number): void => {
     rows.push(researchRow(node, depth, base, sim));
-    for (const child of TECH_TREE) if (child.tier < 4 && child.requires.includes(node.id) && doctrine.includes(child.id)) walk(child, depth + 1);
+    for (const child of TECH_TREE) if (child.tier < 4 && child.requires[0] === node.id && doctrine.includes(child.id)) walk(child, depth + 1);
   };
   for (const root of TECH_TREE) if (root.requires.length === 0 && doctrine.includes(root.id)) walk(root, 0);
   return `
@@ -2282,6 +2357,7 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
   if (action === "defend") return !isInfantryKind(actor.kind) || !actor.status.canMove;
   if (action === "mine") return Boolean(sim.mineFailureReason(actor));
   if (action === "smoke") return Boolean(sim.smokeFailureReason(actor));
+  if (action === "leap") return !actor.status.canMove;
   if (action === "dismount") return !actor.occupantId;
   if (action === "man") return !actor.status.canMove || !sim.entities.some((e) => (e.kind === "gunpost" || e.kind === "mortarpit") && !sim.manFailureReason(actor, e));
   if (action === "treat") return Boolean(sim.treatFailureReason(actor));
@@ -2322,6 +2398,7 @@ function actionApplicable(action: Intent, actor: CombatEntity | undefined): bool
   if (action === "melee" || action === "push" || action === "defend") return isInfantryKind(actor.kind);
   if (action === "mine") return actor.kind === "sapper";
   if (action === "smoke") return actor.kind === "mortar";
+  if (action === "leap") return isInfantryKind(actor.kind) && actor.kind !== "jumper";
   if (action === "dismount") return actor.kind === "gunpost" || actor.kind === "mortarpit";
   if (action === "treat") return actor.kind === "medic" || actor.kind === "engineer";
   if (action === "man") return isInfantryKind(actor.kind) && actor.kind !== "medic" && actor.kind !== "engineer";
@@ -2347,6 +2424,7 @@ function actionDisabledReason(action: Intent, actor: CombatEntity | undefined, s
   if (action === "grenade" && actor.grenades <= 0) return `${actor.name} is out of grenades.`;
   if (action === "mine") return sim.mineFailureReason(actor) ?? undefined;
   if (action === "smoke") return sim.smokeFailureReason(actor) ?? undefined;
+  if (action === "leap") return `${actor.name} cannot jump: its legs are destroyed.`;
   if (action === "dismount") return "No crew to send away";
   if (action === "man") return !actor.status.canMove ? `${actor.name} cannot move` : "No free Gun Post or Mortar Pit in reach";
   if (action === "treat") return sim.treatFailureReason(actor) ?? undefined;
@@ -2366,6 +2444,7 @@ function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: Tac
   if (action === "defend") return isInfantryKind(actor.kind) && actor.status.canMove;
   if (action === "mine") return actor.kind === "sapper";
   if (action === "smoke") return actor.kind === "mortar" && actor.status.canShoot;
+  if (action === "leap") return isInfantryKind(actor.kind) && actor.kind !== "jumper" && actor.status.canMove;
   if (action === "man") return isInfantryKind(actor.kind) && actor.kind !== "medic" && actor.kind !== "engineer";
   if (action === "treat") return actor.kind === "medic" || actor.kind === "engineer";
   if (action === "place") return Boolean(placeSpecFor(actor.kind));

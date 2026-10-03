@@ -92,7 +92,7 @@ export type Phase = "command" | "resolve" | "victory" | "defeat";
 // (measured from the click to the edge of the unit's footprint).
 export const DEPLOY_SNAP = 1.5;
 
-export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "push" | "mine" | "interact" | "inspect" | "inspect-detail" | "build" | "support" | "load" | "unload" | "smoke" | "recon" | "deploy" | "treat" | "place" | "man" | "dismount";
+export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "push" | "mine" | "interact" | "inspect" | "inspect-detail" | "build" | "support" | "load" | "unload" | "smoke" | "recon" | "deploy" | "treat" | "place" | "man" | "dismount" | "leap";
 export type OrderKind = "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "load" | "unload" | "smoke" | "recon" | "deploy" | "treat" | "man";
 
 // Orders that carry a unit off its spot this resolve -- anything else leaves it dug in.
@@ -213,6 +213,10 @@ const AMMO_COOKOFF_SPREAD = 2.2;
 // A cut conduit browns out nearby emplacements: they hold position but cannot fire.
 const CONDUIT_RADIUS = 7;
 const CONDUIT_OUTAGE_TURNS = 2;
+// A trooper's hop: how fast it travels (m/s), the base reach and the base ledge it can clear (both scale with how light and quick the kind is).
+const LEAP_SPEED = 7.5;
+const LEAP_REACH = 3.6;
+const LEAP_UP = 1.35;
 const BURN_TURNS = 2;
 const BURN_DAMAGE = 14;
 // OIL (oiler): a puddle waits for a spark, then burns longer and harder than a flamer's splash.
@@ -313,6 +317,8 @@ export interface TacticalOrder {
   startedCrouched?: boolean;
   /** A melee order that SHOVES instead of striking (the Push ability): same rush, a big throw. */
   shove?: boolean;
+  /** A short hop every trooper can make: a move that arcs over low obstacles and up onto a ledge (see leapRange). */
+  leap?: boolean;
   projectileId?: string;
 }
 
@@ -871,8 +877,8 @@ export class TacticalSim {
   // squad is currently selected — e.g. a wall, turret, or the base was clicked — we step in
   // from the first/last unit so Tab always lands on a real unit instead of stalling.
   cyclePlayer(direction = 1): void {
-    // Gun emplacements you own (built or captured) are commandable, so Tab reaches them; walls are not.
-    const units = this.living("player").filter((e) => !isBuildingKind(e.kind) && e.kind !== "wall");
+    // Tab reaches everything you can command: the Home Base first, then every unit and gun emplacement you own (walls are not).
+    const units = [...this.living("player").filter((e) => e.kind === "base"), ...this.living("player").filter((e) => !isBuildingKind(e.kind) && e.kind !== "wall")];
     if (!units.length) return;
     const step = direction < 0 ? -1 : 1;
     const index = units.findIndex((e) => e.id === this.selectedId);
@@ -929,6 +935,48 @@ export class TacticalSim {
       aim: this.aim,
       duration: isVehicleKind(actor.kind) ? 2.85 : 2.55,
     });
+    return true;
+  }
+
+  /** How far a trooper can hop. Light, quick kinds (a scout) go farther and higher; a heavy gunner barely clears a crate. */
+  leapRange(actor: CombatEntity): number {
+    return LEAP_REACH * Math.sqrt(unitStats(actor.kind).moveSpeed / 6.5) * (actor.mods?.move ?? 1);
+  }
+
+  leapUp(actor: CombatEntity): number {
+    return LEAP_UP * Math.sqrt(unitStats(actor.kind).moveSpeed / 6.5);
+  }
+
+  /** Where a hop toward `point` would land (clamped to range, nudged clear of solids) and whether it may. */
+  leapPreview(point: Vec2, actorOverride?: CombatEntity): { from: Vec2; to: Vec2; ok: boolean; reason?: string } | undefined {
+    const actor = actorOverride ?? this.selected;
+    if (!actor || actor.team !== "player" || this.phase !== "command" || !isInfantryKind(actor.kind) || canJump(actor)) return undefined;
+    const from = this.projectedActorForPreview(actor).position;
+    const range = this.leapRange(actor);
+    const d = dist(from, point);
+    const wanted = d > range ? { x: from.x + ((point.x - from.x) / d) * range, z: from.z + ((point.z - from.z) / d) * range } : point;
+    const to = this.jumpLanding(actor, nearestDryPoint(clampToArena(wanted)));
+    const fail = (reason: string): { from: Vec2; to: Vec2; ok: boolean; reason: string } => ({ from, to, ok: false, reason });
+    if (!actor.status.canMove) return fail(`${actor.name} cannot move`);
+    if (dist(to, wanted) > 1.2) return fail("No room to land there");
+    if (pointInWater(to)) return fail("Cannot land in the water");
+    if (terrainHeightAt(to) - terrainHeightAt(from) > this.leapUp(actor)) return fail("Too high to jump up");
+    if (!this.groundFits(actor, to)) return fail("No room to land there");
+    return { from, to, ok: true };
+  }
+
+  /** Player API: HOP. Every trooper can leap a few metres: over a crate or a low wall, up onto a ledge, across a gap. 1 AP. */
+  queueLeap(point: Vec2): boolean {
+    const actor = this.requirePlayerActor();
+    if (!actor) return false;
+    if (!isInfantryKind(actor.kind)) return this.reject("Only infantry can jump");
+    if (canJump(actor)) return this.reject(`${actor.name} already jumps with its pack: use Move`);
+    if (actor.commandPoints <= 0) return this.reject(`${actor.name} has no action points`);
+    const preview = this.leapPreview(point);
+    if (!preview) return false;
+    if (!preview.ok) return this.reject(preview.reason ?? "Cannot jump there");
+    if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
+    this.addOrder({ actorId: actor.id, kind: "move", destination: preview.to, leap: true, aim: this.aim, duration: 1.6 });
     return true;
   }
 
@@ -1495,6 +1543,9 @@ export class TacticalSim {
     if (this.intent === "ram" && actor.kind === "tank" && actor.status.canMove) {
       return { kind: "ram", radius: ramRange(actor) + actor.radius, position: { ...projected.position }, elevation: projected.elevation };
     }
+    if (this.intent === "leap" && isInfantryKind(actor.kind) && !canJump(actor)) {
+      return { kind: "move", radius: this.leapRange(actor), position: { ...projected.position }, elevation: projected.elevation };
+    }
     if (this.intent === "treat" && (actor.kind === "medic" || actor.kind === "engineer")) {
       return { kind: "move", radius: moveRange(actor) + TREAT_REACH, position: { ...projected.position }, elevation: projected.elevation };
     }
@@ -1770,6 +1821,9 @@ export class TacticalSim {
     // nearest crate or wall. A placed deploy (`at`) was validated by deployPointPreview.
     spawnAt.position = at ? { ...at } : this.freeSpawnNear(base, spawnAt.radius);
     if (!spawnAt.flying) spawnAt.position = nearestDryPoint(spawnAt.position);
+    // A spot found by the last-resort fallback (every ring crowded) must still stand clear of a step: the movement oracle caught a trooper
+    // fielded with its hull in one. A validated, player-placed spot is left exactly where it was put.
+    if (!at && !spawnAt.flying) spawnAt.position = clearOfTerrainEdge(spawnAt.position, spawnClearance(spawnAt.radius));
     const unit = spawnAt;
     this.applyFactionMods(unit);
     // Difficulty scaling: enemy units field with more health on higher difficulties.
@@ -2827,24 +2881,25 @@ export class TacticalSim {
         this.defending.delete(actor.id);
       }
       const crouchMoveSlow = order.startedCrouched ? 0.66 : 1;
-      if (canJump(actor)) {
+      if (canJump(actor) || order.leap) {
         // THE JUMP. Airborne for the whole leap (so it is a flyer to targeting and mines), on a
         // sine arc whose height scales with the distance, and back on the ground the moment it
         // lands. The order's own progress drives the arc, so it can never desync from the move.
         const total = Math.max(0.01, dist(order.start, order.destination));
-        actor.position = moveToward(actor.position, order.destination, moveSpeed(actor) * 1.15 * dt);
+        // A trooper's hop is slower and lower than a jet pack's: a few metres, a bit over a second.
+        actor.position = moveToward(actor.position, order.destination, order.leap ? LEAP_SPEED * dt : moveSpeed(actor) * 1.15 * dt);
         const progress = clamp(1 - dist(actor.position, order.destination) / total, 0, 1);
         const landed = dist(actor.position, order.destination) < 0.08;
         actor.flying = !landed;
-        actor.agl = landed ? undefined : Math.sin(progress * Math.PI) * Math.min(4.2, 1.2 + total * 0.28);
+        actor.agl = landed ? undefined : Math.sin(progress * Math.PI) * (order.leap ? Math.min(1.9, 0.7 + total * 0.22) : Math.min(4.2, 1.2 + total * 0.28));
         this.syncEntityElevation(actor);
         actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
         if (landed) {
           this.separateFromUnits(actor, order.destination);
           this.syncEntityElevation(actor);
           this.effect("land", actor.position, actor.position, 0xbfe9ff, 0.5, actor.radius * 1.3);
-          // SLAM LANDING: anyone hostile within a stride of the touchdown is knocked back and hurt.
-          for (const other of this.entities) {
+          // SLAM LANDING (the jump trooper's identity; an ordinary hop lands softly): anyone hostile within a stride is knocked back and hurt.
+          for (const other of canJump(actor) ? this.entities : []) {
             if (other.team === actor.team || other.team === "neutral" || !other.status.alive || other.flying || other.kind === "cover" || isBuildingKind(other.kind) || isDefenseKind(other.kind)) continue;
             if (dist(other.position, actor.position) > actor.radius + other.radius + 0.6) continue;
             const result = applyDamage(other, preferredPart(other, "center").id, Math.round(SLAM_LANDING_DAMAGE * this.teamDamageScale(actor)));
@@ -3044,7 +3099,14 @@ export class TacticalSim {
       const swingReach = unitStats(actor.kind).meleeRange + actor.radius + target.radius;
       if (!order.fired && dist(actor.position, target.position) > swingReach + 0.05) {
         const gap = dist(actor.position, target.position) - swingReach;
-        actor.position = moveToward(actor.position, target.position, Math.min(gap, moveSpeed(actor) * 1.6 * dt));
+        const want = moveToward(actor.position, target.position, Math.min(gap, moveSpeed(actor) * 1.6 * dt));
+        // A charge never runs into a rise: it stops at the foot of the step (the oracle caught a striker ending hull-deep in one).
+        if (this.blockedBySteepTerrain(actor, actor.position, want, undefined, dist(actor.position, want), true)) {
+          order.done = true;
+          this.pushLog(`${actor.name}'s charge is stopped by the terrain`);
+          return;
+        }
+        actor.position = want;
         this.separateFromUnits(actor);
         this.syncEntityElevation(actor);
           this.checkMines(actor);
@@ -3821,8 +3883,9 @@ export class TacticalSim {
     const big = projectile.kind === "grenade";
     this.pushLog(`${actor.name}'s ${big ? (isAirBomber(actor) ? "bomb" : "grenade") : "shell"} bursts near ${trigger.name}`);
     this.effect("blast", point, point, big ? 0xffbf69 : 0xffd166, 0.72, big ? burst.radius - 0.3 : 1.6);
-    this.applyExplosiveRadius(actor, point, big ? burst.radius : 1.75, big ? burst.damage : 26, `${trigger.name} is caught in the blast`, big ? burst.maxThrow : undefined);
+    // The airburst reads where the sheltering target STANDS, so it comes before the blast throws that target away from the cover.
     if (trigger.kind === "cover") this.airburstBehindCover(actor, projectile, trigger);
+    this.applyExplosiveRadius(actor, point, big ? burst.radius : 1.75, big ? burst.damage : 26, `${trigger.name} is caught in the blast`, big ? burst.maxThrow : undefined);
     this.removeProjectile(projectile.id);
     if (order) order.done = true;
   }
@@ -3878,6 +3941,8 @@ export class TacticalSim {
       this.effect("blast", projectile.position, projectile.position, result.destroyed ? 0xffd166 : 0xffbf69, 0.7, target.radius + 1.05);
       this.resolveShellSplash(actor, target, targetPart, amount, projectile.position);
       this.airburstBehindCover(actor, projectile, target);
+      // A rocket or shell that HITS a trooper throws it backwards, away from the shooter (a tank, a wall or a gun does not budge).
+      if (!cover && target.status.alive && isInfantryKind(target.kind)) this.applyKnockback(actor, target, projectile.origin, Math.max(amount, 36) * 1.2, 1, { maxThrow: 5.5 });
     } else {
       this.effect("impact", target.position, target.position, result.destroyed ? 0xffd166 : 0xffffff, 0.42, target.radius);
     }
@@ -4540,7 +4605,9 @@ export class TacticalSim {
     const angle = len > 0.001 ? Math.atan2(dz, dx) : this.rng.range(0, Math.PI * 2);
     const dirX = len > 0.001 ? dx / len : Math.cos(angle);
     const dirZ = len > 0.001 ? dz / len : Math.sin(angle);
-    const throwDistance = Math.min(opts.maxThrow ?? KNOCKBACK_MAX, (baseDamage / 30) * falloff * KNOCKBACK_SCALE / mass);
+    let throwDistance = Math.min(opts.maxThrow ?? KNOCKBACK_MAX, (baseDamage / 30) * falloff * KNOCKBACK_SCALE / mass);
+    // A trooper in any real explosion is blown back a visible way (owner 2026-10-03), at least a hop; armour (mass 5.5) barely moves.
+    if (isInfantryKind(entity.kind) && baseDamage >= 18 && falloff >= 0.22) throwDistance = Math.max(throwDistance, Math.min(opts.maxThrow ?? KNOCKBACK_MAX, 0.9 + falloff * 1.6));
     if (throwDistance < 0.12) return;
 
     const steps = Math.max(4, Math.ceil(throwDistance * 6));

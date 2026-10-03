@@ -21,3 +21,12 @@ Fetch and transcode with `scripts/audio-fetch.sh` + `scripts/audio-build.sh` (ff
 - fantasy_orchestral: "Fantasy Orchestral Theme" by Joth, https://opengameart.org/content/fantasy-orchestral-theme
 - harvest_season: "Medieval: Harvest Season" by RandomMind, https://opengameart.org/content/medieval-harvest-season
 - long_winter: "Long Winter" by Indieteur, https://opengameart.org/content/long-winter
+
+## Real firearms (`sfx/ar15_*` ... `sfx/ppshburst_*`)
+- "The Free Firearm Sound Library" by Ben Jaszczak, Brian Nelson, Kevin Heras and Matthew Nanney (CC0, no rights reserved),
+  https://opengameart.org/content/the-free-firearm-sound-library. Single shots and bursts cut from the long recordings by
+  `scripts/audio-slice.py`: AR-15, AK-47, SKS, Carl Gustav M45, PPSh, Tikka, Marlin 336, Model 1894, Mosin Nagant, Savage 10,
+  Arisaka, 1911, Walther PPQ, Bersa, Ruger Mark III, S&W 642, Ruger Single Six, M1917, Mossberg, Model 12, Nova.
+
+## Interface (`sfx/ui_*`)
+- "Interface Sounds" and "UI Audio" by Kenney (CC0), https://kenney.nl/assets/interface-sounds and https://kenney.nl/assets/ui-audio.
