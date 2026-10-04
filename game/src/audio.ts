@@ -487,12 +487,6 @@ export class Sfx {
     }
   }
 
-  /** A bounce pad: a rising spring "boing". */
-  boing(): void {
-    this.blip(260, 0.22, "sine", 0.22);
-    this.blip(520, 0.2, "sine", 0.16, 0.06);
-  }
-
   /** A treat order landing: a soft two-note chime. */
   heal(): void {
     this.blip(660, 0.18, "sine", 0.16);

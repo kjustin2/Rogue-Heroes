@@ -81,13 +81,13 @@ describe("faction gating is enforced, not just declared", () => {
     expect(sim.spawnFailureReason(base, offRoster)).toMatch(/roster/i);
   });
 
-  it("rejects research outside the faction doctrine", () => {
+  it("rejects research outside the faction research", () => {
     const sim = armed();
     const base = sim.entities.find((e) => e.kind === "base" && e.team === "player");
     const tech = sim.factionOf("player").tech;
     const offTree = TECH_TREE.map((n) => n.id).find((id) => !tech.includes(id));
     if (!offTree) return;
-    expect(sim.researchFailureReason(base, offTree)).toMatch(/doctrine/i);
+    expect(sim.researchFailureReason(base, offTree)).toMatch(/not in .* research/i);
   });
 
   it("allows everything that IS on the roster", () => {

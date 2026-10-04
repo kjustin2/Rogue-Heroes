@@ -1286,7 +1286,7 @@ function orderPlanner(
               const placing = option.id === "place" && actor ? placeSpecFor(actor.kind) : undefined;
               const label = option.id === "grenade" ? bombVerb(actor) : jumps ? "Jump" : placing ? placing.label : option.label;
               const tip = option.id === "grenade" && actor?.flying
-                ? "Select Bomb, then Confirm to drop straight down on whatever is beneath the aircraft. Cannot hit aircraft."
+                ? "Select Bomb, click a spot in reach, then Confirm. No flight needed. Cannot hit aircraft."
                 : placing ? PLACE_TIP[placing.kind]
                 : jumps ? "Select Jump, then click any dry ground in range — over cliffs, water and walls. Airborne for the leap, so flak can catch it. 1 AP."
                 : ACTION_HOW[option.id] ?? option.tip;

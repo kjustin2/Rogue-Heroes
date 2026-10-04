@@ -354,7 +354,7 @@ export function createGunship(id: string, name: string, team: Team, position: Ve
 }
 
 // Bomber: a slow, tough heavy bomber. No gun at all — it only drops bombs (straight down), carries a
-// big load, and soaks hits, but it's helpless against interceptors and needs an escort.
+// big load, and soaks hits, and needs an escort.
 export function createBomber(id: string, name: string, team: Team, position: Vec2): CombatEntity {
   const entity: CombatEntity = {
     id,

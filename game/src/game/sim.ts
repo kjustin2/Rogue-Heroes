@@ -168,7 +168,7 @@ export const DEPOT_INCOME = 25;
 // Loose cash caches scattered on the field: run a unit over one to bank it. How close a unit
 // must get to grab it, and the min/spread of cash per cache.
 const PICKUP_REACH = 0.95;
-const TRANSPORT_CAPACITY = 2; // how many ground units an air transport (or an APC) can carry at once
+const TRANSPORT_CAPACITY = 2; // how many ground units an air transport can carry at once
 /** Seats per carrier: the Runabout seats four riders and a gunner. */
 const carrierCapacity = (kind: EntityKind): number => (kind === "runabout" ? 5 : TRANSPORT_CAPACITY);
 const SLAM_RADIUS = 3.0; // the Sledge's hammer circle
@@ -180,7 +180,7 @@ const BURN_STATUS_DAMAGE = 8; // ...for this much a turn
 const CHAIN_RADIUS = 3.2; // the arc rifle jumps to foes this close to the one it hit
 const BOUNTY_PAY = 50; // a Bounty Hunter's kill pays this
 const SENTRY_COST_TURNS = 4;
-// APC carry: the ground lift needs the passenger beside the hull, and unloads beside it too.
+// Runabout carry: the ground lift needs the passenger beside the hull, and unloads beside it too.
 const APC_LOAD_REACH = 1.2;
 const APC_UNLOAD_REACH = 3;
 // STRIKER CHARGE: metres of free closing distance folded into the strike order.
@@ -510,7 +510,8 @@ export const CLASH_BLAST = 0xff9a3a;
 /** Utility "blasts" that are a pulse, not an explosion: an EMP burst and a smoke shell opening. They draw a ring of light or a puff, never a fireball, a scorch or a shove. */
 export const PULSE_EMP = 0x8de4ff;
 export const PULSE_SMOKE = 0x9aa3a8; // SMOKE_COLOR
-export const isPulseBlast = (color: number | undefined): boolean => color === PULSE_EMP || color === PULSE_SMOKE;
+export const PULSE_WATER = 0x4f9fd0; // a trooper or vehicle going under: a ring and spray, never a fireball
+export const isPulseBlast = (color: number | undefined): boolean => color === PULSE_EMP || color === PULSE_SMOKE || color === PULSE_WATER;
 const PROJECTILE_COLLIDE_RADIUS = 0.42;
 /** A bomb run closer than this drops where it hovers (no move to queue). */
 const KNOCKBACK_SCALE = 2.4;
@@ -1176,12 +1177,12 @@ export class TacticalSim {
     return true;
   }
 
-  // ---- Transport / APC carry: load a friendly ground unit, carry it, and unload it ----
-  // The air transport flies to its passenger and to the unload point; the APC is the two-seat
+  // ---- Transport / Runabout carry: load a friendly ground unit, carry it, and unload it ----
+  // The air transport flies to its passenger and to the unload point; the Runabout is the ground
   // GROUND version — it takes aboard whoever is beside it and sets them down beside it.
 
   private loadFailureReason(actor: CombatEntity | undefined, passenger: CombatEntity | undefined): string | undefined {
-    if (!actor || !isCarrierKind(actor.kind)) return "Only a transport or APC can carry units";
+    if (!actor || !isCarrierKind(actor.kind)) return "Only a transport or Runabout can carry units";
     if (!actor.status.alive || !actor.status.canMove) return `${actor.name} can't move`;
     if (actor.commandPoints <= 0) return `${actor.name} has no action points`;
     if ((actor.passengerIds?.length ?? 0) >= carrierCapacity(actor.kind)) return `${actor.name} is full (${carrierCapacity(actor.kind)} aboard)`;
@@ -2016,7 +2017,7 @@ export class TacticalSim {
     if (!supportFaction.supports.includes(kind)) return `${spec.label} is not a ${supportFaction.name} asset`;
     if (spec.tech && !isTechUnlocked(base, spec.tech)) {
       const tech = techNode(spec.tech);
-      return `Research ${tech?.name ?? "the required doctrine"} to unlock ${spec.label}`;
+      return `Research ${tech?.name ?? "the required tech"} to unlock ${spec.label}`;
     }
     if (base.commandPoints <= 0) return `${base.name} has no action points`;
     const cooldown = this.supportCooldown(base, kind);
@@ -2189,7 +2190,7 @@ export class TacticalSim {
     const spec = defenseSpec(kind);
     const buildFaction = this.factionOf(base.team);
     if (!buildFaction.defenses.includes(kind)) return `${spec.label} is not a ${buildFaction.name} emplacement`;
-    if (spec.tech && !isTechUnlocked(base, spec.tech)) return `Research ${techNode(spec.tech)?.name ?? "the required doctrine"} to unlock ${spec.label}`;
+    if (spec.tech && !isTechUnlocked(base, spec.tech)) return `Research ${techNode(spec.tech)?.name ?? "the required tech"} to unlock ${spec.label}`;
     if (this.money(base.team) < spec.cost) return `Not enough money for ${spec.label} ($${spec.cost})`;
     return undefined;
   }
@@ -2277,7 +2278,7 @@ export class TacticalSim {
     const node = techNode(nodeId);
     if (!node) return "Unknown research";
     const researchFaction = this.factionOf(base.team);
-    if (!researchFaction.tech.includes(nodeId)) return `${node.name} is outside ${researchFaction.name} doctrine`;
+    if (!researchFaction.tech.includes(nodeId)) return `${node.name} is not in ${researchFaction.name} research`;
     if (isTechUnlocked(base, nodeId)) return `${node.name} already researched`;
     if (!techPrereqsMet(base, node)) {
       const missing = node.requires.find((req) => !isTechUnlocked(base, req));
@@ -2285,7 +2286,7 @@ export class TacticalSim {
     }
     // Specializations come in mutually-exclusive pairs: picking one permanently locks the sibling.
     const lockedBy = (base.unlockedTech ?? []).find((owned) => techNode(owned)?.excludes?.includes(nodeId) || node.excludes?.includes(owned));
-    if (lockedBy) return `${node.name} is locked out by ${techNode(lockedBy)?.name ?? "your doctrine"}`;
+    if (lockedBy) return `${node.name} is locked out by ${techNode(lockedBy)?.name ?? "your pick"}`;
     if (this.money(base.team) < node.cost) return `Not enough money to research ${node.name} ($${node.cost})`;
     if (base.commandPoints <= 0) return `${base.name} has no action points`;
     return undefined;
@@ -3082,7 +3083,7 @@ export class TacticalSim {
       }
       else if (order.elapsed >= order.duration) {
         // Out of time SHORT of the stop (shoved, or the move began late): that halt point was never
-        // checked, so back it off a rise like the planned stop was (an APC hull ended half inside an
+        // checked, so back it off a rise like the planned stop was (a hull ended half inside an
         // Ironworks step, movement.test.ts 2026-10-01).
         order.done = true;
         if (!actor.flying && order.start) this.settleHalt(actor, order.start);
@@ -3172,7 +3173,7 @@ export class TacticalSim {
         return;
       }
       actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
-      // An APC does not drive to the point: the ramp drops where it stands, beside the hull.
+      // A Runabout does not drive to the point: the ramp drops where it stands, beside the hull.
       if (isGroundCarrier(actor.kind) || dist(actor.position, order.destination) <= actor.radius + 0.5 || order.elapsed >= order.duration) {
         this.dropPassengers(actor);
         order.done = true;
@@ -4158,7 +4159,7 @@ export class TacticalSim {
     this.effect("ping", { ...e.position }, { ...e.position }, 0xff7a2a, 0.6, e.radius + 0.4);
   }
 
-  /** Each burning trooper takes its fire damage at turn start; water and a medic put it out. */
+  /** Each burning trooper takes its fire damage at turn start; water puts it out. */
   private runBurningTick(): void {
     for (const e of this.entities) {
       if (!e.burning || !e.status.alive) { if (e.burning) e.burning = undefined; continue; }
@@ -4830,7 +4831,7 @@ export class TacticalSim {
     // Into the channel. Everything is destroyed at once — there is no swimming in this game.
     for (const part of entity.parts) part.hp = 0;
     recomputeStatus(entity);
-    this.effect("blast", landed, landed, 0x4f9fd0, 0.7, entity.radius + 1.2);
+    this.effect("blast", landed, landed, PULSE_WATER, 0.7, entity.radius + 1.2);
     this.pushLog(`${entity.name} is blasted into the water and drowns`);
     this.afterDamage(actor, entity, [`${entity.name} drowned`], "Drowning");
   }
@@ -4898,7 +4899,7 @@ export class TacticalSim {
     const otherResult = applyDamage(into, preferredPart(into, "center").id, Math.round(force * 0.5));
     if (!isBuildingKind(into.kind) && !isDefenseKind(into.kind) && !into.flying && Number.isFinite(blastMass(into))) {
       const shove = clampToArena({ x: into.position.x + dirX * 0.45, z: into.position.z + dirZ * 0.45 });
-      // ...unless that step is into a prop, a rise or a step (an APC was shoved into a boulder).
+      // ...unless that step is into a prop, a rise or a step (a tank was shoved into a boulder).
       if (Math.abs(terrainHeightAt(shove) - terrainHeightAt(into.position)) <= TERRAIN_STEP && this.groundFits(into, shove)) {
         into.position = shove;
         into.elevation = terrainHeightAt(shove);
@@ -5087,7 +5088,7 @@ export class TacticalSim {
   private applyPartImplications(actor: CombatEntity, target: CombatEntity, messages: string[]): void {
     if (messages.some((m) => m.includes("is ruptured"))) {
       this.commandShock(target.position, 2.8, target.team, `${target.name}'s pack shock disrupts nearby orders`);
-      this.effect("blast", target.position, target.position, 0x6fffe0, 0.46, 2.2);
+      this.effect("blast", target.position, target.position, PULSE_EMP, 0.46, 2.2);
     }
     if (messages.some((m) => m.includes("optic relay is ruptured"))) {
       this.pushLog(`${target.name}'s spotter link is offline`);
@@ -5095,7 +5096,7 @@ export class TacticalSim {
     }
     if (messages.some((m) => m.includes("comms are down"))) {
       this.pushLog(`${this.sideName(target.team, target.team === "enemy" ? "Enemy" : "Player")} command network degraded`);
-      this.effect("blast", target.position, target.position, 0xb9f6ff, 0.58, 3.1);
+      this.effect("blast", target.position, target.position, PULSE_EMP, 0.58, 3.1);
     }
     if (messages.some((m) => m.includes("turret ring is jammed"))) {
       this.effect("blast", target.position, target.position, 0xffc166, 0.48, 1.9);
@@ -5513,7 +5514,7 @@ export class TacticalSim {
     const kind = source.coverKind;
 
     if (kind === "conduit") {
-      this.effect("blast", source.position, source.position, 0x7fd7ff, 0.6, 2.2);
+      this.effect("blast", source.position, source.position, PULSE_EMP, 0.6, 2.2);
       const disabledUntil = this.turn + CONDUIT_OUTAGE_TURNS;
       let cut = 0;
       for (const entity of this.entities) {
@@ -5776,7 +5777,7 @@ export class TacticalSim {
     return true;
   }
 
-  /** CARRY: an APC or transport sets its troops down when the fight is close, and boards idle foot troops while it is far. */
+  /** CARRY: a Runabout or transport sets its troops down when the fight is close, and boards idle foot troops while it is far. */
   private aiCarryAct(actor: CombatEntity, foes: CombatEntity[]): boolean {
     if (!isCarrierKind(actor.kind) || actor.commandPoints <= 0 || !actor.status.canMove) return false;
     const foe = nearest(actor, foes);
@@ -7615,12 +7616,12 @@ function canUseHandGrenade(entity: CombatEntity): boolean {
 
 // Aircraft that bomb (gunship, and later the Bomber): their bomb falls STRAIGHT DOWN from the
 // aircraft instead of being lobbed at a distant point, so it's aimed by flying over the target.
-/** Kinds that can take ground units aboard: the air transport and the APC. */
+/** Kinds that can take ground units aboard: the air transport and the Runabout. */
 function isCarrierKind(kind: EntityKind): boolean {
   return kind === "transport" || kind === "runabout";
 }
 
-/** A ground carrier (APC, Runabout): troops board from beside the hull and step off beside it. */
+/** A ground carrier (the Runabout): troops board from beside the hull and step off beside it. */
 function isGroundCarrier(kind: EntityKind): boolean {
   return kind === "runabout";
 }
@@ -7645,7 +7646,7 @@ const MUZZLE_LOCAL: Partial<Record<string, { x: number; z: number; y: number }>>
   // aircraft: chin gun / wing cannons / bomb rack under the airframe
   gunship: { x: 0, z: 1.4, y: -0.3 }, bomber: { x: 0, z: 1.2, y: -0.3 }, transport: { x: 0, z: 1.2, y: -0.3 },
   // ground vehicles
-  tank: { x: 0, z: 2.0, y: 1.1 }, apc: { x: 0, z: 1.0, y: 1.7 }, artillery: { x: 0, z: 2.2, y: 1.6 }, hornet: { x: 0, z: 1.65, y: 1.02 },
+  tank: { x: 0, z: 2.0, y: 1.1 }, artillery: { x: 0, z: 2.2, y: 1.6 }, hornet: { x: 0, z: 1.65, y: 1.02 },
   runabout: { x: 0, z: 0.7, y: 1.4 }, flak: { x: 0, z: 0.7, y: 2.0 },
   // emplacements
   turret: { x: 0, z: 1.45, y: 0.95 }, exturret: { x: 0, z: 1.1, y: 1.5 }, bunker: { x: 0, z: 1.5, y: 0.72 },

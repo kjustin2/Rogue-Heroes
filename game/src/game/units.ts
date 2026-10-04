@@ -212,7 +212,7 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   // HORNET: a light tank: quick, accurate, thin-skinned.
   hornet: u({ moveRange: 8.2, moveSpeed: 8.4, shotDamage: 52, weaponRange: 24, projectile: "shell", projectileSpeed: 2.6, spread: 2.3, accurateFraction: 0.55, accuracyLabel: "light cannon", groundShell: true, hpMultiplier: 0.95, aiValue: 4 }),
 
-  // --- Aircraft. The gunship's gun hits ground and air; bombs use the grenade path and fall straight down. ---
+  // --- Aircraft. The gunship's gun hits ground and air; bombs use the grenade path and fall steeply onto the picked spot. ---
   gunship: u({ moveRange: 12.5, moveSpeed: 9.5, shotDamage: 22, weaponRange: 22, accurateFraction: 0.41, projectile: "bolt", accuracyLabel: "gunship autocannon", grenadeRange: 11, aiValue: 8 }),
   bomber: u({ moveRange: 8, moveSpeed: 6.4, grenadeRange: 12, aiValue: 4 }),
   transport: u({ moveRange: 11, moveSpeed: 8.5, aiValue: 4 }),
@@ -279,8 +279,8 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "tank", label: "Tank", role: "Armor", cost: 760, cooldown: 3, tech: "armor", tip: "Massive HP, big gun, rams and crushes cover. HULL DOWN: a turn spent still takes 30% less damage until it moves." },
   { kind: "artillery", label: "Artillery", role: "Siege", cost: 380, cooldown: 3, tech: "siege", tip: "Long-range siege gun; devastating at distance and tough, but helpless up close. DEPLOY: fires only with outriggers down (a turn, or any turn it holds still); packing up to move costs a turn." },
   { kind: "flak", label: "Flak Track", role: "Anti-Air", cost: 240, cooldown: 2, tech: "recon", tip: "Anti-air specialist: shreds aircraft at range. Weak against ground armour." },
-  { kind: "gunship", label: "Gunship", role: "Air", cost: 420, cooldown: 3, tech: "airwing", tip: "Overflies all terrain. Its autocannon rakes ground troops and aircraft alike; BOMB flies over the target and drops a huge blast that throws troops flying. Fragile to flak; cannot capture." },
-  { kind: "bomber", label: "Bomber", role: "Heavy Bomber", cost: 470, cooldown: 4, tech: "airwing", tip: "Slow, tough heavy bomber. CARPET: each drop is three bombs in a line along its heading. No gun at all — helpless against interceptors, so send an escort." },
+  { kind: "gunship", label: "Gunship", role: "Air", cost: 420, cooldown: 3, tech: "airwing", tip: "Overflies all terrain. Its autocannon rakes ground troops and aircraft alike; BOMB drops a huge blast on any spot in reach, no flight needed, that throws troops flying. Fragile to flak; cannot capture." },
+  { kind: "bomber", label: "Bomber", role: "Heavy Bomber", cost: 470, cooldown: 4, tech: "airwing", tip: "Slow, tough heavy bomber. CARPET: each drop is three bombs in a line across the spot. No gun at all, so send an escort." },
   { kind: "transport", label: "Transport", role: "Airlift", cost: 240, cooldown: 3, tech: "airwing", tip: "Unarmed airlift: Load a ground unit, fly anywhere, Unload it. Shot down, its passengers fall out where it dies." },
 ];
 

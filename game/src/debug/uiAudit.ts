@@ -14,7 +14,7 @@
 
 export interface UiFinding {
   /** Which check failed. */
-  rule: "truncated" | "clipped-text" | "mid-word-wrap" | "overlap" | "offscreen" | "clipped" | "occluded" | "small-text" | "contrast" | "no-owned-surface";
+  rule: "truncated" | "blurred-glow" | "clipped-text" | "mid-word-wrap" | "overlap" | "offscreen" | "clipped" | "occluded" | "small-text" | "contrast" | "no-owned-surface";
   /** A CSS-ish path to the offending element, for the failure message. */
   sel: string;
   detail: string;
@@ -220,6 +220,24 @@ export function auditUI(root: Element = document.body): UiFinding[] {
   const viewport = { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
 
   const leaves = textLeaves(root);
+
+  // --- blurred-glow: the toon UI has inked outlines and hard offset shadows only; a soft blurred glow is the old look creeping back. ---
+  for (const el of root.querySelectorAll<HTMLElement>("*")) {
+    if (el.closest(IGNORE) || !visible(el)) continue;
+    const st = getComputedStyle(el);
+    for (const prop of ["boxShadow", "textShadow"] as const) {
+      const v = st[prop];
+      if (!v || v === "none") continue;
+      // computed form: "rgba(r, g, b, a) Xpx Ypx BLURpx [SPREADpx]" per layer; a layer with blur > 0 and no offset is a glow.
+      for (const layer of v.split(/,(?![^(]*\))/)) {
+        const nums = (layer.replace(/rgba?\([^)]*\)/g, "").match(/-?\d+(?:\.\d+)?px/g) ?? []).map((n) => parseFloat(n));
+        if (nums.length >= 3 && nums[2] > 0 && nums[0] === 0 && nums[1] === 0 && !/inset/.test(layer)) {
+          findings.push({ rule: "blurred-glow", sel: describe(el), detail: `${prop} glow ${nums[2]}px`, rect: boxOf(el) });
+          break;
+        }
+      }
+    }
+  }
 
   // --- clipped-text: text that pokes out past the edge of a box that clips it (a nowrap price inside a card with overflow:hidden).
   //     The `clipped` rule below only sees a WHOLLY hidden element; half a price is just as unreadable. ---

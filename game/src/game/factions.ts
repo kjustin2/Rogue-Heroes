@@ -75,12 +75,12 @@ export interface FactionDef {
 //
 // The first faction pass filtered ONE shared roster, and every faction kept most of it -- three
 // decks of fourteen with ten cards in common, all calling the same Airstrike. They now share only
-// a CORE (the rifleman, the heavy gunner, the medic, the marksman and the flak track, so each keeps
+// a CORE (the rifleman, the heavy gunner, the marksman and the flak track, so each keeps
 // an answer to air; the two regular armies also share the tank)
 // and each owns a block of units nobody else fields:
-//   Vanguard  -- air cavalry: Scout, Jump Trooper, Gunship, Interceptor, Transport. No indirect fire.
-//   Syndicate -- raiders: Striker, Grenadier, Flamer, Sapper, Drone Operator, the APC. No tank.
-//   Bastion   -- fortress: Mortar, Engineer, Artillery, Bomber, Mortar Turret. Nothing fast.
+//   Vanguard  -- air cavalry: Scout, Jump Trooper, Hornet, Gunship, Transport. No indirect fire.
+//   Syndicate -- raiders: Striker, Grenadier, Flamer, Sledge, Drone Operator, the Runabout. No tank.
+//   Bastion   -- fortress: Mortar, Mason, Ironclad, Artillery, Bomber, Mortar Turret. Nothing fast.
 // The Heavy Gunner is CORE: whoever lacked it lost AI-vs-AI games outright (Bastion-only, Bastion
 // beat Vanguard 22-3; with Vanguard and Bastion only, the Syndicate won 10 of 96).
 // Each also has one doctrine rule (see FactionDoctrine) and three support powers of its own. Every faction

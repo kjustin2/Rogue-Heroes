@@ -5641,7 +5641,7 @@ export class WorldRenderer {
         const smoke = effect.color === PULSE_SMOKE;
         fx.burst({
           x: effect.to.x, y: ground + 0.3, z: effect.to.z,
-          count: Math.round(14 + (effect.radius ?? 2) * 5), color: smoke ? [0xdfe5e8, 0xb8c0c4, 0x9aa3a8] : [0xbfeeff, 0x8de4ff, 0x5fb8e8],
+          count: Math.round(14 + (effect.radius ?? 2) * 5), color: smoke ? [0xdfe5e8, 0xb8c0c4, 0x9aa3a8] : effect.color === 0x4f9fd0 ? [0xeaf6ff, 0x9fd0f0, 0x6fb4e4] : [0xbfeeff, 0x8de4ff, 0x5fb8e8],
           speed: [1.5, 4.5], up: 0.9, size: [0.06, 0.16], life: [0.4, 1.0], gravity: -0.6, drag: 1.6, jitter: (effect.radius ?? 2) * 0.5,
           shape: ParticleShape.streak,
         });

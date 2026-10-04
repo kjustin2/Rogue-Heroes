@@ -1311,12 +1311,13 @@ export function makePulse(effect: VisualEvent, t: number, ground: number): THREE
   const out: THREE.Object3D[] = [];
   const radius = Math.min(effect.radius ?? 2, BLAST_DRAW_MAX);
   const smoke = effect.color === 0x9aa3a8;
-  const core = smoke ? 0x9aa3a8 : 0x8de4ff;
-  const rim = smoke ? 0xdfe5e8 : 0xe6f8ff;
+  const water = effect.color === 0x4f9fd0;
+  const core = smoke ? 0x9aa3a8 : water ? 0x6fb4e4 : 0x8de4ff;
+  const rim = smoke ? 0xdfe5e8 : water ? 0xdcf2ff : 0xe6f8ff;
   for (let i = 0; i < 2; i += 1) {
     const u = Math.min(1, Math.max(0, t * 1.15 - i * 0.18));
     if (u <= 0 || u >= 1) continue;
-    const ring = new THREE.Mesh(projectileGeometry("ring"), projectileMaterial(smoke ? "pulse-smoke" : "pulse-cold", i ? rim : core, q((1 - u) * 0.85)));
+    const ring = new THREE.Mesh(projectileGeometry("ring"), projectileMaterial(smoke ? "pulse-smoke" : water ? "pulse-water" : "pulse-cold", i ? rim : core, q((1 - u) * 0.85)));
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(effect.to.x, ground + 0.08 + i * 0.01, effect.to.z);
     ring.scale.setScalar(radius * 2 * (0.15 + u * 0.85));
@@ -1331,7 +1332,7 @@ export function makePulse(effect: VisualEvent, t: number, ground: number): THREE
       out.push(s);
     }
   }
-  const bars = smoke ? 0 : 9;
+  const bars = smoke || water ? 0 : 9;
   const seed = seedOf(effect.id) % 11;
   const life = t < 0.7 ? 1 - Math.max(0, t - 0.3) / 0.4 : 0;
   if (life > 0.05) {

@@ -2411,7 +2411,7 @@ function processBattleEvents(): void {
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.strike, 2);
       feel.addTrauma(0.08);
     } else if (effect.type === "land") {
-      if (effect.color === 0xffe27a) sfx.boing(); else sfx.place(heard); // a bounce pad, or a jump trooper / a placed item touching down
+      sfx.place(heard); // a jump trooper or a placed item touching down
     } else if (effect.type === "clash") {
       // Two rounds meeting in mid-air: the sound and a nudge, bigger for a shell than for a bullet.
       const family = effect.color === CLASH_BLAST ? "blast" : effect.color === CLASH_BOLT ? "bolt" : "spark";
