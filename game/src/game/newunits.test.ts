@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { TacticalSim, mapDef, unitStats } from "./sim";
 import { FACTIONS } from "./factions";
 import { recomputeStatus } from "./damageModel";
-import { PULSE_EMP, PULSE_HEAL, isPulseBlast } from "./sim";
+import { PULSE_EMP, isPulseBlast } from "./sim";
 import { DEFAULT_TERRAIN, setActiveTerrain } from "./terrain";
 
 // BATCH 3 (owner 2026-10-03): the new troopers, posts and strikes, each proven through the real sim.
@@ -48,7 +48,7 @@ describe("burning", () => {
     expect(sim.entity(tank.id)!.burning, "machines do not burn").toBeUndefined();
   });
 
-  it("the fire dies out after its turns, and a medic puts it out at once", () => {
+  it("the fire dies out after its turns", () => {
     const sim = staged();
     const a = sim.debugSpawn("soldier", "player", { x: -6, z: 0 });
     a.burning = { turns: 2, dmg: 8 };
@@ -56,14 +56,6 @@ describe("burning", () => {
     expect(sim.entity(a.id)!.burning?.turns).toBe(1);
     sim.endTurn(); settle(sim);
     expect(sim.entity(a.id)!.burning, "out after two turns").toBeUndefined();
-    const b = sim.debugSpawn("soldier", "player", { x: -6, z: 4 });
-    const medic = sim.debugSpawn("medic", "player", { x: -8, z: 4 });
-    b.burning = { turns: 3, dmg: 8 };
-    for (const p of b.parts) p.hp = Math.max(1, p.hp - 3);
-    sim.debugSelect(medic.id);
-    expect(sim.queueTreat(b.id)).toBe(true);
-    sim.endTurn(); settle(sim);
-    expect(sim.entity(b.id)!.burning).toBeUndefined();
   });
 });
 
@@ -378,48 +370,19 @@ describe("Home Base upgrades", () => {
   });
 });
 
-describe("support troopers worth fielding", () => {
-  afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
-
-  it("a medic's treat stims the patient (an extra action next turn), a mechanic's overcharges a machine", () => {
-    const sim = staged();
-    const medic = sim.debugSpawn("medic", "player", { x: -10, z: 4 });
-    const patient = sim.debugSpawn("soldier", "player", { x: -3, z: 4 });
-    for (const p of patient.parts) p.hp = Math.max(1, p.hp - 5);
-    sim.debugSelect(medic.id);
-    expect(sim.queueTreat(patient.id)).toBe(true);
-    sim.endTurn(); settle(sim);
-    expect(sim.entity(patient.id)!.commandPoints, "two actions and a stim").toBe(sim.entity(patient.id)!.maxCommandPoints + 1);
-    const eng = sim.debugSpawn("engineer", "player", { x: -10, z: -4 });
-    const tank = sim.debugSpawn("tank", "player", { x: -4, z: -4 });
-    for (const p of tank.parts) p.hp = Math.max(1, p.hp - 5);
-    sim.debugSelect(eng.id);
-    expect(sim.queueTreat(tank.id), sim.log[0]).toBe(true);
-    sim.endTurn(); settle(sim);
-    expect(sim.entity(tank.id)!.commandPoints).toBe(sim.entity(tank.id)!.maxCommandPoints + 1);
-  });
-});
-
 describe("pulses are not explosions (2026-10-03 review)", () => {
   afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
 
-  it("an EMP burst and a medic's aura draw as pulses, never as a fire blast", () => {
+  it("an EMP burst draws as a pulse, never as a fire blast", () => {
     const sim = staged();
     const blasts: number[] = [];
     const seen = new Set<string>();
     const watch = (): void => { for (const e of sim.effects) if (e.type === "blast" && !seen.has(e.id)) { seen.add(e.id); blasts.push(e.color); } };
     sim.debugSpawn("tank", "enemy", { x: 2, z: 0 });
     (sim as unknown as { queuedSupport: unknown[] }).queuedSupport.push({ kind: "emp", point: { x: 2, z: 0 }, dir: { x: 1, z: 0 }, team: "player" });
-    const medic = sim.debugSpawn("medic", "player", { x: -12, z: 14 });
-    const hurt = sim.debugSpawn("soldier", "player", { x: -11, z: 14 });
-    for (const p of hurt.parts) p.hp = Math.ceil(p.maxHp * 0.5);
-    void medic;
     sim.endTurn(); watch();
     for (let t = 0; t < 40 && sim.phase === "resolve"; t += 0.05) { sim.update(0.05); watch(); }
-    sim.endTurn(); watch(); // the aura ticks as the next turn begins
-    for (let t = 0; t < 40 && sim.phase === "resolve"; t += 0.05) { sim.update(0.05); watch(); }
     expect(blasts).toContain(PULSE_EMP);
-    expect(blasts).toContain(PULSE_HEAL);
     expect(isPulseBlast(0xff7a2a), "a fire blast is not a pulse").toBe(false);
   });
 

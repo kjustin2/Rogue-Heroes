@@ -4,9 +4,8 @@
 //
 // Projectile families each have a stage so a round's in-flight look, its muzzle event and its
 // impact can be reviewed as motion: shoot (rifle tracer), heavy (MG burst), sniper (pierce line),
-// sapper (shotgun pellets), pistol (medic sidearm), flame (flamer stream), grenade (thrown arc),
-// launcher (grenadier), mortar (high arc), tank (AP shell), artillery (siege shell), apc (autogun
-// bolt), turret (bolt), gunship (air gun + bombs). `all` runs every projectile stage in one go.
+// pistol (field-hand sidearm), flame (flamer stream), grenade (thrown arc),
+// launcher (grenadier), mortar (high arc), tank (AP shell), artillery (siege shell), turret (bolt), gunship (air gun + bombs). `all` runs every projectile stage in one go.
 import { launchGame, delay } from "../improve/lib/harness.mjs";
 import sharp from "sharp";
 
@@ -18,15 +17,13 @@ const STAGES = {
   shoot: { actor: "soldier", target: "soldier", dist: 3.9, order: "shoot", zoom: 0.45, scale: 0.5, span: 2.2 },
   heavy: { actor: "heavy", target: "soldier", dist: 5.2, order: "shoot", zoom: 0.55, scale: 0.5, span: 3.3 },
   sniper: { actor: "sniper", target: "soldier", dist: 7.5, order: "shoot", zoom: 0.72, scale: 0.5, span: 3.1 },
-  sapper: { actor: "sapper", target: "soldier", dist: 3.6, order: "shoot", zoom: 0.45, scale: 0.5, span: 2.2 },
-  pistol: { actor: "medic", target: "soldier", dist: 3.9, order: "shoot", zoom: 0.45, scale: 0.5, span: 2.2 },
+  pistol: { actor: "builder", target: "soldier", dist: 3.9, order: "shoot", zoom: 0.45, scale: 0.5, span: 2.2 },
   flame: { actor: "flamer", target: "soldier", dist: 4.2, order: "shoot", zoom: 0.5, scale: 0.5, span: 2.4 },
   grenade: { actor: "soldier", target: "soldier", dist: 6.5, order: "grenade", zoom: 0.7, scale: 0.5, span: 4.2 },
   launcher: { actor: "grenadier", target: "soldier", dist: 7.5, order: "shoot", zoom: 0.75, scale: 0.5, span: 4.8 },
   mortar: { actor: "mortar", target: "soldier", dist: 10, order: "shoot", zoom: 0.95, scale: 0.5, span: 6.1 },
   tank: { actor: "tank", target: "soldier", dist: 8.5, order: "shoot", zoom: 0.8, scale: 0.5, span: 4.7 },
   artillery: { actor: "artillery", target: "soldier", dist: 11, order: "shoot", zoom: 1.0, scale: 0.5, span: 3.4 },
-  apc: { actor: "apc", target: "soldier", dist: 7, order: "shoot", zoom: 0.7, scale: 0.5, span: 3.6 },
   turret: { actor: "turret", target: "soldier", dist: 6.5, order: "shoot", zoom: 0.7, scale: 0.5, span: 3.4, targetZ: 3.5 },
   gunship: { actor: "gunship", target: "gunship", dist: 7, order: "shoot", zoom: 0.75, scale: 0.5, span: 3.3 },
   // The four attacks the 2026-09-23 audit fixed: mortar smoke (the tube must hoist), the gunship's
@@ -45,7 +42,7 @@ const STAGES = {
   "through-wall": { actor: "soldier", target: "soldier", dist: 7, order: "shoot", zoom: 0.6, scale: 0.4, span: 3.4, wall: true, coverAt: 0.5 },
   "through-tree": { actor: "soldier", target: "soldier", dist: 7, order: "shoot", zoom: 0.6, scale: 0.4, span: 3.4, cover: "tree", coverAt: 0.5 },
 };
-const PROJECTILE_STAGES = ["through-crate", "through-sandbag", "through-rock", "through-tree", "shoot", "heavy", "sniper", "sapper", "pistol", "flame", "grenade", "launcher", "mortar", "tank", "artillery", "apc", "turret", "gunship", "smoke", "carpet"];
+const PROJECTILE_STAGES = ["through-crate", "through-sandbag", "through-rock", "through-tree", "shoot", "heavy", "sniper", "pistol", "flame", "grenade", "launcher", "mortar", "tank", "artillery", "turret", "gunship", "smoke", "carpet"];
 // A software GPU (a cloud container) runs a few fps and the frame loop clamps dt at 50ms, so the
 // sim runs slower than the wall clock the gaps below assume. FILM_SLOW=<n> stretches every gap.
 const SLOW = Number(process.env.FILM_SLOW ?? 1) || 1;

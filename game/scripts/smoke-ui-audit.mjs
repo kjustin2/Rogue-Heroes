@@ -13,6 +13,7 @@ import { launchGame, delay } from "../improve/lib/harness.mjs";
 // Includes the two that have actually broken here: a 16:9 laptop and an ultrawide.
 const VIEWPORTS = [
   { width: 1280, height: 720 },
+  { width: 1366, height: 768 },
   { width: 1600, height: 900 },
   { width: 1920, height: 1080 },
   { width: 2560, height: 1080 },
@@ -238,6 +239,20 @@ try {
   if (injected.found === 0) { console.error("FAULT INJECTION: a strip over the Skirmish choices produced no 'occluded' finding â€” the gate is decorative"); failures += 1; }
   else if (injected.after !== 0) { console.error("FAULT INJECTION: findings persisted after the strip was removed"); failures += 1; }
   else console.log(`  ok   fault injection â€” ${injected.found} occluded control(s) under the strip, 0 without it`);
+  // FAULT INJECTION 4 — half a price: nowrap text poking out of a card that clips it must be named by `clipped-text`.
+  const poked = await page.evaluate(() => {
+    const card = document.querySelector(".menu-screen > .menu-content");
+    const box = document.createElement("div");
+    box.id = "audit-fault-poke";
+    box.style.cssText = "position:absolute;left:20px;top:120px;width:120px;overflow:hidden;background:#223;color:#fff;font-size:14px";
+    box.innerHTML = "<span style=\"white-space:nowrap\">$200 · pays back in 4 turns</span>";
+    card?.appendChild(box);
+    const found = window.__rht.auditUI().filter((f) => f.rule === "clipped-text" && f.sel.includes("span")).length;
+    box.remove();
+    return found;
+  });
+  if (!poked) { console.error("FAULT INJECTION: text poking out of a clipping card produced no 'clipped-text' finding — the gate is decorative"); failures += 1; }
+  else console.log("  ok   fault injection — text clipped by its card was named");
   // FAULT INJECTION 3 â€” a price pushed wholly out of its card (the owner's bug). The clipped rule
   // must name it, and go quiet when the card is gone.
   const pushed = await page.evaluate(() => {

@@ -19,7 +19,7 @@ const answersArmor = (kind: EntityKind): boolean => {
 };
 const answersAir = (kind: EntityKind): boolean => {
   const s = unitStats(kind);
-  if (kind === "gunship" || kind === "interceptor" || kind === "bomber" || kind === "transport") return false;
+  if (kind === "gunship" || kind === "bomber" || kind === "transport") return false;
   if (kind === "flak") return true; // carries the vsAir multiplier
   return !s.groundShell && (s.shotDamage >= 40 || (s.burst >= 4 && s.weaponRange >= 14));
 };

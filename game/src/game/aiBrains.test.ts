@@ -116,18 +116,9 @@ describe("hard AI brain: the full move set", () => {
     expect(sim.smokeClouds.length).toBeGreaterThan(0);
   });
 
-  it("a sapper holding with foes closing sows a mine", () => {
+  it("a Runabout far from the fight boards a rifleman beside it, and sets troops down when it arrives", () => {
     const sim = hard();
-    sim.economy.set("enemy", 600);
-    const sapper = arm(sim.debugSpawn("sapper", "enemy", { x: 8, z: 0 }));
-    sim.debugSpawn("soldier", "player", { x: -2, z: 0 });
-    settleCommand(sim);
-    expect(sim.mines.some((m) => m.team === "enemy" && Math.hypot(m.x - sapper.position.x, m.z - sapper.position.z) < 0.5)).toBe(true);
-  });
-
-  it("an APC far from the fight boards a rifleman beside it, and sets troops down when it arrives", () => {
-    const sim = hard();
-    const apc = arm(sim.debugSpawn("apc", "enemy", { x: 20, z: 0 }));
+    const apc = arm(sim.debugSpawn("runabout", "enemy", { x: 20, z: 0 }));
     const rider = arm(sim.debugSpawn("soldier", "enemy", { x: 20, z: 3.0 }));
     sim.debugSpawn("soldier", "player", { x: -20, z: 0 });
     settleCommand(sim);
@@ -137,7 +128,7 @@ describe("hard AI brain: the full move set", () => {
     for (let t = 0; t < 20 && sim.phase === "resolve"; t += 0.05) sim.update(0.05);
     expect(sim.entity(rider.id)!.carriedById).toBe(apc.id); // and the order really plays out
     const sim2 = hard();
-    const apc2 = arm(sim2.debugSpawn("apc", "enemy", { x: 4, z: 0 }));
+    const apc2 = arm(sim2.debugSpawn("runabout", "enemy", { x: 4, z: 0 }));
     const rider2 = sim2.debugSpawn("soldier", "enemy", { x: 4, z: 3.0 });
     apc2.passengerIds = [rider2.id];
     rider2.carriedById = apc2.id;

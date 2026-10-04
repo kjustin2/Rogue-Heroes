@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TECH_TREE } from "./tech";
 import { dist } from "../core/math";
-import { applyDamage, createBase, createBomber, createCover, createFlak, createFlamer, createGrenadier, createGunship, createHeavy, createInterceptor, createMedic, createSapper, createScout, createSniper, createSoldier, createStriker, createTank, createTransport, createWall } from "./damageModel";
+import { applyDamage, createBase, createBomber, createCover, createFlak, createFlamer, createGrenadier, createGunship, createHeavy, createMortar, createScout, createSniper, createSoldier, createStriker, createTank, createTransport, createWall } from "./damageModel";
 import {
   BASE_INCOME,
   INCOME_BY_LEVEL,
@@ -1458,20 +1458,6 @@ describe("game modes, tech tree, and unit variety", () => {
     expect(sim.entities.some((e) => e.kind === "tank" && e.team === "player")).toBe(true);
   });
 
-  it("heals nearby infantry with a medic aura each round", () => {
-    const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 });
-    const medic = createMedic("medic", "Medic", "player", { x: 0, z: 0 });
-    const wounded = createSoldier("wounded", "Wounded", "player", { x: 1.2, z: 0 });
-    applyDamage(wounded, "body", 20);
-    const before = wounded.parts.find((p) => p.id === "body")!.hp;
-    const sim = new TacticalSim([base, medic, wounded]);
-
-    sim.endTurn();
-    advance(sim, 3);
-
-    const after = wounded.parts.find((p) => p.id === "body")!.hp;
-    expect(after).toBeGreaterThan(before);
-  });
 });
 
 describe("defenses, difficulty, and base upgrades", () => {
@@ -1581,14 +1567,13 @@ describe("defenses, difficulty, and base upgrades", () => {
     expect(sim.setPendingBuild("minefield")).toBe(false);
     build("sandbag", { x: -10, z: -8 });
     expect(sim.entities.some((e) => e.kind === "cover" && e.coverKind === "sandbag")).toBe(true);
-    build("aaturret", { x: -9, z: 1 });
     build("sensor", { x: -17, z: -1 });
     playAs("syndicate");
     build("minefield", { x: -10, z: -2 });
     expect(sim.mines.filter((m) => m.team === "player").length).toBe(3);
     playAs("bastion");
     build("bunker", { x: -9, z: -12 });
-    for (const kind of ["aaturret", "bunker"] as const) {
+    for (const kind of ["bunker"] as const) {
       const e = sim.entities.find((x) => x.kind === kind)!;
       expect(e.status.canShoot, kind).toBe(true);
       expect(e.status.canMove, kind).toBe(false);
@@ -1680,7 +1665,7 @@ describe("defenses, difficulty, and base upgrades", () => {
 
 describe("tactical enemy AI", () => {
   it("concentrates enemy fire on the highest-value target (focus fire) on normal", () => {
-    const medic = createMedic("p-medic", "Medic", "player", { x: 0, z: 0 });
+    const medic = createMortar("p-medic", "Mortar", "player", { x: 0, z: 0 });
     const grunt = createSoldier("p-grunt", "Grunt", "player", { x: 0, z: 2 });
     const a = createSoldier("e-a", "A", "enemy", { x: 6, z: 0 });
     const b = createSoldier("e-b", "B", "enemy", { x: 6, z: 2 });
@@ -1691,12 +1676,12 @@ describe("tactical enemy AI", () => {
     sim.endTurn();
     const shots = sim.orders.filter((o) => o.kind === "shoot" && (o.actorId === "e-a" || o.actorId === "e-b"));
     expect(shots).toHaveLength(2);
-    // Both shooters pile onto the medic (value 8) rather than each taking its own nearest grunt.
+    // Both shooters pile onto the medic (value 8, the mortar) rather than each taking its own nearest grunt.
     expect(new Set(shots.map((o) => o.targetId))).toEqual(new Set(["p-medic"]));
   });
 
   it("greedy (easy) enemies each shoot their own nearest target instead of focusing", () => {
-    const medic = createMedic("p-medic", "Medic", "player", { x: 0, z: 0 });
+    const medic = createMortar("p-medic", "Mortar", "player", { x: 0, z: 0 });
     const grunt = createSoldier("p-grunt", "Grunt", "player", { x: 0, z: 2 });
     const a = createSoldier("e-a", "A", "enemy", { x: 6, z: 0 }); // nearest = medic
     const b = createSoldier("e-b", "B", "enemy", { x: 6, z: 2 }); // nearest = grunt
@@ -1861,40 +1846,6 @@ describe("tactical enemy AI", () => {
     expect(sim.burnZones.length).toBeLessThan(zonesAfterFirst + 1);
   });
 
-  it("sapper demolition rounds hit cover far harder than a rifleman", () => {
-    const sapper = createSapper("p-sap", "Breaker", "player", { x: 0, z: 0 });
-    const rifleman = createSoldier("p-sol", "Rifleman", "player", { x: 0, z: 2 });
-    const wall = createCover("wall-1", "Concrete Wall", { x: 4, z: 1 });
-    const sim = new TacticalSim([sapper, rifleman, wall, createSoldier("e-x", "Foe", "enemy", { x: 14, z: 0 })]);
-    const sapPreview = sim.previewShot("p-sap", "wall-1", wall.parts[0].id);
-    const solPreview = sim.previewShot("p-sol", "wall-1", wall.parts[0].id);
-    expect(sapPreview && solPreview).toBeTruthy();
-    expect(sapPreview!.amount).toBeGreaterThan(solPreview!.amount * 2);
-  });
-
-  it("a hostile stepping on a mine detonates it", () => {
-    const sapper = createSapper("p-sap", "Breaker", "player", { x: 4, z: 0 });
-    const runner = createSoldier("e-run", "Runner", "enemy", { x: 8, z: 0 });
-    applyDamage(runner, "rifle", 999); // disarmed: it charges the objective
-    const sim = new TacticalSim([
-      createBase("p-base-1", "HQ", "player", { x: -14, z: 0 }),
-      sapper,
-      runner,
-    ]);
-    sim.economy.set("player", 500);
-    sim.select("p-sap");
-    expect(sim.queueMine()).toBe(true);
-    expect(sim.mines.length).toBe(1);
-    // Walk the sapper off the mine so it doesn't shield it.
-    sim.queueMove({ x: 4, z: 4 });
-    const hpBefore = runner.parts.reduce((sum, p) => sum + p.hp, 0);
-    sim.endTurn();
-    let guard = 0;
-    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
-    expect(sim.mines.length).toBe(0);
-    expect(runner.parts.reduce((sum, p) => sum + p.hp, 0)).toBeLessThan(hpBefore);
-  });
-
   it("a lone unit beside a neutral depot captures it and it pays income", () => {
     const depot = createCover("dep-1", "Supply Depot", { x: 3, z: 0 }, { coverKind: "depot" });
     depot.capturable = true;
@@ -2002,18 +1953,15 @@ describe("tactical enemy AI", () => {
     expect(flakDmg).toBeGreaterThan(rifleDmg * 3); // dedicated AA vs a rifle barely scratching air
   });
 
-  it("plane attack modes: a gunship gun hits ground and air, an interceptor only air; bombs are ground-only", () => {
+  it("plane attack modes: a gunship gun hits ground and air; bombs are ground-only", () => {
     const sim = new TacticalSim([
       createGunship("g", "Hawk", "player", { x: 0, z: 0 }),
       createGunship("air", "Bandit", "enemy", { x: 4, z: 0 }),
       createSoldier("ground", "Grunt", "enemy", { x: 2.4, z: 0 }),
     ]);
     sim.select("g");
-    // The gunship's autocannon engages ground troops AND aircraft; the interceptor's only aircraft.
+    // The gunship's autocannon engages ground troops AND aircraft.
     expect(sim.queueShoot("ground")).toBe(true);
-    const fighter = new TacticalSim([createInterceptor("f", "Hawk", "player", { x: 0, z: 0 }), createSoldier("g2", "Grunt", "enemy", { x: 2.4, z: 0 })]);
-    fighter.select("f");
-    expect(fighter.queueShoot("g2")).toBe(false);
 
     // Bombs drop straight DOWN as a ground blast beneath the aircraft — they can't be lobbed up at a
     // flyer. Dropping a bomb just plants a ground-target detonation under the plane (x≈0), never at
@@ -2079,22 +2027,13 @@ describe("tactical enemy AI", () => {
     expect(sim.projectiles.length).toBe(0); // ground-detonated — didn't roll off or vanish
   });
 
-  it("air-to-air: a gunship and an interceptor can gun each other, but not ground targets", () => {
+  it("air-to-air: a gunship can gun an enemy aircraft", () => {
     const sim = new TacticalSim([
       createGunship("g", "Hawk", "player", { x: 0, z: 0 }),
-      createInterceptor("i", "MiG", "enemy", { x: 5, z: 0 }),
+      createGunship("i", "MiG", "enemy", { x: 5, z: 0 }),
     ]);
     sim.select("g");
-    expect(sim.queueShoot("i")).toBe(true); // the gunship's autocannon finally has a target — an enemy plane
-
-    const air = new TacticalSim([
-      createInterceptor("i2", "MiG", "player", { x: 0, z: 0 }),
-      createGunship("g2", "Hawk", "enemy", { x: 5, z: 0 }),
-      createSoldier("grunt", "Grunt", "enemy", { x: 3, z: 0 }),
-    ]);
-    air.select("i2");
-    expect(air.queueShoot("g2")).toBe(true);    // interceptor guns the enemy flyer
-    expect(air.queueShoot("grunt")).toBe(false); // but never a ground target (air-to-air only)
+    expect(sim.queueShoot("i")).toBe(true); // the gunship's autocannon has a target: an enemy plane
   });
 
   it("a transport airlifts a unit: load, carry (hidden + inert), serialize, then unload elsewhere", () => {

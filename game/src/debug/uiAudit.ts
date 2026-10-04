@@ -14,7 +14,7 @@
 
 export interface UiFinding {
   /** Which check failed. */
-  rule: "truncated" | "mid-word-wrap" | "overlap" | "offscreen" | "clipped" | "occluded" | "small-text" | "contrast" | "no-owned-surface";
+  rule: "truncated" | "clipped-text" | "mid-word-wrap" | "overlap" | "offscreen" | "clipped" | "occluded" | "small-text" | "contrast" | "no-owned-surface";
   /** A CSS-ish path to the offending element, for the failure message. */
   sel: string;
   detail: string;
@@ -220,6 +220,23 @@ export function auditUI(root: Element = document.body): UiFinding[] {
   const viewport = { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
 
   const leaves = textLeaves(root);
+
+  // --- clipped-text: text that pokes out past the edge of a box that clips it (a nowrap price inside a card with overflow:hidden).
+  //     The `clipped` rule below only sees a WHOLLY hidden element; half a price is just as unreadable. ---
+  for (const el of leaves) {
+    if (el.closest(ALLOW_WRAP)) continue;
+    const r = el.getBoundingClientRect();
+    for (let anc = el.parentElement; anc && anc !== root.parentElement; anc = anc.parentElement) {
+      const st = getComputedStyle(anc);
+      if (st.overflowX !== "hidden" && st.overflowX !== "clip") continue;
+      const a = anc.getBoundingClientRect();
+      if (a.width < 1) break;
+      if (r.right > a.right + 1.5 || r.left < a.left - 1.5) {
+        findings.push({ rule: "clipped-text", sel: describe(el), detail: `text reaches ${Math.round(Math.max(r.right - a.right, a.left - r.left))}px past the edge of ${describe(anc)}: "${(el.textContent ?? "").trim().slice(0, 40)}"`, rect: boxOf(el) });
+      }
+      break; // only the nearest clipping box matters
+    }
+  }
 
   // --- mid-word-wrap: a word broken across two lines ("Intercept" / "or"). overflow-wrap:anywhere hides it from the
   //     truncated rule (nothing overflows), so read where each character actually landed. ---

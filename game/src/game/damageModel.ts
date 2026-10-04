@@ -145,10 +145,6 @@ export interface CombatEntity {
   // DEPLOYED (artillery): outriggers down. The gun only fires deployed; deploying costs a turn
   // (an explicit order, or automatically when it does not move), and moving undeploys it.
   deployed?: boolean;
-  // DOWNED (medic stabilise): an infantry unit that would have died with a friendly medic in reach
-  // lies as a body instead — alive but inert and untargetable — until the next turn start, when a
-  // medic still in reach revives it or it dies for real.
-  downed?: boolean;
   // MARKED (sniper): after a sniper fires at this unit, every other friendly shooter is more
   // accurate against it until the turn stamped here has passed.
   markedUntilTurn?: number;
@@ -166,8 +162,6 @@ export interface CombatEntity {
   burning?: { turns: number; dmg: number };
   // A sentry (set down by a Turret Tech or dropped): turns left before it packs up. It fires on its own each turn.
   sentryTtl?: number;
-  // STIMS / OVERCHARGE: one extra action on the turn stamped here (a medic's or mechanic's treat).
-  overchargeTurn?: number;
   // EMP: no actions for this entity until the turn stamped here has passed.
   disabledUntilTurn?: number;
   // FACTION TRAITS (factions.ts unitMods), stamped at deploy: the same Recruit is quicker for Vanguard and sturdier for Bastion.
@@ -215,7 +209,7 @@ function part(id: string, label: string, role: PartRole, maxHp: number, extras: 
 }
 
 function statusFor(kind: EntityKind): EntityStatus {
-  const defenseShooter = kind === "turret" || kind === "exturret" || kind === "aaturret" || kind === "bunker" || kind === "sentry";
+  const defenseShooter = kind === "turret" || kind === "exturret" || kind === "bunker" || kind === "sentry";
   return {
     alive: true,
     canMove: isInfantryKind(kind) || isVehicleKind(kind),
@@ -296,21 +290,6 @@ export function createTank(id: string, name: string, team: Team, position: Vec2)
   });
 }
 
-export function createApc(id: string, name: string, team: Team, position: Vec2): CombatEntity {
-  return createVehicle(id, name, "apc", team, position, {
-    radius: 1.45,
-    height: 1.4,
-    hullHp: 92,
-    turretHp: 40,
-    cannonHp: 32,
-    treadHp: 40,
-    frontHp: 48,
-    hullLabel: "Chassis",
-    turretLabel: "Cupola",
-    cannonLabel: "Autogun",
-  });
-}
-
 export function createRunabout(id: string, name: string, team: Team, position: Vec2): CombatEntity {
   return createVehicle(id, name, "runabout", team, position, {
     radius: 1.2, height: 1.15, hullHp: 70, turretHp: 30, cannonHp: 24, treadHp: 30, frontHp: 26,
@@ -368,37 +347,6 @@ export function createGunship(id: string, name: string, team: Team, position: Ve
       part("rotor", "Rotor", "mobility", 26),
       part("gun", "Autocannon", "weapon", 30, { vsAir: 1.4 }),
       part("pack", "Bomb Rack", "volatile", 22),
-    ],
-  };
-  recomputeStatus(entity);
-  return entity;
-}
-
-// Interceptor: a fast air-superiority fighter. Gun-only (strong vsAir), no bombs — it exists to
-// win the air and hunt other flyers. Light airframe, so ground AA still shreds it.
-export function createInterceptor(id: string, name: string, team: Team, position: Vec2): CombatEntity {
-  const entity: CombatEntity = {
-    id,
-    name,
-    kind: "interceptor",
-    team,
-    position,
-    yaw: team === "player" ? Math.PI * 0.5 : -Math.PI * 0.5,
-    radius: 1.05,
-    height: 0.8,
-    elevation: 0,
-    stance: "standing",
-    commandPoints: 2,
-    maxCommandPoints: 2,
-    grenades: 0,
-    maxGrenades: 0,
-    flying: true,
-    agl: 7.5,
-    status: statusFor("interceptor"),
-    parts: [
-      part("hull", "Fuselage", "core", 42, { critical: true }),
-      part("wing", "Wings", "mobility", 22),
-      part("gun", "Cannon", "weapon", 26, { vsAir: 2.0 }),
     ],
   };
   recomputeStatus(entity);
@@ -614,23 +562,6 @@ export function createMortar(id: string, name: string, team: Team, position: Vec
   });
 }
 
-export function createMedic(id: string, name: string, team: Team, position: Vec2): CombatEntity {
-  return createInfantry(id, name, "medic", team, position, {
-    radius: 0.62,
-    height: 1.64,
-    bodyHp: 44,
-    headHp: 15,
-    weaponHp: 16,
-    legsHp: 24,
-    packHp: 24,
-    weaponLabel: "Sidearm",
-    packLabel: "Med Kit",
-    packRole: "utility",
-    packTags: ["medic-aura"],
-    grenades: 0,
-  });
-}
-
 export function createFlamer(id: string, name: string, team: Team, position: Vec2): CombatEntity {
   return createInfantry(id, name, "flamer", team, position, {
     radius: 0.66,
@@ -680,32 +611,14 @@ export function createJumper(id: string, name: string, team: Team, position: Vec
   });
 }
 
-export function createSapper(id: string, name: string, team: Team, position: Vec2): CombatEntity {
-  return createInfantry(id, name, "sapper", team, position, {
-    radius: 0.64,
-    height: 1.64,
-    bodyHp: 46,
-    headHp: 15,
-    weaponHp: 18,
-    legsHp: 24,
-    packHp: 24,
-    weaponLabel: "Demo Launcher",
-    packLabel: "Mine Satchel",
-    packRole: "utility",
-    grenades: 0,
-  });
-}
-
 // FIELD HANDS (2026-10-03). Soldier-sized, sidearm only: each is worth its one placing verb (PLACEABLES).
-function createFieldHand(id: string, name: string, kind: "builder" | "demo" | "oiler" | "springer", team: Team, position: Vec2, weaponLabel: string, packLabel: string, bodyHp: number): CombatEntity {
+function createFieldHand(id: string, name: string, kind: "builder" | "demo", team: Team, position: Vec2, weaponLabel: string, packLabel: string, bodyHp: number): CombatEntity {
   return createInfantry(id, name, kind, team, position, {
     radius: 0.64, height: 1.64, bodyHp, headHp: 15, weaponHp: 18, legsHp: 24, packHp: 24, weaponLabel, packLabel, packRole: "utility", grenades: 0,
   });
 }
 export const createBuilder = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createFieldHand(id, name, "builder", team, position, "Sidearm", "Barrier Kit", 50);
 export const createDemo = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createFieldHand(id, name, "demo", team, position, "Sidearm", "Charge Satchel", 44);
-export const createOiler = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createFieldHand(id, name, "oiler", team, position, "Sidearm", "Oil Drum", 44);
-export const createSpringer = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createFieldHand(id, name, "springer", team, position, "Sidearm", "Pad Roll", 40);
 
 export function createTurretTech(id: string, name: string, team: Team, position: Vec2): CombatEntity {
   const e = createInfantry(id, name, "turrettech", team, position, {
@@ -733,23 +646,6 @@ export function createBazooka(id: string, name: string, team: Team, position: Ve
   return createInfantry(id, name, "bazooka", team, position, {
     radius: 0.66, height: 1.66, bodyHp: 42, headHp: 14, weaponHp: 26, legsHp: 22, packHp: 24,
     weaponLabel: "Rocket Launcher", packLabel: "Rocket Pack", packRole: "volatile", grenades: 0,
-  });
-}
-
-export function createEngineer(id: string, name: string, team: Team, position: Vec2): CombatEntity {
-  return createInfantry(id, name, "engineer", team, position, {
-    radius: 0.64,
-    height: 1.64,
-    bodyHp: 46,
-    headHp: 15,
-    weaponHp: 18,
-    legsHp: 24,
-    packHp: 26,
-    weaponLabel: "Repair Gun",
-    packLabel: "Tool Rig",
-    packRole: "utility",
-    packTags: ["repair-aura", "support-aura"],
-    grenades: 0,
   });
 }
 
@@ -840,7 +736,7 @@ export function createBase(id: string, name: string, team: Team, position: Vec2)
 function createDefense(
   id: string,
   name: string,
-  kind: "turret" | "exturret" | "aaturret" | "bunker" | "sensor" | "wall" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost" | "sentry",
+  kind: "turret" | "exturret" | "bunker" | "sensor" | "wall" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost" | "sentry",
   team: Team,
   position: Vec2,
   config: { radius: number; height: number; parts: DamagePart[]; canAct: boolean }
@@ -891,20 +787,6 @@ export function createExTurret(id: string, name: string, team: Team, position: V
       part("mount", "Battery Base", "core", 92, { critical: true }),
       part("gun", "Mortar Battery", "weapon", 44),
       part("ammo", "Shell Magazine", "volatile", 30),
-    ],
-  });
-}
-
-// A fixed flak cannon: the Flak Track's gun on a ring mount.
-export function createAaTurret(id: string, name: string, team: Team, position: Vec2): CombatEntity {
-  return createDefense(id, name, "aaturret", team, position, {
-    radius: 0.95,
-    height: 1.7,
-    canAct: true,
-    parts: [
-      part("mount", "Gun Ring", "core", 80, { critical: true }),
-      part("gun", "Flak Cannon", "weapon", 38, { vsAir: 2.4 }),
-      part("sensor", "Fire-Control Radar", "utility", 24),
     ],
   });
 }
@@ -1218,7 +1100,7 @@ export function recomputeStatus(entity: CombatEntity): void {
   entity.status.canMove = alive && (isInfantryKind(entity.kind) || isVehicleKind(entity.kind)) && allMobilityIntact;
   entity.status.canShoot = alive && hasWeapon && intactWeapon && !turretLocked && entity.kind !== "striker";
 
-  if (!alive || entity.downed) {
+  if (!alive) {
     entity.commandPoints = 0;
     entity.status.canMove = false;
     entity.status.canShoot = false;
@@ -1250,7 +1132,7 @@ export function isMountKind(kind: string): boolean {
 }
 
 export function isDefenseKind(kind: EntityKind): boolean {
-  return kind === "turret" || kind === "exturret" || kind === "aaturret" || kind === "bunker" || kind === "sensor" || kind === "wall" || kind === "gunpost" || kind === "mortarpit" || kind === "rocketpost" || kind === "flamepost" || kind === "sentry";
+  return kind === "turret" || kind === "exturret" || kind === "bunker" || kind === "sensor" || kind === "wall" || kind === "gunpost" || kind === "mortarpit" || kind === "rocketpost" || kind === "flamepost" || kind === "sentry";
 }
 
 function utilityMessages(entity: CombatEntity, part: DamagePart): string[] {

@@ -43,7 +43,7 @@ describe("aggregateTechEffect", () => {
   it("returns neutral defaults with no specializations", () => {
     expect(aggregateTechEffect([])).toEqual({
       infantryDamage: 1, vsVehicleDamage: 1, infantryHp: 1, vehicleHp: 1,
-      healBonus: 0, repairBonus: 0, splashDamage: 1, splashRadius: 1, evasion: 1, spotterBoost: 0,
+      splashDamage: 1, splashRadius: 1, evasion: 1, spotterBoost: 0,
     });
   });
 
@@ -55,9 +55,9 @@ describe("aggregateTechEffect", () => {
   });
 
   it("sums flat bonuses and multiplies scalar bonuses across nodes", () => {
-    const both = aggregateTechEffect(["triage", "welding"]);
-    expect(both.healBonus).toBe(8);
-    expect(both.repairBonus).toBe(10);
+    const both = aggregateTechEffect(["breach", "hunter"]);
+    expect(both.infantryDamage).toBeCloseTo(1.25);
+    expect(both.vsVehicleDamage).toBeCloseTo(1.3);
     // Multiplicative stacking (contrived, but proves the aggregation math).
     expect(aggregateTechEffect(["breach", "breach"]).infantryDamage).toBeCloseTo(1.25 * 1.25);
   });
@@ -86,11 +86,10 @@ describe("tech tree design", () => {
   it("the tree is deep: four branches, five layers, and a real choice (an exclusive pair) on most of them", () => {
     const depth = (id: string): number => 1 + Math.max(0, ...techNode(id)!.requires.map(depth));
     expect(Math.max(...TECH_TREE.map((n) => depth(n.id)))).toBeGreaterThanOrEqual(4);
-    expect(TECH_TREE.length).toBeGreaterThanOrEqual(24);
+    expect(TECH_TREE.length).toBeGreaterThanOrEqual(20);
     expect(TECH_TREE.filter((n) => (n.excludes ?? []).length > 0).length).toBeGreaterThanOrEqual(10);
-    // The pairs that unlock units, not just numbers: Fire Discipline vs Demolitions, Field Works vs Field Hospital.
+    // The pairs that unlock units, not just numbers: Fire Discipline vs Demolitions.
     expect(techNode("incendiary")!.excludes).toContain("demolition");
-    expect(techNode("fieldworks")!.excludes).toContain("fieldhospital");
   });
 
   it("aircraft and artillery are the deep end: they cost more to reach than any doctrine on its own", () => {

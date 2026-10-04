@@ -10,7 +10,7 @@ describe("muzzles sit on the guns", () => {
   const at = (kind: string) => sim.debugSpawn(kind as never, "player", { x: -10, z: 5 });
 
   it("an aircraft's gun and its bomb leave from UNDER the airframe, never above it", () => {
-    for (const kind of ["gunship", "interceptor", "bomber"] as const) {
+    for (const kind of ["gunship", "bomber"] as const) {
       const a = at(kind);
       expect(muzzleFor(a, "weapon").height, `${kind} gun`).toBeLessThan(a.elevation);
       expect(muzzleFor(a, "weapon").height, `${kind} gun`).toBeGreaterThan(a.elevation - 1);

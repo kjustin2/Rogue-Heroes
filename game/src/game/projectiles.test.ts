@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { TacticalSim } from "./sim";
 import {
-  createApc, createArtillery, createBomber, createFlak, createFlamer, createGrenadier, createGunship, createHeavy,
-  createInterceptor, createMedic, createMortar, createSapper, createSniper, createSoldier, createTank, createTurret,
+  createArtillery, createBomber, createFlak, createFlamer, createGrenadier, createGunship, createHeavy,
+  createBuilder, createMortar, createSniper, createSoldier, createTank, createTurret,
   type CombatEntity,
 } from "./damageModel";
 
@@ -16,14 +16,12 @@ const CASES: { name: string; make: Maker; lobbed: boolean; dist?: number }[] = [
   { name: "rifle", make: createSoldier, lobbed: false },
   { name: "machine gun", make: createHeavy, lobbed: false },
   { name: "marksman", make: createSniper, lobbed: false },
-  { name: "scattergun", make: createSapper, lobbed: false, dist: 5 },
-  { name: "pistol", make: createMedic, lobbed: false, dist: 6 },
+  { name: "pistol", make: createBuilder, lobbed: false, dist: 6 },
   { name: "flamer", make: createFlamer, lobbed: false, dist: 5 },
   { name: "launcher", make: createGrenadier, lobbed: true },
   { name: "mortar", make: createMortar, lobbed: true },
   { name: "tank shell", make: createTank, lobbed: false },
   { name: "artillery", make: createArtillery, lobbed: true, dist: 14 },
-  { name: "APC autogun", make: createApc, lobbed: false },
   { name: "turret", make: createTurret, lobbed: false },
 ];
 
@@ -84,7 +82,7 @@ describe("every projectile family flies and lands as expected", () => {
 describe("gunships", () => {
   it("fly, gun aircraft AND ground troops, and bomb straight down", () => {
     const gunship = createGunship("g", "Hawk", "player", { x: -4, z: 0 });
-    const enemyAir = pinned(createInterceptor("i", "Bandit", "enemy", { x: 4, z: 0 }));
+    const enemyAir = pinned(createGunship("i", "Bandit", "enemy", { x: 4, z: 0 }));
     enemyAir.status.alive = true;
     const ground = pinned(createSoldier("s", "Grunt", "enemy", { x: -4, z: 0.4 }));
     const sim = new TacticalSim([gunship, enemyAir, ground]);

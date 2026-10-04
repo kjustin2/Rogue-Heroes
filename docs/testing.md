@@ -235,3 +235,4 @@ order at the Ironworks ramp. `edgecases.test.ts` walks climbing and order edge c
 real maps (mesa steps, the overpass deck, climb-on/off cover, floating/sunk units after 5 AI turns on
 every map, cancel refunds, dead-before-order, shared destinations, water).
 - `npm run shots:gpu -- airaim muzzlecheck` (2026-10-03): `airaim` = gunship Bomb armed, ground spot picked 6m off (line + splash stay put as the cursor wanders, no move queued), Confirm, the fall filmed; `muzzlecheck` prints, per shooter, the gap between its round origin and its drawn weapon mesh. `muzzles.test.ts` pins the aircraft values; `orderLabel.test.ts` pins every order's name.
+- The `treatanim` shot case, the medic/engineer/sapper/apc/interceptor smoke attacks and the pad/oil fieldhands frames were removed with those units (2026-10-04). `ui-audit` gained a `clipped-text` rule (text poking past a clipping box) and a 1366x768 viewport.

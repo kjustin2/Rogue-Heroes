@@ -29,7 +29,7 @@ export const SCENARIOS: Scenario[] = [
     apply(sim) {
       sim.configure(mapDef("ironworks"), "destroy", "normal");
       sim.debugGrant("player", 5000);
-      const kinds: TroopKind[] = ["soldier", "scout", "sniper", "striker", "heavy", "grenadier", "mortar", "medic", "engineer", "tank", "apc", "artillery"];
+      const kinds: TroopKind[] = ["soldier", "scout", "sniper", "striker", "heavy", "grenadier", "mortar", "tank", "hornet", "artillery"];
       const cols = 4;
       kinds.forEach((k, i) => {
         const u = sim.debugSpawn(k, "player", { x: -4.2 + (i % cols) * 2.7, z: -3.6 + Math.floor(i / cols) * 2.7 });
@@ -135,7 +135,7 @@ export const SCENARIOS: Scenario[] = [
       sim.configure(mapDef("dustbowl"), "destroy", "normal");
       sim.debugGrant("player", 99999);
       sim.debugGrant("enemy", 99999);
-      const lineup: TroopKind[] = ["soldier", "scout", "sniper", "heavy", "grenadier", "mortar", "striker", "tank", "apc", "artillery"];
+      const lineup: TroopKind[] = ["soldier", "scout", "sniper", "heavy", "grenadier", "mortar", "striker", "tank", "hornet", "artillery"];
       // Two opposing double-rows of every unit type — ~40 combat entities.
       for (let rowIdx = 0; rowIdx < 2; rowIdx += 1) {
         lineup.forEach((k, i) => {

@@ -100,7 +100,7 @@ describe("bridge spans", () => {
     const sim = staged();
     const span = sim.entities.find((e) => e.coverKind === "span")!;
     const at = { ...span.position };
-    const sapper = sim.debugSpawn("sapper", "player", { x: at.x - 3, z: at.z });
+    const sapper = sim.debugSpawn("soldier", "player", { x: at.x - 3, z: at.z });
     for (const part of span.parts) part.hp = 1; // this test is about the consequence, not the grind
     sim.select(sapper.id);
     expect(sim.queueShoot(span.id)).toBe(true);

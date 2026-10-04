@@ -35,7 +35,6 @@ export function orderLabel(order: TacticalOrder, actor: CombatEntity | undefined
     case "smoke": return make("Smoke");
     case "recon": return make("Recon");
     case "deploy": return make("Deploy");
-    case "treat": return make(actor?.kind === "medic" ? "Heal" : "Repair", who);
     case "man": return make("Man", who);
     case "slam": return make("Slam");
     case "dig": return make("Dig In");

@@ -47,18 +47,3 @@ describe("striker charge", () => {
     expect(far.queueMelee(mark.id)).toBe(true);
   });
 });
-
-describe("sapper breach", () => {
-  it("takes a full-HP wall piece down in one shot; a rifle only chips it", () => {
-    for (const [kind, expectDead] of [["sapper", true], ["soldier", false]] as const) {
-      const sim = staged();
-      const shooter = sim.debugSpawn(kind, "player", { x: -3, z: 0 });
-      const wall = sim.debugCover("wall", { x: 0, z: 0 });
-      sim.debugSelect(shooter.id);
-      expect(sim.queueShoot(wall.id)).toBe(true);
-      sim.endTurn();
-      settle(sim);
-      expect(!wall.status.alive).toBe(expectDead);
-    }
-  });
-});

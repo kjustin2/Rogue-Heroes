@@ -13,8 +13,6 @@ export interface TechEffect {
   vsVehicleDamage?: number; // ×damage dealt to vehicles
   infantryHp?: number; // ×HP infantry deploy with
   vehicleHp?: number; // ×HP vehicles deploy with
-  healBonus?: number; // +HP per medic aura tick
-  repairBonus?: number; // +HP per engineer aura tick
   splashDamage?: number; // ×explosive / grenade splash damage
   splashRadius?: number; // ×explosive splash radius
   evasion?: number; // ×spread of shots fired AT this team (>1 = harder to hit)
@@ -51,23 +49,20 @@ export const TECH_TREE: readonly TechNode[] = [
   { id: "breach", name: "Breaching Rounds", branch: "assault", cost: 140, requires: ["assault"], tier: 4, excludes: ["bulwark"], effect: { infantryDamage: 1.25 }, blurb: "+25% infantry weapon damage. Locks out Bulwark Training." },
   { id: "bulwark", name: "Bulwark Training", branch: "assault", cost: 140, requires: ["assault"], tier: 4, excludes: ["breach"], effect: { infantryHp: 1.25 }, blurb: "Infantry deploy with +25% HP. Locks out Breaching Rounds." },
   { id: "ordnance", name: "Ordnance Lab", branch: "assault", cost: 160, requires: ["assault"], tier: 2, blurb: "Grenadiers, Mortars, the Mortar Pit and Turret, Minefields, Cluster Strike: area denial." },
-  { id: "incendiary", name: "Fire Discipline", branch: "assault", cost: 170, requires: ["ordnance"], tier: 3, excludes: ["demolition"], blurb: "Flamers, Oil Riggers, the Flame Post and Napalm: set them alight. Locks out Demolitions." },
-  { id: "demolition", name: "Demolitions", branch: "assault", cost: 170, requires: ["ordnance"], tier: 3, excludes: ["incendiary"], blurb: "Demolitionists, Scatterguns and the Minefield Drop: break and bury. Locks out Fire Discipline." },
+  { id: "incendiary", name: "Fire Discipline", branch: "assault", cost: 170, requires: ["ordnance"], tier: 3, excludes: ["demolition"], blurb: "Flamers, the Flame Post and Napalm: set them alight. Locks out Demolitions." },
+  { id: "demolition", name: "Demolitions", branch: "assault", cost: 170, requires: ["ordnance"], tier: 3, excludes: ["incendiary"], blurb: "Demolitionists and the Minefield Drop: break and bury. Locks out Fire Discipline." },
   { id: "thermobarics", name: "Thermobarics", branch: "assault", cost: 160, requires: ["ordnance"], tier: 4, excludes: ["cluster"], effect: { splashDamage: 1.4 }, blurb: "+40% explosive and grenade splash damage. Locks out Cluster Munitions." },
   { id: "cluster", name: "Cluster Munitions", branch: "assault", cost: 160, requires: ["ordnance"], tier: 4, excludes: ["thermobarics"], effect: { splashRadius: 1.5 }, blurb: "Explosive blasts cover 50% more ground. Locks out Thermobarics." },
   // ===== ARMOR: wheels, steel, then the deep end =====
-  { id: "motorpool", name: "Motor Pool", branch: "armor", cost: 140, requires: ["assault"], tier: 2, blurb: "Runabouts, Hornets and APCs: fast light machines that carry the fight." },
+  { id: "motorpool", name: "Motor Pool", branch: "armor", cost: 140, requires: ["assault"], tier: 2, blurb: "Runabouts and Hornets: fast light machines that carry the fight." },
   { id: "armor", name: "Armor Bay", branch: "armor", cost: 200, requires: ["motorpool"], tier: 3, blurb: "Tanks, the MG Bunker and the Orbital Lance: rolling steel." },
   { id: "plating", name: "Reactive Plating", branch: "armor", cost: 160, requires: ["armor"], tier: 4, excludes: ["hunter"], effect: { vehicleHp: 1.25 }, blurb: "Vehicles deploy with +25% HP. Locks out Hunter Rounds." },
   { id: "hunter", name: "Hunter Rounds", branch: "armor", cost: 160, requires: ["armor"], tier: 4, excludes: ["plating"], effect: { vsVehicleDamage: 1.3 }, blurb: "+30% damage dealt to vehicles. Locks out Reactive Plating." },
   { id: "siege", name: "Siege Works", branch: "armor", cost: 240, requires: ["armor", "recon"], tier: 4, blurb: "Artillery: needs armour to haul it and Recon to spot for it." },
   { id: "airwing", name: "Air Wing", branch: "armor", cost: 260, requires: ["armor", "recon"], tier: 4, blurb: "Aircraft: needs Armor Bay for the airfield and Recon for the radar." },
   // ===== SUPPORT: keep them fighting, then pick a school =====
-  { id: "support", name: "Support Wing", branch: "support", cost: 150, requires: ["recon"], tier: 2, blurb: "Medics, Engineers, Pad Techs, Fortifiers and the Airstrike: keep your force in the fight." },
-  { id: "triage", name: "Triage Protocol", branch: "support", cost: 130, requires: ["support"], tier: 4, excludes: ["welding"], effect: { healBonus: 8 }, blurb: "Medic auras heal double each round. Locks out Field Welding." },
-  { id: "welding", name: "Field Welding", branch: "support", cost: 130, requires: ["support"], tier: 4, excludes: ["triage"], effect: { repairBonus: 10 }, blurb: "Engineer rigs repair nearly double each round. Locks out Triage Protocol." },
-  { id: "fieldworks", name: "Field Works", branch: "support", cost: 150, requires: ["support"], tier: 3, excludes: ["fieldhospital"], blurb: "Turret Techs, Trenchers and the Sentry Drop: dig in and hold. Locks out Field Hospital." },
-  { id: "fieldhospital", name: "Field Hospital", branch: "support", cost: 150, requires: ["support"], tier: 3, excludes: ["fieldworks"], effect: { healBonus: 4 }, blurb: "The Medevac, and medics heal more each round. Locks out Field Works." },
+  { id: "support", name: "Support Wing", branch: "support", cost: 150, requires: ["recon"], tier: 2, blurb: "Fortifiers, the Airstrike and the Medevac: keep your force in the fight." },
+  { id: "fieldworks", name: "Field Works", branch: "support", cost: 150, requires: ["assault"], tier: 2, blurb: "Turret Techs, Trenchers and the Sentry Drop: dig in and hold." },
 ];
 
 
@@ -84,7 +79,7 @@ export function troopsUnlockedBy(id: string): TroopKind[] {
 /** `passive` is a faction's built-in modifier, folded in like one more researched effect. */
 export function aggregateTechEffect(ids: readonly string[], passive?: TechEffect): Required<TechEffect> {
   const acc: Required<TechEffect> = {
-    infantryDamage: 1, vsVehicleDamage: 1, infantryHp: 1, vehicleHp: 1, healBonus: 0, repairBonus: 0,
+    infantryDamage: 1, vsVehicleDamage: 1, infantryHp: 1, vehicleHp: 1,
     splashDamage: 1, splashRadius: 1, evasion: 1, spotterBoost: 0,
   };
   const effects = ids.map((id) => techNode(id)?.effect).concat(passive ? [passive] : []);
@@ -94,8 +89,6 @@ export function aggregateTechEffect(ids: readonly string[], passive?: TechEffect
     if (eff.vsVehicleDamage) acc.vsVehicleDamage *= eff.vsVehicleDamage;
     if (eff.infantryHp) acc.infantryHp *= eff.infantryHp;
     if (eff.vehicleHp) acc.vehicleHp *= eff.vehicleHp;
-    if (eff.healBonus) acc.healBonus += eff.healBonus;
-    if (eff.repairBonus) acc.repairBonus += eff.repairBonus;
     if (eff.splashDamage) acc.splashDamage *= eff.splashDamage;
     if (eff.splashRadius) acc.splashRadius *= eff.splashRadius;
     if (eff.evasion) acc.evasion *= eff.evasion;

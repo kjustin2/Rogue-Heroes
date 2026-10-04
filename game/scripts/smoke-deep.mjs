@@ -27,7 +27,7 @@ try {
   await waitForCommand(page);
   await assertLit(page, "battle start");
 
-  // Deploy the full air fleet at once — proves every new render path (interceptor/bomber/transport
+  // Deploy the full air fleet at once — proves every new render path (bomber/transport
   // models, rotor spin, frustum-safe tracers) builds and paints without crashing.
   await page.evaluate(() => {
     const sim = window.__rht.sim;
@@ -35,19 +35,19 @@ try {
     sim.debugSpawn("gunship", "player", { x: -8, z: -2 });
     sim.debugSpawn("bomber", "player", { x: -6, z: 3 });
     sim.debugSpawn("transport", "player", { x: -4, z: -4 });
-    sim.debugSpawn("interceptor", "enemy", { x: 8, z: 2 });
+    sim.debugSpawn("transport", "enemy", { x: 8, z: 2 });
     window.__rht.setView({ x: 0, z: 0, zoom: 0.7, pitch: 0.35, yaw: 0.1 });
   });
   await assertLit(page, "air fleet deployed");
   await page.screenshot({ path: join(OUT, "30-air-fleet.png") });
 
-  // 1) Air-to-air: a gunship guns an enemy interceptor -> the interceptor loses HP.
+  // 1) Air-to-air: a gunship guns an enemy transport -> the transport loses HP.
   const air = await page.evaluate(() => {
     const sim = window.__rht.sim;
     sim.reset();
     sim.economy.set("player", 3000);
     const g = sim.debugSpawn("gunship", "player", { x: -4, z: 0 });
-    const e = sim.debugSpawn("interceptor", "enemy", { x: 5, z: 0 });
+    const e = sim.debugSpawn("transport", "enemy", { x: 5, z: 0 });
     e.parts.forEach((p) => { if (p.role === "mobility" || p.role === "weapon") p.hp = 0; }); // hold it AND stop it firing back: opposed rounds now collide in mid-air
     e.status.canShoot = false; e.status.canMove = false;
     sim.select(g.id);
@@ -57,7 +57,7 @@ try {
   if (!air.queued) fail("gunship could not queue an air-to-air shot");
   await endTurnAndSettle(page);
   const airAfter = await page.evaluate((foe) => { const e = window.__rht.sim.entity(foe); return e ? e.parts.reduce((s, p) => s + p.hp, 0) : 0; }, air.foe);
-  if (!(airAfter < air.foeHp)) fail(`air-to-air did not damage the interceptor (${air.foeHp} -> ${airAfter})`);
+  if (!(airAfter < air.foeHp)) fail(`air-to-air did not damage the transport (${air.foeHp} -> ${airAfter})`);
   await assertLit(page, "air-to-air");
   await page.screenshot({ path: join(OUT, "31-air-to-air.png") });
 

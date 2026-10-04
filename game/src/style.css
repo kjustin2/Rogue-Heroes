@@ -5798,7 +5798,8 @@ body:has(.unit-detail-panel) #toasts { left: calc(50% + clamp(344px, 22vw, 520px
 /* Round 4 (2026-10-03): a name is one line, never broken mid-word ("Intercept/or"); the NEW badge rides the price row. */
 .part-options > .btn.confirm > .deck-name { grid-column: 1 / -1; grid-row: 1; white-space: nowrap; font-weight: inherit; }
 .part-options > .btn.confirm > em { grid-column: 2; grid-row: 2; align-self: center; justify-self: start; }
-.part-options > .btn.confirm > span { grid-column: 1; grid-row: 2; white-space: nowrap; }
+/* Status text wraps to a second line rather than being clipped by the card (owner 2026-10-03: "should not have this cutoff issue for any button"). */
+.part-options > .btn.confirm > span { grid-column: 1; grid-row: 2; white-space: normal; overflow-wrap: break-word; }
 /* A locked doctrine group spans two cells and lists several names: let its sub-line wrap too. */
 .part-options > .btn.locked-troop > span { white-space: normal; }
 /* The placement bar's quick actions are real buttons: body-size text, not the 10.9px icon size. */

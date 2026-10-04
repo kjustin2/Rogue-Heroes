@@ -80,13 +80,11 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "melee", label: "Strike", tip: "Infantry only. Rush up to 3.5m and strike in ONE order (Strikers charge 6.5m and hit hardest). Needs an intact weapon." },
   { id: "push", label: "Push", tip: "Infantry only. Rush in and SHOVE a unit far away. Into water it drowns; over the edge of the map it is gone. Vehicles barely budge." },
   { id: "defend", label: "Crouch", tip: "Infantry only. Improves accuracy and makes head shots harder, but slows the next move." },
-  { id: "mine", label: "Mine", tip: "Sapper only. Plant a proximity mine at this spot ($15 + 1 AP). Hostiles that step on it eat a splash blast. Invisible to the enemy." },
   { id: "smoke", label: "Smoke", tip: "Mortar only. Lay a 3-turn smoke cloud that swallows flat shots; arcing rounds sail over. 1 AP." },
-  { id: "load", label: "Load", tip: "Transport / APC. Click a friendly ground unit to take it aboard (a transport flies to it; an APC needs it beside the hull). 1 AP." },
-  { id: "unload", label: "Unload", tip: "Transport / APC. Click ground to set passengers down (a transport flies there; an APC drops the ramp beside itself). 1 AP." },
+  { id: "load", label: "Load", tip: "Transport / Runabout. Click a friendly ground unit to take it aboard (a transport flies to it; a Runabout needs it beside the hull). 1 AP." },
+  { id: "unload", label: "Unload", tip: "Transport / Runabout. Click ground to set passengers down (a transport flies there; a Runabout sets them down beside itself). 1 AP." },
   { id: "deploy", label: "Deploy", tip: "Artillery only. Outriggers down (whole turn): the gun fires only deployed, deploys itself any turn it holds still, and packing up to move costs a turn." },
   { id: "recon", label: "Recon", tip: "Drone Operator only. Whole turn: next turn every enemy unit's planned order is shown on the board." },
-  { id: "treat", label: "Heal", tip: "Medic: walk up to a hurt infantry unit and restore every part to full (wrecked parts to a third). Engineer: the same for machines, emplacements and the base. 1 AP." },
   { id: "leap", label: "Jump", tip: "Infantry: hop a few metres, over a crate or a low wall, up onto a ledge, across a gap. Light, quick troopers go farther and higher. 1 AP." },
   { id: "man", label: "Man", tip: "Walk up to a free post (Gun, Mortar, Rocket or Flame) and crew it. It fires from next turn, twice a turn. 1 AP." },
   { id: "dismount", label: "Leave", tip: "Let the crew step away from this emplacement. It stops firing until someone crews it again." },
@@ -107,11 +105,9 @@ const ACTION_HOW: Partial<Record<Intent, string>> = {
   ram: "Select Ram, click a target beside the tank, then Confirm. 72 damage; dents your front armor. 1 AP.",
   melee: "Select Strike, click an enemy within reach, then Confirm. Strikers hit hardest. 1 AP.",
   defend: "Crouch where you stand: better accuracy, harder to head-shot, slower next move. 1 AP.",
-  mine: "Plant a hidden mine at the sapper's feet; enemies that step on it take a blast. $15 + 1 AP.",
   load: "Select Load, then click a friendly ground unit to lift it aboard. 1 AP.",
   leap: "Select Jump, then click ground within the ring: the trooper arcs there, over low cover and up onto a ledge. 1 AP.",
   man: "Select Man, then click a post in reach.",
-  treat: "Select it, then click a hurt ally in reach: the unit walks over and restores every part. 1 AP.",
   place: "Select it, click ground within reach (T turns it). Set down at once; costs 1 AP and money.",
   unload: "Select Unload, then click ground to fly there and set passengers down. 1 AP.",
 };
@@ -131,7 +127,6 @@ export interface HudCallbacks {
   queueGrenadePart(id: string, partId: string): boolean;
   queueGrenadeAt(destination: Vec2): boolean;
   queueSmokeAt(destination: Vec2): boolean;
-  queueTreat(id: string): boolean;
   queueLeap(destination: Vec2): boolean;
   onAllSet?(): void;
   queueMan(id: string): boolean;
@@ -146,7 +141,6 @@ export interface HudCallbacks {
   queueMeleePart(id: string, partId: string): boolean;
   queueShove(id: string): boolean;
   queueDefend(stance?: InfantryStance): boolean;
-  queueMine(): boolean;
   queueRecon(): boolean;
   queueDeploy(): boolean;
   queueSpawnTroop(kind: TroopKind): boolean;
@@ -241,14 +235,6 @@ export class Hud {
     // Man: clicking an emplacement sends the trooper to crew it.
     if (this.action === "man" && this.sim.phase === "command") {
       if (this.callbacks.queueMan(entity.id)) {
-        this.action = "select";
-        this.callbacks.setIntent("select");
-      }
-      return;
-    }
-    // Heal / Repair: clicking a friendly sends the medic or engineer to it.
-    if (this.action === "treat" && this.sim.phase === "command") {
-      if (this.callbacks.queueTreat(entity.id)) {
         this.action = "select";
         this.callbacks.setIntent("select");
       }
@@ -545,7 +531,7 @@ export class Hud {
 
       <aside class="panel roster ${allOrdersSet ? "all-set" : ""}">
         <div class="panel-title">Squad${allOrdersSet ? `<span class="all-orders-chip">All set</span>` : ""}</div>
-        ${playerUnits.filter((unit) => unit.status.alive || unit.downed || unit.kind === "base").map((unit) => unitCard(unit, unit.id === actor?.id, playerOrders.get(unit.id) ?? [], this.sim)).join("")}
+        ${playerUnits.filter((unit) => unit.status.alive || unit.kind === "base").map((unit) => unitCard(unit, unit.id === actor?.id, playerOrders.get(unit.id) ?? [], this.sim)).join("")}
       </aside>
 
       ${targetPanelOpen ? `
@@ -723,9 +709,6 @@ export class Hud {
     }
     if (confirm === "defend") {
       if (this.callbacks.queueDefend("crouched")) this.afterConfirmedOrder();
-    }
-    if (confirm === "mine") {
-      if (this.callbacks.queueMine()) this.afterConfirmedOrder();
     }
     if (confirm === "recon") {
       if (this.callbacks.queueRecon()) this.afterConfirmedOrder();
@@ -1271,10 +1254,8 @@ function orderPlanner(
     action === "interact" ? coverInteractionState(actor, target, sim) : "",
     action === "inspect" ? inspectTargetState(actor, target, sim) : "",
     action === "defend" ? defendState(canDefend, defendTip) : "",
-    action === "mine" ? mineState(actor, sim) : "",
     action === "recon" ? reconState(actor, sim) : "",
     action === "deploy" ? deployState(actor, sim) : "",
-    action === "treat" ? treatState(actor, sim) : "",
     action === "place" ? placeState(actor, sim) : "",
   ].filter(Boolean).join("");
 
@@ -1303,7 +1284,7 @@ function orderPlanner(
               // ...and a jump trooper's move is a JUMP: the verb on the button is the unit's identity.
               const jumps = option.id === "move" && actor?.kind === "jumper";
               const placing = option.id === "place" && actor ? placeSpecFor(actor.kind) : undefined;
-              const label = option.id === "grenade" ? bombVerb(actor) : jumps ? "Jump" : placing ? placing.label : option.id === "treat" && actor?.kind === "engineer" ? "Repair" : option.label;
+              const label = option.id === "grenade" ? bombVerb(actor) : jumps ? "Jump" : placing ? placing.label : option.label;
               const tip = option.id === "grenade" && actor?.flying
                 ? "Select Bomb, then Confirm to drop straight down on whatever is beneath the aircraft. Cannot hit aircraft."
                 : placing ? PLACE_TIP[placing.kind]
@@ -1420,16 +1401,6 @@ function shootState(
       <div class="target-summary blocked">
         <strong>${escapeHtml(target.name)} is friendly</strong>
         <span>Select a hostile unit or cover object before confirming a shot.</span>
-      </div>
-    `;
-  }
-  // An aircraft's autocannon is air-to-air ONLY — targeting a ground unit reads as "why can't I
-  // confirm?", so say it plainly and offer no confirm button.
-  if (actor.kind === "interceptor" && !target.flying) {
-    return `
-      <div class="target-summary blocked">
-        <strong>${escapeHtml(target.name)} is a ground target</strong>
-        <span>The interceptor's cannon only engages AIRCRAFT.</span>
       </div>
     `;
   }
@@ -1703,36 +1674,10 @@ function defendState(canDefend: boolean, tip: string): string {
   `;
 }
 
-function mineState(actor: CombatEntity | undefined, sim: TacticalSim): string {
-  const reason = actor ? sim.mineFailureReason(actor) : "Select a sapper first";
-  return `
-    <div class="target-summary ${reason ? "blocked" : ""}">
-      <strong>${reason ? "Mine unavailable" : "Mine ready"}</strong>
-      <span>${reason ? escapeHtml(reason) : "Plants a proximity mine at the sapper's feet. Hostiles that step on it take a splash blast. Your mines are invisible to the enemy."}</span>
-    </div>
-    <button class="btn confirm ${reason ? "disabled" : ""}" data-confirm="mine" data-disabled="${Boolean(reason)}" data-tip="${escapeAttr("Plant a proximity mine here ($15 + 1 AP).")}">
-      Plant Mine
-      <span>$15</span>
-    </button>
-  `;
-}
-
 const PLACE_TIP: Record<string, string> = {
   charge: "Select Charge, click ground in reach. Sets a satchel bomb: it blows after 3 turns, or the instant anything shoots it. Huge blast, hurts everyone. $45 + 1 AP.",
-  pad: "Select Pad, click ground in reach (T turns it). Infantry that step or land on it are launched 8m the way it points. $40 + 1 AP.",
-  oil: "Select Slick, click ground in reach. A wide oil puddle: any blast, fire or round that lands in it sets it ablaze for 3 turns. $50 + 1 AP.",
   barrier: "Select Barrier, click ground in reach (T turns it). Raises a short, tough wall. $40 + 1 AP.",
 };
-
-function treatState(actor: CombatEntity | undefined, sim: TacticalSim): string {
-  const reason = actor ? sim.treatFailureReason(actor) : "Select a medic or engineer first";
-  return `
-    <div class="target-summary ${reason ? "blocked" : ""}">
-      <strong>${reason ? "Unavailable" : actor?.kind === "engineer" ? "Pick a machine to repair" : "Pick an ally to heal"}</strong>
-      <span>${reason ? escapeHtml(reason) : "Click a hurt ally inside the ring."}</span>
-    </div>
-  `;
-}
 
 function placeState(actor: CombatEntity | undefined, sim: TacticalSim): string {
   const spec = actor ? placeSpecFor(actor.kind) : undefined;
@@ -2002,11 +1947,11 @@ function upgradeDeckHtml(base: CombatEntity, sim: TacticalSim): string {
   return `<div class="upgrade-options part-options">
       <button class="btn confirm ${incomeReady ? "" : "disabled"}" data-base-upgrade="income" data-disabled="${!incomeReady}" data-tip="${escapeAttr(incomeTip)}">
         ${incomeCost === undefined ? `Income $${nowIncome}/turn` : `Income +$${gain}/turn`}
-        <span>${incomeCost === undefined ? "Maxed" : `$${incomeCost} · pays back in ${payback} turns`}</span>
+        <span>${incomeCost === undefined ? "Maxed" : `$${incomeCost} · back in ${payback} turns`}</span>
       </button>
       <button class="btn confirm ${cmdReady ? "" : "disabled"}" data-base-upgrade="command" data-disabled="${!cmdReady}" data-tip="${escapeAttr(cmdTip)}">
-        ${cmdCost === undefined ? "Base acts twice" : "Base acts twice a turn"}
-        <span>${cmdCost === undefined ? "Done" : `$${cmdCost} · +1 order`}</span>
+        Base acts twice
+        <span>${cmdCost === undefined ? "Done" : `$${cmdCost}`}</span>
       </button>
       ${BASE_UPGRADES.filter((u) => faction.tech.includes(u.tech)).map((u) => {
         const reason = sim.baseUpgradeFailureReason(base, u.id);
@@ -2085,8 +2030,8 @@ function researchCard(node: TechNode, base: CombatEntity, sim: TacticalSim, step
   const unlocked = isTechUnlocked(base, node.id);
   const reason = unlocked ? undefined : sim.researchFailureReason(base, node.id);
   const lockedOut = Boolean(reason && /locked out/i.test(reason));
-  // Only what THIS faction fields from the node, by its own names (Armor Bay unlocks the APC for
-  // the Syndicate and the Tank for Bastion): troops, defenses AND support powers.
+  // Only what THIS faction fields from the node, by its own names (Armor Bay unlocks the Tank for
+  // Bastion): troops, defenses AND support powers.
   const faction = sim.factionOf(base.team);
   const troops = troopsUnlockedBy(node.id).filter((kind) => faction.roster.includes(kind)).map((kind) => sim.troopLabel(base.team, kind));
   const defenses = DEFENSE_CATALOG.filter((d) => d.tech === node.id && faction.defenses.includes(d.kind)).map((d) => d.label);
@@ -2366,14 +2311,12 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
   if (action === "melee") return !isInfantryKind(actor.kind) || !actor.status.canMove || !hasStrikeWeapon(actor);
   if (action === "push") return !isInfantryKind(actor.kind) || !actor.status.canMove;
   if (action === "defend") return !isInfantryKind(actor.kind) || !actor.status.canMove;
-  if (action === "mine") return Boolean(sim.mineFailureReason(actor));
   if (action === "smoke") return Boolean(sim.smokeFailureReason(actor));
   if (action === "leap") return !actor.status.canMove;
   if (action === "slam") return Boolean(sim.slamFailureReason(actor));
   if (action === "dig") return Boolean(sim.digFailureReason(actor));
   if (action === "dismount") return !actor.occupantId;
   if (action === "man") return !actor.status.canMove || !sim.entities.some((e) => isMountKind(e.kind) && !sim.manFailureReason(actor, e));
-  if (action === "treat") return Boolean(sim.treatFailureReason(actor));
   if (action === "place") return Boolean(sim.placeFailureReason(actor));
   if (action === "load") return !isCarrier(actor) || !actor.status.canMove || (actor.passengerIds?.length ?? 0) >= (actor.kind === "runabout" ? 5 : 2);
   if (action === "unload") return !isCarrier(actor) || !(actor.passengerIds?.length);
@@ -2382,7 +2325,7 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
   return false;
 }
 
-// Transport and APC both carry (the sim's isCarrierKind).
+// Transport and Runabout both carry (the sim's isCarrierKind).
 /** What a unit's finite supply is called: a Turret Tech carries sentries, aircraft bombs, everyone else grenades. */
 function supply(entity: CombatEntity): { tip: string; chip: string; stat: string } {
   const n = entity.grenades;
@@ -2394,7 +2337,7 @@ function supply(entity: CombatEntity): { tip: string; chip: string; stat: string
 }
 
 function isCarrier(actor: CombatEntity): boolean {
-  return actor.kind === "transport" || actor.kind === "apc" || actor.kind === "runabout";
+  return actor.kind === "transport" || actor.kind === "runabout";
 }
 
 // Mirrors the sim's melee-weapon check: a unit needs an intact weapon part to bayonet/strike,
@@ -2419,14 +2362,12 @@ function actionApplicable(action: Intent, actor: CombatEntity | undefined): bool
   if (action === "move" && isDefenseKind(actor.kind)) return false; // emplacements never move: no dead card
   if (action === "ram") return actor.kind === "tank";
   if (action === "melee" || action === "push" || action === "defend") return isInfantryKind(actor.kind);
-  if (action === "mine") return actor.kind === "sapper";
   if (action === "smoke") return actor.kind === "mortar";
   if (action === "leap") return isInfantryKind(actor.kind) && actor.kind !== "jumper";
   if (action === "dismount") return isMountKind(actor.kind);
   if (action === "slam") return actor.kind === "sledge";
   if (action === "dig") return actor.kind === "trencher";
-  if (action === "treat") return actor.kind === "medic" || actor.kind === "engineer";
-  if (action === "man") return isInfantryKind(actor.kind) && actor.kind !== "medic" && actor.kind !== "engineer";
+  if (action === "man") return isInfantryKind(actor.kind);
   if (action === "place") return Boolean(placeSpecFor(actor.kind));
   if (action === "load" || action === "unload") return isCarrier(actor);
   if (action === "recon") return actor.kind === "droneop";
@@ -2447,15 +2388,13 @@ function actionDisabledReason(action: Intent, actor: CombatEntity | undefined, s
   if (action === "shoot" && actor.kind === "artillery" && !actor.deployed) return `${actor.name} must deploy before it can fire (Deploy, or hold still for a turn).`;
   if (action === "melee" && !hasStrikeWeapon(actor)) return `${actor.name} has no intact weapon to strike with.`;
   if (action === "grenade" && actor.grenades <= 0) return `${actor.name} is out of ${actor.flying ? "bombs" : "grenades"}.`;
-  if (action === "mine") return sim.mineFailureReason(actor) ?? undefined;
   if (action === "smoke") return sim.smokeFailureReason(actor) ?? undefined;
   if (action === "leap") return `${actor.name} cannot jump: its legs are destroyed.`;
   if (action === "dismount") return "No crew to send away";
   if (action === "man") return !actor.status.canMove ? `${actor.name} cannot move` : "No free post in reach";
-  if (action === "treat") return sim.treatFailureReason(actor) ?? undefined;
   if (action === "place") return sim.placeFailureReason(actor) ?? undefined;
-  if (action === "load" && (actor.passengerIds?.length ?? 0) >= 2) return `${actor.kind === "apc" ? "The APC" : "The transport"} is full.`;
-  if (action === "unload" && !(actor.passengerIds?.length)) return `${actor.kind === "apc" ? "The APC" : "The transport"} is empty.`;
+  if (action === "load" && (actor.passengerIds?.length ?? 0) >= 2) return `${actor.kind === "runabout" ? "The Runabout" : "The transport"} is full.`;
+  if (action === "unload" && !(actor.passengerIds?.length)) return `${actor.kind === "runabout" ? "The Runabout" : "The transport"} is empty.`;
   if (action === "recon") return sim.reconFailureReason(actor) ?? undefined;
   if (action === "deploy") return sim.deployFailureReason(actor) ?? undefined;
   return undefined;
@@ -2467,11 +2406,9 @@ function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: Tac
   if (action === "melee") return isInfantryKind(actor.kind) && actor.status.canMove && hasStrikeWeapon(actor);
   if (action === "push") return isInfantryKind(actor.kind) && actor.status.canMove;
   if (action === "defend") return isInfantryKind(actor.kind) && actor.status.canMove;
-  if (action === "mine") return actor.kind === "sapper";
   if (action === "smoke") return actor.kind === "mortar" && actor.status.canShoot;
   if (action === "leap") return isInfantryKind(actor.kind) && actor.kind !== "jumper" && actor.status.canMove;
-  if (action === "man") return isInfantryKind(actor.kind) && actor.kind !== "medic" && actor.kind !== "engineer";
-  if (action === "treat") return actor.kind === "medic" || actor.kind === "engineer";
+  if (action === "man") return isInfantryKind(actor.kind);
   if (action === "place") return Boolean(placeSpecFor(actor.kind));
   if (action === "load" || action === "unload") return isCarrier(actor);
   if (action === "recon") return actor.kind === "droneop";

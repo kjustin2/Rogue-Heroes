@@ -8,9 +8,9 @@ import { mkdirSync } from "node:fs";
 import { launchGame, delay } from "../improve/lib/harness.mjs";
 
 const ROWS = {
-  vanguard: { units: ["soldier", "sniper", "medic", "scout", "jumper", "engineer"], vehicle: "tank" },
-  syndicate: { units: ["soldier", "sniper", "medic", "striker", "flamer", "sapper"], vehicle: "apc" },
-  bastion: { units: ["soldier", "sniper", "medic", "heavy", "mortar", "engineer"], vehicle: "tank" },
+  vanguard: { units: ["soldier", "sniper", "bazooka", "scout", "jumper", "heavy"], vehicle: "tank" },
+  syndicate: { units: ["soldier", "sniper", "demo", "striker", "flamer", "grenadier"], vehicle: "runabout" },
+  bastion: { units: ["soldier", "sniper", "builder", "heavy", "mortar", "trencher"], vehicle: "tank" },
 };
 const prefix = process.env.SHOT_PREFIX ?? "";
 mkdirSync("shots", { recursive: true });

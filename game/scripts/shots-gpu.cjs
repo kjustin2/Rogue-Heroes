@@ -119,13 +119,13 @@ app.whenReady().then(async () => {
         fs.mkdirSync(dir, { recursive: true });
         win.setSize(900, 700); await sleep(500);
         await js(`(() => { const s = document.createElement("style"); s.textContent = "#ui, .toast, .mission-intro, .battle-loading { visibility: hidden !important; }"; document.head.appendChild(s); })()`);
-        const SUBJ = [["base", "base", 0.62], ["rifleman", "soldier", 0.3], ["heavy", "heavy", 0.3], ["marksman", "sniper", 0.3], ["medic", "medic", 0.3],
+        const SUBJ = [["base", "base", 0.62], ["rifleman", "soldier", 0.3], ["heavy", "heavy", 0.3], ["marksman", "sniper", 0.3],
           ["tank", "tank", 0.5], ["flak", "flak", 0.5], ["turret", "turret", 0.45]];
         // Every unit each faction fields, colour only, for the membership check (does a signature
         // unit read as its faction?). Flyers are framed from higher up.
-        const ROSTERS = { vanguard: ["soldier", "scout", "sniper", "jumper", "heavy", "medic", "tank", "flak", "gunship", "interceptor", "transport"],
-          syndicate: ["soldier", "sniper", "heavy", "striker", "grenadier", "flamer", "sapper", "droneop", "medic", "apc", "flak"],
-          bastion: ["soldier", "sniper", "heavy", "mortar", "medic", "engineer", "tank", "artillery", "flak", "bomber"] };
+        const ROSTERS = { vanguard: ["soldier", "scout", "sniper", "jumper", "heavy", "tank", "flak", "gunship", "transport"],
+          syndicate: ["soldier", "sniper", "heavy", "striker", "grenadier", "flamer", "droneop", "runabout", "flak"],
+          bastion: ["soldier", "sniper", "heavy", "mortar", "builder", "tank", "artillery", "flak", "bomber"] };
         for (const f of ["vanguard", "syndicate", "bastion"]) {
           await js(`window.__rht.startBattle("verdant", "destroy", "normal", ${JSON.stringify(f)}, ${JSON.stringify(f === "vanguard" ? "bastion" : "vanguard")})`);
           await sleep(2600);
@@ -144,7 +144,7 @@ app.whenReady().then(async () => {
           for (const kind of ROSTERS[f]) {
             await js(`(() => { const r = window.__rht, sim = r.sim; sim.debugClearField(); const at = { x: 0, z: -9 };
               const e = sim.debugSpawn(${JSON.stringify(kind)}, "player", at); e.yaw = 0.35; if (e.flying) e.agl = 1.6; r.deselect(); // low enough to be in frame: the livery is measured, not the altitude
-              const air = e.flying; r.setView({ x: at.x, z: at.z, zoom: air ? 0.62 : ${JSON.stringify(kind)} === "tank" || ${JSON.stringify(kind)} === "apc" || ${JSON.stringify(kind)} === "artillery" || ${JSON.stringify(kind)} === "flak" ? 0.5 : 0.3, pitch: air ? 0.62 : 0.42, yaw: 1.2 }); })()`);
+              const air = e.flying; r.setView({ x: at.x, z: at.z, zoom: air ? 0.62 : ${JSON.stringify(kind)} === "tank" || ${JSON.stringify(kind)} === "artillery" || ${JSON.stringify(kind)} === "flak" ? 0.5 : 0.3, pitch: air ? 0.62 : 0.42, yaw: 1.2 }); })()`);
             await sleep(1400);
             const img = await win.webContents.capturePage();
             fs.writeFileSync(path.join(dir, `roster-${kind}-${f}.png`), img.toPNG());
@@ -271,8 +271,8 @@ app.whenReady().then(async () => {
         await sleep(700);
         await shot("rings-build");
         await js(`(() => { const sim = window.__rht.sim; sim.setPendingBuild(undefined); sim.setIntent("select"); })()`);
-        // A medic beside the ledge: its aura ring must follow the step like the move field does.
-        await js(`(() => { const sim = window.__rht.sim; const r = sim.entities.filter(e => e.kind === "cover" && e.coverKind === "ridge")[0]; const m = sim.debugSpawn("medic", "player", { x: r ? r.position.x - r.radius - 1.2 : 2, z: r ? r.position.z + 1 : 2 }); window.__rht.deselect(); window.__rht.setView({ x: m.position.x, z: m.position.z, zoom: 0.5, pitch: 0.6, yaw: 0.25 }); })()`);
+        // A drone operator beside the ledge: its aura ring must follow the step like the move field does.
+        await js(`(() => { const sim = window.__rht.sim; const r = sim.entities.filter(e => e.kind === "cover" && e.coverKind === "ridge")[0]; const m = sim.debugSpawn("droneop", "player", { x: r ? r.position.x - r.radius - 1.2 : 2, z: r ? r.position.z + 1 : 2 }); window.__rht.deselect(); window.__rht.setView({ x: m.position.x, z: m.position.z, zoom: 0.5, pitch: 0.6, yaw: 0.25 }); })()`);
         await sleep(900);
         await shot("rings-aura");
         continue;
@@ -365,7 +365,7 @@ app.whenReady().then(async () => {
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal", "vanguard")`);
         await sleep(2200);
         await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("player", 9000);
-          ["bazooka","builder","demo","oiler","springer","medic","engineer"].forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -20 + i * 1.5, z: 0 }); u.yaw = Math.PI + 0.35; });
+          ["bazooka","builder","demo","turrettech"].forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -20 + i * 1.5, z: 0 }); u.yaw = Math.PI + 0.35; });
           r.setView({ x: -17, z: -0.8, zoom: 0.22, pitch: 0.4, yaw: 0.5 }); })()`);
         await sleep(2500); await shot("fieldhands-lineup");
         await js(`(() => { const r = window.__rht, sim = r.sim; r.setView({ x: -17, z: -0.8, zoom: 0.16, pitch: 0.34, yaw: -0.5 }); })()`);
@@ -373,19 +373,15 @@ app.whenReady().then(async () => {
         // Everything placed, in one frame.
         await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect();
           const place = (kind, at, to) => { const u = sim.debugSpawn(kind, "player", at); sim.debugSelect(u.id); sim.queuePlace(to); return u; };
-          place("springer", { x: -4, z: 6 }, { x: -2, z: 6 }); sim.pads[0].yaw = Math.PI / 2; place("springer", { x: 8, z: 6 }, { x: 6, z: 6 }); sim.pads[1].yaw = -Math.PI / 2;
-          place("oiler", { x: -4, z: -2 }, { x: -1, z: -2 }); place("demo", { x: 6, z: -2 }, { x: 8, z: -2 }); place("builder", { x: 2, z: -8 }, { x: 4, z: -8 });
+          place("demo", { x: 6, z: -2 }, { x: 8, z: -2 }); place("builder", { x: 2, z: -8 }, { x: 4, z: -8 });
           sim.debugStructure("mortarpit", "player", { x: 12, z: 4 });
           r.setView({ x: 3, z: 0, zoom: 0.55, pitch: 0.75, yaw: 0.3 }); })()`);
         await sleep(1500); await shot("fieldhands-placed");
         // Place ghost + the field hand's card (HUD on).
-        await js(`(() => { const r = window.__rht, sim = r.sim; const u = sim.debugSpawn("springer", "player", { x: -8, z: 12 }); sim.debugSelect(u.id); r.setIntent("place"); r.hoverGround({ x: -6, z: 12 }); r.setView({ x: -7, z: 12, zoom: 0.7, pitch: 0.8, yaw: 0.25 }); })()`);
+        await js(`(() => { const r = window.__rht, sim = r.sim; const u = sim.debugSpawn("demo", "player", { x: -8, z: 12 }); sim.debugSelect(u.id); r.setIntent("place"); r.hoverGround({ x: -6, z: 12 }); r.setView({ x: -7, z: 12, zoom: 0.7, pitch: 0.8, yaw: 0.25 }); })()`);
         await sleep(1000); await shot("fieldhands-ghost");
         await js(`(() => { const r = window.__rht, sim = r.sim; r.setIntent("select"); r.hoverGround(undefined); })()`);
         await sleep(600); await shot("fieldhands-card");
-        // Oil lit by a blast, then the fire.
-        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.effect("blast", { x: -1, z: -2 }, { x: -1, z: -2 }, 0xffffff, 0.5, 1); r.setView({ x: -1, z: -2, zoom: 0.5, pitch: 0.7, yaw: 0.3 }); })()`);
-        await sleep(900); await shot("fieldhands-oilfire");
         // A shove, six frames: lean and recover.
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
         await sleep(2000);
@@ -418,17 +414,6 @@ app.whenReady().then(async () => {
         }
         const missing = await js(`(async () => { const names = ["rifle","carbine","pistol","pellet","bolt_01","cannon_01","blast_01","boomdeep_01","pop_01","crack_01","hitmetal_000","hitpunch_000","hitsoft_000","hitplate_000","hitwood_000"]; const bad = []; for (const n of names) { const r = await fetch(new URL("audio/sfx/" + n + ".ogg", document.baseURI)); if (!r.ok) bad.push(n); } return JSON.stringify(bad); })()`);
         console.log("audioprobe missing sfx:", missing);
-        continue;
-      }
-      if (s === "treatanim") {
-        // A medic healing a wounded trooper: walk up, lift the tool, lean in (aid pose), the chime ring; then a charge dropping in.
-        await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
-        await sleep(2000);
-        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); const m = sim.debugSpawn("medic", "player", { x: -9, z: 0 }); const p = sim.debugSpawn("soldier", "player", { x: -3, z: 0 }); for (const part of p.parts) part.hp = Math.max(1, Math.round(part.hp * 0.3)); sim.debugSelect(m.id); sim.queueTreat(p.id); r.setView({ x: -5.5, z: 0, zoom: 0.4, pitch: 0.5, yaw: 0.9 }); sim.endTurn(); })()`);
-        for (let i = 0; i < 6; i += 1) { await sleep(i === 0 ? 800 : 260); await shot("treat-" + i); }
-        await sleep(2500);
-        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); const d = sim.debugSpawn("demo", "player", { x: -6, z: 14 }); sim.debugSelect(d.id); sim.queuePlace({ x: -3.5, z: 14 }); r.setView({ x: -4, z: 6, zoom: 0.4, pitch: 0.6, yaw: 0.5 }); })()`);
-        for (let i = 0; i < 3; i += 1) { await sleep(i === 0 ? 60 : 110); await shot("place-" + i); }
         continue;
       }
       if (s === "projectiles") {
@@ -583,13 +568,13 @@ app.whenReady().then(async () => {
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal", "syndicate", "vanguard")`);
         await sleep(1500);
         await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("player", 9000); sim.economy.set("enemy", 0);
-          const kinds = ["sledge", "bounty", "runabout", "turrettech", "flamer", "medic", "builder", "springer", "trencher", "ironclad", "lancer", "hornet"];
+          const kinds = ["sledge", "bounty", "runabout", "turrettech", "flamer", "builder", "trencher", "ironclad", "lancer", "hornet"];
           kinds.forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -20 + i * 2.6, z: 4 }); u.yaw = 0.3; });
           const foe = sim.debugSpawn("soldier", "enemy", { x: -6, z: -4 }); foe.burning = { turns: 3, dmg: 8 };
           const f2 = sim.debugSpawn("tank", "enemy", { x: -2, z: -3 });
           r.setView({ x: -6, z: 2, zoom: 0.5, pitch: 0.6, yaw: 0.2 }); })()`);
         await sleep(1000);
-        for (const k of ["sledge", "bounty", "runabout", "turrettech", "flamer", "medic", "builder", "springer", "trencher", "ironclad", "lancer", "hornet"]) {
+        for (const k of ["sledge", "bounty", "runabout", "turrettech", "flamer", "builder", "trencher", "ironclad", "lancer", "hornet"]) {
           await js(`(() => { const sim = window.__rht.sim; const u = sim.entities.find((e) => e.team === "player" && e.kind === ${JSON.stringify(k)}); sim.select(u.id); })()`);
           await sleep(500);
           await shot("review-" + k);
@@ -606,7 +591,7 @@ app.whenReady().then(async () => {
           await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal", ${JSON.stringify(fac)}, "vanguard")`);
           await sleep(1500);
           const info = await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("player", 9000); sim.economy.set("enemy", 0);
-            const base = sim.entities.find((e) => e.team === "player" && e.kind === "base"); base.unlockedTech = sim.techIds ? sim.techIds() : ["recon","assault","armor","support","radar","motorpool","siege","airwing","shock","ordnance","incendiary","demolition","triage","welding","fieldworks","fieldhospital","optics","marksman","breach","bulwark","thermobarics","cluster","plating","hunter","ghillie"];
+            const base = sim.entities.find((e) => e.team === "player" && e.kind === "base"); base.unlockedTech = sim.techIds ? sim.techIds() : ["recon","assault","armor","support","radar","motorpool","siege","airwing","shock","ordnance","incendiary","demolition","fieldworks","optics","marksman","breach","bulwark","thermobarics","cluster","plating","hunter","ghillie"];
             const bx = base.position.x;
             const tgt = { x: bx + 14, z: 0 };
             const foes = [];
@@ -651,7 +636,7 @@ app.whenReady().then(async () => {
       }
       if (s === "muzzles") {
         // One shooter per kind, mid-flight of its first round, tight on the muzzle: the round must leave the gun, not float above it.
-        const kinds = ["gunship", "interceptor", "soldier", "sniper", "bazooka", "flamer", "tank", "apc", "hornet", "runabout", "flak", "artillery"];
+        const kinds = ["gunship", "soldier", "sniper", "bazooka", "flamer", "tank", "hornet", "runabout", "flak", "artillery"];
         for (const kind of kinds) {
           await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal")`);
           await sleep(1300);
@@ -668,7 +653,7 @@ app.whenReady().then(async () => {
       }
       if (s === "muzzlecheck") {
         // DATA, not pictures: for every shooter, fire one round and measure how far the sim's round origin is from the nearest drawn weapon-part box.
-        const kinds = ["gunship", "interceptor", "soldier", "sniper", "heavy", "scout", "striker", "grenadier", "mortar", "bazooka", "flamer", "lancer", "bounty", "ironclad", "turrettech", "trencher", "tank", "apc", "hornet", "runabout", "flak", "artillery"];
+        const kinds = ["gunship", "soldier", "sniper", "heavy", "scout", "striker", "grenadier", "mortar", "bazooka", "flamer", "lancer", "bounty", "ironclad", "turrettech", "trencher", "tank", "hornet", "runabout", "flak", "artillery"];
         const rows = [];
         for (const kind of kinds) {
           await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal")`);
@@ -746,12 +731,12 @@ app.whenReady().then(async () => {
       }
       if (s === "projgallery") {
         // One shooter at a time, tight camera on the round in flight: three frames each. Rifle, carbine, pistol, MG, marksman, rocket, scattergun, grenade.
-        const kinds = ["soldier", "scout", "striker", "heavy", "sniper", "bazooka", "sapper", "grenadier"];
+        const kinds = ["soldier", "scout", "striker", "heavy", "sniper", "bazooka", "grenadier"];
         for (const kind of kinds) {
           await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
           await sleep(1400);
           await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("enemy", 0); document.body.classList.add("shots-hide-hud"); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = "hidden"));
-            const a = sim.debugSpawn(${JSON.stringify(kind)}, "player", { x: -12, z: 0 }); const t = sim.debugSpawn("tank", "enemy", { x: ${kind === "sapper" ? -6 : 2}, z: 0 }); for (const p of t.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0; t.status.canShoot = false; t.status.canMove = false;
+            const a = sim.debugSpawn(${JSON.stringify(kind)}, "player", { x: -12, z: 0 }); const t = sim.debugSpawn("tank", "enemy", { x: 2, z: 0 }); for (const p of t.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0; t.status.canShoot = false; t.status.canMove = false;
             sim.debugSelect(a.id); sim.queueShoot(t.id); r.setView({ x: -5, z: 0, zoom: 0.26, pitch: 0.65, yaw: 0.35 }); sim.endTurn(); })()`);
           for (let i = 0; i < 4; i += 1) { await sleep(i === 0 ? 650 : 140); await shot(`pg-${kind}-${i}`); }
         }
@@ -759,12 +744,12 @@ app.whenReady().then(async () => {
       }
       if (s === "projfollow") {
         // The camera rides each round (tight, HUD hidden) and grabs the frame at mid-flight: the round itself, close.
-        const kinds = ["soldier", "scout", "striker", "heavy", "sniper", "bazooka", "sapper", "grenadier", "tank", "mortar"];
+        const kinds = ["soldier", "scout", "striker", "heavy", "sniper", "bazooka", "grenadier", "tank", "mortar"];
         for (const kind of kinds) {
           await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal")`);
           await sleep(1300);
           await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("enemy", 0); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = "hidden"));
-            const a = sim.debugSpawn(${JSON.stringify(kind)}, "player", { x: -14, z: 0 }); const t = sim.debugSpawn("tank", "enemy", { x: ${kind === "sapper" ? -9 : 6}, z: 0 }); for (const p of t.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0; t.status.canShoot = false; t.status.canMove = false;
+            const a = sim.debugSpawn(${JSON.stringify(kind)}, "player", { x: -14, z: 0 }); const t = sim.debugSpawn("tank", "enemy", { x: 6, z: 0 }); for (const p of t.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0; t.status.canShoot = false; t.status.canMove = false;
             sim.debugSelect(a.id); sim.queueShoot(t.id); sim.endTurn(); window.__rht.setTimeScale(0.25); })()`);
           let got = false;
           for (let i = 0; i < 400 && !got; i += 1) {
@@ -790,7 +775,7 @@ app.whenReady().then(async () => {
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal", "bastion")`);
         await sleep(1800);
         await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = "hidden"));
-          ["soldier", "heavy", "medic", "tank"].forEach((k, i) => sim.debugSpawn(k, "player", { x: -42 + i * 2.2, z: 5 }));
+          ["soldier", "heavy", "builder", "tank"].forEach((k, i) => sim.debugSpawn(k, "player", { x: -42 + i * 2.2, z: 5 }));
           sim.debugSpawn("soldier", "enemy", { x: -36, z: 9 });
           const hq = sim.entities.find(e => e.team === "player" && e.kind === "base"); r.setView({ x: hq.position.x + 2, z: hq.position.z + 3, zoom: 0.4, pitch: 0.8, yaw: 0.3 }); })()`);
         await sleep(1200); await shot("unselected-a");
@@ -923,7 +908,7 @@ app.whenReady().then(async () => {
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
         await sleep(1500);
         await js(`(() => { const sim = window.__rht.sim; sim.economy.set("player", 9000);
-          const line = [["soldier", -3], ["heavy", -1.8], ["sniper", -0.6], ["flamer", 0.6], ["mortar", 1.8], ["tank", 3.4], ["apc", 5.2]];
+          const line = [["soldier", -3], ["heavy", -1.8], ["sniper", -0.6], ["flamer", 0.6], ["mortar", 1.8], ["tank", 3.4], ["hornet", 5.2]];
           const actors = line.map(([k, z]) => sim.debugSpawn(k, "player", { x: -4, z }));
           const targets = line.map(([, z], i) => sim.debugSpawn(i % 2 ? "soldier" : "heavy", "enemy", { x: (i % 2 ? 4 : 6), z }));
           for (const t of targets) { for (const p of t.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0; t.status.canShoot = false; t.status.canMove = false; t.commandPoints = 0; t.maxCommandPoints = 0; }
@@ -988,7 +973,7 @@ app.whenReady().then(async () => {
         // One art direction: a tank, an APC and two troopers in one close frame.
         await js(`window.__rht.startBattle("verdant", "destroy", "normal")`);
         await sleep(1500);
-        await js(`(() => { const sim = window.__rht.sim; const t = sim.debugSpawn("tank", "player", { x: -2, z: 0 }); t.yaw = 0.6; const a = sim.debugSpawn("apc", "enemy", { x: 3.5, z: -2 }); a.yaw = 2.4; const s1 = sim.debugSpawn("soldier", "player", { x: 0.6, z: 1.6 }); s1.yaw = 0.4; const s2 = sim.debugSpawn("heavy", "player", { x: 1.8, z: 2.4 }); s2.yaw = 0.2; window.__rht.deselect(); window.__rht.setView({ x: 0.5, z: 0.5, zoom: 0.36, pitch: 0.5, yaw: 0.35 }); })()`);
+        await js(`(() => { const sim = window.__rht.sim; const t = sim.debugSpawn("tank", "player", { x: -2, z: 0 }); t.yaw = 0.6; const a = sim.debugSpawn("hornet", "enemy", { x: 3.5, z: -2 }); a.yaw = 2.4; const s1 = sim.debugSpawn("soldier", "player", { x: 0.6, z: 1.6 }); s1.yaw = 0.4; const s2 = sim.debugSpawn("heavy", "player", { x: 1.8, z: 2.4 }); s2.yaw = 0.2; window.__rht.deselect(); window.__rht.setView({ x: 0.5, z: 0.5, zoom: 0.36, pitch: 0.5, yaw: 0.35 }); })()`);
         await sleep(2500);
         await shot("direction");
         continue;
@@ -1017,8 +1002,8 @@ app.whenReady().then(async () => {
         await js(`(() => { const sim = window.__rht.sim;
           sim.smokeClouds.push({ id: "smoke-shot", x: -4, z: 0, radius: 3, turnsLeft: 3 });
           const e = sim.debugSpawn("soldier", "enemy", { x: 3, z: -1 }); e.yaw = 2.6; e.markedUntilTurn = sim.turn + 1;
-          const m = sim.debugSpawn("medic", "player", { x: 1, z: 2 }); m.yaw = 0.4;
-          const d = sim.debugSpawn("scout", "player", { x: 2.4, z: 2.4 }); d.yaw = 0.2; d.downed = true; d.stance = "prone";
+          const m = sim.debugSpawn("builder", "player", { x: 1, z: 2 }); m.yaw = 0.4;
+          const d = sim.debugSpawn("scout", "player", { x: 2.4, z: 2.4 }); d.yaw = 0.2; d.stance = "prone";
           window.__rht.deselect(); })()`);
         await sleep(2500);
         await js(`window.__rht.setView({ x: 0, z: 0.6, zoom: 0.4, pitch: 0.55, yaw: 0.3 })`);
@@ -1070,7 +1055,7 @@ app.whenReady().then(async () => {
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
         await sleep(1500);
         await js(`(() => { const sim = window.__rht.sim; sim.economy.set("player", 9000);
-          const line = [["soldier", -3], ["heavy", -1.8], ["sniper", -0.6], ["flamer", 0.6], ["mortar", 1.8], ["tank", 3.4], ["apc", 5.2]];
+          const line = [["soldier", -3], ["heavy", -1.8], ["sniper", -0.6], ["flamer", 0.6], ["mortar", 1.8], ["tank", 3.4], ["hornet", 5.2]];
           const actors = line.map(([k, z]) => sim.debugSpawn(k, "player", { x: -4, z }));
           const targets = line.map(([, z], i) => sim.debugSpawn(i % 2 ? "soldier" : "heavy", "enemy", { x: (i === 3 ? 1.5 : i >= 4 ? 5 : 3.5), z }));
           for (const t of targets) { for (const p of t.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0; t.status.canShoot = false; t.status.canMove = false; }
@@ -1158,7 +1143,7 @@ app.whenReady().then(async () => {
         await js(`window.__rht.startBattle("verdant", "destroy", "normal", "vanguard", "vanguard")`);
         await sleep(2400);
         await js(`(() => { const r = window.__rht, s = r.sim; s.debugClearField();
-          ["soldier", "heavy", "sniper", "medic"].forEach((k, i) => { const a = s.debugSpawn(k, "player", { x: -3, z: -12 + i * 1.6 }); a.yaw = Math.PI / 2;
+          ["soldier", "heavy", "sniper", "builder"].forEach((k, i) => { const a = s.debugSpawn(k, "player", { x: -3, z: -12 + i * 1.6 }); a.yaw = Math.PI / 2;
             const b = s.debugSpawn(k, "enemy", { x: 3, z: -12 + i * 1.6 }); b.yaw = -Math.PI / 2; });
           r.deselect(); r.setView({ x: 0, z: -9.6, zoom: 0.42, pitch: 0.5, yaw: 0.9 }); })()`);
         await sleep(1800);
@@ -1175,7 +1160,7 @@ app.whenReady().then(async () => {
           await sleep(1800);
           await js(`(() => { const sim = window.__rht.sim; const base = sim.entities.find((e) => e.team === "player" && e.kind === "base");
             const at = (dx, dz) => ({ x: base.position.x + dx, z: base.position.z + dz });
-            const v = sim.debugSpawn("${f}" === "syndicate" ? "apc" : "tank", "player", at(6, -3)); v.yaw = 1.2;
+            const v = sim.debugSpawn("${f}" === "syndicate" ? "runabout" : "tank", "player", at(6, -3)); v.yaw = 1.2;
             ["soldier", "heavy", "sniper"].forEach((k, i) => { const u = sim.debugSpawn(k, "player", at(4.5 + i * 1.2, 2.6)); u.yaw = 1.3; });
             window.__rht.deselect(); window.__rht.setView({ x: base.position.x + 3.6, z: base.position.z, zoom: 0.52, pitch: 0.5, yaw: 0.45 }); })()`);
           await sleep(1500);
@@ -1248,7 +1233,7 @@ app.whenReady().then(async () => {
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
         await sleep(1500);
         await js(`(() => { const sim = window.__rht.sim;
-          ["gunship","interceptor","bomber","transport"].forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -7 + i * 5, z: 2.5 }); u.yaw = 0.5; });
+          ["gunship","bomber","transport"].forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -7 + i * 5, z: 2.5 }); u.yaw = 0.5; });
           ["gunship","bomber"].forEach((k, i) => { const u = sim.debugSpawn(k, "enemy", { x: -4 + i * 6, z: -5 }); u.yaw = 2.6; });
           const s1 = sim.debugSpawn("soldier", "player", { x: 9.5, z: 2.5 }); s1.yaw = 0.5;
           window.__rht.deselect(); })()`);
@@ -1270,8 +1255,8 @@ app.whenReady().then(async () => {
         await sleep(1500);
         if (s === "vehicles") {
           await js(`(() => { const sim = window.__rht.sim;
-            ["tank","apc","artillery"].forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -6 + i * 6, z: 2.5 }); u.yaw = 0.5; });
-            ["tank","apc","artillery"].forEach((k, i) => { const u = sim.debugSpawn(k, "enemy", { x: -6 + i * 6, z: -4 }); u.yaw = 2.6; });
+            ["tank","hornet","artillery"].forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -6 + i * 6, z: 2.5 }); u.yaw = 0.5; });
+            ["tank","hornet","artillery"].forEach((k, i) => { const u = sim.debugSpawn(k, "enemy", { x: -6 + i * 6, z: -4 }); u.yaw = 2.6; });
             const s1 = sim.debugSpawn("soldier", "player", { x: 9.5, z: 2.5 }); s1.yaw = 0.5;
             const s2 = sim.debugSpawn("heavy", "player", { x: -9.5, z: 2.5 }); s2.yaw = 0.5;
             window.__rht.deselect(); })()`);
@@ -1335,7 +1320,7 @@ app.whenReady().then(async () => {
       if (s === "lineup") {
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
         await sleep(1500);
-        await js(`(() => { const sim = window.__rht.sim; ["soldier","scout","sniper","striker","heavy","grenadier","mortar","medic","engineer","flamer","droneop","sapper","jumper"].forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -9 + i * 1.5, z: 0 }); u.yaw = 0.5; }); window.__rht.deselect(); })()`);
+        await js(`(() => { const sim = window.__rht.sim; ["soldier","scout","sniper","striker","heavy","grenadier","mortar","flamer","droneop","jumper"].forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -9 + i * 1.5, z: 0 }); u.yaw = 0.5; }); window.__rht.deselect(); })()`);
         await sleep(2500);
         await js(`window.__rht.setView({ x: 0, z: 0.6, zoom: 0.34, pitch: 0.5, yaw: 0.35 })`);
         await sleep(600);

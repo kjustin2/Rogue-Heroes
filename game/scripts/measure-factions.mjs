@@ -24,16 +24,15 @@ const SUBJECTS = [
   { id: "rifleman", kind: "soldier", zoom: 0.26, pitch: 0.22 },
   { id: "heavy", kind: "heavy", zoom: 0.26, pitch: 0.22 },
   { id: "marksman", kind: "sniper", zoom: 0.26, pitch: 0.22 },
-  { id: "medic", kind: "medic", zoom: 0.26, pitch: 0.22 },
   // Shared machines: only the factions that actually field one are compared.
   { id: "tank", kind: "tank", only: ["vanguard", "bastion"] },
   { id: "flak", kind: "flak" },
   { id: "turret", kind: "turret" },
 ];
 const ROSTERS = {
-  vanguard: ["soldier", "scout", "sniper", "jumper", "heavy", "medic", "tank", "flak", "gunship", "interceptor", "transport"],
-  syndicate: ["soldier", "sniper", "heavy", "striker", "grenadier", "flamer", "sapper", "droneop", "medic", "apc", "flak"],
-  bastion: ["soldier", "sniper", "heavy", "mortar", "medic", "engineer", "tank", "artillery", "flak", "bomber"],
+  vanguard: ["soldier", "scout", "sniper", "jumper", "heavy", "tank", "flak", "gunship", "transport"],
+  syndicate: ["soldier", "sniper", "heavy", "striker", "grenadier", "flamer", "droneop", "runabout", "flak"],
+  bastion: ["soldier", "sniper", "heavy", "mortar", "builder", "tank", "artillery", "flak", "bomber"],
 };
 const GOAL = { infantryIoU: 0.8, baseIoU: 0.7, hueDeg: 40, memberMargin: 15 };
 

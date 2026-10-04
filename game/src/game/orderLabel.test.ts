@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { orderLabel } from "./orderLabel";
-import { createGunship, createMedic, createSoldier, createTransport, createEngineer } from "./damageModel";
+import { createGunship, createSoldier, createTransport } from "./damageModel";
 import type { OrderKind, TacticalOrder } from "./sim";
 
 const ord = (kind: OrderKind, extra: Partial<TacticalOrder> = {}): TacticalOrder => ({ id: "o", actorId: "a", kind, aim: "center", elapsed: 0, duration: 1, fired: false, done: false, ...extra });
 const soldier = createSoldier("a", "Rook", "player", { x: 0, z: 0 });
 const foe = createSoldier("b", "Foe", "enemy", { x: 5, z: 0 });
-const KINDS: OrderKind[] = ["move", "shoot", "grenade", "ram", "defend", "melee", "load", "unload", "smoke", "recon", "deploy", "treat", "man", "slam", "dig"];
+const KINDS: OrderKind[] = ["move", "shoot", "grenade", "ram", "defend", "melee", "load", "unload", "smoke", "recon", "deploy", "man", "slam", "dig"];
 
 describe("orderLabel (2026-10-03: a bomb read 'Grenade', slam/dig/smoke read 'shoot target')", () => {
   it("every order kind has a real name, never the raw enum", () => {
@@ -30,8 +30,6 @@ describe("orderLabel (2026-10-03: a bomb read 'Grenade', slam/dig/smoke read 'sh
     expect(orderLabel(ord("melee", { shove: true }), soldier, foe)).toMatchObject({ title: "Push", detail: "Foe" });
     expect(orderLabel(ord("melee"), soldier, foe).title).toBe("Strike");
     expect(orderLabel(ord("move", { leap: true }), soldier, undefined).title).toBe("Jump");
-    expect(orderLabel(ord("treat"), createMedic("m", "Doc", "player", { x: 0, z: 0 }), soldier).title).toBe("Heal");
-    expect(orderLabel(ord("treat"), createEngineer("e", "Wrench", "player", { x: 0, z: 0 }), soldier).title).toBe("Repair");
     expect(orderLabel(ord("load"), createTransport("t", "Lift", "player", { x: 0, z: 0 }), soldier).title).toBe("Airlift");
   });
 });

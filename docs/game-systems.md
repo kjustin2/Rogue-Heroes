@@ -2,6 +2,17 @@
 
 How the factions, the three AI brains and Local 2 Players work, with the measurements behind each.
 
+## Roster cut (2026-10-04, owner: "3-4 too many units per faction")
+Cut from every roster and from the code: **Medic/Corpsman, Engineer/Mechanic, Pad Tech (springer), Interceptor, Oil Rigger, Sapper (Scattergun), APC**,
+the Bastion **Demolisher** (demo stays Syndicate's Blaster), the **Flak Nest** defense, and everything that only they used: the `treat` order
+(Heal/Repair), stims/overcharge, support auras, DOWNED troopers and revives, bounce pads, oil slicks, the sapper's mines order and wall breach
+(mines now come from the Minefield defense and the Minefield Drop strike), the Triage / Welding / Field Hospital techs (`healBonus` and
+`repairBonus` are gone). The **Medevac** strike is the only heal and now sits on Support Wing; Field Works needs only Assault.
+Final rosters (14 / 14 / 13): **Vanguard** soldier, scout, sniper, jumper, heavy, bazooka, lancer, turrettech, tank, hornet, runabout, flak, gunship,
+transport. **Syndicate** soldier, sniper, heavy, striker, grenadier, flamer, demo, bazooka, sledge, bounty, turrettech, droneop, runabout, flak.
+**Bastion** soldier, sniper, heavy, mortar, builder, ironclad, trencher, turrettech, tank, artillery, runabout, flak, bomber. The **Flak Track** is
+the one anti-air unit every faction keeps. Any older section below that names a removed unit or system is superseded by this one.
+
 ## FACTIONS play, look and fight differently (2026-09-22)
 
 - **THE FACTION READ IS MEASURED** (2026-09-24, owner: "infantry all look the same across factions and bases
@@ -115,7 +126,7 @@ How the factions, the three AI brains and Local 2 Players work, with the measure
 - **Height is continuous** (`accuracyForShot`): shooter above the target by `d` metres scales the spread by
   `1/(1+1.1*(d-0.3))` (floor 0.2): 1.2m = half, 3m = a fifth. Below: `1+1.3*(|d|-0.3)` (cap 4): 1.2m = 2x,
   3m = 3.7x. Aircraft shoot down at no penalty. No tiers.
-- **Heal / Repair** (order `treat`, `sim.queueTreat`): the Medic walks to within 3.2m of a hurt infantry unit and
+- **[REMOVED 2026-10-04 with the Medic and Engineer] Heal / Repair** (order `treat`, `sim.queueTreat`): the Medic walks to within 3.2m of a hurt infantry unit and
   restores EVERY part to full, wrecked non-critical parts to a third; the Engineer ("Mechanic" for Vanguard) does
   the same for vehicles, aircraft, emplacements and the base. Medic $220, Engineer $220 (the passive aura stays as
   a trickle). The bot's medics/engineers treat the most valuable wounded ally first (`aiTreatTarget`).

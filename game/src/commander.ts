@@ -63,8 +63,8 @@ function defaultPoints(m: MedalSeed): number {
   return need > 0 ? Math.max(10, Math.min(120, Math.round(Math.sqrt(need) * 5))) : 40;
 }
 
-const AIR_KINDS = ["gunship", "interceptor", "bomber", "transport"];
-const VEHICLE_KINDS = ["tank", "apc", "artillery", "flak"];
+const AIR_KINDS = ["gunship", "bomber", "transport"];
+const VEHICLE_KINDS = ["tank", "hornet", "runabout", "artillery", "flak"];
 const killsOf = (s: CommanderStats, kinds: string[]): number => kinds.reduce((sum, k) => sum + (s.killsByKind[k] ?? 0), 0);
 const INFANTRY_KILLS = (s: CommanderStats): number => s.kills - killsOf(s, AIR_KINDS) - killsOf(s, VEHICLE_KINDS);
 

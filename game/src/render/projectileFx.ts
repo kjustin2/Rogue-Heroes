@@ -73,8 +73,7 @@ export function projectileFamily(p: Projectile): ProjectileFamily {
   }
   if (src === "sniper" || src === "bounty") return "sniper";
   if (src === "heavy" || src === "gunpost" || src === "runabout") return "mg";
-  if (src === "sapper") return "pellet";
-  if (src === "medic" || src === "droneop" || src === "striker" || src === "turrettech" || src === "trencher" || src === "sledge") return "pistol";
+  if (src === "droneop" || src === "striker" || src === "turrettech" || src === "trencher" || src === "sledge") return "pistol";
   if (src === "flamer" || src === "flamepost") return "flame";
   if (src === "scout" || src === "jumper") return "carbine";
   return "rifle";
@@ -1307,18 +1306,17 @@ export function blastAfterlife(family: ProjectileFamily | undefined, burn: boole
   return 1.4;
 }
 /** PULSE (EMP burst, healing aura): two flat rings spreading across the ground and a low dome of flat bars,
- *  in a cold blue or a healing green. No fire, no smoke, no scorch -- the blast without the bang. */
+ *  in cold blue (EMP) or soft grey (smoke). No fire, no smoke, no scorch -- the blast without the bang. */
 export function makePulse(effect: VisualEvent, t: number, ground: number): THREE.Object3D[] {
   const out: THREE.Object3D[] = [];
   const radius = Math.min(effect.radius ?? 2, BLAST_DRAW_MAX);
   const smoke = effect.color === 0x9aa3a8;
-  const cold = effect.color === 0x8de4ff;
-  const core = smoke ? 0x9aa3a8 : cold ? 0x8de4ff : 0x8effa6;
-  const rim = smoke ? 0xdfe5e8 : cold ? 0xe6f8ff : 0xe4ffe9;
+  const core = smoke ? 0x9aa3a8 : 0x8de4ff;
+  const rim = smoke ? 0xdfe5e8 : 0xe6f8ff;
   for (let i = 0; i < 2; i += 1) {
     const u = Math.min(1, Math.max(0, t * 1.15 - i * 0.18));
     if (u <= 0 || u >= 1) continue;
-    const ring = new THREE.Mesh(projectileGeometry("ring"), projectileMaterial(smoke ? "pulse-smoke" : cold ? "pulse-cold" : "pulse-heal", i ? rim : core, q((1 - u) * 0.85)));
+    const ring = new THREE.Mesh(projectileGeometry("ring"), projectileMaterial(smoke ? "pulse-smoke" : "pulse-cold", i ? rim : core, q((1 - u) * 0.85)));
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(effect.to.x, ground + 0.08 + i * 0.01, effect.to.z);
     ring.scale.setScalar(radius * 2 * (0.15 + u * 0.85));
@@ -1333,7 +1331,7 @@ export function makePulse(effect: VisualEvent, t: number, ground: number): THREE
       out.push(s);
     }
   }
-  const bars = smoke ? 0 : cold ? 9 : 7;
+  const bars = smoke ? 0 : 9;
   const seed = seedOf(effect.id) % 11;
   const life = t < 0.7 ? 1 - Math.max(0, t - 0.3) / 0.4 : 0;
   if (life > 0.05) {
@@ -1342,8 +1340,8 @@ export function makePulse(effect: VisualEvent, t: number, ground: number): THREE
       const rr = radius * (0.35 + 0.55 * ((i * 7 + seed) % 5) / 4);
       const bar = solid("bar", i % 2 ? core : rim, 1.1);
       bar.position.set(effect.to.x + Math.cos(a) * rr, ground + 0.35 + t * 0.6, effect.to.z + Math.sin(a) * rr);
-      bar.rotation.set(0, a, cold ? Math.sin(t * 40 + i * 2.1) * 0.9 : 0);
-      const h = (cold ? 0.55 : 0.4) * life * (0.7 + 0.3 * Math.sin(t * 30 + i));
+      bar.rotation.set(0, a, Math.sin(t * 40 + i * 2.1) * 0.9);
+      const h = 0.55 * life * (0.7 + 0.3 * Math.sin(t * 30 + i));
       bar.scale.set(0.07, h, 0.07);
       out.push(bar);
     }

@@ -38,7 +38,6 @@ import {
   type FactionId,
   CLASH_BLAST,
   PULSE_EMP,
-  PULSE_SMOKE,
   isPulseBlast,
   CLASH_BOLT,
 } from "./game/sim";
@@ -231,7 +230,6 @@ const hud = new Hud(uiRoot, sim, {
   queueGrenadePart: (id: string, partId: string) => sim.queueGrenadePart(id, partId),
   queueGrenadeAt: (destination) => sim.queueGrenadeAt(destination),
   queueSmokeAt: (destination) => sim.queueSmokeAt(destination),
-  queueTreat: (id: string) => { const ok = sim.queueTreat(id); if (!ok) refused(); return ok; },
   queueLeap: (destination) => { const ok = sim.queueLeap(destination); if (!ok) refused(); return ok; },
   onAllSet: () => sfx.allSet(),
   queueMan: (id: string) => { const ok = sim.queueMan(id); if (!ok) refused(); return ok; },
@@ -284,11 +282,6 @@ const hud = new Hud(uiRoot, sim, {
   queueDeploy: () => {
     const ok = sim.queueDeploy();
     if (ok) sfx.select();
-    return ok;
-  },
-  queueMine: () => {
-    const ok = sim.queueMine();
-    if (ok) sfx.build();
     return ok;
   },
   beginSupport: (kind) => {
@@ -723,7 +716,7 @@ function requestEndTurn(skipApCheck = false): void {
   // units that could still act asks first, naming them; "don't show again" turns it off for good
   // and the Gameplay tab turns it back on. The Home Base is not counted: saving money is a choice.
   if (!skipApCheck && settings.warnUnusedAp && !AUTOMATED) {
-    const idle = sim.entities.filter((e) => e.team === "player" && e.status.alive && !e.downed && !e.carriedById &&
+    const idle = sim.entities.filter((e) => e.team === "player" && e.status.alive && !e.carriedById &&
       e.kind !== "base" && e.kind !== "wall" && e.kind !== "cover" && e.commandPoints > 0);
     if (idle.length) { showApWarning(idle); return; }
   }
@@ -975,7 +968,7 @@ function stageMenuDiorama(): void {
     const u = sim.debugSpawn(kind, "player", { x, z }, { clearTerrain: true });
     u.yaw = Math.PI * 0.5 + (x + z) * 0.05;
   }
-  const patrol: [TroopKind, number, number][] = [["striker", 7.5, -1.2], ["soldier", 8.8, 1.6], ["apc", 11, 0]];
+  const patrol: [TroopKind, number, number][] = [["striker", 7.5, -1.2], ["soldier", 8.8, 1.6], ["runabout", 11, 0]];
   for (const [kind, x, z] of patrol) {
     const u = sim.debugSpawn(kind, "enemy", { x, z }, { clearTerrain: true });
     u.yaw = -Math.PI * 0.5;
@@ -2220,7 +2213,7 @@ function frameBody(now: number): void {
     const attack = sim.intent === "shoot" || sim.intent === "grenade" || sim.intent === "melee" || sim.intent === "push" || sim.intent === "ram";
     const hovered = sim.entity(hud.hoveredTargetId);
     document.body.classList.toggle("cursor-aim", inBattle && sim.phase === "command" && (attack || hovered?.team === "enemy"));
-    document.body.classList.toggle("cursor-move", inBattle && sim.phase === "command" && !attack && (sim.intent === "move" || sim.intent === "place" || sim.intent === "man" || sim.intent === "treat" || Boolean(sim.pendingDeploy || sim.pendingBuild)));
+    document.body.classList.toggle("cursor-move", inBattle && sim.phase === "command" && !attack && (sim.intent === "move" || sim.intent === "place" || sim.intent === "man" || Boolean(sim.pendingDeploy || sim.pendingBuild)));
   }
   music.setScene(inBattle ? sim.mapDef.id : "menu");
   sfx.setAmbience(inBattle ? sim.mapDef.id : "");
@@ -2376,7 +2369,7 @@ function processBattleEvents(): void {
       sfx.ignite(heard); // a puddle of oil catching
       feel.addTrauma(0.06 * heard);
     } else if (effect.type === "blast" && isPulseBlast(effect.color)) {
-      if (effect.color === PULSE_EMP) { sfx.clank(heard); feel.addTrauma(0.05 * heard); } else if (effect.color === PULSE_SMOKE) sfx.place(heard); else sfx.heal(); // a pulse, not a bang
+      if (effect.color === PULSE_EMP) { sfx.clank(heard); feel.addTrauma(0.05 * heard); } else sfx.place(heard); // a pulse, not a bang
     } else if (effect.type === "blast") {
       sfx.explosion(effect.radius ?? 1.5, heard);
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.blast, 1.5);
@@ -2544,7 +2537,6 @@ declare global {
       queueGrenadePart(id: string, partId: string): boolean;
       queueGrenadeAt(destination: Vec2): boolean;
       queueSmokeAt(destination: Vec2): boolean;
-      queueTreat(id: string): boolean;
       queueLeap(destination: Vec2): boolean;
       onAllSet?(): void;
       queueMan(id: string): boolean;
@@ -2572,7 +2564,6 @@ declare global {
       beginSupport(kind: SupportPowerKind): void;
       queueSupportAt(point: Vec2): boolean;
       queueCapture(id: string): boolean;
-      queueMine(): boolean;
       queueRecon(): boolean;
       queueDeploy(): boolean;
       upgradeBaseIncome(): boolean;
@@ -2668,7 +2659,6 @@ window.__rht = {
   queueGrenadePart: (id, partId) => sim.queueGrenadePart(id, partId),
   queueGrenadeAt: (destination) => sim.queueGrenadeAt(destination),
   queueSmokeAt: (destination) => sim.queueSmokeAt(destination),
-  queueTreat: (id: string) => sim.queueTreat(id),
   queueLeap: (destination) => sim.queueLeap(destination),
   queueMan: (id: string) => sim.queueMan(id),
   queueDismount: () => sim.queueDismount(),
@@ -2698,7 +2688,6 @@ window.__rht = {
   beginSupport: (kind) => sim.setPendingSupport(kind),
   queueSupportAt: (point) => sim.queueSupportAt(point),
   queueCapture: (id) => sim.queueCapture(id),
-  queueMine: () => sim.queueMine(),
   queueRecon: () => sim.queueRecon(),
   queueDeploy: () => sim.queueDeploy(),
   upgradeBaseIncome: () => sim.upgradeBaseIncome(),

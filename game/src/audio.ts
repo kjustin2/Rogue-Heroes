@@ -90,14 +90,9 @@ export const GUN_VOICES: Record<string, Voice> = {
   sniper: { group: "mosin", alt: ["savage", "arisaka"], rate: 0.95, m: 1 },
   heavy: { group: "ak47burst", rate: 0.92, m: 1, burst: true },
   striker: { group: "colt1911", rate: 1, m: 1 },
-  medic: { group: "ppq", rate: 1.1, m: 1 },
   droneop: { group: "bersa", rate: 1.2, m: 1 },
-  engineer: { group: "ruger22", rate: 0.9, m: 1 },
   builder: { group: "sw642", rate: 0.9, m: 1 },
   demo: { group: "m1917", rate: 0.85, m: 1 },
-  oiler: { group: "singlesix", rate: 1, m: 1 },
-  springer: { group: "bersa", rate: 1.4, m: 0.9 },
-  sapper: { group: "mossberg", alt: ["model12", "nova"], rate: 1, m: 1 },
   flamer: { group: "", rate: 1, m: 1, synth: "flame" },
   bazooka: { group: "crack", rate: 0.7, m: 1, synth: "rocket" },
   grenadier: { group: "pop", rate: 0.7, m: 0.85, synth: "thunk" },
@@ -107,11 +102,8 @@ export const GUN_VOICES: Record<string, Voice> = {
   artillery: { group: "cannon", rate: 0.6, m: 1.15 },
   exturret: { group: "cannon", rate: 0.74, m: 0.9 },
   base: { group: "cannon", rate: 1.15, m: 0.7 },
-  apc: { group: "sks", alt: ["ak47"], rate: 0.95, m: 1 },
   flak: { group: "crack", rate: 1.35, m: 0.8 },
-  aaturret: { group: "crack", rate: 1.2, m: 0.8 },
   gunship: { group: "ppshburst", rate: 1.1, m: 1, burst: true },
-  interceptor: { group: "bolt", rate: 1.32, m: 0.8 },
   turret: { group: "marlin", alt: ["lever1894"], rate: 0.9, m: 1 },
   bunker: { group: "ak47burst", rate: 0.8, m: 1, burst: true },
   gunpost: { group: "ppshburst", rate: 0.9, m: 1, burst: true },
@@ -130,7 +122,7 @@ export const GUN_VOICES: Record<string, Voice> = {
 /** A hand grenade leaving a hand, and a bomb leaving a bay. */
 const THROW_VOICE: Voice = { group: "", rate: 1, m: 1, synth: "whoosh" };
 const BOMB_VOICE: Voice = { group: "pop", rate: 0.5, m: 0.6 };
-const AIR = new Set(["gunship", "interceptor", "bomber", "transport"]);
+const AIR = new Set(["gunship", "bomber", "transport"]);
 
 /** The sound of a round leaving its barrel. Pure. */
 export function voiceFor(kind: ShotKind, source?: string): Voice {
@@ -141,7 +133,7 @@ export function voiceFor(kind: ShotKind, source?: string): Voice {
 
 /** Which impact material a hit lands on, from what was hit. Pure. */
 export function impactClass(kind: string, coverKind?: string): "hitsoft" | "hitmetal" | "hitplate" | "hitwood" {
-  const SOFT = new Set(["soldier", "scout", "sniper", "striker", "heavy", "grenadier", "mortar", "medic", "engineer", "flamer", "droneop", "sapper", "jumper", "bazooka", "builder", "demo", "oiler", "springer", "turrettech", "sledge", "lancer", "bounty", "ironclad", "trencher"]);
+  const SOFT = new Set(["soldier", "scout", "sniper", "striker", "heavy", "grenadier", "mortar", "flamer", "droneop", "jumper", "bazooka", "builder", "demo", "turrettech", "sledge", "lancer", "bounty", "ironclad", "trencher"]);
   if (SOFT.has(kind)) return "hitsoft";
   if (kind === "cover") {
     const wood = new Set(["tree", "crate", "log", "stump", "bush", "haybale", "fence", "rack", "tent", "hut", "boat", "barricade", "sandbag", "bones", "grave"]);

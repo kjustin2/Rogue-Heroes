@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { CARPET_BOMBS, TacticalSim, carpetDropPoints, type Projectile, type TroopKind, type VisualEvent } from "../game/sim";
 import { TROOP_CATALOG, SUPPORT_POWERS } from "../game/units";
 import {
-  createApc, createArtillery, createBomber, createDroneOp, createEngineer, createExTurret, createFlak,
-  createBase, createFlamer, createGrenadier, createGunship, createHeavy, createInterceptor, createJumper, createMedic, createMortar,
-  createBazooka, createBuilder, createDemo, createOiler, createSpringer,
+  createArtillery, createBomber, createDroneOp, createExTurret, createFlak,
+  createBase, createFlamer, createGrenadier, createGunship, createHeavy, createJumper, createMortar,
+  createBazooka, createBuilder, createDemo,
   createTurretTech, createSledge, createLancer, createBounty, createIronclad, createTrencher, createRunabout, createHornet,
-  createSapper, createScout, createSniper, createSoldier, createStriker, createTank, createTransport, createTurret,
+  createScout, createSniper, createSoldier, createStriker, createTank, createTransport, createTurret,
   type CombatEntity,
 } from "../game/damageModel";
 import { makeProjectileModel, projectileFamily, SNIPER_PAUSE, type ProjectileFamily } from "./projectileFx";
@@ -27,21 +27,21 @@ import { hasMotionBank, sampleMotion } from "./infantryMotion";
 type Maker = (id: string, name: string, team: "player" | "enemy", p: { x: number; z: number }) => CombatEntity;
 const MAKERS: Record<TroopKind, Maker> = {
   soldier: createSoldier, scout: createScout, sniper: createSniper, striker: createStriker, heavy: createHeavy,
-  grenadier: createGrenadier, mortar: createMortar, medic: createMedic, engineer: createEngineer, droneop: createDroneOp,
-  jumper: createJumper, flamer: createFlamer, sapper: createSapper, tank: createTank, apc: createApc,
-  artillery: createArtillery, flak: createFlak, gunship: createGunship, interceptor: createInterceptor,
+  grenadier: createGrenadier, mortar: createMortar, droneop: createDroneOp,
+  jumper: createJumper, flamer: createFlamer, tank: createTank, 
+  artillery: createArtillery, flak: createFlak, gunship: createGunship,
   bomber: createBomber, transport: createTransport,
-  bazooka: createBazooka, builder: createBuilder, demo: createDemo, oiler: createOiler, springer: createSpringer,
+  bazooka: createBazooka, builder: createBuilder, demo: createDemo, 
   turrettech: createTurretTech, sledge: createSledge, lancer: createLancer, bounty: createBounty, ironclad: createIronclad, trencher: createTrencher,
   runabout: createRunabout, hornet: createHornet,
 };
 
 /** How each troop's main gun is exercised. `null` = the kind has no gun, and says why. */
 const GUN: Record<TroopKind, { dist?: number; air?: boolean } | { none: string }> = {
-  soldier: {}, scout: {}, sniper: {}, heavy: {}, engineer: {}, droneop: {}, jumper: {}, bazooka: {}, builder: {}, demo: {}, oiler: {}, springer: {},
-  medic: { dist: 6 }, flamer: { dist: 5 }, sapper: { dist: 5 }, grenadier: {}, mortar: {},
-  tank: {}, apc: {}, artillery: { dist: 14 }, flak: { air: true },
-  gunship: { air: true }, interceptor: { air: true },
+  soldier: {}, scout: {}, sniper: {}, heavy: {}, droneop: {}, jumper: {}, bazooka: {}, builder: {}, demo: {},
+  flamer: { dist: 5 }, grenadier: {}, mortar: {},
+  tank: {}, artillery: { dist: 14 }, flak: { air: true },
+  gunship: { air: true },
   turrettech: {}, sledge: {}, lancer: {}, bounty: {}, ironclad: {}, trencher: {}, hornet: {},
   runabout: { none: "its MG needs a gunner aboard (covered by the seats test)" },
   striker: { none: "melee only (its strike is covered below)" },
@@ -129,7 +129,7 @@ describe("every unit's gun has an animation from trigger to landing", () => {
       const shooter = MAKERS[kind]("s", "Shooter", "player", { x: -6, z: -2 });
       if (shooter.kind === "artillery") shooter.deployed = true;
       const target = gun.air
-        ? pinned(createInterceptor("t", "Target", "enemy", { x: -6 + range, z: -2 }))
+        ? pinned(createTransport("t", "Target", "enemy", { x: -6 + range, z: -2 }))
         : pinned(createHeavy("t", "Target", "enemy", { x: -6 + range, z: -2 }));
       target.status.alive = true;
       const sim = new TacticalSim([shooter, target]);
@@ -313,25 +313,6 @@ describe("every non-gun attack has an animation", () => {
     for (const p of points) expect(Math.min(...blasts.map((b) => Math.hypot(b.x - p.x, b.z - p.z))), "a blast where each bomb lands (a bomb may burst early beside a unit)").toBeLessThan(1.5);
   });
 
-  it("mines: a planted mine bursts under the unit that steps on it", () => {
-    const sapper = createSapper("s", "S", "player", { x: -6, z: -2 });
-    const walker = createSoldier("w", "W", "player", { x: -2, z: -2 });
-    const sim = new TacticalSim([sapper, walker]);
-    sim.economy.set("player", 500);
-    sim.select("s");
-    expect(sim.queueMine(), sim.log[0]).toBe(true);
-    // Hand the mine to the other side so our own trooper can trip it without an AI turn in between,
-    // and step the sapper off it so the walker's path is clear.
-    sim.mines[0].team = "enemy";
-    sapper.position = { x: -6, z: 3 };
-    sim.select("w");
-    expect(sim.queueMove({ x: -8, z: -2 }), sim.log[0]).toBe(true);
-    const trace = resolve(sim, [walker]);
-    // Only the visual is asserted: the borrowed mine's damage is credited to a team with no HQ here,
-    // which friendly-fire rules zero out. Mine damage itself is covered by the sim tests.
-    expect(trace.effects.has("blast")).toBe(true);
-  });
-
   it("support powers: strikes fly in and burst; utility powers are delivered and harm no one", () => {
     for (const power of SUPPORT_POWERS) {
       // A player HQ well clear of the point: the paradrop lands the caller's troopers, so needs one.
@@ -373,11 +354,10 @@ describe("the renderer's attack choreography covers every family", () => {
   });
 });
 
-describe("treat animation", () => {
-  it("a medic or engineer treating plays the aid pose (the tool lifts, the body leans in); a tank does not", () => {
-    expect(attackFamilyForOrder("medic", "treat")).toBe("aid");
-    expect(attackFamilyForOrder("engineer", "treat")).toBe("aid");
-    expect(attackFamilyForOrder("tank", "treat")).toBeUndefined();
+describe("dig animation", () => {
+  it("a Trencher digging in plays the aid pose (the tool comes down, the body leans in); a tank does not", () => {
+    expect(attackFamilyForOrder("trencher", "dig")).toBe("aid");
+    expect(attackFamilyForOrder("tank", "dig")).toBeUndefined();
     const peak = Math.max(...Array.from({ length: 41 }, (_, i) => { const p = attackPose("aid", i / 40); return Math.abs(p.lift) + Math.abs(p.brace); }));
     expect(peak).toBeGreaterThan(0.2);
   });

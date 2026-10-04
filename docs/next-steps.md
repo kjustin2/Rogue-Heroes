@@ -77,6 +77,8 @@ three movement bugs the oracle found; the per-frame GL depth-blit error (postpro
 - **Hard bot economy (found in the 2026-10-03 review, partly fixed).** Self-play (Hard vs Normal, 108 games) showed the Hard bot fielding almost only Soldiers/Heavies/Snipers/Scouts and no vehicle or new premium unit, because it spends every turn's ~$110 on the cheapest wished unit, never reaching the money for a doctrine, an income upgrade or a $450+ Hornet / $760 Tank. Fixed: its first two doctrines no longer need a spare-cash pad (variety up, win rate unchanged: 89-1-18). Tried and REVERTED: banking up to three turns of income for the next plan step or premium troop (win rate fell to 26-25-57, the same lesson as the 2026-10 note on saving while outnumbered). A real fix needs an opening book (units, then income, then doctrine) tuned against tournaments, not a threshold tweak.
 - `serialize()` / `restore()` is idempotent except a passenger inside an aircraft: its elevation re-derives from the ground on restore (hidden, re-set on unload). Harmless.
 
+- **Roster cut done (2026-10-04)**: see docs/game-systems.md "Roster cut". Hard vs Normal still 39-0-15 (18 seeds x 3 maps pairs); `measure:factions` GOAL MET after the Bastion heavy got pauldrons and an ammo drum (its silhouette sat at the 0.8 IoU line once unit ids shifted). Open: Syndicate has no Support Wing, so its Support lane is Field Works alone; with no healing the game is pure attrition (Medevac only), watch game length.
+
 ## Known and deliberately deferred (do not re-chase without new evidence)
 
 - **Seat split in balance self-play** sits at 38-42% for the player seat (gate 35-65). Maps are point-
