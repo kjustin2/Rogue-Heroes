@@ -71,12 +71,14 @@ export const CROUCH_GAIT: GaitParams = { stride: 0.55, stance: 0.62, hip: [0.31,
 
 export function gaitTier(kind: string): GaitTier {
   switch (kind) {
-    case "scout":
     case "striker":
+    case "breaker":
+    case "sledge":
       return "march";
     case "heavy":
     case "mortar":
     case "flamer":
+    case "juggernaut":
       return "trudge";
     default:
       return "walk";

@@ -24,6 +24,12 @@ Every command, smoke, probe and oracle, and the hard-won ledgers behind them. Ru
 | CPU profile of the stress scene / scene census | `npm run perf:profile`, `npm run perf:census` |
 | AI-vs-AI faction matchups (not a gate, ~5 min) | `npm run balance:factions` |
 
+**The wording gate (`wording.test.ts`, inside `npm test`, 2026-10-07)**: every number a tip quotes (catalog tips, action cards in
+`hud.ts`, defenses, support powers) is asserted against the constant that does the work (`BOOM_RADIUS`, `PUNCH_MAX`, `HOOK_REEL`, ...);
+the player-facing strings of the catalogs, `hud.ts`, `main.ts`, `tech.ts`, `factions.ts` and `commander.ts` may not name a cut unit or
+system (`CUT`) or say "CP"; every card label is one or two words. Fault-injected: a 3.5m Boomer tip and a "Hornets" tech blurb both fail it.
+A new number in a tip gets a line here; a cut unit gets added to `CUT`.
+
 **The balance gate (`balance.test.ts`, inside `npm test`)** measures damage per dollar against the median kind. Two crediting rules
 (2026-10-06), both measured, not tuned: a KILLING blow also counts the health it denied (a Marksman's one-shot head kill used to count as
 16 damage and read as a dead buy), and a Turret Tech is credited with its sentries' damage and charged their $70. The player seat lean (~60-69%) was

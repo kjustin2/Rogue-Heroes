@@ -111,7 +111,8 @@ describe("infantry gait", () => {
     expect(trudge.sway).toBeGreaterThan(walk.sway * 2);
     expect(trudge.width).toBeGreaterThan(walk.width);
     expect(trudge.stance).toBeGreaterThan(march.stance);
-    expect(gaitTier("scout")).toBe("march");
+    expect(gaitTier("breaker")).toBe("march");
+    expect(gaitTier("juggernaut")).toBe("trudge");
     expect(gaitTier("striker")).toBe("march");
     expect(gaitTier("heavy")).toBe("trudge");
     expect(gaitTier("mortar")).toBe("trudge");

@@ -1771,7 +1771,7 @@ describe("tactical enemy AI", () => {
   });
 
   it("locks cluster and laser support behind their doctrines", () => {
-    // Cluster Strike is a Syndicate asset and the Orbital Lance a Bastion one -- no faction fields
+    // Cluster Strike is a Syndicate asset and the Gun Run a Bastion one -- no faction fields
     // both, so each half is checked under the faction that can actually call it. Under any other
     // faction the roster gate fires first and reports "not a <faction> asset", which is a
     // different (and correct) refusal.

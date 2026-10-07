@@ -381,7 +381,6 @@ export class WorldRenderer {
       this.syncShotPreview(sim, targetId, targetPartId);
       this.syncGroundAim(sim, groundAim);
     }
-    resetFxLinePool(); // recycle the projectile/effect trail lines instead of reallocating them
     // Flat cut-outs (the impact star, the POW burst) turn to face the camera; the FX module needs
     // to know where it is, and it changes once a frame.
     if (camera) setFxViewer(camera.position);
@@ -5345,7 +5344,7 @@ export class WorldRenderer {
   }
 
   // The hover footprint while calling in a support power: line of bomb circles (airstrike),
-  // a wide saturation disc (cluster), or the burning beam line (laser). Line powers align
+  // a wide saturation disc (cluster), or the strafing line (gun run, id laser). Line powers align
   // away from the calling base, so the preview shows the true strike axis.
   private drawSupportReticle(sim: TacticalSim, kind: string, point: Vec2): void {
     const base = sim.selected;
@@ -5810,13 +5809,6 @@ export class WorldRenderer {
           count: 10, color: [0x4a423a, 0x6a6055], speed: [2, 5], up: 0.25,
           size: [0.08, 0.18], life: [0.5, 1.1], gravity: 8, drag: 0.5, shape: ParticleShape.shard,
         });
-      } else if (effect.type === "beam") {
-        fx.burst({
-          x: effect.to.x, y: ground + 0.6, z: effect.to.z,
-          count: 26, color: [0xd8f4ff, 0x8fd8ff, 0xffffff], speed: [1.5, 6], up: 0.8,
-          size: [0.07, 0.2], life: [0.3, 0.9], gravity: -1.5, drag: 1.8, jitter: 0.3,
-          shape: ParticleShape.streak,
-        });
       }
     }
 
@@ -5866,34 +5858,6 @@ export class WorldRenderer {
         shadow.position.set(x, terrainHeightAt({ x, z }) + 0.03, z);
         shadow.scale.set(1, 1.9, 1);
         this.effectRoot.add(shadow);
-      } else if (effect.type === "beam") {
-        // Orbital lance: a burning light-curtain from the sky along the strike line, with a
-        // white-hot core and a scorch line on the ground.
-        const fade = t < 0.18 ? t / 0.18 : 1 - (t - 0.18) / 0.82;
-        const dirX = effect.to.x - effect.from.x;
-        const dirZ = effect.to.z - effect.from.z;
-        const length = Math.hypot(dirX, dirZ) || 1;
-        const yaw = Math.atan2(-dirZ, dirX);
-        const midX = (effect.from.x + effect.to.x) / 2;
-        const midZ = (effect.from.z + effect.to.z) / 2;
-        const curtain = new THREE.Mesh(
-          new THREE.PlaneGeometry(length + 1.5, 17),
-          new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: fade * 0.4, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }),
-        );
-        curtain.position.set(midX, 8.4, midZ);
-        curtain.rotation.y = yaw;
-        this.effectRoot.add(curtain);
-        const core = new THREE.Mesh(
-          new THREE.PlaneGeometry(length + 0.5, 17),
-          new THREE.MeshBasicMaterial({ color: 0xfff1dc, transparent: true, opacity: fade * 0.7, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }),
-        );
-        core.position.set(midX, 8.4, midZ);
-        core.rotation.y = yaw;
-        core.scale.x = 0.22;
-        this.effectRoot.add(core);
-        const y = terrainHeightAt({ x: midX, z: midZ }) + 0.12;
-        this.effectRoot.add(makeTubeLine(effect.from, effect.to, 0xff7a5a, fade * 0.9, y, 0.11));
-        this.effectRoot.add(fxLine(effect.from, effect.to, 0xfff1dc, fade, y + 0.06));
       } else if (effect.type === "topple") {
         // A felled column pivots at its base and slams along the from->to line, kicking
         // dust at the impact end. The dead cover mesh hides itself, so this IS the fall.
@@ -6691,33 +6655,6 @@ function makeLine(from: { x: number; z: number }, to: { x: number; z: number }, 
   ]);
   const mat = lineMaterial(color, opacity);
   return new THREE.Line(geo, mat);
-}
-
-// A frame-scoped pool of 2-vertex lines for the projectile + effect roots — both are disposed and
-// rebuilt EVERY frame during resolve, so `makeLine` there was the dominant per-frame allocator
-// (up to 5 trail segments per round) and the source of the resolve-phase GC jank. Pooled geometry
-// is tagged shared so disposeSubtree only detaches it; the index resets once per frame. NOT for the
-// command-phase overlay roots — those are conditionally skipped and keep their lines across frames.
-const fxLinePool: THREE.Line[] = [];
-let fxLineIdx = 0;
-function resetFxLinePool(): void { fxLineIdx = 0; }
-function fxLine(from: { x: number; z: number }, to: { x: number; z: number }, color: number, opacity: number, y = 0.16, toY = y): THREE.Line {
-  let line = fxLinePool[fxLineIdx];
-  if (!line) {
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
-    geo.userData.shared = true; // pooled — disposeSubtree detaches but never frees it
-    line = new THREE.Line(geo, lineMaterial(color, opacity));
-    line.frustumCulled = false; // tiny overlay lines always near the action — skip the cull test
-    fxLinePool[fxLineIdx] = line;
-  }
-  fxLineIdx += 1;
-  const pos = line.geometry.getAttribute("position") as THREE.BufferAttribute;
-  pos.setXYZ(0, from.x, y, from.z);
-  pos.setXYZ(1, to.x, toY, to.z);
-  pos.needsUpdate = true;
-  line.material = lineMaterial(color, opacity);
-  return line;
 }
 
 function makeTubeLine(

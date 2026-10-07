@@ -79,13 +79,12 @@ export interface Voice {
 
 /**
  * ONE VOICE PER WEAPON (owner 2026-10-03: "variety across units"). Shooter kind -> its sound: the same few
- * recordings, pitched and weighted so a marksman, a recruit, a scout, a machine gun, a tank and the siege gun
+ * recordings, pitched and weighted so a marksman, a recruit, a machine gun, a tank and the siege gun
  * are all distinguishable by ear. `voiceFor` is pure so a test can hold the table to that promise.
  */
 export const GUN_VOICES: Record<string, Voice> = {
   // A recruit's rifle, and the other infantry, each its OWN gun (owner 2026-10-03: "snipe, heavy gunner and regular guy sound the same").
   soldier: { group: "ar15", rate: 1, m: 1 },
-  scout: { group: "carlgustav", rate: 1.06, m: 1 },
   jumper: { group: "tikka", rate: 1.1, m: 1 },
   sniper: { group: "mosin", alt: ["savage", "arisaka"], rate: 0.95, m: 1 },
   heavy: { group: "ak47burst", rate: 0.92, m: 1, burst: true },
@@ -107,9 +106,7 @@ export const GUN_VOICES: Record<string, Voice> = {
   rocketpost: { group: "crack", rate: 0.62, m: 1, synth: "rocket" },
   flamepost: { group: "", rate: 0.9, m: 1, synth: "flame" },
   sentry: { group: "marlin", rate: 1.35, m: 0.75 },
-  turrettech: { group: "sw642", rate: 1.05, m: 0.9 },
   sledge: { group: "singlesix", rate: 0.8, m: 0.9 },
-  lancer: { group: "sks", alt: ["ar15"], rate: 1.18, m: 1 },
   breaker: { group: "m1917", rate: 1.15, m: 1 },
   juggernaut: { group: "cannon", rate: 1.32, m: 0.8 },
   hookshot: { group: "crack", rate: 0.9, m: 0.8, synth: "whoosh" },
@@ -134,7 +131,7 @@ export function voiceFor(kind: ShotKind, source?: string): Voice {
 
 /** Which impact material a hit lands on, from what was hit. Pure. */
 export function impactClass(kind: string, coverKind?: string): "hitsoft" | "hitmetal" | "hitplate" | "hitwood" {
-  const SOFT = new Set(["soldier", "scout", "sniper", "striker", "heavy", "mortar", "flamer", "jumper", "bazooka", "turrettech", "sledge", "lancer", "breaker", "boomer", "juggernaut", "hookshot", "skater", "molotov", "mole"]);
+  const SOFT = new Set(["soldier", "sniper", "striker", "heavy", "mortar", "flamer", "jumper", "bazooka", "sledge", "breaker", "boomer", "juggernaut", "hookshot", "skater", "molotov", "mole"]);
   if (SOFT.has(kind)) return "hitsoft";
   if (kind === "cover") {
     const wood = new Set(["tree", "crate", "log", "stump", "bush", "haybale", "fence", "rack", "tent", "hut", "boat", "barricade", "sandbag", "bones", "grave"]);
@@ -142,6 +139,32 @@ export function impactClass(kind: string, coverKind?: string): "hitsoft" | "hitm
   }
   if (kind === "base" || kind === "wall" || kind === "bunker" || kind === "gunpost" || kind === "mortarpit" || kind === "rocketpost" || kind === "flamepost" || kind === "cannonpost") return "hitplate";
   return "hitmetal"; // vehicles, aircraft, turrets
+}
+
+/** What a unit's ABILITY sounds like as its order starts (the shot, the hit and the blast have their own sounds). */
+export type VerbSound = "boost" | "rev" | "scrape" | "dig" | "jetpack" | "reel" | "punch" | "swing";
+
+/** The verb sound for an order starting (actor kind + order kind), or undefined for a plain walk / shot. Pure. */
+export function verbSound(actorKind: string, order: { kind: string; leap?: boolean; shove?: boolean }): VerbSound | undefined {
+  if (order.kind === "move" && !order.leap) {
+    if (actorKind === "skater") return "boost";
+    if (actorKind === "chopbike") return "rev";
+    if (actorKind === "bulldozer") return "scrape";
+    if (actorKind === "mole") return "dig";
+    if (actorKind === "jumper") return "jetpack";
+  }
+  if (order.kind === "move" && order.leap) return actorKind === "hookshot" ? "reel" : undefined;
+  if (order.kind === "melee") return actorKind === "breaker" && order.shove ? "punch" : "swing";
+  if (order.kind === "slam") return "swing";
+  return undefined;
+}
+
+/** What a unit's death sounds like: a body falling, a hull cooking off, an airframe coming apart. Pure. */
+export function deathSound(kind: string, infantry: boolean, flying: boolean): "fall" | "hull" | "crash" | undefined {
+  if (infantry) return "fall";
+  if (flying || kind === "gunship" || kind === "bomber") return "crash";
+  if (kind === "cover" || kind === "base") return undefined;
+  return "hull";
 }
 
 /** The explosion sample group for a blast of this radius (metres). Pure. */
@@ -323,6 +346,71 @@ export class Sfx {
     src.connect(bp).connect(env).connect(this.master!);
     src.start(t);
     src.stop(t + dur + 0.02);
+  }
+
+  /** A noise band sweeping f0 -> f1 Hz over `dur` s: the body of every synthesized ability sound. */
+  private sweep(f0: number, f1: number, dur: number, peak: number, q = 1.4, delay = 0): void {
+    if (!this.ctx || !this.master || this.muted) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime + delay;
+    const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * dur), ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.Q.value = q;
+    bp.frequency.setValueAtTime(f0, t);
+    bp.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.001, t);
+    env.gain.linearRampToValueAtTime(peak, t + dur * 0.3);
+    env.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(bp).connect(env).connect(this.master);
+    src.start(t);
+    src.stop(t + dur + 0.02);
+  }
+
+  /** A tone gliding f0 -> f1 Hz (an engine rev, a winch whine). */
+  private glide(f0: number, f1: number, dur: number, type: OscillatorType, peak: number, delay = 0): void {
+    if (!this.ctx || !this.master || this.muted) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime + delay;
+    const osc = ctx.createOscillator();
+    osc.type = type;
+    osc.frequency.setValueAtTime(f0, t);
+    osc.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 1400;
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.001, t);
+    env.gain.linearRampToValueAtTime(peak, t + 0.05);
+    env.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.connect(lp).connect(env).connect(this.master);
+    osc.start(t);
+    osc.stop(t + dur + 0.02);
+  }
+
+  /** An ability starting (see verbSound): each fun unit's verb has its own sound. */
+  verb(sound: VerbSound, gain = 1): void {
+    if (!this.ready()) return;
+    if (sound === "boost") { this.sweep(260, 2200, 0.9, 0.32 * gain, 1.1); this.boom(80, 0.3, 0.25 * gain); }
+    else if (sound === "rev") { this.glide(70, 210, 0.5, "sawtooth", 0.13 * gain); this.glide(140, 95, 0.6, "sawtooth", 0.08 * gain, 0.45); }
+    else if (sound === "scrape") { this.sweep(180, 120, 1.1, 0.26 * gain, 0.8); this.glide(48, 62, 1.0, "sawtooth", 0.1 * gain); }
+    else if (sound === "dig") { this.sweep(110, 70, 1.3, 0.3 * gain, 0.7); this.boom(55, 0.6, 0.25 * gain); }
+    else if (sound === "jetpack") { this.sweep(500, 1600, 0.5, 0.22 * gain, 1.2); this.sweep(1400, 400, 0.5, 0.14 * gain, 1.2, 0.45); }
+    else if (sound === "reel") { this.glide(320, 1300, 0.45, "square", 0.06 * gain); this.sweep(900, 2600, 0.3, 0.1 * gain); }
+    else if (sound === "punch") { this.sweep(300, 2400, 0.35, 0.3 * gain, 1.4); }
+    else this.sweep(1600, 600, 0.18, 0.12 * gain, 1.6); // swing: a short airy swish
+  }
+
+  /** A unit going down (see deathSound). */
+  down(sound: "fall" | "hull" | "crash", gain = 1): void {
+    if (sound === "fall") { if (!this.sample("hitsoft", GROUP_GAIN.hitsoft * 0.8 * gain, 0.62)) this.thunk(90, 0.12); return; }
+    if (sound === "hull") { this.explosion(2.4, 0.85 * gain); this.sample("hitmetal", GROUP_GAIN.hitmetal * 0.9 * gain, 0.6); return; }
+    this.explosion(3.4, gain); this.sweep(1200, 160, 1.1, 0.2 * gain, 0.9); // an airframe falling and coming apart
   }
 
   /** Oil catching: a low whump and a rush of flame. */
@@ -527,24 +615,6 @@ export class Sfx {
     src.connect(bp).connect(env).connect(this.master!);
     src.start(t);
     src.stop(t + dur + 0.05);
-  }
-
-  // Orbital lance: a deep descending charge tone under a bright zap.
-  beam(): void {
-    if (!this.ready()) return;
-    const ctx = this.ctx!;
-    const t = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    osc.type = "sawtooth";
-    osc.frequency.setValueAtTime(1600, t);
-    osc.frequency.exponentialRampToValueAtTime(90, t + 0.9);
-    const env = ctx.createGain();
-    env.gain.setValueAtTime(0.28, t);
-    env.gain.exponentialRampToValueAtTime(0.001, t + 0.95);
-    osc.connect(env).connect(this.master!);
-    osc.start(t);
-    osc.stop(t + 1);
-    this.boom(70, 0.5, 0.5);
   }
 
   // ---- the interface: recorded Kenney sounds (CC0), each job its own sound, the old synth blips only as the fallback ----

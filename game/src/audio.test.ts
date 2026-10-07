@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { GROUP_GAIN, GUN_VOICES, SAMPLE_GROUPS, blastGroup, impactClass, voiceFor } from "./audio";
+import { GROUP_GAIN, GUN_VOICES, SAMPLE_GROUPS, blastGroup, deathSound, impactClass, verbSound, voiceFor } from "./audio";
 import { MAP_TRACKS, MENU_TRACKS } from "./music";
 import { MAPS } from "./game/maps";
 import { UNIT_STATS, TROOP_KINDS, isInfantry } from "./game/units";
@@ -26,13 +26,12 @@ describe("weapon voices", () => {
     expect(set.size).toBeGreaterThanOrEqual(20);
   });
 
-  it("is loud where it should be: boom > cannon = blast, marksman rifle > recruit rifle > scout SMG > pistols, siege gun > tank", () => {
+  it("is loud where it should be: boom > cannon = blast, marksman rifle > recruit rifle > .22, siege gun > tank", () => {
     expect(GROUP_GAIN.boomdeep).toBeGreaterThan(GROUP_GAIN.cannon);
     expect(GROUP_GAIN.cannon).toBeGreaterThanOrEqual(GROUP_GAIN.blast);
     const loud = (k: string): number => (GROUP_GAIN[GUN_VOICES[k].group] ?? 0) * GUN_VOICES[k].m;
     expect(loud("sniper")).toBeGreaterThan(loud("soldier"));
-    expect(loud("soldier")).toBeGreaterThan(loud("scout"));
-    expect(loud("scout")).toBeGreaterThan(loud("turrettech") * 0.8);
+    expect(loud("soldier")).toBeGreaterThan(loud("mole"));
     expect(loud("artillery")).toBeGreaterThan(loud("tank"));
     // headroom: every sample is peak-normalised to -3 dBFS, so a gain past ~1.41 clips
     for (const g of Object.values(GROUP_GAIN)) expect(g).toBeLessThanOrEqual(1.4);
@@ -54,8 +53,8 @@ describe("weapon voices", () => {
   it("heavier weapons play lower, lighter ones higher", () => {
     expect(GUN_VOICES.artillery.rate).toBeLessThan(GUN_VOICES.tank.rate);
     expect(GUN_VOICES.tank.rate).toBeLessThan(GUN_VOICES.base.rate);
-    expect(GUN_VOICES.heavy.rate).toBeLessThan(GUN_VOICES.scout.rate);
-    expect(GUN_VOICES.scout.rate).toBeGreaterThan(GUN_VOICES.soldier.rate);
+    expect(GUN_VOICES.heavy.rate).toBeLessThan(GUN_VOICES.skater.rate);
+    expect(GUN_VOICES.skater.rate).toBeGreaterThan(GUN_VOICES.soldier.rate);
   });
 
   it("a hand grenade is thrown (a swish), a bomb is dropped, neither is a gunshot", () => {
@@ -103,5 +102,27 @@ describe("audio files", () => {
   it("neighbouring maps do not share a whole playlist", () => {
     const lists = MAPS.map((m) => [...MAP_TRACKS[m.id]].sort().join());
     expect(new Set(lists).size).toBe(lists.length);
+  });
+});
+
+describe("ability and death sounds (owner 2026-10-07: proper sounds for every action and situation)", () => {
+  it("every fun unit's verb has its own sound, and they are all different", () => {
+    const verbs = {
+      skater: verbSound("skater", { kind: "move" }), chopbike: verbSound("chopbike", { kind: "move" }),
+      bulldozer: verbSound("bulldozer", { kind: "move" }), mole: verbSound("mole", { kind: "move" }),
+      jumper: verbSound("jumper", { kind: "move" }), hookshot: verbSound("hookshot", { kind: "move", leap: true }),
+      breaker: verbSound("breaker", { kind: "melee", shove: true }),
+    };
+    for (const [kind, sound] of Object.entries(verbs)) expect(sound, kind).toBeTruthy();
+    expect(new Set(Object.values(verbs)).size).toBe(Object.keys(verbs).length);
+    expect(verbSound("sledge", { kind: "slam" })).toBe("swing");
+    expect(verbSound("soldier", { kind: "move" })).toBeUndefined(); // a walk is footfalls, not a verb
+    expect(verbSound("soldier", { kind: "shoot" })).toBeUndefined(); // a shot is its gun's voice
+  });
+  it("a trooper falls, a hull cooks off, an aircraft crashes", () => {
+    expect(deathSound("soldier", true, false)).toBe("fall");
+    expect(deathSound("tank", false, false)).toBe("hull");
+    expect(deathSound("gunship", false, true)).toBe("crash");
+    expect(deathSound("cover", false, false)).toBeUndefined();
   });
 });

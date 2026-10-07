@@ -16,7 +16,7 @@ import { hasMotionBank, sampleMotion } from "./infantryMotion";
 // EVERY ATTACK HAS A WORKING ANIMATION (2026-09-23 audit).
 //
 // An attack is three things on screen: the attacker MOVES (wind-up / recoil / swing), something
-// TRAVELS (a round, a blade arc, a jet, a beam) and something LANDS (an impact, a blast, a strike).
+// TRAVELS (a round, a blade arc, a jet) and something LANDS (an impact, a blast, a strike).
 // Each can silently go missing without failing any other test -- a new kind falls through a
 // family switch, an order kind is left out of the renderer's attack filter, an effect type is
 // drawn as a leftover debug line -- and the game still plays. This test runs every attack in the
@@ -322,7 +322,7 @@ describe("every non-gun attack has an animation", () => {
       (sim as unknown as { queuedSupport: { kind: string; point: { x: number; z: number }; dir: { x: number; z: number } }[] })
         .queuedSupport.push({ kind: power.kind, point: { x: 2, z: 0 }, dir: { x: 1, z: 0 } });
       const trace = resolve(sim, [sim.entity("t")!]);
-      const delivery = trace.effects.has("jet") || trace.effects.has("beam") || trace.rounds.length > 0;
+      const delivery = trace.effects.has("jet") || trace.rounds.length > 0;
       const seen = delivery || trace.effects.has("blast") || trace.effects.has("ping") || trace.effects.has("land");
       expect(seen, `${power.kind}: nothing on screen (${[...trace.effects].join(",")})`).toBe(true);
       if (["airstrike", "cluster", "laser", "napalm", "barrage", "railstrike"].includes(power.kind)) {

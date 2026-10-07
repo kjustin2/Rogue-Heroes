@@ -51,6 +51,12 @@ an armour answer for the bot only with 30+ damage (the Molotov is not one).
   splash, a Molotov, the slag) is `sfx.ignite`, never an explosion; dirt/dust puffs (`DIG_FX`: a burrowing Mole, the train's wake) are
   silent; `HORN_FX` = the train horn (`sfx.horn`); `ICE_FX` = ice cracking/sinking (crash); `ERUPT_FX` = a Mole erupting (crash);
   `LAUNCH_FX` = a pad launch (whoosh); the Breaker's punch is a `strike` (thud), not a blast; a Boomer's fuse hisses as its order starts.
+- **Ability and death sounds (2026-10-07 polish)**: `verbSound(actorKind, order)` in `audio.ts` (pure, `audio.test.ts`) names the sound
+  an order makes the moment it starts, played by `main.ts` (`seenOrderIds`): Skater boost (rocket roar), Chop Bike rev, Bulldozer blade
+  scrape, Mole dig rumble, Jump Trooper jet pack, Hookshot reel whine, Breaker rocket fist, any melee or Slam a swing swish. Synthesized
+  (`Sfx.sweep` / `Sfx.glide`), no new files. `deathSound` plays on a kill: a trooper's body falls, a hull cooks off, an aircraft crashes.
+- **No lasers, anywhere** (2026-10-07): the Bastion's Armor Bay power is the **Gun Run** (internal id `laser`, kept for saves): a jet
+  strafes a line and seven cannon shells walk down it. The beam effect, its additive light curtain and its zap sound are deleted.
 - **Flame Post** tanks are dark steel with one orange band: the bright orange drums read as the map's explosive red barrels.
 
 ## FACTIONS play, look and fight differently (2026-09-22)
@@ -89,7 +95,7 @@ an armour answer for the bot only with 30+ damage (the Molotov is not one).
   block (`signatureUnits(id)`, derived): Vanguard = scout, jumper, gunship, interceptor, transport;
   Syndicate = striker, grenadier, flamer, sapper, drone op, APC; Bastion = mortar, engineer,
   artillery, bomber (+ Mortar Turret). The heavy gunner is core because the AI leans on it: any
-  faction without it lost AI-vs-AI games outright (`npm run balance:factions`). THREE support powers each, never shared, starter first (owner 2026-10-01: "should start out with some starter thing and have more options in them based on your tech line ... differ per faction"): Vanguard Recon Sweep (start) / Airstrike (Support Wing) / Paradrop (Air Wing: two Troopers land at the point, field cap respected); Syndicate Smoke Screen (start) / Napalm (Assault: three firebombs, 2-turn burning ground) / Cluster Strike (Ordnance); Bastion Resupply Drop (start) / Orbital Lance (Armor Bay) / Barrage (Siege Works: six heavy shells walk a 4.5m circle). DEFENSES deck, 5-6 each: starters everyone has (Sandbags $60 = neutral low cover; Blast Wall $130), shared tech pieces (Gun Turret, Assault; Flak Nest $230, Armor Bay: the Flak Track's gun on a mount) and the faction's own: Vanguard Sensor Mast (Recon: a 10m spotter relay, no gun), Syndicate Minefield (Ordnance: three mines in a turnable triangle), Bastion Mortar Turret (Ordnance) + MG Bunker (Armor Bay: a Heavy Gunner's suppressing burst behind 150 HP of concrete). `doctrines.test.ts` pins starters / tech gates / one-of-its-own; `sim.test.ts` asserts every deck entry, on every map and faction, either REFUSES TO ARM (locked) or arms AND has a legal spot in its ring (the owner's locked-turret bug, fault-injection proven). The bot drops its strongest affordable DAMAGING power on a crowd (`DAMAGING_SUPPORT`, read top tier first); it does not build defenses or use the utility powers (not yet asked). The flat
+  faction without it lost AI-vs-AI games outright (`npm run balance:factions`). THREE support powers each, never shared, starter first (owner 2026-10-01: "should start out with some starter thing and have more options in them based on your tech line ... differ per faction"): Vanguard Recon Sweep (start) / Airstrike (Support Wing) / Paradrop (Air Wing: two Troopers land at the point, field cap respected); Syndicate Smoke Screen (start) / Napalm (Assault: three firebombs, 2-turn burning ground) / Cluster Strike (Ordnance); Bastion Resupply Drop (start) / Gun Run (Armor Bay) / Barrage (Siege Works: six heavy shells walk a 4.5m circle). DEFENSES deck, 5-6 each: starters everyone has (Sandbags $60 = neutral low cover; Blast Wall $130), shared tech pieces (Gun Turret, Assault; Flak Nest $230, Armor Bay: the Flak Track's gun on a mount) and the faction's own: Vanguard Sensor Mast (Recon: a 10m spotter relay, no gun), Syndicate Minefield (Ordnance: three mines in a turnable triangle), Bastion Mortar Turret (Ordnance) + MG Bunker (Armor Bay: a Heavy Gunner's suppressing burst behind 150 HP of concrete). `doctrines.test.ts` pins starters / tech gates / one-of-its-own; `sim.test.ts` asserts every deck entry, on every map and faction, either REFUSES TO ARM (locked) or arms AND has a legal spot in its ring (the owner's locked-turret bug, fault-injection proven). The bot drops its strongest affordable DAMAGING power on a crowd (`DAMAGING_SUPPORT`, read top tier first); it does not build defenses or use the utility powers (not yet asked). The flat
   stat passives were replaced by a `doctrine` rule, each read by one clause in sim.ts:
   **Rapid Response** (Vanguard: `troopCooldownFor`/`supportCooldownFor` a turn shorter, min 1;
   deploy ring +4m), **Scavengers** (Syndicate: `recordDamage` pays 30% of a destroyed enemy troop's
@@ -126,7 +132,7 @@ an armour answer for the bot only with 30+ damage (the Molotov is not one).
   specialization, pick one of each pair).
   - **Every threat has an answer outside the road that makes it**: Recon owns the Flak Track, Flak Nest, Scout,
     Marksman and Drone Op (air answer + eyes); Assault owns the Rocketeer, Striker, Heavy, Jump Trooper (armour answer
-    + pressure); Armor Bay is tanks/APC/bunker/Lance only.
+    + pressure); Armor Bay is tanks/bunker/Gun Run only.
   - **Aircraft and artillery are the deep end**: Siege Works and Air Wing need Armor Bay AND Recon (radar / spotters),
     so the plane rush costs ~$700 of tech before the first gunship. `tech.test.ts` pins that ordering.
   - **Upgrades must beat buying another unit**: researching spends the base order (a deploy forgone) plus $130-160, so

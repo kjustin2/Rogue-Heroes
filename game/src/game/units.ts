@@ -188,12 +188,8 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   jumper: foot({ jump: true, moveRange: 9.0, moveSpeed: 8.5, shotDamage: 36, weaponRange: 17, spread: 2.6, accurateFraction: 0.44, spreadPerMeter: 0.11, accuracyLabel: "carbine", hpMultiplier: 0.95, aiValue: 6 }),
 
   // --- batch 3 (2026-10-03): the new troopers ---
-  // TURRET TECH: a field hand that sets down two sentries a sortie (a counter like grenades).
   // SLEDGE: a huge hammer. Fast, brittle, and every foe within 3m of it is flung when it swings (see queueSlam).
   sledge: foot({ moveRange: 10.5, moveSpeed: 11.2, shotDamage: 14, weaponRange: 10, accurateFraction: 0.5, hpMultiplier: 0.92, accuracyLabel: "sidearm", meleeRange: 0.9, meleeMultiplier: 1, aiValue: 6 }),
-  // RICOCHET GUNNER: a hit glances on to the next two foes within 3.2m (a warm bullet, not a beam): the answer to a clump.
-  // BOUNTY HUNTER: a long rifle and a price on every head: each kill pays cash.
-  // TRENCHER: digs a whole squad in (see queueDig).
 
   // --- Round 6 (2026-10-06, owner: "only FUN units") ---
   // BREAKER: a rocket gauntlet. Fast; its Punch dashes in 7m and sends one foe ~18m (into water, off a ledge, into a wall).
@@ -274,12 +270,12 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "striker", label: "Striker", role: "Melee", cost: 470, cooldown: 2, tech: "assault", tip: "CHARGE: the strike order closes up to 6.5m for free before the blade lands, so anything within a lunge is already in reach." },
   { kind: "heavy", label: "Heavy Gunner", role: "Suppression", cost: 250, cooldown: 2, tech: "assault", tip: "Machine-gun bursts SUPPRESS whoever they hit: one action point and a forced crouch next turn. Strays rake nearby targets." },
   { kind: "mortar", label: "Mortar Team", role: "Indirect", cost: 260, cooldown: 3, tech: "ordnance", tip: "High-arc fire over walls and ridges. SMOKE order: a 3-turn cloud that swallows flat shots; arcing rounds sail over." },
-  { kind: "jumper", label: "Jump Trooper", role: "Vertical", cost: 170, cooldown: 2, tech: "shock", tip: "Jet pack: its move is a leap over cliffs, water and walls. Landing beside an enemy SLAMS it. Flak can catch it mid-arc." },
+  { kind: "jumper", label: "Jump Trooper", role: "Vertical", cost: 170, cooldown: 2, tech: "shock", tip: "Jet pack: its move is a leap over cliffs, water and walls. It lands like a bomb, hurting and throwing every foe within 2.5m. Flak can catch it mid-arc." },
   { kind: "flamer", label: "Flamer", role: "Burn", cost: 260, cooldown: 2, tech: "incendiary", tip: "Short-range flame projector. Hits leave burning ground for 2 turns: run, don't crouch. FEAR: enemy infantry near the flames break and run from them. Its fuel tanks explode when shot." },
   { kind: "bazooka", label: "Rocketeer", role: "Anti-Armor", cost: 300, cooldown: 2, tech: "shock", tip: "Shoulder-fired rocket: hits vehicles half again as hard (96 against armour). Slow, short-ranged and fragile: armour will hunt it." },
   { kind: "sledge", label: "Sledge", role: "Hammer", cost: 360, cooldown: 3, tech: "shock", tip: "SLAM: swings a huge hammer in a circle: every foe within 3m is hurt and flung. Fast, brittle, brutal against a clump or a ledge." },
   { kind: "breaker", label: "Breaker", role: "Rocket Fist", cost: 300, cooldown: 2, tech: "shock", tip: "PUNCH: dashes up to 7m and sends one foe flying ~18m: into water, off the map, into a wall. Vehicles barely budge." },
-  { kind: "boomer", label: "Boomer", role: "Kamikaze", cost: 110, cooldown: 1, tech: "demolition", tip: "Fast, fragile, no gun. DETONATE: blows itself up, wrecking and flinging everything within 3.5m. Shot first, it blows where it falls." },
+  { kind: "boomer", label: "Boomer", role: "Kamikaze", cost: 110, cooldown: 1, tech: "demolition", tip: "Fast, fragile, no gun. DETONATE: blows itself up, wrecking and flinging everything within 3.6m. Shot first, it blows where it falls." },
   { kind: "juggernaut", label: "Juggernaut", role: "Blast Cannon", cost: 340, cooldown: 3, tech: "fieldworks", tip: "Slow and tough. Its shoulder cannon's blasts throw troopers far." },
   { kind: "hookshot", label: "Hookshot", role: "Grapple", cost: 170, cooldown: 2, tech: "shock", tip: "Its harpoon DRAGS whatever it hits to its feet (vehicles barely budge). Its Reel hops 10m onto ledges." },
   { kind: "skater", label: "Rocket Skater", role: "Bowler", cost: 240, cooldown: 2, tech: "shock", tip: "Fastest trooper. Every move is a rocket boost that bowls over troopers on its line." },
@@ -328,7 +324,7 @@ export const DEFENSE_CATALOG: readonly DefenseSpec[] = [
   { kind: "gunpost", label: "Gun Post", role: "Manned", cost: 90, tip: "A sandbag ring with a heavy machine gun: it fires only while a trooper crews it (Man it). Out-ranges and out-shoots a Bunker; it dies if the gunner does." },
   { kind: "mortarpit", label: "Mortar Pit", role: "Manned", cost: 140, tech: "ordnance", tip: "A dug-in mortar that fires only while a trooper crews it (Man it). Longer reach and harder hits than a Mortar Team, behind sandbags." },
   { kind: "rocketpost", label: "Rocket Post", role: "Manned", cost: 170, tech: "shock", tip: "A sandbag ring with an anti-armour launcher: it fires only while a trooper crews it (Man it). One heavy rocket a shot, long reach, hard on hulls." },
-  { kind: "flamepost", label: "Flame Post", role: "Manned", cost: 150, tech: "incendiary", tip: "A sandbag ring with a flame projector: it fires only while a trooper crews it (Man it). Short reach; whoever it hits burns for three turns." },
+  { kind: "flamepost", label: "Flame Post", role: "Manned", cost: 150, tech: "incendiary", tip: "A sandbag ring with a flame projector: it fires only while a trooper crews it (Man it). Short reach; whoever it hits burns for 3 turns." },
   { kind: "sensor", label: "Sensor Mast", role: "Spotter", cost: 150, tech: "recon", tip: "No gun. Every ally within 10m shoots straighter, like a spotter standing beside them." },
   { kind: "minefield", label: "Minefield", role: "Trap", cost: 110, tech: "ordnance", tip: "Three hidden mines in a small triangle. The first enemy to step on each sets it off." },
   { kind: "exturret", label: "Mortar Turret", role: "Siege", cost: 360, tech: "ordnance", tip: "Stationary splash battery: hits harder and soaks more than a gun turret. Clears cover and clusters; detonates if its magazine is hit." },
@@ -383,7 +379,7 @@ export const SUPPORT_POWERS: readonly SupportPowerSpec[] = [
   // Syndicate: Smoke Screen / Napalm / Cluster Strike. Bastion: Resupply / Orbital Lance / Barrage.
   { kind: "airstrike", label: "Airstrike", role: "Line", cost: 320, cooldown: 3, tech: "support", tip: "A strike wing carpets a line of bombs through the target point, aligned away from your base. Hardened HQs are unaffected." },
   { kind: "cluster", label: "Cluster Strike", role: "Area", cost: 300, cooldown: 3, tech: "ordnance", tip: "Bomblets saturate a wide area around the target point. Hardened HQs are unaffected." },
-  { kind: "laser", label: "Orbital Lance", role: "Beam", cost: 420, cooldown: 4, tech: "armor", tip: "An orbital beam cuts a burning line through the target point. Hardened HQs are unaffected." },
+  { kind: "laser", label: "Gun Run", role: "Strafe", cost: 420, cooldown: 4, tech: "armor", tip: "A jet strafes a line through the target point: seven cannon shells walk down it. Hardened HQs are unaffected." },
   { kind: "reconsweep", label: "Recon Sweep", role: "Intel", cost: 60, cooldown: 2, tip: "A spotter plane maps the enemy: you see every enemy unit's next order in red, and every foe is MARKED so your shooters hit them straighter next turn. Click anywhere to call it." },
   { kind: "smokescreen", label: "Smoke Screen", role: "Cover", cost: 90, cooldown: 2, tip: "Smoke shells land on the point: a 3-turn cloud that swallows flat shots through it. Arcing fire sails over. Cover an advance." },
   { kind: "resupply", label: "Resupply Drop", role: "Sustain", cost: 140, cooldown: 3, tip: "A crate drop at the point: every one of your units within 4m heals 40 and refills its grenades." },

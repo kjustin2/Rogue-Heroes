@@ -38,31 +38,31 @@ export interface TechNode {
 //    decision (you can never have both halves of a pair), with a concrete combat payoff.
 export const TECH_TREE: readonly TechNode[] = [
   // ===== RECON: eyes, precision, the answer to air =====
-  { id: "recon", name: "Recon Doctrine", branch: "recon", cost: 100, requires: [], tier: 1, blurb: "Scouts, Marksmen and the Flak Track: eyes, precision, and the answer to air." },
-  { id: "marksman", name: "Sharpshooters", branch: "recon", cost: 140, requires: ["recon"], tier: 2, blurb: "Ricochet Gunners and the Rail Strike: kill what is worth killing." },
+  { id: "recon", name: "Recon Doctrine", branch: "recon", cost: 100, requires: [], tier: 1, blurb: "Marksmen and the Flak Track: eyes, precision, and the answer to air." },
+  { id: "marksman", name: "Sharpshooters", branch: "recon", cost: 140, requires: ["recon"], tier: 2, blurb: "The Rail Strike: kill what is worth killing." },
   { id: "radar", name: "Radar Net", branch: "recon", cost: 150, requires: ["recon"], tier: 2, blurb: "The EMP Burst, and the Watch Radar base upgrade: see the enemy's orders every turn." },
-  { id: "optics", name: "Optics Array", branch: "recon", cost: 130, requires: ["recon"], tier: 4, excludes: ["ghillie"], effect: { spotterBoost: 1 }, blurb: "Scout and Marksman relays sharpen nearby allied fire far more. Locks out Ghillie Doctrine." },
+  { id: "optics", name: "Optics Array", branch: "recon", cost: 130, requires: ["recon"], tier: 4, excludes: ["ghillie"], effect: { spotterBoost: 1 }, blurb: "Marksman and Sensor Mast relays sharpen nearby allied fire far more. Locks out Ghillie Doctrine." },
   { id: "ghillie", name: "Ghillie Doctrine", branch: "recon", cost: 130, requires: ["recon"], tier: 4, excludes: ["optics"], effect: { evasion: 1.4 }, blurb: "Shots fired at your units scatter much wider. Locks out Optics Array." },
   // ===== ASSAULT: pressure, shock, the answer to armour =====
   { id: "assault", name: "Assault Doctrine", branch: "assault", cost: 100, requires: [], tier: 1, blurb: "Strikers, Heavy Gunners and the Gun Turret: pressure." },
-  { id: "shock", name: "Shock Troops", branch: "assault", cost: 150, requires: ["assault"], tier: 2, blurb: "Jump Troopers, Breakers, Rocketeers, Sledges, Ironclads and the Rocket Post: the answer to armour, and a fist for the front." },
+  { id: "shock", name: "Shock Troops", branch: "assault", cost: 150, requires: ["assault"], tier: 2, blurb: "Jump Troopers, Breakers, Hookshots, Rocket Skaters, Rocketeers, Sledges and the Rocket Post: the answer to armour, and a fist for the front." },
   { id: "breach", name: "Breaching Rounds", branch: "assault", cost: 140, requires: ["assault"], tier: 4, excludes: ["bulwark"], effect: { infantryDamage: 1.25 }, blurb: "+25% infantry weapon damage. Locks out Bulwark Training." },
   { id: "bulwark", name: "Bulwark Training", branch: "assault", cost: 140, requires: ["assault"], tier: 4, excludes: ["breach"], effect: { infantryHp: 1.25 }, blurb: "Infantry deploy with +25% HP. Locks out Breaching Rounds." },
-  { id: "ordnance", name: "Ordnance Lab", branch: "assault", cost: 160, requires: ["assault"], tier: 2, blurb: "Grenadiers, Mortars, the Mortar Pit and Turret, Minefields, Cluster Strike: area denial." },
-  { id: "incendiary", name: "Fire Discipline", branch: "assault", cost: 170, requires: ["ordnance"], tier: 3, excludes: ["demolition"], blurb: "Flamers, the Flame Post and Napalm: set them alight. Locks out Demolitions." },
+  { id: "ordnance", name: "Ordnance Lab", branch: "assault", cost: 160, requires: ["assault"], tier: 2, blurb: "Mortars, the Mortar Pit and Turret, Minefields, Cluster Strike: area denial." },
+  { id: "incendiary", name: "Fire Discipline", branch: "assault", cost: 170, requires: ["ordnance"], tier: 3, excludes: ["demolition"], blurb: "Flamers, Molotovs, the Flame Post and Napalm: set them alight. Locks out Demolitions." },
   { id: "demolition", name: "Demolitions", branch: "assault", cost: 170, requires: ["ordnance"], tier: 3, excludes: ["incendiary"], blurb: "Boomers and the Minefield Drop: break and bury. Locks out Fire Discipline." },
   { id: "thermobarics", name: "Thermobarics", branch: "assault", cost: 160, requires: ["ordnance"], tier: 4, excludes: ["cluster"], effect: { splashDamage: 1.4 }, blurb: "+40% explosive and grenade splash damage. Locks out Cluster Munitions." },
   { id: "cluster", name: "Cluster Munitions", branch: "assault", cost: 160, requires: ["ordnance"], tier: 4, excludes: ["thermobarics"], effect: { splashRadius: 1.5 }, blurb: "Explosive blasts cover 50% more ground. Locks out Thermobarics." },
   // ===== ARMOR: wheels, steel, then the deep end =====
-  { id: "motorpool", name: "Motor Pool", branch: "armor", cost: 140, requires: ["assault"], tier: 2, blurb: "Runabouts and Hornets: fast light machines that carry the fight." },
-  { id: "armor", name: "Armor Bay", branch: "armor", cost: 200, requires: ["motorpool"], tier: 3, blurb: "Tanks, the MG Bunker and the Orbital Lance: rolling steel." },
+  { id: "motorpool", name: "Motor Pool", branch: "armor", cost: 140, requires: ["assault"], tier: 2, blurb: "Runabouts and Chop Bikes: fast light machines that carry the fight." },
+  { id: "armor", name: "Armor Bay", branch: "armor", cost: 200, requires: ["motorpool"], tier: 3, blurb: "Tanks, the MG Bunker and the Gun Run: rolling steel." },
   { id: "plating", name: "Reactive Plating", branch: "armor", cost: 160, requires: ["armor"], tier: 4, excludes: ["hunter"], effect: { vehicleHp: 1.25 }, blurb: "Vehicles deploy with +25% HP. Locks out Hunter Rounds." },
   { id: "hunter", name: "Hunter Rounds", branch: "armor", cost: 160, requires: ["armor"], tier: 4, excludes: ["plating"], effect: { vsVehicleDamage: 1.3 }, blurb: "+30% damage dealt to vehicles. Locks out Reactive Plating." },
   { id: "siege", name: "Siege Works", branch: "armor", cost: 240, requires: ["armor", "recon"], tier: 4, blurb: "Artillery: needs armour to haul it and Recon to spot for it." },
   { id: "airwing", name: "Air Wing", branch: "armor", cost: 260, requires: ["armor", "recon"], tier: 4, blurb: "Aircraft: needs Armor Bay for the airfield and Recon for the radar." },
   // ===== SUPPORT: keep them fighting, then pick a school =====
   { id: "support", name: "Support Wing", branch: "support", cost: 150, requires: ["recon"], tier: 2, blurb: "The Airstrike and the Medevac: keep your force in the fight." },
-  { id: "fieldworks", name: "Field Works", branch: "support", cost: 150, requires: ["assault"], tier: 2, blurb: "Turret Techs, Juggernauts and the Sentry Drop: dig in and hold." },
+  { id: "fieldworks", name: "Field Works", branch: "support", cost: 150, requires: ["assault"], tier: 2, blurb: "Juggernauts, Mole Sappers, Bulldozers and the Sentry Drop: dig in and hold." },
 ];
 
 

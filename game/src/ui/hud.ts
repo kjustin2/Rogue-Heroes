@@ -102,7 +102,7 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "man", label: "Man", tip: "Walk up to a free post (Gun, Mortar, Rocket, Cannon or Flame) and crew it. It fires from next turn, twice a turn. 1 AP." },
   { id: "dismount", label: "Leave", tip: "Let the crew step away from this emplacement. It stops firing until someone crews it again." },
   { id: "slam", label: "Slam", tip: "Sledge only. Swing the hammer in a circle: every foe within 3m is hurt and flung far. 1 AP." },
-  { id: "detonate", label: "Detonate", tip: "Boomer only. Blows itself up after its other orders: everything within 3.5m is wrecked and flung. Move first, then Detonate. 1 AP." },
+  { id: "detonate", label: "Detonate", tip: "Boomer only. Blows itself up after its other orders: everything within 3.6m is wrecked and flung. Move first, then Detonate. 1 AP." },
 ];
 
 // WHAT THE CARD DOES, AS AN INSTRUCTION. The catalog tips above are reference text (what the

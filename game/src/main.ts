@@ -47,7 +47,7 @@ import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isVehicleKind
 import { TECH_TREE, troopsUnlockedBy } from "./game/tech";
 import { supportPowerSpec, troopSpec, unitStats } from "./game/units";
 import { factionDef, factionTroopLabel, signatureUnits } from "./game/factions";
-import { sfx } from "./audio";
+import { deathSound, sfx, verbSound } from "./audio";
 import { music } from "./music";
 import { progression, COSMETICS, COSMETIC_CATEGORIES, type Cosmetic } from "./progression";
 import { battleReward } from "./progression";
@@ -2155,6 +2155,7 @@ let lastHudUpdateAt = 0;
 let lastHudPhase = sim.phase;
 let lastHudLogHead = "";
 const seenProjectileIds = new Set<string>();
+const seenOrderIds = new Set<string>();
 // Debug-seam slow motion for the resolve clock (1 = normal). Filmstrips shoot swings at 0.25.
 let resolveScale = 1;
 const seenEffectIds = new Set<string>();
@@ -2340,12 +2341,26 @@ function processBattleEvents(): void {
         aliveLastFrame.add(entity.id);
       } else if (wasAlive) {
         aliveLastFrame.delete(entity.id);
+        const death = deathSound(entity.kind, isInfantryKind(entity.kind), Boolean(entity.flying));
+        if (death) sfx.down(death, stage.isInView(entity.position) ? 1 : 0.35);
         resolveCam.note(entity.position.x, entity.position.z, POI_WEIGHT.kill, 1.6);
         // Base kills are the end of the battle; hold longer for those.
         resolveCam.freeze(settings.reducedMotion ? 0 : entity.kind === "base" ? 0.2 : 0.09);
         feel.addTrauma(entity.kind === "base" ? 0.4 : 0.16);
       }
     }
+  }
+  // ABILITY SOUNDS: each fun unit's verb is heard the moment its order starts (a boost, a rev, a punch).
+  for (const order of sim.orders) {
+    if (order.elapsed <= 0 || seenOrderIds.has(order.id)) continue;
+    seenOrderIds.add(order.id);
+    const actor = sim.entities.find((e) => e.id === order.actorId);
+    const sound = actor && verbSound(actor.kind, order);
+    if (sound) sfx.verb(sound, stage.isInView(actor.position) ? 1 : 0.35);
+  }
+  if (seenOrderIds.size > 400) {
+    const live = new Set(sim.orders.map((o) => o.id));
+    for (const id of seenOrderIds) if (!live.has(id)) seenOrderIds.delete(id);
   }
   for (const projectile of sim.projectiles) {
     if (seenProjectileIds.has(projectile.id)) continue;
@@ -2442,11 +2457,6 @@ function processBattleEvents(): void {
       sfx.clank(heard);
     } else if (effect.type === "ping" && effect.color === 0x2b2430) {
       sfx.place(heard);
-    } else if (effect.type === "beam") {
-      sfx.beam();
-      resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.strike, 2);
-      feel.addTrauma(0.22);
-      stage.punch(0.3);
     }
   }
   // Keep the seen-sets bounded by dropping ids no longer in play. A blind clear() would let a

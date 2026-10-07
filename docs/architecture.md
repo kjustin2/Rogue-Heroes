@@ -335,7 +335,7 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   firing unit to fifteen visual families; `syncProjectiles` only feeds it a position history.
   On top of the family, `UNIT_ROUND` gives each infantry kind its own round shape (tandem burst beads,
   twin side-by-side rounds, spinning brass rings, needle/collar, stubby slug); still warm-only. Check
-  with `KINDS=scout,lancer npm run shots:gpu -- projfollow`.
+  with `KINDS=soldier,sniper npm run shots:gpu -- projfollow`.
   Rules: (1) trails are sampled by WORLD DISTANCE (`pushTrailPoint`/`trailStep`), never per render
   frame — a frame-sampled history is a different length at every refresh rate and resolve speed
   (at quarter speed nine flame blobs stacked in 20cm and read as a balloon); (2) blast shapes scale
@@ -370,7 +370,7 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   (2m) radius** (a vehicle kill's ~4m blast covered half a squad; the sim radius is untouched), and the shell
   dust CROWN is a low thin ring (it hovered at 0.9m, 2.4x thick and inked, and read as a beige plate).
   Evidence: `shots:gpu -- volley temporal`.
-  (6) **ONE BALLISTIC LANGUAGE** (2026-09-22, owner: "some projectiles look like laser beams"): every round is a physical bullet, tracer or shell in WARM colours. No team-colour tracers, no energy darts, no muzzle-to-target lance tubes, no electric impact stars. The sim's `bolt` rounds (APC/turret/aircraft/flak) draw as the `mg` family; the base relay's as a `tank` shell. The only electric visual left is the lightning map event (`makeLightning`); the orbital-lance support strike is a deliberate sky strike, not a unit's weapon.
+  (6) **ONE BALLISTIC LANGUAGE** (2026-09-22, owner: "some projectiles look like laser beams"): every round is a physical bullet, tracer or shell in WARM colours. No team-colour tracers, no energy darts, no muzzle-to-target lance tubes, no electric impact stars. The sim's `bolt` rounds (APC/turret/aircraft/flak) draw as the `mg` family; the base relay's as a `tank` shell. The only electric visual left is the lightning map event (`makeLightning`); the old orbital-lance beam is gone too (2026-10-07: it is the Gun Run, a jet strafe).
 - **Frame loop is guarded** (`frame` → `frameBody` in try/catch, `__rht.frameErrors()`); one bad frame never kills rAF again.
 - **`dt` is floored at 0.** rAF's timestamp is the frame's START and can predate the boot-time `last`, so the first frame's delta was negative — and `trauma - dt*1.7` turned it into a full-strength camera shake on the title screen (the "earthquake before the slow pan"). `npm run probe:intro` (real GPU) measures camera jitter from boot: 1.48 before, 0.03 after; it fails above 0.2.
 - **`window.__rht`** is the entire test/debug surface (sim + `endTurn`/`reset`/

@@ -151,9 +151,9 @@ const RESOLVE_HARD_CEILING = 20;
 // Support powers that land damage (the bot's strike logic only drops these on a crowd).
 const DAMAGING_SUPPORT: ReadonlySet<SupportPowerKind> = new Set<SupportPowerKind>(["airstrike", "cluster", "laser", "napalm", "barrage"]);
 /** A Sensor Mast's spotter relay reaches this far (a spotter unit's reaches 6.2m). */
-const SENSOR_REACH = 10;
-const RESUPPLY_RADIUS = 4;
-const RESUPPLY_HEAL = 40;
+export const SENSOR_REACH = 10;
+export const RESUPPLY_RADIUS = 4;
+export const RESUPPLY_HEAL = 40;
 // Half-angle of a unit's FRONT: a shot from outside this ±60° wedge around its facing flanks it.
 const FRONT_ARC_HALF = Math.PI / 3;
 // Salvage economy: each vehicle wreck holds this much money, stripped this fast by an
@@ -169,20 +169,20 @@ export const DEPOT_INCOME = 25;
 const PICKUP_REACH = 0.95;
 /** Seats per carrier: the Runabout seats five riders (its own MG always fires). */
 const carrierCapacity = (_kind: EntityKind): number => 5; // ponytail: the Runabout is the only carrier
-const SLAM_RADIUS = 3.0; // the Sledge's hammer circle
+export const SLAM_RADIUS = 3.0; // the Sledge's hammer circle
 const SLAM_DAMAGE = 30;
 const SLAM_THROW = 8;
 // BREAKER (owner 2026-10-06: "a unit that can move fast and punch people SUPER far"): the punch is a shove twice as hard that also hurts.
 export const BREAKER_CHARGE = 7;
 const PUNCH_FORCE = 225; // 225/30 x KNOCKBACK_SCALE = 18m on a trooper: the tooltip's number
-const PUNCH_MAX = 18;
+export const PUNCH_MAX = 18;
 const PUNCH_DAMAGE = 26;
 // BOOMER (owner: "a cheaper unit that Kamikazes"): it blows itself up; everything within BOOM_RADIUS is hurt and flung.
 export const BOOM_RADIUS = 3.6;
 // ROUND 7 (2026-10-07): HOOKSHOT drags a hit foe to its feet; ROCKET SKATER bowls troopers off its line; MOLE SAPPER erupts.
 const HOOK_PULL_MAX = 16;
 const HOOK_YANK_DAMAGE = 20;
-const HOOK_REEL = 10;
+export const HOOK_REEL = 10;
 const BOWL_WIDTH = 0.9;
 const BOWL_DAMAGE = 12;
 const BOWL_THROW = 4;
@@ -196,7 +196,7 @@ const BIKE_THROW = 4.5;
 const BLADE_HALF = 1.6;
 const PLOW_DAMAGE = 10;
 // JUMP TROOPER, death from above (2026-10-07): every foe within this of the landing is hurt and thrown.
-const JUMP_SLAM_RADIUS = 2.5;
+export const JUMP_SLAM_RADIUS = 2.5;
 const JUMP_SLAM_THROW = 4;
 // Effect colours that name a SOUND (main.ts maps them): a pad launch whoosh, silent dirt/dust puffs, the train horn, ice cracking.
 export const LAUNCH_FX = 0xffe14a;
@@ -206,16 +206,16 @@ export const ICE_FX = 0xd8f0ff;
 export const ERUPT_FX = 0x8a6a41;
 const BOOM_DAMAGE = 112;
 const BOOM_THROW = 7.5;
-const BURN_STATUS_TURNS = 3; // a trooper set alight burns this many turns...
+export const BURN_STATUS_TURNS = 3; // a trooper set alight burns this many turns...
 const BURN_STATUS_DAMAGE = 8; // ...for this much a turn
-const SENTRY_COST_TURNS = 4;
+export const SENTRY_COST_TURNS = 4;
 // Runabout carry: the ground lift needs the passenger beside the hull, and unloads beside it too.
 const APC_LOAD_REACH = 1.2;
 const APC_UNLOAD_REACH = 3;
 // STRIKER CHARGE: metres of free closing distance folded into the strike order.
 export const STRIKER_CHARGE = 6.5;
 // Hull-down tanks take this fraction of incoming shot damage.
-const HULL_DOWN_DAMAGE = 0.7;
+export const HULL_DOWN_DAMAGE = 0.7;
 // FEAR (flamer): enemy infantry this close to burning ground at turn start run from it.
 export const FLAMER_FEAR_RADIUS = 6;
 // CARPET (bomber): three bombs in a line along the heading, this far apart.
@@ -258,14 +258,14 @@ const CONDUIT_OUTAGE_TURNS = 2;
 const LEAP_SPEED = 7.5;
 const LEAP_REACH = 3.6;
 const LEAP_UP = 1.35;
-const BURN_TURNS = 2;
+export const BURN_TURNS = 2;
 const BURN_DAMAGE = 14;
 // How many of each placement a side may keep standing at once.
 // MANNED EMPLACEMENTS: a trooper this close (past both radii) is crewing it; farther and it has left.
 const MOUNT_CREW_REACH = 1.4;
 // Mortar smoke round: a cloud that blocks flat line of fire through it for a few turns.
 const SMOKE_RADIUS = 3;
-const SMOKE_TURNS = 3;
+export const SMOKE_TURNS = 3;
 const SMOKE_COLOR = 0x9aa3a8;
 // Sniper mark: every OTHER friendly shooter gets this spread multiplier and accurate-band bonus
 // against a unit a sniper fired at, until the turn after.
@@ -353,14 +353,13 @@ export interface EnemyIntent {
 
 export interface VisualEvent {
   id: string;
-  // "jet" = a strike aircraft flying from->to; "beam" = an orbital lance burning the from->to
-  // line; "topple" = a tall cover column falling from `from` toward `to`.
+  // "jet" = a strike aircraft flying from->to; "topple" = a tall cover column falling from `from` toward `to`.
   // "strike" = a melee blow landing at `to`, swung from `from`.
   // "bolt" = lightning striking `to` from the sky; "land" = a jump trooper touching down at `to`.
   // "shot" = a gun-run burst (gunship strafe): tracers from the aircraft's gun at `fromHeight`
   // down into `to`. It is resolved as direct damage, so it carries no Projectile of its own.
   // "clash" = two rounds meeting in mid-air at `fromHeight`; its colour names the family (CLASH_SPARK / CLASH_BOLT / CLASH_BLAST).
-  type: "shot" | "impact" | "blast" | "ping" | "jet" | "beam" | "topple" | "strike" | "bolt" | "land" | "clash";
+  type: "shot" | "impact" | "blast" | "ping" | "jet" | "topple" | "strike" | "bolt" | "land" | "clash";
   from: Vec2;
   to: Vec2;
   color: number;
@@ -628,7 +627,7 @@ export class TacticalSim {
   pendingSupport: SupportPowerKind | undefined;
   // Support strikes committed this command phase; they fly in during the next resolve.
   private queuedSupport: { kind: SupportPowerKind; point: Vec2; dir: Vec2; team?: Team }[] = [];
-  // Timed one-shot visual events (strike jets, orbital beams) played during a resolve.
+  // Timed one-shot visual events (strike jets) played during a resolve.
   private pendingFx: { at: number; type: VisualEvent["type"]; from: Vec2; to: Vec2; color: number; duration: number; radius?: number; fired?: boolean }[] = [];
 
   private orderSeq = 0;
@@ -1283,7 +1282,7 @@ export class TacticalSim {
     }
   }
 
-  // Fire a unit's explosive round (tank/artillery shell, mortar/grenadier round, turret) at a
+  // Fire a unit's explosive round (tank/artillery shell, mortar round, turret) at a
   // ground spot rather than a specific enemy part.
   queueShootAt(destination: Vec2): boolean {
     const actor = this.requirePlayerActor();
@@ -1986,7 +1985,7 @@ export class TacticalSim {
     return true;
   }
 
-  // ---- Off-map support powers (airstrike / cluster / orbital lance) ----
+  // ---- Off-map support powers (airstrike / cluster / gun run) ----
 
   setPendingSupport(kind: SupportPowerKind | undefined): boolean {
     const blocked = kind && this.supportFailureReason(this.selected, kind);
@@ -2059,7 +2058,7 @@ export class TacticalSim {
     this.pushLog(
       kind === "airstrike" ? `${base.name} tasks a strike wing — bombs on the next resolve`
       : kind === "cluster" ? `${base.name} authorizes a cluster strike — saturation on the next resolve`
-      : kind === "laser" ? `${base.name} requests the orbital lance — beam on the next resolve`
+      : kind === "laser" ? `${base.name} calls a gun run — strafing on the next resolve`
       : kind === "reconsweep" ? `${base.name} sends a spotter plane — the enemy's next orders will be revealed`
       : kind === "smokescreen" ? `${base.name} calls smoke on the point — it blooms on the next resolve`
       : kind === "paradrop" ? `${base.name} sends a paradrop — two troopers land on the next resolve`
@@ -2165,10 +2164,13 @@ export class TacticalSim {
         this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: 0x9ef0b8, duration: 1.5 });
         this.pendingStrikes.push({ at: 1.0, point, radius: RESUPPLY_RADIUS, damage: 0, kind: "resupply", team: call.team });
       } else {
-        // The lance burns for ~2s and its detonations sweep down the line with it.
+        // GUN RUN (internal id "laser"; it was a beam until 2026-10-07, and the game has no lasers):
+        // a jet strafes the line and its cannon shells walk down it.
         const from = clampToArena({ x: point.x - dir.x * 4.5, z: point.z - dir.z * 4.5 });
         const to = clampToArena({ x: point.x + dir.x * 4.5, z: point.z + dir.z * 4.5 });
-        this.pendingFx.push({ at: 0.7, type: "beam", from, to, color: 0xff5a4d, duration: 1.9 });
+        const runIn = clampToArena({ x: point.x - dir.x * 16, z: point.z - dir.z * 16 });
+        const runOut = clampToArena({ x: point.x + dir.x * 16, z: point.z + dir.z * 16 });
+        this.pendingFx.push({ at: 0.2, type: "jet", from: runIn, to: runOut, color: 0xffb84a, duration: 1.5 });
         for (let i = 0; i < 7; i += 1) {
           const t = i / 6;
           const p = { x: from.x + (to.x - from.x) * t, z: from.z + (to.z - from.z) * t };
@@ -3835,7 +3837,7 @@ export class TacticalSim {
     }
   }
 
-  /** What a thrown or lobbed explosive is CALLED in the log: a bomber drops bombs, a soldier or grenadier throws grenades, everything else (mortar, artillery, tank, posts) fires shells. */
+  /** What a thrown or lobbed explosive is CALLED in the log: a bomber drops bombs, a soldier throws grenades, everything else (mortar, artillery, tank, posts) fires shells. */
   private roundWord(actor: CombatEntity | undefined): "bomb" | "grenade" | "shell" | "bottle" {
     if (actor && isAirBomber(actor)) return "bomb";
     if (actor?.kind === "molotov") return "bottle";
@@ -4097,7 +4099,6 @@ export class TacticalSim {
     }
     // FLAMES: a flamethrower hit sets a trooper alight (three turns of fire); machines shrug it off.
     if (!cover && (actor.kind === "flamer" || actor.kind === "flamepost") && result.amount > 0) this.ignite(target, `${actor.name}'s flames`, actor);
-    // RICOCHET: the round glances on to up to two more foes near the first (60% then 40% of the hit).
     this.afterDamage(actor, target, result);
     // THE HARPOON: a landed hook drags the target to the Hookshot's feet.
     if (!cover && unitStats(actor.kind).pull && target.status.alive && actor.status.alive && target.kind !== "cover" && !isBuildingKind(target.kind) && !isDefenseKind(target.kind)) this.hookPull(actor, target);
@@ -4372,10 +4373,7 @@ export class TacticalSim {
     place("cannonpost", "Cannon Post", "cannon", [-16, -18, -14, -20, -12], [-10, 10, -14, 14, -6, 6, -18, 18]);
   }
 
-  // ---- Field hands: place (demolitionist / turret tech / fortifier) ----
-
-
-
+  // ---- Field hands ----
 
   /** The nearest free emplacement worth crewing: close, and with a foe inside its weapon's reach. */
   private aiMountTarget(actor: CombatEntity, foes: CombatEntity[]): CombatEntity | undefined {
@@ -4390,9 +4388,6 @@ export class TacticalSim {
     }
     return best;
   }
-
-
-
 
   /** A sentry stands where it is dropped (Sentry Drop): it shoots by itself each turn and packs up after SENTRY_COST_TURNS. */
   private deploySentry(team: Team, at: Vec2, yaw: number, owner: string): CombatEntity {
@@ -7435,7 +7430,7 @@ export class TacticalSim {
       : strike.kind === "slag" ? 0xff7a2a
       : strike.kind === "barrage" ? 0xffac5a
       : strike.kind === "collapse" ? 0xb59a72
-      : strike.kind === "laser" ? 0xff5a4d
+      : strike.kind === "laser" ? 0xffb84a
       : strike.kind === "cluster" ? 0xffb02e
       : strike.kind === "railstrike" ? 0xc9d3dc
       : 0xff8c3a;
@@ -7920,12 +7915,11 @@ const MUZZLE_LOCAL: Partial<Record<string, { x: number; z: number; y: number }>>
   sentry: { x: 0, z: 0.8, y: 0.66 }, base: { x: 0.2, z: 2.6, y: 3.8 },
   // long guns carry the muzzle further out front than a carbine does
   sniper: { x: 0.5, z: 1.0, y: 1.12 }, bazooka: { x: 0.45, z: 1.0, y: 1.1 }, flamer: { x: 0.42, z: 0.9, y: 1.0 },
-  lancer: { x: 0.42, z: 0.8, y: 1.05 }, grenadier: { x: 0.46, z: 0.7, y: 1.02 }, mortar: { x: 0.46, z: 0.58, y: 1.02 },
+  mortar: { x: 0.46, z: 0.58, y: 1.02 },
   // the Breaker's wrist gun rides the gauntlet; the Juggernaut's cannon sits over its shoulder (builds are 1.12x / 1.5x wide)
   breaker: { x: 0.56, z: 0.85, y: 1.0 }, juggernaut: { x: 0.68, z: 1.15, y: 1.62 },
   chopbike: { x: -0.32, z: 0.0, y: 1.0 }, bulldozer: { x: 0.3, z: -0.05, y: 2.0 },
   hookshot: { x: 0.44, z: 1.1, y: 1.0 }, skater: { x: 0.36, z: 0.5, y: 0.88 }, molotov: { x: 0.41, z: 0.2, y: 1.28 }, mole: { x: 0.49, z: 0.4, y: 0.92 },
-  ironclad: { x: 0.7, z: 0.6, y: 0.95 }, turrettech: { x: 0.49, z: 0.5, y: 0.95 },
 };
 /** The bomb rack under a gunship or bomber: a bomb leaves from beneath the airframe. */
 const BOMB_RACK_LOCAL = { x: 0, z: 0.2, y: -0.55 };
