@@ -6972,8 +6972,11 @@ export class TacticalSim {
   }
 
   // Read-only environment snapshot for the renderer + HUD.
-  environment(): { sandstorm: number; ionstorm: number; notice?: string; zones: { kind: MapEventKind; x: number; z: number; radius: number }[] } {
-    return { sandstorm: this.sandstormActive() ? 1 : 0, ionstorm: this.ionStormActive() ? 1 : 0, notice: this.eventNotice, zones: this.eventZonesForTurn() };
+  // `soon` = map hazards that strike NEXT turn (a turn of warning: "what would kill you" is on the ground before it fires).
+  environment(): { sandstorm: number; ionstorm: number; notice?: string; zones: { kind: MapEventKind; x: number; z: number; radius: number }[]; soon: { kind: MapEventKind; x: number; z: number; radius: number }[] } {
+    const zones = this.eventZonesForTurn();
+    const soon = this.eventZonesForTurn(this.turn + 1).filter((z) => !this.forcedZones.includes(z) && !zones.some((n) => n.kind === z.kind && dist(n, z) < 0.5));
+    return { sandstorm: this.sandstormActive() ? 1 : 0, ionstorm: this.ionStormActive() ? 1 : 0, notice: this.eventNotice, zones, soon };
   }
 
   // Set the banner/log for the new turn's events (and announce sandstorm transitions).

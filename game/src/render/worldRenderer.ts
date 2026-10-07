@@ -625,7 +625,7 @@ export class WorldRenderer {
     }
     const pulse = (Math.sin(performance.now() * 0.006) + 1) * 0.5;
     for (const zone of env.zones) {
-      const color = zone.kind === "barrage" ? 0xff5a3c : zone.kind === "lightning" ? 0xbfe4ff : 0xffb24a;
+      const color = hazardColor(zone.kind);
       const ring = new THREE.Mesh(
         drapedDisc(zone.x, zone.z, zone.radius - 0.4, zone.radius, 72, 0.07),
         this.envMat(THREE.MeshBasicMaterial, { color, transparent: true, opacity: 0.4 + pulse * 0.42, side: THREE.DoubleSide, depthWrite: false }),
@@ -636,6 +636,15 @@ export class WorldRenderer {
         this.envMat(THREE.MeshBasicMaterial, { color, transparent: true, opacity: 0.06 + pulse * 0.05, side: THREE.DoubleSide, depthWrite: false }),
       );
       this.environmentRoot.add(disc);
+    }
+    for (const zone of env.soon) {
+      // Next turn's hazard: a thin, steady outline (no pulse, no fill) so the danger is readable a turn early without crying wolf.
+      const color = hazardColor(zone.kind);
+      const ring = new THREE.Mesh(
+        drapedDisc(zone.x, zone.z, zone.radius - 0.14, zone.radius, 72, 0.07),
+        this.envMat(THREE.MeshBasicMaterial, { color, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }),
+      );
+      this.environmentRoot.add(ring);
     }
   }
 
@@ -6104,6 +6113,9 @@ function drawnGroundAt(p: Vec2): number {
  * coin floating over it. Cache is cleared per map (clearDrapedDiscs).
  */
 const drapedDiscs = new Map<string, THREE.BufferGeometry>();
+// Danger zones are molten orange-red, never the supply caches' gold (a slag ring read as loot).
+function hazardColor(kind: string): number { return kind === "barrage" ? 0xff4a2e : kind === "lightning" ? 0xbfe4ff : 0xff6a1c; }
+
 function drapedDisc(x: number, z: number, inner: number, outer: number, segments: number, lift: number): THREE.BufferGeometry {
   // A ring that crosses a ledge needs vertices close enough that the lip is a CLEAN break, not a slanted ramp (the "teeth" and kinks
   // reported on circles, 2026-10-03): at least one vertex every ~0.15m of rim, capped.

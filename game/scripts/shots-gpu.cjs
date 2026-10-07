@@ -770,6 +770,16 @@ app.whenReady().then(async () => {
         }
         continue;
       }
+      if (s === "hazards") {
+        // Ironworks on turn 2: the slag spill strikes next turn, so its outline must already be on the ground.
+        await js(`window.__rht.startBattle("ironworks", "destroy", "normal")`);
+        await sleep(1500);
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.turn = 2; r.setView({ x: -8, z: 4, zoom: 0.45, pitch: 0.8, yaw: 0.3 }); })()`);
+        await sleep(900); await shot("hazards-soon");
+        await js(`(() => { window.__rht.sim.turn = 3; })()`);
+        await sleep(900); await shot("hazards-now");
+        continue;
+      }
       if (s === "unselected") {
         // NOTHING selected, HUD hidden: every ring / disc still drawn around units and bases is a "default circle".
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal", "bastion")`);

@@ -184,7 +184,9 @@ the one anti-air unit every faction keeps. Any older section below that names a 
   pairs (`placeFieldMounts`, one band of the board each) and as base defenses (`isMountKind`); since 2026-10-06 every map also gets a mirrored
   pair of **Mortar Pits** and of **Cannon Posts** (`cannonpost`: a wheeled field gun firing a 54-damage tank shell, 32m, anti-armour). Posts keep
   3m off every supply cache and caches 3m off each other (`pickupSpotClear`); `mapLayout.test.ts` fails any overlap or a prop straddling a
-  terrain step (except `hug` landmarks built into a step, e.g. the Ironworks furnace). **Strikes**: EMP Burst (vehicles and defenses lose
+  terrain step (except `hug` landmarks built into a step, e.g. the Ironworks furnace). **Map hazards** (barrage, collapse,
+  lightning, slag) draw a thin steady outline the turn BEFORE they strike (`environment().soon`) and a pulsing filled zone on the turn;
+  danger is molten orange-red (`hazardColor`), never the caches' gold (`npm run shots:gpu -- hazards`). **Strikes**: EMP Burst (vehicles and defenses lose
   next turn), Minefield Drop, Medevac (full heal, up), Sentry Drop, Rail Strike (3 rods, 95 each). **Base options** (`BASE_UPGRADES`): Armor I/II
   (+30% health each), the **Fortress Cannon** (a `cannon` weapon part: 120-damage shell every second turn at the dearest ground foe in 40m, costs
   no base order), the **Watch Radar** (enemy orders revealed every turn). The bot buys armour then the cannon with an army out.
