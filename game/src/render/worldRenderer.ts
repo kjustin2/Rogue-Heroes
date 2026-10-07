@@ -1655,6 +1655,32 @@ export class WorldRenderer {
     const meleeTarget = this.meleeTargetByActor.get(entity.id);
     group.userData.weaponFamily = this.attackFamilyByActor.get(entity.id) ?? weaponFamily(entity.kind);
     group.userData.meleeTarget = meleeTarget;
+    // VERB FX (2026-10-07 polish). A Boomer's fuse is always lit: a few sparks spit off its tip, so it reads as a walking bomb.
+    // A boosting Rocket Skater trails flame and smoke from its boots (it glides: see the gait below). Throttled by distance or time.
+    if (entity.kind === "boomer" && entity.status.alive && this.particles) {
+      const now = performance.now();
+      if (now > ((group.userData.nextSparkAt as number | undefined) ?? 0)) {
+        group.userData.nextSparkAt = now + 140;
+        let tip = group.userData.fuseMesh as THREE.Object3D | undefined;
+        if (!tip) group.traverse((o) => { if (o.userData.fuseTip) tip = o; });
+        group.userData.fuseMesh = tip;
+        if (tip) {
+          const p = tip.getWorldPosition(_fuseScratch);
+          this.particles.burst({ x: p.x, y: p.y + 0.04, z: p.z, count: 2, color: [0xfff1a6, 0xffc040], speed: [0.6, 1.6], up: 1.2, size: [0.04, 0.08], life: [0.15, 0.35], gravity: 6, drag: 0.6, shape: ParticleShape.streak });
+        }
+      }
+    }
+    if (entity.kind === "skater" && moving && this.particles) {
+      const lastJet = (group.userData.lastJetAt as number | undefined) ?? 0;
+      if (motionTime - lastJet > 0.35) {
+        group.userData.lastJetAt = motionTime;
+        const bx = entity.position.x - Math.sin(entity.yaw) * 0.55;
+        const bz = entity.position.z - Math.cos(entity.yaw) * 0.55;
+        const y = (group.userData.renderElevation as number | undefined ?? entity.elevation) + 0.3;
+        this.particles.burst({ x: bx, y, z: bz, count: 3, color: [0xffd07a, 0xff9a3a], speed: [0.3, 1.0], up: 0.3, size: [0.12, 0.24], life: [0.15, 0.3], gravity: -0.5, drag: 1.4, jitter: 0.15 });
+        this.particles.burst({ x: bx, y, z: bz, count: 2, color: [0x8a8580, 0xb0aaa2], speed: [0.2, 0.5], up: 0.4, size: [0.22, 0.4], life: [0.5, 0.9], gravity: -0.4, drag: 1.2, jitter: 0.2 });
+      }
+    }
     // Rolling vehicles kick up a dust wake behind their tracks.
     if (moving && isVehicleKind(entity.kind)) {
       const lastDust = (group.userData.lastDustAt as number | undefined) ?? 0;
@@ -1688,10 +1714,12 @@ export class WorldRenderer {
     if (isInfantryKind(entity.kind)) {
       // The sim stands a crouched unit up the moment it moves (its order remembers it started
       // crouched and slows it); the renderer keeps it low the whole way, on short steps.
-      const crouched = entity.stance === "crouched" || crouchMoving;
+      // A boosting Rocket Skater GLIDES on its rocket boots: crouched low, feet still (no stepping gait while it moves).
+      const gliding = entity.kind === "skater" && moving;
+      const crouched = entity.stance === "crouched" || crouchMoving || gliding;
       group.userData.crouched = crouched;
       const gait = crouched ? CROUCH_GAIT : GAIT_TIERS[gaitTier(entity.kind)];
-      const phase = ((group.userData.gaitPhase as number | undefined) ?? (hash(entity.id) % 97) / 97) + (moving ? moved / gait.stride : 0);
+      const phase = ((group.userData.gaitPhase as number | undefined) ?? (hash(entity.id) % 97) / 97) + (moving && !gliding ? moved / gait.stride : 0);
       const body = bodyAt(gait, phase);
       group.userData.gaitPhase = phase;
       group.userData.gait = gait;
@@ -2393,7 +2421,11 @@ export class WorldRenderer {
       }
       this.box(rig, entity, "head", [0.52, 0.54, 0.52], [0, 1.46, 0.0], 0x3f4f26, { kit: "dress-bucket", metalness: 0.35, bevel: 0.2 });
       this.box(rig, entity, "head", [0.3, 0.05, 0.03], [0, 1.47, 0.27], 0x0c1418, { emissive: glow, emissiveIntensity: 0.6 });
-      for (const z of [0.2, -0.2]) this.box(rig, entity, "body", [0.5, 0.28, 0.08], [0, 0.64, z], plate, { metalness: 0.3, rotation: [z > 0 ? 0.12 : -0.12, 0, 0], bevel: 0.2 });
+      // A broad KETTLE BRIM round the bucket helm (2026-10-07): the widest head on the field, where Vanguard's is a slim dome.
+      this.box(rig, entity, "head", [0.82, 0.05, 0.76], [0, 1.5, 0.0], 0x3f4f26, { metalness: 0.35, bevel: 0.3 });
+      // A long plated SKIRT front and back, flaring past the hips: it fills the gap between the legs that every Vanguard keeps
+      // open (2026-10-07: was a short tasset; the rifleman pair sat at IoU 0.80).
+      for (const z of [0.2, -0.2]) this.box(rig, entity, "body", [0.58, 0.44, 0.08], [0, 0.56, z], plate, { metalness: 0.3, rotation: [z > 0 ? 0.14 : -0.14, 0, 0], bevel: 0.2 });
       this.box(rig, entity, "body", [0.56, 0.78, 0.1], [0, 0.98, -0.34], 0x3f4f26, { kit: "dress-shield", rotation: [0, Math.PI, 0], metalness: 0.3, bevel: 0.15 });
       this.box(rig, entity, "body", [0.08, 0.6, 0.02], [0, 0.98, -0.39], 0xe0b12a, { accent: true });
       if (entity.kind === "heavy") {
@@ -3025,7 +3057,7 @@ export class WorldRenderer {
       for (const y of [0.86, 1.38]) this.cylinder(rig, entity, "pack", 0.375, 0.08, [0, y, -0.36], 0x2a2420, [0, 0, 0], { metalness: 0.4 });
       this.cylinder(rig, entity, "pack", 0.37, 0.12, [0, 1.12, -0.36], 0xf2c230, [0, 0, 0], { accent: true });
       this.cylinder(rig, entity, "pack", 0.025, 0.34, [0.1, 1.66, -0.36], 0xd8d0b8, [0, 0, 0.35]);
-      this.box(rig, entity, "pack", [0.09, 0.09, 0.09], [0.16, 1.84, -0.36], 0xffe58a, { accent: true, emissive: 0xffb020, emissiveIntensity: 0.9 });
+      this.box(rig, entity, "pack", [0.09, 0.09, 0.09], [0.16, 1.84, -0.36], 0xffe58a, { accent: true, emissive: 0xffb020, emissiveIntensity: 0.9 }).userData.fuseTip = true;
       this.box(rig, entity, "body", [0.12, 0.3, 0.06], [-0.18, 1.0, 0.24], 0xd33a2a, { accent: true, rotation: [0, 0, 0.6] }); // strap
       this.box(rig, entity, "body", [0.18, 0.14, 0.12], [0.2, 0.9, 0.24], 0x2b2b22); // the detonator box
       this.box(rig, entity, "head", [0.4, 0.38, 0.42], [0, 1.36, 0.0], 0x3a3530, { metalness: 0.2 });
@@ -3265,17 +3297,31 @@ export class WorldRenderer {
     this.cylinder(group, entity, "left-tread", 0.42, 0.24, [0, 0.42, -0.95], 0x1d2124, [0, 0, Math.PI / 2], { metalness: 0.1 });
     this.cylinder(group, entity, "left-tread", 0.18, 0.26, [0, 0.42, -0.95], 0x9aa0a8, [0, 0, Math.PI / 2], { accent: true, metalness: 0.5 });
     this.cylinder(group, entity, "right-tread", 0.36, 0.2, [0, 0.36, 1.25], 0x1d2124, [0, 0, Math.PI / 2], { metalness: 0.1 });
-    for (const side of [-1, 1]) this.cylinder(group, entity, "front-plate", 0.04, 1.2, [side * 0.12, 0.85, 1.0], 0xc8ccd0, [0.6, 0, 0], { metalness: 0.7 });
+    for (const side of [-1, 1]) this.cylinder(group, entity, "front-plate", 0.04, 1.2, [side * 0.12, 0.85, 1.0], 0xc8ccd0, [0.6, 0, 0], { accent: true, metalness: 0.7 });
     this.box(group, entity, "hull", [0.42, 0.36, 1.5], [0, 0.72, -0.05], 0x8a3a2a, { metalness: 0.3, bevel: 0.25 });
     this.box(group, entity, "hull", [0.5, 0.3, 0.6], [0, 0.95, 0.35], 0x6a2a20, { metalness: 0.3, bevel: 0.3 }); // tank
     for (const side of [-1, 1]) this.cylinder(group, entity, "hull", 0.06, 1.2, [side * 0.3, 0.46, -0.6], 0xd8dce0, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.8 });
     this.box(group, entity, "front-plate", [0.7, 0.06, 0.08], [0, 1.38, 1.22], 0x2a2f34, { metalness: 0.5 }); // bars
-    // The rider: hunched forward over the tank, a sidearm on the hip and a machete out to the side.
-    this.box(group, entity, "turret", [0.44, 0.5, 0.36], [0, 1.25, -0.2], 0x3a3530, { rotation: [0.5, 0, 0] });
-    this.box(group, entity, "turret", [0.34, 0.32, 0.34], [0, 1.62, 0.12], 0x2a2a2a, { bevel: 0.3 });
-    this.box(group, entity, "turret", [0.3, 0.06, 0.06], [0, 1.64, 0.3], glow, { accent: true, emissive: glow, emissiveIntensity: 0.5 });
-    this.box(group, entity, "cannon", [0.06, 0.06, 0.95], [0.5, 1.15, 0.2], 0xd8dce0, { accent: true, metalness: 0.8, rotation: [0, 0.3, 0] });
-    this.box(group, entity, "cannon", [0.1, 0.16, 0.3], [-0.32, 1.0, -0.2], 0x2a2f34, { metalness: 0.4 });
+    // The rider (2026-10-07: was two team-tinted boxes): a hunched raider in a leather jacket, arms on the bars, boots on the
+    // pegs, a spiked helmet with goggles, a sidearm on the hip and a machete held out to the side. Accent meshes keep their own
+    // colours, so the rider never takes the vehicle's role tint.
+    const R = { accent: true } as const;
+    this.box(group, entity, "turret", [0.46, 0.5, 0.34], [0, 1.28, -0.2], 0x4a2a1e, { ...R, rotation: [0.55, 0, 0], bevel: 0.25 }); // jacket
+    this.box(group, entity, "turret", [0.48, 0.1, 0.36], [0, 1.1, -0.32], 0x2a1a14, { ...R, rotation: [0.55, 0, 0] }); // belt
+    for (const side of [-1, 1]) {
+      this.box(group, entity, "turret", [0.13, 0.13, 0.62], [side * 0.24, 1.38, 0.4], 0x4a2a1e, { ...R, rotation: [0.35, -side * 0.12, 0] }); // arm to the bars
+      this.box(group, entity, "turret", [0.12, 0.12, 0.12], [side * 0.3, 1.36, 0.72], 0x1a1412, R); // glove
+      this.box(group, entity, "turret", [0.15, 0.42, 0.15], [side * 0.26, 0.82, -0.3], 0x2a2a30, { ...R, rotation: [-0.5, 0, 0] }); // leg to the peg
+      this.box(group, entity, "turret", [0.16, 0.12, 0.26], [side * 0.27, 0.62, -0.12], 0x141414, R); // boot
+    }
+    this.box(group, entity, "turret", [0.3, 0.3, 0.3], [0, 1.66, 0.1], 0xc79a78, { ...R, bevel: 0.3 }); // head
+    this.box(group, entity, "turret", [0.36, 0.2, 0.36], [0, 1.8, 0.08], 0x2a2a2a, { ...R, bevel: 0.35, metalness: 0.4 }); // helmet
+    this.cylinder(group, entity, "turret", 0.005, 0.2, [0, 1.98, 0.02], 0x8a8f94, [0, 0, 0], { ...R, radiusBottom: 0.06, metalness: 0.7 }); // spike
+    this.box(group, entity, "turret", [0.3, 0.08, 0.06], [0, 1.7, 0.26], glow, { accent: true, emissive: glow, emissiveIntensity: 0.5 }); // goggles
+    // The machete: a dark grip and a broad steel blade, swept out and back from the right hand.
+    this.box(group, entity, "cannon", [0.07, 0.07, 0.22], [0.45, 1.3, 0.55], 0x2a1a14, { ...R, rotation: [0, 0.6, 0] });
+    this.box(group, entity, "cannon", [0.03, 0.16, 0.8], [0.72, 1.22, 0.2], 0xd8dce0, { ...R, metalness: 0.85, rotation: [0.15, 0.6, 0] });
+    this.box(group, entity, "cannon", [0.1, 0.16, 0.3], [-0.32, 1.0, -0.2], 0x2a2f34, { metalness: 0.4 }); // holstered sidearm
     // No faction vehicle dress: its cages and rails buried the slim bike under a junk pile (2026-10-07). The bike IS the silhouette.
   }
 
@@ -9085,6 +9131,7 @@ function hexColor(hex: number): THREE.Color {
   return color;
 }
 
+const _fuseScratch = new THREE.Vector3();
 // Scratch colors reused by paintPart's per-frame, per-mesh hot path (avoids allocating).
 const _paintColor = new THREE.Color();
 // Scratch id->part map reused by syncEntity's per-frame traverse.

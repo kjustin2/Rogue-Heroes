@@ -55,6 +55,13 @@ an armour answer for the bot only with 30+ damage (the Molotov is not one).
   an order makes the moment it starts, played by `main.ts` (`seenOrderIds`): Skater boost (rocket roar), Chop Bike rev, Bulldozer blade
   scrape, Mole dig rumble, Jump Trooper jet pack, Hookshot reel whine, Breaker rocket fist, any melee or Slam a swing swish. Synthesized
   (`Sfx.sweep` / `Sfx.glide`), no new files. `deathSound` plays on a kill: a trooper's body falls, a hull cooks off, an aircraft crashes.
+- **Verb FX (2026-10-07 polish, `worldRenderer.syncEntity`)**: a Boomer's fuse always spits sparks (`userData.fuseTip`); a boosting
+  Rocket Skater GLIDES (crouched, no stepping gait while it moves) and trails rocket flame and smoke from its boots. The Chop Bike's
+  rider is a real figure (jacket, arms on the bars, boots on the pegs, spiked helmet, goggles, a steel machete), all `accent` meshes so
+  the vehicle's role tint never paints it (it was two mint-green boxes).
+- **Bastion infantry outline (2026-10-07)**: a broad kettle BRIM round the bucket helm and plated tassets front and back. These are
+  procedural, not kit, pieces, so they show with the Blender kit loaded. Rifleman Vanguard~Bastion IoU 0.81 -> 0.77, marksman
+  0.80 -> 0.75. Lesson: `measure:factions` runs `dist/`; rebuild (`npx vite build`) before every measure or you measure the old build.
 - **No lasers, anywhere** (2026-10-07): the Bastion's Armor Bay power is the **Gun Run** (internal id `laser`, kept for saves): a jet
   strafes a line and seven cannon shells walk down it. The beam effect, its additive light curtain and its zap sound are deleted.
 - **Flame Post** tanks are dark steel with one orange band: the bright orange drums read as the map's explosive red barrels.

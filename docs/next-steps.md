@@ -99,8 +99,7 @@ three movement bugs the oracle found; the per-frame GL depth-blit error (postpro
 - **`getParameters` ~2.7% of the frame** (perf:profile, stress scene) persists after the material-churn fixes;
   not vertex alphas, not the light set, not instanced shadows. Find what re-triggers three's program
   lookup before trying again.
-- The heavy gunner's Syndicate / Bastion outline pair sits near the 0.80 IoU line (0.78); watch it when
-  changing faction dress.
+- The tank Vanguard~Bastion pair sits at IoU 0.78-0.79; watch it when changing vehicle dress.
 - Command-phase shimmer on grass and trees is the WIND, not a glitch.
 - Real-GPU tools (`soak:gpu`, `shots:gpu`, `probe:intro`) only mean something on a machine with a GPU; under
   SwiftShader use them to check a scene renders and to read layouts, not to judge frame times.
@@ -108,5 +107,7 @@ three movement bugs the oracle found; the per-frame GL depth-blit error (postpro
 Round 8 (2026-10-07, in progress): cut Grenadier, Hornet, Ironclad; added Chop Bike (Syndicate: rides through troopers slashing) and
 Bulldozer (Bastion: shoves units, props and wrecks ahead of its blade); Jump Trooper landing is now a 2.5m "death from above" slam
 (0.52x -> 0.90x). LEFT: map hazards (Dust Bowl oil geyser, Karak rolling boulder, Crossfire minefield strip, Verdant stampede: generalise
-MapDef.train into lanes), the ranked top-10 polish pass, and the rifleman Vanguard~Bastion silhouette pair that flips at IoU 0.80 in
-measure:factions (pre-existing, borderline: widen one outline).
+MapDef.train into lanes).
+Polish pass (2026-10-07): `wording.test.ts` (tips match constants, no cut names), ability + death sounds, Orbital Lance -> Gun Run (no
+lasers), Boomer fuse sparks, Skater glide + exhaust, Chop Bike rider, Bastion kettle brim (rifleman IoU 0.81 -> 0.77). Music checked:
+16 tracks within -18.5..-20.9 LUFS, three per map, stingers duck. Not done: Breaker punch / Boomer detonate / Mole mound poses.
