@@ -471,17 +471,45 @@ function chips(count: number, cx: number, cy: number, cz: number, reach: number,
  *   rifle  a warm yellow dash          carbine a thin pale-gold dart       pistol  a small round bead
  *   mg     fat orange-red slugs, alternating     sniper  a long white-hot needle with a bright collar
  */
-const ROUND: Record<string, { w: number; len: number; head: number; core: number; sleeve: number; sleeveAlt?: number; collar?: boolean }> = {
+interface RoundSpec {
+  w: number; len: number; head: number; core: number; sleeve: number; sleeveAlt?: number; collar?: boolean;
+  /** Extra rounds riding in line behind the lead one (a burst reads as 2-3 beads, not one dash). */
+  tandem?: number;
+  /** Two streaks side by side (a double-barrel / paired shot). */
+  twin?: boolean;
+  /** Ring collars spinning around the streak (a ricochet round's "charged" read, warm brass). */
+  rings?: number;
+}
+const ROUND: Record<string, RoundSpec> = {
   rifle: { w: 1.0, len: 1.0, head: 1.0, core: HOT, sleeve: TRACER },
   carbine: { w: 0.72, len: 0.85, head: 0.8, core: HOT, sleeve: 0xffefa8 },
   pistol: { w: 1.05, len: 0.42, head: 0.9, core: HOT, sleeve: TRACER_ALT },
   mg: { w: 1.25, len: 0.8, head: 1.15, core: 0xffe9b0, sleeve: TRACER_ALT, sleeveAlt: TRACER_DEEP },
   sniper: { w: 0.85, len: 2.4, head: 0.85, core: HOT, sleeve: 0xfff0b8, collar: true },
 };
+/**
+ * PER-UNIT ROUNDS (owner 2026-10-06: "projectiles for basic infantry are more cool and unique looking per unit"). The family still
+ * drives trail length / impacts; this only changes the round's own shape and warm colour, so two infantry kinds never fire the
+ * same bullet. Warm only (one ballistic language): golds, ambers, oranges, white-hot; never team colour, never cyan.
+ */
+const UNIT_ROUND: Partial<Record<EntityKind, RoundSpec>> = {
+  scout: { w: 0.62, len: 0.7, head: 0.7, core: HOT, sleeve: 0xffefa8, tandem: 1 }, // quick double-tap darts
+  jumper: { w: 0.78, len: 0.5, head: 0.85, core: HOT, sleeve: 0xffb04a, tandem: 2 }, // three-round burst beads
+  lancer: { w: 0.9, len: 1.3, head: 1.0, core: HOT, sleeve: BRASS, rings: 2 }, // ricochet slug with spinning brass rings
+  ironclad: { w: 1.4, len: 0.75, head: 1.25, core: 0xffe9b0, sleeve: TRACER_DEEP }, // stubby heavy slug
+  bounty: { w: 0.8, len: 2.8, head: 0.8, core: HOT, sleeve: 0xffc27a, collar: true, rings: 1 }, // long rifle: amber needle + ring
+  striker: { w: 0.85, len: 0.5, head: 0.85, core: HOT, sleeve: 0xffc857, twin: true }, // akimbo sidearms
+  sledge: { w: 1.3, len: 0.36, head: 1.2, core: 0xffd8a0, sleeve: TRACER_DEEP }, // fat short sawn-off slug
+  droneop: { w: 0.6, len: 1.1, head: 0.75, core: HOT, sleeve: 0xfff2c4, collar: true }, // pale marker dart
+  turrettech: { w: 0.95, len: 0.45, head: 0.95, core: HOT, sleeve: 0xffa040, tandem: 1 }, // rivet-gun pair
+  trencher: { w: 1.1, len: 0.38, head: 1.05, core: HOT, sleeve: 0xe8742a }, // dull ember bead
+  builder: { w: 1.0, len: 0.4, head: 0.95, core: HOT, sleeve: 0xffd27a, twin: true }, // nail-gun pair
+  demo: { w: 1.15, len: 0.42, head: 1.1, core: 0xffe0a0, sleeve: 0xff7a2a }, // hot orange bead
+};
 
-function tracerModel(family: ProjectileFamily, age: number, seed: number, travel = 99): THREE.Group {
+function tracerModel(family: ProjectileFamily, age: number, seed: number, travel = 99, src?: EntityKind): THREE.Group {
   const group = new THREE.Group();
-  const spec = ROUND[family] ?? ROUND.rifle;
+  const spec = (src && UNIT_ROUND[src]) || ROUND[family] || ROUND.rifle;
   const alt = spec.sleeveAlt !== undefined && seed % 2 === 0;
   // Warm, never team colour: a cyan comet read as a laser. The team read lives on the unit.
   const sleeveColor = alt ? spec.sleeveAlt! : spec.sleeve;
@@ -505,6 +533,31 @@ function tracerModel(family: ProjectileFamily, age: number, seed: number, travel
   headRim.frustumCulled = false;
   head.add(headRim);
   group.add(streak, head);
+  if (spec.twin) {
+    // Paired rounds side by side: the lead pair is the same round, offset across the line of fire.
+    const pair = new THREE.Group();
+    pair.add(streak.clone(), head.clone());
+    pair.position.x = 0.2;
+    pair.position.y = -0.08;
+    streak.position.x = head.position.x = -0.2;
+    group.add(pair);
+  }
+  for (let i = 1; i <= (spec.tandem ?? 0); i += 1) {
+    // A burst: smaller copies trailing in line. They grow out of the muzzle like the lead streak, so nothing pops in behind the shooter.
+    const follower = new THREE.Group();
+    follower.add(streak.clone(), head.clone());
+    follower.position.y = -i * (0.42 + 0.3 * spec.len) * grow;
+    follower.scale.setScalar(Math.pow(0.8, i));
+    group.add(follower);
+  }
+  for (let i = 0; i < (spec.rings ?? 0); i += 1) {
+    const ring = new THREE.Mesh(projectileGeometry("crown"), fxSolid(BRASS, true));
+    ring.rotation.set(Math.PI / 2, 0, age * 18 + i * 1.3);
+    ring.position.y = (0.05 - i * 0.22 * spec.len) * grow;
+    ring.scale.setScalar(0.3 + 0.03 * Math.sin(age * 24 + i));
+    ring.frustumCulled = false;
+    group.add(ring);
+  }
   if (spec.collar) {
     // A marksman's round carries a bright collar a third of the way back: the one detail that says "this one is different".
     const collar = new THREE.Mesh(projectileGeometry("crown"), fxSolid(HOT, true));
@@ -733,8 +786,8 @@ export function makeProjectileModel(p: Projectile, family: ProjectileFamily): TH
     case "bomb": return bombModel(team, p.age);
     case "flame": return flameHead(p.age);
     case "pellet": return pelletModel(team, seed);
-    case "sniper": return p.age < SNIPER_PAUSE ? new THREE.Group() : tracerModel(family, p.age, seed, p.travel);
-    default: return tracerModel(family, p.age, seed, p.travel);
+    case "sniper": return p.age < SNIPER_PAUSE ? new THREE.Group() : tracerModel(family, p.age, seed, p.travel, p.sourceKind);
+    default: return tracerModel(family, p.age, seed, p.travel, p.sourceKind);
   }
 }
 

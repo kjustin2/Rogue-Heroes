@@ -99,6 +99,7 @@ export const GUN_VOICES: Record<string, Voice> = {
   mortar: { group: "blast", rate: 0.55, m: 0.6, synth: "thunk" },
   mortarpit: { group: "blast", rate: 0.5, m: 0.65, synth: "thunk" },
   tank: { group: "cannon", rate: 0.9, m: 1 },
+  cannonpost: { group: "cannon", rate: 1.0, m: 1 },
   artillery: { group: "cannon", rate: 0.6, m: 1.15 },
   exturret: { group: "cannon", rate: 0.74, m: 0.9 },
   base: { group: "cannon", rate: 1.15, m: 0.7 },
@@ -139,7 +140,7 @@ export function impactClass(kind: string, coverKind?: string): "hitsoft" | "hitm
     const wood = new Set(["tree", "crate", "log", "stump", "bush", "haybale", "fence", "rack", "tent", "hut", "boat", "barricade", "sandbag", "bones", "grave"]);
     return coverKind && wood.has(coverKind) ? "hitwood" : "hitplate";
   }
-  if (kind === "base" || kind === "wall" || kind === "bunker" || kind === "gunpost" || kind === "mortarpit" || kind === "rocketpost" || kind === "flamepost") return "hitplate";
+  if (kind === "base" || kind === "wall" || kind === "bunker" || kind === "gunpost" || kind === "mortarpit" || kind === "rocketpost" || kind === "flamepost" || kind === "cannonpost") return "hitplate";
   return "hitmetal"; // vehicles, aircraft, turrets
 }
 

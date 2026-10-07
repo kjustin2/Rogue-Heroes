@@ -3230,6 +3230,18 @@ export class WorldRenderer {
       this.cylinder(group, entity, "gun", 0.14, 0.2, [0, 0.62, 0.94], 0x1d1a18, [Math.PI / 2, 0, 0], { metalness: 0.4, radiusBottom: 0.09 });
       this.sphere(group, entity, "gun", 0.07, [0, 0.62, 1.08], 0xffb02e, { accent: true, emissive: 0xff6b1a, emissiveIntensity: 0.5 });
       this.box(group, entity, "gun", [0.1, 0.1, 0.9], [0, 0.82, 0.1], 0x2a2422, { accent: true });
+    } else if (entity.kind === "cannonpost") {
+      // Cannon post: a field gun -- two spoked wheels, a sloped gun shield, a long barrel with a muzzle brake, a shell crate.
+      for (const x of [-0.5, 0.5]) {
+        this.cylinder(group, entity, "gun", 0.36, 0.12, [x, 0.38, -0.05], 0x2a2f34, [0, 0, Math.PI / 2], { metalness: 0.35 });
+        this.cylinder(group, entity, "gun", 0.12, 0.16, [x, 0.38, -0.05], 0x6a6a4a, [0, 0, Math.PI / 2], { accent: true, metalness: 0.3 });
+      }
+      this.box(group, entity, "gun", [0.86, 0.62, 0.08], [0, 0.78, 0.32], 0x4f5a3a, { metalness: 0.3, rotation: [-0.18, 0, 0], bevel: 0.2 });
+      this.box(group, entity, "gun", [0.36, 0.3, 0.7], [0, 0.82, -0.05], 0x3a4048, { metalness: 0.4, bevel: 0.2 });
+      this.cylinder(group, entity, "gun", 0.085, 1.5, [0, 0.92, 0.95], 0x2a2f34, [Math.PI / 2 - 0.06, 0, 0], { metalness: 0.5 });
+      this.box(group, entity, "gun", [0.24, 0.18, 0.18], [0, 0.96, 1.7], 0x1d2226, { metalness: 0.5, bevel: 0.2 });
+      for (const x of [-0.18, 0.18]) this.box(group, entity, "gun", [0.08, 0.08, 1.1], [x, 0.3, -0.75], 0x2a2f34, { metalness: 0.35, rotation: [0, x * 0.6, 0] });
+      this.box(group, entity, "gun", [0.42, 0.26, 0.3], [0.62, 0.2, -0.3], 0x6a5a36, { accent: true });
     } else {
       // Mortar: baseplate, an angled tube and a shell stack at the crew's side.
       this.box(group, entity, "gun", [0.7, 0.1, 0.7], [0, 0.12, 0], 0x2a2f34, { metalness: 0.4 });
@@ -6004,14 +6016,19 @@ function waveStrokeTexture(): THREE.CanvasTexture {
   ctx.strokeStyle = "#ffffff";
   ctx.lineCap = "round";
   // Draw each stroke at its position and at the wrapped positions so the tile is seamless.
-  for (let i = 0; i < 14; i += 1) {
-    const x = rand() * size, y = rand() * size, len = 26 + rand() * 34, lw = 4 + rand() * 3;
+  // Short arcs at RANDOM angles: strokes that all ran the same way tiled into rows of dashes, and a channel read as a road.
+  for (let i = 0; i < 22; i += 1) {
+    const x = rand() * size, y = rand() * size, len = 14 + rand() * 18, lw = 3 + rand() * 2.5, ang = (rand() - 0.5) * 1.6;
     ctx.lineWidth = lw;
     for (const [ox, oy] of [[0, 0], [size, 0], [-size, 0], [0, size], [0, -size]]) {
+      ctx.save();
+      ctx.translate(x + ox, y + oy);
+      ctx.rotate(ang);
       ctx.beginPath();
-      ctx.moveTo(x + ox, y + oy);
-      ctx.quadraticCurveTo(x + ox + len * 0.5, y + oy - len * 0.22, x + ox + len, y + oy);
+      ctx.moveTo(0, 0);
+      ctx.quadraticCurveTo(len * 0.5, -len * 0.38, len, 0);
       ctx.stroke();
+      ctx.restore();
     }
   }
   // A few darker troughs so the surface has two values, not one.
@@ -8466,22 +8483,25 @@ function makeWaterAndBridges(theme: MapTheme, surface: GroundSurface): THREE.Gro
       ink.position.set(cx + ox, 0.075, cz + oz); // just above the lip top (-0.14 + 0.21)
       group.add(ink);
     }
-    // Foam strokes: short pale dashes a little inside the rim, staggered so they read as lapping
-    // water and not as a second outline.
-    const dash = (x: number, z: number, len: number, alongX: boolean, i: number): void => {
-      const jitter = ((i * 7) % 5) * 0.06;
-      const m = new THREE.Mesh(new THREE.BoxGeometry(alongX ? len : 0.07, 0.015, alongX ? 0.07 : len), foamMat);
+    // Foam: small curved CRESCENTS lapping the rim at irregular spacing and depth. The old evenly spaced straight dashes ran
+    // the length of a channel like lane markings, so a deadly channel read as a ROAD (owner 2026-10-06: "clear where you can walk").
+    let seed = Math.round((cx * 73 + cz * 151) * 10) >>> 0;
+    const rnd = (): number => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 0xffffffff; };
+    const foamGeo = new THREE.RingGeometry(0.26, 0.34, 10, 1, 0, 1.6);
+    const crescent = (x: number, z: number, facing: number): void => {
+      const m = new THREE.Mesh(foamGeo, foamMat);
+      m.rotation.set(-Math.PI / 2, 0, facing + (rnd() - 0.5) * 0.9);
+      m.scale.setScalar(0.8 + rnd() * 0.7);
       m.position.set(x, SURFACE + 0.06, z);
-      m.position[alongX ? "z" : "x"] += (i % 2 ? 1 : -1) * jitter;
       group.add(m);
     };
-    for (let x = r.minX + 0.6, i = 0; x < r.maxX - 0.6; x += 1.5, i += 1) {
-      dash(x + 0.4, r.minZ + 0.42, 0.7, true, i);
-      dash(x + 0.4, r.maxZ - 0.42, 0.7, true, i + 3);
+    for (let x = r.minX + 0.5 + rnd(); x < r.maxX - 0.5; x += 1.4 + rnd() * 1.8) {
+      crescent(x, r.minZ + 0.35 + rnd() * 0.5, Math.PI * 0.2);
+      crescent(x + rnd() * 0.8, r.maxZ - 0.35 - rnd() * 0.5, Math.PI * 1.2);
     }
-    for (let z = r.minZ + 0.6, i = 0; z < r.maxZ - 0.6; z += 1.5, i += 1) {
-      dash(r.minX + 0.42, z + 0.4, 0.7, false, i + 1);
-      dash(r.maxX - 0.42, z + 0.4, 0.7, false, i + 4);
+    for (let z = r.minZ + 0.5 + rnd(); z < r.maxZ - 0.5; z += 1.4 + rnd() * 1.8) {
+      crescent(r.minX + 0.35 + rnd() * 0.5, z, Math.PI * 0.7);
+      crescent(r.maxX - 0.35 - rnd() * 0.5, z + rnd() * 0.8, Math.PI * 1.7);
     }
   }
 

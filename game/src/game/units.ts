@@ -32,7 +32,7 @@ export type AirKind = "gunship" | "bomber" | "transport";
 export type TroopKind = InfantryKind | GroundVehicleKind | AirKind;
 
 /** Emplacements and scenery: never deployed as troops, but they are damageable entities. */
-export type StructureKind = "base" | "turret" | "exturret" | "bunker" | "sensor" | "wall" | "cover" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost" | "sentry";
+export type StructureKind = "base" | "turret" | "exturret" | "bunker" | "sensor" | "wall" | "cover" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost" | "cannonpost" | "sentry";
 
 /** Every kind that can exist as a CombatEntity. */
 export type EntityKind = TroopKind | StructureKind;
@@ -231,6 +231,8 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   mortarpit: u({ shotDamage: 52, weaponRange: 34, projectile: "grenade", projectileSpeed: 2.05, spread: 6, accurateFraction: 0.67, accuracyLabel: "mortar pit", groundShell: true, hpMultiplier: 1.1, aiValue: 6 }),
   // ROCKET POST: an anti-armour launcher on a sandbag ring (crewed). One heavy rocket, long reach, hard on hulls.
   rocketpost: u({ shotDamage: 70, weaponRange: 30, projectile: "shell", projectileSpeed: 2.7, spread: 2.2, accurateFraction: 0.55, accuracyLabel: "rocket post", groundShell: true, antiArmor: 1.6, hpMultiplier: 1.1, aiValue: 6 }),
+  // CANNON POST: a field gun on a sandbag ring (crewed) that fires a tank shell: long reach, splash, hard on hulls. Map-only.
+  cannonpost: u({ shotDamage: 54, weaponRange: 32, projectile: "shell", projectileSpeed: 2.9, spread: 2.0, accurateFraction: 0.55, accuracyLabel: "field gun", groundShell: true, antiArmor: 1.3, hpMultiplier: 1.2, aiValue: 6 }),
   // FLAME POST: a flame projector on a sandbag ring (crewed). Short reach, sets infantry alight.
   flamepost: u({ shotDamage: 34, weaponRange: 8, accurateFraction: 0.9, accuracyLabel: "flame post", hpMultiplier: 1.1, aiValue: 5 }),
   // SENTRY: a small auto-turret set down by a Turret Tech. Fires on its own each turn, packs up after a few.

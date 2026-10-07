@@ -10,6 +10,10 @@ on purpose — see `CLAUDE.md`). A Skirmish: six themed maps (each with sections
 its own light), three modes (Annihilation, Capture the Flag, Hold the Hill), three factions that look, play
 and research differently, three AI brains (Easy / Normal / Hard differ in intelligence), or Local 2 Players.
 
+2026-10-06: map props / posts / caches never overlap (`mapLayout.test.ts`), water no longer reads as a road,
+every map has mirrored Mortar Pits and Cannon Posts (tank-shell field gun), and each infantry kind fires its
+own round shape (`UNIT_ROUND`). Next on the goal list: hazard clarity (Ironworks rust ground), map uniqueness.
+
 State of `main`: `npm run verify` green (574 vitest incl. chaos, balance self-play and the movement +
 projectile oracle), `npm run smoke:core` green (11 smokes), `npm run probe:terrain` 0 offenders,
 `npm run measure:factions` GOAL MET, `npm run soak:gpu` with no mid-resolve shader compiles, perf gate OK.

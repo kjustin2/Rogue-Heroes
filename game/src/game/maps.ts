@@ -86,6 +86,8 @@ export interface SignatureObject {
   mirror?: boolean; // also place a mirrored copy across the map center
   /** Facing in radians (landmarks are placed, not spun); the mirror copy faces the opposite way. */
   yaw?: number;
+  /** A landmark built INTO a step (a furnace in its slag heap): only its centre must keep off the edge. */
+  hug?: boolean;
 }
 
 // Dynamic battlefield events — opt-in per map, deterministic (seeded), telegraphed a turn ahead.
@@ -278,7 +280,7 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
     // walkable strip over it -- so scatter happily dropped crates on them, which both collided with
     // the destructible span entity now sitting there and blocked the chokepoint the bridge exists to
     // create. A crossing should be an open lane, contested by units rather than furniture.
-    if (steepHere(p) || pointInWater(p)) return true;
+    if (steepHere(p, r) || pointInWater(p)) return true;
     return (map.terrain.bridges ?? []).some((b) =>
       p.x >= b.minX - r && p.x <= b.maxX + r && p.z >= b.minZ - r && p.z <= b.maxZ + r);
   };
@@ -308,26 +310,26 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
     { x: map.enemyBase.x, z: map.enemyBase.z, r: BASE_RADIUS },
   ];
   // Does a piece of radius r at q (and, if mirrored, its twin) keep every walking-room rule?
-  const fits = (q: Vec2, r: number, mirrored: boolean): boolean => {
+  const fits = (q: Vec2, r: number, mirrored: boolean, edgeR = r): boolean => {
     const twin = { x: 2 * center.x - q.x, z: 2 * center.z - q.z };
     const ok = (x: Vec2): boolean =>
       dist(x, map.playerBase) >= BASE_CLEAR + r && dist(x, map.enemyBase) >= BASE_CLEAR + r &&
       x.x > bounds.minX + r && x.x < bounds.maxX - r && x.z > bounds.minZ + r && x.z < bounds.maxZ - r &&
       !solids().some((o) => dist(x, o) < o.r + r + WALK_GAP - 0.01) &&
-      !steepHere(x) && !pointInWater(x) && !pinchesTerrain(x, r, bounds) &&
+      !steepHere(x, edgeR) && !pointInWater(x) && !pinchesTerrain(x, r, bounds) &&
       !(map.terrain.bridges ?? []).some((b) => x.x >= b.minX - r && x.x <= b.maxX + r && x.z >= b.minZ - r && x.z <= b.maxZ + r);
     return ok(q) && (!mirrored || (ok(twin) && dist(q, twin) >= 2 * r + WALK_GAP - 0.01));
   };
   // The nearest spot to the authored one that fits, searched outward in rings (deterministic).
   // Undefined when nothing within reach fits -- the piece is then left out, not crammed in.
-  const findRoom = (p: Vec2, r: number, mirrored: boolean): Vec2 | undefined => {
-    if (fits(p, r, mirrored)) return p;
+  const findRoom = (p: Vec2, r: number, mirrored: boolean, edgeR = r): Vec2 | undefined => {
+    if (fits(p, r, mirrored, edgeR)) return p;
     for (let ring = 0.5; ring <= 8; ring += 0.5) {
       const steps = Math.max(8, Math.round(ring * 6));
       for (let k = 0; k < steps; k += 1) {
         const a = (k / steps) * Math.PI * 2;
         const q = { x: p.x + Math.cos(a) * ring, z: p.z + Math.sin(a) * ring };
-        if (fits(q, r, mirrored)) return q;
+        if (fits(q, r, mirrored, edgeR)) return q;
       }
     }
     return undefined;
@@ -352,7 +354,7 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
     // the nudged point so the layout stays symmetric.
     const r = sig.radius ?? profile.radius;
     const mirrored = Boolean(sig.mirror && Math.abs(sig.x - center.x) > 0.3);
-    const at = findRoom({ x: sig.x, z: sig.z }, r, mirrored);
+    const at = findRoom({ x: sig.x, z: sig.z }, r, mirrored, sig.hug ? 0.5 : r);
     if (!at) continue; // no room anywhere near its spot: one piece fewer beats a pinch nobody drives through
     place(at.x, at.z, sig.yaw ?? 0);
     if (sig.mirror && Math.abs(sig.x - center.x) > 0.3) place(2 * center.x - at.x, 2 * center.z - at.z, (sig.yaw ?? 0) + Math.PI);
@@ -473,9 +475,10 @@ export function pinchesTerrain(p: Vec2, r: number, bounds: TerrainRect): boolean
   return false;
 }
 
-function steepHere(p: Vec2): boolean {
-  // 1.0m: most of a prop radius, so almost nothing is ever half on a ledge and half off it (owner 2026-10-02).
-  return onTerrainEdge(p, 1.0) || terrainHeightAt(p) > 1.2;
+function steepHere(p: Vec2, r = 1): boolean {
+  // The whole footprint plus a hand's breadth clear of any step (2026-10-06: a Power Conduit sat flush against the Ironworks
+  // slab and read as a figure stuck in the wall; a Wrecked Truck straddled the Dust Bowl riverbank, half sunk).
+  return onTerrainEdge(p, Math.max(1.0, r + 0.2)) || terrainHeightAt(p) > 1.2;
 }
 
 // ---------------------------------------------------------------------------
@@ -542,7 +545,7 @@ const RAW_MAPS: readonly MapDef[] = [
     // leaves WALK_GAP round it (findRoom); a piece with no room is left out, never crammed in.
     scatter: [],
     signature: [
-      { kind: "convoy", x: -6.5, z: -2.9, yaw: -0.35, mirror: true }, // the dead convoy's last truck: cover that explodes
+      { kind: "convoy", x: -6.5, z: -7.8, yaw: -0.35, mirror: true }, // the dead convoy's last truck: cover that explodes
       { kind: "derrick", x: -13, z: 8.6, yaw: 0.4, mirror: true },
       { kind: "fuel", x: -10.6, z: 6.4, mirror: true }, // the derrick's fuel: shoot it when they gather there
       { kind: "bunker", x: -6.5, z: 9.2, mirror: true, yaw: 0.6 },
@@ -553,7 +556,7 @@ const RAW_MAPS: readonly MapDef[] = [
     // Recurring sandstorms sweep the open basin — accuracy and visibility drop in waves.
     events: [{ kind: "sandstorm", startTurn: 3, duration: 2, period: 6 }],
     // Twin supply depots by the spires: hold them for extra income.
-    neutrals: [{ kind: "depot", x: -19, z: -3, mirror: true }],
+    neutrals: [{ kind: "depot", x: -19, z: -2.3, mirror: true }],
   },
   // IRONWORKS — one working foundry, seen from above. Sections: the FOUNDRY FLOOR (the north-west
   // quarter: a blast-furnace landmark still lit, the catwalk beside it, the slag heap behind it,
@@ -599,7 +602,7 @@ const RAW_MAPS: readonly MapDef[] = [
     // leaves WALK_GAP round it (findRoom); a piece with no room is left out, never crammed in.
     scatter: [],
     signature: [
-      { kind: "furnace", x: -17, z: 8.5, yaw: -0.5, mirror: true },
+      { kind: "furnace", x: -17, z: 8.5, yaw: -0.5, mirror: true, hug: true }, // built into its slag heap on purpose
       { kind: "railcar", x: -13, z: -9.5, yaw: 0, mirror: true }, // the rail yard
       { kind: "conduit", x: -9.5, z: 1.5, mirror: true }, // cut it and the derelict turret browns out
     ],

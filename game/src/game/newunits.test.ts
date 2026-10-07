@@ -15,9 +15,11 @@ const staged = (): TacticalSim => {
   sim.economy.set("enemy", 0);
   for (const e of sim.entities) if (e.team === "enemy" && e.kind === "base") for (const p of e.parts) if (p.role === "weapon") p.hp = 0;
   for (const e of sim.entities.filter((x) => isMount(x.kind))) e.status.alive = false; // no free posts muddying a test
+  // ...and no map props: a layout change must not move a test's line of fire or placement spot.
+  for (let i = sim.entities.length - 1; i >= 0; i -= 1) { const e = sim.entities[i]; if (e.kind === "cover" && !["ridge", "cliff"].includes(e.coverKind ?? "")) sim.entities.splice(i, 1); }
   return sim;
 };
-const isMount = (k: string): boolean => k === "gunpost" || k === "rocketpost" || k === "flamepost" || k === "mortarpit";
+const isMount = (k: string): boolean => k === "gunpost" || k === "rocketpost" || k === "flamepost" || k === "mortarpit" || k === "cannonpost";
 const disarm = (e: ReturnType<TacticalSim["debugSpawn"]>): void => {
   for (const p of e.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0;
   e.status.canShoot = false; e.status.canMove = false;

@@ -86,7 +86,7 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "deploy", label: "Deploy", tip: "Artillery only. Outriggers down (whole turn): the gun fires only deployed, deploys itself any turn it holds still, and packing up to move costs a turn." },
   { id: "recon", label: "Recon", tip: "Drone Operator only. Whole turn: next turn every enemy unit's planned order is shown on the board." },
   { id: "leap", label: "Jump", tip: "Infantry: hop a few metres, over a crate or a low wall, up onto a ledge, across a gap. Light, quick troopers go farther and higher. 1 AP." },
-  { id: "man", label: "Man", tip: "Walk up to a free post (Gun, Mortar, Rocket or Flame) and crew it. It fires from next turn, twice a turn. 1 AP." },
+  { id: "man", label: "Man", tip: "Walk up to a free post (Gun, Mortar, Rocket, Cannon or Flame) and crew it. It fires from next turn, twice a turn. 1 AP." },
   { id: "dismount", label: "Leave", tip: "Let the crew step away from this emplacement. It stops firing until someone crews it again." },
   { id: "place", label: "Place", tip: "Set this unit's item down within reach. T turns it. 1 AP and its cost." },
   { id: "slam", label: "Slam", tip: "Sledge only. Swing the hammer in a circle: every foe within 3m is hurt and flung far. 1 AP." },

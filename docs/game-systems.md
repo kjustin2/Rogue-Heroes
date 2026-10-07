@@ -181,7 +181,10 @@ the one anti-air unit every faction keeps. Any older section below that names a 
   **Ironclad** (tower shield: bullets from the front 150 degrees do 40%, blasts go round) and the **Trencher** (Dig: every trooper within 4m
   digs in). **Burning** is now a status (`entity.burning`): flamers, flame posts, napalm and burning ground set INFANTRY alight for three
   turns of 8, machines and aircraft do not burn, water or a medic puts it out. **Posts**: Rocket Posts and Flame Posts join Gun Posts as map
-  pairs (`placeFieldMounts`, one band of the board each) and as base defenses (`isMountKind`). **Strikes**: EMP Burst (vehicles and defenses lose
+  pairs (`placeFieldMounts`, one band of the board each) and as base defenses (`isMountKind`); since 2026-10-06 every map also gets a mirrored
+  pair of **Mortar Pits** and of **Cannon Posts** (`cannonpost`: a wheeled field gun firing a 54-damage tank shell, 32m, anti-armour). Posts keep
+  3m off every supply cache and caches 3m off each other (`pickupSpotClear`); `mapLayout.test.ts` fails any overlap or a prop straddling a
+  terrain step (except `hug` landmarks built into a step, e.g. the Ironworks furnace). **Strikes**: EMP Burst (vehicles and defenses lose
   next turn), Minefield Drop, Medevac (full heal, up), Sentry Drop, Rail Strike (3 rods, 95 each). **Base options** (`BASE_UPGRADES`): Armor I/II
   (+30% health each), the **Fortress Cannon** (a `cannon` weapon part: 120-damage shell every second turn at the dearest ground foe in 40m, costs
   no base order), the **Watch Radar** (enemy orders revealed every turn). The bot buys armour then the cannon with an army out.

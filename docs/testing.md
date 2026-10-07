@@ -14,6 +14,7 @@ Every command, smoke, probe and oracle, and the hard-won ledgers behind them. Ru
 | Full gate + smokes | `npm run test:full` |
 | Every smoke, serially (buttons flow economy deep ground ui-audit faction animation attacks director hotseat) | `npm run smoke:core` |
 | Movement + projectile oracle (AI vs AI, all maps; part of `npm test`) | `npx vitest run src/game/movement.test.ts` |
+| Map layout: no props/posts/caches overlap, nothing straddles a step (part of `npm test`) | `npx vitest run src/game/mapLayout.test.ts` |
 | Faction look measure (silhouette IoU + hue per faction pair, every roster unit's membership; `MEASURE_GATE=1` fails below goal) | `npm run measure:factions` |
 | Map look measure (board contrast / range / one-hue share; `SHOT_PREFIX=before-` for a baseline) | `npm run measure:maps` |
 | CPU profile of the stress scene / scene census | `npm run perf:profile`, `npm run perf:census` |

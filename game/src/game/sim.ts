@@ -42,6 +42,7 @@ import {
   createRunabout,
   createHornet,
   createRocketPost,
+  createCannonPost,
   createFlamePost,
   createSentry,
   createBuilder,
@@ -4312,10 +4313,11 @@ export class TacticalSim {
     const axis = normalize({ x: b.position.x - a.position.x, z: b.position.z - a.position.z });
     const side = { x: -axis.z, z: axis.x };
     const clear = (p: Vec2): boolean => !pointInWater(p) && !onTerrainEdge(p, 2.4) && Math.abs(terrainHeightAt(p)) <= 0.5
-      && !this.entities.some((e) => e.status.alive && dist(e.position, p) < e.radius + 2.2);
+      && !this.entities.some((e) => e.status.alive && dist(e.position, p) < e.radius + 2.2)
+      && !this.pickups.some((c) => dist(c, p) < 3); // never on top of a cash cache (owner 2026-10-06: "objects overlap")
     // A mirrored pair of each kind, on its own band of the board so they never crowd: Gun Posts on the flanks, Rocket Posts
     // far out where armour crosses, Flame Posts close to the centre line where infantry funnel.
-    const place = (kind: "gunpost" | "rocketpost" | "flamepost", label: string, tag: string, laterals: number[], alongs: number[]): void => {
+    const place = (kind: "gunpost" | "rocketpost" | "flamepost" | "mortarpit" | "cannonpost", label: string, tag: string, laterals: number[], alongs: number[]): void => {
       for (const lateral of laterals) {
         for (const along of alongs) {
           const p = clampToArena({ x: c.x + side.x * lateral + axis.x * along, z: c.z + side.z * lateral + axis.z * along });
@@ -4324,6 +4326,8 @@ export class TacticalSim {
           for (const [at, n] of [[p, 1], [q, 2]] as const) {
             const post = kind === "gunpost" ? createGunPost(`field-${tag}-${n}`, label, "neutral", { ...at })
               : kind === "rocketpost" ? createRocketPost(`field-${tag}-${n}`, label, "neutral", { ...at })
+              : kind === "mortarpit" ? createMortarPit(`field-${tag}-${n}`, label, "neutral", { ...at })
+              : kind === "cannonpost" ? createCannonPost(`field-${tag}-${n}`, label, "neutral", { ...at })
               : createFlamePost(`field-${tag}-${n}`, label, "neutral", { ...at });
             post.yaw = Math.atan2(c.x - at.x, c.z - at.z) + Math.PI / 2; // facing along the front
             this.entities.push(post);
@@ -4337,6 +4341,9 @@ export class TacticalSim {
     place("gunpost", "Gun Post", "post", [10, 8, 12, 6, 14, 5, 16, 18, 4, 3], alongs);
     place("rocketpost", "Rocket Post", "rocket", [15, 17, 13, 19, 11], [14, -14, 20, -20, 8, -8, 26, -26]);
     place("flamepost", "Flame Post", "flame", [4, 5, 6, 3, 7, 8, 2, 9, 11], [8, -8, 4, -4, 12, -12, 16, -16, 20, -20, 0]);
+    // Heavier field pieces further back toward each side's half: a Mortar Pit to shell the middle and a Cannon Post that fires tank shells.
+    place("mortarpit", "Mortar Pit", "mortar", [20, 22, 18, 24, 16], [-16, 16, -20, 20, -12, 12, -24, 24]);
+    place("cannonpost", "Cannon Post", "cannon", [-16, -18, -14, -20, -12], [-10, 10, -14, 14, -6, 6, -18, 18]);
   }
 
   // ---- Field hands: place (demolitionist / turret tech / fortifier) ----
@@ -4596,7 +4603,7 @@ export class TacticalSim {
       if (e.kind === "base" && dist(p, e.position) < 14) return false; // outside every deploy ring
       if ((e.kind === "cover" || e.kind === "base" || isDefenseKind(e.kind)) && dist(p, e.position) < e.radius + 1.3) return false;
     }
-    return true;
+    return !this.pickups.some((c) => dist(c, p) < 3); // two caches never touch
   }
 
   // Anti-air multiplier vs a flying target: read the shooter's intact weapon part vsAir if it has
@@ -7650,7 +7657,7 @@ const MUZZLE_LOCAL: Partial<Record<string, { x: number; z: number; y: number }>>
   runabout: { x: 0, z: 0.7, y: 1.4 }, flak: { x: 0, z: 0.7, y: 2.0 },
   // emplacements
   turret: { x: 0, z: 1.45, y: 0.95 }, exturret: { x: 0, z: 1.1, y: 1.5 }, bunker: { x: 0, z: 1.5, y: 0.72 },
-  gunpost: { x: 0, z: 1.1, y: 0.8 }, mortarpit: { x: 0, z: 0.7, y: 0.6 }, rocketpost: { x: 0, z: 1.15, y: 1.1 }, flamepost: { x: 0, z: 1.05, y: 0.62 },
+  gunpost: { x: 0, z: 1.1, y: 0.8 }, mortarpit: { x: 0, z: 0.7, y: 0.6 }, rocketpost: { x: 0, z: 1.15, y: 1.1 }, flamepost: { x: 0, z: 1.05, y: 0.62 }, cannonpost: { x: 0, z: 1.75, y: 0.95 },
   sentry: { x: 0, z: 0.8, y: 0.66 }, base: { x: 0.2, z: 2.6, y: 3.8 },
   // long guns carry the muzzle further out front than a carbine does
   sniper: { x: 0.5, z: 1.0, y: 1.12 }, bounty: { x: 0.5, z: 1.0, y: 1.12 }, bazooka: { x: 0.45, z: 1.0, y: 1.1 }, flamer: { x: 0.42, z: 0.9, y: 1.0 },

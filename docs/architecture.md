@@ -333,6 +333,9 @@ Standard three-layer split (pure sim → read-only renderer → DOM HUD, composi
   additive blending anywhere in a shot (the only additive light is the pooled flash light). Fades
   shrink, never dim toward black. `projectileFamily()` maps the sim's four projectile kinds × the
   firing unit to fifteen visual families; `syncProjectiles` only feeds it a position history.
+  On top of the family, `UNIT_ROUND` gives each infantry kind its own round shape (tandem burst beads,
+  twin side-by-side rounds, spinning brass rings, needle/collar, stubby slug); still warm-only. Check
+  with `KINDS=scout,lancer npm run shots:gpu -- projfollow`.
   Rules: (1) trails are sampled by WORLD DISTANCE (`pushTrailPoint`/`trailStep`), never per render
   frame — a frame-sampled history is a different length at every refresh rate and resolve speed
   (at quarter speed nine flame blobs stacked in 20cm and read as a balloon); (2) blast shapes scale

@@ -736,7 +736,7 @@ export function createBase(id: string, name: string, team: Team, position: Vec2)
 function createDefense(
   id: string,
   name: string,
-  kind: "turret" | "exturret" | "bunker" | "sensor" | "wall" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost" | "sentry",
+  kind: "turret" | "exturret" | "bunker" | "sensor" | "wall" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost" | "cannonpost" | "sentry",
   team: Team,
   position: Vec2,
   config: { radius: number; height: number; parts: DamagePart[]; canAct: boolean }
@@ -793,8 +793,8 @@ export function createExTurret(id: string, name: string, team: Team, position: V
 
 // MANNED EMPLACEMENTS (2026-10-03): a weapon on a sandbag ring that acts only while a trooper crews it.
 // Born uncrewed with no action points; the sim hands it one a turn while its crew stands beside it.
-function createMount(id: string, name: string, kind: "gunpost" | "mortarpit" | "rocketpost" | "flamepost", team: Team, position: Vec2): CombatEntity {
-  const gun = kind === "gunpost" ? "Heavy MG" : kind === "mortarpit" ? "Mortar Tube" : kind === "rocketpost" ? "Rocket Launcher" : "Flame Projector";
+function createMount(id: string, name: string, kind: "gunpost" | "mortarpit" | "rocketpost" | "flamepost" | "cannonpost", team: Team, position: Vec2): CombatEntity {
+  const gun = kind === "gunpost" ? "Heavy MG" : kind === "mortarpit" ? "Mortar Tube" : kind === "rocketpost" ? "Rocket Launcher" : kind === "cannonpost" ? "Field Gun" : "Flame Projector";
   const mount = createDefense(id, name, kind, team, position, {
     radius: 1.0,
     height: 1.0,
@@ -810,6 +810,7 @@ function createMount(id: string, name: string, kind: "gunpost" | "mortarpit" | "
 export const createGunPost = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createMount(id, name, "gunpost", team, position);
 export const createMortarPit = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createMount(id, name, "mortarpit", team, position);
 export const createRocketPost = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createMount(id, name, "rocketpost", team, position);
+export const createCannonPost = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createMount(id, name, "cannonpost", team, position);
 export const createFlamePost = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createMount(id, name, "flamepost", team, position);
 
 // A sentry: a small auto-turret a Turret Tech sets down. Light, fragile, fires by itself each turn.
@@ -1128,11 +1129,11 @@ export function isBuildingKind(kind: EntityKind): boolean {
 // Player/enemy-built defensive emplacements (turret, explosive turret, wall).
 /** A defense a trooper crews to make it fire: it acts only while someone stands at the gun. */
 export function isMountKind(kind: string): boolean {
-  return kind === "gunpost" || kind === "mortarpit" || kind === "rocketpost" || kind === "flamepost";
+  return kind === "gunpost" || kind === "mortarpit" || kind === "rocketpost" || kind === "flamepost" || kind === "cannonpost";
 }
 
 export function isDefenseKind(kind: EntityKind): boolean {
-  return kind === "turret" || kind === "exturret" || kind === "bunker" || kind === "sensor" || kind === "wall" || kind === "gunpost" || kind === "mortarpit" || kind === "rocketpost" || kind === "flamepost" || kind === "sentry";
+  return kind === "turret" || kind === "exturret" || kind === "bunker" || kind === "sensor" || kind === "wall" || kind === "gunpost" || kind === "mortarpit" || kind === "rocketpost" || kind === "flamepost" || kind === "cannonpost" || kind === "sentry";
 }
 
 function utilityMessages(entity: CombatEntity, part: DamagePart): string[] {

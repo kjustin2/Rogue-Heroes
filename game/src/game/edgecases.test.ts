@@ -149,7 +149,8 @@ describe("order edge cases", () => {
     quietEnemy(sim);
     const a = sim.debugSpawn("soldier", "player", { x: -6, z: 0 });
     const b = sim.debugSpawn("soldier", "player", { x: -6, z: 2 });
-    const t = sim.debugSpawn("soldier", "enemy", { x: 2, z: 1 });
+    const t = sim.debugSpawn("soldier", "enemy", { x: -2.5, z: 1 });
+    for (let i = sim.entities.length - 1; i >= 0; i -= 1) if (sim.entities[i].kind === "cover" && !["ridge", "cliff"].includes(sim.entities[i].coverKind ?? "")) sim.entities.splice(i, 1); // nothing in the line of fire
     for (const p of t.parts) p.hp = Math.min(p.hp, 1);
     for (const u of [a, b]) { sim.select(u.id); sim.queueShoot(t.id); }
     sim.endTurn();

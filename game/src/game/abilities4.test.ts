@@ -9,7 +9,12 @@ import { DEFAULT_TERRAIN, discSamples, onTerrainEdge, pointInWater, setActiveTer
 const settle = (sim: TacticalSim): void => {
   for (let t = 0; t < 80 && sim.phase === "resolve"; t += 0.05) sim.update(0.05);
 };
-const staged = (): TacticalSim => { const sim = new TacticalSim(); sim.configure(mapDef("dustbowl"), "destroy", "normal"); return sim; };
+// A clean board: map props and field posts are removed, so a change to a map's layout cannot move a test's line of fire.
+const staged = (): TacticalSim => {
+  const sim = new TacticalSim(); sim.configure(mapDef("dustbowl"), "destroy", "normal");
+  for (let i = sim.entities.length - 1; i >= 0; i -= 1) { const e = sim.entities[i]; if (e.team === "neutral" && e.kind !== "base" && !["ridge", "cliff"].includes(e.coverKind ?? "")) sim.entities.splice(i, 1); }
+  return sim;
+};
 // The enemy AI moves and shoots its units during the resolve; take their legs and weapon so the
 // staging stays where it was put.
 const disarm = (e: ReturnType<TacticalSim["debugSpawn"]>): void => {

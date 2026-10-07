@@ -744,7 +744,7 @@ app.whenReady().then(async () => {
       }
       if (s === "projfollow") {
         // The camera rides each round (tight, HUD hidden) and grabs the frame at mid-flight: the round itself, close.
-        const kinds = ["soldier", "scout", "striker", "heavy", "sniper", "bazooka", "grenadier", "tank", "mortar"];
+        const kinds = (process.env.KINDS || "soldier,scout,jumper,lancer,ironclad,bounty,striker,sledge,droneop,turrettech,trencher,builder,demo,heavy,sniper,bazooka,grenadier,tank,mortar").split(",");
         for (const kind of kinds) {
           await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal")`);
           await sleep(1300);
@@ -1019,6 +1019,7 @@ app.whenReady().then(async () => {
           await js(`window.__rht.setView({ x: 0, z: 0, zoom: 0.8, pitch: 0.6, yaw: 0.2 })`);
           await sleep(900);
           await shot("map-" + map);
+          if (process.env.PROBE) console.log("near", map, await js(`(() => { const cam = window.__rht.cameraObject(); const out = []; for (const e of window.__rht.sim.entities) { const v = cam.position.clone().set(e.position.x, e.elevation + 0.5, e.position.z).project(cam); const sx = (v.x + 1) / 2 * innerWidth, sy = (1 - v.y) / 2 * innerHeight; if (Math.hypot(sx - ${process.env.PX ?? 480}, sy - ${process.env.PY ?? 540}) < 90) out.push(e.kind + "/" + (e.coverKind ?? "") + " " + e.name + " @" + e.position.x.toFixed(1) + "," + e.position.z.toFixed(1)); } return JSON.stringify(out); })()`));
         }
         continue;
       }
