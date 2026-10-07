@@ -46,8 +46,6 @@ const CLIP_FOR_FAMILY: Record<WeaponFamily, string> = {
   // No authored bank: the throw is a procedural windmill of the FREE arm (throwArmAngle in
   // worldRenderer), which no rifle clip describes.
   throw: "",
-  // Procedural too: the tool lifts toward the patient and the body leans in (attackPose "aid").
-  aid: "",
 };
 
 /** Does a Blender bank exist for this family? Callers fall back to the procedural pose if not. */

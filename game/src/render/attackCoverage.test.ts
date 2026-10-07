@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { CARPET_BOMBS, TacticalSim, carpetDropPoints, type Projectile, type TroopKind, type VisualEvent } from "../game/sim";
 import { TROOP_CATALOG, SUPPORT_POWERS } from "../game/units";
 import {
-  createArtillery, createBomber, createDroneOp, createExTurret, createFlak,
+  createArtillery, createBomber, createExTurret, createFlak,
   createBase, createFlamer, createGrenadier, createGunship, createHeavy, createJumper, createMortar,
-  createBazooka, createBuilder, createDemo,
-  createTurretTech, createSledge, createLancer, createBounty, createIronclad, createTrencher, createRunabout, createHornet,
-  createScout, createSniper, createSoldier, createStriker, createTank, createTransport, createTurret,
+  createBazooka,
+  createTurretTech, createSledge, createLancer, createIronclad, createBreaker, createBoomer, createJuggernaut, createRunabout, createHornet,
+  createScout, createSniper, createSoldier, createStriker, createTank, createTurret,
   type CombatEntity,
 } from "../game/damageModel";
 import { makeProjectileModel, projectileFamily, SNIPER_PAUSE, type ProjectileFamily } from "./projectileFx";
@@ -27,26 +27,26 @@ import { hasMotionBank, sampleMotion } from "./infantryMotion";
 type Maker = (id: string, name: string, team: "player" | "enemy", p: { x: number; z: number }) => CombatEntity;
 const MAKERS: Record<TroopKind, Maker> = {
   soldier: createSoldier, scout: createScout, sniper: createSniper, striker: createStriker, heavy: createHeavy,
-  grenadier: createGrenadier, mortar: createMortar, droneop: createDroneOp,
+  grenadier: createGrenadier, mortar: createMortar,
   jumper: createJumper, flamer: createFlamer, tank: createTank, 
   artillery: createArtillery, flak: createFlak, gunship: createGunship,
-  bomber: createBomber, transport: createTransport,
-  bazooka: createBazooka, builder: createBuilder, demo: createDemo, 
-  turrettech: createTurretTech, sledge: createSledge, lancer: createLancer, bounty: createBounty, ironclad: createIronclad, trencher: createTrencher,
+  bomber: createBomber,
+  bazooka: createBazooka,
+  turrettech: createTurretTech, sledge: createSledge, lancer: createLancer, ironclad: createIronclad, breaker: createBreaker, boomer: createBoomer, juggernaut: createJuggernaut,
   runabout: createRunabout, hornet: createHornet,
 };
 
 /** How each troop's main gun is exercised. `null` = the kind has no gun, and says why. */
 const GUN: Record<TroopKind, { dist?: number; air?: boolean } | { none: string }> = {
-  soldier: {}, scout: {}, sniper: {}, heavy: {}, droneop: {}, jumper: {}, bazooka: {}, builder: {}, demo: {},
+  soldier: {}, scout: {}, sniper: {}, heavy: {}, jumper: {}, bazooka: {},
   flamer: { dist: 5 }, grenadier: {}, mortar: {},
   tank: {}, artillery: { dist: 14 }, flak: { air: true },
   gunship: { air: true },
-  turrettech: {}, sledge: {}, lancer: {}, bounty: {}, ironclad: {}, trencher: {}, hornet: {},
+  turrettech: {}, sledge: {}, lancer: {}, ironclad: {}, hornet: {}, breaker: {}, juggernaut: {},
   runabout: { none: "its MG needs a gunner aboard (covered by the seats test)" },
   striker: { none: "melee only (its strike is covered below)" },
   bomber: { none: "bombs only (carpet covered below)" },
-  transport: { none: "unarmed airlift" },
+  boomer: { none: "no gun: it detonates" },
 };
 
 /** A target that cannot move or shoot back, so the enemy AI never muddies the trace. */
@@ -129,9 +129,10 @@ describe("every unit's gun has an animation from trigger to landing", () => {
       const shooter = MAKERS[kind]("s", "Shooter", "player", { x: -6, z: -2 });
       if (shooter.kind === "artillery") shooter.deployed = true;
       const target = gun.air
-        ? pinned(createTransport("t", "Target", "enemy", { x: -6 + range, z: -2 }))
+        ? pinned(createBomber("t", "Target", "enemy", { x: -6 + range, z: -2 }))
         : pinned(createHeavy("t", "Target", "enemy", { x: -6 + range, z: -2 }));
       target.status.alive = true;
+      target.grenades = 0; // an air target must not bomb back (the old one was the unarmed transport)
       const sim = new TacticalSim([shooter, target]);
       sim.select("s");
       expect(sim.queueShoot("t"), sim.log[0]).toBe(true);
@@ -354,11 +355,3 @@ describe("the renderer's attack choreography covers every family", () => {
   });
 });
 
-describe("dig animation", () => {
-  it("a Trencher digging in plays the aid pose (the tool comes down, the body leans in); a tank does not", () => {
-    expect(attackFamilyForOrder("trencher", "dig")).toBe("aid");
-    expect(attackFamilyForOrder("tank", "dig")).toBeUndefined();
-    const peak = Math.max(...Array.from({ length: 41 }, (_, i) => { const p = attackPose("aid", i / 40); return Math.abs(p.lift) + Math.abs(p.brace); }));
-    expect(peak).toBeGreaterThan(0.2);
-  });
-});

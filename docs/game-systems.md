@@ -2,16 +2,29 @@
 
 How the factions, the three AI brains and Local 2 Players work, with the measurements behind each.
 
-## Roster cut (2026-10-04, owner: "3-4 too many units per faction")
-Cut from every roster and from the code: **Medic/Corpsman, Engineer/Mechanic, Pad Tech (springer), Interceptor, Oil Rigger, Sapper (Scattergun), APC**,
-the Bastion **Demolisher** (demo stays Syndicate's Blaster), the **Flak Nest** defense, and everything that only they used: the `treat` order
-(Heal/Repair), stims/overcharge, support auras, DOWNED troopers and revives, bounce pads, oil slicks, the sapper's mines order and wall breach
-(mines now come from the Minefield defense and the Minefield Drop strike), the Triage / Welding / Field Hospital techs (`healBonus` and
-`repairBonus` are gone). The **Medevac** strike is the only heal and now sits on Support Wing; Field Works needs only Assault.
-Final rosters (14 / 14 / 13): **Vanguard** soldier, scout, sniper, jumper, heavy, bazooka, lancer, turrettech, tank, hornet, runabout, flak, gunship,
-transport. **Syndicate** soldier, sniper, heavy, striker, grenadier, flamer, demo, bazooka, sledge, bounty, turrettech, droneop, runabout, flak.
-**Bastion** soldier, sniper, heavy, mortar, builder, ironclad, trencher, turrettech, tank, artillery, runabout, flak, bomber. The **Flak Track** is
-the one anti-air unit every faction keeps. Any older section below that names a removed unit or system is superseded by this one.
+## Rosters: only FUN units (2026-10-06; supersedes every older section that names a removed unit or system)
+Owner: "Any unit that isn't super FUN and exciting to use should be removed." Two cuts so far:
+- **2026-10-04:** Medic/Corpsman, Engineer/Mechanic, Pad Tech, Interceptor, Oil Rigger, Sapper, APC, the Flak Nest defense, and what only they
+  used (`treat`, auras, DOWNED/revives, bounce pads, oil slicks, the sapper mines order, Triage / Welding / Field Hospital). The **Medevac**
+  strike is the only heal (Support Wing).
+- **2026-10-06:** Trencher (and the `dig` order; Bastion's Dig In doctrine stays), Drone Operator (and the `recon` order; the Watch Radar
+  still reveals orders), Bounty Hunter, Transport (the Runabout is the only carrier), Fortifier and Demolitionist (and the `charge` /
+  `barrier` placeables; the sentry is the only placeable). An old save holding a retired kind loads without it (`restore()` drops it).
+- **New fun units (2026-10-06):**
+  - **Breaker** (Vanguard, $300, Shock Troops): a rocket gauntlet. **Punch** = the push order with a 7m dash (`BREAKER_CHARGE`), 26 damage
+    and an 18m throw (`PUNCH_FORCE` / `PUNCH_MAX`); water, ledges and the map edge kill, slamming into a body or prop hurts both, vehicles
+    budge. Wrist gun for range.
+  - **Boomer** (Syndicate, $110, Demolitions): fast, fragile, no gun. **Detonate** (order `detonate`, 1 AP, resolves after its move):
+    112-damage blast over 3.6m that flings everyone, friend or foe (`BOOM_*`); the barrel on its back is volatile, so a shot from behind
+    blows it where it stands. Bots run it at the best clump they can reach (`aiBoomerAct`).
+  - **Juggernaut** (Bastion, $340, Field Works): slow, x1.6 HP, a 16m shoulder blast cannon; `UnitStats.knockback` 2.2 scales every throw
+    it causes (`applyKnockback`), so its splash knocks troopers far.
+Final rosters (14 / 12 / 12): **Vanguard** soldier, scout, sniper, jumper, heavy, bazooka, lancer, turrettech, breaker, tank, hornet, runabout,
+flak, gunship. **Syndicate** soldier, sniper, heavy, striker, grenadier, flamer, boomer, bazooka, sledge, turrettech, runabout, flak.
+**Bastion** soldier, sniper, heavy, mortar, ironclad, juggernaut, turrettech, tank, artillery, runabout, flak, bomber.
+Balance notes from the same round: the Marksman is $160 with 0.55 accurate fraction; the Turret Tech is $150, and every bot brain now
+sets its sentries (it was Hard-only, so Normal's Turret Techs never used their one verb); the bot plans blind to a sentry the other side
+placed this turn (`placedTurn`: placement is an order, and orders are simultaneous).
 
 ## FACTIONS play, look and fight differently (2026-09-22)
 

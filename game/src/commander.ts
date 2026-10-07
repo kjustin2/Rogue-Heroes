@@ -63,7 +63,7 @@ function defaultPoints(m: MedalSeed): number {
   return need > 0 ? Math.max(10, Math.min(120, Math.round(Math.sqrt(need) * 5))) : 40;
 }
 
-const AIR_KINDS = ["gunship", "bomber", "transport"];
+const AIR_KINDS = ["gunship", "bomber"];
 const VEHICLE_KINDS = ["tank", "hornet", "runabout", "artillery", "flak"];
 const killsOf = (s: CommanderStats, kinds: string[]): number => kinds.reduce((sum, k) => sum + (s.killsByKind[k] ?? 0), 0);
 const INFANTRY_KILLS = (s: CommanderStats): number => s.kills - killsOf(s, AIR_KINDS) - killsOf(s, VEHICLE_KINDS);
@@ -131,13 +131,12 @@ const MEDAL_SEEDS: readonly MedalSeed[] = [
     ["sentry50", "Automatic Defense", "Deploy 50 sentries.", "sentries", 50, 55],
     ["ricochet20", "Bank Shot", "Ricochet a round on to a second foe 20 times.", "ricochets", 20, 25],
     ["ricochet100", "Pool Shark", "Ricochet a round on to a second foe 100 times.", "ricochets", 100, 60],
-    ["bounty500", "Cashing In", "Collect $500 in bounties.", "bountyPaid", 500, 30],
-    ["bounty5000", "Most Wanted", "Collect $5,000 in bounties.", "bountyPaid", 5000, 75],
+    ["boom10", "Big Badda Boom", "Detonate 10 Boomers.", "booms", 10, 25],
+    ["punch25", "Home Run", "Punch 25 foes with a Breaker.", "punches", 25, 25],
     ["clash10", "Bullet Meets Bullet", "See 10 rounds meet in mid-air.", "clashes", 10, 30],
     ["clash50", "Point Defense", "See 50 rounds meet in mid-air.", "clashes", 50, 70],
     ["cannon10", "Big Gun", "Fire the Fortress Cannon 10 times.", "cannon", 10, 30],
     ["cannon50", "Fortress Master", "Fire the Fortress Cannon 50 times.", "cannon", 50, 75],
-    ["dug50", "Dig Deep", "Dig in 50 troopers with a Trencher.", "dug", 50, 25],
     ["fullcar", "Clown Car", "Fill a Runabout with five aboard.", "fullcar", 1, 30],
     ["hops50", "Hopper", "Make 50 hops.", "hops", 50, 20],
     ["hops300", "Kangaroo", "Make 300 hops.", "hops", 300, 55],
@@ -153,7 +152,7 @@ const MEDAL_SEEDS: readonly MedalSeed[] = [
       ? [(st.counters["research:incendiary"] ? 1 : 0) + (st.counters["research:demolition"] ? 1 : 0), 2]
       : [st.counters[key as string] ?? 0, need as number],
   })),
-  { id: "tried8", page: "Arsenal", name: "Try Them All", blurb: "Field every one of the 8 newest troop types.", points: 60, progress: (st) => [triedKinds(st, NEW_KINDS), NEW_KINDS.length] },
+  { id: "tried8", page: "Arsenal", name: "Try Them All", blurb: "Field every one of the newest troop types.", points: 60, progress: (st) => [triedKinds(st, NEW_KINDS), NEW_KINDS.length] },
   { id: "roster", page: "Arsenal", name: "Full Roster", blurb: "Field every troop type in the game at least once.", points: 100, progress: (st) => [triedKinds(st, TROOP_KINDS), TROOP_KINDS.length] },
   { id: "tech10", page: "Arsenal", name: "Branching Out", blurb: "Research 10 different tech nodes (across battles).", points: 30, progress: (st) => [triedTech(st), 10] },
   { id: "tech20", page: "Arsenal", name: "Fully Tooled", blurb: "Research 20 different tech nodes (across battles).", points: 80, progress: (st) => [triedTech(st), 20] },
@@ -162,12 +161,11 @@ const MEDAL_SEEDS: readonly MedalSeed[] = [
   { id: "cannonbuilt", page: "Arsenal", name: "Heavy Metal", blurb: "Build the Fortress Cannon.", points: 50, progress: (st) => [st.counters["upgrade:cannon"] ? 1 : 0, 1] },
   { id: "radarbuilt", page: "Arsenal", name: "Eyes Open", blurb: "Build the Watch Radar.", points: 25, progress: (st) => [st.counters["upgrade:radar"] ? 1 : 0, 1] },
   { id: "sledgekills", page: "Arsenal", name: "Sledge Hunter", blurb: "Kill 25 foes with Sledges (hammer or sidearm).", points: 40, progress: (st) => [st.counters["killer:sledge"] ?? 0, 25] },
-  { id: "bountykills", page: "Arsenal", name: "Bounty Collector", blurb: "Kill 25 foes with Bounty Hunters.", points: 40, progress: (st) => [st.counters["killer:bounty"] ?? 0, 25] },
   { id: "flamekills", page: "Arsenal", name: "Burn Notice", blurb: "Kill 25 foes with Flamers or Flame Posts.", points: 40, progress: (st) => [(st.counters["killer:flamer"] ?? 0) + (st.counters["killer:flamepost"] ?? 0), 25] },
   { id: "rocketkills", page: "Arsenal", name: "Post Haste", blurb: "Kill 15 vehicles' worth of foes from Rocket Posts.", points: 40, progress: (st) => [st.counters["killer:rocketpost"] ?? 0, 15] },
 ];
 
-const NEW_KINDS = ["runabout", "turrettech", "hornet", "lancer", "sledge", "bounty", "ironclad", "trencher"];
+const NEW_KINDS = ["runabout", "turrettech", "hornet", "lancer", "sledge", "ironclad", "breaker", "boomer", "juggernaut"];
 const triedKinds = (st: CommanderStats, kinds: readonly string[]): number => kinds.filter((k) => (st.counters[`deploy:${k}`] ?? 0) > 0).length;
 const triedTech = (st: CommanderStats): number => TECH_TREE.filter((n) => (st.counters[`research:${n.id}`] ?? 0) > 0).length;
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TECH_TREE } from "./tech";
 import { dist } from "../core/math";
-import { applyDamage, createBase, createBomber, createCover, createFlak, createFlamer, createGrenadier, createGunship, createHeavy, createMortar, createScout, createSniper, createSoldier, createStriker, createTank, createTransport, createWall } from "./damageModel";
+import { applyDamage, createBase, createBomber, createCover, createFlak, createFlamer, createGrenadier, createGunship, createHeavy, createMortar, createScout, createSniper, createSoldier, createStriker, createTank, createWall } from "./damageModel";
 import {
   BASE_INCOME,
   INCOME_BY_LEVEL,
@@ -17,7 +17,7 @@ import {
   troopSpec,
   type Projectile,
 } from "./sim";
-import { terrainHeightAt, setActiveTerrain, DEFAULT_TERRAIN, ARENA_BOUNDS } from "./terrain";
+import { terrainHeightAt, setActiveTerrain, DEFAULT_TERRAIN } from "./terrain";
 
 describe("tactical simulation loop", () => {
   it("resolves queued target fire back into a new command phase", () => {
@@ -2036,101 +2036,9 @@ describe("tactical enemy AI", () => {
     expect(sim.queueShoot("i")).toBe(true); // the gunship's autocannon has a target: an enemy plane
   });
 
-  it("a transport airlifts a unit: load, carry (hidden + inert), serialize, then unload elsewhere", () => {
-    const transport = createTransport("t", "Chinook", "player", { x: 0, z: 0 });
-    const rider = createSoldier("r", "Rook", "player", { x: 1, z: 0 });
-    const sim = new TacticalSim([transport, rider]);
-    sim.select("t");
-    expect(sim.queueLoad("r")).toBe(true);
-    sim.endTurn();
-    let guard = 0;
-    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
-    expect(rider.carriedById).toBe("t");
-    expect(transport.passengerIds).toContain("r");
-
-    // The carry link rides serialize()/restore().
-    const restored = new TacticalSim();
-    expect(restored.restore(sim.serialize())).toBe(true);
-    expect(restored.entity("r")?.carriedById).toBe("t");
-    expect(restored.entity("t")?.passengerIds).toContain("r");
-
-    // Unload at a distant spot: the transport flies there and sets the rider down.
-    sim.select("t");
-    expect(sim.queueUnload({ x: 12, z: 0 })).toBe(true);
-    sim.endTurn();
-    guard = 0;
-    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
-    expect(rider.carriedById).toBeUndefined();
-    expect(transport.passengerIds?.length ?? 0).toBe(0);
-    expect(rider.position.x).toBeGreaterThan(8); // dropped near the unload point, not back at the start
-  });
-
-  it("transport airlift rejects enemies, flyers, and a full hold", () => {
-    const t = createTransport("t", "Chinook", "player", { x: 0, z: 0 });
-    const sim = new TacticalSim([
-      t,
-      createSoldier("a", "A", "player", { x: 1, z: 0 }),
-      createGunship("f", "Hawk", "player", { x: -1, z: 0 }),
-      createSoldier("foe", "Foe", "enemy", { x: 2, z: 0 }),
-    ]);
-    sim.select("t");
-    expect(sim.queueLoad("foe")).toBe(false); // not your unit
-    expect(sim.queueLoad("f")).toBe(false);   // can't airlift a flyer
-    expect(sim.canAirlift("a")).toBe(true);
-    t.passengerIds = ["x", "y"]; // pretend full (capacity 2)
-    expect(sim.canAirlift("a")).toBe(false);
-    expect(sim.queueLoad("a")).toBe(false);
-  });
-
-  it("transport carries two and unloads them to distinct, in-arena spots", () => {
-    const t = createTransport("t", "Chinook", "player", { x: 0, z: 0 });
-    const a = createSoldier("a", "A", "player", { x: 0.6, z: 0 });
-    const b = createSoldier("b", "B", "player", { x: 0, z: 0.6 });
-    const sim = new TacticalSim([t, a, b]);
-    // Two load orders (2 CP) → picks both up during resolve.
-    sim.select("t");
-    expect(sim.queueLoad("a")).toBe(true);
-    expect(sim.queueLoad("b")).toBe(true);
-    sim.endTurn();
-    let guard = 0;
-    while (sim.phase === "resolve" && guard++ < 500) sim.update(0.05);
-    expect(t.passengerIds?.length).toBe(2);
-    // Unload: both set down at separate spots, none on top of the other.
-    sim.select("t");
-    expect(sim.queueUnload({ x: 8, z: 0 })).toBe(true);
-    sim.endTurn();
-    guard = 0;
-    while (sim.phase === "resolve" && guard++ < 500) sim.update(0.05);
-    expect(a.carriedById).toBeUndefined();
-    expect(b.carriedById).toBeUndefined();
-    expect(dist(a.position, b.position)).toBeGreaterThan(0.5); // not stacked on the same spot
-    for (const p of [a, b]) {
-      expect(Math.abs(p.position.x)).toBeLessThan(ARENA_BOUNDS.maxX); // in-arena
-      expect(Math.abs(p.position.z)).toBeLessThan(ARENA_BOUNDS.maxZ);
-    }
-  });
-
-  it("a downed transport drops its passengers where it falls", () => {
-    const transport = createTransport("t", "Chinook", "player", { x: 3, z: 0 });
-    const rider = createSoldier("r", "Rook", "player", { x: 3.4, z: 0 });
-    const sim = new TacticalSim([transport, rider]);
-    sim.select("t");
-    sim.queueLoad("r");
-    sim.endTurn();
-    let guard = 0;
-    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
-    expect(rider.carriedById).toBe("t");
-    // Blow up the transport mid-resolve → the passenger bails out and reappears on the ground.
-    applyDamage(transport, "hull", 999);
-    sim.debugSetPhase("resolve");
-    sim.update(0.05);
-    expect(rider.carriedById).toBeUndefined();
-    expect(rider.status.alive).toBe(true);
-  });
-
   it("a ground bomb blast does NOT reach a flyer at altitude (anti-air is direct-fire only)", () => {
     const bomber = createBomber("b", "Fortress", "player", { x: 5, z: 0 });
-    const enemyAir = createTransport("t", "Bandit", "enemy", { x: 6, z: 0 }); // ~1u away horizontally, up at agl
+    const enemyAir = createGunship("t", "Bandit", "enemy", { x: 6, z: 0 }); // ~1u away horizontally, up at agl
     applyDamage(enemyAir, "rotor", 999); // immobilise → holds position over the blast
     const sim = new TacticalSim([bomber, enemyAir]);
     const before = enemyAir.parts.reduce((s, p) => s + p.hp, 0);
@@ -2143,7 +2051,7 @@ describe("tactical enemy AI", () => {
   });
 
   it("a flyer overflies a ground mine without tripping it", () => {
-    const transport = createTransport("t", "Chinook", "player", { x: -5, z: 0 });
+    const transport = createGunship("t", "Hawk", "player", { x: -5, z: 0 });
     const foe = createSoldier("e", "Grunt", "enemy", { x: 24, z: 15 }); // keeps the battle live, out of AA range
     const sim = new TacticalSim([transport, foe]);
     sim.mines.push({ id: "m1", x: 0, z: 0, team: "enemy" });

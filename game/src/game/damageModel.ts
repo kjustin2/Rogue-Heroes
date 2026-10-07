@@ -27,8 +27,6 @@ export type CoverKind =
   | "depot"
   | "span"
   | "gas"
-  | "charge" // a demolitionist's satchel bomb (volatile, fused)
-  | "barrier" // a fortifier's wall segment
   | "stump" | "log" | "bush" | "cactus" | "tent" | "pipe" | "silo" | "statue"
   // Biome props (2026-09-23): the furniture that says WHICH map this is, so no kind is shared by
   // accident (a Roman column in a foundry, a sandbag wall in a hay field).
@@ -149,8 +147,7 @@ export interface CombatEntity {
   // accurate against it until the turn stamped here has passed.
   markedUntilTurn?: number;
   markedById?: string;
-  // A demolition charge: turns left on its fuse (it blows at 0), and who set it (for the log).
-  fuse?: number;
+  // Who set this down (a sentry), for the log and pop-in.
   ownerTeam?: Team;
   // A manned emplacement (gun post, mortar pit): the trooper crewing it. It fires only while crewed.
   occupantId?: string;
@@ -162,6 +159,8 @@ export interface CombatEntity {
   burning?: { turns: number; dmg: number };
   // A sentry (set down by a Turret Tech or dropped): turns left before it packs up. It fires on its own each turn.
   sentryTtl?: number;
+  /** The turn a sentry was set down: the bot, which plans after the player, must not react to one placed this turn (orders are simultaneous). */
+  placedTurn?: number;
   // EMP: no actions for this entity until the turn stamped here has passed.
   disabledUntilTurn?: number;
   // FACTION TRAITS (factions.ts unitMods), stamped at deploy: the same Recruit is quicker for Vanguard and sturdier for Bastion.
@@ -384,37 +383,6 @@ export function createBomber(id: string, name: string, team: Team, position: Vec
   return entity;
 }
 
-// Transport: an unarmed helicopter that airlifts friendly ground units — load one (or two) aboard,
-// fly them across the map, and drop them off. Flies low so the pickup/drop reads. Permadeath cargo.
-export function createTransport(id: string, name: string, team: Team, position: Vec2): CombatEntity {
-  const entity: CombatEntity = {
-    id,
-    name,
-    kind: "transport",
-    team,
-    position,
-    yaw: team === "player" ? Math.PI * 0.5 : -Math.PI * 0.5,
-    radius: 1.3,
-    height: 1.0,
-    elevation: 0,
-    stance: "standing",
-    commandPoints: 2,
-    maxCommandPoints: 2,
-    grenades: 0,
-    maxGrenades: 0,
-    flying: true,
-    agl: 5.5,
-    passengerIds: [],
-    status: statusFor("transport"),
-    parts: [
-      part("hull", "Cabin", "core", 60, { critical: true }),
-      part("rotor", "Rotor", "mobility", 28),
-      part("tail", "Tail Rotor", "utility", 20),
-    ],
-  };
-  recomputeStatus(entity);
-  return entity;
-}
 
 // Flak Track: the dedicated ground anti-air specialist — devastating vs flyers (high vsAir), long
 // range so it blankets the air lane, but thin and weak against ground armor.
@@ -578,22 +546,6 @@ export function createFlamer(id: string, name: string, team: Team, position: Vec
   });
 }
 
-export function createDroneOp(id: string, name: string, team: Team, position: Vec2): CombatEntity {
-  return createInfantry(id, name, "droneop", team, position, {
-    radius: 0.62,
-    height: 1.64,
-    bodyHp: 42,
-    headHp: 15,
-    weaponHp: 16,
-    legsHp: 24,
-    packHp: 26,
-    weaponLabel: "Machine Pistol",
-    packLabel: "Recon Drone",
-    packRole: "utility",
-    packTags: ["spotter-aura"], // the hovering drone spots for everyone nearby
-    grenades: 0,
-  });
-}
 
 export function createJumper(id: string, name: string, team: Team, position: Vec2): CombatEntity {
   return createInfantry(id, name, "jumper", team, position, {
@@ -611,14 +563,6 @@ export function createJumper(id: string, name: string, team: Team, position: Vec
   });
 }
 
-// FIELD HANDS (2026-10-03). Soldier-sized, sidearm only: each is worth its one placing verb (PLACEABLES).
-function createFieldHand(id: string, name: string, kind: "builder" | "demo", team: Team, position: Vec2, weaponLabel: string, packLabel: string, bodyHp: number): CombatEntity {
-  return createInfantry(id, name, kind, team, position, {
-    radius: 0.64, height: 1.64, bodyHp, headHp: 15, weaponHp: 18, legsHp: 24, packHp: 24, weaponLabel, packLabel, packRole: "utility", grenades: 0,
-  });
-}
-export const createBuilder = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createFieldHand(id, name, "builder", team, position, "Sidearm", "Barrier Kit", 50);
-export const createDemo = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createFieldHand(id, name, "demo", team, position, "Sidearm", "Charge Satchel", 44);
 
 export function createTurretTech(id: string, name: string, team: Team, position: Vec2): CombatEntity {
   const e = createInfantry(id, name, "turrettech", team, position, {
@@ -632,14 +576,25 @@ export const createSledge = (id: string, name: string, team: Team, position: Vec
 export const createLancer = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createInfantry(id, name, "lancer", team, position, {
   radius: 0.62, height: 1.7, bodyHp: 38, headHp: 14, weaponHp: 24, legsHp: 22, packHp: 22, weaponLabel: "Ricochet Rifle", packLabel: "Ammo Drum", packRole: "volatile", grenades: 0,
 });
-export const createBounty = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createInfantry(id, name, "bounty", team, position, {
-  radius: 0.62, height: 1.7, bodyHp: 34, headHp: 13, weaponHp: 24, legsHp: 20, packHp: 18, weaponLabel: "Long Rifle", packLabel: "Trophy Rack", packRole: "utility", grenades: 0,
-});
 export const createIronclad = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createInfantry(id, name, "ironclad", team, position, {
   radius: 0.74, height: 1.7, bodyHp: 56, headHp: 20, weaponHp: 22, legsHp: 30, packHp: 34, weaponLabel: "Carbine", packLabel: "Tower Shield", packRole: "utility", grenades: 0,
 });
-export const createTrencher = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createInfantry(id, name, "trencher", team, position, {
-  radius: 0.66, height: 1.64, bodyHp: 48, headHp: 15, weaponHp: 18, legsHp: 24, packHp: 26, weaponLabel: "Sidearm", packLabel: "Trench Tools", packRole: "utility", grenades: 0,
+
+// ROUND 6 (2026-10-06): the fun units.
+export const createBreaker = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createInfantry(id, name, "breaker", team, position, {
+  radius: 0.66, height: 1.72, bodyHp: 44, headHp: 15, weaponHp: 30, legsHp: 26, packHp: 22, weaponLabel: "Rocket Gauntlet", packLabel: "Thruster Pack", packRole: "utility", grenades: 0,
+});
+/** No gun at all: the Boomer's weapon is the barrel on its back (volatile: shoot it and it goes up where it stands). */
+export function createBoomer(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  const e = createInfantry(id, name, "boomer", team, position, {
+    radius: 0.6, height: 1.5, bodyHp: 30, headHp: 12, weaponHp: 1, legsHp: 20, packHp: 16, weaponLabel: "Detonator", packLabel: "Barrel Charge", packRole: "volatile", grenades: 0,
+  });
+  e.parts = e.parts.filter((p) => p.role !== "weapon");
+  recomputeStatus(e);
+  return e;
+}
+export const createJuggernaut = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createInfantry(id, name, "juggernaut", team, position, {
+  radius: 0.8, height: 1.84, bodyHp: 64, headHp: 22, weaponHp: 30, legsHp: 34, packHp: 30, weaponLabel: "Blast Cannon", packLabel: "Shell Hopper", packRole: "utility", grenades: 0,
 });
 
 export function createBazooka(id: string, name: string, team: Team, position: Vec2): CombatEntity {
@@ -919,9 +874,6 @@ export const COVER_PROFILES: Record<CoverKind, CoverProfile> = {
   gate: { hp: 170, radius: 2.3, height: 2.55, volatile: false, label: "Checkpoint Gate" },
   radar: { hp: 160, radius: 1.5, height: 3.5, volatile: false, label: "Radar Station" },
   ammo: { hp: 34, radius: 0.7, height: 1.2, volatile: true, label: "Ammo Cache" },
-  // Field placements (units.ts PLACEABLES). The satchel is volatile: kill it (or let the fuse run) and it blows.
-  charge: { hp: 14, radius: 0.5, height: 0.5, volatile: true, label: "Charge" },
-  barrier: { hp: 80, radius: 1.0, height: 1.35, volatile: false, label: "Barrier" },
   conduit: { hp: 44, radius: 0.7, height: 1.2, volatile: true, label: "Power Conduit" },
   ridge: { hp: 95, radius: 1.2, height: 1.85, volatile: false, label: "High Ground" },
   cliff: { hp: 160, radius: 1.28, height: 2.15, volatile: false, label: "Cliff Face" },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createBomber, createSoldier, createTank, createTransport } from "./damageModel";
+import { createBomber, createRunabout, createSoldier, createTank } from "./damageModel";
 import { TacticalSim } from "./sim";
 
 function advance(sim: TacticalSim, seconds: number): void {
@@ -27,7 +27,7 @@ describe("serialize / restore fidelity", () => {
 
   it("preserves a carried passenger through a save/load", () => {
     const sim = new TacticalSim([
-      createTransport("t1", "Chinook", "player", { x: -6, z: 0 }),
+      createRunabout("t1", "Jeep", "player", { x: -6, z: 0 }),
       createSoldier("s1", "Rider", "player", { x: -4, z: 0 }),
       createSoldier("e1", "Foe", "enemy", { x: 20, z: 0 }),
     ]);

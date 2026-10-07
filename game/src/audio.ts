@@ -90,9 +90,6 @@ export const GUN_VOICES: Record<string, Voice> = {
   sniper: { group: "mosin", alt: ["savage", "arisaka"], rate: 0.95, m: 1 },
   heavy: { group: "ak47burst", rate: 0.92, m: 1, burst: true },
   striker: { group: "colt1911", rate: 1, m: 1 },
-  droneop: { group: "bersa", rate: 1.2, m: 1 },
-  builder: { group: "sw642", rate: 0.9, m: 1 },
-  demo: { group: "m1917", rate: 0.85, m: 1 },
   flamer: { group: "", rate: 1, m: 1, synth: "flame" },
   bazooka: { group: "crack", rate: 0.7, m: 1, synth: "rocket" },
   grenadier: { group: "pop", rate: 0.7, m: 0.85, synth: "thunk" },
@@ -114,16 +111,16 @@ export const GUN_VOICES: Record<string, Voice> = {
   turrettech: { group: "sw642", rate: 1.05, m: 0.9 },
   sledge: { group: "singlesix", rate: 0.8, m: 0.9 },
   lancer: { group: "sks", alt: ["ar15"], rate: 1.18, m: 1 },
-  bounty: { group: "tikka", alt: ["marlin"], rate: 0.78, m: 1.05 },
   ironclad: { group: "lever1894", rate: 0.85, m: 1 },
-  trencher: { group: "ruger22", rate: 1.1, m: 0.9 },
+  breaker: { group: "m1917", rate: 1.15, m: 1 },
+  juggernaut: { group: "cannon", rate: 1.32, m: 0.8 },
   runabout: { group: "ppshburst", rate: 1.12, m: 0.9, burst: true },
   hornet: { group: "cannon", rate: 1.18, m: 0.85 },
 };
 /** A hand grenade leaving a hand, and a bomb leaving a bay. */
 const THROW_VOICE: Voice = { group: "", rate: 1, m: 1, synth: "whoosh" };
 const BOMB_VOICE: Voice = { group: "pop", rate: 0.5, m: 0.6 };
-const AIR = new Set(["gunship", "bomber", "transport"]);
+const AIR = new Set(["gunship", "bomber"]);
 
 /** The sound of a round leaving its barrel. Pure. */
 export function voiceFor(kind: ShotKind, source?: string): Voice {
@@ -134,7 +131,7 @@ export function voiceFor(kind: ShotKind, source?: string): Voice {
 
 /** Which impact material a hit lands on, from what was hit. Pure. */
 export function impactClass(kind: string, coverKind?: string): "hitsoft" | "hitmetal" | "hitplate" | "hitwood" {
-  const SOFT = new Set(["soldier", "scout", "sniper", "striker", "heavy", "grenadier", "mortar", "flamer", "droneop", "jumper", "bazooka", "builder", "demo", "turrettech", "sledge", "lancer", "bounty", "ironclad", "trencher"]);
+  const SOFT = new Set(["soldier", "scout", "sniper", "striker", "heavy", "grenadier", "mortar", "flamer", "jumper", "bazooka", "turrettech", "sledge", "lancer", "ironclad", "breaker", "boomer", "juggernaut"]);
   if (SOFT.has(kind)) return "hitsoft";
   if (kind === "cover") {
     const wood = new Set(["tree", "crate", "log", "stump", "bush", "haybale", "fence", "rack", "tent", "hut", "boat", "barricade", "sandbag", "bones", "grave"]);

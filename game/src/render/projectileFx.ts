@@ -60,7 +60,7 @@ export type ProjectileFamily =
  *  comes from who fired it and how. */
 export function projectileFamily(p: Projectile): ProjectileFamily {
   const src: EntityKind | undefined = p.sourceKind;
-  if (p.kind === "shell") return src === "artillery" ? "artillery" : src === "exturret" ? "siege" : src === "bazooka" ? "rocket" : "tank";
+  if (p.kind === "shell") return src === "artillery" ? "artillery" : src === "exturret" || src === "juggernaut" ? "siege" : src === "bazooka" ? "rocket" : "tank";
   // ONE BALLISTIC LANGUAGE (2026-09-22): the sim's "bolt" rounds used to draw as cyan energy darts
   // with crackling arc impacts -- "laser beams" next to every other gun in the game. Autoguns,
   // aircraft cannon and flak fire warm MG tracers now; the base relay throws a real shell.
@@ -71,11 +71,11 @@ export function projectileFamily(p: Projectile): ProjectileFamily {
     if (src && isAirKind(src)) return "bomb";
     return "grenade";
   }
-  if (src === "sniper" || src === "bounty") return "sniper";
+  if (src === "sniper") return "sniper";
   if (src === "heavy" || src === "gunpost" || src === "runabout") return "mg";
-  if (src === "droneop" || src === "striker" || src === "turrettech" || src === "trencher" || src === "sledge") return "pistol";
+  if (src === "striker" || src === "turrettech" || src === "sledge") return "pistol";
   if (src === "flamer" || src === "flamepost") return "flame";
-  if (src === "scout" || src === "jumper") return "carbine";
+  if (src === "scout" || src === "jumper" || src === "breaker") return "carbine";
   return "rifle";
 }
 
@@ -496,15 +496,11 @@ const UNIT_ROUND: Partial<Record<EntityKind, RoundSpec>> = {
   scout: { w: 0.62, len: 0.7, head: 0.7, core: HOT, sleeve: 0xffefa8, tandem: 1 }, // quick double-tap darts
   jumper: { w: 0.78, len: 0.5, head: 0.85, core: HOT, sleeve: 0xffb04a, tandem: 2 }, // three-round burst beads
   lancer: { w: 0.9, len: 1.3, head: 1.0, core: HOT, sleeve: BRASS, rings: 2 }, // ricochet slug with spinning brass rings
+  breaker: { w: 1.2, len: 0.55, head: 1.15, core: HOT, sleeve: 0xff8a2a, tandem: 1 }, // stubby carbine double-tap
   ironclad: { w: 1.4, len: 0.75, head: 1.25, core: 0xffe9b0, sleeve: TRACER_DEEP }, // stubby heavy slug
-  bounty: { w: 0.8, len: 2.8, head: 0.8, core: HOT, sleeve: 0xffc27a, collar: true, rings: 1 }, // long rifle: amber needle + ring
   striker: { w: 0.85, len: 0.5, head: 0.85, core: HOT, sleeve: 0xffc857, twin: true }, // akimbo sidearms
   sledge: { w: 1.3, len: 0.36, head: 1.2, core: 0xffd8a0, sleeve: TRACER_DEEP }, // fat short sawn-off slug
-  droneop: { w: 0.6, len: 1.1, head: 0.75, core: HOT, sleeve: 0xfff2c4, collar: true }, // pale marker dart
   turrettech: { w: 0.95, len: 0.45, head: 0.95, core: HOT, sleeve: 0xffa040, tandem: 1 }, // rivet-gun pair
-  trencher: { w: 1.1, len: 0.38, head: 1.05, core: HOT, sleeve: 0xe8742a }, // dull ember bead
-  builder: { w: 1.0, len: 0.4, head: 0.95, core: HOT, sleeve: 0xffd27a, twin: true }, // nail-gun pair
-  demo: { w: 1.15, len: 0.42, head: 1.1, core: 0xffe0a0, sleeve: 0xff7a2a }, // hot orange bead
 };
 
 function tracerModel(family: ProjectileFamily, age: number, seed: number, travel = 99, src?: EntityKind): THREE.Group {

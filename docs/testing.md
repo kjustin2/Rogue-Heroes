@@ -15,10 +15,17 @@ Every command, smoke, probe and oracle, and the hard-won ledgers behind them. Ru
 | Every smoke, serially (buttons flow economy deep ground ui-audit faction animation attacks director hotseat) | `npm run smoke:core` |
 | Movement + projectile oracle (AI vs AI, all maps; part of `npm test`) | `npx vitest run src/game/movement.test.ts` |
 | Map layout: no props/posts/caches overlap, nothing straddles a step (part of `npm test`) | `npx vitest run src/game/mapLayout.test.ts` |
+| Fun units close up + Punch / Detonate / blast cannon mid-action (real GPU) | `npm run shots:gpu -- fununits` |
+| Round origin vs the drawn weapon, every shooter (data, real GPU) | `npm run shots:gpu -- muzzlecheck` |
 | Faction look measure (silhouette IoU + hue per faction pair, every roster unit's membership; `MEASURE_GATE=1` fails below goal) | `npm run measure:factions` |
 | Map look measure (board contrast / range / one-hue share; `SHOT_PREFIX=before-` for a baseline) | `npm run measure:maps` |
 | CPU profile of the stress scene / scene census | `npm run perf:profile`, `npm run perf:census` |
 | AI-vs-AI faction matchups (not a gate, ~5 min) | `npm run balance:factions` |
+
+**The balance gate (`balance.test.ts`, inside `npm test`)** measures damage per dollar against the median kind. Two crediting rules
+(2026-10-06), both measured, not tuned: a KILLING blow also counts the health it denied (a Marksman's one-shot head kill used to count as
+16 damage and read as a dead buy), and a Turret Tech is credited with its sentries' damage and charged their $70. The player seat has run
+~60-64% of decided games since the fun-unit round (gate 35-65%): watch it.
 | Perf bench + leak probe | `npm run perf` (`-- --update-baseline` to rebase) |
 | AI vision inspector | `npm run vision` (`-- <scenario>` or `-- all`) |
 | Scenario screenshot gallery | `npm run improve:gallery` |

@@ -12,7 +12,10 @@ and research differently, three AI brains (Easy / Normal / Hard differ in intell
 
 2026-10-06: map props / posts / caches never overlap (`mapLayout.test.ts`), water no longer reads as a road,
 every map has mirrored Mortar Pits and Cannon Posts (tank-shell field gun), and each infantry kind fires its
-own round shape (`UNIT_ROUND`). Next on the goal list: hazard clarity (Ironworks rust ground), map uniqueness.
+own round shape (`UNIT_ROUND`). Hazards now warn a turn early in molten orange (never cache gold).
+Round 6 (2026-10-06, "only FUN units"): cut Trencher, Drone Operator, Bounty Hunter, Transport, Fortifier, Demolitionist; added the
+Breaker (rocket-fist Punch, 18m throw), Boomer (kamikaze) and Juggernaut (knockback cannon); see `docs/game-systems.md`.
+Open: the balance gate's player seat runs ~60-64% (limit 65%); map uniqueness pass.
 
 State of `main`: `npm run verify` green (574 vitest incl. chaos, balance self-play and the movement +
 projectile oracle), `npm run smoke:core` green (11 smokes), `npm run probe:terrain` 0 offenders,

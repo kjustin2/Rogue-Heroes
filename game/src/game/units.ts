@@ -12,21 +12,19 @@ export type InfantryKind =
   | "grenadier"
   | "mortar"
   | "flamer"
-  | "droneop"
   | "jumper"
   | "bazooka"
-  | "builder"
-  | "demo"
   | "turrettech"
   | "sledge"
   | "lancer"
-  | "bounty"
   | "ironclad"
-  | "trencher";
+  | "breaker"
+  | "boomer"
+  | "juggernaut";
 
 export type GroundVehicleKind = "tank" | "artillery" | "flak" | "runabout" | "hornet";
 
-export type AirKind = "gunship" | "bomber" | "transport";
+export type AirKind = "gunship" | "bomber";
 
 /** Everything the Home Base can deploy onto the field. */
 export type TroopKind = InfantryKind | GroundVehicleKind | AirKind;
@@ -42,12 +40,12 @@ export type EntityKind = TroopKind | StructureKind;
 // `kind === "a" || kind === "b" || ...` predicates used to.
 const INFANTRY_SET: Record<InfantryKind, true> = {
   soldier: true, scout: true, sniper: true, striker: true, heavy: true, grenadier: true,
-  mortar: true, flamer: true, droneop: true, jumper: true,
-  bazooka: true, builder: true, demo: true,
-  turrettech: true, sledge: true, lancer: true, bounty: true, ironclad: true, trencher: true,
+  mortar: true, flamer: true, jumper: true, bazooka: true,
+  turrettech: true, sledge: true, lancer: true, ironclad: true,
+  breaker: true, boomer: true, juggernaut: true,
 };
 const GROUND_VEHICLE_SET: Record<GroundVehicleKind, true> = { tank: true, artillery: true, flak: true, runabout: true, hornet: true };
-const AIR_SET: Record<AirKind, true> = { gunship: true, bomber: true, transport: true };
+const AIR_SET: Record<AirKind, true> = { gunship: true, bomber: true };
 
 export const INFANTRY_KINDS = Object.keys(INFANTRY_SET) as readonly InfantryKind[];
 export const GROUND_VEHICLE_KINDS = Object.keys(GROUND_VEHICLE_SET) as readonly GroundVehicleKind[];
@@ -81,6 +79,8 @@ export interface UnitStats {
   chain?: boolean;
   /** A tower shield: damage from the front arc is multiplied by this (bullets only; blasts go round it). */
   shield?: number;
+  /** Multiplies the throw of every blast or hit this unit causes (the Juggernaut's blast cannon). */
+  knockback?: number;
   /** A landed hit SUPPRESSES: the target has one command point next turn and drops to a crouch. */
   suppresses?: boolean;
   /** Board distance per order, before MOVE_RANGE_SCALE. 0 = immobile. */
@@ -160,7 +160,7 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   // RAIL MARKSMAN. The round does not stop at the first body: it goes through and hits every unit
   // on the line, losing a quarter of its punch per body. Cover and walls still stop it. Line the
   // enemy up and one shot is three -- the "wide beam" of the fun pass as one stat on one unit.
-  sniper: foot({ moveRange: 6.0, moveSpeed: 6.2, shotDamage: 54, weaponRange: 34, projectileSpeed: 3.8, spread: 0.22, accurateFraction: 0.35, spreadPerMeter: 0.09, accuracyLabel: "marksman", pierce: 0.25, aiValue: 8 }),
+  sniper: foot({ moveRange: 6.0, moveSpeed: 6.2, shotDamage: 54, weaponRange: 34, projectileSpeed: 3.8, spread: 0.22, accurateFraction: 0.55, spreadPerMeter: 0.09, accuracyLabel: "marksman", pierce: 0.25, aiValue: 8 }),
   striker: foot({ moveRange: 10.8, moveSpeed: 11.5, shotDamage: 24, accuracyLabel: "sidearm", meleeRange: 0.72, meleeMultiplier: 1, aiValue: 5 }),
   // A four-round burst reads as a rifle with a stutter. Ten rounds at lower per-shot damage reads
   // as a machine gun: same weight of fire, but you SEE the volume, and the wide cone means stray
@@ -172,10 +172,7 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   // infantry to hurt armour, and slow and short-ranged enough that armour can hunt it back.
   bazooka: foot({ moveRange: 5.2, moveSpeed: 5.2, shotDamage: 64, weaponRange: 21, projectile: "shell", projectileSpeed: 2.7, spread: 2.8, accurateFraction: 0.5, accuracyLabel: "rocket launcher", groundShell: true, antiArmor: 1.5, aiValue: 7 }),
   // THE FIELD HANDS: each has a sidearm and one placing verb (see PLACEABLES) -- their worth is the verb.
-  builder: foot({ moveRange: 5.8, moveSpeed: 5.8, shotDamage: 16, weaponRange: 12, accurateFraction: 0.55, hpMultiplier: 1.15, accuracyLabel: "sidearm", aiValue: 4 }),
-  demo: foot({ moveRange: 6.0, moveSpeed: 6.0, shotDamage: 17, weaponRange: 14, accurateFraction: 0.5, accuracyLabel: "sidearm", aiValue: 5 }),
   flamer: foot({ shotDamage: 34, weaponRange: 7.5, accurateFraction: 0.9, aiValue: 4 }),
-  droneop: foot({ moveRange: 6.8, moveSpeed: 6.8, shotDamage: 8, weaponRange: 26, accurateFraction: 0.62, spread: 1.4, spreadPerMeter: 0.08, hpMultiplier: 0.82, accuracyLabel: "marker carbine", aiValue: 4 }),
   // SCATTERGUN. Seven pellets, each rolling its own spread, on a short leash. Projectiles hit
   // whatever they cross rather than only their target, so a wide burst genuinely sweeps a clump —
   // this is a shotgun as a data change, not a new attack path. At 3m nearly every pellet connects
@@ -197,11 +194,17 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   // RICOCHET GUNNER: a hit glances on to the next two foes within 3.2m (a warm bullet, not a beam): the answer to a clump.
   lancer: foot({ moveRange: 6.4, moveSpeed: 6.4, shotDamage: 30, weaponRange: 22, projectileSpeed: 3.0, spread: 2.6, accurateFraction: 0.45, spreadPerMeter: 0.1, accuracyLabel: "ricochet rifle", chain: true, aiValue: 7 }),
   // BOUNTY HUNTER: a long rifle and a price on every head: each kill pays cash.
-  bounty: foot({ moveRange: 6.2, moveSpeed: 6.3, shotDamage: 50, weaponRange: 36, projectileSpeed: 3.8, spread: 0.3, accurateFraction: 0.35, spreadPerMeter: 0.09, accuracyLabel: "long rifle", aiValue: 7 }),
   // IRONCLAD: a tower shield. Slow and tough; bullets from the front arc barely hurt it.
   ironclad: foot({ moveRange: 5.0, moveSpeed: 5.2, shotDamage: 36, weaponRange: 18, spread: 3.0, accurateFraction: 0.5, accuracyLabel: "carbine", hpMultiplier: 1.45, shield: 0.4, aiValue: 6 }),
   // TRENCHER: digs a whole squad in (see queueDig).
-  trencher: foot({ moveRange: 6.2, moveSpeed: 6.2, shotDamage: 17, weaponRange: 14, accurateFraction: 0.5, hpMultiplier: 1.1, accuracyLabel: "sidearm", aiValue: 5 }),
+
+  // --- Round 6 (2026-10-06, owner: "only FUN units") ---
+  // BREAKER: a rocket gauntlet. Fast; its Punch dashes in 7m and sends one foe ~18m (into water, off a ledge, into a wall).
+  breaker: foot({ moveRange: 10.5, moveSpeed: 10.8, shotDamage: 22, weaponRange: 14, spread: 2.8, accurateFraction: 0.5, accuracyLabel: "carbine", meleeRange: 0.8, meleeMultiplier: 1, aiValue: 6 }),
+  // BOOMER: a sprinting kamikaze with a barrel charge. No gun: it runs in and DETONATEs (it dies).
+  boomer: foot({ moveRange: 12, moveSpeed: 12.5, shotDamage: 0, weaponRange: 0, hpMultiplier: 0.6, aiValue: 3 }),
+  // JUGGERNAUT: slow armoured trooper with a shoulder blast cannon whose hits throw troops far.
+  juggernaut: foot({ moveRange: 4.6, moveSpeed: 4.8, shotDamage: 44, weaponRange: 16, projectile: "shell", projectileSpeed: 2.6, spread: 2.4, accurateFraction: 0.6, accuracyLabel: "blast cannon", groundShell: true, hpMultiplier: 1.6, knockback: 2.2, aiValue: 7 }),
 
   // --- Ground vehicles ---
   tank: u({ moveRange: 5.4, moveSpeed: 5.5, shotDamage: 78, weaponRange: 28, projectile: "shell", projectileSpeed: 2.45, spread: 2.65, accurateFraction: 0.5, accuracyLabel: "stabilized cannon", ramRange: 2.85, groundShell: true, hpMultiplier: 1.6, aiValue: 3 }),
@@ -215,7 +218,6 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   // --- Aircraft. The gunship's gun hits ground and air; bombs use the grenade path and fall steeply onto the picked spot. ---
   gunship: u({ moveRange: 12.5, moveSpeed: 9.5, shotDamage: 22, weaponRange: 22, accurateFraction: 0.41, projectile: "bolt", accuracyLabel: "gunship autocannon", grenadeRange: 11, aiValue: 8 }),
   bomber: u({ moveRange: 8, moveSpeed: 6.4, grenadeRange: 12, aiValue: 4 }),
-  transport: u({ moveRange: 11, moveSpeed: 8.5, aiValue: 4 }),
 
   // --- Structures and scenery ---
   // The Home Base has no gun until it buys the Fortress Cannon (BASE_UPGRADES): one heavy shell, far reach.
@@ -259,23 +261,21 @@ export interface TroopSpec {
 export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "soldier", label: "Recruit", role: "Rifle", cost: 150, cooldown: 1, tip: "Versatile rifle infantry with hand grenades. Always available." },
   { kind: "scout", label: "Scout", role: "Recon", cost: 100, cooldown: 1, tech: "recon", tip: "Fast, cheap eyes; its optic relay sharpens nearby allies' fire." },
-  { kind: "sniper", label: "Marksman", role: "Sniper", cost: 185, cooldown: 2, tech: "recon", tip: "Rail rifle that pierces every body on its line (cover still stops it). Whatever it fires at is MARKED: allies hit it easier this turn." },
+  { kind: "sniper", label: "Marksman", role: "Sniper", cost: 160, cooldown: 2, tech: "recon", tip: "Rail rifle that pierces every body on its line (cover still stops it). Whatever it fires at is MARKED: allies hit it easier this turn." },
   { kind: "striker", label: "Striker", role: "Melee", cost: 470, cooldown: 2, tech: "assault", tip: "CHARGE: the strike order closes up to 6.5m for free before the blade lands, so anything within a lunge is already in reach." },
   { kind: "heavy", label: "Heavy Gunner", role: "Suppression", cost: 250, cooldown: 2, tech: "assault", tip: "Machine-gun bursts SUPPRESS whoever they hit: one action point and a forced crouch next turn. Strays rake nearby targets." },
   { kind: "grenadier", label: "Grenadier", role: "Splash", cost: 250, cooldown: 3, tech: "ordnance", tip: "Arcing launcher with splash that clears cover and clusters. AIRBURST: a round that bursts on cover still lands half its hit on whoever hides behind it." },
   { kind: "mortar", label: "Mortar Team", role: "Indirect", cost: 260, cooldown: 3, tech: "ordnance", tip: "High-arc fire over walls and ridges. SMOKE order: a 3-turn cloud that swallows flat shots; arcing rounds sail over." },
-  { kind: "droneop", label: "Drone Operator", role: "Spotter", cost: 210, cooldown: 2, tech: "recon", tip: "26m marker carbine and a spotter drone that sharpens nearby allies' fire. RECON: spend its turn to see every enemy unit's next order. Paper-thin armour: keep it behind everything." },
   { kind: "jumper", label: "Jump Trooper", role: "Vertical", cost: 240, cooldown: 2, tech: "shock", tip: "Jet pack: its move is a leap over cliffs, water and walls. Landing beside an enemy SLAMS it. Flak can catch it mid-arc." },
   { kind: "flamer", label: "Flamer", role: "Burn", cost: 260, cooldown: 2, tech: "incendiary", tip: "Short-range flame projector. Hits leave burning ground for 2 turns: run, don't crouch. FEAR: enemy infantry near the flames break and run from them. Its fuel tanks explode when shot." },
   { kind: "bazooka", label: "Rocketeer", role: "Anti-Armor", cost: 300, cooldown: 2, tech: "shock", tip: "Shoulder-fired rocket: hits vehicles half again as hard (96 against armour). Slow, short-ranged and fragile: armour will hunt it." },
-  { kind: "demo", label: "Demolitionist", role: "Charges", cost: 230, cooldown: 2, tech: "demolition", tip: "CHARGE ($45): sets a satchel bomb beside itself. It does not throw anyone when placed; it blows after 3 turns, or the moment anything shoots it. Huge blast. Anyone can set it off, you included." },
-  { kind: "builder", label: "Fortifier", role: "Barriers", cost: 210, cooldown: 2, tech: "support", tip: "BARRIER ($40): raises a short, tough wall within reach. Walls stop shots and walkers; a cheap way to wall off a flank or seal a doorway." },
-  { kind: "turrettech", label: "Turret Tech", role: "Sentries", cost: 200, cooldown: 2, tech: "fieldworks", tip: "SENTRY ($70): sets down an auto-turret that fires on its own each turn and packs up after 4. Carries two a sortie." },
+  { kind: "turrettech", label: "Turret Tech", role: "Sentries", cost: 150, cooldown: 2, tech: "fieldworks", tip: "SENTRY ($70): sets down an auto-turret that fires on its own each turn and packs up after 4. Carries two a sortie." },
   { kind: "sledge", label: "Sledge", role: "Hammer", cost: 360, cooldown: 3, tech: "shock", tip: "SLAM: swings a huge hammer in a circle: every foe within 3m is hurt and flung. Fast, brittle, brutal against a clump or a ledge." },
   { kind: "lancer", label: "Ricochet Gunner", role: "Chain", cost: 260, cooldown: 2, tech: "marksman", tip: "Ricochet rifle: a hit glances on to up to two more foes within 3m of the first. Wasted on armour, deadly on a clump." },
-  { kind: "bounty", label: "Bounty Hunter", role: "Long Rifle", cost: 230, cooldown: 2, tech: "marksman", tip: "A 36m rifle and a price on every head: each kill pays $50." },
   { kind: "ironclad", label: "Ironclad", role: "Shield", cost: 300, cooldown: 3, tech: "shock", tip: "A tower shield: bullets from the front arc do 40% damage. Slow and tough: it walks point. Blasts and shots from the flank still hurt." },
-  { kind: "trencher", label: "Trencher", role: "Dig In", cost: 210, cooldown: 2, tech: "fieldworks", tip: "DIG: every friendly trooper within 4m digs in at once (less damage until it moves)." },
+  { kind: "breaker", label: "Breaker", role: "Rocket Fist", cost: 300, cooldown: 2, tech: "shock", tip: "PUNCH: dashes up to 7m and sends one foe flying ~18m: into water, off the map, into a wall. Vehicles barely budge." },
+  { kind: "boomer", label: "Boomer", role: "Kamikaze", cost: 110, cooldown: 1, tech: "demolition", tip: "Fast, fragile, no gun. DETONATE: blows itself up, wrecking and flinging everything within 3.5m. Shot first, it blows where it falls." },
+  { kind: "juggernaut", label: "Juggernaut", role: "Blast Cannon", cost: 340, cooldown: 3, tech: "fieldworks", tip: "Slow and tough. Its shoulder cannon's blasts throw troopers far." },
   { kind: "runabout", label: "Runabout", role: "Scout Car", cost: 300, cooldown: 2, tech: "motorpool", tip: "A light car: drives 13m a move, seats four riders and a gunner. Its MG fires only with a gunner aboard." },
   { kind: "hornet", label: "Hornet", role: "Light Tank", cost: 450, cooldown: 2, tech: "motorpool", tip: "A light tank: fast, accurate and thin-skinned. Hunts what the Tank is too slow to catch." },
   { kind: "tank", label: "Tank", role: "Armor", cost: 760, cooldown: 3, tech: "armor", tip: "Massive HP, big gun, rams and crushes cover. HULL DOWN: a turn spent still takes 30% less damage until it moves." },
@@ -283,7 +283,6 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "flak", label: "Flak Track", role: "Anti-Air", cost: 240, cooldown: 2, tech: "recon", tip: "Anti-air specialist: shreds aircraft at range. Weak against ground armour." },
   { kind: "gunship", label: "Gunship", role: "Air", cost: 420, cooldown: 3, tech: "airwing", tip: "Overflies all terrain. Its autocannon rakes ground troops and aircraft alike; BOMB drops a huge blast on any spot in reach, no flight needed, that throws troops flying. Fragile to flak; cannot capture." },
   { kind: "bomber", label: "Bomber", role: "Heavy Bomber", cost: 470, cooldown: 4, tech: "airwing", tip: "Slow, tough heavy bomber. CARPET: each drop is three bombs in a line across the spot. No gun at all, so send an escort." },
-  { kind: "transport", label: "Transport", role: "Airlift", cost: 240, cooldown: 3, tech: "airwing", tip: "Unarmed airlift: Load a ground unit, fly anywhere, Unload it. Shot down, its passengers fall out where it dies." },
 ];
 
 export function troopSpec(kind: TroopKind): TroopSpec {
@@ -292,7 +291,7 @@ export function troopSpec(kind: TroopKind): TroopSpec {
 
 // ---- Field placements: what a utility infantry unit sets down beside itself (1 AP + the cost). ----
 
-export type PlaceKind = "charge" | "pad" | "oil" | "barrier" | "sentry";
+export type PlaceKind = "sentry";
 
 export interface PlaceSpec {
   kind: PlaceKind;
@@ -307,8 +306,6 @@ export interface PlaceSpec {
 }
 
 export const PLACEABLES: readonly PlaceSpec[] = [
-  { kind: "charge", by: "demo", label: "Charge", cost: 45, reach: 3.2, rotatable: false },
-  { kind: "barrier", by: "builder", label: "Barrier", cost: 40, reach: 3.5, rotatable: true },
   { kind: "sentry", by: "turrettech", label: "Sentry", cost: 70, reach: 3.5, rotatable: true },
 ];
 

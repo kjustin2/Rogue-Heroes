@@ -30,9 +30,9 @@ const SUBJECTS = [
   { id: "turret", kind: "turret" },
 ];
 const ROSTERS = {
-  vanguard: ["soldier", "scout", "sniper", "jumper", "heavy", "tank", "flak", "gunship", "transport"],
-  syndicate: ["soldier", "sniper", "heavy", "striker", "grenadier", "flamer", "droneop", "runabout", "flak"],
-  bastion: ["soldier", "sniper", "heavy", "mortar", "builder", "tank", "artillery", "flak", "bomber"],
+  vanguard: ["soldier", "scout", "sniper", "jumper", "heavy", "breaker", "tank", "flak", "gunship"],
+  syndicate: ["soldier", "sniper", "heavy", "striker", "grenadier", "flamer", "boomer", "runabout", "flak"],
+  bastion: ["soldier", "sniper", "heavy", "mortar", "juggernaut", "tank", "artillery", "flak", "bomber"],
 };
 const GOAL = { infantryIoU: 0.8, baseIoU: 0.7, hueDeg: 40, memberMargin: 15 };
 

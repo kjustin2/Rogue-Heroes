@@ -98,34 +98,6 @@ describe("hotseat", () => {
     expect(sim.money("enemy")).toBe(START_MONEY_PLAYER);
   });
 
-  it("recon reveals the other human's real orders to the seat that flew it, and only to that seat", () => {
-    const sim = hotseat();
-    const op = sim.debugSpawn("droneop", "enemy", { x: 8, z: 0 }); // Player 2's drone op
-    const p1 = sim.debugSpawn("soldier", "player", { x: -8, z: 0 });
-    sim.swapSides(); // Player 2 plans and flies the pulse
-    sim.debugSelect(op.id);
-    expect(sim.queueRecon()).toBe(true);
-    sim.endTurn();
-    settle(sim);
-    expect(sim.turn).toBe(2);
-    expect(sim.revealedOrders).toBe(true);
-    expect(sim.revealedSeat()).toBe(2);
-    // Player 1 plans first (the revealing seat plans second) and cannot see anything revealed.
-    expect(sim.enemyIntents()).toEqual([]);
-    sim.select(p1.id);
-    expect(sim.queueMove({ x: -6, z: 1 })).toBe(true);
-    sim.swapSides();
-    expect(sim.revealedSeat()).toBe(2);
-    const intents = sim.enemyIntents();
-    expect(intents.map((i) => i.actorId)).toEqual([p1.id]);
-    expect(intents[0].destination).toBeDefined();
-    // The reveal is about the other seat, so it never stops Player 1 flying a pulse of their own.
-    sim.swapSides();
-    const op1 = sim.debugSpawn("droneop", "player", { x: -8, z: 4 });
-    sim.debugSelect(op1.id);
-    expect(sim.reconFailureReason(op1)).toBeUndefined();
-  });
-
   it("a queued support strike survives a save (money, AP and cooldown were already paid)", () => {
     const base = createBase("p-base-1", "HQ", "player", { x: -14, z: 0 });
     const enemyBase = createBase("e-base-1", "Enemy HQ", "enemy", { x: 14, z: 8 });

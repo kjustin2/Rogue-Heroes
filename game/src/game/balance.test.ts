@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { MAPS, TROOP_CATALOG, TacticalSim, mapCenter, mapDef, troopSpec, type TroopKind } from "./sim";
+import { MAPS, TROOP_CATALOG, TacticalSim, mapCenter, mapDef, placeSpecFor, troopSpec, type TroopKind } from "./sim";
 import { isBuildingKind, isDefenseKind, type CombatEntity } from "./damageModel";
 import { DEFAULT_TERRAIN, setActiveTerrain } from "./terrain";
 import { Rng } from "../core/rng";
@@ -45,7 +45,7 @@ const BAND_HIGH = 2.5;
 // ~27 damage a game and the row swung 0.42x-0.56x on a map layout change alone. Given a bombing
 // run (move over a group, release on arrival) the same aircraft measured 1.8x-2.3x -- see
 // docs/next-steps.md. Re-gate it when the AI flies real bombing runs.
-const UNGATED: readonly TroopKind[] = ["builder", "demo", "droneop", "transport", "flamer", "scout", "bomber", "sledge", "runabout"];
+const UNGATED: readonly TroopKind[] = ["flamer", "scout", "bomber", "sledge", "runabout"];
 
 interface Tally { damage: number; spent: number; fielded: number }
 
@@ -100,6 +100,14 @@ function playGame(mapId: string, seed: number, tally: Map<TroopKind, Tally>): "p
   const seen = new Set<string>();
   const kindOf = new Map<string, TroopKind>();
   const price = (e: CombatEntity): void => {
+    // A Turret Tech's worth IS its sentries (as a Marksman's is its kills): credit what they shoot to it, and charge it their $70.
+    if (!seen.has(e.id) && e.kind === "sentry" && [...kindOf].some(([id, k]) => k === "turrettech" && sim.entity(id)?.team === e.team)) {
+      seen.add(e.id);
+      kindOf.set(e.id, "turrettech");
+      const row = tally.get("turrettech");
+      if (row) row.spent += placeSpecFor("turrettech")?.cost ?? 0;
+      return;
+    }
     if (seen.has(e.id) || e.kind === "cover" || isBuildingKind(e.kind) || isDefenseKind(e.kind)) return;
     seen.add(e.id);
     const kind = e.kind as TroopKind;
@@ -123,7 +131,10 @@ function playGame(mapId: string, seed: number, tally: Map<TroopKind, Tally>): "p
       // breaching neutral cover (a sapper's 9999-point wall breach would swamp its row).
       if (!kind || !actor || entry.targetTeam !== (actor.team === "player" ? "enemy" : "player")) continue;
       const row = tally.get(kind);
-      if (row) row.damage += entry.amount;
+      // A KILLING blow is worth the health it denied, not just the part it broke: a Marksman's head shot
+      // drops a full-health trooper for 16 "damage" and read as a dead buy (2026-10-06, measured ~50% kills at 10-30m).
+      const denied = entry.killed ? (sim.entity(entry.targetId)?.parts.reduce((sum, p) => sum + Math.max(0, p.hp), 0) ?? 0) : 0;
+      if (row) row.damage += entry.amount + denied;
     }
   }
   if (sim.phase === "victory") return "player";

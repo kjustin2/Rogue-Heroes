@@ -170,14 +170,7 @@ describe("hard AI brain: the full move set", () => {
     expect(ordersOf(far, s2.id).some((o) => o.kind === "slam")).toBe(false);
   });
 
-  it("a Trencher digs in the squad around it; a Turret Tech sows a sentry toward the foe", () => {
-    const sim = hard();
-    const t = arm(sim.debugSpawn("trencher", "enemy", { x: 8, z: 0 }));
-    sim.debugSpawn("soldier", "enemy", { x: 9.5, z: 0 });
-    sim.debugSpawn("soldier", "enemy", { x: 9.5, z: 1.6 });
-    sim.debugSpawn("soldier", "player", { x: -10, z: 0 });
-    settleCommand(sim);
-    expect(ordersOf(sim, t.id).some((o) => o.kind === "dig")).toBe(true);
+  it("a Turret Tech sows a sentry toward the foe", () => {
     const s2 = hard();
     s2.economy.set("enemy", 900);
     const tt = arm(s2.debugSpawn("turrettech", "enemy", { x: 10, z: 0 }));

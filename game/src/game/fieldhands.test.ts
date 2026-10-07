@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { TacticalSim, mapDef } from "./sim";
-import { applyDamage } from "./damageModel";
 import { DEFAULT_TERRAIN, pointInWater, setActiveTerrain } from "./terrain";
 const pointInWaterAt = (x: number, z: number): boolean => pointInWater({ x, z });
 
@@ -22,57 +21,7 @@ const disarm = (e: ReturnType<TacticalSim["debugSpawn"]>): void => {
 };
 const hp = (e: { parts: { hp: number }[] }): number => e.parts.reduce((s, p) => s + p.hp, 0);
 
-describe("demolition charge", () => {
-  it("is set down without a blast, ticks for three turns, then blows everything near it away", () => {
-    const sim = staged();
-    const demo = sim.debugSpawn("demo", "player", { x: -6, z: 0 });
-    const victim = sim.debugSpawn("soldier", "enemy", { x: -0.2, z: 0 });
-    disarm(victim);
-    sim.debugSelect(demo.id);
-    const before = hp(victim);
-    expect(sim.queuePlace({ x: -2.5, z: 0 })).toBe(true);
-    expect(hp(victim)).toBe(before); // nothing thrown up on placement
-    const charge = sim.entities.find((e) => e.coverKind === "charge")!;
-    expect(charge.fuse).toBe(3);
-    expect(sim.money("player")).toBe(1000 - 45);
-    for (let i = 0; i < 2; i += 1) { sim.endTurn(); settle(sim); expect(sim.entity(charge.id)!.status.alive).toBe(true); }
-    sim.endTurn();
-    settle(sim);
-    expect(sim.entity(charge.id)!.status.alive).toBe(false);
-    expect(hp(sim.entity(victim.id)!)).toBeLessThan(before - 30);
-  });
-
-  it("goes off the moment it is shot", () => {
-    const sim = staged();
-    const demo = sim.debugSpawn("demo", "player", { x: -8, z: 0 });
-    sim.debugSelect(demo.id);
-    expect(sim.queuePlace({ x: -5, z: 0 })).toBe(true);
-    const charge = sim.entities.find((e) => e.coverKind === "charge")!;
-    const result = applyDamage(charge, charge.parts[0].id, 99);
-    expect(result.killed || !charge.status.alive).toBe(true);
-    (sim as unknown as { afterDamage(a: unknown, t: unknown, r: unknown): void }).afterDamage(charge, charge, result);
-    expect(sim.log.some((l) => l.includes("detonates"))).toBe(true);
-  });
-
-  it("refuses a fifth charge, and a spot out of reach", () => {
-    const sim = staged();
-    const demo = sim.debugSpawn("demo", "player", { x: -8, z: 0 });
-    sim.debugSelect(demo.id);
-    expect(sim.placeFailureReason(demo, { x: 5, z: 0 })).toMatch(/Too far/);
-    expect(sim.placeFailureReason(demo, { x: -6, z: 0 })).toBeUndefined();
-  });
-});
-
 describe("barrier and rocketeer", () => {
-  it("a barrier is two solid blocks across the facing", () => {
-    const sim = staged();
-    const builder = sim.debugSpawn("builder", "player", { x: -10, z: 0 });
-    sim.debugSelect(builder.id);
-    expect(sim.queuePlace({ x: -7, z: 0 })).toBe(true);
-    const blocks = sim.entities.filter((e) => e.coverKind === "barrier");
-    expect(blocks.length).toBe(2);
-    expect(blocks[0].status.alive).toBe(true);
-  });
 
   it("a rocket hits armour half again as hard as it hits a trooper's equivalent", () => {
     const sim = staged();
@@ -205,38 +154,6 @@ describe("manned emplacements", () => {
     sim.entity(gunner.id)!.status.alive = false;
     sim.endTurn(); settle(sim);
     expect(sim.entity(gp.id)!.occupantId).toBeUndefined();
-  });
-});
-
-describe("bot field hands", () => {
-  const run = (difficulty: "normal" | "hard", kind: "builder" | "demo"): TacticalSim => {
-    const sim = new TacticalSim();
-    sim.configure(mapDef("dustbowl"), "destroy", difficulty);
-    sim.economy.set("enemy", 900);
-    sim.economy.set("player", 0);
-    for (const e of sim.entities) if (e.kind === "base") for (const p of e.parts) if (p.role === "weapon") p.hp = 0;
-    const hand = sim.debugSpawn(kind, "enemy", { x: 10, z: 0 });
-    const bait = sim.debugSpawn("soldier", "player", { x: -2, z: 0 });
-    disarm(bait);
-    hand.commandPoints = hand.maxCommandPoints;
-    sim.endTurn();
-    settle(sim);
-    return sim;
-  };
-
-  it("the Hard bot lays a barrier ahead of its line and a charge in front of the foe", () => {
-    expect(run("hard", "builder").entities.some((e) => e.coverKind === "barrier")).toBe(true);
-    expect(run("hard", "demo").entities.some((e) => e.coverKind === "charge")).toBe(true);
-  });
-
-  it("bots treat a charge as danger and stay out", () => {
-    const sim = staged();
-    const danger = (p: { x: number; z: number }): boolean => (sim as unknown as { aiDangerAt(p: unknown, m?: number): boolean }).aiDangerAt(p);
-    expect(danger({ x: -5, z: 0 })).toBe(false);
-    const demo = sim.debugSpawn("demo", "player", { x: -8, z: 0 });
-    sim.debugSelect(demo.id);
-    sim.queuePlace({ x: -5, z: 0 });
-    expect(danger({ x: -5, z: 0 })).toBe(true);
   });
 });
 

@@ -11,7 +11,7 @@ const AUDIO = join(__dirname, "..", "public", "audio");
 
 describe("weapon voices", () => {
   const shooters = [...TROOP_KINDS, "turret", "exturret", "bunker", "base", "gunpost", "mortarpit"].filter(
-    (k) => UNIT_STATS[k as keyof typeof UNIT_STATS].shotDamage > 0 && !["striker", "bomber", "transport", "sensor", "wall", "cover"].includes(k),
+    (k) => UNIT_STATS[k as keyof typeof UNIT_STATS].shotDamage > 0 && !["striker", "bomber", "sensor", "wall", "cover"].includes(k),
   );
 
   it("every armed unit has its own voice (nothing falls through to the recruit's rifle)", () => {
@@ -32,7 +32,7 @@ describe("weapon voices", () => {
     const loud = (k: string): number => (GROUP_GAIN[GUN_VOICES[k].group] ?? 0) * GUN_VOICES[k].m;
     expect(loud("sniper")).toBeGreaterThan(loud("soldier"));
     expect(loud("soldier")).toBeGreaterThan(loud("scout"));
-    expect(loud("scout")).toBeGreaterThan(loud("builder") * 0.8);
+    expect(loud("scout")).toBeGreaterThan(loud("turrettech") * 0.8);
     expect(loud("artillery")).toBeGreaterThan(loud("tank"));
     // headroom: every sample is peak-normalised to -3 dBFS, so a gain past ~1.41 clips
     for (const g of Object.values(GROUP_GAIN)) expect(g).toBeLessThanOrEqual(1.4);

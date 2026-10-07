@@ -18,7 +18,7 @@ mkdirSync(OUT, { recursive: true });
 const ROWS = [
   ["01-line", ["soldier", "scout", "sniper", "striker"]],
   ["02-weight", ["heavy", "grenadier", "mortar", "flamer"]],
-  ["03-support", ["builder", "demo", "droneop", "jumper"]],
+  ["03-fun", ["breaker", "boomer", "juggernaut", "jumper"]],
   ["04-vehicles", ["tank", "hornet", "artillery"]],
 ];
 

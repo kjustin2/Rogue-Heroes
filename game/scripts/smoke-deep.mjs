@@ -1,4 +1,4 @@
-// Consolidated deep smoke (RH4's walk-the-whole-machine net): drives the NEW air/transport
+// Consolidated deep smoke (RH4's walk-the-whole-machine net): drives the NEW air/carry
 // mechanics through the full sim -> renderer -> HUD pipeline in one process, asserting sim-state
 // transitions AND that the canvas stays painted (no black frame) with a clean console throughout.
 // These features had only visual shot-scripts; this is their regression net in the suite.
@@ -27,27 +27,27 @@ try {
   await waitForCommand(page);
   await assertLit(page, "battle start");
 
-  // Deploy the full air fleet at once — proves every new render path (bomber/transport
+  // Deploy the full air fleet at once — proves every new render path (gunship/bomber
   // models, rotor spin, frustum-safe tracers) builds and paints without crashing.
   await page.evaluate(() => {
     const sim = window.__rht.sim;
     sim.economy.set("player", 4000);
     sim.debugSpawn("gunship", "player", { x: -8, z: -2 });
     sim.debugSpawn("bomber", "player", { x: -6, z: 3 });
-    sim.debugSpawn("transport", "player", { x: -4, z: -4 });
-    sim.debugSpawn("transport", "enemy", { x: 8, z: 2 });
+    sim.debugSpawn("gunship", "enemy", { x: 8, z: 2 });
     window.__rht.setView({ x: 0, z: 0, zoom: 0.7, pitch: 0.35, yaw: 0.1 });
   });
   await assertLit(page, "air fleet deployed");
   await page.screenshot({ path: join(OUT, "30-air-fleet.png") });
 
-  // 1) Air-to-air: a gunship guns an enemy transport -> the transport loses HP.
+  // 1) Air-to-air: a gunship guns an enemy bomber -> the bomber loses HP.
   const air = await page.evaluate(() => {
     const sim = window.__rht.sim;
     sim.reset();
     sim.economy.set("player", 3000);
     const g = sim.debugSpawn("gunship", "player", { x: -4, z: 0 });
-    const e = sim.debugSpawn("transport", "enemy", { x: 5, z: 0 });
+    const e = sim.debugSpawn("bomber", "enemy", { x: 5, z: 0 });
+    e.grenades = 0;
     e.parts.forEach((p) => { if (p.role === "mobility" || p.role === "weapon") p.hp = 0; }); // hold it AND stop it firing back: opposed rounds now collide in mid-air
     e.status.canShoot = false; e.status.canMove = false;
     sim.select(g.id);
@@ -57,35 +57,35 @@ try {
   if (!air.queued) fail("gunship could not queue an air-to-air shot");
   await endTurnAndSettle(page);
   const airAfter = await page.evaluate((foe) => { const e = window.__rht.sim.entity(foe); return e ? e.parts.reduce((s, p) => s + p.hp, 0) : 0; }, air.foe);
-  if (!(airAfter < air.foeHp)) fail(`air-to-air did not damage the transport (${air.foeHp} -> ${airAfter})`);
+  if (!(airAfter < air.foeHp)) fail(`air-to-air did not damage the bomber (${air.foeHp} -> ${airAfter})`);
   await assertLit(page, "air-to-air");
   await page.screenshot({ path: join(OUT, "31-air-to-air.png") });
 
-  // 2) Transport: pick up a friendly soldier, carry it (link + passenger list), then drop it off.
+  // 2) Runabout: pick up a friendly soldier, carry it (link + passenger list), then drop it off.
   const t = await page.evaluate(() => {
     const sim = window.__rht.sim;
     sim.reset();
     sim.economy.set("player", 3000);
-    const tr = sim.debugSpawn("transport", "player", { x: -6, z: 0 });
+    const tr = sim.debugSpawn("runabout", "player", { x: -6, z: 0 });
     const s = sim.debugSpawn("soldier", "player", { x: -4, z: 0 });
     sim.select(tr.id);
     const queued = sim.queueLoad(s.id);
     return { t: tr.id, s: s.id, queued };
   });
-  if (!t.queued) fail("transport could not queue a load order");
+  if (!t.queued) fail("runabout could not queue a load order");
   await endTurnAndSettle(page);
   const carried = await page.evaluate((ids) => {
     const sim = window.__rht.sim;
     const tr = sim.entity(ids.t); const s = sim.entity(ids.s);
     return { carriedBy: s?.carriedById, passengers: tr?.passengerIds ?? [] };
   }, t);
-  if (carried.carriedBy !== t.t || !carried.passengers.includes(t.s)) fail(`transport did not pick up the soldier: ${JSON.stringify(carried)}`);
+  if (carried.carriedBy !== t.t || !carried.passengers.includes(t.s)) fail(`runabout did not pick up the soldier: ${JSON.stringify(carried)}`);
   await page.evaluate((ids) => { const sim = window.__rht.sim; sim.select(ids.t); window.__rht.queueUnload({ x: -11, z: 6 }); }, t);
   await endTurnAndSettle(page);
   const dropped = await page.evaluate((ids) => { const s = window.__rht.sim.entity(ids.s); return { carriedBy: s?.carriedById, alive: s?.status.alive }; }, t);
-  if (dropped.carriedBy || !dropped.alive) fail(`transport did not drop the soldier: ${JSON.stringify(dropped)}`);
-  await assertLit(page, "transport carry");
-  await page.screenshot({ path: join(OUT, "32-transport.png") });
+  if (dropped.carriedBy || !dropped.alive) fail(`runabout did not drop the soldier: ${JSON.stringify(dropped)}`);
+  await assertLit(page, "runabout carry");
+  await page.screenshot({ path: join(OUT, "32-runabout.png") });
 
   // 3) Bomb straight-down: a bomber over a (held) ground foe detonates beneath itself.
   const bomb = await page.evaluate(() => {
@@ -132,7 +132,7 @@ try {
   await page.screenshot({ path: join(OUT, "34-victory.png") });
 
   if (errors.length) fail(`Console errors:\n${errors.slice(0, 12).join("\n")}`);
-  console.log("Deep smoke passed: air fleet render, air-to-air, transport load/carry/unload, straight-down bomb, serialize round-trip, victory screen.");
+  console.log("Deep smoke passed: air fleet render, air-to-air, runabout load/carry/unload, straight-down bomb, serialize round-trip, victory screen.");
 } finally {
   await close();
 }

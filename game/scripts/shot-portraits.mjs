@@ -24,10 +24,10 @@ const fail = (msg) => { throw new Error(msg); };
 // Troops get a tight lens; vehicles and structures are bigger so they need a little more room.
 const TROOPS = [
   "soldier", "scout", "sniper", "striker", "heavy", "grenadier",
-  "mortar", "flamer", "droneop",
+  "mortar", "flamer", "jumper", "bazooka", "lancer", "ironclad", "sledge", "turrettech", "breaker", "boomer", "juggernaut",
 ];
 const VEHICLES = ["tank", "hornet", "runabout", "artillery", "flak"];
-const AIR = ["gunship", "bomber", "transport"];
+const AIR = ["gunship", "bomber"];
 // Structures and scenery. The owner asks about characters, BASES and OBJECTS, and until now the
 // sheet only covered things that walk -- so the half of the screen made of emplacements and props
 // was never actually looked at.
