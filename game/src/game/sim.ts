@@ -59,6 +59,7 @@ import {
   factionLiving,
   isBuildingKind,
   isDefenseKind,
+  isLandmarkKind,
   isToppleKind,
   isAirKind,
   isInfantryKind,
@@ -4313,7 +4314,7 @@ export class TacticalSim {
     const axis = normalize({ x: b.position.x - a.position.x, z: b.position.z - a.position.z });
     const side = { x: -axis.z, z: axis.x };
     const clear = (p: Vec2): boolean => !pointInWater(p) && !onTerrainEdge(p, 2.4) && Math.abs(terrainHeightAt(p)) <= 0.5
-      && !this.entities.some((e) => e.status.alive && dist(e.position, p) < e.radius + 2.2)
+      && !this.entities.some((e) => e.status.alive && dist(e.position, p) < e.radius + 2.2 + (isLandmarkKind(e.coverKind) ? 2 : 0))
       && !this.pickups.some((c) => dist(c, p) < 3); // never on top of a cash cache (owner 2026-10-06: "objects overlap")
     // A mirrored pair of each kind, on its own band of the board so they never crowd: Gun Posts on the flanks, Rocket Posts
     // far out where armour crosses, Flame Posts close to the centre line where infantry funnel.
@@ -4601,7 +4602,8 @@ export class TacticalSim {
     if (pointInWater(p) || onTerrainEdge(p, 1.6) || discSamples(p, 1.6).some(pointInWater)) return false; // flat, dry, the whole ring on one level and clear of the shore
     for (const e of this.entities) {
       if (e.kind === "base" && dist(p, e.position) < 14) return false; // outside every deploy ring
-      if ((e.kind === "cover" || e.kind === "base" || isDefenseKind(e.kind)) && dist(p, e.position) < e.radius + 1.3) return false;
+      // Landmarks draw past their footprint (the checkpoint's raised boom overhung a cache): 2m more for them.
+      if ((e.kind === "cover" || e.kind === "base" || isDefenseKind(e.kind)) && dist(p, e.position) < e.radius + 1.3 + (isLandmarkKind(e.coverKind) ? 2 : 0)) return false;
     }
     return !this.pickups.some((c) => dist(c, p) < 3); // two caches never touch
   }

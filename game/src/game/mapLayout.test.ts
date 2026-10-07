@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { isLandmarkKind } from "./damageModel";
 import { MAPS } from "./maps";
 import { TacticalSim, mapDef } from "./sim";
 import { DEFAULT_TERRAIN, setActiveTerrain, terrainHeightAt } from "./terrain";
@@ -12,7 +13,7 @@ describe("map layout: nothing overlaps, nothing straddles a step", () => {
     it(map.id, () => {
       const sim = new TacticalSim(); sim.configure(mapDef(map.id), "destroy", "normal"); setActiveTerrain(map.terrain);
       const things: { n: string; x: number; z: number; r: number }[] = [];
-      for (const e of sim.entities) if (e.status.alive && !e.flying && !["ridge", "cliff", "span", "wall"].includes(e.coverKind ?? "")) things.push({ n: `${e.kind}/${e.coverKind ?? ""}`, x: e.position.x, z: e.position.z, r: e.radius });
+      for (const e of sim.entities) if (e.status.alive && !e.flying && !["ridge", "cliff", "span", "wall"].includes(e.coverKind ?? "")) things.push({ n: `${e.kind}/${e.coverKind ?? ""}`, x: e.position.x, z: e.position.z, r: e.radius + (isLandmarkKind(e.coverKind) ? 1.7 : 0) }); // landmarks draw past their footprint
       for (const p of sim.pickups) things.push({ n: "cache", x: p.x, z: p.z, r: 0.6 });
       const overlaps: string[] = [];
       for (let i = 0; i < things.length; i++) for (let j = i + 1; j < things.length; j++) {
