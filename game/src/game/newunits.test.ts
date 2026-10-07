@@ -96,23 +96,6 @@ describe("the hammer, the spade and the ricochet", () => {
     expect(sim.queueSlam()).toBe(false);
   });
 
-  it("the Ricochet Gunner's hit glances on to the next two foes in a clump", () => {
-    const sim = staged();
-    const g = sim.debugSpawn("lancer", "player", { x: -9, z: 0 });
-    const a = sim.debugSpawn("soldier", "enemy", { x: -5, z: 0 });
-    const b = sim.debugSpawn("soldier", "enemy", { x: -5, z: 1.6 });
-    const c = sim.debugSpawn("soldier", "enemy", { x: -5, z: -1.6 });
-    const lone = sim.debugSpawn("soldier", "enemy", { x: -5, z: 9 });
-    for (const e of [a, b, c, lone]) { disarm(e); tough(e); }
-    const hpBefore = new Map([a, b, c, lone].map((e) => [e.id, hp(e)] as const));
-    sim.debugSelect(g.id);
-    expect(sim.queueShoot(a.id)).toBe(true);
-    sim.endTurn(); settle(sim);
-    const hurt = [a, b, c].filter((e) => hp(sim.entity(e.id)!) < hpBefore.get(e.id)!).length;
-    expect(hurt, "the first foe and at least one more").toBeGreaterThanOrEqual(2);
-    expect(hp(sim.entity(lone.id)!), "too far for the ricochet").toBe(hpBefore.get(lone.id));
-  });
-
   it("an Ironclad's shield turns bullets from the front and not from behind", () => {
     const damageFrom = (side: 1 | -1): number => {
       const sim = staged();
@@ -135,13 +118,17 @@ describe("the hammer, the spade and the ricochet", () => {
 describe("the Runabout", () => {
   afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
 
-  it("seats five (four riders and a gunner), and its gun needs a gunner aboard", () => {
+  it("seats five, and its MG fires with nobody aboard (no gunner seat: owner 2026-10-07)", () => {
     const sim = staged();
     const car = sim.debugSpawn("runabout", "player", { x: -12, z: 0 });
     const foe = sim.debugSpawn("soldier", "enemy", { x: -4, z: 0 });
     disarm(foe);
     sim.debugSelect(car.id);
-    expect(sim.queueShoot(foe.id), "no gunner, no shot").toBe(false);
+    const empty = staged();
+    const car0 = empty.debugSpawn("runabout", "player", { x: -12, z: 0 });
+    const foe0 = empty.debugSpawn("soldier", "enemy", { x: -4, z: 0 });
+    empty.debugSelect(car0.id);
+    expect(empty.queueShoot(foe0.id), "an empty car still shoots").toBe(true);
     const riders = Array.from({ length: 6 }, (_, i) => sim.debugSpawn("soldier", "player", { x: -12, z: 1.6 + (i % 3) * 0.1 + Math.floor(i / 3) * 0.1 }));
     let boarded = 0;
     for (const r of riders) {
@@ -153,45 +140,11 @@ describe("the Runabout", () => {
     expect(sim.entity(car.id)!.passengerIds?.length).toBe(5);
     car.commandPoints = car.maxCommandPoints;
     sim.debugSelect(car.id);
-    expect(sim.queueShoot(foe.id), "a gunner is aboard").toBe(true);
+    expect(sim.queueShoot(foe.id), "and a full one").toBe(true);
   });
 
   it("drives far in one move", () => {
     expect(unitStats("runabout").moveRange).toBeGreaterThan(unitStats("tank").moveRange * 2);
-  });
-});
-
-describe("sentries", () => {
-  afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
-
-  it("a Turret Tech sets down two, shows its supply, and the third is refused", () => {
-    const sim = staged();
-    const tt = sim.debugSpawn("turrettech", "player", { x: -4, z: 0 });
-    expect(tt.grenades).toBe(2);
-    sim.debugSelect(tt.id);
-    expect(sim.queuePlace({ x: -2, z: 2 }), sim.log[0]).toBe(true);
-    tt.commandPoints = tt.maxCommandPoints;
-    expect(sim.queuePlace({ x: -2, z: -2 }), sim.log[0]).toBe(true);
-    tt.commandPoints = tt.maxCommandPoints;
-    expect(tt.grenades).toBe(0);
-    expect(sim.queuePlace({ x: -3, z: 4 })).toBe(false);
-    expect(sim.entities.filter((e) => e.kind === "sentry")).toHaveLength(2);
-    expect(sim.money("player")).toBe(3000 - 140);
-  });
-
-  it("a sentry shoots the nearest foe by itself, and packs up after its turns", () => {
-    const sim = staged();
-    const tt = sim.debugSpawn("turrettech", "player", { x: -8, z: 0 });
-    const foe = sim.debugSpawn("soldier", "enemy", { x: 4, z: 0 });
-    disarm(foe); tough(foe);
-    sim.debugSelect(tt.id);
-    expect(sim.queuePlace({ x: -6, z: 0 }), sim.log[0]).toBe(true);
-    const sentry = sim.entities.find((e) => e.kind === "sentry")!;
-    const before = hp(foe);
-    sim.endTurn(); settle(sim);
-    expect(hp(sim.entity(foe.id)!), "it fired on its own").toBeLessThan(before);
-    for (let i = 0; i < 4; i += 1) { sim.endTurn(); settle(sim); }
-    expect(sim.entity(sentry.id)!.status.alive, "packed up").toBe(false);
   });
 });
 
@@ -269,13 +222,13 @@ describe("the new posts and the roster split", () => {
   });
 
   it("each faction fields the two shared new kinds and at least two of its own", () => {
-    const NEW = ["runabout", "turrettech", "hornet", "lancer", "sledge", "ironclad", "breaker", "boomer", "juggernaut"];
+    const NEW = ["runabout", "hornet", "sledge", "ironclad", "breaker", "boomer", "juggernaut", "hookshot", "skater", "molotov", "mole"];
     for (const f of FACTIONS) {
       const mine = f.roster.filter((k) => NEW.includes(k));
       const own = mine.filter((k) => FACTIONS.every((o) => o.id === f.id || !o.roster.includes(k as never)));
       const shared = mine.filter((k) => FACTIONS.every((o) => o.roster.includes(k as never)));
       expect(own.length, `${f.id} exclusives`).toBeGreaterThanOrEqual(2);
-      expect([...shared].sort(), `${f.id} shared`).toEqual(["runabout", "turrettech"]);
+      expect([...shared].sort(), `${f.id} shared`).toEqual(["runabout"]);
     }
   });
 });
@@ -496,5 +449,81 @@ describe("the fun units", () => {
     expect(clone.entity(keep.id)).toBeDefined();
     expect(clone.entity(gone.id)).toBeUndefined();
     expect(() => { clone.endTurn(); settle(clone); }).not.toThrow();
+  });
+});
+
+// ROUND 7 (owner 2026-10-07, second fun audit): the grapple, the bowler, the fire bottle and the burrower.
+describe("round 7 units", () => {
+  afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
+  const gap = (a: { position: { x: number; z: number } }, b: { position: { x: number; z: number } }): number => Math.hypot(a.position.x - b.position.x, a.position.z - b.position.z);
+
+  it("a Hookshot's harpoon drags a trooper to its feet; a tank barely budges; its Reel reaches 10m", () => {
+    const pull = (foeKind: "soldier" | "tank"): number => {
+      const sim = staged();
+      const h = sim.debugSpawn("hookshot", "player", { x: -16, z: -8 });
+      const foe = sim.debugSpawn(foeKind, "enemy", { x: -5, z: -8 });
+      disarm(foe); tough(foe);
+      sim.debugSelect(h.id);
+      expect(sim.queueShoot(foe.id), sim.log[0]).toBe(true);
+      sim.endTurn(); settle(sim);
+      return gap(sim.entity(h.id)!, sim.entity(foe.id)!);
+    };
+    expect(pull("soldier"), "dragged to its feet").toBeLessThan(3);
+    expect(pull("tank"), "armour barely moves").toBeGreaterThan(7);
+    const sim = staged();
+    expect(sim.leapRange(sim.debugSpawn("hookshot", "player", { x: -16, z: -8 }))).toBeGreaterThan(sim.leapRange(sim.debugSpawn("soldier", "player", { x: -16, z: -4 })) * 2);
+  });
+
+  it("a Rocket Skater's boost bowls over the troopers on its line and leaves the one off it alone", () => {
+    const sim = staged();
+    const k = sim.debugSpawn("skater", "player", { x: -16, z: -8 });
+    const on = sim.debugSpawn("soldier", "enemy", { x: -10, z: -8.3 });
+    const off = sim.debugSpawn("soldier", "enemy", { x: -10, z: -5 });
+    disarm(on); disarm(off); tough(on);
+    const hpOn = hp(on), hpOff = hp(off), at = { ...on.position };
+    sim.debugSelect(k.id);
+    expect(sim.queueMove({ x: -5, z: -8 }), sim.log[0]).toBe(true);
+    sim.endTurn(); settle(sim);
+    expect(hp(sim.entity(on.id)!)).toBeLessThan(hpOn);
+    expect(Math.hypot(sim.entity(on.id)!.position.x - at.x, sim.entity(on.id)!.position.z - at.z), "bowled aside").toBeGreaterThan(1.5);
+    expect(hp(sim.entity(off.id)!)).toBe(hpOff);
+  });
+
+  it("a Molotov's bottle leaves burning ground and sets the troopers in it alight", () => {
+    const sim = staged();
+    const m = sim.debugSpawn("molotov", "player", { x: -16, z: -8 });
+    const foe = sim.debugSpawn("soldier", "enemy", { x: -4, z: -8 });
+    disarm(foe); tough(foe);
+    sim.debugSelect(m.id);
+    expect(sim.queueShoot(foe.id), sim.log[0]).toBe(true);
+    const zones = sim.burnZones.length;
+    sim.endTurn(); settle(sim);
+    expect(sim.burnZones.length).toBeGreaterThan(zones);
+    expect(sim.entity(foe.id)!.burning, "alight").toBeTruthy();
+  });
+
+  it("a Mole Sapper burrows under a wall of bodies, can't be hit on the way, and erupts under a foe", () => {
+    const sim = staged();
+    const mole = sim.debugSpawn("mole", "player", { x: -16, z: -8 });
+    const blocker = sim.debugSpawn("soldier", "enemy", { x: -12, z: -8 });
+    const foe = sim.debugSpawn("soldier", "enemy", { x: -8.4, z: -8 });
+    disarm(blocker); disarm(foe); tough(foe);
+    const hpFoe = hp(foe), at = { ...foe.position };
+    sim.debugSelect(mole.id);
+    expect(sim.queueMove({ x: -9, z: -8 }), sim.log[0]).toBe(true);
+    sim.endTurn();
+    let seenBurrowed = false;
+    for (let t = 0; t < 40 && sim.phase === "resolve"; t += 0.05) { sim.update(0.05); if (sim.entity(mole.id)!.burrowed) seenBurrowed = true; }
+    expect(seenBurrowed, "it went underground").toBe(true);
+    expect(sim.entity(mole.id)!.burrowed).toBeFalsy();
+    expect(gap(sim.entity(mole.id)!, { position: { x: -9, z: -8 } }), "surfaced at the spot, past the blocker").toBeLessThan(1.6);
+    expect(hp(sim.entity(foe.id)!)).toBeLessThan(hpFoe);
+    expect(Math.hypot(sim.entity(foe.id)!.position.x - at.x, sim.entity(foe.id)!.position.z - at.z), sim.log.slice(0, 10).join(" | ")).toBeGreaterThan(1);
+    // ...and it refuses to surface in water or inside a prop.
+    const wet = staged();
+    const m2 = wet.debugSpawn("mole", "player", { x: -16, z: -8 });
+    wet.debugSelect(m2.id);
+    const water = wet.mapDef.terrain.water?.[0];
+    if (water) expect(wet.queueMove({ x: (water.minX + water.maxX) / 2, z: (water.minZ + water.maxZ) / 2 })).toBe(false);
   });
 });

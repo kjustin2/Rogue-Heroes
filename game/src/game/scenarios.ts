@@ -29,7 +29,7 @@ export const SCENARIOS: Scenario[] = [
     apply(sim) {
       sim.configure(mapDef("ironworks"), "destroy", "normal");
       sim.debugGrant("player", 5000);
-      const kinds: TroopKind[] = ["soldier", "scout", "sniper", "striker", "heavy", "grenadier", "mortar", "tank", "hornet", "artillery"];
+      const kinds: TroopKind[] = ["soldier", "jumper", "sniper", "striker", "heavy", "grenadier", "mortar", "tank", "hornet", "artillery"];
       const cols = 4;
       kinds.forEach((k, i) => {
         const u = sim.debugSpawn(k, "player", { x: -4.2 + (i % cols) * 2.7, z: -3.6 + Math.floor(i / cols) * 2.7 });
@@ -70,7 +70,7 @@ export const SCENARIOS: Scenario[] = [
       sim.debugGrant("player", 5000);
       const c = { x: 0, z: 0 };
       row(sim, ["soldier", "sniper", "heavy"], "player", c.x - 9, c.z - 2, 2.2);
-      row(sim, ["soldier", "scout", "striker"], "enemy", c.x + 6, c.z + 2, 2.2);
+      row(sim, ["soldier", "jumper", "striker"], "enemy", c.x + 6, c.z + 2, 2.2);
       const shooter = sim.entities.find((e) => e.team === "player" && e.kind === "sniper");
       if (shooter) {
         sim.debugSelect(shooter.id);
@@ -102,7 +102,7 @@ export const SCENARIOS: Scenario[] = [
       // Find a raised spot on the map's terrain to perch the sniper.
       const perch = highestSpot(sim);
       const sniper = sim.debugSpawn("sniper", "player", perch);
-      sim.debugSpawn("scout", "player", { x: perch.x + 1.6, z: perch.z + 1.2 });
+      sim.debugSpawn("jumper", "player", { x: perch.x + 1.6, z: perch.z + 1.2 });
       row(sim, ["soldier", "heavy", "striker"], "enemy", 4, -1, 2.4);
       sim.debugSelect(sniper.id);
       sim.setIntent("shoot");
@@ -135,7 +135,7 @@ export const SCENARIOS: Scenario[] = [
       sim.configure(mapDef("dustbowl"), "destroy", "normal");
       sim.debugGrant("player", 99999);
       sim.debugGrant("enemy", 99999);
-      const lineup: TroopKind[] = ["soldier", "scout", "sniper", "heavy", "grenadier", "mortar", "striker", "tank", "hornet", "artillery"];
+      const lineup: TroopKind[] = ["soldier", "jumper", "sniper", "heavy", "grenadier", "mortar", "striker", "tank", "hornet", "artillery"];
       // Two opposing double-rows of every unit type — ~40 combat entities.
       for (let rowIdx = 0; rowIdx < 2; rowIdx += 1) {
         lineup.forEach((k, i) => {

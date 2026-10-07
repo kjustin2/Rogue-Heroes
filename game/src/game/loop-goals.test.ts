@@ -3,7 +3,7 @@
 // that has since been retired; the assertions stand on their own.
 
 import { describe, expect, it } from "vitest";
-import { applyDamage, createCover, createScout, createSoldier, createStriker, createTank } from "./damageModel";
+import { applyDamage, createCover, createSkater, createSoldier, createStriker, createTank } from "./damageModel";
 import { COMMAND_UPGRADE_COST, TacticalSim, defenseSpec, mapDef, troopSpec } from "./sim";
 import { SCENARIOS, SCENARIO_IDS, applyScenario } from "./scenarios";
 
@@ -156,7 +156,7 @@ describe("batch balance + UX fixes", () => {
 
   it("the second move ring originates from the projected post-move position", () => {
     const sim = new TacticalSim([
-      createScout("p1", "Me", "player", { x: 0, z: 0 }),
+      createSkater("p1", "Me", "player", { x: 0, z: 0 }),
       createSoldier("e1", "Foe", "enemy", { x: 14, z: 0 }),
     ]);
     sim.select("p1");

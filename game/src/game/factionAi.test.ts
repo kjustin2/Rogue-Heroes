@@ -15,7 +15,7 @@ const answersArmor = (kind: EntityKind): boolean => {
   // `burst >= 4` declare a knife-range shotgun an answer to armour, which would have made the AI
   // believe it was already covered and stop building real ones. Sustained fire counts only with
   // the range to use it.
-  return s.groundShell || (s.burst >= 4 && s.weaponRange >= 14) || s.shotDamage >= 60;
+  return (s.groundShell && s.shotDamage >= 30) || (s.burst >= 4 && s.weaponRange >= 14) || s.shotDamage >= 60;
 };
 const answersAir = (kind: EntityKind): boolean => {
   const s = unitStats(kind);

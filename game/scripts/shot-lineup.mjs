@@ -2,7 +2,7 @@
 // identity review. Out: shots/lineup-near.png, shots/lineup-far.png, plus two CLOSE frames
 // (shots/lineup-close-a/b.png: 7 + 6 troopers at portrait zoom, HUD hidden) for per-kind body review.
 import { launchGame, delay } from "../improve/lib/harness.mjs";
-const KINDS = ["soldier", "scout", "sniper", "striker", "heavy", "grenadier", "mortar", "flamer", "jumper", "breaker", "boomer", "juggernaut"];
+const KINDS = ["soldier", "skater", "sniper", "striker", "heavy", "grenadier", "mortar", "flamer", "jumper", "breaker", "boomer", "juggernaut"];
 const { page, close } = await launchGame({ port: 5204, viewport: { width: 1800, height: 700 } });
 try {
   await page.waitForSelector(".main-menu");

@@ -20,7 +20,6 @@ import {
   isTechUnlocked,
   troopSheet,
   unitStats,
-  placeSpecFor,
   modeDef,
   type TroopKind,
   type TechNode,
@@ -72,6 +71,19 @@ function syncRevealTracking(base: CombatEntity): void {
   revealTracker.seeded = true;
 }
 
+/** Per-unit names for a shared verb: the card reads as the unit's own move. */
+const UNIT_VERBS: Partial<Record<string, Partial<Record<Intent, { label: string; tip: string }>>>> = {
+  jumper: { move: { label: "Jump", tip: "Select Jump, then click any dry ground in range — over cliffs, water and walls. Airborne for the leap, so flak can catch it. 1 AP." } },
+  breaker: { push: { label: "Punch", tip: "Select Punch, then a foe within 7m: the Breaker dashes in and sends it ~18m. Water, ledges and the map edge kill. 1 AP." } },
+  hookshot: {
+    shoot: { label: "Hook", tip: "Select Hook, then a foe within 14m: the harpoon drags it to your feet. Vehicles barely budge. 1 AP." },
+    leap: { label: "Reel", tip: "Select Reel, then ground or a ledge within 10m: the grapple pulls the Hookshot there. 1 AP." },
+  },
+  skater: { move: { label: "Boost", tip: "Select Boost, then ground in range: a straight rocket dash that bowls over every trooper on the line. 1 AP." } },
+  mole: { move: { label: "Burrow", tip: "Select Burrow, then ground in range: it tunnels there (can't be shot) and erupts, throwing every foe within 2m. 1 AP." } },
+  molotov: { shoot: { label: "Throw", tip: "Select Throw, then a foe within 16m: the bottle arcs over cover and leaves burning ground for 2 turns. 1 AP." } },
+};
+
 const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "move", label: "Move", tip: "Select Move, then click ground or a cover object. Costs 1 AP. Soldiers move farther than heavy units." },
   { id: "shoot", label: "Shoot", tip: "Select Shoot, pick an enemy part, then confirm. The line previews cover, damage and accuracy." },
@@ -87,7 +99,6 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "leap", label: "Jump", tip: "Infantry: hop a few metres, over a crate or a low wall, up onto a ledge, across a gap. Light, quick troopers go farther and higher. 1 AP." },
   { id: "man", label: "Man", tip: "Walk up to a free post (Gun, Mortar, Rocket, Cannon or Flame) and crew it. It fires from next turn, twice a turn. 1 AP." },
   { id: "dismount", label: "Leave", tip: "Let the crew step away from this emplacement. It stops firing until someone crews it again." },
-  { id: "place", label: "Place", tip: "Set this unit's item down within reach. T turns it. 1 AP and its cost." },
   { id: "slam", label: "Slam", tip: "Sledge only. Swing the hammer in a circle: every foe within 3m is hurt and flung far. 1 AP." },
   { id: "detonate", label: "Detonate", tip: "Boomer only. Blows itself up after its other orders: everything within 3.5m is wrecked and flung. Move first, then Detonate. 1 AP." },
 ];
@@ -107,7 +118,6 @@ const ACTION_HOW: Partial<Record<Intent, string>> = {
   load: "Select Load, then click a friendly ground unit to lift it aboard. 1 AP.",
   leap: "Select Jump, then click ground within the ring: the trooper arcs there, over low cover and up onto a ledge. 1 AP.",
   man: "Select Man, then click a post in reach.",
-  place: "Select it, click ground within reach (T turns it). Set down at once; costs 1 AP and money.",
   unload: "Select Unload, then click ground to fly there and set passengers down. 1 AP.",
 };
 
@@ -132,7 +142,6 @@ export interface HudCallbacks {
   queueDismount(): boolean;
   queueSlam(): boolean;
   queueDetonate(): boolean;
-  queuePlace(destination: Vec2): boolean;
   queueLoad(passengerId: string): boolean;
   queueUnload(destination: Vec2): boolean;
   queueRam(id: string): boolean;
@@ -439,14 +448,6 @@ export class Hud {
       }
       return;
     }
-    // Place: the unit sets its item down at the clicked spot (inside its reach ring).
-    if (this.action === "place" && this.sim.phase === "command") {
-      if (this.callbacks.queuePlace(destination)) {
-        this.action = "select";
-        this.callbacks.setIntent("select");
-      }
-      return;
-    }
     // Smoke: the mortar lobs a smoke round onto the clicked ground point.
     if (this.action === "smoke" && this.sim.phase === "command") {
       if (this.callbacks.queueSmokeAt(destination)) {
@@ -497,7 +498,7 @@ export class Hud {
     const cover = this.sim.entities.filter((entity) => entity.team === "neutral").sort(byRange);
     // Only open the target drawer when the selected actor can actually perform the armed
     // attack — never for the Home Base (which has its own command deck and cannot attack).
-    const targetPanelOpen = !target && Boolean(actor) && this.action !== "leap" && this.action !== "place" && actionVisible(this.action, actor, this.sim); // a hop or a placement is a ground click: no hostile list
+    const targetPanelOpen = !target && Boolean(actor) && this.action !== "leap" && actionVisible(this.action, actor, this.sim); // a hop or a placement is a ground click: no hostile list
     // "All set" reflects squad maneuvering, so ignore the base's economy command point.
     const squadUnits = playerUnits.filter((unit) => unit.status.alive && !isBuildingKind(unit.kind) && !isDefenseKind(unit.kind));
     const allOrdersSet = this.sim.phase === "command" && squadUnits.length > 0 && squadUnits.every((unit) => unit.commandPoints <= 0);
@@ -1250,7 +1251,6 @@ function orderPlanner(
     action === "inspect" ? inspectTargetState(actor, target, sim) : "",
     action === "defend" ? defendState(canDefend, defendTip) : "",
     action === "deploy" ? deployState(actor, sim) : "",
-    action === "place" ? placeState(actor, sim) : "",
   ].filter(Boolean).join("");
 
   return `
@@ -1276,15 +1276,12 @@ function orderPlanner(
               const why = disabled ? actionDisabledReason(option.id, actor, sim) : undefined;
               // An aircraft's "grenade" verb is a bomb drop; relabel it so the air unit reads right.
               // ...and a jump trooper's move is a JUMP: the verb on the button is the unit's identity.
-              const jumps = option.id === "move" && actor?.kind === "jumper";
-              const placing = option.id === "place" && actor ? placeSpecFor(actor.kind) : undefined;
-              const punches = option.id === "push" && actor?.kind === "breaker";
-              const label = option.id === "grenade" ? bombVerb(actor) : jumps ? "Jump" : placing ? placing.label : punches ? "Punch" : option.label;
+              // A unit whose verb IS its identity names the card after it (the Breaker punches, the Hookshot hooks ...).
+              const own = actor ? UNIT_VERBS[actor.kind]?.[option.id] : undefined;
+              const label = option.id === "grenade" ? bombVerb(actor) : own ? own.label : option.label;
               const tip = option.id === "grenade" && actor?.flying
                 ? "Select Bomb, click a spot in reach, then Confirm. No flight needed. Cannot hit aircraft."
-                : placing ? PLACE_TIP[placing.kind]
-                : punches ? "Select Punch, then a foe within 7m: the Breaker dashes in and sends it ~18m. Water, ledges and the map edge kill. 1 AP."
-                : jumps ? "Select Jump, then click any dry ground in range — over cliffs, water and walls. Airborne for the leap, so flak can catch it. 1 AP."
+                : own ? own.tip
                 : ACTION_HOW[option.id] ?? option.tip;
               // A disabled card states the REASON. Silently dead buttons are how a player concludes
               // a game is broken rather than that their unit is hurt.
@@ -1667,21 +1664,6 @@ function defendState(canDefend: boolean, tip: string): string {
       Confirm Crouch
       <span>+accuracy</span>
     </button>
-  `;
-}
-
-const PLACE_TIP: Record<string, string> = {
-  sentry: "Select Sentry, click ground in reach (T turns it). An auto-turret that fires each turn, packs up after 4. $70 + 1 AP.",
-};
-
-function placeState(actor: CombatEntity | undefined, sim: TacticalSim): string {
-  const spec = actor ? placeSpecFor(actor.kind) : undefined;
-  const reason = actor ? sim.placeFailureReason(actor) : "Select a unit first";
-  return `
-    <div class="target-summary ${reason ? "blocked" : ""}">
-      <strong>${reason ? "Unavailable" : `Place ${escapeHtml(spec?.label ?? "item")}`}</strong>
-      <span>${reason ? escapeHtml(reason) : `Click ground inside the ring.${spec?.rotatable ? " T turns it." : ""}`}</span>
-    </div>
   `;
 }
 
@@ -2298,7 +2280,6 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
   if (action === "detonate") return Boolean(sim.detonateFailureReason(actor));
   if (action === "dismount") return !actor.occupantId;
   if (action === "man") return !actor.status.canMove || !sim.entities.some((e) => isMountKind(e.kind) && !sim.manFailureReason(actor, e));
-  if (action === "place") return Boolean(sim.placeFailureReason(actor));
   if (action === "load") return !isCarrier(actor) || !actor.status.canMove || (actor.passengerIds?.length ?? 0) >= (actor.kind === "runabout" ? 5 : 2);
   if (action === "unload") return !isCarrier(actor) || !(actor.passengerIds?.length);
   if (action === "deploy") return Boolean(sim.deployFailureReason(actor));
@@ -2306,12 +2287,10 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
 }
 
 // The Runabout carries (the sim's isCarrierKind).
-/** What a unit's finite supply is called: a Turret Tech carries sentries, aircraft bombs, everyone else grenades. */
+/** What a unit's finite supply is called: aircraft carry bombs, everyone else grenades. */
 function supply(entity: CombatEntity): { tip: string; chip: string; stat: string } {
   const n = entity.grenades;
-  return entity.kind === "turrettech"
-    ? { tip: "Sentries left this battle", chip: `${n} ${n === 1 ? "sentry" : "sentries"}`, stat: "Sentries" }
-    : entity.flying
+  return entity.flying
       ? { tip: "Bombs left this battle", chip: `${n} bomb${n === 1 ? "" : "s"}`, stat: "Bombs" }
       : { tip: "Grenades left this battle", chip: `${n} grenade${n === 1 ? "" : "s"}`, stat: "Grenades" };
 }
@@ -2349,7 +2328,6 @@ function actionApplicable(action: Intent, actor: CombatEntity | undefined): bool
   if (action === "slam") return actor.kind === "sledge";
   if (action === "detonate") return actor.kind === "boomer";
   if (action === "man") return isInfantryKind(actor.kind);
-  if (action === "place") return Boolean(placeSpecFor(actor.kind));
   if (action === "load" || action === "unload") return isCarrier(actor);
   if (action === "deploy") return actor.kind === "artillery";
   if (action === "grenade") return (actor.kind === "soldier" || actor.flying === true) && actor.maxGrenades > 0;
@@ -2373,7 +2351,6 @@ function actionDisabledReason(action: Intent, actor: CombatEntity | undefined, s
   if (action === "leap") return `${actor.name} cannot jump: its legs are destroyed.`;
   if (action === "dismount") return "No crew to send away";
   if (action === "man") return !actor.status.canMove ? `${actor.name} cannot move` : "No free post in reach";
-  if (action === "place") return sim.placeFailureReason(actor) ?? undefined;
   if (action === "load" && (actor.passengerIds?.length ?? 0) >= 2) return "The Runabout is full.";
   if (action === "unload" && !(actor.passengerIds?.length)) return "The Runabout is empty.";
   if (action === "deploy") return sim.deployFailureReason(actor) ?? undefined;
@@ -2390,7 +2367,6 @@ function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: Tac
   if (action === "smoke") return actor.kind === "mortar" && actor.status.canShoot;
   if (action === "leap") return isInfantryKind(actor.kind) && actor.kind !== "jumper" && actor.status.canMove;
   if (action === "man") return isInfantryKind(actor.kind);
-  if (action === "place") return Boolean(placeSpecFor(actor.kind));
   if (action === "load" || action === "unload") return isCarrier(actor);
   if (action === "deploy") return actor.kind === "artillery";
   if (action === "grenade") return (actor.kind === "soldier" || actor.flying === true) && actor.maxGrenades > 0;
@@ -2412,8 +2388,6 @@ function cpPips(entity: CombatEntity): string {
 
 function actionCostLabel(action: Intent, actor: CombatEntity | undefined): string {
   if (action === "grenade" && actor) return `${actor.grenades}/${actor.maxGrenades} ${actor.flying ? "B" : "G"}`;
-  const spec = action === "place" && actor ? placeSpecFor(actor.kind) : undefined;
-  if (spec) return `$${spec.cost}`;
   return "1 AP";
 }
 

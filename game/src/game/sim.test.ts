@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TECH_TREE } from "./tech";
 import { dist } from "../core/math";
-import { applyDamage, createBase, createBomber, createCover, createFlak, createFlamer, createGrenadier, createGunship, createHeavy, createMortar, createScout, createSniper, createSoldier, createStriker, createTank, createWall } from "./damageModel";
+import { applyDamage, createBase, createBomber, createCover, createFlak, createFlamer, createGrenadier, createGunship, createHeavy, createMortar, createSkater, createSniper, createSoldier, createStriker, createTank, createWall } from "./damageModel";
 import {
   BASE_INCOME,
   INCOME_BY_LEVEL,
@@ -61,7 +61,7 @@ describe("tactical simulation loop", () => {
     const sim = new TacticalSim([
       createBase("p-base-1", "HQ", "player", { x: -10, z: 0 }),
       createSoldier("p-a", "Able", "player", { x: 0, z: 0 }),
-      createScout("p-b", "Baker", "player", { x: 1.6, z: 0 }),
+      createSkater("p-b", "Baker", "player", { x: 1.6, z: 0 }),
       createTank("p-c", "Charlie", "player", { x: 3.2, z: 0 }),
       createWall("p-wall", "Barrier", "player", { x: 4.8, z: 0 }),
     ]);

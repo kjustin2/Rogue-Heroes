@@ -11,7 +11,7 @@ import { launchGame, delay } from "../improve/lib/harness.mjs";
 import sharp from "sharp";
 import { mkdirSync } from "node:fs";
 const MODE = process.argv[2] ?? "step";
-const KIND = { march: "scout", trudge: "heavy" }[MODE] ?? "soldier";
+const KIND = { march: "skater", trudge: "heavy" }[MODE] ?? "soldier";
 mkdirSync("shots", { recursive: true });
 const { page, close } = await launchGame({ port: 5209, viewport: { width: 1200, height: 700 } });
 try {

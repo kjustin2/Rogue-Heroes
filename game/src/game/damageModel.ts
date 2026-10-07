@@ -149,6 +149,8 @@ export interface CombatEntity {
   markedById?: string;
   // Who set this down (a sentry), for the log and pop-in.
   ownerTeam?: Team;
+  /** A Mole Sapper under the ground (mid-move): not shot, not blocked, not drawn; it erupts when the move ends. */
+  burrowed?: boolean;
   // A manned emplacement (gun post, mortar pit): the trooper crewing it. It fires only while crewed.
   occupantId?: string;
   // HOME BASE UPGRADES (see BASE_UPGRADES): armour level 0-2, the Fortress Cannon, the Watch Radar.
@@ -156,11 +158,10 @@ export interface CombatEntity {
   cannonReadyTurn?: number;
   radarOnline?: boolean;
   // BURNING (flamethrower, napalm, oil fire): infantry only. `dmg` to the body at the start of each of its next `turns` turns.
-  burning?: { turns: number; dmg: number };
+  /** On fire: turns left, damage a turn, and who lit it (credited with the burn, like any hit). */
+  burning?: { turns: number; dmg: number; by?: string };
   // A sentry (set down by a Turret Tech or dropped): turns left before it packs up. It fires on its own each turn.
   sentryTtl?: number;
-  /** The turn a sentry was set down: the bot, which plans after the player, must not react to one placed this turn (orders are simultaneous). */
-  placedTurn?: number;
   // EMP: no actions for this entity until the turn stamped here has passed.
   disabledUntilTurn?: number;
   // FACTION TRAITS (factions.ts unitMods), stamped at deploy: the same Recruit is quicker for Vanguard and sturdier for Bastion.
@@ -481,22 +482,6 @@ export function createStriker(id: string, name: string, team: Team, position: Ve
   });
 }
 
-export function createScout(id: string, name: string, team: Team, position: Vec2): CombatEntity {
-  return createInfantry(id, name, "scout", team, position, {
-    radius: 0.55,
-    height: 1.6,
-    bodyHp: 34,
-    headHp: 12,
-    weaponHp: 16,
-    legsHp: 22,
-    packHp: 16,
-    weaponLabel: "Carbine",
-    packLabel: "Recon Optics",
-    packRole: "utility",
-    packTags: ["spotter-aura"],
-    grenades: 0,
-  });
-}
 
 export function createHeavy(id: string, name: string, team: Team, position: Vec2): CombatEntity {
   return createInfantry(id, name, "heavy", team, position, {
@@ -564,17 +549,8 @@ export function createJumper(id: string, name: string, team: Team, position: Vec
 }
 
 
-export function createTurretTech(id: string, name: string, team: Team, position: Vec2): CombatEntity {
-  const e = createInfantry(id, name, "turrettech", team, position, {
-    radius: 0.64, height: 1.64, bodyHp: 46, headHp: 15, weaponHp: 18, legsHp: 24, packHp: 24, weaponLabel: "Sidearm", packLabel: "Sentry Case", packRole: "utility", grenades: 2,
-  });
-  return e;
-}
 export const createSledge = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createInfantry(id, name, "sledge", team, position, {
   radius: 0.7, height: 1.74, bodyHp: 40, headHp: 14, weaponHp: 22, legsHp: 22, packHp: 18, weaponLabel: "Sledgehammer", packLabel: "Counterweight", packRole: "utility", grenades: 0,
-});
-export const createLancer = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createInfantry(id, name, "lancer", team, position, {
-  radius: 0.62, height: 1.7, bodyHp: 38, headHp: 14, weaponHp: 24, legsHp: 22, packHp: 22, weaponLabel: "Ricochet Rifle", packLabel: "Ammo Drum", packRole: "volatile", grenades: 0,
 });
 export const createIronclad = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createInfantry(id, name, "ironclad", team, position, {
   radius: 0.74, height: 1.7, bodyHp: 56, headHp: 20, weaponHp: 22, legsHp: 30, packHp: 34, weaponLabel: "Carbine", packLabel: "Tower Shield", packRole: "utility", grenades: 0,
@@ -595,6 +571,20 @@ export function createBoomer(id: string, name: string, team: Team, position: Vec
 }
 export const createJuggernaut = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createInfantry(id, name, "juggernaut", team, position, {
   radius: 0.8, height: 1.84, bodyHp: 64, headHp: 22, weaponHp: 30, legsHp: 34, packHp: 30, weaponLabel: "Blast Cannon", packLabel: "Shell Hopper", packRole: "utility", grenades: 0,
+});
+
+// ROUND 7 (2026-10-07): the second fun audit.
+export const createHookshot = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createInfantry(id, name, "hookshot", team, position, {
+  radius: 0.62, height: 1.68, bodyHp: 40, headHp: 14, weaponHp: 24, legsHp: 24, packHp: 22, weaponLabel: "Harpoon Gun", packLabel: "Cable Reel", packRole: "utility", grenades: 0,
+});
+export const createSkater = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createInfantry(id, name, "skater", team, position, {
+  radius: 0.58, height: 1.62, bodyHp: 36, headHp: 13, weaponHp: 16, legsHp: 24, packHp: 18, weaponLabel: "Carbine", packLabel: "Rocket Boots", packRole: "volatile", grenades: 0,
+});
+export const createMolotov = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createInfantry(id, name, "molotov", team, position, {
+  radius: 0.6, height: 1.64, bodyHp: 38, headHp: 14, weaponHp: 18, legsHp: 22, packHp: 18, weaponLabel: "Fire Bottles", packLabel: "Bottle Crate", packRole: "volatile", grenades: 0,
+});
+export const createMole = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createInfantry(id, name, "mole", team, position, {
+  radius: 0.64, height: 1.6, bodyHp: 46, headHp: 16, weaponHp: 18, legsHp: 26, packHp: 26, weaponLabel: "Sidearm", packLabel: "Drill Pack", packRole: "utility", grenades: 0,
 });
 
 export function createBazooka(id: string, name: string, team: Team, position: Vec2): CombatEntity {

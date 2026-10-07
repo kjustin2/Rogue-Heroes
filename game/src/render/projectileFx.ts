@@ -73,9 +73,9 @@ export function projectileFamily(p: Projectile): ProjectileFamily {
   }
   if (src === "sniper") return "sniper";
   if (src === "heavy" || src === "gunpost" || src === "runabout") return "mg";
-  if (src === "striker" || src === "turrettech" || src === "sledge") return "pistol";
+  if (src === "striker" || src === "sledge" || src === "mole") return "pistol";
   if (src === "flamer" || src === "flamepost") return "flame";
-  if (src === "scout" || src === "jumper" || src === "breaker") return "carbine";
+  if (src === "jumper" || src === "breaker" || src === "skater") return "carbine";
   return "rifle";
 }
 
@@ -493,14 +493,14 @@ const ROUND: Record<string, RoundSpec> = {
  * same bullet. Warm only (one ballistic language): golds, ambers, oranges, white-hot; never team colour, never cyan.
  */
 const UNIT_ROUND: Partial<Record<EntityKind, RoundSpec>> = {
-  scout: { w: 0.62, len: 0.7, head: 0.7, core: HOT, sleeve: 0xffefa8, tandem: 1 }, // quick double-tap darts
   jumper: { w: 0.78, len: 0.5, head: 0.85, core: HOT, sleeve: 0xffb04a, tandem: 2 }, // three-round burst beads
-  lancer: { w: 0.9, len: 1.3, head: 1.0, core: HOT, sleeve: BRASS, rings: 2 }, // ricochet slug with spinning brass rings
+  hookshot: { w: 1.5, len: 1.6, head: 1.4, core: 0xfff0c8, sleeve: BRASS, collar: true, rings: 1 }, // a fat brass harpoon with a barbed collar
+  skater: { w: 0.7, len: 0.6, head: 0.75, core: HOT, sleeve: 0xffc27a, tandem: 2 }, // a quick three-dart spray from a rider at speed
+  mole: { w: 1.0, len: 0.4, head: 0.95, core: HOT, sleeve: 0xd8843a }, // a dull copper bead from the sidearm
   breaker: { w: 1.2, len: 0.55, head: 1.15, core: HOT, sleeve: 0xff8a2a, tandem: 1 }, // stubby carbine double-tap
   ironclad: { w: 1.4, len: 0.75, head: 1.25, core: 0xffe9b0, sleeve: TRACER_DEEP }, // stubby heavy slug
   striker: { w: 0.85, len: 0.5, head: 0.85, core: HOT, sleeve: 0xffc857, twin: true }, // akimbo sidearms
   sledge: { w: 1.3, len: 0.36, head: 1.2, core: 0xffd8a0, sleeve: TRACER_DEEP }, // fat short sawn-off slug
-  turrettech: { w: 0.95, len: 0.45, head: 0.95, core: HOT, sleeve: 0xffa040, tandem: 1 }, // rivet-gun pair
 };
 
 function tracerModel(family: ProjectileFamily, age: number, seed: number, travel = 99, src?: EntityKind): THREE.Group {
@@ -645,6 +645,24 @@ function shellModel(family: ProjectileFamily, team: number, age: number): THREE.
   return group;
 }
 
+/** The Molotov's bottle: a green glass body with a burning rag at the neck, tumbling end over end. */
+function bottleModel(age: number): THREE.Group {
+  const group = new THREE.Group();
+  const tumble = new THREE.Group();
+  const glass = solid("grenade-body", 0x5f8a3a, 1.18);
+  glass.scale.set(0.7, 1.4, 0.7);
+  const neck = solid("ember", 0x4a6a2a, 1.3);
+  neck.position.y = 0.28;
+  neck.scale.set(0.8, 1.6, 0.8);
+  const rag = solid("tongue", FIRE[1], 1.2, FIRE[3]);
+  rag.position.y = 0.42;
+  rag.scale.set(0.7, 0.8 + Math.sin(age * 40) * 0.2, 0.7);
+  tumble.add(glass, neck, rag);
+  tumble.rotation.x = age * 9;
+  group.add(tumble);
+  return group;
+}
+
 function grenadeModel(team: number, age: number, rolling: boolean): THREE.Group {
   const group = new THREE.Group();
   const tumble = new THREE.Group();
@@ -776,7 +794,7 @@ export function makeProjectileModel(p: Projectile, family: ProjectileFamily): TH
   switch (family) {
     case "tank": case "artillery": case "siege": return shellModel(family, team, p.age);
     case "rocket": return rocketModel(p.age);
-    case "grenade": return grenadeModel(team, p.age, p.state === "rolling");
+    case "grenade": return p.sourceKind === "molotov" ? bottleModel(p.age) : grenadeModel(team, p.age, p.state === "rolling");
     case "launcher": return launcherModel(team, p.age);
     case "mortar": case "smoke": return mortarModel(family, team, p.age);
     case "bomb": return bombModel(team, p.age);

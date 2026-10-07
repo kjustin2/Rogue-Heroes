@@ -23,8 +23,8 @@ const fail = (msg) => { throw new Error(msg); };
 
 // Troops get a tight lens; vehicles and structures are bigger so they need a little more room.
 const TROOPS = [
-  "soldier", "scout", "sniper", "striker", "heavy", "grenadier",
-  "mortar", "flamer", "jumper", "bazooka", "lancer", "ironclad", "sledge", "turrettech", "breaker", "boomer", "juggernaut",
+  "soldier", "skater", "sniper", "striker", "heavy", "grenadier",
+  "mortar", "flamer", "jumper", "bazooka", "hookshot", "ironclad", "sledge", "mole", "breaker", "boomer", "juggernaut",
 ];
 const VEHICLES = ["tank", "hornet", "runabout", "artillery", "flak"];
 const AIR = ["gunship", "bomber"];

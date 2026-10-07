@@ -8,7 +8,7 @@ import { mkdirSync } from "node:fs";
 import { launchGame, delay } from "../improve/lib/harness.mjs";
 
 const ROWS = {
-  vanguard: { units: ["soldier", "sniper", "bazooka", "scout", "jumper", "heavy"], vehicle: "tank" },
+  vanguard: { units: ["soldier", "sniper", "bazooka", "skater", "jumper", "heavy"], vehicle: "tank" },
   syndicate: { units: ["soldier", "sniper", "boomer", "striker", "flamer", "grenadier"], vehicle: "runabout" },
   bastion: { units: ["soldier", "sniper", "juggernaut", "heavy", "mortar", "ironclad"], vehicle: "tank" },
 };

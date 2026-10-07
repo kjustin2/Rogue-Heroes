@@ -2,29 +2,37 @@
 
 How the factions, the three AI brains and Local 2 Players work, with the measurements behind each.
 
-## Rosters: only FUN units (2026-10-06; supersedes every older section that names a removed unit or system)
-Owner: "Any unit that isn't super FUN and exciting to use should be removed." Two cuts so far:
+## Rosters: only FUN units (2026-10-07; supersedes every older section that names a removed unit or system)
+Owner: "Any unit that isn't super FUN and exciting to use should be removed." Three cuts so far:
 - **2026-10-04:** Medic/Corpsman, Engineer/Mechanic, Pad Tech, Interceptor, Oil Rigger, Sapper, APC, the Flak Nest defense, and what only they
   used (`treat`, auras, DOWNED/revives, bounce pads, oil slicks, the sapper mines order, Triage / Welding / Field Hospital). The **Medevac**
   strike is the only heal (Support Wing).
-- **2026-10-06:** Trencher (and the `dig` order; Bastion's Dig In doctrine stays), Drone Operator (and the `recon` order; the Watch Radar
-  still reveals orders), Bounty Hunter, Transport (the Runabout is the only carrier), Fortifier and Demolitionist (and the `charge` /
-  `barrier` placeables; the sentry is the only placeable). An old save holding a retired kind loads without it (`restore()` drops it).
-- **New fun units (2026-10-06):**
-  - **Breaker** (Vanguard, $300, Shock Troops): a rocket gauntlet. **Punch** = the push order with a 7m dash (`BREAKER_CHARGE`), 26 damage
-    and an 18m throw (`PUNCH_FORCE` / `PUNCH_MAX`); water, ledges and the map edge kill, slamming into a body or prop hurts both, vehicles
-    budge. Wrist gun for range.
-  - **Boomer** (Syndicate, $110, Demolitions): fast, fragile, no gun. **Detonate** (order `detonate`, 1 AP, resolves after its move):
-    112-damage blast over 3.6m that flings everyone, friend or foe (`BOOM_*`); the barrel on its back is volatile, so a shot from behind
-    blows it where it stands. Bots run it at the best clump they can reach (`aiBoomerAct`).
-  - **Juggernaut** (Bastion, $340, Field Works): slow, x1.6 HP, a 16m shoulder blast cannon; `UnitStats.knockback` 2.2 scales every throw
-    it causes (`applyKnockback`), so its splash knocks troopers far.
-Final rosters (14 / 12 / 12): **Vanguard** soldier, scout, sniper, jumper, heavy, bazooka, lancer, turrettech, breaker, tank, hornet, runabout,
-flak, gunship. **Syndicate** soldier, sniper, heavy, striker, grenadier, flamer, boomer, bazooka, sledge, turrettech, runabout, flak.
-**Bastion** soldier, sniper, heavy, mortar, ironclad, juggernaut, turrettech, tank, artillery, runabout, flak, bomber.
-Balance notes from the same round: the Marksman is $160 with 0.55 accurate fraction; the Turret Tech is $150, and every bot brain now
-sets its sentries (it was Hard-only, so Normal's Turret Techs never used their one verb); the bot plans blind to a sentry the other side
-placed this turn (`placedTurn`: placement is an order, and orders are simultaneous).
+- **2026-10-06:** Trencher (`dig`), Drone Operator (`recon`; the Watch Radar still reveals orders), Bounty Hunter, Transport, Fortifier and
+  Demolitionist (`charge` / `barrier`).
+- **2026-10-07:** Scout, Ricochet Gunner (`lancer`, the `chain` stat), Turret Tech and with it the whole placement system (`place` intent,
+  `PLACEABLES`, `queuePlace`; the sentry entity stays for the Sentry Drop strike). The **Runabout** lost its gunner seat: its MG always fires.
+- An old save holding a retired kind loads without it (`restore()` drops unknown kinds).
+
+The fun units (each verb is the unit; the HUD card is named after it via `UNIT_VERBS` in `hud.ts`):
+- **Breaker** (Vanguard, $300) — **Punch**: the push with a 7m dash, 26 damage and an 18m throw (`PUNCH_*`).
+- **Hookshot** (Vanguard, $170, Shock Troops) — **Hook**: its shot drags what it hits to its feet (`UnitStats.pull`, `hookPull`, 20 yank
+  damage, vehicles move 1/5.5); a steel cable is drawn from the gun to the harpoon. **Reel**: its hop reaches 10m and climbs cliffs.
+- **Rocket Skater** (Vanguard, $240, Shock Troops) — **Boost**: every move bowls over foe troopers within 0.9m of its line (12 damage,
+  thrown 4m sideways; `UnitStats.bowl`, `bowlAlong`). Rocket boots with flame cones.
+- **Boomer** (Syndicate, $110, Demolitions) — **Detonate** after its move: 112 over 3.6m, friend or foe; the barrel is volatile from behind.
+- **Molotov** (Syndicate, $170, Fire Discipline) — **Throw**: a 16m bottle that does NOT explode; it smashes into a 2.2m fire for 2 turns
+  and sets troopers alight. Fire damage is now credited to whoever lit it (`burning.by`, burn zone `by`), and damage dealt between turns
+  (fire at turn start) lands in the report that just closed.
+- **Juggernaut** (Bastion, $340, Field Works) — 16m blast cannon whose every throw is scaled by `UnitStats.knockback` 2.2.
+- **Mole Sapper** (Bastion, $320, Field Works) — **Burrow**: its move goes underground (`burrowed`: not drawn, not hit by rounds or blasts,
+  passes under bodies and props; a dirt puff trail), then it erupts: 20 damage and a 6m throw to every foe within 2m (`eruptAt`). It
+  refuses to surface in water or inside a prop or emplacement.
+Final rosters (13 / 12 / 12): **Vanguard** soldier, sniper, jumper, heavy, bazooka, breaker, hookshot, skater, tank, hornet, runabout, flak,
+gunship. **Syndicate** soldier, sniper, heavy, striker, grenadier, flamer, boomer, molotov, bazooka, sledge, runabout, flak. **Bastion**
+soldier, sniper, heavy, mortar, ironclad, juggernaut, mole, tank, artillery, runabout, flak, bomber.
+Balance (self-play, 2026-10-07): **supply caches now come in mirrored pairs** (`placePickups`): the free scatter had put six of Karak's seven
+on one half, and that was the whole long-running player-seat lean (69% -> 53%). Ironclad $250, Jump Trooper $200. A lobbed weapon counts as
+an armour answer for the bot only with 30+ damage (the Molotov is not one).
 
 ## FACTIONS play, look and fight differently (2026-09-22)
 

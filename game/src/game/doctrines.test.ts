@@ -23,7 +23,7 @@ const baseOf = (sim: TacticalSim, team: "player" | "enemy") => sim.entities.find
 // Same predicates as factionAi.test.ts: what the AI counts as an answer to armour / air.
 const answersArmor = (kind: EntityKind): boolean => {
   const s = unitStats(kind);
-  return s.groundShell || (s.burst >= 4 && s.weaponRange >= 14) || s.shotDamage >= 60;
+  return (s.groundShell && s.shotDamage >= 30) || (s.burst >= 4 && s.weaponRange >= 14) || s.shotDamage >= 60;
 };
 const answersAir = (kind: EntityKind): boolean => ["flak", "heavy", "sniper", "interceptor"].includes(kind);
 

@@ -39,3 +39,17 @@ describe("map layout: nothing overlaps, nothing straddles a step", () => {
     });
   }
 });
+
+// Supply caches come in mirrored pairs through the map centre (2026-10-07: Karak scattered six of seven onto one half).
+describe("supply caches are fair", () => {
+  afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
+  for (const map of MAPS) {
+    it(map.id, () => {
+      const sim = new TacticalSim(); sim.configure(mapDef(map.id), "destroy", "normal");
+      const b = map.terrain.bounds, cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
+      expect(sim.pickups.length).toBeGreaterThanOrEqual(2);
+      const lonely = sim.pickups.filter((p) => !sim.pickups.some((q) => q !== p && q.amount === p.amount && Math.hypot(q.x - (2 * cx - p.x), q.z - (2 * cz - p.z)) < 0.05));
+      expect(lonely).toEqual([]);
+    });
+  }
+});

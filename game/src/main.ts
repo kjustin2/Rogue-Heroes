@@ -236,7 +236,6 @@ const hud = new Hud(uiRoot, sim, {
   queueDismount: () => { const ok = sim.queueDismount(); if (!ok) refused(); return ok; },
   queueSlam: () => { const ok = sim.queueSlam(); if (!ok) refused(); else sfx.turn(); return ok; },
   queueDetonate: () => { const ok = sim.queueDetonate(); if (!ok) refused(); else sfx.turn(); return ok; },
-  queuePlace: (destination) => { const ok = sim.queuePlace(destination); if (!ok) refused(); return ok; },
   queueLoad: (passengerId: string) => sim.queueLoad(passengerId),
   queueUnload: (destination) => sim.queueUnload(destination),
   queueRam: (id: string) => sim.queueRam(id),
@@ -526,7 +525,7 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   // T turns a wall or a line strike while it is being placed (the Rotate button in the placement bar).
-  if (event.code === "KeyT" && ((sim.pendingBuild && ROTATABLE_BUILDS.has(sim.pendingBuild)) || (sim.pendingSupport && LINE_SUPPORTS.has(sim.pendingSupport)) || (sim.intent === "place" && sim.placeSpec()?.rotatable))) {
+  if (event.code === "KeyT" && ((sim.pendingBuild && ROTATABLE_BUILDS.has(sim.pendingBuild)) || (sim.pendingSupport && LINE_SUPPORTS.has(sim.pendingSupport)))) {
     sim.rotatePlacement();
     hud.update();
     return;
@@ -2208,7 +2207,7 @@ function frameBody(now: number): void {
     const attack = sim.intent === "shoot" || sim.intent === "grenade" || sim.intent === "melee" || sim.intent === "push" || sim.intent === "ram";
     const hovered = sim.entity(hud.hoveredTargetId);
     document.body.classList.toggle("cursor-aim", inBattle && sim.phase === "command" && (attack || hovered?.team === "enemy"));
-    document.body.classList.toggle("cursor-move", inBattle && sim.phase === "command" && !attack && (sim.intent === "move" || sim.intent === "place" || sim.intent === "man" || Boolean(sim.pendingDeploy || sim.pendingBuild)));
+    document.body.classList.toggle("cursor-move", inBattle && sim.phase === "command" && !attack && (sim.intent === "move" || sim.intent === "man" || Boolean(sim.pendingDeploy || sim.pendingBuild)));
   }
   music.setScene(inBattle ? sim.mapDef.id : "menu");
   sfx.setAmbience(inBattle ? sim.mapDef.id : "");
@@ -2287,7 +2286,7 @@ function groundAimHover(): Vec2 | undefined {
   const lob = sim.intent === "grenade";
   if (lob || (sim.intent === "shoot" && sim.selectedCanGroundTarget())) return hud.groundPick;
   // Move, Hop and Place all preview where they would end up under the cursor.
-  return sim.intent === "grenade" || sim.intent === "move" || sim.intent === "leap" || sim.intent === "place" ? hoverWorld : undefined;
+  return sim.intent === "grenade" || sim.intent === "move" || sim.intent === "leap" ? hoverWorld : undefined;
 }
 
 // Diff freshly-spawned projectiles/effects against the seen-sets and fire the one-shot
@@ -2538,7 +2537,6 @@ declare global {
       queueDismount(): boolean;
       queueSlam(): boolean;
       queueDetonate(): boolean;
-      queuePlace(destination: Vec2): boolean;
       queueBombDrop(at?: Vec2): boolean;
       queueLoad(passengerId: string): boolean;
       queueUnload(destination: Vec2): boolean;
@@ -2658,7 +2656,6 @@ window.__rht = {
   queueDismount: () => sim.queueDismount(),
   queueSlam: () => sim.queueSlam(),
   queueDetonate: () => sim.queueDetonate(),
-  queuePlace: (destination) => sim.queuePlace(destination),
   queueBombDrop: (at) => sim.queueBombDrop(at),
   queueLoad: (passengerId: string) => sim.queueLoad(passengerId),
   queueUnload: (destination) => sim.queueUnload(destination),

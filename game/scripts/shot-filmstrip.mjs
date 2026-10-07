@@ -17,7 +17,7 @@ const STAGES = {
   shoot: { actor: "soldier", target: "soldier", dist: 3.9, order: "shoot", zoom: 0.45, scale: 0.5, span: 2.2 },
   heavy: { actor: "heavy", target: "soldier", dist: 5.2, order: "shoot", zoom: 0.55, scale: 0.5, span: 3.3 },
   sniper: { actor: "sniper", target: "soldier", dist: 7.5, order: "shoot", zoom: 0.72, scale: 0.5, span: 3.1 },
-  pistol: { actor: "turrettech", target: "soldier", dist: 3.9, order: "shoot", zoom: 0.45, scale: 0.5, span: 2.2 },
+  pistol: { actor: "mole", target: "soldier", dist: 3.9, order: "shoot", zoom: 0.45, scale: 0.5, span: 2.2 },
   flame: { actor: "flamer", target: "soldier", dist: 4.2, order: "shoot", zoom: 0.5, scale: 0.5, span: 2.4 },
   grenade: { actor: "soldier", target: "soldier", dist: 6.5, order: "grenade", zoom: 0.7, scale: 0.5, span: 4.2 },
   launcher: { actor: "grenadier", target: "soldier", dist: 7.5, order: "shoot", zoom: 0.75, scale: 0.5, span: 4.8 },

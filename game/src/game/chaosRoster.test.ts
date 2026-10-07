@@ -19,7 +19,7 @@ function run(seed: number, mapId: string): string[] {
         const roll = r(); let ok = false;
         try {
           if (roll < 0.25) ok = sim.queueMove(pt()); else if (roll < 0.45 && foe) ok = sim.queueShoot(foe.id); else if (roll < 0.5) ok = sim.queueSlam();
-          else if (roll < 0.6) ok = sim.queueLeap(pt()); else if (roll < 0.65) ok = sim.queuePlace(pt()); else if (roll < 0.72 && mate) ok = sim.queueLoad(mate.id); else if (roll < 0.77) ok = sim.queueUnload(pt());
+          else if (roll < 0.6) ok = sim.queueLeap(pt()); else if (roll < 0.72 && mate) ok = sim.queueLoad(mate.id); else if (roll < 0.77) ok = sim.queueUnload(pt());
           else if (roll < 0.82 && mate) ok = sim.queueMan(mate.id); else if (roll < 0.85) ok = sim.queueDismount(); else if (roll < 0.9 && foe) ok = sim.queueMelee(foe.id); else if (roll < 0.94 && foe) ok = sim.queueShove(foe.id);
           else if (roll < 0.97) ok = sim.queueBombDrop(pt()); else ok = sim.queueGrenadeAt(pt());
         } catch (e) { out.push(`${u.kind} threw: ${(e as Error).stack?.split("\n").slice(0, 3).join(" | ")}`); }

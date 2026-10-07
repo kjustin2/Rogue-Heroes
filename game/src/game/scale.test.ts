@@ -43,7 +43,7 @@ describe("map scale stays coherent with movement, range and accuracy", () => {
     const rows = MAPS.map((map) => {
       const { width, depth } = span(map);
       const soldier = turnsToCross("soldier", map);
-      const scout = turnsToCross("scout", map);
+      const scout = turnsToCross("skater", map);
       const artillery = turnsToCross("artillery", map);
       return `${map.id.padEnd(11)} ${mapSize(map).padEnd(7)} ${width.toFixed(0)}x${depth.toFixed(0)}  cross: soldier ${soldier.toFixed(1)}t  scout ${scout.toFixed(1)}t  artillery ${artillery.toFixed(1)}t`;
     });

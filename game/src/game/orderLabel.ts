@@ -18,10 +18,10 @@ export function orderLabel(order: TacticalOrder, actor: CombatEntity | undefined
   const make = (title: string, detail = ""): OrderLabel => ({ title, detail, text: detail ? `${title.toLowerCase()} ${detail}` : title.toLowerCase() });
   switch (order.kind) {
     case "move":
-      if (order.leap) return make("Jump");
-      return make("Move");
+      if (order.leap) return make(actor?.kind === "hookshot" ? "Reel" : "Jump");
+      return make(actor?.kind === "skater" ? "Boost" : actor?.kind === "mole" ? "Burrow" : "Move");
     case "shoot":
-      return make("Shoot", withPart);
+      return make(actor?.kind === "hookshot" ? "Hook" : actor?.kind === "molotov" ? "Throw" : "Shoot", withPart);
     case "grenade": {
       if (actor?.flying) return make("Bomb", withPart);
       return make("Grenade", withPart || (order.destination ? "ground" : ""));

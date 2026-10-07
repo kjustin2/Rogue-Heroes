@@ -29,13 +29,13 @@ mkdirSync(OUT, { recursive: true });
 // objects must appear well above the ground (the gun run's tracers leave the aircraft).
 const CASES = [
   { name: "rifle", actor: "soldier", target: "heavy", dist: 7, order: "shoot", limb: "weapon", round: true },
-  { name: "carbine", actor: "scout", target: "heavy", dist: 7, order: "shoot", limb: "weapon", round: true },
+  { name: "carbine", actor: "skater", target: "heavy", dist: 7, order: "shoot", limb: "weapon", round: true },
   { name: "marksman", actor: "sniper", target: "heavy", dist: 9, order: "shoot", limb: "weapon", round: true },
   { name: "machine-gun", actor: "heavy", target: "heavy", dist: 7, order: "shoot", limb: "weapon", round: true },
   { name: "launcher", actor: "grenadier", target: "heavy", dist: 8, order: "shoot", limb: "weapon", round: true },
   { name: "mortar", actor: "mortar", target: "heavy", dist: 10, order: "shoot", limb: "weapon", round: true },
   { name: "mortar-smoke", actor: "mortar", target: "heavy", dist: 10, order: "smoke", limb: "weapon", round: true },
-  { name: "pistol", actor: "turrettech", target: "heavy", dist: 6, order: "shoot", limb: "weapon", round: true },
+  { name: "pistol", actor: "mole", target: "heavy", dist: 6, order: "shoot", limb: "weapon", round: true },
   { name: "jumper-carbine", actor: "jumper", target: "heavy", dist: 7, order: "shoot", limb: "weapon", round: true },
   { name: "flamer", actor: "flamer", target: "heavy", dist: 4.5, order: "shoot", limb: "weapon", round: true },
   // The throw is a full windmill of the free arm (~2π); a twitch of the torso brace is ~0.1.

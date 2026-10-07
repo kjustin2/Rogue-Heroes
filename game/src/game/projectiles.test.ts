@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { TacticalSim } from "./sim";
 import {
   createArtillery, createBomber, createFlak, createFlamer, createGrenadier, createGunship, createHeavy,
-  createTurretTech, createMortar, createSniper, createSoldier, createTank, createTurret,
+  createMole, createMortar, createSniper, createSoldier, createTank, createTurret,
   type CombatEntity,
 } from "./damageModel";
 
@@ -16,7 +16,7 @@ const CASES: { name: string; make: Maker; lobbed: boolean; dist?: number }[] = [
   { name: "rifle", make: createSoldier, lobbed: false },
   { name: "machine gun", make: createHeavy, lobbed: false },
   { name: "marksman", make: createSniper, lobbed: false },
-  { name: "pistol", make: createTurretTech, lobbed: false, dist: 6 },
+  { name: "pistol", make: createMole, lobbed: false, dist: 6 },
   { name: "flamer", make: createFlamer, lobbed: false, dist: 5 },
   { name: "launcher", make: createGrenadier, lobbed: true },
   { name: "mortar", make: createMortar, lobbed: true },

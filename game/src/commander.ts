@@ -127,12 +127,12 @@ const MEDAL_SEEDS: readonly MedalSeed[] = [
     ["ringout5", "Over the Edge", "Send 5 foes off the map or into the water.", "ringouts", 5, 35],
     ["burn25", "Pyromaniac", "Set 25 troopers alight.", "burned", 25, 25],
     ["burn150", "Firestarter", "Set 150 troopers alight.", "burned", 150, 65],
-    ["sentry10", "Perimeter Guard", "Deploy 10 sentries.", "sentries", 10, 20],
-    ["sentry50", "Automatic Defense", "Deploy 50 sentries.", "sentries", 50, 55],
-    ["ricochet20", "Bank Shot", "Ricochet a round on to a second foe 20 times.", "ricochets", 20, 25],
-    ["ricochet100", "Pool Shark", "Ricochet a round on to a second foe 100 times.", "ricochets", 100, 60],
     ["boom10", "Big Badda Boom", "Detonate 10 Boomers.", "booms", 10, 25],
     ["punch25", "Home Run", "Punch 25 foes with a Breaker.", "punches", 25, 25],
+    ["hook25", "Get Over Here", "Drag 25 foes in with a Hookshot.", "hooks", 25, 25],
+    ["bowl20", "Strike!", "Bowl over 20 troopers with a Rocket Skater.", "bowled", 20, 25],
+    ["molotov25", "Firebug", "Throw 25 Molotovs.", "molotovs", 25, 20],
+    ["erupt20", "Surprise!", "Erupt under foes 20 times with a Mole Sapper.", "erupts", 20, 30],
     ["clash10", "Bullet Meets Bullet", "See 10 rounds meet in mid-air.", "clashes", 10, 30],
     ["clash50", "Point Defense", "See 50 rounds meet in mid-air.", "clashes", 50, 70],
     ["cannon10", "Big Gun", "Fire the Fortress Cannon 10 times.", "cannon", 10, 30],
@@ -165,7 +165,7 @@ const MEDAL_SEEDS: readonly MedalSeed[] = [
   { id: "rocketkills", page: "Arsenal", name: "Post Haste", blurb: "Kill 15 vehicles' worth of foes from Rocket Posts.", points: 40, progress: (st) => [st.counters["killer:rocketpost"] ?? 0, 15] },
 ];
 
-const NEW_KINDS = ["runabout", "turrettech", "hornet", "lancer", "sledge", "ironclad", "breaker", "boomer", "juggernaut"];
+const NEW_KINDS = ["runabout", "hornet", "sledge", "ironclad", "breaker", "boomer", "juggernaut", "hookshot", "skater", "molotov", "mole"];
 const triedKinds = (st: CommanderStats, kinds: readonly string[]): number => kinds.filter((k) => (st.counters[`deploy:${k}`] ?? 0) > 0).length;
 const triedTech = (st: CommanderStats): number => TECH_TREE.filter((n) => (st.counters[`research:${n.id}`] ?? 0) > 0).length;
 

@@ -15,7 +15,9 @@ every map has mirrored Mortar Pits and Cannon Posts (tank-shell field gun), and 
 own round shape (`UNIT_ROUND`). Hazards now warn a turn early in molten orange (never cache gold).
 Round 6 (2026-10-06, "only FUN units"): cut Trencher, Drone Operator, Bounty Hunter, Transport, Fortifier, Demolitionist; added the
 Breaker (rocket-fist Punch, 18m throw), Boomer (kamikaze) and Juggernaut (knockback cannon); see `docs/game-systems.md`.
-Open: the balance gate's player seat runs ~60-64% (limit 65%); map uniqueness pass.
+Round 7 (2026-10-07, second fun audit): cut Scout, Ricochet Gunner, Turret Tech (and placement); Runabout MG always fires; added Hookshot,
+Rocket Skater, Molotov, Mole Sapper. Caches mirrored (the player-seat lean is gone: 53%). Next: map features (Ironworks train, launch pads,
+thin ice, barrel clusters), then a sound + visual polish audit.
 
 State of `main`: `npm run verify` green (574 vitest incl. chaos, balance self-play and the movement +
 projectile oracle), `npm run smoke:core` green (11 smokes), `npm run probe:terrain` 0 offenders,

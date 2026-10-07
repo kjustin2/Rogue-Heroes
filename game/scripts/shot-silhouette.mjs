@@ -16,7 +16,7 @@ const OUT = join("shots", "silhouette");
 mkdirSync(OUT, { recursive: true });
 
 const ROWS = [
-  ["01-line", ["soldier", "scout", "sniper", "striker"]],
+  ["01-line", ["soldier", "skater", "sniper", "striker"]],
   ["02-weight", ["heavy", "grenadier", "mortar", "flamer"]],
   ["03-fun", ["breaker", "boomer", "juggernaut", "jumper"]],
   ["04-vehicles", ["tank", "hornet", "artillery"]],

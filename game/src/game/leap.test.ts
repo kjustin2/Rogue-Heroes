@@ -16,10 +16,10 @@ const staged = (): TacticalSim => {
 describe("infantry hop", () => {
   it("light, quick kinds jump farther and higher than heavy ones", () => {
     const sim = staged();
-    const range = (k: "scout" | "soldier" | "heavy"): number => sim.leapRange(sim.debugSpawn(k, "player", { x: -10, z: 0 }));
-    expect(range("scout")).toBeGreaterThan(range("soldier"));
+    const range = (k: "skater" | "soldier" | "heavy"): number => sim.leapRange(sim.debugSpawn(k, "player", { x: -10, z: 0 }));
+    expect(range("skater")).toBeGreaterThan(range("soldier"));
     expect(range("soldier")).toBeGreaterThan(range("heavy"));
-    expect(sim.leapUp(sim.debugSpawn("scout", "player", { x: -10, z: 4 }))).toBeGreaterThan(sim.leapUp(sim.debugSpawn("heavy", "player", { x: -10, z: 8 })));
+    expect(sim.leapUp(sim.debugSpawn("skater", "player", { x: -10, z: 4 }))).toBeGreaterThan(sim.leapUp(sim.debugSpawn("heavy", "player", { x: -10, z: 8 })));
   });
 
   it("a trooper hops over a pillar to the far side, airborne on the way and soft on landing", () => {
@@ -130,7 +130,7 @@ describe("infantry hop: robustness", () => {
     const z = (river.minZ + river.maxZ) / 2 + 3.2; // clear of the bridge spans
     const west = { x: river.minX - 0.9, z };
     const east = { x: river.maxX + 0.9, z };
-    const u = sim.debugSpawn("scout", "player", west);
+    const u = sim.debugSpawn("skater", "player", west);
     sim.debugSelect(u.id);
     const gap = east.x - west.x;
     expect(gap).toBeLessThan(sim.leapRange(u)); // the ravine is a hop wide
@@ -161,7 +161,7 @@ describe("infantry hop: robustness", () => {
       if (h >= 0.6 && h <= 0.95 && terrainHeightAt(low) === 0 && !pointInWater(low) && !pointInWater(high)) found = { low, high };
     }
     expect(found, "karak has a low ledge to hop onto").toBeDefined();
-    const u = sim.debugSpawn("scout", "player", found!.low);
+    const u = sim.debugSpawn("skater", "player", found!.low);
     sim.debugSelect(u.id);
     const hop = sim.leapPreview(found!.high)!;
     expect(hop.ok, hop.reason).toBe(true);

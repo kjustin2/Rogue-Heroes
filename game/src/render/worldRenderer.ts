@@ -346,8 +346,8 @@ export class WorldRenderer {
     for (const order of sim.orders) if (order.startedCrouched) _crouchMovers.add(order.actorId);
     const crouchMovers = _crouchMovers;
     for (const entity of sim.entities) {
-      // A unit carried by an air transport is aboard/hidden — don't draw it (nor make it clickable).
-      if (entity.carriedById) {
+      // A unit aboard a carrier, or a Mole Sapper underground, is hidden — don't draw it (nor make it clickable).
+      if (entity.carriedById || entity.burrowed) {
         const group = this.groups.get(entity.id);
         if (group) group.visible = false;
         continue;
@@ -2842,17 +2842,6 @@ export class WorldRenderer {
       this.box(rig, entity, "body", [0.16, 0.18, 0.06], [0.16, 0.98, 0.26], 0xffd27a, { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.2 });
       this.box(rig, entity, "head", [0.46, 0.34, 0.44], [0, 1.4, 0.0], helmetColor, { metalness: 0.16, kit: "helmet-mortar" });
       this.box(rig, entity, "head", [0.36, 0.09, 0.13], [0, 1.41, 0.22], 0x3a3f28, { accent: true });
-    } else if (entity.kind === "scout") {
-      // Light recon: stubby carbine, chest binoculars with glowing green lenses, a tall whip
-      // antenna with a blinking tip, and a soft beret with goggles — the leanest silhouette.
-      this.box(rig, entity, "rifle", [0.2, 0.26, 0.72], [0.46, 0.95, 0.22], trimColor, { metalness: 0.22, kit: "weapon-carbine" });
-      this.box(rig, entity, "body", [0.28, 0.14, 0.12], [0, 1.0, 0.22], 0x1c2a24, { accent: true });
-      for (const x of [-0.09, 0.09]) this.cylinder(rig, entity, "body", 0.05, 0.07, [x, 1.0, 0.3], 0x9dffcf, [Math.PI / 2, 0, 0], { accent: true, emissive: 0x6ff0b0, emissiveIntensity: 0.36 });
-      this.cylinder(rig, entity, "pack", 0.028, 0.95, [-0.2, 1.42, -0.34], 0xbcd8c6, [0, 0, 0], { accent: true, emissive: 0x6ff0b0, emissiveIntensity: 0.21 });
-      this.box(rig, entity, "pack", [0.08, 0.08, 0.08], [-0.2, 1.92, -0.34], 0x9dffcf, { accent: true, emissive: 0x6ff0b0, emissiveIntensity: 0.38 });
-      this.box(rig, entity, "head", [0.42, 0.42, 0.46], [0, 1.42, 0.0], helmetColor, { kit: "helmet-scout" });
-      this.box(rig, entity, "head", [0.086, 0.1, 0.058], [0.16, 1.52, -0.04], 0x244d39, { accent: true });
-      this.box(rig, entity, "head", [0.302, 0.1, 0.101], [0, 1.38, 0.2], 0x0e2a24, { accent: true, emissive: 0x6ff0b0, emissiveIntensity: 0.25 });
     } else if (entity.kind === "flamer") {
       // Incendiary specialist: fat twin-nozzle projector with a pilot flame, hazard-striped
       // shoulder guard, and big glowing fuel tanks on the back — unmistakably "fire".
@@ -2892,16 +2881,6 @@ export class WorldRenderer {
       for (const x of [-0.12, 0.12]) this.cylinder(rig, entity, "pack", 0.08, 0.7, [x, 1.2, -0.38], 0x6a6a4a, [0.2, 0, 0], { metalness: 0.3, accent: true });
       this.box(rig, entity, "head", [0.44, 0.38, 0.46], [0, 1.4, 0.0], helmetColor, { kit: "helmet" });
       this.box(rig, entity, "head", [0.3, 0.1, 0.09], [0, 1.4, 0.2], 0xff7a3a, { accent: true, emissive: 0xff5a2a, emissiveIntensity: 0.3 });
-    } else if (entity.kind === "turrettech") {
-      // Turret Tech: a flat-pack SENTRY CASE on the back with its tripod legs folded up past the head (the silhouette),
-      // an orange hard hat with a lamp, and a belt pouch of spare barrels. Sidearm only: its worth is the case.
-      this.box(rig, entity, "rifle", [0.16, 0.24, 0.52], [0.45, 0.92, 0.22], 0x3a4a48, { metalness: 0.3, kit: "weapon-pistol" });
-      this.box(rig, entity, "pack", [0.56, 0.74, 0.3], [0, 0.98, -0.4], 0x3b6a62, { accent: true, metalness: 0.3 });
-      for (const x of [-0.2, 0, 0.2]) this.cylinder(rig, entity, "pack", 0.035, 1.0, [x, 1.78, -0.42], 0x9aa6a0, [-0.12 + x * 0.3, 0, x * 0.4], { accent: true, metalness: 0.4 });
-      this.box(rig, entity, "pack", [0.2, 0.14, 0.2], [0, 1.58, -0.36], 0xffb02e, { accent: true, emissive: 0xff8a2a, emissiveIntensity: 0.3 });
-      this.box(rig, entity, "legs", [0.3, 0.2, 0.2], [0.32, 0.52, 0.1], 0x2f3b39, { accent: true, metalness: 0.3 });
-      this.box(rig, entity, "head", [0.5, 0.3, 0.52], [0, 1.44, 0.0], 0xff8a2a, { metalness: 0.2 });
-      this.box(rig, entity, "head", [0.12, 0.1, 0.1], [0, 1.52, 0.26], 0xfff3b0, { accent: true, emissive: 0xffd24a, emissiveIntensity: 0.5 });
     } else if (entity.kind === "sledge") {
       // Sledge: the HAMMER is the unit. A huge head on a long haft carried up over the shoulder, a spiked pauldron,
       // a counterweight chain on the back and a horned helm: wide, tall and top-heavy against the roster.
@@ -2914,16 +2893,6 @@ export class WorldRenderer {
       this.cylinder(rig, entity, "pack", 0.16, 0.2, [0, 0.62, -0.5], 0x7a8088, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.5 });
       this.box(rig, entity, "head", [0.46, 0.4, 0.48], [0, 1.42, 0.0], 0x5a2f4a, { metalness: 0.2 });
       for (const side of [-1, 1]) this.cylinder(rig, entity, "head", 0.03, 0.34, [side * 0.26, 1.68, 0.0], 0xe8e0c8, [0, 0, side * -0.5], { accent: true, radiusBottom: 0.07 });
-    } else if (entity.kind === "lancer") {
-      // Ricochet Gunner: a long carbine whose muzzle splits into two angled deflector fins (the round glances on to the next
-      // body), a bright drum under the stock, a scarf streaming back and a slit visor. Slim, fast-looking.
-      this.box(rig, entity, "rifle", [0.14, 0.2, 1.0], [0.46, 0.96, 0.32], 0x2a3538, { metalness: 0.36 });
-      for (const side of [-1, 1]) this.box(rig, entity, "rifle", [0.04, 0.2, 0.3], [0.46 + side * 0.07, 0.96, 0.86], 0xffc27a, { accent: true, rotation: [0, side * 0.5, 0], metalness: 0.4, emissive: 0xff9e2b, emissiveIntensity: 0.2 });
-      this.cylinder(rig, entity, "rifle", 0.1, 0.16, [0.46, 0.76, 0.18], 0x3fa9b8, [0, 0, Math.PI / 2], { accent: true, metalness: 0.4 });
-      this.box(rig, entity, "pack", [0.34, 0.5, 0.2], [0, 1.0, -0.34], 0x1f4a52, { accent: true, metalness: 0.3 });
-      this.box(rig, entity, "body", [0.12, 0.7, 0.06], [-0.2, 1.1, -0.42], 0xff9e2b, { accent: true, rotation: [0.3, 0, 0.18] });
-      this.box(rig, entity, "head", [0.42, 0.4, 0.46], [0, 1.42, 0.0], helmetColor, { metalness: 0.3 });
-      this.box(rig, entity, "head", [0.34, 0.07, 0.08], [0, 1.44, 0.2], 0xffe2a8, { accent: true, emissive: 0xffc27a, emissiveIntensity: 0.45 });
     } else if (entity.kind === "ironclad") {
       // Ironclad: the TOWER SHIELD, a man-high slab carried on the left arm and angled across the front; a barrel helm with a
       // slit; broad bolted pauldrons. From the front it is a wall with a head.
@@ -2972,6 +2941,52 @@ export class WorldRenderer {
       for (const side of [-1, 1]) this.box(rig, entity, "legs", [0.24, 0.3, 0.1], [side * 0.16, 0.5, 0.2], 0x5a6474, { metalness: 0.4 });
       this.box(rig, entity, "head", [0.5, 0.44, 0.52], [0, 1.6, 0.0], 0x5a6474, { metalness: 0.45, bevel: 0.25 });
       this.cylinder(rig, entity, "head", 0.08, 0.06, [0, 1.62, 0.27], 0xffc27a, [Math.PI / 2, 0, 0], { accent: true, emissive: 0xff9e2b, emissiveIntensity: 0.55 });
+    } else if (entity.kind === "hookshot") {
+      // Hookshot: a HARPOON GUN (a long barrel with a barbed brass head sticking out of the muzzle) fed from a big CABLE
+      // REEL on the back, coils of rope over one shoulder and a climber's helmet with a lamp. The reel is the silhouette.
+      this.box(rig, entity, "rifle", [0.16, 0.2, 0.9], [0.46, 0.96, 0.3], 0x2e3438, { metalness: 0.4, bevel: 0.2 });
+      this.cylinder(rig, entity, "rifle", 0.035, 0.36, [0.46, 0.98, 0.88], 0xc8a24a, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.6 });
+      for (const side of [-1, 1]) this.box(rig, entity, "rifle", [0.03, 0.03, 0.16], [0.46 + side * 0.06, 0.98, 1.02], 0xc8a24a, { accent: true, rotation: [0, side * 0.6, 0], metalness: 0.6 });
+      this.cylinder(rig, entity, "pack", 0.3, 0.26, [0, 1.02, -0.4], 0x4a3a28, [0, 0, Math.PI / 2], { metalness: 0.3 });
+      this.cylinder(rig, entity, "pack", 0.12, 0.3, [0, 1.02, -0.4], 0xd8c89a, [0, 0, Math.PI / 2], { accent: true });
+      this.box(rig, entity, "body", [0.14, 0.62, 0.14], [-0.22, 1.08, 0.12], 0xb89a6a, { rotation: [0, 0, 0.55] });
+      this.box(rig, entity, "head", [0.44, 0.38, 0.48], [0, 1.42, 0.0], helmetColor, { metalness: 0.25 });
+      this.box(rig, entity, "head", [0.12, 0.1, 0.1], [0, 1.6, 0.24], 0xfff3b0, { accent: true, emissive: 0xffd24a, emissiveIntensity: 0.5 });
+    } else if (entity.kind === "skater") {
+      // Rocket Skater: ROCKET BOOTS (fat thruster cans strapped to each shin with a glowing nozzle), a low forward crouch,
+      // a racing helmet with a long visor and a compact carbine. Lean, low and all about the feet.
+      for (const side of [-1, 1]) {
+        // Big enough to read at play zoom: a fat can on each calf, a nose cone at the toe, a flame cone out the back.
+        this.cylinder(rig, entity, "legs", 0.17, 0.5, [side * 0.2, 0.3, -0.1], 0x3a3f46, [Math.PI / 2 - 0.25, 0, 0], { metalness: 0.5 });
+        this.cylinder(rig, entity, "legs", 0.02, 0.22, [side * 0.2, 0.36, 0.26], 0x8cefff, [Math.PI / 2 - 0.25, 0, 0], { accent: true, radiusBottom: 0.17, metalness: 0.4 });
+        this.cylinder(rig, entity, "legs", 0.15, 0.36, [side * 0.2, 0.24, -0.5], 0xffb040, [Math.PI / 2 - 0.25, 0, 0], { accent: true, emissive: 0xff7a1e, emissiveIntensity: 0.9, radiusBottom: 0.01 });
+      }
+      this.box(rig, entity, "rifle", [0.12, 0.16, 0.56], [0.44, 0.94, 0.26], 0x262c30, { metalness: 0.35 });
+      this.box(rig, entity, "pack", [0.4, 0.34, 0.2], [0, 1.0, -0.32], 0x2f6a7a, { accent: true, metalness: 0.3 });
+      this.box(rig, entity, "head", [0.42, 0.38, 0.5], [0, 1.4, 0.02], helmetColor, { metalness: 0.4, bevel: 0.3 });
+      this.box(rig, entity, "head", [0.38, 0.1, 0.1], [0, 1.42, 0.26], 0xffe2a8, { accent: true, emissive: 0xffc27a, emissiveIntensity: 0.45 });
+    } else if (entity.kind === "molotov") {
+      // Molotov: a BANDOLIER of bottles across the chest, each with a lit rag, a crate of spares on the back, one bottle raised
+      // in the throwing hand and a rag tied over the face. No gun: the bottles are the weapon.
+      this.cylinder(rig, entity, "rifle", 0.06, 0.26, [0.44, 1.12, 0.16], 0x6a8a3a, [0.3, 0, 0], { metalness: 0.2 });
+      this.box(rig, entity, "rifle", [0.06, 0.08, 0.06], [0.44, 1.28, 0.2], 0xffb040, { accent: true, emissive: 0xff7a1e, emissiveIntensity: 0.8 });
+      this.box(rig, entity, "body", [0.12, 0.66, 0.08], [0, 1.02, 0.24], 0x4a3a28, { rotation: [0, 0, 0.6] });
+      for (const t of [-0.16, 0, 0.16]) {
+        this.cylinder(rig, entity, "body", 0.045, 0.18, [t, 1.02 - t * 0.6, 0.29], 0x7a9a46, [0, 0, 0], { accent: true });
+        this.box(rig, entity, "body", [0.04, 0.05, 0.04], [t, 1.13 - t * 0.6, 0.29], 0xffb040, { accent: true, emissive: 0xff7a1e, emissiveIntensity: 0.6 });
+      }
+      this.box(rig, entity, "pack", [0.46, 0.34, 0.3], [0, 0.98, -0.36], 0x6a4a2a, { metalness: 0.1 });
+      this.box(rig, entity, "head", [0.42, 0.4, 0.44], [0, 1.4, 0.0], helmetColor, { metalness: 0.1 });
+      this.box(rig, entity, "head", [0.44, 0.12, 0.1], [0, 1.32, 0.2], 0xb8321f, { accent: true });
+    } else if (entity.kind === "mole") {
+      // Mole Sapper: a big DRILL PACK (a cone bit pointing up past the head off the back), a mining helmet with a lamp,
+      // dirt-brown overalls and a sidearm. The drill is the silhouette.
+      this.cylinder(rig, entity, "pack", 0.24, 0.5, [0, 1.02, -0.4], 0x4a4a44, [0, 0, 0], { metalness: 0.5 });
+      this.cylinder(rig, entity, "pack", 0.02, 0.62, [0, 1.6, -0.4], 0xd8b84a, [0, 0, 0], { accent: true, metalness: 0.6, radiusBottom: 0.22 });
+      for (const y of [1.42, 1.62]) this.cylinder(rig, entity, "pack", 0.17 - (y - 1.42) * 0.5, 0.04, [0, y, -0.4], 0x8a7a3a, [0, 0, 0], { metalness: 0.6 });
+      this.box(rig, entity, "rifle", [0.14, 0.2, 0.4], [0.44, 0.92, 0.2], 0x3a3530, { metalness: 0.3, kit: "weapon-pistol" });
+      this.box(rig, entity, "head", [0.46, 0.32, 0.5], [0, 1.44, 0.0], 0xd8a83a, { metalness: 0.2 });
+      this.cylinder(rig, entity, "head", 0.07, 0.06, [0, 1.52, 0.26], 0xfff3b0, [Math.PI / 2, 0, 0], { accent: true, emissive: 0xffd24a, emissiveIntensity: 0.6 });
     } else {
       // Line infantry (soldier): standard bayoneted rifle, a brimmed helmet with a comms
       // bead, chest webbing/pouches and a slung frag — the plain baseline trooper.
@@ -3112,7 +3127,7 @@ export class WorldRenderer {
 
   /** A manned emplacement: a ring of sandbags round a pit, with the weapon on a mount in the middle. Walk up and crew it. */
   // RUNABOUT: a light open car. Low chassis, a roll bar, four fat wheels, a bench for four riders and a pintle MG at the
-  // back that only fires with a gunner seated. Sand paint, team lamps: unmistakably not a tank, not an APC.
+  // back that always fires. Sand paint, team lamps: unmistakably not a tank, not an APC.
   private buildRunabout(group: THREE.Group, entity: CombatEntity): void {
     const glow = entity.team === "enemy" ? TEAMS.enemyAccent : (entity.accent ?? this.playerAccent);
     const lamp = { accent: true, emissive: glow, emissiveIntensity: 0.4, bevel: 0.3 } as const;
@@ -5099,24 +5114,6 @@ export class WorldRenderer {
       this.groundAimRoot.add(makeEndpoint(point, ok ? 0x8de4ff : 0xff765f, kind === "minefield" ? 2 : kind === "bunker" ? 1.45 : 1.15, ground + 0.06));
       return;
     }
-    // Placing a sentry: where it will land, green when accepted.
-    if (sim.intent === "place" && sim.selected) {
-      const spec = sim.placeSpec();
-      if (spec) {
-        const ok = !sim.placeFailureReason(sim.selected, point);
-        const color = ok ? 0x2ee88a : 0xff3b5c;
-        const yaw = sim.placementYaw(sim.projectedSelected()?.position ?? sim.selected.position, point);
-        const ground = drawnGroundAt(point);
-        // The sentry the Turret Tech will set down (this used to draw a barrier's two wall blocks).
-        const ghost = new THREE.Mesh(defenseGhostGeometry("emplacement"), wallGhostMaterial(ok));
-        ghost.scale.setScalar(0.55);
-        ghost.position.set(point.x, ground, point.z);
-        ghost.rotation.y = yaw;
-        this.groundAimRoot.add(ghost);
-        this.groundAimRoot.add(makeEndpoint(point, color, 0.5, ground + 0.06));
-      }
-      return;
-    }
     // Targeting a support power: draw the strike footprint instead of a weapon arc.
     if (sim.pendingSupport) {
       this.drawSupportReticle(sim, sim.pendingSupport, point);
@@ -5342,6 +5339,8 @@ export class WorldRenderer {
       // and the muzzle event. Nothing here is frustum-culled — a fast/high round near a screen edge
       // would otherwise vanish while its un-culled trail lingers.
       for (const part of makeProjectileTrail(projectile, family, history)) this.projectileRoot.add(part);
+      // The Hookshot's harpoon pays out a CABLE from the gun: the drag that follows reads as the line reeling in.
+      if (projectile.sourceKind === "hookshot") this.projectileRoot.add(makeTubeLine(projectile.origin, projectile.position, 0x4a3a28, 1, projectile.originHeight, 0.028, projectile.height));
       // Only LOBBED rounds cast a ground shadow -- it is how you read where a shell or grenade will
       // land. A flat tracer's shadow was a dark disc sliding over the ground unattached to anything.
       if (isLobbed(family)) this.projectileRoot.add(makeProjectileShadow(projectile, family));
@@ -6761,16 +6760,17 @@ const INFANTRY_BUILDS: Partial<Record<EntityKind, Partial<InfantryBuild>>> = {
   heavy: { girth: 1.22, stature: 0.92, lean: 0.05 }, // bulk comes from the kit; 1.52 stretched every rotated part into a slab
   flamer: { girth: 1.34, stature: 0.94 },
   striker: { girth: 1.06, stature: 1.04, lean: 0.24 },
-  scout: { girth: 0.72, stature: 1.14, lean: 0.14 },
   sniper: { girth: 0.78, stature: 1.09, lean: 0.18 },
   mortar: { girth: 1.2, stature: 0.94 },
   grenadier: { girth: 1.22, stature: 0.96 },
   bazooka: { girth: 1.04, stature: 1.0, lean: 0.1 },
-  turrettech: { girth: 1.08, stature: 0.96 },
   sledge: { girth: 1.3, stature: 1.12, lean: 0.2 },
-  lancer: { girth: 0.84, stature: 1.1, lean: 0.08 },
   ironclad: { girth: 1.42, stature: 1.0 },
   breaker: { girth: 1.12, stature: 1.04, lean: 0.22 },
+  hookshot: { girth: 0.96, stature: 1.06, lean: 0.12 },
+  skater: { girth: 0.82, stature: 0.94, lean: 0.34 },
+  molotov: { girth: 0.94, stature: 1.0, lean: 0.16 },
+  mole: { girth: 1.12, stature: 0.88, lean: 0.14 },
   boomer: { girth: 0.9, stature: 0.86, lean: 0.3 },
   juggernaut: { girth: 1.5, stature: 1.08, lean: 0.04 },
 };
@@ -6805,7 +6805,6 @@ const DEFAULT_KIT_PARTS: InfantryKitParts = {
 
 const INFANTRY_KIT_PARTS: Partial<Record<EntityKind, InfantryKitParts>> = {
   heavy: { ...DEFAULT_KIT_PARTS, torso: "torso-heavy", torsoSize: [0.8, 0.66, 0.5], armL: "arm-heavy", armR: "arm-heavy", armSize: [0.24, 0.62, 0.26], leg: "leg-heavy", legSize: [0.26, 0.5, 0.3], pauldrons: false, rucksack: false },
-  scout: { ...DEFAULT_KIT_PARTS, torso: "torso-scout", torsoSize: [0.54, 0.64, 0.42], leg: "leg-scout", legSize: [0.2, 0.5, 0.26], pauldrons: false },
   sniper: { ...DEFAULT_KIT_PARTS, torso: "torso-sniper", torsoSize: [0.7, 0.64, 0.5], pauldrons: false },
   striker: { ...DEFAULT_KIT_PARTS, torso: "torso-striker", torsoSize: [0.7, 0.66, 0.44], armL: "arm-striker", pauldrons: false },
   flamer: { ...DEFAULT_KIT_PARTS, torso: "torso-flamer", torsoSize: [0.64, 0.64, 0.5], armL: "arm-flamer", armR: "arm-flamer", armSize: [0.24, 0.62, 0.26], pauldrons: false },
@@ -6835,7 +6834,8 @@ export function weaponFamily(kind: EntityKind): WeaponFamily {
   if (kind === "sniper") return "marksman";
   if (kind === "grenadier" || kind === "mortar") return "launcher";
   if (kind === "flamer") return "flamer";
-  if (kind === "turrettech" || kind === "sledge") return "pistol";
+  if (kind === "sledge" || kind === "mole") return "pistol";
+  if (kind === "molotov") return "throw";
   if (kind === "juggernaut") return "launcher";
   if (kind === "boomer") return "melee";
   if (kind === "bazooka") return "launcher";
@@ -7026,7 +7026,6 @@ function infantryPalette(kind: string): { body: number; trim: number; pack: numb
     // now the most desaturated thing on the field -- specialists are the ones that should pop --
     // and each pair that used to collide (scout/sniper, heavy/flamer,
     // grenadier/mortar) is pushed apart on value as well as hue.
-    case "scout": return { body: 0x63b45c, trim: 0x36443c, pack: 0x24503a };
     case "sniper": return { body: 0x2f5570, trim: 0x2b3742, pack: 0x1b3a4e };
     case "striker": return { body: 0x7d51ad, trim: 0x3b3350, pack: 0x39235c };
     case "heavy": return { body: 0xa85a24, trim: 0x453930, pack: 0x4a2716 };
@@ -7035,11 +7034,13 @@ function infantryPalette(kind: string): { body: number; trim: number; pack: numb
     case "flamer": return { body: 0xb33418, trim: 0x4a3a30, pack: 0x6a2812 };
     case "jumper": return { body: 0x4e6b8c, trim: 0x2b3036, pack: 0x2f3a46 };
     case "bazooka": return { body: 0x5f7a4a, trim: 0x3a3a2e, pack: 0x4a4a32 };
-    case "turrettech": return { body: 0x4aa38c, trim: 0x2f3f3c, pack: 0x2a4a44 };
     case "sledge": return { body: 0x9a3f78, trim: 0x3d2a38, pack: 0x4a2440 };
-    case "lancer": return { body: 0x2fb7c9, trim: 0x2a3a40, pack: 0x1f4a52 };
     case "ironclad": return { body: 0x5f6b7d, trim: 0x2c333d, pack: 0x3a4250 };
     case "breaker": return { body: 0xc8662a, trim: 0x3a3430, pack: 0x4a3a30 };
+    case "hookshot": return { body: 0x5a7a8a, trim: 0x2c3238, pack: 0x4a3a28 };
+    case "skater": return { body: 0x6fa8b8, trim: 0x2a3640, pack: 0x2f6a7a };
+    case "molotov": return { body: 0x8a4a2a, trim: 0x3a2a22, pack: 0x6a4a2a };
+    case "mole": return { body: 0x7a5a3a, trim: 0x3a2e22, pack: 0x4a4a44 };
     case "boomer": return { body: 0x8a7a52, trim: 0x3a3428, pack: 0x5a1f1c };
     case "juggernaut": return { body: 0x3f4a5a, trim: 0x232a32, pack: 0x2f3844 };
     default: return { body: 0x6c7052, trim: 0x35424a, pack: 0x3a4438 };

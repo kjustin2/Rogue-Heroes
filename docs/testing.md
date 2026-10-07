@@ -24,8 +24,8 @@ Every command, smoke, probe and oracle, and the hard-won ledgers behind them. Ru
 
 **The balance gate (`balance.test.ts`, inside `npm test`)** measures damage per dollar against the median kind. Two crediting rules
 (2026-10-06), both measured, not tuned: a KILLING blow also counts the health it denied (a Marksman's one-shot head kill used to count as
-16 damage and read as a dead buy), and a Turret Tech is credited with its sentries' damage and charged their $70. The player seat has run
-~60-64% of decided games since the fun-unit round (gate 35-65%): watch it.
+16 damage and read as a dead buy), and a Turret Tech is credited with its sentries' damage and charged their $70. The player seat lean (~60-69%) was
+the unmirrored supply caches; with mirrored pairs it reads ~53% (`mapLayout.test` "supply caches are fair" pins them).
 | Perf bench + leak probe | `npm run perf` (`-- --update-baseline` to rebase) |
 | AI vision inspector | `npm run vision` (`-- <scenario>` or `-- all`) |
 | Scenario screenshot gallery | `npm run improve:gallery` |

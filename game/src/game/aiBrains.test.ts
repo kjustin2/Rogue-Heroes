@@ -81,7 +81,7 @@ describe("hard AI brain: the full move set", () => {
     const sim = hard("karak");
     const river = terrainWater()[0]!;
     const z = (river.minZ + river.maxZ) / 2 + 3.2;
-    const grunt = arm(sim.debugSpawn("scout", "enemy", { x: river.maxX + 0.9, z }));
+    const grunt = arm(sim.debugSpawn("hookshot", "enemy", { x: river.maxX + 0.9, z }));
     sim.debugSpawn("soldier", "player", { x: river.minX - 22, z });
     settleCommand(sim);
     expect(ordersOf(sim, grunt.id).some((o) => o.kind === "move" && o.leap)).toBe(true);
@@ -168,16 +168,6 @@ describe("hard AI brain: the full move set", () => {
     far.debugSpawn("soldier", "player", { x: -4, z: 0 });
     settleCommand(far);
     expect(ordersOf(far, s2.id).some((o) => o.kind === "slam")).toBe(false);
-  });
-
-  it("a Turret Tech sows a sentry toward the foe", () => {
-    const s2 = hard();
-    s2.economy.set("enemy", 900);
-    const tt = arm(s2.debugSpawn("turrettech", "enemy", { x: 10, z: 0 }));
-    s2.debugSpawn("soldier", "player", { x: -4, z: 0 });
-    settleCommand(s2);
-    expect(s2.entities.some((e) => e.kind === "sentry" && e.team === "enemy"), "a sentry is down").toBe(true);
-    expect(tt.grenades).toBe(1);
   });
 
   it("with every flag off it plays the old way (no hop, ram, smoke, mine or crouch)", () => {

@@ -30,7 +30,7 @@ const SUBJECTS = [
   { id: "turret", kind: "turret" },
 ];
 const ROSTERS = {
-  vanguard: ["soldier", "scout", "sniper", "jumper", "heavy", "breaker", "tank", "flak", "gunship"],
+  vanguard: ["soldier", "skater", "sniper", "jumper", "heavy", "breaker", "tank", "flak", "gunship"],
   syndicate: ["soldier", "sniper", "heavy", "striker", "grenadier", "flamer", "boomer", "runabout", "flak"],
   bastion: ["soldier", "sniper", "heavy", "mortar", "juggernaut", "tank", "artillery", "flak", "bomber"],
 };

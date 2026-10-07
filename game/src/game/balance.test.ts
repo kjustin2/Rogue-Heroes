@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { MAPS, TROOP_CATALOG, TacticalSim, mapCenter, mapDef, placeSpecFor, troopSpec, type TroopKind } from "./sim";
+import { MAPS, TROOP_CATALOG, TacticalSim, mapCenter, mapDef, troopSpec, type TroopKind } from "./sim";
 import { isBuildingKind, isDefenseKind, type CombatEntity } from "./damageModel";
 import { DEFAULT_TERRAIN, setActiveTerrain } from "./terrain";
 import { Rng } from "../core/rng";
@@ -37,7 +37,7 @@ const BAND_HIGH = 2.5;
 // Listed, not gated: the Sledge's hammer and the Runabout's gunner seat are Hard-bot behaviour (Slam, ferrying); the Normal brain this
 // self-play uses never swings a hammer or seats a gunner, so their rows measure the AI, not the unit (same story as the bomber below).
 // Support kinds earn their keep another way; the interceptor can only hit
-// flyers; the flamer's burning-ground ticks are unattributed (no actor on a burn zone); the
+// flyers; fire is credited to whoever lit it (2026-10-07); the
 // scout is eyes + capture + dash, and as the fastest unit the AI runs it in first and alone, so
 // its damage row is 0-or-a-little depending on which two games draw it (see the seat table).
 // The bomber's row measures the AI, not the aircraft: the bot only bombs a foe that is already
@@ -45,7 +45,7 @@ const BAND_HIGH = 2.5;
 // ~27 damage a game and the row swung 0.42x-0.56x on a map layout change alone. Given a bombing
 // run (move over a group, release on arrival) the same aircraft measured 1.8x-2.3x -- see
 // docs/next-steps.md. Re-gate it when the AI flies real bombing runs.
-const UNGATED: readonly TroopKind[] = ["flamer", "scout", "bomber", "sledge", "runabout"];
+const UNGATED: readonly TroopKind[] = ["bomber", "sledge"];
 
 interface Tally { damage: number; spent: number; fielded: number }
 
@@ -100,14 +100,6 @@ function playGame(mapId: string, seed: number, tally: Map<TroopKind, Tally>): "p
   const seen = new Set<string>();
   const kindOf = new Map<string, TroopKind>();
   const price = (e: CombatEntity): void => {
-    // A Turret Tech's worth IS its sentries (as a Marksman's is its kills): credit what they shoot to it, and charge it their $70.
-    if (!seen.has(e.id) && e.kind === "sentry" && [...kindOf].some(([id, k]) => k === "turrettech" && sim.entity(id)?.team === e.team)) {
-      seen.add(e.id);
-      kindOf.set(e.id, "turrettech");
-      const row = tally.get("turrettech");
-      if (row) row.spent += placeSpecFor("turrettech")?.cost ?? 0;
-      return;
-    }
     if (seen.has(e.id) || e.kind === "cover" || isBuildingKind(e.kind) || isDefenseKind(e.kind)) return;
     seen.add(e.id);
     const kind = e.kind as TroopKind;
