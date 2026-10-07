@@ -161,14 +161,15 @@ describe("bot push", () => {
   it("the Hard bot shoves a trooper that stands at the water's edge", () => {
     const sim = new TacticalSim();
     sim.configure(mapDef("causeway"), "destroy", "hard");
-    // first water metre along z at x = 0
+    // first water metre along z at x = -6 (x = 0 crosses the channel's ice strip since 2026-10-07)
+    const X = -6;
     let zw = 0;
-    for (let z = 0; z < 40; z += 0.25) if (pointInWaterAt(0, z)) { zw = z; break; }
+    for (let z = 0; z < 40; z += 0.25) if (pointInWaterAt(X, z)) { zw = z; break; }
     expect(zw).toBeGreaterThan(2);
     for (const e of sim.entities) if (e.kind === "base") for (const p of e.parts) if (p.role === "weapon") p.hp = 0;
     sim.economy.set("enemy", 0);
-    const hunter = sim.debugSpawn("soldier", "enemy", { x: 0, z: zw - 5 });
-    const victim = sim.debugSpawn("soldier", "player", { x: 0, z: zw - 1.6 });
+    const hunter = sim.debugSpawn("soldier", "enemy", { x: X, z: zw - 5 });
+    const victim = sim.debugSpawn("soldier", "player", { x: X, z: zw - 1.6 });
     disarm(victim);
     hunter.commandPoints = hunter.maxCommandPoints;
     sim.endTurn();

@@ -34,6 +34,20 @@ Balance (self-play, 2026-10-07): **supply caches now come in mirrored pairs** (`
 on one half, and that was the whole long-running player-seat lean (69% -> 53%). Ironclad $250, Jump Trooper $200. A lobbed weapon counts as
 an armour answer for the bot only with 30+ damage (the Molotov is not one).
 
+## Map features (2026-10-07, owner: "other fun things to add to maps ... more fun and unique")
+- **Ironworks freight train** (`MapDef.train`, `runTrain`): a train runs both rail-yard tracks every 4th turn from turn 4. The rails are
+  always drawn; they glow hazard-orange the turn before (`environment().rails` state "soon") and pulse on the turn ("now"), and the train
+  model crosses during that resolve (`progress`). Anything on a track takes 140 and is thrown clear sideways. It rides the event forecast
+  chip ("Freight train") and the hover text; `aiDangerAt` keeps bots off live rails.
+- **Launch pads** (`MapDef.pads`, `launchPads()`, Karak and Crossfire, mirrored): a trooper that ENDS a plain move on a pad carries on as a
+  high, fast leap to the pad's landing ring (`order.launched`). Karak's fire over the ravine; Crossfire's land on the forward nest crowns.
+- **Thin ice** (`TerrainSpec.ice`, `pointOnIce`, Causeway): the middle of each frozen channel is walkable ice. A ground vehicle that ends a
+  turn on it cracks it (`crackedTurn`, a dark ring under it); still there next turn, it sinks. Bots never park vehicles on ice.
+- **Red barrels** (`barrels` cover, every map, mirrored, lowest placement priority): volatile, so a shot sets the stack off (the fuel
+  chain reaction and fire).
+- Posts, caches and props keep off rails, pads and landing spots (`onMapFeature`; `mapLayout.test` "map features are clear").
+- A jump or pad launch that lands flush against a step now slides to the nearest ground its footprint fits on (movement oracle).
+
 ## FACTIONS play, look and fight differently (2026-09-22)
 
 - **THE FACTION READ IS MEASURED** (2026-09-24, owner: "infantry all look the same across factions and bases

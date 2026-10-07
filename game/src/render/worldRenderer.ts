@@ -12,7 +12,7 @@ import type { OrderKind, Projectile, ShotPreview, TacticalSim, VisualEvent } fro
 import { CLASH_BLAST, CLASH_BOLT, PULSE_SMOKE, isPulseBlast, minefieldPoints, muzzleFor } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type GroundSurfaceKind, type SkylineKind } from "../game/maps";
 import type { TroopKind } from "../game/units";
-import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, climbsAlong, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainWater } from "../game/terrain";
+import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, climbsAlong, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainIce, terrainWater } from "../game/terrain";
 import { kitGeometry, modelsVersion, propGeometry, toonGradient, vehicleGeometry, vehiclesKitReady, type KitPart, type PropsKind, type VehiclesPart } from "./models";
 import { VEHICLE_LAYOUT } from "./vehiclesLayout";
 import { damageLabel } from "./damageLabel";
@@ -52,6 +52,11 @@ export class WorldRenderer {
   private readonly orderRoot = new THREE.Group();
   private readonly previewRoot = new THREE.Group();
   private readonly projectileRoot = new THREE.Group();
+  /** Map-owned features built once per map (rails, trains, launch pads); glow and train motion update per frame. */
+  private readonly featureRoot = new THREE.Group();
+  private featureKey = "";
+  private railGlows: THREE.Mesh[] = [];
+  private trains: THREE.Group[] = [];
   private readonly effectRoot = new THREE.Group();
   private readonly objectiveRoot = new THREE.Group();
   private readonly groundAimRoot = new THREE.Group();
@@ -164,7 +169,7 @@ export class WorldRenderer {
   private readonly flashLights: { light: THREE.PointLight; strength: number; until: number; duration: number }[] = [];
 
   constructor(private readonly scene: THREE.Scene) {
-    this.scene.add(this.sceneryRoot, this.craterRoot, this.debrisRoot, this.entityRoot, this.markerRoot, this.orderRoot, this.previewRoot, this.projectileRoot, this.effectRoot, this.objectiveRoot, this.groundAimRoot, this.auraRoot, this.blockedRoot, this.damageNumberRoot, this.environmentRoot);
+    this.scene.add(this.featureRoot, this.sceneryRoot, this.craterRoot, this.debrisRoot, this.entityRoot, this.markerRoot, this.orderRoot, this.previewRoot, this.projectileRoot, this.effectRoot, this.objectiveRoot, this.groundAimRoot, this.auraRoot, this.blockedRoot, this.damageNumberRoot, this.environmentRoot);
     for (let i = 0; i < 3; i += 1) {
       // Tight radius + fast decay: a wide pool reads as a brown stain on the ground
       // rather than a flash.
@@ -427,6 +432,7 @@ export class WorldRenderer {
 
   private syncEnvironment(sim: TacticalSim): void {
     this.disposeAndClear(this.environmentRoot);
+    this.syncMapFeatures(sim);
     // DUST DEVILS on the Dust Bowl: every few seconds a little twister of dust lifts off open ground.
     if (this.surfaceKind === "cracked" && this.particles && !this.silhouetteMode) {
       const now = performance.now();
@@ -624,6 +630,13 @@ export class WorldRenderer {
       this.pickables.push(hit, coin);
     }
     const pulse = (Math.sin(performance.now() * 0.006) + 1) * 0.5;
+    for (const e of sim.entities) {
+      if (e.crackedTurn === undefined || !e.status.alive) continue;
+      // THIN ICE CRACKING under a vehicle: a dark jagged ring that says "move it or lose it".
+      const crack = new THREE.Mesh(drapedDisc(e.position.x, e.position.z, e.radius + 0.5, e.radius + 1.0, 18, 0.06),
+        this.envMat(THREE.MeshBasicMaterial, { color: 0x2a4a5a, transparent: true, opacity: 0.65 + pulse * 0.3, side: THREE.DoubleSide, depthWrite: false }));
+      this.environmentRoot.add(crack);
+    }
     for (const zone of env.zones) {
       const color = hazardColor(zone.kind);
       const ring = new THREE.Mesh(
@@ -646,6 +659,118 @@ export class WorldRenderer {
       );
       this.environmentRoot.add(ring);
     }
+  }
+
+  /** Rails, freight trains and launch pads: built once per map, then only the rail glow and the trains move. */
+  private syncMapFeatures(sim: TacticalSim): void {
+    const def = sim.mapDef;
+    if (this.featureKey !== def.id) {
+      this.featureKey = def.id;
+      this.disposeAndClear(this.featureRoot);
+      this.railGlows = [];
+      this.trains = [];
+      const wood = new THREE.MeshStandardMaterial({ color: 0x4a3722, roughness: 0.9 });
+      const steel = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.35, metalness: 0.7 });
+      (def.train?.tracks ?? []).forEach((t, i) => {
+        const midZ = (t.minZ + t.maxZ) / 2, depth = t.maxZ - t.minZ;
+        // Sleepers every 0.8m and two steel rails, sitting on the drawn ground.
+        for (let x = t.minX - 3; x <= t.maxX + 3; x += 0.8) {
+          const sleeper = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.08, depth + 0.3), wood);
+          sleeper.position.set(x, drawnGroundAt({ x, z: midZ }) + 0.04, midZ);
+          sleeper.receiveShadow = true;
+          this.featureRoot.add(sleeper);
+        }
+        for (const side of [-1, 1]) {
+          const rail = new THREE.Mesh(new THREE.BoxGeometry(t.maxX - t.minX + 6, 0.1, 0.09), steel);
+          rail.position.set((t.minX + t.maxX) / 2, drawnGroundAt({ x: (t.minX + t.maxX) / 2, z: midZ }) + 0.13, midZ + side * depth * 0.3);
+          this.featureRoot.add(rail);
+        }
+        // The hazard glow over the track (shown the turn before, pulsing on the turn).
+        const glow = new THREE.Mesh(new THREE.PlaneGeometry(t.maxX - t.minX, depth), new THREE.MeshBasicMaterial({ color: 0xff6a1c, transparent: true, opacity: 0, depthWrite: false }));
+        glow.rotation.x = -Math.PI / 2;
+        glow.position.set((t.minX + t.maxX) / 2, drawnGroundAt({ x: (t.minX + t.maxX) / 2, z: midZ }) + 0.2, midZ);
+        glow.visible = false;
+        this.featureRoot.add(glow);
+        this.railGlows.push(glow);
+        // The train: an engine (dark red, yellow stripe, a stack) and two freight cars, hidden until it runs.
+        const train = new THREE.Group();
+        const engineMat = new THREE.MeshStandardMaterial({ color: 0x7a2a1e, roughness: 0.6, metalness: 0.3 });
+        const carMat = new THREE.MeshStandardMaterial({ color: 0x4a4f52, roughness: 0.7, metalness: 0.35 });
+        const stripe = new THREE.MeshBasicMaterial({ color: 0xf2c230 });
+        const engine = new THREE.Mesh(new THREE.BoxGeometry(4.2, 1.9, depth + 0.4), engineMat);
+        engine.position.set(0, 1.05, 0);
+        const band = new THREE.Mesh(new THREE.BoxGeometry(4.25, 0.18, depth + 0.45), stripe);
+        band.position.set(0, 0.9, 0);
+        const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 0.7, 10), engineMat);
+        stack.position.set(1.3, 2.3, 0);
+        train.add(engine, band, stack);
+        for (const k of [1, 2]) {
+          const car = new THREE.Mesh(new THREE.BoxGeometry(4.0, 1.6, depth + 0.3), carMat);
+          car.position.set(-k * 4.4, 0.9, 0);
+          train.add(car);
+        }
+        train.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true; });
+        train.userData.dir = i % 2 === 0 ? 1 : -1;
+        train.rotation.y = train.userData.dir > 0 ? 0 : Math.PI;
+        train.position.set(0, drawnGroundAt({ x: 0, z: midZ }), midZ);
+        train.visible = false;
+        this.featureRoot.add(train);
+        this.trains.push(train);
+      });
+      // LAUNCH PADS: a dark steel plate with a hazard-striped rim and chevrons pointing at the landing ring.
+      const plateMat = new THREE.MeshStandardMaterial({ color: 0x3a3f46, roughness: 0.5, metalness: 0.5 });
+      const hazard = new THREE.MeshBasicMaterial({ color: 0xf2c230 });
+      const chevMat = new THREE.MeshStandardMaterial({ color: 0xffb040, emissive: 0xff7a1e, emissiveIntensity: 0.5 });
+      for (const pad of sim.launchPads()) {
+        const y = drawnGroundAt(pad);
+        const plate = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.15, 0.16, 24), plateMat);
+        plate.position.set(pad.x, y + 0.08, pad.z);
+        plate.receiveShadow = true;
+        this.featureRoot.add(plate);
+        for (let k = 0; k < 12; k += 2) {
+          const a = (k / 12) * Math.PI * 2;
+          const seg = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.04, 0.16), hazard);
+          seg.position.set(pad.x + Math.cos(a) * 0.95, y + 0.17, pad.z + Math.sin(a) * 0.95);
+          seg.rotation.y = -a + Math.PI / 2;
+          this.featureRoot.add(seg);
+        }
+        const yaw = Math.atan2(pad.to.x - pad.x, pad.to.z - pad.z);
+        for (const k of [-0.35, 0.05, 0.45]) {
+          const chev = new THREE.Group();
+          for (const side of [-1, 1]) {
+            const arm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.42), chevMat);
+            arm.position.set(side * 0.14, 0, 0);
+            arm.rotation.y = side * 0.7;
+            chev.add(arm);
+          }
+          chev.position.set(pad.x + Math.sin(yaw) * k, y + 0.19, pad.z + Math.cos(yaw) * k);
+          chev.rotation.y = yaw + Math.PI; // the arms splay BACK from the tip, so the chevron points at the landing ring
+          this.featureRoot.add(chev);
+        }
+        const landing = new THREE.Mesh(drapedDisc(pad.to.x, pad.to.z, 0.85, 1.05, 32, 0.06), new THREE.MeshBasicMaterial({ color: 0xf2c230, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false }));
+        this.featureRoot.add(landing);
+      }
+    }
+    // Per frame: the rail glow and the trains.
+    const env = sim.environment();
+    const pulse = (Math.sin(performance.now() * 0.006) + 1) * 0.5;
+    env.rails.forEach((r, i) => {
+      const glow = this.railGlows[i];
+      if (glow) {
+        glow.visible = r.state !== "idle";
+        (glow.material as THREE.MeshBasicMaterial).opacity = r.state === "now" ? 0.22 + pulse * 0.25 : 0.16;
+      }
+      const train = this.trains[i];
+      if (train) {
+        train.visible = r.progress !== undefined && r.progress > 0 && r.progress < 1;
+        if (train.visible) {
+          const span = r.rect.maxX - r.rect.minX + 24;
+          const dir = train.userData.dir as number;
+          const x = dir > 0 ? r.rect.minX - 12 + span * r.progress! : r.rect.maxX + 12 - span * r.progress!;
+          train.position.set(x, drawnGroundAt({ x: Math.max(r.rect.minX, Math.min(r.rect.maxX, x)), z: train.position.z }) + 0.12, train.position.z);
+        }
+      }
+    });
   }
 
   // Floating damage numbers that pop off a unit when it's hit during resolve, plus recording
@@ -3428,6 +3553,18 @@ export class WorldRenderer {
     } else if (entity.coverKind && BIOME_PROPS.has(entity.coverKind)) {
       // Before the fuel drum: the brazier is volatile too.
       this.buildBiomeProp(group, entity);
+    } else if (entity.coverKind === "barrels") {
+      // RED BARRELS: three bright red drums in a tight stack (two standing, one lying on top) with yellow hazard bands and a
+      // black flame mark. The one saturated red on the field that is NOT a team colour: it means "shoot me, it explodes".
+      this.box(group, entity, part.id, [1.3, 0.08, 1.0], [0, 0.04, 0], 0x3b3a33, { bevel: 0.2 });
+      for (const [x, z] of [[-0.3, -0.1], [0.32, 0.12]] as const) {
+        this.cylinder(group, entity, part.id, 0.3, 0.78, [x, 0.47, z], 0xc8321f, [0, 0, 0], { accent: true, metalness: 0.25 });
+        for (const y of [0.24, 0.7]) this.cylinder(group, entity, part.id, 0.315, 0.06, [x, y, z], 0x7a1e14, [0, 0, 0], { metalness: 0.4 });
+        this.cylinder(group, entity, part.id, 0.31, 0.12, [x, 0.47, z], 0xf2c230, [0, 0, 0], { accent: true });
+      }
+      this.cylinder(group, entity, part.id, 0.27, 0.72, [0, 1.12, 0], 0xc8321f, [0, 0, Math.PI / 2], { accent: true, metalness: 0.25 });
+      this.cylinder(group, entity, part.id, 0.28, 0.1, [0, 1.12, 0], 0xf2c230, [0, 0, Math.PI / 2], { accent: true });
+      this.box(group, entity, part.id, [0.14, 0.18, 0.04], [-0.3, 0.52, 0.2], 0x1a1714, { rotation: [0, 0, 0.2] });
     } else if (volatile) {
       // Fuel: a ribbed drum in a low cradle with a valve head and a hazard band. Dark body, warm
       // band -- the previous version was a saturated orange blob that read as a pickup, not a hazard.
@@ -8462,6 +8599,26 @@ function makeWaterAndBridges(theme: MapTheme, surface: GroundSurface): THREE.Gro
   const edgeMat = new THREE.MeshBasicMaterial({ color: 0xf4e2b0 });
   const railMat = new THREE.MeshStandardMaterial({ color: 0x4a3722, roughness: 0.85, metalness: 0.04 });
   const pileMat = new THREE.MeshStandardMaterial({ color: 0x3d2c1b, roughness: 0.9, metalness: 0.03 });
+  // THIN ICE over the water: a pale frosted sheet at ground level with dark crack lines, so it reads as "walkable,
+  // but not for long" against the dark water around it.
+  const iceRnd = (() => { let t = 0x1ce; return () => ((t = (t * 1103515245 + 12345) & 0x7fffffff) % 1000) / 1000; })();
+  const iceMat = new THREE.MeshStandardMaterial({ color: 0xd6ecf6, roughness: 0.35, metalness: 0.05, transparent: true, opacity: 0.88 });
+  const crackMat = new THREE.MeshBasicMaterial({ color: 0x4a6a80 });
+  for (const r of terrainIce()) {
+    const w = r.maxX - r.minX, d = r.maxZ - r.minZ;
+    const sheet = new THREE.Mesh(new THREE.BoxGeometry(w, 0.08, d), iceMat);
+    sheet.position.set((r.minX + r.maxX) / 2, 0.0, (r.minZ + r.maxZ) / 2);
+    sheet.receiveShadow = true;
+    group.add(sheet);
+    for (let i = 0; i < Math.round(w * d * 0.12); i += 1) {
+      const len = 0.6 + iceRnd() * 1.4;
+      const crack = new THREE.Mesh(new THREE.BoxGeometry(len, 0.02, 0.05), crackMat);
+      crack.position.set(r.minX + 0.4 + iceRnd() * (w - 0.8), 0.05, r.minZ + 0.4 + iceRnd() * (d - 0.8));
+      crack.rotation.y = iceRnd() * Math.PI;
+      group.add(crack);
+    }
+  }
+
   for (const r of terrainBridges()) {
     const w = r.maxX - r.minX;
     const d = r.maxZ - r.minZ;

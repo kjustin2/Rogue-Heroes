@@ -95,7 +95,7 @@ export interface SignatureObject {
 //  • barrage: off-map artillery shells a zone during the turn's resolve (hits both sides).
 //  • collapse: cover inside a zone crumbles during the turn's resolve.
 // "lightning": a storm that strikes ONE telegraphed point per turn, somewhere new each turn.
-export type MapEventKind = "sandstorm" | "barrage" | "collapse" | "ionstorm" | "lightning" | "slag";
+export type MapEventKind = "sandstorm" | "barrage" | "collapse" | "ionstorm" | "lightning" | "slag" | "train";
 
 export interface MapEventConfig {
   kind: MapEventKind;
@@ -127,6 +127,10 @@ export interface MapDef {
   events?: MapEventConfig[];
   // Capturable neutral field structures; mirror places a point-symmetric twin for fairness.
   neutrals?: Array<{ kind: "turret" | "depot"; x: number; z: number; mirror?: boolean }>;
+  /** A FREIGHT TRAIN runs these tracks every `period` turns from `startTurn`: anything standing on one takes `damage` and is thrown off. */
+  train?: { tracks: TerrainRect[]; startTurn: number; period: number; damage: number };
+  /** LAUNCH PADS: a trooper that ends a move on one is flung to `to` (an arc over anything). `mirror` adds the point-symmetric twin. */
+  pads?: Array<{ x: number; z: number; to: Vec2; mirror?: boolean }>;
 }
 
 export function mapCenter(map: MapDef): Vec2 {
@@ -214,6 +218,7 @@ function scaleMapDef(def: MapDef): MapDef {
       blocks: scaledBlocks.filter((b) => ![playerBase, enemyBase].some((base) => rectDistance(b, base) < DEPLOY_RING_CLEAR)),
       water: t.water?.map((r) => scaleRect(r, f)),
       bridges: t.bridges?.map((r) => scaleRect(r, f)),
+      ice: t.ice?.map((r) => scaleRect(r, f)),
     },
     playerBase,
     enemyBase,
@@ -231,6 +236,8 @@ function scaleMapDef(def: MapDef): MapDef {
     signature: def.signature?.map((s) => ({ ...s, x: s.x * f, z: s.z * f })), // positions scale, object size fixed
     neutrals: def.neutrals?.map((n) => ({ ...n, x: n.x * f, z: n.z * f })),
     events: def.events?.map((e) => (e.zone ? { ...e, zone: { x: e.zone.x * f, z: e.zone.z * f, radius: e.zone.radius * f } } : e)),
+    train: def.train ? { ...def.train, tracks: def.train.tracks.map((r) => scaleRect(r, f)) } : undefined,
+    pads: def.pads?.map((pad) => ({ ...pad, x: pad.x * f, z: pad.z * f, to: { x: pad.to.x * f, z: pad.to.z * f } })),
   };
 }
 
@@ -552,6 +559,7 @@ const RAW_MAPS: readonly MapDef[] = [
       { kind: "rock", x: -6, z: 4, mirror: true, radius: 1.3, height: 1.6 },
       { kind: "cactus", x: -22, z: 15, mirror: true },
       { kind: "bones", x: -22, z: -9, mirror: true },
+      { kind: "barrels", x: -9, z: 6, mirror: true }, // RED BARRELS (2026-10-07): shoot them and they go up, and so does whoever stands beside them
     ],
     // Recurring sandstorms sweep the open basin — accuracy and visibility drop in waves.
     events: [{ kind: "sandstorm", startTurn: 3, duration: 2, period: 6 }],
@@ -605,11 +613,15 @@ const RAW_MAPS: readonly MapDef[] = [
       { kind: "furnace", x: -17, z: 8.5, yaw: -0.5, mirror: true, hug: true }, // built into its slag heap on purpose
       { kind: "railcar", x: -13, z: -9.5, yaw: 0, mirror: true }, // the rail yard
       { kind: "conduit", x: -9.5, z: 1.5, mirror: true }, // cut it and the derelict turret browns out
+      { kind: "barrels", x: -3, z: 13, mirror: true }, // RED BARRELS (2026-10-07): shoot them and they go up, and so does whoever stands beside them
     ],
     // SLAG SPILL: both furnaces vent every third turn, together -- molten slag floods
     // the marked foundry floor (a hit on the spill, then burning ground for two turns). Ironworks'
     // own hazard; Karak keeps the collapse.
     events: [{ kind: "slag", startTurn: 3, period: 3, zone: { x: -12, z: 6.5, radius: 3.4 }, power: 18 }],
+    // THE FREIGHT LINE (owner 2026-10-07: "more fun and unique maps"): a train runs both rail-yard tracks every fourth turn.
+    // The rails glow the turn before; anything standing on them is hit and thrown clear. Bait them onto it.
+    train: { tracks: [{ minX: -7.5, maxX: 7.5, minZ: -11.2, maxZ: -9.8 }, { minX: -7.5, maxX: 7.5, minZ: 9.8, maxZ: 11.2 }], startTurn: 4, period: 4, damage: 140 },
     // Derelict foundry turrets guard the throat of each rail yard — first squad to reach one owns it.
     neutrals: [{ kind: "turret", x: -3.5, z: -8, mirror: true }],
   },
@@ -679,6 +691,7 @@ const RAW_MAPS: readonly MapDef[] = [
       { kind: "fuel", x: -10, z: -3, mirror: true }, // the farm's fuel drum: the one thing here that blows
       { kind: "tree", x: -11, z: 4, mirror: true }, // a lone field oak: it topples
       { kind: "rock", x: -4.5, z: -6.8, mirror: true, radius: 1.1 },
+      { kind: "barrels", x: -5, z: 13, mirror: true }, // RED BARRELS (2026-10-07): shoot them and they go up, and so does whoever stands beside them
     ],
   },
   // FROZEN CAUSEWAY — a harbour the ice took. Sections: THE CAUSEWAY (the raised land bridge down
@@ -723,6 +736,11 @@ const RAW_MAPS: readonly MapDef[] = [
         { minX: -10, maxX: -7, minZ: -18, maxZ: -7 },  // SW crossing
         { minX: 7, maxX: 10, minZ: -18, maxZ: -7 },    // SE crossing
       ],
+      // THIN ICE (2026-10-07): the middle of each channel froze over. Infantry cross freely; a vehicle that stays two turns goes through.
+      ice: [
+        { minX: -2.5, maxX: 2.5, minZ: 7, maxZ: 18 },   // north channel ice
+        { minX: -2.5, maxX: 2.5, minZ: -18, maxZ: -7 }, // south channel ice
+      ],
     },
     playerBase: { x: -34, z: 0 },
     enemyBase: { x: 34, z: 0 },
@@ -742,6 +760,7 @@ const RAW_MAPS: readonly MapDef[] = [
       { kind: "wall", x: -3, z: 0, mirror: true },
       { kind: "crate", x: -10.5, z: 2.8, mirror: true },
       { kind: "sandbag", x: -12, z: -1, mirror: true },
+      { kind: "barrels", x: -14, z: -2.5, mirror: true }, // RED BARRELS (2026-10-07): shoot them and they go up, and so does whoever stands beside them
     ],
     // Ion storms rake the exposed causeway, scrambling command links (units lose command points).
     events: [{ kind: "ionstorm", startTurn: 3, duration: 1, period: 4 }],
@@ -813,9 +832,12 @@ const RAW_MAPS: readonly MapDef[] = [
       { kind: "colossus", x: -2.6, z: 9.6, yaw: 0.25, mirror: true },
       { kind: "brazier", x: -15, z: -4, mirror: true }, // the temple's oil brazier: it bursts and burns
       { kind: "obelisk", x: -6.8, z: -11, mirror: true }, // the precinct's gatepost; it topples
+      { kind: "barrels", x: -11, z: 3, mirror: true }, // RED BARRELS (2026-10-07): shoot them and they go up, and so does whoever stands beside them
     ],
     // The ancient colonnades give way: cover near the central dais collapses every few turns.
     events: [{ kind: "collapse", startTurn: 4, period: 4, zone: { x: 0, z: 0, radius: 9 } }],
+    // LAUNCH PADS (2026-10-07): an old temple catapult on each side flings a trooper clean over the ravine.
+    pads: [{ x: -13.5, z: 3.5, to: { x: -5.5, z: 5.5 }, mirror: true }],
   },
   // CROSSFIRE BASIN — a militarised border. Sections: the CHECKPOINT (the centre lane: each side's
   // gate landmark — booth, raised boom, sign — facing the other across the knoll, the crossing
@@ -878,9 +900,12 @@ const RAW_MAPS: readonly MapDef[] = [
       { kind: "ammo", x: -5, z: 8, mirror: true }, // the checkpoint's ammo: it cooks off
       { kind: "radar", x: -19, z: 9, yaw: 0.8, mirror: true },
       { kind: "bunker", x: -1.6, z: -9, yaw: 0.2, mirror: true },
+      { kind: "barrels", x: -14, z: 6, mirror: true }, // RED BARRELS (2026-10-07): shoot them and they go up, and so does whoever stands beside them
     ],
     // Off-map artillery ranges in on the central basin on a steady cadence — don't loiter there.
     events: [{ kind: "barrage", startTurn: 3, period: 4, zone: { x: 0, z: 0, radius: 6 }, power: 34 }],
+    // LAUNCH PADS (2026-10-07): a pad behind each line flings a trooper up onto the forward nest's crown (high ground in one move).
+    pads: [{ x: -18, z: -4, to: { x: -13.5, z: -8.5 }, mirror: true }],
   },
 ];
 

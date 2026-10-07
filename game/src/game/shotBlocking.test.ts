@@ -6,6 +6,8 @@ import { TacticalSim, mapDef } from "./sim";
 // beside a wall that lies parallel to the line of fire must not.
 const stage = (yaw: number, wallOffset: number) => {
   const sim = new TacticalSim(); sim.configure(mapDef("dustbowl"), "destroy", "normal");
+  // A clean board: a layout change (the 2026-10-07 barrel stacks) must not put a prop on the test's line of fire.
+  for (let i = sim.entities.length - 1; i >= 0; i -= 1) { const e = sim.entities[i]; if (e.kind === "cover" && !["ridge", "cliff"].includes(e.coverKind ?? "")) sim.entities.splice(i, 1); }
   const Z = 2.5; // basin floor, off the central rise
   const a = sim.debugSpawn("soldier", "player", { x: -20, z: Z });
   const t = sim.debugSpawn("soldier", "enemy", { x: -13, z: Z });

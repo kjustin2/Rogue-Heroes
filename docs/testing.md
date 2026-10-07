@@ -15,7 +15,9 @@ Every command, smoke, probe and oracle, and the hard-won ledgers behind them. Ru
 | Every smoke, serially (buttons flow economy deep ground ui-audit faction animation attacks director hotseat) | `npm run smoke:core` |
 | Movement + projectile oracle (AI vs AI, all maps; part of `npm test`) | `npx vitest run src/game/movement.test.ts` |
 | Map layout: no props/posts/caches overlap, nothing straddles a step (part of `npm test`) | `npx vitest run src/game/mapLayout.test.ts` |
-| Fun units close up + Punch / Detonate / blast cannon mid-action (real GPU) | `npm run shots:gpu -- fununits` |
+| Fun units close up + their verbs mid-action (real GPU; `FUN=faction:kind,...` to pick) | `npm run shots:gpu -- fununits` |
+| Map features: rails + train, launch pad, thin ice, barrels (real GPU) | `npm run shots:gpu -- mapfx` |
+| Map features through the sim (train, pads, ice, barrels) | `npx vitest run src/game/mapFeatures.test.ts` |
 | Round origin vs the drawn weapon, every shooter (data, real GPU) | `npm run shots:gpu -- muzzlecheck` |
 | Faction look measure (silhouette IoU + hue per faction pair, every roster unit's membership; `MEASURE_GATE=1` fails below goal) | `npm run measure:factions` |
 | Map look measure (board contrast / range / one-hue share; `SHOT_PREFIX=before-` for a baseline) | `npm run measure:maps` |

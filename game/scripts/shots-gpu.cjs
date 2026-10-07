@@ -791,6 +791,40 @@ app.whenReady().then(async () => {
         await js(`window.__rht.setTimeScale(1); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = ""))`);
         continue;
       }
+      if (s === "mapfx") {
+        // Round 7 map features: the Ironworks rails glowing the turn before, then the train mid-run; a Karak pad launch;
+        // a tank cracking Causeway ice; a barrel stack on each map.
+        await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("ironworks", "destroy", "normal")`);
+        await sleep(1500);
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = "hidden"));
+          const t = sim.mapDef.train.tracks[0]; sim.turn = sim.mapDef.train.startTurn - 1;
+          const u = sim.debugSpawn("soldier", "enemy", { x: (t.minX + t.maxX) / 2 + 3, z: (t.minZ + t.maxZ) / 2 }); u.commandPoints = 0;
+          r.setView({ x: (t.minX + t.maxX) / 2, z: (t.minZ + t.maxZ) / 2, zoom: 0.5, pitch: 0.7, yaw: 0.25 }); })()`);
+        await sleep(900); await shot("mapfx-rails-soon");
+        await js(`(() => { const sim = window.__rht.sim; sim.turn = sim.mapDef.train.startTurn; sim.endTurn(); window.__rht.setTimeScale(0.5); })()`);
+        for (let i = 0; i < 4; i += 1) { await sleep(i === 0 ? 900 : 500); await shot("mapfx-train-" + i); }
+        await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("karak", "destroy", "normal")`);
+        await sleep(1500);
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); const pad = sim.launchPads()[0];
+          r.setView({ x: (pad.x + pad.to.x) / 2, z: (pad.z + pad.to.z) / 2, zoom: 0.55, pitch: 0.7, yaw: 0.2 }); })()`);
+        await sleep(900); await shot("mapfx-pad");
+        await js(`(() => { const r = window.__rht, sim = r.sim; const pad = sim.launchPads()[0]; const u = sim.debugSpawn("soldier", "player", { x: pad.x - 2, z: pad.z }); sim.debugSelect(u.id); sim.queueMove({ x: pad.x, z: pad.z }); r.deselect(); sim.endTurn(); window.__rht.setTimeScale(0.5); })()`);
+        for (let i = 0; i < 4; i += 1) { await sleep(i === 0 ? 900 : 450); await shot("mapfx-launch-" + i); }
+        await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("causeway", "destroy", "normal")`);
+        await sleep(1500);
+        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); const ice = sim.mapDef.terrain.ice[0]; const c = { x: (ice.minX + ice.maxX) / 2, z: (ice.minZ + ice.maxZ) / 2 };
+          const t = sim.debugSpawn("tank", "player", c); t.crackedTurn = sim.turn - 1; const s2 = sim.debugSpawn("soldier", "player", { x: c.x, z: c.z + 3 });
+          r.setView({ x: c.x, z: c.z, zoom: 0.5, pitch: 0.75, yaw: 0.2 }); })()`);
+        await sleep(1000); await shot("mapfx-ice");
+        for (const m of ["dustbowl", "verdant", "crossfire"]) {
+          await js(`window.__rht.startBattle(${JSON.stringify(m)}, "destroy", "normal")`);
+          await sleep(1400);
+          await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); const b = sim.entities.find((e) => e.coverKind === "barrels"); r.setView({ x: b.position.x, z: b.position.z, zoom: 0.3, pitch: 0.6, yaw: 0.3 }); })()`);
+          await sleep(900); await shot("mapfx-barrels-" + m);
+        }
+        await js(`document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = ""))`);
+        continue;
+      }
       if (s === "hazards") {
         // Ironworks on turn 2: the slag spill strikes next turn, so its outline must already be on the ground.
         await js(`window.__rht.startBattle("ironworks", "destroy", "normal")`);

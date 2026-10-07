@@ -79,7 +79,7 @@ import {
   type Team,
 } from "./damageModel";
 import { createScenario } from "./scenario";
-import { DEFAULT_TERRAIN, TERRAIN_STEP, ARENA_BOUNDS, clampToArena, discSamples, nearestDryPoint, onTerrainEdge, setActiveTerrain, terrainHeightAt, pointInWater } from "./terrain";
+import { DEFAULT_TERRAIN, TERRAIN_STEP, ARENA_BOUNDS, pointOnIce, type TerrainRect, clampToArena, discSamples, nearestDryPoint, onTerrainEdge, setActiveTerrain, terrainHeightAt, pointInWater } from "./terrain";
 import { TROOP_CATALOG, TROOP_KINDS, troopSpec, defenseSpec, supportPowerSpec, baseUpgradeSpec, unitStats, type BaseUpgradeId, type TroopKind, type DefenseKind, type SupportPowerKind, type ProjectileKind } from "./units";
 import { TECH_TREE, techNode, aggregateTechEffect, type TechNode, type TechEffect } from "./tech";
 import { modeDef, type ModeId } from "./modes";
@@ -220,7 +220,7 @@ const SLAM_LANDING_DAMAGE = 15;
 // Metres a piercing round carries on past a body it went through.
 const PIERCE_CARRY = 7;
 
-type StrikeKind = "barrage" | "collapse" | "airstrike" | "cluster" | "laser" | "lightning" | "slag" | "smokedrop" | "resupply" | "napalm" | "paradrop" | "emp" | "minedrop" | "medevac" | "sentrydrop" | "railstrike";
+type StrikeKind = "train" | "barrage" | "collapse" | "airstrike" | "cluster" | "laser" | "lightning" | "slag" | "smokedrop" | "resupply" | "napalm" | "paradrop" | "emp" | "minedrop" | "medevac" | "sentrydrop" | "railstrike";
 const LIGHTNING_RADIUS = 2.0;
 
 // Gas clouds (see runGasTick / igniteGasAt).
@@ -328,6 +328,8 @@ export interface TacticalOrder {
   shove?: boolean;
   /** A short hop every trooper can make: a move that arcs over low obstacles and up onto a ledge (see leapRange). */
   leap?: boolean;
+  /** A move that ended on a launch pad and carried on as a launch (never re-launches on landing). */
+  launched?: boolean;
   projectileId?: string;
 }
 
@@ -3010,15 +3012,21 @@ export class TacticalSim {
         // lands. The order's own progress drives the arc, so it can never desync from the move.
         const total = Math.max(0.01, dist(order.start, order.destination));
         // A trooper's hop is slower and lower than a jet pack's: a few metres, a bit over a second.
-        actor.position = moveToward(actor.position, order.destination, order.leap ? LEAP_SPEED * dt : moveSpeed(actor) * 1.15 * dt);
+        actor.position = moveToward(actor.position, order.destination, order.launched ? LEAP_SPEED * 2.2 * dt : order.leap ? LEAP_SPEED * dt : moveSpeed(actor) * 1.15 * dt);
         const progress = clamp(1 - dist(actor.position, order.destination) / total, 0, 1);
         const landed = dist(actor.position, order.destination) < 0.08;
         actor.flying = !landed;
-        actor.agl = landed ? undefined : Math.sin(progress * Math.PI) * (order.leap ? Math.min(1.9, 0.7 + total * 0.22) : Math.min(4.2, 1.2 + total * 0.28));
+        actor.agl = landed ? undefined : Math.sin(progress * Math.PI) * (order.launched ? Math.min(6, 2 + total * 0.35) : order.leap ? Math.min(1.9, 0.7 + total * 0.22) : Math.min(4.2, 1.2 + total * 0.28));
         this.syncEntityElevation(actor);
         actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
         if (landed) {
           this.separateFromUnits(actor, order.destination);
+          // A landing flush against a step would leave the hull inside it (movement oracle, Ironworks overpass, 2026-10-07):
+          // slide to the nearest ground the whole footprint fits on, as a thrown body does.
+          if (!this.groundFits(actor, actor.position, 1.0)) {
+            const fit = this.nearestFittingGround(actor, actor.position, 1.0);
+            if (fit) actor.position = fit;
+          }
           this.syncEntityElevation(actor);
           this.effect("land", actor.position, actor.position, 0xbfe9ff, 0.5, actor.radius * 1.3);
           // SLAM LANDING (the jump trooper's identity; an ordinary hop lands softly): anyone hostile within a stride is knocked back and hurt.
@@ -3048,6 +3056,21 @@ export class TacticalSim {
       actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
       this.checkMines(actor);
       this.checkPickups(actor);
+      const pad = !order.launched && isInfantryKind(actor.kind) && dist(actor.position, order.destination) < 0.08
+        ? this.launchPads().find((p) => dist(p, actor.position) <= 1.2) : undefined;
+      if (pad) {
+        // LAUNCH PAD: the same order carries on as a leap to the pad's landing spot.
+        order.launched = true;
+        order.leap = true;
+        order.start = { ...actor.position };
+        order.destination = { ...pad.to };
+        order.elapsed = 0;
+        order.duration = 1.7;
+        this.effect("blast", { ...actor.position }, { ...actor.position }, 0xffd166, 0.4, 1.0);
+        this.pushLog(`${actor.name} hits the launch pad!`);
+        this.tally(actor.team, "launches");
+        return;
+      }
       if (dist(actor.position, order.destination) < 0.08) {
         order.done = true;
         // A drop off a ledge can end flush against the face it dropped from (movement oracle, ironworks): back it off like a
@@ -4158,6 +4181,24 @@ export class TacticalSim {
     }
   }
 
+  /** THIN ICE: a ground vehicle that ends a turn on the ice cracks it; one that is still there a turn later goes through. */
+  private runIceTick(): void {
+    for (const e of this.entities) {
+      if (!e.status.alive || e.flying || e.carriedById || !isVehicleKind(e.kind) || !pointOnIce(e.position)) { e.crackedTurn = undefined; continue; }
+      if (e.crackedTurn !== undefined && e.crackedTurn < this.turn) {
+        for (const part of e.parts) part.hp = 0;
+        recomputeStatus(e);
+        this.effect("blast", { ...e.position }, { ...e.position }, 0x4f9fd0, 0.9, e.radius + 1.4);
+        this.pushLog(`${e.name} breaks through the ice and sinks!`);
+        this.checkEndState();
+        continue;
+      }
+      e.crackedTurn = this.turn;
+      this.effect("ping", { ...e.position }, { ...e.position }, 0xd8f0ff, 0.8, e.radius + 1.0);
+      this.pushLog(`The ice cracks under ${e.name}: move it off this turn`);
+    }
+  }
+
   private runBurnTick(): void {
     this.runBurningTick();
     if (!this.burnZones.length) return;
@@ -4300,7 +4341,7 @@ export class TacticalSim {
     const side = { x: -axis.z, z: axis.x };
     // ...and a full post's width inside the board: a clamped spot sat ON the rim with its ring hanging off the map (smoke:ground).
     const inside = (p: Vec2): boolean => p.x - ARENA_BOUNDS.minX >= 2.5 && ARENA_BOUNDS.maxX - p.x >= 2.5 && p.z - ARENA_BOUNDS.minZ >= 2.5 && ARENA_BOUNDS.maxZ - p.z >= 2.5;
-    const clear = (p: Vec2): boolean => inside(p) && !pointInWater(p) && !onTerrainEdge(p, 2.4) && Math.abs(terrainHeightAt(p)) <= 0.5
+    const clear = (p: Vec2): boolean => inside(p) && !this.onMapFeature(p, 2.2) && !pointInWater(p) && !onTerrainEdge(p, 2.4) && Math.abs(terrainHeightAt(p)) <= 0.5
       && !this.entities.some((e) => e.status.alive && dist(e.position, p) < e.radius + 2.2 + (isLandmarkKind(e.coverKind) ? 2 : 0))
       && !this.pickups.some((c) => dist(c, p) < 3); // never on top of a cash cache (owner 2026-10-06: "objects overlap")
     // A mirrored pair of each kind, on its own band of the board so they never crowd: Gun Posts on the flanks, Rocket Posts
@@ -4519,7 +4560,8 @@ export class TacticalSim {
   // cover, and not adjacent to a base (loot is earned by taking ground, not handed out at spawn).
   private pickupSpotClear(p: Vec2): boolean {
     if (pointInWater(p) || onTerrainEdge(p, 1.6) || discSamples(p, 1.6).some(pointInWater)) return false;
-    if (Math.min(p.x - ARENA_BOUNDS.minX, ARENA_BOUNDS.maxX - p.x, p.z - ARENA_BOUNDS.minZ, ARENA_BOUNDS.maxZ - p.z) < 1.6) return false; // the whole ring on the board // flat, dry, the whole ring on one level and clear of the shore
+    if (Math.min(p.x - ARENA_BOUNDS.minX, ARENA_BOUNDS.maxX - p.x, p.z - ARENA_BOUNDS.minZ, ARENA_BOUNDS.maxZ - p.z) < 1.6) return false;
+    if (this.onMapFeature(p, 1.2)) return false; // never on the rails, a launch pad or its landing spot // the whole ring on the board // flat, dry, the whole ring on one level and clear of the shore
     for (const e of this.entities) {
       if (e.kind === "base" && dist(p, e.position) < 14) return false; // outside every deploy ring
       // Landmarks draw past their footprint (the checkpoint's raised boom overhung a cache): 2m more for them.
@@ -5684,6 +5726,7 @@ export class TacticalSim {
   /** Hard brain: is `pos` somewhere that gets hurt THIS turn -- a telegraphed strike, fire, gas? */
   private aiDangerAt(pos: Vec2, margin = 0.8): boolean {
     for (const z of this.eventZonesForTurn(this.turn)) if (dist(pos, z) <= z.radius + margin) return true;
+    for (const t of this.trainTracksOn(this.turn)) if (pos.x >= t.minX - margin && pos.x <= t.maxX + margin && pos.z >= t.minZ - margin && pos.z <= t.maxZ + margin) return true;
     for (const z of this.burnZones) if (dist(pos, z) <= z.radius + margin) return true;
     for (const z of this.gasClouds) if (dist(pos, z) <= z.radius + margin) return true;
     return false;
@@ -6196,6 +6239,15 @@ export class TacticalSim {
               if (!this.aiDangerAt(shorter)) { destination = shorter; break; }
             }
             if (this.aiDangerAt(destination)) destination = enemy.position; // hold rather than walk in
+          }
+          // THIN ICE: a vehicle never parks on it (every brain: sinking a tank to the scenery is no fun to watch).
+          if (isVehicleKind(enemy.kind) && !enemy.flying && pointOnIce(destination)) {
+            let off: Vec2 | undefined;
+            for (const f of [0.75, 0.5, 0.25, 0]) {
+              const shorter = { x: enemy.position.x + (destination.x - enemy.position.x) * f, z: enemy.position.z + (destination.z - enemy.position.z) * f };
+              if (!pointOnIce(shorter) && !pointInWater(shorter)) { off = shorter; break; }
+            }
+            destination = off ?? enemy.position;
           }
           destination = this.spreadDestination(enemy, destination);
           if (dist(enemy.position, destination) > 0.2) {
@@ -6876,6 +6928,7 @@ export class TacticalSim {
     this.runGasTick();
     this.runSentryTick();
     this.runSmokeTick();
+    this.runIceTick();
     // A carrier killed by a turn-start tick (fire, gas) drops its riders now, not at the next resolve (chaos fuzz, 2026-10-07).
     this.syncCarriedPassengers();
     // Forced events are single-turn debug overrides; clear them, then announce the new turn's events.
@@ -6955,7 +7008,29 @@ export class TacticalSim {
   // overrides), so it survives save/load for free and stays deterministic.
 
   private mapEvents(): readonly MapEventConfig[] {
-    return this.mapDef.events ?? [];
+    const train = this.mapDef.train;
+    return train ? [...(this.mapDef.events ?? []), { kind: "train", startTurn: train.startTurn, period: train.period }] : this.mapDef.events ?? [];
+  }
+
+  /** The freight line's tracks when a train runs on turn `t` (empty otherwise). */
+  private trainTracksOn(t: number): readonly TerrainRect[] {
+    const train = this.mapDef.train;
+    if (!train || t < train.startTurn || (t - train.startTurn) % train.period !== 0) return [];
+    return train.tracks;
+  }
+
+  /** On (or within `r` of) a freight track, a launch pad or a pad's landing spot. */
+  onMapFeature(p: Vec2, r: number): boolean {
+    for (const t of this.mapDef.train?.tracks ?? []) if (p.x >= t.minX - r && p.x <= t.maxX + r && p.z >= t.minZ - r && p.z <= t.maxZ + r) return true;
+    return this.launchPads().some((pad) => dist(pad, p) < 1.2 + r || dist(pad.to, p) < 1.2 + r);
+  }
+
+  /** Every launch pad on this map, mirrored twins included. */
+  launchPads(): { x: number; z: number; to: Vec2 }[] {
+    const c = mapCenter(this.mapDef);
+    return (this.mapDef.pads ?? []).flatMap((p) => p.mirror
+      ? [{ x: p.x, z: p.z, to: { ...p.to } }, { x: 2 * c.x - p.x, z: 2 * c.z - p.z, to: { x: 2 * c.x - p.to.x, z: 2 * c.z - p.to.z } }]
+      : [{ x: p.x, z: p.z, to: { ...p.to } }]);
   }
 
   // Whether reduced-accuracy sandstorm weather is in effect on a given turn.
@@ -7034,10 +7109,18 @@ export class TacticalSim {
 
   // Read-only environment snapshot for the renderer + HUD.
   // `soon` = map hazards that strike NEXT turn (a turn of warning: "what would kill you" is on the ground before it fires).
-  environment(): { sandstorm: number; ionstorm: number; notice?: string; zones: { kind: MapEventKind; x: number; z: number; radius: number }[]; soon: { kind: MapEventKind; x: number; z: number; radius: number }[] } {
+  environment(): { sandstorm: number; ionstorm: number; notice?: string; zones: { kind: MapEventKind; x: number; z: number; radius: number }[]; soon: { kind: MapEventKind; x: number; z: number; radius: number }[]; rails: { rect: TerrainRect; state: "idle" | "soon" | "now"; progress?: number }[] } {
     const zones = this.eventZonesForTurn();
     const soon = this.eventZonesForTurn(this.turn + 1).filter((z) => !this.forcedZones.includes(z) && !zones.some((n) => n.kind === z.kind && dist(n, z) < 0.5));
-    return { sandstorm: this.sandstormActive() ? 1 : 0, ionstorm: this.ionStormActive() ? 1 : 0, notice: this.eventNotice, zones, soon };
+    const now = this.trainTracksOn(this.turn).length > 0;
+    const next = this.trainTracksOn(this.turn + 1).length > 0;
+    const rails = (this.mapDef.train?.tracks ?? []).map((rect) => ({
+      rect,
+      state: (now ? "now" : next ? "soon" : "idle") as "idle" | "soon" | "now",
+      // The train crosses during its resolve: 0 = entering, 1 = gone. Undefined outside it.
+      progress: now && this.phase === "resolve" ? clamp01((this.strikeClock - 0.2) / 1.6) : undefined,
+    }));
+    return { sandstorm: this.sandstormActive() ? 1 : 0, ionstorm: this.ionStormActive() ? 1 : 0, notice: this.eventNotice, zones, soon, rails };
   }
 
   // Set the banner/log for the new turn's events (and announce sandstorm transitions).
@@ -7088,6 +7171,8 @@ export class TacticalSim {
   private scheduleMapStrikes(): void {
     this.pendingStrikes = [];
     this.strikeClock = 0;
+    // The freight train reaches the middle of its tracks just under a second into the resolve.
+    if (this.trainTracksOn(this.turn).length) this.pendingStrikes.push({ at: 0.95, point: { x: 0, z: 0 }, radius: 0, damage: this.mapDef.train!.damage, kind: "train" });
     for (const zone of this.eventZonesForTurn(this.turn)) {
       if (zone.kind === "barrage") {
         for (let i = 0; i < 6; i += 1) {
@@ -7126,6 +7211,29 @@ export class TacticalSim {
       this.detonateStrike(strike);
     }
     if (detonated) this.pendingStrikes = this.pendingStrikes.filter((s) => !s.fired);
+  }
+
+  /** THE FREIGHT TRAIN: everything standing on a track is hit hard and thrown off it, sideways. */
+  private runTrain(damage: number): void {
+    let hit = 0;
+    for (const track of this.trainTracksOn(this.turn)) {
+      const midZ = (track.minZ + track.maxZ) / 2;
+      for (let x = track.minX; x <= track.maxX; x += 3) this.effect("land", { x, z: midZ }, { x, z: midZ }, 0xd8c8a0, 0.5, 1.2);
+      for (const e of this.entities) {
+        if (!e.status.alive || e.flying || e.burrowed || e.carriedById || e.kind === "cover" || e.kind === "base") continue;
+        const r = e.radius * 0.6;
+        if (e.position.x < track.minX - r || e.position.x > track.maxX + r || e.position.z < track.minZ - r || e.position.z > track.maxZ + r) continue;
+        const result = applyDamage(e, preferredPart(e, "center").id, damage);
+        this.effect("impact", { ...e.position }, { ...e.position }, 0xffd9a0, 0.6, e.radius + 0.6);
+        for (const m of result.messages) this.pushLog(m);
+        // Off the rails, to whichever side it stood nearer.
+        const side = e.position.z >= midZ ? 1 : -1;
+        this.applyKnockback(e, e, { x: e.position.x, z: midZ - side * 0.5 }, 0, 1, { force: (track.maxZ - track.minZ) / 2 + e.radius + 2.2, maxThrow: 6 });
+        hit += 1;
+      }
+    }
+    this.pushLog(hit ? `The freight train thunders through: ${hit} caught on the tracks` : "The freight train thunders through");
+    this.checkEndState();
   }
 
   // PARADROP: two of the caller's line troopers land around the point (dry, clear ground; never past
@@ -7234,6 +7342,7 @@ export class TacticalSim {
       // the render and the AI's fear of fire all come for free).
       this.burnZones.push({ id: `burn-${++this.effectSeq}`, x: strike.point.x, z: strike.point.z, radius: strike.radius * 0.85, turnsLeft: 2 });
     }
+    if (strike.kind === "train") { this.runTrain(strike.damage); return; }
     const color = strike.kind === "lightning" ? 0xd8ecff
       : strike.kind === "napalm" ? 0xff6a1c
       : strike.kind === "slag" ? 0xff7a2a

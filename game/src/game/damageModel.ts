@@ -37,6 +37,7 @@ export type CoverKind =
   | "hedgehog" | "tower" // Crossfire: anti-tank hedgehog, border watchtower
   | "bones" // Dust Bowl: a bleached carcass
   // Landmarks (2026-09-20): each map's own big authored pieces — the things you point at.
+  | "barrels" // a stack of red fuel barrels on every map: shoot it and it goes up
   | "convoy" | "derrick" | "furnace" | "railcar" | "chapel" | "mill" | "hull" | "hut" | "colossus" | "cistern" | "gate" | "radar";
 export type PartRole = "core" | "head" | "weapon" | "mobility" | "armor" | "utility" | "volatile";
 
@@ -151,6 +152,8 @@ export interface CombatEntity {
   ownerTeam?: Team;
   /** A Mole Sapper under the ground (mid-move): not shot, not blocked, not drawn; it erupts when the move ends. */
   burrowed?: boolean;
+  /** The turn a vehicle cracked thin ice under it (still there next turn, it goes through). */
+  crackedTurn?: number;
   // A manned emplacement (gun post, mortar pit): the trooper crewing it. It fires only while crewed.
   occupantId?: string;
   // HOME BASE UPGRADES (see BASE_UPGRADES): armour level 0-2, the Fortress Cannon, the Watch Radar.
@@ -821,6 +824,7 @@ export const COVER_PROFILES: Record<CoverKind, CoverProfile> = {
   wall: { hp: 70, radius: 1.05, height: 1.55, volatile: false, label: "Wall Block" },
   barricade: { hp: 42, radius: 0.82, height: 0.82, volatile: false, label: "Barricade" },
   fuel: { hp: 36, radius: 0.7, height: 1.2, volatile: true, label: "Fuel Cell" },
+  barrels: { hp: 30, radius: 0.85, height: 1.1, volatile: true, label: "Red Barrels" },
   gas: { hp: 28, radius: 0.7, height: 1.3, volatile: true, label: "Gas Canister" },
   // Theme props (2026-09-16): each map's own furniture, so a forest is not rocks and crates.
   stump: { hp: 60, radius: 0.7, height: 0.7, volatile: false, label: "Stump" },

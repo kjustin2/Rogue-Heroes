@@ -1141,6 +1141,7 @@ const EVENT_GLYPHS: Record<string, { glyph: string; name: string; label: string 
   collapse: { glyph: "▽", name: "Collapse", label: "Structural collapse in the marked zone" },
   lightning: { glyph: "ϟ", name: "Lightning", label: "Lightning strikes the marked point" },
   slag: { glyph: "♨", name: "Slag spill", label: "Slag spill — the marked zone floods and burns" },
+  train: { glyph: "▤", name: "Freight train", label: "Freight train — anything on the glowing rails is hit and thrown off" },
 };
 
 // Environmental forecast: icons for events hitting NOW / next turn / the turn after,

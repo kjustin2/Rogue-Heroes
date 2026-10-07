@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { isLandmarkKind, isMountKind } from "./damageModel";
 import { MAPS } from "./maps";
 import { TacticalSim, mapDef } from "./sim";
-import { ARENA_BOUNDS, DEFAULT_TERRAIN, setActiveTerrain, terrainHeightAt } from "./terrain";
+import { ARENA_BOUNDS, DEFAULT_TERRAIN, pointInWater, setActiveTerrain, terrainHeightAt } from "./terrain";
 
 // 2026-10-06 (owner: "objects on the ground overlap ... like turrets and supply caches"). Every map, as the game lays it out:
 // nothing on the ground touches anything else (props, posts, neutral turrets, cash caches, mines), and no prop straddles a
@@ -50,6 +50,26 @@ describe("supply caches are fair", () => {
       expect(sim.pickups.length).toBeGreaterThanOrEqual(2);
       const lonely = sim.pickups.filter((p) => !sim.pickups.some((q) => q !== p && q.amount === p.amount && Math.hypot(q.x - (2 * cx - p.x), q.z - (2 * cz - p.z)) < 0.05));
       expect(lonely).toEqual([]);
+    });
+  }
+});
+
+// The map features stay clear: nothing set down on a freight track, a launch pad or a pad's landing spot; pads land on dry, level ground.
+describe("map features are clear", () => {
+  afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
+  for (const map of MAPS.filter((m) => m.train || m.pads)) {
+    it(map.id, () => {
+      const sim = new TacticalSim(); sim.configure(mapDef(map.id), "destroy", "normal"); setActiveTerrain(map.terrain);
+      const things = [
+        ...sim.entities.filter((e) => e.status.alive && !["ridge", "cliff", "span", "wall"].includes(e.coverKind ?? "") && e.kind !== "base").map((e) => ({ n: `${e.kind}/${e.coverKind ?? ""}`, x: e.position.x, z: e.position.z, r: e.radius })),
+        ...sim.pickups.map((p) => ({ n: "cache", x: p.x, z: p.z, r: 0.74 })),
+      ];
+      const blocking = things.filter((t) => sim.onMapFeature(t, t.r * 0.9));
+      expect(blocking.map((t) => `${t.n} @${t.x.toFixed(1)},${t.z.toFixed(1)}`)).toEqual([]);
+      for (const pad of sim.launchPads()) {
+        expect(pointInWater(pad) || pointInWater(pad.to), `${map.id} pad in water`).toBe(false);
+        expect(Math.abs(terrainHeightAt(pad) - terrainHeightAt({ x: pad.x + 1, z: pad.z })), `${map.id} pad on a step`).toBeLessThan(0.3);
+      }
     });
   }
 });

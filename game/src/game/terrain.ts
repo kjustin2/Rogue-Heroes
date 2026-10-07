@@ -37,6 +37,8 @@ export interface TerrainSpec {
   water?: TerrainRect[];
   // Walkable strips that cross water — a unit inside a bridge rect ignores the water blocker.
   bridges?: TerrainRect[];
+  /** THIN ICE over water: anyone can walk it, but a vehicle that stays on it two turns breaks through (sim). */
+  ice?: TerrainRect[];
 }
 
 // The tallest single step a unit can climb in one stride. One authored block level sits
@@ -54,6 +56,7 @@ let activeBlocks: TerrainBlock[] = [];
 let activeMax = 1.9;
 let activeWater: TerrainRect[] = [];
 let activeBridges: TerrainRect[] = [];
+let activeIce: TerrainRect[] = [];
 
 // The default terrain keeps a single raised mesa in the +z half so unit tests that don't
 // load a map still see deterministic high ground (used by the line-of-sight / cover tests).
@@ -74,6 +77,7 @@ export function setActiveTerrain(spec: TerrainSpec): void {
   activeMax = spec.maxHeight ?? 1.9;
   activeWater = (spec.water ?? []).map((r) => ({ ...r }));
   activeBridges = (spec.bridges ?? []).map((r) => ({ ...r }));
+  activeIce = (spec.ice ?? []).map((r) => ({ ...r }));
 }
 
 /** A snapshot of the live terrain, so a caller that swaps it for one synchronous call can put it back. */
@@ -84,6 +88,7 @@ export function activeTerrainSpec(): TerrainSpec {
     maxHeight: activeMax,
     water: activeWater.map((r) => ({ ...r })),
     bridges: activeBridges.map((r) => ({ ...r })),
+    ice: activeIce.map((r) => ({ ...r })),
   };
 }
 
@@ -97,12 +102,21 @@ export function terrainBridges(): readonly TerrainRect[] {
   return activeBridges;
 }
 
+export function terrainIce(): readonly TerrainRect[] {
+  return activeIce;
+}
+
+/** On a sheet of thin ice (over water). */
+export function pointOnIce(point: Vec2): boolean {
+  return activeIce.some((r) => inRect(point, r));
+}
+
 // True when a point sits in impassable water and NOT on a bridge that crosses it. Ground movement
 // is blocked here; flyers and the renderer ignore it.
 export function pointInWater(point: Vec2): boolean {
   if (activeWater.length === 0) return false;
   if (!activeWater.some((r) => inRect(point, r))) return false;
-  return !activeBridges.some((r) => inRect(point, r));
+  return !activeBridges.some((r) => inRect(point, r)) && !activeIce.some((r) => inRect(point, r));
 }
 
 // Initialize to the default terrain so terrainHeightAt is always meaningful.

@@ -383,7 +383,12 @@ canvas.addEventListener("pointermove", (event) => {
 
 /** Plain-language line for the hazard zone under a ground point, if any (this turn's telegraphs). */
 function hazardAt(point: Vec2): string | undefined {
-  const zone = sim.environment().zones.find((z) => Math.hypot(point.x - z.x, point.z - z.z) <= z.radius);
+  const env = sim.environment();
+  const rail = env.rails.find((r) => r.state !== "idle" && point.x >= r.rect.minX && point.x <= r.rect.maxX && point.z >= r.rect.minZ && point.z <= r.rect.maxZ);
+  if (rail) return rail.state === "now"
+    ? "Freight train — it runs these rails when you end the turn: anything on them is hit hard and thrown off. Get clear."
+    : "Freight train — it runs these rails NEXT turn. Don't end a move here then.";
+  const zone = env.zones.find((z) => Math.hypot(point.x - z.x, point.z - z.z) <= z.radius);
   if (!zone) return undefined;
   const text: Record<string, string> = {
     lightning: "Lightning — this circle is struck when you end the turn: heavy damage to anyone in it, and the ground burns. Move out.",

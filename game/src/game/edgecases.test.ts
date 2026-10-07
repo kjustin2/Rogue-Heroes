@@ -177,7 +177,7 @@ describe("order edge cases", () => {
     sim.configure(mapDef("causeway"), "destroy", "normal");
     quietEnemy(sim);
     const water = sim.mapDef.terrain.water![0];
-    const mid = { x: (water.minX + water.maxX) / 2, z: (water.minZ + water.maxZ) / 2 };
+    const mid = { x: (water.minX + water.maxX) / 2 - 6, z: (water.minZ + water.maxZ) / 2 }; // off the centre ice strip (2026-10-07)
     const s = sim.debugSpawn("soldier", "player", { x: mid.x, z: water.maxZ + 3 });
     sim.select(s.id);
     sim.queueMove(mid);
