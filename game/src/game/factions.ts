@@ -78,9 +78,9 @@ export interface FactionDef {
 // a CORE (the rifleman, the heavy gunner, the marksman and the flak track, so each keeps
 // an answer to air; the two regular armies also share the tank)
 // and each owns a block of units nobody else fields:
-//   Vanguard  -- air cavalry: Jump Trooper, Breaker, Hookshot, Rocket Skater, Hornet, Gunship. No indirect fire.
-//   Syndicate -- raiders: Striker, Grenadier, Flamer, Molotov, Sledge, Boomer, the Runabout. No tank.
-//   Bastion   -- fortress: Mortar, Ironclad, Juggernaut, Mole Sapper, Artillery, Bomber, Mortar Turret. Nothing fast.
+//   Vanguard  -- air cavalry: Jump Trooper, Breaker, Hookshot, Rocket Skater, Gunship. No indirect fire.
+//   Syndicate -- raiders: Striker, Flamer, Molotov, Sledge, Boomer, the Chop Bike and the Runabout. No tank.
+//   Bastion   -- fortress: Mortar, Juggernaut, Mole Sapper, Bulldozer, Artillery, Bomber, Mortar Turret. Nothing fast.
 // The Heavy Gunner is CORE: whoever lacked it lost AI-vs-AI games outright (Bastion-only, Bastion
 // beat Vanguard 22-3; with Vanguard and Bastion only, the Syndicate won 10 of 96).
 // Each also has one doctrine rule (see FactionDoctrine) and three support powers of its own. Every faction
@@ -92,13 +92,13 @@ export const FACTIONS: readonly FactionDef[] = [
     id: "vanguard",
     name: "Vanguard",
     blurb: "Full air wing. No artillery.",
-    detail: "Air-mobile shock troops. Jump troopers, rocket-fisted Breakers, Hookshots that drag foes in, Rocket Skaters, Hornets and the only gunships, with Rocketeers for armour. No mortar, grenadier or artillery: a dug-in enemy has to be taken, not shelled.",
-    roster: ["soldier", "sniper", "jumper", "heavy", "bazooka", "breaker", "hookshot", "skater", "tank", "hornet", "runabout", "flak", "gunship"],
+    detail: "Air-mobile shock troops. Jump troopers, rocket-fisted Breakers, Hookshots that drag foes in, Rocket Skaters and the only gunships, with Rocketeers for armour. No mortar, grenadier or artillery: a dug-in enemy has to be taken, not shelled.",
+    roster: ["soldier", "sniper", "jumper", "heavy", "bazooka", "breaker", "hookshot", "skater", "tank", "runabout", "flak", "gunship"],
     tech: ["recon", "marksman", "radar", "assault", "shock", "motorpool", "armor", "airwing", "support", "fieldworks", "breach", "bulwark", "plating", "hunter", "optics", "ghillie"],
     defenses: ["sandbag", "wall", "turret", "sensor", "gunpost", "rocketpost"],
     supports: ["reconsweep", "airstrike", "paradrop", "emp", "medevac", "sentrydrop"],
     accent: 0x8cefff,
-    aiPreference: ["tank", "gunship", "hornet", "breaker", "hookshot", "skater", "heavy", "jumper", "sniper"],
+    aiPreference: ["tank", "gunship", "breaker", "hookshot", "skater", "heavy", "jumper", "sniper"],
     aiTechPath: ["assault", "motorpool", "armor", "recon", "airwing", "shock", "breach"],
     doctrine: {
       name: "Rapid Response",
@@ -118,13 +118,13 @@ export const FACTIONS: readonly FactionDef[] = [
     id: "syndicate",
     name: "Syndicate",
     blurb: "Fire and blades. Kills pay.",
-    detail: "Fast, cheap and attritional. Strikers, flamers, Molotov throwers, grenadiers, the Sledge and kamikaze Boomers, carried in by Runabouts, with tank-hunting rocketeers behind them. No tank and no siege gun, so it cannot win a slugging match -- only a quicker one.",
-    roster: ["soldier", "sniper", "heavy", "striker", "grenadier", "flamer", "boomer", "molotov", "bazooka", "sledge", "runabout", "flak"],
+    detail: "Fast, cheap and attritional. Strikers, flamers, Molotov throwers, Chop Bikes, the Sledge and kamikaze Boomers, carried in by Runabouts, with tank-hunting rocketeers behind them. No tank and no siege gun, so it cannot win a slugging match -- only a quicker one.",
+    roster: ["soldier", "sniper", "heavy", "striker", "flamer", "boomer", "molotov", "bazooka", "sledge", "chopbike", "runabout", "flak"],
     tech: ["recon", "marksman", "radar", "assault", "shock", "motorpool", "fieldworks", "ordnance", "incendiary", "demolition", "breach", "bulwark", "thermobarics", "cluster", "optics", "ghillie"],
     defenses: ["sandbag", "wall", "turret", "minefield", "mortarpit", "rocketpost", "flamepost"],
     supports: ["smokescreen", "napalm", "cluster", "minedrop", "railstrike"],
     accent: 0xffca6b,
-    aiPreference: ["flamer", "molotov", "sledge", "boomer", "striker", "grenadier", "runabout", "heavy", "bazooka"],
+    aiPreference: ["flamer", "molotov", "sledge", "boomer", "striker", "chopbike", "runabout", "heavy", "bazooka"],
     aiTechPath: ["assault", "ordnance", "incendiary", "motorpool", "shock", "recon", "marksman", "thermobarics"],
     doctrine: {
       name: "Scavengers",
@@ -136,22 +136,22 @@ export const FACTIONS: readonly FactionDef[] = [
     labels: { soldier: "Raider", sniper: "Longshot", flak: "Flak Technical", bazooka: "Tank Hunter" },
     // Hard-hitting and brittle: it wins the first exchange or loses the war.
     unitMods: {
-      soldier: { grenades: 1, hp: 0.92 }, striker: { damage: 1.1 }, heavy: { damage: 1.08, hp: 0.92 }, grenadier: { range: 1.06, hp: 0.92 },
+      soldier: { grenades: 1, hp: 0.92 }, striker: { damage: 1.1 }, heavy: { damage: 1.08, hp: 0.92 },
       flamer: { damage: 1.1, hp: 0.92 }, sniper: { damage: 1.06, hp: 0.92 },
-      bazooka: { damage: 1.06 }, boomer: { move: 1.08 },
+      bazooka: { damage: 1.06 }, boomer: { move: 1.08 }, chopbike: { move: 1.06 }, molotov: { range: 1.06 },
     },
   },
   {
     id: "bastion",
     name: "Bastion",
     blurb: "Siege guns. Troops dig in.",
-    detail: "Siege and fortification. Mortars, artillery, Ironclads, cannon-armed Juggernauts, burrowing Mole Sappers, the heavy bomber and the only Mortar Turret. No scout, no striker, no fighter: nothing it fails to kill will be caught.",
-    roster: ["soldier", "sniper", "heavy", "mortar", "ironclad", "juggernaut", "mole", "tank", "artillery", "runabout", "flak", "bomber"],
+    detail: "Siege and fortification. Mortars, artillery, cannon-armed Juggernauts, burrowing Mole Sappers, Bulldozers, the heavy bomber and the only Mortar Turret. No scout, no striker, no fighter: nothing it fails to kill will be caught.",
+    roster: ["soldier", "sniper", "heavy", "mortar", "juggernaut", "mole", "bulldozer", "tank", "artillery", "runabout", "flak", "bomber"],
     tech: ["recon", "marksman", "radar", "assault", "shock", "motorpool", "armor", "siege", "airwing", "support", "fieldworks", "ordnance", "bulwark", "plating", "thermobarics", "cluster", "optics", "ghillie"],
     defenses: ["sandbag", "wall", "turret", "exturret", "bunker", "gunpost", "rocketpost"],
     supports: ["resupply", "laser", "barrage", "railstrike", "medevac", "sentrydrop"],
     accent: 0x9ef0b8,
-    aiPreference: ["tank", "heavy", "artillery", "juggernaut", "mole", "ironclad", "mortar", "sniper"],
+    aiPreference: ["tank", "heavy", "artillery", "juggernaut", "mole", "bulldozer", "mortar", "sniper"],
     aiTechPath: ["assault", "motorpool", "armor", "shock", "recon", "siege", "plating"],
     doctrine: {
       name: "Dig In",

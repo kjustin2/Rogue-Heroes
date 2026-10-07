@@ -17,9 +17,9 @@ mkdirSync(OUT, { recursive: true });
 
 const ROWS = [
   ["01-line", ["soldier", "skater", "sniper", "striker"]],
-  ["02-weight", ["heavy", "grenadier", "mortar", "flamer"]],
+  ["02-weight", ["heavy", "molotov", "mortar", "flamer"]],
   ["03-fun", ["breaker", "boomer", "juggernaut", "jumper"]],
-  ["04-vehicles", ["tank", "hornet", "artillery"]],
+  ["04-vehicles", ["tank", "chopbike", "artillery"]],
 ];
 
 const { page, errors, close } = await launchGame({ port: 5194, query: "?lowfx=1", viewport: { width: 1600, height: 560 } });

@@ -104,3 +104,9 @@ three movement bugs the oracle found; the per-frame GL depth-blit error (postpro
 - Command-phase shimmer on grass and trees is the WIND, not a glitch.
 - Real-GPU tools (`soak:gpu`, `shots:gpu`, `probe:intro`) only mean something on a machine with a GPU; under
   SwiftShader use them to check a scene renders and to read layouts, not to judge frame times.
+
+Round 8 (2026-10-07, in progress): cut Grenadier, Hornet, Ironclad; added Chop Bike (Syndicate: rides through troopers slashing) and
+Bulldozer (Bastion: shoves units, props and wrecks ahead of its blade); Jump Trooper landing is now a 2.5m "death from above" slam
+(0.52x -> 0.90x). LEFT: map hazards (Dust Bowl oil geyser, Karak rolling boulder, Crossfire minefield strip, Verdant stampede: generalise
+MapDef.train into lanes), the ranked top-10 polish pass, and the rifleman Vanguard~Bastion silhouette pair that flips at IoU 0.80 in
+measure:factions (pre-existing, borderline: widen one outline).

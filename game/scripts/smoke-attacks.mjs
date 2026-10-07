@@ -32,7 +32,7 @@ const CASES = [
   { name: "carbine", actor: "skater", target: "heavy", dist: 7, order: "shoot", limb: "weapon", round: true },
   { name: "marksman", actor: "sniper", target: "heavy", dist: 9, order: "shoot", limb: "weapon", round: true },
   { name: "machine-gun", actor: "heavy", target: "heavy", dist: 7, order: "shoot", limb: "weapon", round: true },
-  { name: "launcher", actor: "grenadier", target: "heavy", dist: 8, order: "shoot", limb: "weapon", round: true },
+  { name: "launcher", actor: "molotov", target: "heavy", dist: 8, order: "shoot", limb: "weapon", round: true },
   { name: "mortar", actor: "mortar", target: "heavy", dist: 10, order: "shoot", limb: "weapon", round: true },
   { name: "mortar-smoke", actor: "mortar", target: "heavy", dist: 10, order: "smoke", limb: "weapon", round: true },
   { name: "pistol", actor: "mole", target: "heavy", dist: 6, order: "shoot", limb: "weapon", round: true },

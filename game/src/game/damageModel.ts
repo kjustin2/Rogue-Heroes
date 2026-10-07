@@ -300,10 +300,19 @@ export function createRunabout(id: string, name: string, team: Team, position: V
   });
 }
 
-export function createHornet(id: string, name: string, team: Team, position: Vec2): CombatEntity {
-  return createVehicle(id, name, "hornet", team, position, {
-    radius: 1.35, height: 1.3, hullHp: 78, turretHp: 38, cannonHp: 30, treadHp: 28, frontHp: 36,
-    hullLabel: "Hull", turretLabel: "Turret Ring", cannonLabel: "Light Cannon",
+
+// ROUND 8 (2026-10-07): the Chop Bike (a fast raider bike; its move slashes through troopers) and the Bulldozer (its blade shoves).
+export function createChopBike(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  return createVehicle(id, name, "chopbike", team, position, {
+    radius: 0.9, height: 1.3, hullHp: 48, turretHp: 26, cannonHp: 18, treadHp: 22, frontHp: 18,
+    hullLabel: "Frame", turretLabel: "Rider", cannonLabel: "Sidearm",
+  });
+}
+
+export function createBulldozer(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  return createVehicle(id, name, "bulldozer", team, position, {
+    radius: 1.5, height: 2.1, hullHp: 120, turretHp: 50, cannonHp: 24, treadHp: 44, frontHp: 70,
+    hullLabel: "Body", turretLabel: "Cab", cannonLabel: "Cab MG",
   });
 }
 
@@ -453,21 +462,6 @@ export function createSniper(id: string, name: string, team: Team, position: Vec
   return entity;
 }
 
-export function createGrenadier(id: string, name: string, team: Team, position: Vec2): CombatEntity {
-  return createInfantry(id, name, "grenadier", team, position, {
-    radius: 0.72,
-    height: 1.66,
-    bodyHp: 52,
-    headHp: 16,
-    weaponHp: 24,
-    legsHp: 24,
-    packHp: 24,
-    weaponLabel: "Grenade Launcher",
-    packLabel: "Ammo Satchel",
-    packRole: "volatile",
-    grenades: 0,
-  });
-}
 
 export function createStriker(id: string, name: string, team: Team, position: Vec2): CombatEntity {
   return createInfantry(id, name, "striker", team, position, {
@@ -554,9 +548,6 @@ export function createJumper(id: string, name: string, team: Team, position: Vec
 
 export const createSledge = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createInfantry(id, name, "sledge", team, position, {
   radius: 0.7, height: 1.74, bodyHp: 40, headHp: 14, weaponHp: 22, legsHp: 22, packHp: 18, weaponLabel: "Sledgehammer", packLabel: "Counterweight", packRole: "utility", grenades: 0,
-});
-export const createIronclad = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createInfantry(id, name, "ironclad", team, position, {
-  radius: 0.74, height: 1.7, bodyHp: 56, headHp: 20, weaponHp: 22, legsHp: 30, packHp: 34, weaponLabel: "Carbine", packLabel: "Tower Shield", packRole: "utility", grenades: 0,
 });
 
 // ROUND 6 (2026-10-06): the fun units.

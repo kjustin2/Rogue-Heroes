@@ -73,7 +73,9 @@ function syncRevealTracking(base: CombatEntity): void {
 
 /** Per-unit names for a shared verb: the card reads as the unit's own move. */
 const UNIT_VERBS: Partial<Record<string, Partial<Record<Intent, { label: string; tip: string }>>>> = {
-  jumper: { move: { label: "Jump", tip: "Select Jump, then click any dry ground in range — over cliffs, water and walls. Airborne for the leap, so flak can catch it. 1 AP." } },
+  jumper: { move: { label: "Jump", tip: "Select Jump, then any dry ground in range, over cliffs, water and walls. It lands like a bomb: every foe within 2.5m is hurt and thrown. Flak can catch it mid-air. 1 AP." } },
+  chopbike: { move: { label: "Ride", tip: "Select Ride, then ground in range: the bike rides straight through, slashing and scattering every trooper on its line. 1 AP." } },
+  bulldozer: { move: { label: "Shove", tip: "Select Shove, then ground in range: everything ahead of the blade is pushed along, into walls, water or off the map. 1 AP." } },
   breaker: { push: { label: "Punch", tip: "Select Punch, then a foe within 7m: the Breaker dashes in and sends it ~18m. Water, ledges and the map edge kill. 1 AP." } },
   hookshot: {
     shoot: { label: "Hook", tip: "Select Hook, then a foe within 14m: the harpoon drags it to your feet. Vehicles barely budge. 1 AP." },

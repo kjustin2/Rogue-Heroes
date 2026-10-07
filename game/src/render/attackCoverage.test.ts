@@ -3,9 +3,9 @@ import { CARPET_BOMBS, TacticalSim, carpetDropPoints, type Projectile, type Troo
 import { TROOP_CATALOG, SUPPORT_POWERS } from "../game/units";
 import {
   createArtillery, createBomber, createExTurret, createFlak,
-  createBase, createFlamer, createGrenadier, createGunship, createHeavy, createJumper, createMortar,
+  createBase, createFlamer, createGunship, createHeavy, createJumper, createMortar,
   createBazooka,
-  createSledge, createIronclad, createHookshot, createSkater, createMolotov, createMole, createBreaker, createBoomer, createJuggernaut, createRunabout, createHornet,
+  createSledge, createHookshot, createSkater, createMolotov, createMole, createBreaker, createBoomer, createJuggernaut, createRunabout, createChopBike, createBulldozer,
   createSniper, createSoldier, createStriker, createTank, createTurret,
   type CombatEntity,
 } from "../game/damageModel";
@@ -27,22 +27,22 @@ import { hasMotionBank, sampleMotion } from "./infantryMotion";
 type Maker = (id: string, name: string, team: "player" | "enemy", p: { x: number; z: number }) => CombatEntity;
 const MAKERS: Record<TroopKind, Maker> = {
   soldier: createSoldier, sniper: createSniper, striker: createStriker, heavy: createHeavy,
-  grenadier: createGrenadier, mortar: createMortar,
+  mortar: createMortar,
   jumper: createJumper, flamer: createFlamer, tank: createTank, 
   artillery: createArtillery, flak: createFlak, gunship: createGunship,
   bomber: createBomber,
   bazooka: createBazooka,
-  sledge: createSledge, ironclad: createIronclad, hookshot: createHookshot, skater: createSkater, molotov: createMolotov, mole: createMole, breaker: createBreaker, boomer: createBoomer, juggernaut: createJuggernaut,
-  runabout: createRunabout, hornet: createHornet,
+  sledge: createSledge, hookshot: createHookshot, skater: createSkater, molotov: createMolotov, mole: createMole, breaker: createBreaker, boomer: createBoomer, juggernaut: createJuggernaut,
+  runabout: createRunabout, chopbike: createChopBike, bulldozer: createBulldozer,
 };
 
 /** How each troop's main gun is exercised. `null` = the kind has no gun, and says why. */
 const GUN: Record<TroopKind, { dist?: number; air?: boolean } | { none: string }> = {
   soldier: {}, sniper: {}, heavy: {}, jumper: {}, bazooka: {},
-  flamer: { dist: 5 }, grenadier: {}, mortar: {},
+  flamer: { dist: 5 }, mortar: {},
   tank: {}, artillery: { dist: 14 }, flak: { air: true },
   gunship: { air: true },
-  sledge: {}, ironclad: {}, hookshot: {}, skater: {}, molotov: {}, mole: {}, runabout: {}, hornet: {}, breaker: {}, juggernaut: {},
+  sledge: {}, hookshot: {}, skater: {}, molotov: {}, mole: {}, runabout: {}, chopbike: {}, bulldozer: {}, breaker: {}, juggernaut: {},
   striker: { none: "melee only (its strike is covered below)" },
   bomber: { none: "bombs only (carpet covered below)" },
   boomer: { none: "no gun: it detonates" },

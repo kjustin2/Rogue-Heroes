@@ -32,7 +32,7 @@ describe("faction-aware AI build logic", () => {
     // + the Rocketeer (2026-10-03): a rocket launcher IS an armour answer; the point of this pin is that nothing widens by accident.
     // + the Hornet (2026-10-03): a light tank gun is an armour answer.
     // + the Juggernaut (2026-10-06): a shoulder cannon is an armour answer.
-    expect(got).toEqual(["artillery", "bazooka", "grenadier", "heavy", "hornet", "juggernaut", "mortar", "tank"]);
+    expect(got).toEqual(["artillery", "bazooka", "heavy", "juggernaut", "mortar", "tank"]);
   });
 
   it("still classifies exactly the old anti-air set", () => {

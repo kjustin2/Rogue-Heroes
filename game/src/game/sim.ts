@@ -16,7 +16,6 @@ import {
   aimDamageMultiplier,
   applyDamage,
   createArtillery,
-  createGrenadier,
   createHeavy,
   createMortar,
   createSniper,
@@ -31,9 +30,7 @@ import {
   createMortarPit,
   createBazooka,
   createSledge,
-  createIronclad,
   createRunabout,
-  createHornet,
   createRocketPost,
   createCannonPost,
   createFlamePost,
@@ -41,6 +38,8 @@ import {
   createSoldier,
   createStriker,
   createBreaker,
+  createChopBike,
+  createBulldozer,
   createHookshot,
   createSkater,
   createMolotov,
@@ -190,6 +189,15 @@ const BOWL_THROW = 4;
 export const ERUPT_RADIUS = 2;
 const ERUPT_DAMAGE = 20;
 const MOLOTOV_RADIUS = 2.2;
+// ROUND 8: the Chop Bike's sweep (wider and harder than the Skater's) and the Bulldozer's blade.
+const BIKE_WIDTH = 1.25;
+const BIKE_DAMAGE = 14;
+const BIKE_THROW = 4.5;
+const BLADE_HALF = 1.6;
+const PLOW_DAMAGE = 10;
+// JUMP TROOPER, death from above (2026-10-07): every foe within this of the landing is hurt and thrown.
+const JUMP_SLAM_RADIUS = 2.5;
+const JUMP_SLAM_THROW = 4;
 // Effect colours that name a SOUND (main.ts maps them): a pad launch whoosh, silent dirt/dust puffs, the train horn, ice cracking.
 export const LAUNCH_FX = 0xffe14a;
 export const DIG_FX = 0x8a6a43;
@@ -208,10 +216,6 @@ const APC_UNLOAD_REACH = 3;
 export const STRIKER_CHARGE = 6.5;
 // Hull-down tanks take this fraction of incoming shot damage.
 const HULL_DOWN_DAMAGE = 0.7;
-// AIRBURST (grenadier): a launcher round that bursts on cover still lands this share of its direct
-// damage on the target sheltering right behind it — cover is half protection, not full.
-const AIRBURST_SHARE = 0.5;
-const AIRBURST_REACH = 2.7;
 // FEAR (flamer): enemy infantry this close to burning ground at turn start run from it.
 export const FLAMER_FEAR_RADIUS = 6;
 // CARPET (bomber): three bombs in a line along the heading, this far apart.
@@ -221,7 +225,7 @@ const CARPET_SPACING = 2.2;
 // contact point is authored against this; the renderer's carpet-bomb fall ends on it).
 export const ATTACK_FIRE_AT = 0.58;
 // A jump trooper landing next to an enemy: damage before difficulty scaling.
-const SLAM_LANDING_DAMAGE = 15;
+const SLAM_LANDING_DAMAGE = 34; // death from above (2026-10-07; was 15 on a stride's reach)
 
 // Metres a piercing round carries on past a body it went through.
 const PIERCE_CARRY = 7;
@@ -2997,6 +3001,7 @@ export class TacticalSim {
         actor.stance = "standing";
         this.defending.delete(actor.id);
         if (unitStats(actor.kind).bowl && !order.leap) this.bowlAlong(actor, order.start, order.destination);
+        if (unitStats(actor.kind).plow && !order.leap) this.plowAlong(actor, order.start, order.destination);
         if (unitStats(actor.kind).burrow && !order.leap) { actor.burrowed = true; this.effect("land", actor.position, actor.position, 0x8a6a42, 0.5, 1.2); }
       }
       if (actor.burrowed) {
@@ -3039,12 +3044,12 @@ export class TacticalSim {
           // SLAM LANDING (the jump trooper's identity; an ordinary hop lands softly): anyone hostile within a stride is knocked back and hurt.
           for (const other of canJump(actor) ? this.entities : []) {
             if (other.team === actor.team || other.team === "neutral" || !other.status.alive || other.flying || other.kind === "cover" || isBuildingKind(other.kind) || isDefenseKind(other.kind)) continue;
-            if (dist(other.position, actor.position) > actor.radius + other.radius + 0.6) continue;
+            if (dist(other.position, actor.position) > JUMP_SLAM_RADIUS + other.radius * 0.5) continue;
             const result = applyDamage(other, preferredPart(other, "center").id, Math.round(SLAM_LANDING_DAMAGE * this.teamDamageScale(actor)));
             this.pushLog(`${actor.name} slams down on ${other.name}`);
             this.effect("strike", actor.position, other.position, 0xbfe9ff, 0.45, other.radius + 0.6);
             this.afterDamage(actor, other, result, "Slam");
-            this.applyKnockback(actor, other, actor.position, 30, 0.9);
+            this.applyKnockback(actor, other, actor.position, 0, 1, { ringOut: true, maxThrow: JUMP_SLAM_THROW, force: JUMP_SLAM_THROW });
           }
           this.checkMines(actor);
           this.checkPickups(actor);
@@ -3414,6 +3419,7 @@ export class TacticalSim {
         entity.status.alive &&
         entity.id !== actor.id &&
         entity.id !== allowedCoverId &&
+        !(unitStats(actor.kind).plow && this.plowable(entity)) && // a blade pushes props instead of stopping at them
         ((entity.kind === "cover" && entity.coverKind !== "ridge") || entity.kind === "base" || isDefenseKind(entity.kind)))
       .map((entity) => ({
         entity,
@@ -3833,7 +3839,7 @@ export class TacticalSim {
   private roundWord(actor: CombatEntity | undefined): "bomb" | "grenade" | "shell" | "bottle" {
     if (actor && isAirBomber(actor)) return "bomb";
     if (actor?.kind === "molotov") return "bottle";
-    return actor && (actor.kind === "soldier" || actor.kind === "grenadier") ? "grenade" : "shell";
+    return actor && actor.kind === "soldier" ? "grenade" : "shell";
   }
 
   private updateProjectile(projectile: Projectile, dt: number): void {
@@ -4044,28 +4050,12 @@ export class TacticalSim {
     this.pushLog(`${actor.name}'s ${this.roundWord(actor)} bursts near ${trigger.name}`);
     this.effect("blast", point, point, big ? 0xffbf69 : 0xffd166, 0.72, big ? burst.radius - 0.3 : 1.6);
     // The airburst reads where the sheltering target STANDS, so it comes before the blast throws that target away from the cover.
-    if (trigger.kind === "cover") this.airburstBehindCover(actor, projectile, trigger);
     this.applyExplosiveRadius(actor, point, big ? burst.radius : 1.75, big ? burst.damage : 26, `${trigger.name} is caught in the blast`, big ? burst.maxThrow : undefined);
     this.removeProjectile(projectile.id);
     if (order) order.done = true;
   }
 
-  // AIRBURST. A grenadier round that bursts on (or fuses beside) a cover piece still comes down on
-  // whoever is sheltering right behind it: the intended target takes half of the direct hit the
-  // cover just spared it. Cover is half protection against the launcher, not full.
-  private airburstBehindCover(actor: CombatEntity, projectile: Projectile, cover: CombatEntity): void {
-    if (actor.kind !== "grenadier") return;
-    const target = this.entity(projectile.targetId);
-    if (!target || target.id === cover.id || !target.status.alive || target.flying) return;
-    if (dist(target.position, projectile.position) > AIRBURST_REACH + target.radius) return;
-    const part = preferredPart(target, "center");
-    const direct = this.estimateShotDamage(actor, target, part, "center", false, projectile.attackMode ?? "weapon");
-    const burst = applyDamage(target, part.id, Math.max(1, Math.round(direct * AIRBURST_SHARE)));
-    if (burst.amount <= 0) return;
-    this.pushLog(`${actor.name}'s round airbursts over ${cover.name} — ${target.name} is hit behind it`);
-    this.effect("impact", target.position, target.position, 0xffbf69, 0.42, target.radius);
-    this.afterDamage(actor, target, burst);
-  }
+
 
   private impactProjectile(projectile: Projectile, target: CombatEntity, targetPart: DamagePart, cover: boolean): void {
     const actor = this.entity(projectile.actorId);
@@ -4100,7 +4090,6 @@ export class TacticalSim {
       this.effect("impact", target.position, target.position, 0xffffff, 0.42, target.radius + 0.45);
       this.effect("blast", projectile.position, projectile.position, result.destroyed ? 0xffd166 : 0xffbf69, 0.7, target.radius + 1.05);
       this.resolveShellSplash(actor, target, targetPart, amount, projectile.position);
-      this.airburstBehindCover(actor, projectile, target);
       // A rocket or shell that HITS a trooper throws it backwards, away from the shooter (a tank, a wall or a gun does not budge).
       if (!cover && target.status.alive && isInfantryKind(target.kind)) this.applyKnockback(actor, target, projectile.origin, Math.max(amount, 36) * 1.2, 1, { maxThrow: 7 });
     } else {
@@ -4617,7 +4606,7 @@ export class TacticalSim {
     const falloff = clamp(1.08 - range / 26, 0.65, 1);
     if (target.kind === "tank" && target.hullDown) base *= HULL_DOWN_DAMAGE;
     const vulnerability = cover ? 1 : vulnerabilityMultiplier(target, targetPart);
-    const explosiveActor = actor.kind === "tank" || actor.kind === "artillery" || actor.kind === "grenadier" || actor.kind === "mortar" || actor.kind === "exturret";
+    const explosiveActor = actor.kind === "tank" || actor.kind === "artillery" || actor.kind === "mortar" || actor.kind === "exturret";
     const shellObjectBoost = ((attackMode === "weapon" && explosiveActor) || attackMode === "grenade") && target.kind === "cover" ? 1.72 : 1;
     const aimMultiplier = attackMode === "grenade" ? 1 : aimDamageMultiplier(aim);
     // Flanking: a direct shot into an exposed side/rear hits harder (area grenades don't flank).
@@ -4626,15 +4615,8 @@ export class TacticalSim {
     // most ground units barely scratch it. This single number IS the AA read on the shot preview.
     const vsAir = target.flying ? this.vsAirMultiplier(actor) : 1;
     const antiArmor = isVehicleKind(target.kind) ? unitStats(actor.kind).antiArmor ?? 1 : 1;
-    // SHIELD: a tower shield turns bullets from the front arc (blasts go round it).
-    const shieldStat = unitStats(target.kind).shield;
-    let shield = 1;
-    if (shieldStat && attackMode === "weapon" && !unitStats(actor.kind).groundShell && target.parts.some((p) => p.id === "pack" && p.hp > 0)) {
-      const toward = normalize({ x: actor.position.x - target.position.x, z: actor.position.z - target.position.z });
-      if (toward.x * Math.sin(target.yaw) + toward.z * Math.cos(target.yaw) > 0.26) shield = shieldStat; // inside ~75 degrees of its facing
-    }
     base *= actor.mods?.damage ?? 1;
-    return Math.round(base * antiArmor * shield * falloff * (cover ? 1.05 : aimMultiplier) * vulnerability * shellObjectBoost * flank * vsAir * this.supportDamageMultiplier(actor) * this.teamDamageScale(actor) * this.techDamageScale(actor, target));
+    return Math.round(base * antiArmor * falloff * (cover ? 1.05 : aimMultiplier) * vulnerability * shellObjectBoost * flank * vsAir * this.supportDamageMultiplier(actor) * this.teamDamageScale(actor) * this.techDamageScale(actor, target));
   }
 
   // Difficulty scaling: enemy units hit harder on higher difficulties.
@@ -4919,6 +4901,8 @@ export class TacticalSim {
 
   /** ROCKET SKATER: at the start of a boost, every foe trooper within BOWL_WIDTH of its line is bowled aside. */
   private bowlAlong(actor: CombatEntity, from: Vec2, to: Vec2): void {
+    const bike = actor.kind === "chopbike";
+    const width = bike ? BIKE_WIDTH : BOWL_WIDTH, damage = bike ? BIKE_DAMAGE : BOWL_DAMAGE, thrown = bike ? BIKE_THROW : BOWL_THROW;
     const dx = to.x - from.x, dz = to.z - from.z;
     const len = Math.hypot(dx, dz);
     if (len < 0.5) return;
@@ -4928,16 +4912,82 @@ export class TacticalSim {
       const t = ((e.position.x - from.x) * dx + (e.position.z - from.z) * dz) / (len * len);
       if (t <= 0 || t > 1) continue;
       const on = { x: from.x + dx * t, z: from.z + dz * t };
-      if (dist(on, e.position) > BOWL_WIDTH + e.radius) continue;
-      const result = applyDamage(e, preferredPart(e, "center").id, Math.round(BOWL_DAMAGE * this.teamDamageScale(actor)));
+      if (dist(on, e.position) > width + e.radius) continue;
+      const result = applyDamage(e, preferredPart(e, "center").id, Math.round(damage * this.teamDamageScale(actor)));
       this.effect("strike", on, e.position, 0xffd9a0, 0.45, e.radius + 0.5);
-      this.afterDamage(actor, e, result, "Bowl");
+      this.afterDamage(actor, e, result, bike ? "Slash" : "Bowl");
       // Thrown off the line, sideways (or to one side when it stood dead centre).
       const side = dist(on, e.position) > 0.05 ? on : { x: on.x - (dz / len) * 0.1, z: on.z + (dx / len) * 0.1 };
-      this.applyKnockback(actor, e, side, 0, 1, { ringOut: true, maxThrow: BOWL_THROW, force: BOWL_THROW });
+      this.applyKnockback(actor, e, side, 0, 1, { ringOut: true, maxThrow: thrown, force: thrown });
       bowled += 1;
     }
-    if (bowled) { this.pushLog(`${actor.name} bowls over ${bowled} trooper${bowled === 1 ? "" : "s"}`); this.tally(actor.team, "bowled", bowled); }
+    if (bowled) { this.pushLog(`${actor.name} ${bike ? "slashes through" : "bowls over"} ${bowled} trooper${bowled === 1 ? "" : "s"}`); this.tally(actor.team, bike ? "slashed" : "bowled", bowled); }
+  }
+
+  /** Cover a Bulldozer's blade can push: loose props and wrecks, never terrain pieces, bridges or landmarks. */
+  private plowable(e: CombatEntity): boolean {
+    return e.kind === "cover" && !isLandmarkKind(e.coverKind) && !["ridge", "cliff", "span"].includes(e.coverKind ?? "");
+  }
+
+  /** BULLDOZER: everything in the blade's corridor is shoved ahead to where the blade stops: units by the knockback path (slams,
+   *  drownings and ring-outs come free), props stepped along until something stops them (water swallows them). */
+  private plowAlong(actor: CombatEntity, from: Vec2, to: Vec2): void {
+    const len = dist(from, to);
+    if (len < 0.5) return;
+    const dir = { x: (to.x - from.x) / len, z: (to.z - from.z) / len };
+    let shoved = 0;
+    // Farthest first: the front of the pile moves before what is pressed against it (a trooper shoved into an unmoved crate stuck).
+    const along = (e: CombatEntity): number => (e.position.x - from.x) * dir.x + (e.position.z - from.z) * dir.z;
+    const corridor = this.entities.filter((e) => {
+      if (e.id === actor.id || !e.status.alive || e.flying || e.burrowed || e.carriedById) return false;
+      if (!(isInfantryKind(e.kind) || isVehicleKind(e.kind)) && !this.plowable(e)) return false;
+      const rx = e.position.x - from.x, rz = e.position.z - from.z;
+      const t = rx * dir.x + rz * dir.z;
+      return t > 0 && t <= len + actor.radius + e.radius && Math.abs(rx * dir.z - rz * dir.x) <= BLADE_HALF + e.radius * 0.6;
+    }).sort((a, b) => along(b) - along(a));
+    for (const e of corridor) {
+      const unit = isInfantryKind(e.kind) || isVehicleKind(e.kind);
+      const t = along(e);
+      const push = len - t + actor.radius + e.radius + 0.5;
+      if (unit) {
+        if (e.team !== actor.team) {
+          const scrape = applyDamage(e, preferredPart(e, "center").id, Math.round(PLOW_DAMAGE * this.teamDamageScale(actor)));
+          this.afterDamage(actor, e, scrape, "Shove");
+        }
+        if (e.status.alive) this.applyKnockback(actor, e, { x: e.position.x - dir.x, z: e.position.z - dir.z }, 0, 1, { ringOut: true, maxThrow: push, force: push * blastMass(e) });
+      } else {
+        this.pushProp(e, dir, push, actor.id);
+      }
+      this.effect("strike", { ...actor.position }, { ...e.position }, 0xd8c8a0, 0.5, e.radius + 0.6);
+      shoved += 1;
+    }
+    if (shoved) { this.pushLog(`${actor.name} shoves ${shoved} thing${shoved === 1 ? "" : "s"} ahead of its blade`); this.tally(actor.team, "shoved", shoved); }
+  }
+
+  /** A loose prop pushed along `dir`: it slides until a step, a body, another prop or the board's edge stops it; water swallows it. */
+  private pushProp(prop: CombatEntity, dir: Vec2, distance: number, pusherId: string): void {
+    let at = { ...prop.position };
+    const footing = terrainHeightAt(at);
+    for (let d = 0.25; d <= distance; d += 0.25) {
+      const next = { x: prop.position.x + dir.x * d, z: prop.position.z + dir.z * d };
+      const c = clampToArena(next);
+      if (c.x !== next.x || c.z !== next.z) break;
+      if (pointInWater(next)) {
+        for (const part of prop.parts) part.hp = 0;
+        recomputeStatus(prop);
+        prop.position = next;
+        this.effect("blast", { ...next }, { ...next }, PULSE_WATER, 0.6, prop.radius + 0.8);
+        this.pushLog(`${prop.name} is shoved into the water`);
+        return;
+      }
+      if (Math.abs(terrainHeightAt(next) - footing) > TERRAIN_STEP) break;
+      // ...and at a body: a shoved wreck must not end up on top of a car (movement oracle, Ironworks, 2026-10-07).
+      if (this.entities.some((o) => o.id !== pusherId && o.status.alive && !o.flying && !o.carriedById && !o.burrowed && (isInfantryKind(o.kind) || isVehicleKind(o.kind)) && dist(o.position, next) < o.radius + prop.radius)) break;
+      if (this.entities.some((o) => o.id !== prop.id && o.status.alive && !o.flying && !o.carriedById && (o.kind === "cover" || isBuildingKind(o.kind) || isDefenseKind(o.kind)) && o.coverKind !== "ridge" && dist(o.position, next) < (o.radius + prop.radius) * 0.9)) break;
+      at = next;
+    }
+    prop.position = at;
+    this.syncEntityElevation(prop);
   }
 
   /** MOLE SAPPER: surfacing. Every foe within ERUPT_RADIUS is hurt and thrown up and away; then it stands clear of any body. */
@@ -5878,7 +5928,8 @@ export class TacticalSim {
 
   /** ROCKET SKATER: boost straight THROUGH the trooper (or line of troopers) it can reach, ending a stride beyond. */
   private aiSkaterAct(actor: CombatEntity, foes: CombatEntity[]): boolean {
-    if (actor.kind !== "skater" || actor.commandPoints <= 0 || !actor.status.canMove) return false;
+    if ((actor.kind !== "skater" && actor.kind !== "chopbike") || actor.commandPoints <= 0 || !actor.status.canMove) return false;
+    const width = actor.kind === "chopbike" ? BIKE_WIDTH : BOWL_WIDTH;
     const reach = moveRange(actor) - 1.6;
     const troopers = foes.filter((f) => isInfantryKind(f.kind) && !f.flying && f.status.alive && dist(f.position, actor.position) <= reach);
     let best: { to: Vec2; n: number } | undefined;
@@ -5892,12 +5943,38 @@ export class TacticalSim {
         const t = ((o.position.x - actor.position.x) * dir.x + (o.position.z - actor.position.z) * dir.z);
         if (t <= 0 || t > d + 1.6) return false;
         const on = { x: actor.position.x + dir.x * t, z: actor.position.z + dir.z * t };
-        return dist(on, o.position) <= BOWL_WIDTH + o.radius;
+        return dist(on, o.position) <= width + o.radius;
       }).length;
       if (!best || n > best.n) best = { to, n };
     }
     if (!best || !spendCommandPoint(actor)) return false;
     this.addOrder({ actorId: actor.id, kind: "move", destination: best.to, aim: "center", duration: 1.4 });
+    return true;
+  }
+
+  /** BULLDOZER: drive through the foe whose shove ends worst for it (water or the map edge behind it first), else the nearest clump. */
+  private aiDozerAct(actor: CombatEntity, foes: CombatEntity[]): boolean {
+    if (actor.kind !== "bulldozer" || actor.commandPoints <= 0 || !actor.status.canMove) return false;
+    let best: { to: Vec2; score: number } | undefined;
+    for (const f of foes) {
+      if (f.flying || !f.status.alive || isBuildingKind(f.kind) || isDefenseKind(f.kind) || f.kind === "cover") continue;
+      const d = dist(f.position, actor.position);
+      if (d < 1.5 || d > moveRange(actor) - 0.5) continue;
+      const dir = normalize({ x: f.position.x - actor.position.x, z: f.position.z - actor.position.z });
+      const to = clampToArena({ x: actor.position.x + dir.x * moveRange(actor), z: actor.position.z + dir.z * moveRange(actor) });
+      let doom = 0;
+      for (let k = 1; k <= 6 && !doom; k += 1) {
+        const p = { x: f.position.x + dir.x * k, z: f.position.z + dir.z * k };
+        const c = clampToArena(p);
+        if (pointInWater(p) || c.x !== p.x || c.z !== p.z) doom = 1;
+      }
+      const score = doom * 100 + (isInfantryKind(f.kind) ? 5 : 8) - d;
+      if (!best || score > best.score) best = { to, score };
+    }
+    if (!best || !spendCommandPoint(actor)) return false;
+    const limited = this.blockedMoveDestination(actor, actor.position, best.to, undefined, true);
+    if (dist(limited, actor.position) < 1) { actor.commandPoints += 1; return false; }
+    this.addOrder({ actorId: actor.id, kind: "move", destination: limited, aim: "center", duration: 2.1 });
     return true;
   }
 
@@ -6041,6 +6118,7 @@ export class TacticalSim {
       if (this.aiPunchAct(enemy, players)) continue;
       if (this.aiSkaterAct(enemy, players)) continue;
       if (this.aiMoleAct(enemy, players)) continue;
+      if (this.aiDozerAct(enemy, players)) continue;
       // Push: a foe with water or the edge behind it is a free kill (Hard only).
       if (profile.tactical && this.aiShoveAct(enemy, players)) continue;
       // The rest of the toolkit (Hard only): carry troops, ram, screen with smoke, sow a mine.
@@ -6111,7 +6189,7 @@ export class TacticalSim {
       if (shootTarget && enemy.status.canShoot && enemy.commandPoints > 0) {
         const aim = enemy.kind === "sniper"
           ? (isInfantryKind(shootTarget.kind) ? "head" : "weapon")
-          : enemy.kind === "grenadier" || enemy.kind === "mortar"
+          : enemy.kind === "mortar"
             ? "center"
             : isVehicleKind(shootTarget.kind) ? "mobility" : this.rng.chance(0.35) ? "weapon" : "center";
         // Line of sight: don't waste a shot on a target the round can't reach. If a DESTRUCTIBLE
@@ -6166,7 +6244,7 @@ export class TacticalSim {
           ? (players.length ? players : allPlayers).find((p) => dist(p.position, home) < 11)
           : undefined;
         // HARD: fragile ranged units keep their distance instead of walking into melee range.
-        const kites = profile.tactical && !carrying && target && (enemy.kind === "sniper" || enemy.kind === "mortar" || enemy.kind === "grenadier")
+        const kites = profile.tactical && !carrying && target && (enemy.kind === "sniper" || enemy.kind === "mortar")
           && separation < Math.max(4, range * 0.4);
         if (profile.tactical && !carrying && this.aiDangerAt(enemy.position)) {
           // Standing in a strike zone, fire or gas: step out first, whatever else is going on.
@@ -6709,10 +6787,10 @@ export class TacticalSim {
     const pref: TroopKind[] = [];
     // Contest the air lane with a Flak Track.
     if (playerFlyers > 0 && !haveAntiAir) pref.push("flak", "heavy", "sniper");
-    if (playerVehicles > 0 && !haveAntiArmor) pref.push("bazooka", "tank", "heavy", "grenadier", "artillery");
+    if (playerVehicles > 0 && !haveAntiArmor) pref.push("bazooka", "tank", "heavy", "bulldozer", "artillery");
     // A dug-in player (turrets, bunkers, manned guns) is shelled, not charged.
-    if (this.entities.filter((e) => e.team === "player" && e.status.alive && isDefenseKind(e.kind) && e.kind !== "wall").length >= 2) pref.push("artillery", "mortar", "grenadier");
-    if (playerInfantry >= 3) pref.push("grenadier", "mortar", "heavy");
+    if (this.entities.filter((e) => e.team === "player" && e.status.alive && isDefenseKind(e.kind) && e.kind !== "wall").length >= 2) pref.push("artillery", "mortar", "bulldozer");
+    if (playerInfantry >= 3) pref.push("chopbike", "mortar", "heavy");
     // Round out into a balanced force. The tail is the faction's own doctrine rather than a fixed
     // build order, so each side plays to its roster.
     pref.push(...faction.aiPreference);
@@ -6995,7 +7073,7 @@ export class TacticalSim {
   private spawnSurvivalWave(): void {
     const wave = Math.ceil(this.turn / 2);
     const count = Math.min(6, 1 + wave);
-    const ladder: TroopKind[] = ["soldier", "jumper", "heavy", "striker", "grenadier", "sniper", "runabout", "tank", "mortar", "artillery"];
+    const ladder: TroopKind[] = ["soldier", "jumper", "heavy", "striker", "sniper", "runabout", "tank", "mortar", "artillery"];
     const pool = ladder.slice(0, Math.min(ladder.length, 2 + wave));
     const bounds = this.mapDef.terrain.bounds;
     for (let i = 0; i < count; i += 1) {
@@ -7704,16 +7782,15 @@ function makeTroopBase(kind: TroopKind, id: string, name: string, team: Team, po
     case "sniper": return createSniper(id, name, team, position);
     case "striker": return createStriker(id, name, team, position);
     case "heavy": return createHeavy(id, name, team, position);
-    case "grenadier": return createGrenadier(id, name, team, position);
     case "mortar": return createMortar(id, name, team, position);
     case "flamer": return createFlamer(id, name, team, position);
     case "jumper": return createJumper(id, name, team, position);
     case "bazooka": return createBazooka(id, name, team, position);
     case "sledge": return createSledge(id, name, team, position);
-    case "ironclad": return createIronclad(id, name, team, position);
     case "runabout": return createRunabout(id, name, team, position);
-    case "hornet": return createHornet(id, name, team, position);
     case "breaker": return createBreaker(id, name, team, position);
+    case "chopbike": return createChopBike(id, name, team, position);
+    case "bulldozer": return createBulldozer(id, name, team, position);
     case "hookshot": return createHookshot(id, name, team, position);
     case "skater": return createSkater(id, name, team, position);
     case "molotov": return createMolotov(id, name, team, position);
@@ -7846,6 +7923,7 @@ const MUZZLE_LOCAL: Partial<Record<string, { x: number; z: number; y: number }>>
   lancer: { x: 0.42, z: 0.8, y: 1.05 }, grenadier: { x: 0.46, z: 0.7, y: 1.02 }, mortar: { x: 0.46, z: 0.58, y: 1.02 },
   // the Breaker's wrist gun rides the gauntlet; the Juggernaut's cannon sits over its shoulder (builds are 1.12x / 1.5x wide)
   breaker: { x: 0.56, z: 0.85, y: 1.0 }, juggernaut: { x: 0.68, z: 1.15, y: 1.62 },
+  chopbike: { x: -0.32, z: 0.0, y: 1.0 }, bulldozer: { x: 0.3, z: -0.05, y: 2.0 },
   hookshot: { x: 0.44, z: 1.1, y: 1.0 }, skater: { x: 0.36, z: 0.5, y: 0.88 }, molotov: { x: 0.41, z: 0.2, y: 1.28 }, mole: { x: 0.49, z: 0.4, y: 0.92 },
   ironclad: { x: 0.7, z: 0.6, y: 0.95 }, turrettech: { x: 0.49, z: 0.5, y: 0.95 },
 };

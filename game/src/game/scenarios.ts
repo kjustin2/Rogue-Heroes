@@ -29,7 +29,7 @@ export const SCENARIOS: Scenario[] = [
     apply(sim) {
       sim.configure(mapDef("ironworks"), "destroy", "normal");
       sim.debugGrant("player", 5000);
-      const kinds: TroopKind[] = ["soldier", "jumper", "sniper", "striker", "heavy", "grenadier", "mortar", "tank", "hornet", "artillery"];
+      const kinds: TroopKind[] = ["soldier", "jumper", "sniper", "striker", "heavy", "mortar", "chopbike", "tank", "bulldozer", "artillery"];
       const cols = 4;
       kinds.forEach((k, i) => {
         const u = sim.debugSpawn(k, "player", { x: -4.2 + (i % cols) * 2.7, z: -3.6 + Math.floor(i / cols) * 2.7 });
@@ -56,7 +56,7 @@ export const SCENARIOS: Scenario[] = [
       // Player siege column a short distance off, ready to fire.
       const tank = sim.debugSpawn("tank", "player", { x: eb.x + dir * 11, z: eb.z - 1.6 });
       sim.debugSpawn("artillery", "player", { x: eb.x + dir * 13, z: eb.z + 1.6 });
-      sim.debugSpawn("grenadier", "player", { x: eb.x + dir * 11.5, z: eb.z + 3.4 });
+      sim.debugSpawn("mortar", "player", { x: eb.x + dir * 11.5, z: eb.z + 3.4 });
       sim.debugSelect(tank.id);
       sim.setIntent("select");
     },
@@ -135,7 +135,7 @@ export const SCENARIOS: Scenario[] = [
       sim.configure(mapDef("dustbowl"), "destroy", "normal");
       sim.debugGrant("player", 99999);
       sim.debugGrant("enemy", 99999);
-      const lineup: TroopKind[] = ["soldier", "jumper", "sniper", "heavy", "grenadier", "mortar", "striker", "tank", "hornet", "artillery"];
+      const lineup: TroopKind[] = ["soldier", "jumper", "sniper", "heavy", "mortar", "breaker", "striker", "tank", "bulldozer", "artillery"];
       // Two opposing double-rows of every unit type — ~40 combat entities.
       for (let rowIdx = 0; rowIdx < 2; rowIdx += 1) {
         lineup.forEach((k, i) => {

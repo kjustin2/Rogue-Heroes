@@ -124,7 +124,7 @@ app.whenReady().then(async () => {
         // Every unit each faction fields, colour only, for the membership check (does a signature
         // unit read as its faction?). Flyers are framed from higher up.
         const ROSTERS = { vanguard: ["soldier", "skater", "sniper", "jumper", "heavy", "breaker", "tank", "flak", "gunship"],
-          syndicate: ["soldier", "sniper", "heavy", "striker", "grenadier", "flamer", "boomer", "runabout", "flak"],
+          syndicate: ["soldier", "sniper", "heavy", "striker", "molotov", "flamer", "boomer", "runabout", "flak"],
           bastion: ["soldier", "sniper", "heavy", "mortar", "juggernaut", "tank", "artillery", "flak", "bomber"] };
         for (const f of ["vanguard", "syndicate", "bastion"]) {
           await js(`window.__rht.startBattle("verdant", "destroy", "normal", ${JSON.stringify(f)}, ${JSON.stringify(f === "vanguard" ? "bastion" : "vanguard")})`);
@@ -546,7 +546,7 @@ app.whenReady().then(async () => {
       if (s === "newunits") {
         // The eight newest troop types, each faction's own four, on the line: both teams, close, one frame per faction.
         for (const f of ["vanguard", "syndicate", "bastion"]) {
-          const kinds = { vanguard: ["runabout", "hookshot", "skater", "breaker"], syndicate: ["runabout", "molotov", "sledge", "boomer"], bastion: ["runabout", "mole", "ironclad", "juggernaut"] }[f];
+          const kinds = { vanguard: ["runabout", "hookshot", "skater", "breaker"], syndicate: ["runabout", "molotov", "sledge", "boomer"], bastion: ["runabout", "mole", "bulldozer", "juggernaut"] }[f];
           await js(`window.__rht.startBattle("dustbowl", "destroy", "normal", ${JSON.stringify(f)}, ${JSON.stringify(f)})`);
           await sleep(1500);
           await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("enemy", 0); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = "hidden"));
@@ -563,13 +563,13 @@ app.whenReady().then(async () => {
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal", "syndicate", "vanguard")`);
         await sleep(1500);
         await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("player", 9000); sim.economy.set("enemy", 0);
-          const kinds = ["sledge", "boomer", "runabout", "mole", "flamer", "breaker", "juggernaut", "ironclad", "hookshot", "hornet"];
+          const kinds = ["sledge", "boomer", "runabout", "mole", "flamer", "breaker", "juggernaut", "bulldozer", "hookshot", "chopbike"];
           kinds.forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -20 + i * 2.6, z: 4 }); u.yaw = 0.3; });
           const foe = sim.debugSpawn("soldier", "enemy", { x: -6, z: -4 }); foe.burning = { turns: 3, dmg: 8 };
           const f2 = sim.debugSpawn("tank", "enemy", { x: -2, z: -3 });
           r.setView({ x: -6, z: 2, zoom: 0.5, pitch: 0.6, yaw: 0.2 }); })()`);
         await sleep(1000);
-        for (const k of ["sledge", "boomer", "runabout", "mole", "flamer", "breaker", "juggernaut", "ironclad", "hookshot", "hornet"]) {
+        for (const k of ["sledge", "boomer", "runabout", "mole", "flamer", "breaker", "juggernaut", "bulldozer", "hookshot", "chopbike"]) {
           await js(`(() => { const sim = window.__rht.sim; const u = sim.entities.find((e) => e.team === "player" && e.kind === ${JSON.stringify(k)}); sim.select(u.id); })()`);
           await sleep(500);
           await shot("review-" + k);
@@ -631,7 +631,7 @@ app.whenReady().then(async () => {
       }
       if (s === "muzzles") {
         // One shooter per kind, mid-flight of its first round, tight on the muzzle: the round must leave the gun, not float above it.
-        const kinds = ["gunship", "soldier", "sniper", "bazooka", "flamer", "tank", "hornet", "runabout", "flak", "artillery"];
+        const kinds = ["gunship", "soldier", "sniper", "bazooka", "flamer", "tank", "chopbike", "runabout", "flak", "artillery"];
         for (const kind of kinds) {
           await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal")`);
           await sleep(1300);
@@ -648,7 +648,7 @@ app.whenReady().then(async () => {
       }
       if (s === "muzzlecheck") {
         // DATA, not pictures: for every shooter, fire one round and measure how far the sim's round origin is from the nearest drawn weapon-part box.
-        const kinds = ["gunship", "soldier", "sniper", "heavy", "skater", "striker", "grenadier", "mortar", "bazooka", "flamer", "hookshot", "ironclad", "mole", "breaker", "juggernaut", "tank", "hornet", "runabout", "flak", "artillery"];
+        const kinds = ["gunship", "soldier", "sniper", "heavy", "skater", "striker", "molotov", "mortar", "bazooka", "flamer", "hookshot", "bulldozer", "mole", "breaker", "juggernaut", "tank", "chopbike", "runabout", "flak", "artillery"];
         const rows = [];
         for (const kind of kinds) {
           await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal")`);
@@ -726,7 +726,7 @@ app.whenReady().then(async () => {
       }
       if (s === "projgallery") {
         // One shooter at a time, tight camera on the round in flight: three frames each. Rifle, carbine, pistol, MG, marksman, rocket, scattergun, grenade.
-        const kinds = ["soldier", "skater", "striker", "heavy", "sniper", "bazooka", "grenadier"];
+        const kinds = ["soldier", "skater", "striker", "heavy", "sniper", "bazooka", "molotov"];
         for (const kind of kinds) {
           await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
           await sleep(1400);
@@ -739,7 +739,7 @@ app.whenReady().then(async () => {
       }
       if (s === "projfollow") {
         // The camera rides each round (tight, HUD hidden) and grabs the frame at mid-flight: the round itself, close.
-        const kinds = (process.env.KINDS || "soldier,skater,jumper,hookshot,ironclad,breaker,juggernaut,striker,sledge,mole,molotov,heavy,sniper,bazooka,grenadier,tank,mortar").split(",");
+        const kinds = (process.env.KINDS || "soldier,skater,jumper,hookshot,bulldozer,breaker,juggernaut,striker,sledge,mole,molotov,heavy,sniper,bazooka,grenadier,tank,mortar").split(",");
         for (const kind of kinds) {
           await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal")`);
           await sleep(1300);
@@ -782,7 +782,9 @@ app.whenReady().then(async () => {
             sim.debugSelect(a.id);
             if (${JSON.stringify(k)} === "breaker") sim.queueShove(foes[0].id);
             else if (${JSON.stringify(k)} === "boomer") { sim.queueMove({ x: -7.8, z: -8 }); sim.queueDetonate(); }
-            else if (${JSON.stringify(k)} === "skater") sim.queueMove({ x: -2, z: -8.2 });
+            else if (${JSON.stringify(k)} === "skater" || ${JSON.stringify(k)} === "chopbike") sim.queueMove({ x: -2, z: -8.2 });
+            else if (${JSON.stringify(k)} === "bulldozer") sim.queueMove({ x: -4, z: -8 });
+            else if (${JSON.stringify(k)} === "jumper") sim.queueMove({ x: -6.5, z: -8 });
             else if (${JSON.stringify(k)} === "mole") sim.queueMove({ x: -6.2, z: -8 });
             else sim.queueShoot(foes[0].id);
             r.setView({ x: -6, z: -8, zoom: 0.3, pitch: 0.6, yaw: 0.2 }); sim.endTurn(); window.__rht.setTimeScale(0.5); })()`);
@@ -973,7 +975,7 @@ app.whenReady().then(async () => {
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
         await sleep(1500);
         await js(`(() => { const sim = window.__rht.sim; sim.economy.set("player", 9000);
-          const line = [["soldier", -3], ["heavy", -1.8], ["sniper", -0.6], ["flamer", 0.6], ["mortar", 1.8], ["tank", 3.4], ["hornet", 5.2]];
+          const line = [["soldier", -3], ["heavy", -1.8], ["sniper", -0.6], ["flamer", 0.6], ["mortar", 1.8], ["tank", 3.4], ["chopbike", 5.2]];
           const actors = line.map(([k, z]) => sim.debugSpawn(k, "player", { x: -4, z }));
           const targets = line.map(([, z], i) => sim.debugSpawn(i % 2 ? "soldier" : "heavy", "enemy", { x: (i % 2 ? 4 : 6), z }));
           for (const t of targets) { for (const p of t.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0; t.status.canShoot = false; t.status.canMove = false; t.commandPoints = 0; t.maxCommandPoints = 0; }
@@ -1038,7 +1040,7 @@ app.whenReady().then(async () => {
         // One art direction: a tank, an APC and two troopers in one close frame.
         await js(`window.__rht.startBattle("verdant", "destroy", "normal")`);
         await sleep(1500);
-        await js(`(() => { const sim = window.__rht.sim; const t = sim.debugSpawn("tank", "player", { x: -2, z: 0 }); t.yaw = 0.6; const a = sim.debugSpawn("hornet", "enemy", { x: 3.5, z: -2 }); a.yaw = 2.4; const s1 = sim.debugSpawn("soldier", "player", { x: 0.6, z: 1.6 }); s1.yaw = 0.4; const s2 = sim.debugSpawn("heavy", "player", { x: 1.8, z: 2.4 }); s2.yaw = 0.2; window.__rht.deselect(); window.__rht.setView({ x: 0.5, z: 0.5, zoom: 0.36, pitch: 0.5, yaw: 0.35 }); })()`);
+        await js(`(() => { const sim = window.__rht.sim; const t = sim.debugSpawn("tank", "player", { x: -2, z: 0 }); t.yaw = 0.6; const a = sim.debugSpawn("chopbike", "enemy", { x: 3.5, z: -2 }); a.yaw = 2.4; const s1 = sim.debugSpawn("soldier", "player", { x: 0.6, z: 1.6 }); s1.yaw = 0.4; const s2 = sim.debugSpawn("heavy", "player", { x: 1.8, z: 2.4 }); s2.yaw = 0.2; window.__rht.deselect(); window.__rht.setView({ x: 0.5, z: 0.5, zoom: 0.36, pitch: 0.5, yaw: 0.35 }); })()`);
         await sleep(2500);
         await shot("direction");
         continue;
@@ -1121,7 +1123,7 @@ app.whenReady().then(async () => {
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
         await sleep(1500);
         await js(`(() => { const sim = window.__rht.sim; sim.economy.set("player", 9000);
-          const line = [["soldier", -3], ["heavy", -1.8], ["sniper", -0.6], ["flamer", 0.6], ["mortar", 1.8], ["tank", 3.4], ["hornet", 5.2]];
+          const line = [["soldier", -3], ["heavy", -1.8], ["sniper", -0.6], ["flamer", 0.6], ["mortar", 1.8], ["tank", 3.4], ["chopbike", 5.2]];
           const actors = line.map(([k, z]) => sim.debugSpawn(k, "player", { x: -4, z }));
           const targets = line.map(([, z], i) => sim.debugSpawn(i % 2 ? "soldier" : "heavy", "enemy", { x: (i === 3 ? 1.5 : i >= 4 ? 5 : 3.5), z }));
           for (const t of targets) { for (const p of t.parts) if (p.role === "weapon" || p.role === "mobility") p.hp = 0; t.status.canShoot = false; t.status.canMove = false; }
@@ -1258,7 +1260,7 @@ app.whenReady().then(async () => {
           const h = sim.debugSpawn("heavy", "player", { x: -12, z: -1 }); h.suppressedUntilTurn = sim.turn + 1;
           const s1 = sim.debugSpawn("soldier", "player", { x: -13, z: 0 }); s1.stance = "crouched";
           const a = sim.debugSpawn("artillery", "player", { x: -14, z: 3 }); a.deployed = true;
-          const g = sim.debugSpawn("grenadier", "player", { x: -11, z: 1 }); g.parts.forEach((p) => { p.hp = Math.ceil(p.maxHp * 0.3); });
+          const g = sim.debugSpawn("molotov", "player", { x: -11, z: 1 }); g.parts.forEach((p) => { p.hp = Math.ceil(p.maxHp * 0.3); });
           sim.debugSpawn("striker", "player", { x: -12, z: 4 });
           window.__rht.deselect(); })()`);
         await sleep(1200);
@@ -1321,8 +1323,8 @@ app.whenReady().then(async () => {
         await sleep(1500);
         if (s === "vehicles") {
           await js(`(() => { const sim = window.__rht.sim;
-            ["tank","hornet","artillery"].forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -6 + i * 6, z: 2.5 }); u.yaw = 0.5; });
-            ["tank","hornet","artillery"].forEach((k, i) => { const u = sim.debugSpawn(k, "enemy", { x: -6 + i * 6, z: -4 }); u.yaw = 2.6; });
+            ["tank","chopbike","artillery"].forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -6 + i * 6, z: 2.5 }); u.yaw = 0.5; });
+            ["tank","chopbike","artillery"].forEach((k, i) => { const u = sim.debugSpawn(k, "enemy", { x: -6 + i * 6, z: -4 }); u.yaw = 2.6; });
             const s1 = sim.debugSpawn("soldier", "player", { x: 9.5, z: 2.5 }); s1.yaw = 0.5;
             const s2 = sim.debugSpawn("heavy", "player", { x: -9.5, z: 2.5 }); s2.yaw = 0.5;
             window.__rht.deselect(); })()`);
@@ -1386,7 +1388,7 @@ app.whenReady().then(async () => {
       if (s === "lineup") {
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
         await sleep(1500);
-        await js(`(() => { const sim = window.__rht.sim; ["soldier","skater","sniper","striker","heavy","grenadier","mortar","flamer","jumper","breaker","boomer","juggernaut"].forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -9 + i * 1.5, z: 0 }); u.yaw = 0.5; }); window.__rht.deselect(); })()`);
+        await js(`(() => { const sim = window.__rht.sim; ["soldier","skater","sniper","striker","heavy","molotov","mortar","flamer","jumper","breaker","boomer","juggernaut"].forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -9 + i * 1.5, z: 0 }); u.yaw = 0.5; }); window.__rht.deselect(); })()`);
         await sleep(2500);
         await js(`window.__rht.setView({ x: 0, z: 0.6, zoom: 0.34, pitch: 0.5, yaw: 0.35 })`);
         await sleep(600);

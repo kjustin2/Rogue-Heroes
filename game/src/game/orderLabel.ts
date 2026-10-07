@@ -19,7 +19,7 @@ export function orderLabel(order: TacticalOrder, actor: CombatEntity | undefined
   switch (order.kind) {
     case "move":
       if (order.leap) return make(actor?.kind === "hookshot" ? "Reel" : "Jump");
-      return make(actor?.kind === "skater" ? "Boost" : actor?.kind === "mole" ? "Burrow" : "Move");
+      return make(actor?.kind === "skater" ? "Boost" : actor?.kind === "mole" ? "Burrow" : actor?.kind === "chopbike" ? "Ride" : actor?.kind === "bulldozer" ? "Shove" : actor?.kind === "jumper" ? "Jump" : "Move");
     case "shoot":
       return make(actor?.kind === "hookshot" ? "Hook" : actor?.kind === "molotov" ? "Throw" : "Shoot", withPart);
     case "grenade": {

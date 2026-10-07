@@ -45,10 +45,10 @@ describe("weapon voices", () => {
     expect(voiceFor("rifle", "sniper").alt?.length).toBeGreaterThanOrEqual(2); // a marksman rotates between bolt rifles
   });
 
-  it("every infantry kind owns a recording of its own: at least 14 distinct guns across the roster", () => {
+  it("every infantry kind owns a recording of its own: at least 12 distinct guns across the roster", () => {
     const infantry = TROOP_KINDS.filter((k) => isInfantry(k) && UNIT_STATS[k].shotDamage > 0 && k !== "striker" || k === "striker");
     const groups = new Set(infantry.map((k) => voiceFor("rifle", k).group).filter(Boolean));
-    expect(groups.size).toBeGreaterThanOrEqual(14);
+    expect(groups.size).toBeGreaterThanOrEqual(12); // the roster is leaner since the fun-unit cuts (2026-10-07)
   });
 
   it("heavier weapons play lower, lighter ones higher", () => {

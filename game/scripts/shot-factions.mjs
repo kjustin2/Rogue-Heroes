@@ -9,8 +9,8 @@ import { launchGame, delay } from "../improve/lib/harness.mjs";
 
 const ROWS = {
   vanguard: { units: ["soldier", "sniper", "bazooka", "skater", "jumper", "heavy"], vehicle: "tank" },
-  syndicate: { units: ["soldier", "sniper", "boomer", "striker", "flamer", "grenadier"], vehicle: "runabout" },
-  bastion: { units: ["soldier", "sniper", "juggernaut", "heavy", "mortar", "ironclad"], vehicle: "tank" },
+  syndicate: { units: ["soldier", "sniper", "boomer", "striker", "flamer", "molotov"], vehicle: "runabout" },
+  bastion: { units: ["soldier", "sniper", "juggernaut", "heavy", "mortar", "bulldozer"], vehicle: "tank" },
 };
 const prefix = process.env.SHOT_PREFIX ?? "";
 mkdirSync("shots", { recursive: true });

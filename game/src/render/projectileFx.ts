@@ -67,13 +67,12 @@ export function projectileFamily(p: Projectile): ProjectileFamily {
   if (p.kind === "bolt") return src === "base" ? "tank" : "mg";
   if (p.kind === "grenade") {
     if (src === "mortar" || src === "mortarpit") return p.smoke ? "smoke" : "mortar";
-    if (src === "grenadier") return "launcher";
     if (src && isAirKind(src)) return "bomb";
     return "grenade";
   }
   if (src === "sniper") return "sniper";
-  if (src === "heavy" || src === "gunpost" || src === "runabout") return "mg";
-  if (src === "striker" || src === "sledge" || src === "mole") return "pistol";
+  if (src === "heavy" || src === "gunpost" || src === "runabout" || src === "bulldozer") return "mg";
+  if (src === "striker" || src === "sledge" || src === "mole" || src === "chopbike") return "pistol";
   if (src === "flamer" || src === "flamepost") return "flame";
   if (src === "jumper" || src === "breaker" || src === "skater") return "carbine";
   return "rifle";
@@ -497,8 +496,9 @@ const UNIT_ROUND: Partial<Record<EntityKind, RoundSpec>> = {
   hookshot: { w: 1.5, len: 1.6, head: 1.4, core: 0xfff0c8, sleeve: BRASS, collar: true, rings: 1 }, // a fat brass harpoon with a barbed collar
   skater: { w: 0.7, len: 0.6, head: 0.75, core: HOT, sleeve: 0xffc27a, tandem: 2 }, // a quick three-dart spray from a rider at speed
   mole: { w: 1.0, len: 0.4, head: 0.95, core: HOT, sleeve: 0xd8843a }, // a dull copper bead from the sidearm
+  chopbike: { w: 0.9, len: 0.45, head: 0.9, core: HOT, sleeve: 0xffa040, twin: true }, // a rider's pistol pair
+  bulldozer: { w: 1.2, len: 0.7, head: 1.1, core: 0xffe9b0, sleeve: TRACER_ALT }, // a cab MG slug
   breaker: { w: 1.2, len: 0.55, head: 1.15, core: HOT, sleeve: 0xff8a2a, tandem: 1 }, // stubby carbine double-tap
-  ironclad: { w: 1.4, len: 0.75, head: 1.25, core: 0xffe9b0, sleeve: TRACER_DEEP }, // stubby heavy slug
   striker: { w: 0.85, len: 0.5, head: 0.85, core: HOT, sleeve: 0xffc857, twin: true }, // akimbo sidearms
   sledge: { w: 1.3, len: 0.36, head: 1.2, core: 0xffd8a0, sleeve: TRACER_DEEP }, // fat short sawn-off slug
 };

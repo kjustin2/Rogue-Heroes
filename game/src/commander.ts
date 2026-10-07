@@ -133,6 +133,8 @@ const MEDAL_SEEDS: readonly MedalSeed[] = [
     ["bowl20", "Strike!", "Bowl over 20 troopers with a Rocket Skater.", "bowled", 20, 25],
     ["molotov25", "Firebug", "Throw 25 Molotovs.", "molotovs", 25, 20],
     ["erupt20", "Surprise!", "Erupt under foes 20 times with a Mole Sapper.", "erupts", 20, 30],
+    ["slash25", "Easy Rider", "Slash through 25 troopers with a Chop Bike.", "slashed", 25, 25],
+    ["shove30", "Clear the Road", "Shove 30 things with a Bulldozer.", "shoved", 30, 25],
     ["clash10", "Bullet Meets Bullet", "See 10 rounds meet in mid-air.", "clashes", 10, 30],
     ["clash50", "Point Defense", "See 50 rounds meet in mid-air.", "clashes", 50, 70],
     ["cannon10", "Big Gun", "Fire the Fortress Cannon 10 times.", "cannon", 10, 30],
@@ -165,7 +167,7 @@ const MEDAL_SEEDS: readonly MedalSeed[] = [
   { id: "rocketkills", page: "Arsenal", name: "Post Haste", blurb: "Kill 15 vehicles' worth of foes from Rocket Posts.", points: 40, progress: (st) => [st.counters["killer:rocketpost"] ?? 0, 15] },
 ];
 
-const NEW_KINDS = ["runabout", "hornet", "sledge", "ironclad", "breaker", "boomer", "juggernaut", "hookshot", "skater", "molotov", "mole"];
+const NEW_KINDS = ["runabout", "sledge", "breaker", "boomer", "juggernaut", "hookshot", "skater", "molotov", "mole", "chopbike", "bulldozer"];
 const triedKinds = (st: CommanderStats, kinds: readonly string[]): number => kinds.filter((k) => (st.counters[`deploy:${k}`] ?? 0) > 0).length;
 const triedTech = (st: CommanderStats): number => TECH_TREE.filter((n) => (st.counters[`research:${n.id}`] ?? 0) > 0).length;
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TECH_TREE } from "./tech";
 import { dist } from "../core/math";
-import { applyDamage, createBase, createBomber, createCover, createFlak, createFlamer, createGrenadier, createGunship, createHeavy, createMortar, createSkater, createSniper, createSoldier, createStriker, createTank, createWall } from "./damageModel";
+import { applyDamage, createBase, createBomber, createCover, createFlak, createFlamer, createGunship, createHeavy, createMortar, createSkater, createSniper, createSoldier, createStriker, createTank, createWall } from "./damageModel";
 import {
   BASE_INCOME,
   INCOME_BY_LEVEL,
@@ -402,11 +402,11 @@ describe("tactical simulation loop", () => {
 
   it("makes the same inaccurate attack much more reliable at close range", () => {
     const close = new TacticalSim([
-      createGrenadier("grenadier", "Briggs", "player", { x: 0, z: 0 }),
+      createMortar("grenadier", "Briggs", "player", { x: 0, z: 0 }),
       createSoldier("enemy", "Cutlass", "enemy", { x: 1.4, z: 0 }),
     ]);
     const far = new TacticalSim([
-      createGrenadier("grenadier", "Briggs", "player", { x: 0, z: 0 }),
+      createMortar("grenadier", "Briggs", "player", { x: 0, z: 0 }),
       createSoldier("enemy", "Cutlass", "enemy", { x: 9, z: 0 }),
     ]);
 
@@ -950,7 +950,7 @@ describe("tactical simulation loop", () => {
     applyDamage(target, "rifle", 99);
     applyDamage(bystander, "rifle", 99);
     const sim = new TacticalSim([
-      createGrenadier("grenadier", "Briggs", "player", { x: 0, z: 0 }),
+      createMortar("grenadier", "Briggs", "player", { x: 0, z: 0 }),
       target,
       bystander,
     ]);
@@ -974,7 +974,7 @@ describe("tactical simulation loop", () => {
 
   it("lets a missed grenade hit ground, roll, and still explode", () => {
     const sim = new TacticalSim([
-      createGrenadier("grenadier", "Briggs", "player", { x: 0, z: 2 }),
+      createMortar("grenadier", "Briggs", "player", { x: 0, z: 2 }),
       createSoldier("target", "Target", "enemy", { x: 0, z: 8 }),
     ]);
     const start = { x: 0, z: 4.55 };
@@ -1034,12 +1034,12 @@ describe("tactical simulation loop", () => {
     sim.update(0.1);
 
     expect(sim.projectiles[0]?.state).toBe("rolling");
-    expect(sim.log).toContain("Briggs's grenade skips and rolls short of Target");
+    expect(sim.log).toContain("Briggs's shell skips and rolls short of Target"); // a mortar since the Grenadier was cut (2026-10-07)
 
     advance(sim, 1.2);
 
     expect(sim.projectiles).toHaveLength(0);
-    expect(sim.log).toContain("Briggs's grenade rolls and explodes near Target");
+    expect(sim.log).toContain("Briggs's shell rolls and explodes near Target");
   });
 
   it("keeps a launched projectile alive if the shooter dies before impact", () => {

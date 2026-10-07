@@ -96,23 +96,6 @@ describe("the hammer, the spade and the ricochet", () => {
     expect(sim.queueSlam()).toBe(false);
   });
 
-  it("an Ironclad's shield turns bullets from the front and not from behind", () => {
-    const damageFrom = (side: 1 | -1): number => {
-      const sim = staged();
-      const iron = sim.debugSpawn("ironclad", "enemy", { x: 0, z: 0 });
-      iron.yaw = Math.PI / 2; // facing +x
-      disarm(iron);
-      const shooter = sim.debugSpawn("soldier", "player", { x: side * 8, z: 0 });
-      sim.debugSelect(shooter.id);
-      const before = hp(iron);
-      sim.queueShoot(iron.id);
-      sim.endTurn(); settle(sim);
-      return before - hp(sim.entity(iron.id)!);
-    };
-    const front = damageFrom(1), back = damageFrom(-1);
-    expect(front).toBeGreaterThan(0);
-    expect(back, "much more from behind").toBeGreaterThan(front * 1.8);
-  });
 });
 
 describe("the Runabout", () => {
@@ -222,7 +205,7 @@ describe("the new posts and the roster split", () => {
   });
 
   it("each faction fields the two shared new kinds and at least two of its own", () => {
-    const NEW = ["runabout", "hornet", "sledge", "ironclad", "breaker", "boomer", "juggernaut", "hookshot", "skater", "molotov", "mole"];
+    const NEW = ["runabout", "sledge", "breaker", "boomer", "juggernaut", "hookshot", "skater", "molotov", "mole", "chopbike", "bulldozer"];
     for (const f of FACTIONS) {
       const mine = f.roster.filter((k) => NEW.includes(k));
       const own = mine.filter((k) => FACTIONS.every((o) => o.id === f.id || !o.roster.includes(k as never)));
@@ -525,5 +508,58 @@ describe("round 7 units", () => {
     wet.debugSelect(m2.id);
     const water = wet.mapDef.terrain.water?.[0];
     if (water) expect(wet.queueMove({ x: (water.minX + water.maxX) / 2, z: (water.minZ + water.maxZ) / 2 })).toBe(false);
+  });
+});
+
+// ROUND 8 (owner 2026-10-07, third fun audit): the bike that rides through, the dozer that shoves, the jump that lands like a bomb.
+describe("round 8 units", () => {
+  afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
+  const moved = (a: { x: number; z: number }, b: { x: number; z: number }): number => Math.hypot(a.x - b.x, a.z - b.z);
+
+  it("a Chop Bike rides through a line of troopers, slashing and scattering each one", () => {
+    const sim = staged();
+    const bike = sim.debugSpawn("chopbike", "player", { x: -18, z: -8 });
+    // One on the line, one 1.7m off it: only the bike's wider sweep (not the Skater's) reaches the second.
+    const foes = [[-12, -8.2], [-9, -9.7]].map(([x, z]) => { const f = sim.debugSpawn("soldier", "enemy", { x, z }); disarm(f); tough(f); return f; });
+    const hp0 = foes.map(hp), at = foes.map((f) => ({ ...f.position }));
+    sim.debugSelect(bike.id);
+    expect(sim.queueMove({ x: -5, z: -8 }), sim.log[0]).toBe(true);
+    sim.endTurn(); settle(sim);
+    foes.forEach((f, i) => {
+      expect(hp(sim.entity(f.id)!), `trooper ${i} slashed`).toBeLessThan(hp0[i]);
+      expect(moved(sim.entity(f.id)!.position, at[i]), `trooper ${i} scattered`).toBeGreaterThan(1.5);
+    });
+  });
+
+  it("a Bulldozer shoves a trooper and a prop ahead of its blade, and drives where a prop would have stopped anything else", () => {
+    const sim = staged();
+    const dozer = sim.debugSpawn("bulldozer", "player", { x: -18, z: -8 });
+    const foe = sim.debugSpawn("soldier", "enemy", { x: -14, z: -8 });
+    disarm(foe); tough(foe);
+    const crate = sim.debugCover("crate", { x: -11, z: -8.4 });
+    const crateAt = { ...crate.position };
+    sim.debugSelect(dozer.id);
+    expect(sim.queueMove({ x: -8, z: -8 }), sim.log[0]).toBe(true);
+    sim.endTurn(); settle(sim);
+    const d = sim.entity(dozer.id)!;
+    expect(d.position.x, "the dozer got through").toBeGreaterThan(-9.5);
+    expect(sim.entity(foe.id)!.position.x, "the trooper ends ahead of the blade").toBeGreaterThan(d.position.x);
+    expect(moved(sim.entity(crate.id)!.position, crateAt), "the prop was pushed").toBeGreaterThan(1.5);
+  });
+
+  it("a Jump Trooper lands like a bomb: every foe within 2.5m is hurt and thrown", () => {
+    const sim = staged();
+    const j = sim.debugSpawn("jumper", "player", { x: -16, z: -8 });
+    const near = sim.debugSpawn("soldier", "enemy", { x: -9.8, z: -8 });
+    const near2 = sim.debugSpawn("soldier", "enemy", { x: -8, z: -9.6 });
+    for (const f of [near, near2]) { disarm(f); tough(f); }
+    const h = [hp(near), hp(near2)], at = [{ ...near.position }, { ...near2.position }];
+    sim.debugSelect(j.id);
+    expect(sim.queueMove({ x: -8, z: -8 }), sim.log[0]).toBe(true);
+    sim.endTurn(); settle(sim);
+    [near, near2].forEach((f, i) => {
+      expect(hp(sim.entity(f.id)!), `foe ${i} hurt`).toBeLessThan(h[i] - 20);
+      expect(moved(sim.entity(f.id)!.position, at[i]), `foe ${i} thrown`).toBeGreaterThan(1.5);
+    });
   });
 });

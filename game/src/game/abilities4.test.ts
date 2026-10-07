@@ -23,29 +23,6 @@ const disarm = (e: ReturnType<TacticalSim["debugSpawn"]>): void => {
 };
 const hp = (e: { parts: { hp: number }[] }): number => e.parts.reduce((s, p) => s + p.hp, 0);
 
-describe("grenadier airburst", () => {
-  it("a round that bursts on cover still lands half its damage on the trooper behind it", () => {
-    const sim = staged();
-    const grenadier = sim.debugSpawn("grenadier", "player", { x: -5, z: 0 }); // same 0.7 plateau as the target: no uphill penalty
-    const wall = sim.debugCover("pillar", { x: 0, z: 0 });
-    const target = sim.debugSpawn("soldier", "enemy", { x: wall.radius + 0.8, z: 0 });
-    disarm(target);
-    // The bot shares the sim's rng: with research cheap it now buys tech on turn 1, which shifts the
-    // accuracy roll this test depends on. Broke bot = the same draw every run.
-    sim.economy.set("enemy", 0);
-    sim.entities.filter((e) => e.team === "enemy" && e.kind === "base").forEach(disarm); // its relay shot would otherwise shoot the grenade down mid-air
-    target.stance = "crouched";
-    const before = hp(target);
-    sim.debugSelect(grenadier.id);
-    expect(sim.queueShoot(target.id)).toBe(true);
-    sim.endTurn();
-    settle(sim);
-    expect(sim.log.some((l) => l.includes("bursts near Stone Pillar"))).toBe(true); // the round DID hit the wall
-    expect(sim.log.some((l) => l.includes("airbursts"))).toBe(true);
-    expect(before - hp(target)).toBeGreaterThanOrEqual(12);
-  });
-});
-
 describe("flamer fear", () => {
   it("enemy infantry beside burning ground run from it, where the same trooper otherwise advances through it", () => {
     const run = (burning: boolean): number => {
