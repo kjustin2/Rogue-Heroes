@@ -80,7 +80,7 @@ try {
     return { carriedBy: s?.carriedById, passengers: tr?.passengerIds ?? [] };
   }, t);
   if (carried.carriedBy !== t.t || !carried.passengers.includes(t.s)) fail(`runabout did not pick up the soldier: ${JSON.stringify(carried)}`);
-  await page.evaluate((ids) => { const sim = window.__rht.sim; sim.select(ids.t); window.__rht.queueUnload({ x: -11, z: 6 }); }, t);
+  await page.evaluate((ids) => { const sim = window.__rht.sim; sim.select(ids.t); const tr = sim.entity(ids.t); window.__rht.queueUnload({ x: tr.position.x + 2, z: tr.position.z }); }, t); // a car sets its troops down beside itself
   await endTurnAndSettle(page);
   const dropped = await page.evaluate((ids) => { const s = window.__rht.sim.entity(ids.s); return { carriedBy: s?.carriedById, alive: s?.status.alive }; }, t);
   if (dropped.carriedBy || !dropped.alive) fail(`runabout did not drop the soldier: ${JSON.stringify(dropped)}`);

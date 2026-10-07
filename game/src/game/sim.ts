@@ -4263,7 +4263,9 @@ export class TacticalSim {
     if (!a || !b) return;
     const axis = normalize({ x: b.position.x - a.position.x, z: b.position.z - a.position.z });
     const side = { x: -axis.z, z: axis.x };
-    const clear = (p: Vec2): boolean => !pointInWater(p) && !onTerrainEdge(p, 2.4) && Math.abs(terrainHeightAt(p)) <= 0.5
+    // ...and a full post's width inside the board: a clamped spot sat ON the rim with its ring hanging off the map (smoke:ground).
+    const inside = (p: Vec2): boolean => p.x - ARENA_BOUNDS.minX >= 2.5 && ARENA_BOUNDS.maxX - p.x >= 2.5 && p.z - ARENA_BOUNDS.minZ >= 2.5 && ARENA_BOUNDS.maxZ - p.z >= 2.5;
+    const clear = (p: Vec2): boolean => inside(p) && !pointInWater(p) && !onTerrainEdge(p, 2.4) && Math.abs(terrainHeightAt(p)) <= 0.5
       && !this.entities.some((e) => e.status.alive && dist(e.position, p) < e.radius + 2.2 + (isLandmarkKind(e.coverKind) ? 2 : 0))
       && !this.pickups.some((c) => dist(c, p) < 3); // never on top of a cash cache (owner 2026-10-06: "objects overlap")
     // A mirrored pair of each kind, on its own band of the board so they never crowd: Gun Posts on the flanks, Rocket Posts
@@ -4521,7 +4523,8 @@ export class TacticalSim {
   // A cache must sit on open ground a unit can actually reach — not inside a base/defense/solid
   // cover, and not adjacent to a base (loot is earned by taking ground, not handed out at spawn).
   private pickupSpotClear(p: Vec2): boolean {
-    if (pointInWater(p) || onTerrainEdge(p, 1.6) || discSamples(p, 1.6).some(pointInWater)) return false; // flat, dry, the whole ring on one level and clear of the shore
+    if (pointInWater(p) || onTerrainEdge(p, 1.6) || discSamples(p, 1.6).some(pointInWater)) return false;
+    if (Math.min(p.x - ARENA_BOUNDS.minX, ARENA_BOUNDS.maxX - p.x, p.z - ARENA_BOUNDS.minZ, ARENA_BOUNDS.maxZ - p.z) < 1.6) return false; // the whole ring on the board // flat, dry, the whole ring on one level and clear of the shore
     for (const e of this.entities) {
       if (e.kind === "base" && dist(p, e.position) < 14) return false; // outside every deploy ring
       // Landmarks draw past their footprint (the checkpoint's raised boom overhung a cache): 2m more for them.

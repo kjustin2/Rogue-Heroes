@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { isLandmarkKind } from "./damageModel";
+import { isLandmarkKind, isMountKind } from "./damageModel";
 import { MAPS } from "./maps";
 import { TacticalSim, mapDef } from "./sim";
-import { DEFAULT_TERRAIN, setActiveTerrain, terrainHeightAt } from "./terrain";
+import { ARENA_BOUNDS, DEFAULT_TERRAIN, setActiveTerrain, terrainHeightAt } from "./terrain";
 
 // 2026-10-06 (owner: "objects on the ground overlap ... like turrets and supply caches"). Every map, as the game lays it out:
 // nothing on the ground touches anything else (props, posts, neutral turrets, cash caches, mines), and no prop straddles a
@@ -21,6 +21,12 @@ describe("map layout: nothing overlaps, nothing straddles a step", () => {
         if (Math.hypot(a.x - b.x, a.z - b.z) < a.r + b.r + 0.3) overlaps.push(`${a.n} x ${b.n}`);
       }
       expect(overlaps).toEqual([]);
+      // Nothing the layout sets down hangs off the board (smoke:ground's rule, 0.05m slack): a post's contact shadow (1.25x radius),
+      // a cache's 0.74m ring. Authored landmarks are placed by hand and exempt.
+      const b = ARENA_BOUNDS;
+      const reach = (t: { n: string; r: number }): number => (t.n === "cache" ? 0.74 : isMountKind(t.n.split("/")[0] as never) ? t.r * 1.25 : 0);
+      const offEdge = things.filter((t) => reach(t) > 0 && Math.min(t.x - b.minX, b.maxX - t.x, t.z - b.minZ, b.maxZ - t.z) < reach(t) - 0.05);
+      expect(offEdge.map((t) => `${t.n} @${t.x.toFixed(1)},${t.z.toFixed(1)}`)).toEqual([]);
       const hugs = new Set((map.signature ?? []).filter((s) => s.hug).map((s) => s.kind));
       const straddles: string[] = [];
       for (const e of sim.entities) {
