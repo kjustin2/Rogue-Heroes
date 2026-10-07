@@ -17,7 +17,8 @@ Round 6 (2026-10-06, "only FUN units"): cut Trencher, Drone Operator, Bounty Hun
 Breaker (rocket-fist Punch, 18m throw), Boomer (kamikaze) and Juggernaut (knockback cannon); see `docs/game-systems.md`.
 Round 7 (2026-10-07, second fun audit): cut Scout, Ricochet Gunner, Turret Tech (and placement); Runabout MG always fires; added Hookshot,
 Rocket Skater, Molotov, Mole Sapper. Caches mirrored (the player-seat lean is gone: 53%). Map features landed (Ironworks train, launch pads,
-thin ice, red barrels). Next: the sound + visual polish audit.
+thin ice, red barrels). Sound + visual audit done (fire never booms, silent dig puffs, train horn, ice/eruption crashes, pad whoosh;
+flame-post drums no longer mimic red barrels). Watch: Jump Trooper is the lowest-value unit in self-play (0.52x).
 
 State of `main`: `npm run verify` green (574 vitest incl. chaos, balance self-play and the movement +
 projectile oracle), `npm run smoke:core` green (11 smokes), `npm run probe:terrain` 0 offenders,

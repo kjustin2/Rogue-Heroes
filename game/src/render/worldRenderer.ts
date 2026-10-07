@@ -3339,7 +3339,11 @@ export class WorldRenderer {
     } else if (entity.kind === "flamepost") {
       // Flame post: twin fuel drums, a hose and a squat nozzle with a pilot flame.
       this.box(group, entity, "gun", [0.5, 0.14, 0.5], [0, 0.14, 0], 0x2a2f34, { metalness: 0.4 });
-      for (const x of [-0.3, 0.3]) this.cylinder(group, entity, "gun", 0.22, 0.7, [x, 0.5, -0.32], 0xd84a14, [0, 0, 0], { accent: true, emissive: 0xff5a1a, emissiveIntensity: 0.25, metalness: 0.3 });
+      // Dark steel tanks with one thin orange band (2026-10-07): bright orange drums read as the map's RED BARRELS, which explode; a post does not.
+      for (const x of [-0.3, 0.3]) {
+        this.cylinder(group, entity, "gun", 0.22, 0.7, [x, 0.5, -0.32], 0x4a4440, [0, 0, 0], { metalness: 0.45 });
+        this.cylinder(group, entity, "gun", 0.225, 0.08, [x, 0.62, -0.32], 0xd8742a, [0, 0, 0], { accent: true });
+      }
       this.cylinder(group, entity, "gun", 0.1, 1.0, [0, 0.62, 0.4], 0x3a3230, [Math.PI / 2, 0, 0], { metalness: 0.4 });
       this.cylinder(group, entity, "gun", 0.14, 0.2, [0, 0.62, 0.94], 0x1d1a18, [Math.PI / 2, 0, 0], { metalness: 0.4, radiusBottom: 0.09 });
       this.sphere(group, entity, "gun", 0.07, [0, 0.62, 1.08], 0xffb02e, { accent: true, emissive: 0xff6b1a, emissiveIntensity: 0.5 });

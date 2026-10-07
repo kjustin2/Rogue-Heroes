@@ -332,6 +332,15 @@ export class Sfx {
     this.synthVoice("flame", gain);
   }
 
+  /** The freight train: a two-note horn, twice, over a low rumble. */
+  horn(gain = 1): void {
+    for (const at of [0, 0.7]) {
+      this.blip(196, 0.55, "sawtooth", 0.11 * gain, at);
+      this.blip(247, 0.55, "sawtooth", 0.09 * gain, at);
+    }
+    this.boom(42, 1.4, 0.4 * gain);
+  }
+
   /** A placed item landing: a soft thud. */
   place(gain = 1): void {
     if (this.sample("hitplate", GROUP_GAIN.hitplate * 0.9 * gain, 0.75)) return;

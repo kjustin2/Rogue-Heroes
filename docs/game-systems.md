@@ -47,6 +47,11 @@ an armour answer for the bot only with 30+ damage (the Molotov is not one).
   chain reaction and fire).
 - Posts, caches and props keep off rails, pads and landing spots (`onMapFeature`; `mapLayout.test` "map features are clear").
 - A jump or pad launch that lands flush against a step now slides to the nearest ground its footprint fits on (movement oracle).
+- **Sound map (2026-10-07 audit)**: an effect's sound is keyed by type + colour in `main.ts`. Fire of any size (`blast` 0xff7a2a: a flamer
+  splash, a Molotov, the slag) is `sfx.ignite`, never an explosion; dirt/dust puffs (`DIG_FX`: a burrowing Mole, the train's wake) are
+  silent; `HORN_FX` = the train horn (`sfx.horn`); `ICE_FX` = ice cracking/sinking (crash); `ERUPT_FX` = a Mole erupting (crash);
+  `LAUNCH_FX` = a pad launch (whoosh); the Breaker's punch is a `strike` (thud), not a blast; a Boomer's fuse hisses as its order starts.
+- **Flame Post** tanks are dark steel with one orange band: the bright orange drums read as the map's explosive red barrels.
 
 ## FACTIONS play, look and fight differently (2026-09-22)
 

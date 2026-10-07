@@ -190,6 +190,12 @@ const BOWL_THROW = 4;
 export const ERUPT_RADIUS = 2;
 const ERUPT_DAMAGE = 20;
 const MOLOTOV_RADIUS = 2.2;
+// Effect colours that name a SOUND (main.ts maps them): a pad launch whoosh, silent dirt/dust puffs, the train horn, ice cracking.
+export const LAUNCH_FX = 0xffe14a;
+export const DIG_FX = 0x8a6a43;
+export const HORN_FX = 0x5a3a2a;
+export const ICE_FX = 0xd8f0ff;
+export const ERUPT_FX = 0x8a6a41;
 const BOOM_DAMAGE = 112;
 const BOOM_THROW = 7.5;
 const BURN_STATUS_TURNS = 3; // a trooper set alight burns this many turns...
@@ -2935,6 +2941,7 @@ export class TacticalSim {
     }
 
     if (order.kind === "detonate") {
+      if (!order.start) { order.start = { ...actor.position }; this.effect("ping", { ...actor.position }, { ...actor.position }, 0xff3b30, 0.4, 0.9); } // the fuse
       if (!order.fired && order.elapsed >= 0.4) {
         order.fired = true;
         if (actor.status.alive) this.resolveExplosion(actor, actor);
@@ -2995,7 +3002,7 @@ export class TacticalSim {
       if (actor.burrowed) {
         // UNDERGROUND: straight to the spot, through bodies and props, unseen and unshot; erupt on arrival.
         // A puff of dirt every quarter second is the trail the player reads.
-        if (Math.floor(order.elapsed * 4) !== Math.floor((order.elapsed - dt) * 4)) this.effect("land", { ...actor.position }, { ...actor.position }, 0x8a6a42, 0.35, 0.8);
+        if (Math.floor(order.elapsed * 4) !== Math.floor((order.elapsed - dt) * 4)) this.effect("land", { ...actor.position }, { ...actor.position }, DIG_FX, 0.35, 0.8);
         actor.position = moveToward(actor.position, order.destination, moveSpeed(actor) * dt);
         actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
         this.syncEntityElevation(actor);
@@ -3066,7 +3073,7 @@ export class TacticalSim {
         order.destination = { ...pad.to };
         order.elapsed = 0;
         order.duration = 1.7;
-        this.effect("blast", { ...actor.position }, { ...actor.position }, 0xffd166, 0.4, 1.0);
+        this.effect("ping", { ...actor.position }, { ...actor.position }, LAUNCH_FX, 0.6, 1.2);
         this.pushLog(`${actor.name} hits the launch pad!`);
         this.tally(actor.team, "launches");
         return;
@@ -4188,13 +4195,14 @@ export class TacticalSim {
       if (e.crackedTurn !== undefined && e.crackedTurn < this.turn) {
         for (const part of e.parts) part.hp = 0;
         recomputeStatus(e);
-        this.effect("blast", { ...e.position }, { ...e.position }, 0x4f9fd0, 0.9, e.radius + 1.4);
+        this.effect("ping", { ...e.position }, { ...e.position }, ICE_FX, 0.9, e.radius + 1.4);
+        this.effect("blast", { ...e.position }, { ...e.position }, PULSE_WATER, 0.9, e.radius + 1.4);
         this.pushLog(`${e.name} breaks through the ice and sinks!`);
         this.checkEndState();
         continue;
       }
       e.crackedTurn = this.turn;
-      this.effect("ping", { ...e.position }, { ...e.position }, 0xd8f0ff, 0.8, e.radius + 1.0);
+      this.effect("ping", { ...e.position }, { ...e.position }, ICE_FX, 0.8, e.radius + 1.0);
       this.pushLog(`The ice cracks under ${e.name}: move it off this turn`);
     }
   }
@@ -4936,8 +4944,8 @@ export class TacticalSim {
   private eruptAt(actor: CombatEntity): void {
     // Still underground while the throws resolve: a body flung off the spot must not "slam into" the Mole coming up beneath it.
     this.syncEntityElevation(actor);
-    this.effect("land", { ...actor.position }, { ...actor.position }, 0x8a6a42, 0.9, ERUPT_RADIUS);
-    this.effect("blast", { ...actor.position }, { ...actor.position }, 0xc8a070, 0.45, 1.2);
+    this.effect("ping", { ...actor.position }, { ...actor.position }, ERUPT_FX, 0.9, ERUPT_RADIUS); // the ground heaves: a crash
+    this.effect("land", { ...actor.position }, { ...actor.position }, DIG_FX, 0.9, ERUPT_RADIUS);
     let hit = 0;
     for (const e of this.entities) {
       if (e.team === actor.team || e.team === "neutral" || !e.status.alive || e.flying || e.carriedById || e.burrowed || e.kind === "cover" || isBuildingKind(e.kind) || isDefenseKind(e.kind)) continue;
@@ -4964,7 +4972,7 @@ export class TacticalSim {
       // The rocket fist: a real hit, then a throw twice a shove's.
       const part = preferredPart(target, "center");
       const result = applyDamage(target, part.id, Math.round(PUNCH_DAMAGE * this.teamDamageScale(actor) * (target.dugIn ?? 1)));
-      this.effect("blast", { ...target.position }, { ...target.position }, 0xffc27a, 0.45, 1.1);
+      this.effect("strike", { ...actor.position }, { ...target.position }, 0xffc27a, 0.6, target.radius + 1.2);
       this.pushLog(`${actor.name} PUNCHES ${target.name}`);
       this.afterDamage(actor, target, result, "Punch");
       this.tally(actor.team, "punches");
@@ -7171,7 +7179,8 @@ export class TacticalSim {
   private scheduleMapStrikes(): void {
     this.pendingStrikes = [];
     this.strikeClock = 0;
-    // The freight train reaches the middle of its tracks just under a second into the resolve.
+    // The freight train reaches the middle of its tracks just under a second into the resolve; its horn sounds as it enters.
+    if (this.trainTracksOn(this.turn).length) this.effect("ping", { x: 0, z: 0 }, { x: 0, z: 0 }, HORN_FX, 0.2, 0.5);
     if (this.trainTracksOn(this.turn).length) this.pendingStrikes.push({ at: 0.95, point: { x: 0, z: 0 }, radius: 0, damage: this.mapDef.train!.damage, kind: "train" });
     for (const zone of this.eventZonesForTurn(this.turn)) {
       if (zone.kind === "barrage") {
@@ -7218,7 +7227,7 @@ export class TacticalSim {
     let hit = 0;
     for (const track of this.trainTracksOn(this.turn)) {
       const midZ = (track.minZ + track.maxZ) / 2;
-      for (let x = track.minX; x <= track.maxX; x += 3) this.effect("land", { x, z: midZ }, { x, z: midZ }, 0xd8c8a0, 0.5, 1.2);
+      for (let x = track.minX; x <= track.maxX; x += 3) this.effect("land", { x, z: midZ }, { x, z: midZ }, DIG_FX, 0.5, 1.2);
       for (const e of this.entities) {
         if (!e.status.alive || e.flying || e.burrowed || e.carriedById || e.kind === "cover" || e.kind === "base") continue;
         const r = e.radius * 0.6;

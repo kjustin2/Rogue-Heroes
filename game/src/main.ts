@@ -37,6 +37,7 @@ import {
   FACTIONS,
   type FactionId,
   CLASH_BLAST,
+  DIG_FX, ERUPT_FX, HORN_FX, ICE_FX, LAUNCH_FX,
   PULSE_EMP,
   isPulseBlast,
   CLASH_BOLT,
@@ -2364,8 +2365,20 @@ function processBattleEvents(): void {
     if (seenEffectIds.has(effect.id)) continue;
     seenEffectIds.add(effect.id);
     const heard = stage.isInView(effect.to) ? 1 : 0.35;
-    if (effect.type === "blast" && effect.color === 0xff7a2a && (effect.radius ?? 0) >= 3) {
-      sfx.ignite(heard); // a puddle of oil catching
+    if (effect.type === "land" && effect.color === DIG_FX) {
+      // dirt and dust puffs (a burrowing Mole, the train's wake): silent
+    } else if (effect.type === "ping" && effect.color === HORN_FX) {
+      sfx.horn();
+    } else if (effect.type === "ping" && effect.color === ICE_FX) {
+      sfx.crash(heard * 0.6); // the ice cracking
+    } else if (effect.type === "ping" && effect.color === ERUPT_FX) {
+      sfx.crash(heard); // a Mole bursting out of the ground
+      feel.addTrauma(0.1 * heard);
+    } else if (effect.type === "ping" && effect.color === LAUNCH_FX) {
+      sfx.jet();
+      feel.addTrauma(0.06 * heard);
+    } else if (effect.type === "blast" && effect.color === 0xff7a2a) {
+      sfx.ignite(heard); // fire catching (a flamer's splash, a Molotov, the slag), never an explosion
       feel.addTrauma(0.06 * heard);
     } else if (effect.type === "blast" && isPulseBlast(effect.color)) {
       if (effect.color === PULSE_EMP) { sfx.clank(heard); feel.addTrauma(0.05 * heard); } else sfx.place(heard); // a pulse, not a bang
