@@ -36,7 +36,6 @@ describe("every projectile family flies and lands as expected", () => {
     it(c.name, () => {
       const range = c.dist ?? 10;
       const shooter = c.make("s", "Shooter", "player", { x: -6, z: -2 });
-      if (shooter.kind === "artillery") shooter.deployed = true;
       const target = pinned(createHeavy("t", "Target", "enemy", { x: -6 + range, z: -2 }));
       const sim = new TacticalSim([shooter, target]);
       sim.select("s");

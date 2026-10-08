@@ -53,7 +53,7 @@ const ARC = 0xbfe9ff; // electric
 
 export type ProjectileFamily =
   | "rifle" | "carbine" | "sniper" | "mg" | "pellet" | "pistol" | "flame"
-  | "grenade" | "launcher" | "mortar" | "smoke" | "bomb"
+  | "grenade" | "launcher" | "mortar" | "bomb"
   | "tank" | "artillery" | "siege" | "rocket";
 
 /** Which visual family a round belongs to. The sim only knows four projectile kinds; the look
@@ -66,7 +66,7 @@ export function projectileFamily(p: Projectile): ProjectileFamily {
   // aircraft cannon and flak fire warm MG tracers now; the base relay throws a real shell.
   if (p.kind === "bolt") return src === "base" ? "tank" : "mg";
   if (p.kind === "grenade") {
-    if (src === "mortar" || src === "mortarpit") return p.smoke ? "smoke" : "mortar";
+    if (src === "mortar" || src === "mortarpit") return "mortar";
     if (src && isAirKind(src)) return "bomb";
     return "grenade";
   }
@@ -78,7 +78,7 @@ export function projectileFamily(p: Projectile): ProjectileFamily {
   return "rifle";
 }
 
-const LOBBED = new Set<ProjectileFamily>(["mortar", "smoke", "artillery", "siege", "tank", "launcher", "grenade", "bomb"]);
+const LOBBED = new Set<ProjectileFamily>(["mortar", "artillery", "siege", "tank", "launcher", "grenade", "bomb"]);
 const SMALL_ARMS = new Set<ProjectileFamily>(["rifle", "carbine", "pistol", "mg", "sniper", "pellet"]);
 export function isSmallArms(family: ProjectileFamily): boolean { return SMALL_ARMS.has(family); }
 export function isLobbed(family: ProjectileFamily): boolean { return LOBBED.has(family); }
@@ -87,7 +87,7 @@ export function isLobbed(family: ProjectileFamily): boolean { return LOBBED.has(
 export function trailLength(family: ProjectileFamily): number {
   switch (family) {
     case "flame": return 9;
-    case "mortar": case "smoke": case "artillery": case "siege": case "tank": return 8;
+    case "mortar": case "artillery": case "siege": case "tank": return 8;
     case "rocket": return 7;
     case "sniper": return 7;
     case "mg": return 7;
@@ -117,7 +117,7 @@ function easeOut(behind: number, reach: number): number { return smooth((1 - beh
 export function trailStep(family: ProjectileFamily): number {
   switch (family) {
     case "flame": return 0.3;
-    case "mortar": case "smoke": case "artillery": case "siege": case "bomb": return 0.42;
+    case "mortar": case "artillery": case "siege": case "bomb": return 0.42;
     case "launcher": case "grenade": return 0.36;
     case "tank": return 0.3;
     case "rocket": return 0.3;
@@ -493,7 +493,8 @@ const ROUND: Record<string, RoundSpec> = {
  */
 const UNIT_ROUND: Partial<Record<EntityKind, RoundSpec>> = {
   jumper: { w: 0.78, len: 0.5, head: 0.85, core: HOT, sleeve: 0xffb04a, tandem: 2 }, // three-round burst beads
-  hookshot: { w: 1.5, len: 1.6, head: 1.4, core: 0xfff0c8, sleeve: BRASS, collar: true, rings: 1 }, // a fat brass harpoon with a barbed collar
+  hookshot: { w: 1.5, len: 1.6, head: 1.4, core: 0xfff0c8, sleeve: BRASS, collar: true, rings: 1 },
+  harpoon: { w: 1.6, len: 1.8, head: 1.5, core: 0xfff0c8, sleeve: BRASS, collar: true, rings: 1 }, // a fat brass harpoon with a barbed collar
   skater: { w: 0.7, len: 0.6, head: 0.75, core: HOT, sleeve: 0xffc27a, tandem: 2 }, // a quick three-dart spray from a rider at speed
   mole: { w: 1.0, len: 0.4, head: 0.95, core: HOT, sleeve: 0xd8843a }, // a dull copper bead from the sidearm
   chopbike: { w: 0.9, len: 0.45, head: 0.9, core: HOT, sleeve: 0xffa040, twin: true }, // a rider's pistol pair
@@ -712,15 +713,14 @@ function launcherModel(team: number, age: number): THREE.Group {
   return group;
 }
 
-function mortarModel(family: ProjectileFamily, team: number, age: number): THREE.Group {
+function mortarModel(team: number, age: number): THREE.Group {
   const group = new THREE.Group();
-  const smoke = family === "smoke";
-  const body = rimmed("mortar-body", smoke ? SMOKE_LIGHT : OLIVE, [1.26, 1.14, 1.26]);
-  const band = new THREE.Mesh(projectileGeometry("shell-band"), fxSolid(smoke ? 0xf2efe6 : team));
+  const body = rimmed("mortar-body", OLIVE, [1.26, 1.14, 1.26]);
+  const band = new THREE.Mesh(projectileGeometry("shell-band"), fxSolid(team));
   band.rotation.x = Math.PI / 2;
   band.position.y = -0.02;
   band.frustumCulled = false;
-  const tip = solid("ember", smoke ? 0xf2efe6 : HOT, 1.5);
+  const tip = solid("ember", HOT, 1.5);
   tip.position.y = 0.3;
   tip.scale.setScalar(1.4);
   for (const angle of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
@@ -796,7 +796,7 @@ export function makeProjectileModel(p: Projectile, family: ProjectileFamily): TH
     case "rocket": return rocketModel(p.age);
     case "grenade": return p.sourceKind === "molotov" ? bottleModel(p.age) : grenadeModel(team, p.age, p.state === "rolling");
     case "launcher": return launcherModel(team, p.age);
-    case "mortar": case "smoke": return mortarModel(family, team, p.age);
+    case "mortar": return mortarModel(team, p.age);
     case "bomb": return bombModel(team, p.age);
     case "flame": return flameHead(p.age);
     case "pellet": return pelletModel(team, seed);
@@ -878,7 +878,7 @@ export function makeProjectileTrail(p: Projectile, family: ProjectileFamily, his
     return out;
   }
   const tapered = family === "grenade" || family === "launcher" || family === "bomb" ? 0.45 : family === "pistol" || family === "carbine" ? 0.7 : 1;
-  const trailColor = family === "mg" ? (seedOf(p.id) % 2 === 0 ? TRACER_ALT : TRACER) : family === "grenade" || family === "mortar" || family === "smoke" || family === "bomb" ? SMOKE_LIGHT : family === "launcher" ? BRASS : family === "sniper" || family === "rocket" ? SMOKE_LIGHT : TRACER;
+  const trailColor = family === "mg" ? (seedOf(p.id) % 2 === 0 ? TRACER_ALT : TRACER) : family === "grenade" || family === "mortar" || family === "bomb" ? SMOKE_LIGHT : family === "launcher" ? BRASS : family === "sniper" || family === "rocket" ? SMOKE_LIGHT : TRACER;
   const lobbed = LOBBED.has(family);
   // Tapered ribbon from the HEAD back: fat and bright at the round, thin and faint at the tail.
   // The first segment runs head → newest sample, so it grows continuously instead of the ribbon
@@ -939,7 +939,7 @@ export function makeProjectileTrail(p: Projectile, family: ProjectileFamily, his
     }
   }
   const descending = p.height < p.previousHeight - 0.01;
-  if (descending && n >= 1 && (family === "mortar" || family === "artillery" || family === "siege" || family === "bomb" || family === "smoke")) {
+  if (descending && n >= 1 && (family === "mortar" || family === "artillery" || family === "siege" || family === "bomb")) {
     // WHISTLE-FALL: two thin white speed lines trailing the round as it noses down, flickering in
     // length, and the ground shadow (below) swelling under it. They grow with the descent rate so
     // the top of the arc eases them in.
@@ -966,7 +966,7 @@ export function makeProjectileTrail(p: Projectile, family: ProjectileFamily, his
 export function makeProjectileShadow(p: Projectile, family: ProjectileFamily): THREE.Mesh {
   const groundY = terrainHeightAt(p.position) + 0.028;
   const above = Math.max(0, p.height - groundY);
-  const base = family === "artillery" || family === "bomb" ? 0.44 : family === "tank" || family === "siege" || family === "mortar" || family === "smoke" ? 0.36 : family === "grenade" || family === "launcher" ? 0.3 : family === "flame" ? 0.3 : family === "pellet" || family === "pistol" ? 0.18 : 0.24;
+  const base = family === "artillery" || family === "bomb" ? 0.44 : family === "tank" || family === "siege" || family === "mortar" ? 0.36 : family === "grenade" || family === "launcher" ? 0.3 : family === "flame" ? 0.3 : family === "pellet" || family === "pistol" ? 0.18 : 0.24;
   const radius = [0.18, 0.24, 0.3, 0.36, 0.44].reduce((best, r) => Math.abs(r - base) < Math.abs(best - base) ? r : best, 0.24);
   const descending = LOBBED.has(family) && p.height < p.previousHeight - 0.01 && family !== "tank";
   const shrink = clamp01(1 - above * 0.05);
@@ -1060,7 +1060,7 @@ export function makeMuzzleFlash(p: Projectile, family: ProjectileFamily): THREE.
         group.scale.setScalar((big ? 1.2 : 1.0) * pop);
         break;
       }
-      case "launcher": case "mortar": case "smoke": {
+      case "launcher": case "mortar": {
         const s = puff(0.5 * pop + t * 0.4, SMOKE_LIGHT);
         group.add(s);
         if (family === "launcher") group.add(starburst(4, 0.5, 0.6, FLASH, FLASH_RIM, 0.9, seed));

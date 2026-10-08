@@ -93,8 +93,7 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "ram", label: "Ram", tip: "Tank only. Select a close target or wall, then confirm. Costs 1 AP, deals 72 damage, and damages your front armor." },
   { id: "melee", label: "Strike", tip: "Infantry only. Rush up to 3.5m and strike in ONE order: the blow knocks the target back (Strikers charge 6.5m and hit hardest). Tanks don't budge." },
   { id: "push", label: "Push", tip: "Breaker only. Rush in and punch a unit far away. Into water it drowns; over the edge of the map it is gone. Tanks don't budge." },
-  { id: "smoke", label: "Smoke", tip: "Mortar only. Lay a 3-turn smoke cloud that swallows flat shots; arcing rounds sail over. 1 AP." },
-  { id: "deploy", label: "Deploy", tip: "Artillery only. Outriggers down (whole turn): the gun fires only deployed, deploys itself any turn it holds still, and packing up to move costs a turn." },
+  { id: "salvo", label: "Salvo", tip: "Mortar only. Three lighter shells walk down a line through the spot: short, on it, long. 1 AP." },
   { id: "leap", label: "Jump", tip: "Infantry: hop a few metres, over a crate or a low wall, up onto a ledge, across a gap. A trooper mid-hop is hard to hit. 1 AP." },
   { id: "slam", label: "Slam", tip: "Sledge only. Swing the hammer in a circle: every foe within 3m is hurt and flung far. 1 AP." },
   { id: "detonate", label: "Detonate", tip: "Boomer only. Blows itself up after its other orders: everything within 3.6m is wrecked and flung. Move first, then Detonate. 1 AP." },
@@ -128,7 +127,7 @@ export interface HudCallbacks {
   queueShootPart(id: string, partId: string): boolean;
   queueGrenadePart(id: string, partId: string): boolean;
   queueGrenadeAt(destination: Vec2): boolean;
-  queueSmokeAt(destination: Vec2): boolean;
+  queueSalvoAt(destination: Vec2): boolean;
   queueLeap(destination: Vec2): boolean;
   onAllSet?(): void;
   queueMan(id: string): boolean;
@@ -139,7 +138,6 @@ export interface HudCallbacks {
   queueMelee(id: string): boolean;
   queueMeleePart(id: string, partId: string): boolean;
   queueShove(id: string): boolean;
-  queueDeploy(): boolean;
   queueSpawnTroop(kind: TroopKind): boolean;
   beginDeploy(kind: TroopKind): void;
   cancelDeploy(): void;
@@ -430,9 +428,9 @@ export class Hud {
       }
       return;
     }
-    // Smoke: the mortar lobs a smoke round onto the clicked ground point.
-    if (this.action === "smoke" && this.sim.phase === "command") {
-      if (this.callbacks.queueSmokeAt(destination)) {
+    // Salvo: the mortar walks three shells across the clicked ground point.
+    if (this.action === "salvo" && this.sim.phase === "command") {
+      if (this.callbacks.queueSalvoAt(destination)) {
         this.action = "select";
         this.callbacks.setIntent("select");
       }
@@ -679,9 +677,6 @@ export class Hud {
     }
     if (confirm === "melee" && this.targetId && this.targetPartId) {
       if (this.callbacks.queueMeleePart(this.targetId, this.targetPartId)) this.afterConfirmedOrder();
-    }
-    if (confirm === "deploy") {
-      if (this.callbacks.queueDeploy()) this.afterConfirmedOrder();
     }
 
     const coverAction = target.closest<HTMLElement>("[data-cover-action]")?.dataset.coverAction;
@@ -1213,7 +1208,6 @@ function orderPlanner(
     action === "melee" ? meleeState(target, targetPartId, canMelee, meleeStatus?.reason, sim) : "",
     action === "interact" ? coverInteractionState(actor, target, sim) : "",
     action === "inspect" ? inspectTargetState(actor, target, sim) : "",
-    action === "deploy" ? deployState(actor, sim) : "",
   ].filter(Boolean).join("");
 
   return `
@@ -1616,20 +1610,6 @@ function ramState(target: CombatEntity | undefined, canRam: boolean, reason: str
     <button class="btn confirm ${canRam ? "" : "disabled"}" data-confirm="ram" data-disabled="${!canRam}" data-tip="${escapeAttr(tip)}">
       Confirm Ram
       <span>72 dmg</span>
-    </button>
-  `;
-}
-
-function deployState(actor: CombatEntity | undefined, sim: TacticalSim): string {
-  const reason = actor ? sim.deployFailureReason(actor) : "Select artillery first";
-  return `
-    <div class="target-summary ${reason ? "blocked" : ""}">
-      <strong>${reason ? "Deploy unavailable" : "Ready to deploy"}</strong>
-      <span>${reason ? escapeHtml(reason) : "Outriggers go down this resolve. From next turn the gun can fire; moving again means packing up for a turn."}</span>
-    </div>
-    <button class="btn confirm ${reason ? "disabled" : ""}" data-confirm="deploy" data-disabled="${Boolean(reason)}" data-tip="${escapeAttr("Deploy the gun (whole turn).")}">
-      Deploy
-      <span>all AP</span>
     </button>
   `;
 }
@@ -2221,18 +2201,17 @@ function partRow(part: DamagePart, active: boolean): string {
 function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: TacticalSim): boolean {
   if (!actor || sim.phase !== "command" || actor.commandPoints <= 0) return true;
   if (action === "move") return !actor.status.canMove;
-  if (action === "shoot") return !actor.status.canShoot || (actor.kind === "artillery" && !actor.deployed);
+  if (action === "shoot") return !actor.status.canShoot;
   if (action === "grenade") return !(actor.kind === "soldier" || actor.flying) || actor.grenades <= 0;
   if (action === "ram") return actor.kind !== "tank" || !actor.status.canMove;
   if (action === "melee") return !isInfantryKind(actor.kind) || !actor.status.canMove || !hasStrikeWeapon(actor);
   if (action === "push") return !isInfantryKind(actor.kind) || !actor.status.canMove;
-  if (action === "smoke") return Boolean(sim.smokeFailureReason(actor));
+  if (action === "salvo") return Boolean(sim.salvoFailureReason(actor));
   if (action === "leap") return !actor.status.canMove;
   if (action === "slam") return Boolean(sim.slamFailureReason(actor));
   if (action === "detonate") return Boolean(sim.detonateFailureReason(actor));
   if (action === "dismount") return !actor.occupantId;
   if (action === "man") return !actor.status.canMove || !sim.entities.some((e) => isMountKind(e.kind) && !sim.manFailureReason(actor, e));
-  if (action === "deploy") return Boolean(sim.deployFailureReason(actor));
   return false;
 }
 
@@ -2267,13 +2246,12 @@ function actionApplicable(action: Intent, actor: CombatEntity | undefined): bool
   if (action === "ram") return actor.kind === "tank";
   if (action === "melee") return isInfantryKind(actor.kind) && actor.kind !== "boomer";
   if (action === "push") return actor.kind === "breaker"; // every Strike throws now (2026-10-07): the Push card is the Breaker's Punch
-  if (action === "smoke") return actor.kind === "mortar";
+  if (action === "salvo") return actor.kind === "mortar";
   if (action === "leap") return isInfantryKind(actor.kind) && actor.kind !== "jumper";
   if (action === "dismount") return isMountKind(actor.kind);
   if (action === "slam") return actor.kind === "sledge";
   if (action === "detonate") return actor.kind === "boomer";
   if (action === "man") return isInfantryKind(actor.kind);
-  if (action === "deploy") return actor.kind === "artillery";
   if (action === "grenade") return (actor.kind === "soldier" || actor.flying === true) && actor.maxGrenades > 0;
   if (action === "shoot") return actor.kind !== "boomer"; // no gun at all: no dead card
   if (action === "move") return true;
@@ -2288,14 +2266,12 @@ function actionDisabledReason(action: Intent, actor: CombatEntity | undefined, s
     return `${actor.name} cannot move — its legs or treads are destroyed.`;
   }
   if (action === "shoot" && !actor.status.canShoot) return `${actor.name} cannot shoot — its weapon is destroyed.`;
-  if (action === "shoot" && actor.kind === "artillery" && !actor.deployed) return `${actor.name} must deploy before it can fire (Deploy, or hold still for a turn).`;
   if (action === "melee" && !hasStrikeWeapon(actor)) return `${actor.name} has no intact weapon to strike with.`;
   if (action === "grenade" && actor.grenades <= 0) return `${actor.name} is out of ${actor.flying ? "bombs" : "grenades"}.`;
-  if (action === "smoke") return sim.smokeFailureReason(actor) ?? undefined;
+  if (action === "salvo") return sim.salvoFailureReason(actor) ?? undefined;
   if (action === "leap") return `${actor.name} cannot jump: its legs are destroyed.`;
   if (action === "dismount") return "No crew to send away";
   if (action === "man") return !actor.status.canMove ? `${actor.name} cannot move` : "No free post in reach";
-  if (action === "deploy") return sim.deployFailureReason(actor) ?? undefined;
   if (action === "detonate") return sim.detonateFailureReason(actor) ?? undefined;
   return undefined;
 }
@@ -2305,10 +2281,9 @@ function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: Tac
   if (action === "ram") return actor.kind === "tank" && actor.status.canMove;
   if (action === "melee") return isInfantryKind(actor.kind) && actor.status.canMove && hasStrikeWeapon(actor);
   if (action === "push") return actor.kind === "breaker" && actor.status.canMove;
-  if (action === "smoke") return actor.kind === "mortar" && actor.status.canShoot;
+  if (action === "salvo") return actor.kind === "mortar" && actor.status.canShoot;
   if (action === "leap") return isInfantryKind(actor.kind) && actor.kind !== "jumper" && actor.status.canMove;
   if (action === "man") return isInfantryKind(actor.kind);
-  if (action === "deploy") return actor.kind === "artillery";
   if (action === "grenade") return (actor.kind === "soldier" || actor.flying === true) && actor.maxGrenades > 0;
   if (action === "shoot") return actor.status.canShoot;
   if (action === "move") return actor.status.canMove;
@@ -2385,11 +2360,8 @@ function statusText(entity: CombatEntity): string {
   if (entity.status.disarmed) return "Disarmed";
   if (entity.status.commandLimited) return "Limited";
   if (entity.suppressedUntilTurn !== undefined) return "Suppressed";
-  if (entity.kind === "tank" && entity.hullDown) return "Hull down";
   if (entity.dugIn) return "Dug in";
   if (entity.digging) return "Digging in";
-  // Artillery can only fire once its outriggers are down: the status says which it is.
-  if (entity.kind === "artillery") return entity.deployed ? "Deployed" : "Packed";
   return "Ready";
 }
 

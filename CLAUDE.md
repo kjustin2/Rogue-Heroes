@@ -79,7 +79,8 @@ always run muted. Scratch diagnostics go in `game/scripts/_*.mjs` and are delete
   `revealedOrders`, `medevac`, `resupply`, `armorLevel`, `smokescreen`, `emp` (the burst), `disabledUntilTurn`.
 - **FOCUSED SET** (2026-10-07): no launch / jump pads, no carrying, no Crouch / Man / Leave / Deploy-ritual cards, no stat-bump
   tech, no sentries. Banned: `launchPads`, `passengerIds`, `carriedById`, `queueLoad`, `queueUnload`, `markedUntilTurn`,
-  `sentryTtl`, `createSentry`, `railstrike`, `"cluster"` (the support), `spotterBoost`.
+  `sentryTtl`, `createSentry`, `railstrike`, `"cluster"` (the support), `spotterBoost`, `hullDown`, `queueDeploy`,
+  `smokeClouds`, `queueSmokeAt`.
 - **HEAVIES NEVER MOVE** (2026-10-07): tank, artillery and bulldozer are not thrown, pulled or shoved (`IMMOVABLE_HEAVIES`); troopers
   always fly from a blast.
 - **NO MESHY, no AI-generated models** (2026-09-20). Every model is a validated Blender kit or

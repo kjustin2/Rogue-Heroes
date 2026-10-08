@@ -29,7 +29,7 @@ export type AirKind = "gunship" | "bomber";
 export type TroopKind = InfantryKind | GroundVehicleKind | AirKind;
 
 /** Emplacements and scenery: never deployed as troops, but they are damageable entities. */
-export type StructureKind = "base" | "turret" | "exturret" | "bunker" | "wall" | "cover" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost" | "cannonpost";
+export type StructureKind = "base" | "turret" | "exturret" | "bunker" | "wall" | "cover" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost" | "cannonpost" | "harpoon";
 
 /** Every kind that can exist as a CombatEntity. */
 export type EntityKind = TroopKind | StructureKind;
@@ -210,7 +210,7 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   mole: foot({ moveRange: 8, moveSpeed: 6.5, shotDamage: 16, weaponRange: 12, accurateFraction: 0.55, accuracyLabel: "sidearm", hpMultiplier: 1.05, burrow: true, aiValue: 6 }),
 
   // --- Ground vehicles ---
-  tank: u({ moveRange: 5.4, moveSpeed: 5.5, shotDamage: 78, weaponRange: 28, projectile: "shell", projectileSpeed: 2.45, spread: 2.65, accurateFraction: 0.5, accuracyLabel: "stabilized cannon", ramRange: 2.85, groundShell: true, hpMultiplier: 1.6, aiValue: 3 }),
+  tank: u({ moveRange: 5.4, moveSpeed: 5.5, shotDamage: 78, weaponRange: 28, projectile: "shell", projectileSpeed: 2.45, spread: 2.65, accurateFraction: 0.5, accuracyLabel: "stabilized cannon", ramRange: 2.85, groundShell: true, hpMultiplier: 1.6, bowl: true, aiValue: 3 }),
   artillery: u({ moveRange: 4.2, moveSpeed: 4.4, shotDamage: 88, weaponRange: 42, projectile: "shell", projectileSpeed: 2.45, spread: 4.6, accurateFraction: 0.55, accuracyLabel: "siege gun", groundShell: true, hpMultiplier: 1.2, aiValue: 9 }),
   flak: u({ moveRange: 6.0, moveSpeed: 6.2, shotDamage: 18, weaponRange: 32, accurateFraction: 0.3, projectile: "bolt", accuracyLabel: "flak cannon", aiValue: 6 }),
   // RUNABOUT: a light car that drives far (13m a move) and its mounted MG always fires (carrying was cut, 2026-10-07).
@@ -229,6 +229,8 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   // The Home Base has no gun until it buys the Fortress Cannon (BASE_UPGRADES): one heavy shell, far reach.
   base: u({ shotDamage: 120, weaponRange: 40, accurateFraction: 0.55, projectile: "shell", projectileSpeed: 2.45, spread: 2.2, accuracyLabel: "fortress cannon", groundShell: true, aiValue: 6 }),
   turret: u({ shotDamage: 30, weaponRange: 24, projectile: "bolt", projectileSpeed: 2.8, spread: 2.3, accurateFraction: 0.375, spreadPerMeter: 0.05, accuracyLabel: "turret autogun", aiValue: 4 }),
+  // HARPOON TOWER (2026-10-07): fires a harpoon at the nearest ground foe in reach every turn by itself and drags it to its foot.
+  harpoon: u({ shotDamage: 14, weaponRange: 14, projectileSpeed: 2.6, spread: 1.6, accurateFraction: 0.6, accuracyLabel: "harpoon", pull: true, aiValue: 3 }),
   exturret: u({ shotDamage: 58, projectile: "shell", projectileSpeed: 2.45, spread: 4.6, accurateFraction: 0.77, accuracyLabel: "mortar battery", groundShell: true, hpMultiplier: 1.25, aiValue: 5 }),
   // MG Bunker: a Heavy Gunner's ten-round burst behind concrete. Short reach, suppresses, very tough.
   bunker: u({ shotDamage: 8, weaponRange: 22, burst: 10, spread: 4.4, accurateFraction: 0.32, spreadPerMeter: 0.16, accuracyLabel: "bunker MG", suppresses: true, hpMultiplier: 1.3, aiValue: 5 }),
@@ -267,7 +269,7 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "sniper", label: "Marksman", role: "Sniper", cost: 160, cooldown: 2, tech: "recon", tip: "Rail rifle that pierces every body on its line (cover still stops it)." },
   { kind: "striker", label: "Striker", role: "Melee", cost: 470, cooldown: 2, tech: "assault", tip: "CHARGE: the strike order closes up to 6.5m for free before the blade lands, so anything within a lunge is already in reach." },
   { kind: "heavy", label: "Heavy Gunner", role: "Suppression", cost: 250, cooldown: 2, tech: "assault", tip: "Machine-gun bursts SUPPRESS whoever they hit: one action point and a forced crouch next turn. Strays rake nearby targets." },
-  { kind: "mortar", label: "Mortar Team", role: "Indirect", cost: 260, cooldown: 3, tech: "ordnance", tip: "High-arc fire over walls and ridges. SMOKE order: a 3-turn cloud that swallows flat shots; arcing rounds sail over." },
+  { kind: "mortar", label: "Mortar Team", role: "Indirect", cost: 260, cooldown: 3, tech: "ordnance", tip: "High-arc fire over walls and ridges. SALVO: three lighter shells walk down a line through the spot, short, on it and long." },
   { kind: "jumper", label: "Jump Trooper", role: "Vertical", cost: 170, cooldown: 2, tech: "shock", tip: "Jet pack: its move is a leap over cliffs, water and walls. It lands like a bomb, hurting and throwing every foe within 2.5m. Flak can catch it mid-arc." },
   { kind: "flamer", label: "Flamer", role: "Burn", cost: 260, cooldown: 2, tech: "incendiary", tip: "Short-range flame projector. Hits leave burning ground for 2 turns: run, don't crouch. FEAR: enemy infantry near the flames break and run from them. Its fuel tanks explode when shot." },
   { kind: "bazooka", label: "Rocketeer", role: "Anti-Armor", cost: 300, cooldown: 2, tech: "shock", tip: "Shoulder-fired rocket: hits vehicles half again as hard (96 against armour). Slow, short-ranged and fragile: armour will hunt it." },
@@ -282,8 +284,8 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "chopbike", label: "Chop Bike", role: "Raider", cost: 260, cooldown: 2, tech: "motorpool", tip: "A fast bike. Every move rides THROUGH troopers, slashing and scattering each one it passes." },
   { kind: "bulldozer", label: "Bulldozer", role: "Shover", cost: 380, cooldown: 3, tech: "fieldworks", tip: "Slow and armoured. Every move SHOVES everything ahead of its blade: troopers, tanks, props, wrecks. Into walls, water, off the map." },
   { kind: "runabout", label: "Runabout", role: "Scout Car", cost: 300, cooldown: 2, tech: "motorpool", tip: "A fast light car: drives 13m a move and its mounted MG always fires." },
-  { kind: "tank", label: "Tank", role: "Armor", cost: 760, cooldown: 3, tech: "armor", tip: "Massive HP, big gun, rams and crushes cover. HULL DOWN: a turn spent still takes 30% less damage until it moves." },
-  { kind: "artillery", label: "Artillery", role: "Siege", cost: 380, cooldown: 3, tech: "siege", tip: "Long-range siege gun; devastating at distance and tough, but helpless up close. DEPLOY: fires only with outriggers down (a turn, or any turn it holds still); packing up to move costs a turn." },
+  { kind: "tank", label: "Tank", role: "Armor", cost: 760, cooldown: 3, tech: "armor", tip: "Massive HP, big gun, rams and crushes cover. RUNS OVER troopers in its path, throwing them aside." },
+  { kind: "artillery", label: "Artillery", role: "Siege", cost: 380, cooldown: 3, tech: "siege", tip: "Long-range siege gun; devastating at distance and tough, but helpless up close. It fires or moves in a turn, never both." },
   { kind: "flak", label: "Flak Track", role: "Anti-Air", cost: 240, cooldown: 2, tech: "recon", tip: "Anti-air specialist: shreds aircraft at range. Weak against ground armour." },
   { kind: "gunship", label: "Gunship", role: "Air", cost: 420, cooldown: 3, tech: "airwing", tip: "Overflies all terrain. Its autocannon rakes ground troops and aircraft alike; BOMB drops a huge blast on any spot in reach, no flight needed, that throws troops flying. Fragile to flak; cannot capture." },
   { kind: "bomber", label: "Bomber", role: "Heavy Bomber", cost: 470, cooldown: 4, tech: "airwing", tip: "Slow, tough heavy bomber. CARPET: each drop is three bombs in a line across the spot. No gun at all, so send an escort." },
@@ -297,7 +299,7 @@ export function troopSpec(kind: TroopKind): TroopSpec {
 
 /** Buildable from the base's Defenses deck. Sandbags become cover and a minefield becomes mines;
  *  every other kind is an emplacement entity of the same name. */
-export type DefenseKind = "wall" | "sandbag" | "turret" | "exturret" | "bunker" | "springtrap" | "minefield" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost";
+export type DefenseKind = "wall" | "sandbag" | "turret" | "exturret" | "bunker" | "springtrap" | "harpoon" | "minefield" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost";
 
 export interface DefenseSpec {
   kind: DefenseKind;
@@ -323,6 +325,7 @@ export const DEFENSE_CATALOG: readonly DefenseSpec[] = [
   { kind: "mortarpit", label: "Mortar Pit", role: "Manned", cost: 140, tech: "ordnance", tip: "A dug-in mortar that fires only while a trooper crews it (Man it). Longer reach and harder hits than a Mortar Team, behind sandbags." },
   { kind: "rocketpost", label: "Rocket Post", role: "Manned", cost: 170, tech: "shock", tip: "A sandbag ring with an anti-armour launcher: it fires only while a trooper crews it (Man it). One heavy rocket a shot, long reach, hard on hulls." },
   { kind: "flamepost", label: "Flame Post", role: "Manned", cost: 150, tech: "incendiary", tip: "A sandbag ring with a flame projector: it fires only while a trooper crews it (Man it). Short reach; whoever it hits burns for 3 turns." },
+  { kind: "harpoon", label: "Harpoon Tower", role: "Grapple", cost: 180, tech: "shock", tip: "Fires by itself every turn: a harpoon at the nearest foe within 14m that drags it to the tower's foot. Tanks don't budge." },
   { kind: "springtrap", label: "Spring Trap", role: "Launcher", cost: 100, tip: "A hidden spring plate. The first foe to step on it is LAUNCHED far across the map: into water, off a ledge, off the board. One use." },
   { kind: "minefield", label: "Minefield", role: "Trap", cost: 110, tech: "ordnance", tip: "Three hidden mines in a small triangle. The first enemy to step on each sets it off." },
   { kind: "exturret", label: "Mortar Turret", role: "Siege", cost: 360, tech: "ordnance", tip: "Stationary splash battery: hits harder and soaks more than a gun turret. Clears cover and clusters; detonates if its magazine is hit." },

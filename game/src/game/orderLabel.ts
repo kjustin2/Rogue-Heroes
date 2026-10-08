@@ -30,8 +30,7 @@ export function orderLabel(order: TacticalOrder, actor: CombatEntity | undefined
       return order.shove ? make(actor?.kind === "breaker" ? "Punch" : "Push", who) : make("Strike", withPart);
     case "ram": return make("Ram", who);
     case "defend": return make("Crouch");
-    case "smoke": return make("Smoke");
-    case "deploy": return make("Deploy");
+    case "salvo": return make("Salvo");
     case "man": return make("Man", who);
     case "slam": return make("Slam");
     case "detonate": return make("Detonate");

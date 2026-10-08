@@ -129,17 +129,12 @@ export interface CombatEntity {
   // SUPPRESSED: a machine-gun burst that lands leaves the target with one command point next
   // turn and drops it to a crouch. Set to the turn it wears off; read at turn start.
   suppressedUntilTurn?: number;
-  // HULL DOWN: a tank that did not move this resolve takes 30% less damage until it moves.
-  hullDown?: boolean;
   // DUG IN (Bastion doctrine): a ground unit that held position through the last resolve takes
   // `dugIn` x damage from every source until it moves or is thrown. The multiplier itself, so
   // applyDamage needs no faction lookup and a restored save carries it.
   dugIn?: number;
   // DIGGING: held position through one resolve; if it holds through the next too it is dug in.
   digging?: boolean;
-  // DEPLOYED (artillery): outriggers down. The gun only fires deployed; deploying costs a turn
-  // (an explicit order, or automatically when it does not move), and moving undeploys it.
-  deployed?: boolean;
   // Who set this down (a sentry), for the log and pop-in.
   ownerTeam?: Team;
   /** A Mole Sapper under the ground (mid-move): not shot, not blocked, not drawn; it erupts when the move ends. */
@@ -664,7 +659,7 @@ export function createBase(id: string, name: string, team: Team, position: Vec2)
 function createDefense(
   id: string,
   name: string,
-  kind: "turret" | "exturret" | "bunker" | "wall" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost" | "cannonpost",
+  kind: "turret" | "exturret" | "bunker" | "wall" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost" | "cannonpost" | "harpoon",
   team: Team,
   position: Vec2,
   config: { radius: number; height: number; parts: DamagePart[]; canAct: boolean }
@@ -701,6 +696,19 @@ export function createTurret(id: string, name: string, team: Team, position: Vec
       part("mount", "Turret Base", "core", 86, { critical: true }),
       part("gun", "Auto-Cannon", "weapon", 40),
       part("sensor", "Targeting Array", "utility", 26),
+    ],
+  });
+}
+
+// A harpoon tower: a launcher on a mast with a cable drum. It fires by itself every turn and drags what it hits in.
+export function createHarpoonTower(id: string, name: string, team: Team, position: Vec2): CombatEntity {
+  return createDefense(id, name, "harpoon", team, position, {
+    radius: 0.9,
+    height: 2.2,
+    canAct: true,
+    parts: [
+      part("mount", "Tower", "core", 80, { critical: true }),
+      part("gun", "Harpoon Launcher", "weapon", 34),
     ],
   });
 }
@@ -1027,7 +1035,7 @@ export function isBuildingKind(kind: EntityKind): boolean {
 // Player/enemy-built defensive emplacements (turret, explosive turret, wall).
 /** A defense a trooper crews to make it fire: it acts only while someone stands at the gun. */
 export function isMountKind(kind: string): boolean {
-  return kind === "gunpost" || kind === "mortarpit" || kind === "rocketpost" || kind === "flamepost" || kind === "cannonpost";
+  return kind === "gunpost" || kind === "mortarpit" || kind === "rocketpost" || kind === "flamepost" || kind === "cannonpost" || kind === "harpoon";
 }
 
 export function isDefenseKind(kind: EntityKind): boolean {

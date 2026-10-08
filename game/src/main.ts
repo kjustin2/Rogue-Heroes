@@ -230,7 +230,7 @@ const hud = new Hud(uiRoot, sim, {
   queueShootPart: (id: string, partId: string) => sim.queueShootPart(id, partId),
   queueGrenadePart: (id: string, partId: string) => sim.queueGrenadePart(id, partId),
   queueGrenadeAt: (destination) => sim.queueGrenadeAt(destination),
-  queueSmokeAt: (destination) => sim.queueSmokeAt(destination),
+  queueSalvoAt: (destination) => sim.queueSalvoAt(destination),
   queueLeap: (destination) => { const ok = sim.queueLeap(destination); if (!ok) refused(); return ok; },
   onAllSet: () => sfx.allSet(),
   queueMan: (id: string) => { const ok = sim.queueMan(id); if (!ok) refused(); return ok; },
@@ -269,11 +269,6 @@ const hud = new Hud(uiRoot, sim, {
     const ok = sim.queueBuildStructure(point);
     if (ok) sfx.build();
     else refused();
-    return ok;
-  },
-  queueDeploy: () => {
-    const ok = sim.queueDeploy();
-    if (ok) sfx.select();
     return ok;
   },
   beginSupport: (kind) => {
@@ -2563,7 +2558,7 @@ declare global {
       queueClimbCover(id: string): boolean;
       queueGrenadePart(id: string, partId: string): boolean;
       queueGrenadeAt(destination: Vec2): boolean;
-      queueSmokeAt(destination: Vec2): boolean;
+      queueSalvoAt(destination: Vec2): boolean;
       queueLeap(destination: Vec2): boolean;
       onAllSet?(): void;
       queueMan(id: string): boolean;
@@ -2588,7 +2583,6 @@ declare global {
       beginSupport(kind: SupportPowerKind): void;
       queueSupportAt(point: Vec2): boolean;
       queueCapture(id: string): boolean;
-      queueDeploy(): boolean;
       upgradeBaseIncome(): boolean;
       upgradeBaseCommand(): boolean;
       upgradeBase(id: string): boolean;
@@ -2685,7 +2679,7 @@ window.__rht = {
   queueClimbCover: (id) => sim.queueClimbCover(id),
   queueGrenadePart: (id, partId) => sim.queueGrenadePart(id, partId),
   queueGrenadeAt: (destination) => sim.queueGrenadeAt(destination),
-  queueSmokeAt: (destination) => sim.queueSmokeAt(destination),
+  queueSalvoAt: (destination) => sim.queueSalvoAt(destination),
   queueLeap: (destination) => sim.queueLeap(destination),
   queueMan: (id: string) => sim.queueMan(id),
   queueDismount: () => sim.queueDismount(),
@@ -2712,7 +2706,6 @@ window.__rht = {
   beginSupport: (kind) => sim.setPendingSupport(kind),
   queueSupportAt: (point) => sim.queueSupportAt(point),
   queueCapture: (id) => sim.queueCapture(id),
-  queueDeploy: () => sim.queueDeploy(),
   upgradeBaseIncome: () => sim.upgradeBaseIncome(),
   upgradeBaseCommand: () => sim.upgradeBaseCommand(),
   upgradeBase: (id) => sim.upgradeBaseWith(id as never),

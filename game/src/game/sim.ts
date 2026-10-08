@@ -50,6 +50,7 @@ import {
   COVER_PROFILES,
   createExTurret,
   createBunker,
+  createHarpoonTower,
   createWall,
   factionLiving,
   isBuildingKind,
@@ -94,8 +95,8 @@ export type Phase = "command" | "resolve" | "victory" | "defeat";
 // (measured from the click to the edge of the unit's footprint).
 export const DEPLOY_SNAP = 1.5;
 
-export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "push" | "interact" | "inspect" | "build" | "support" | "smoke" | "deploy" | "man" | "dismount" | "leap" | "slam" | "detonate";
-export type OrderKind = "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "smoke" | "deploy" | "man" | "slam" | "detonate";
+export type Intent = "select" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "push" | "interact" | "inspect" | "build" | "support" | "salvo" | "deploy" | "man" | "dismount" | "leap" | "slam" | "detonate";
+export type OrderKind = "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "salvo" | "man" | "slam" | "detonate";
 
 // Orders that carry a unit off its spot this resolve -- anything else leaves it dug in.
 const MOVING_ORDERS: ReadonlySet<OrderKind> = new Set<OrderKind>(["move", "ram", "melee", "slam"]);
@@ -183,6 +184,9 @@ export const ERUPT_RADIUS = 2;
 const ERUPT_DAMAGE = 20;
 const MOLOTOV_RADIUS = 2.2;
 // ROUND 8: the Chop Bike's sweep (wider and harder than the Skater's) and the Bulldozer's blade.
+const RUN_OVER_WIDTH = 1.5;
+export const RUN_OVER_DAMAGE = 28;
+const RUN_OVER_THROW = 3.5;
 const BIKE_WIDTH = 1.25;
 const BIKE_DAMAGE = 14;
 const BIKE_THROW = 4.5;
@@ -205,13 +209,12 @@ const BURN_STATUS_DAMAGE = 8; // ...for this much a turn
 // STRIKER CHARGE: metres of free closing distance folded into the strike order.
 export const STRIKER_CHARGE = 6.5;
 // Hull-down tanks take this fraction of incoming shot damage.
-export const HULL_DOWN_DAMAGE = 0.7;
 // FEAR (flamer): enemy infantry this close to burning ground at turn start run from it.
 export const FLAMER_FEAR_RADIUS = 6;
 // CARPET (bomber): three bombs in a line along the heading, this far apart.
 export const CARPET_BOMBS = 3;
 const CARPET_SPACING = 2.2;
-// Seconds into a shoot / grenade / smoke order at which the round leaves (the attack pose's
+// Seconds into a shoot / grenade / salvo order at which the round leaves (the attack pose's
 // contact point is authored against this; the renderer's carpet-bomb fall ends on it).
 export const ATTACK_FIRE_AT = 0.58;
 // A jump trooper landing next to an enemy: damage before difficulty scaling.
@@ -253,10 +256,10 @@ const BURN_DAMAGE = 14;
 // How many of each placement a side may keep standing at once.
 // MANNED EMPLACEMENTS: a trooper this close (past both radii) is crewing it; farther and it has left.
 const MOUNT_CREW_REACH = 1.4;
-// Mortar smoke round: a cloud that blocks flat line of fire through it for a few turns.
-const SMOKE_RADIUS = 3;
-export const SMOKE_TURNS = 3;
-const SMOKE_COLOR = 0x9aa3a8;
+// SALVO (the Mortar's Walking Fire, 2026-10-07: replaces the smoke round): three lighter shells walk down a line through the spot.
+export const SALVO_SHELLS = 3;
+const SALVO_STEP = 2;
+const SALVO_SCALE = 0.5; // each shell's damage against a normal mortar round
 // Sniper mark: every OTHER friendly shooter gets this spread multiplier and accurate-band bonus
 // against a unit a sniper fired at, until the turn after.
 // SHOCKWAVE (support, owner 2026-10-07: knockback chaos): a 4m air-burst, little damage, a huge throw.
@@ -391,8 +394,6 @@ export interface ShotPreview {
   arcHeight: number;
   blockedById?: string;
   blockedByGround?: boolean;
-  // A flat shot whose line passes through a smoke cloud is swallowed by it (arcing rounds sail over).
-  blockedBySmoke?: boolean;
   warningEntityId?: string;
   warningText?: string;
 }
@@ -434,8 +435,8 @@ export interface Projectile {
   arcDistance: number;
   attackMode?: AttackMode;
   groundTarget?: boolean;
-  // A mortar smoke round: lands a smoke cloud instead of a blast, harms nothing.
-  smoke?: boolean;
+  // One shell of a mortar salvo (Walking Fire): a lighter blast.
+  salvo?: boolean;
   state: "flying" | "rolling";
   rollElapsed: number;
   rollDuration: number;
@@ -529,9 +530,8 @@ export const CLASH_BOLT = 0xd8ecff;
 export const CLASH_BLAST = 0xff9a3a;
 /** Utility "blasts" that are a pulse, not an explosion: an electrical burst and a smoke shell opening. They draw a ring of light or a puff, never a fireball, a scorch or a shove. */
 export const PULSE_EMP = 0x8de4ff;
-export const PULSE_SMOKE = 0x9aa3a8; // SMOKE_COLOR
 export const PULSE_WATER = 0x4f9fd0; // a trooper or vehicle going under: a ring and spray, never a fireball
-export const isPulseBlast = (color: number | undefined): boolean => color === PULSE_EMP || color === PULSE_SMOKE || color === PULSE_WATER;
+export const isPulseBlast = (color: number | undefined): boolean => color === PULSE_EMP || color === PULSE_WATER;
 const PROJECTILE_COLLIDE_RADIUS = 0.42;
 /** A bomb run closer than this drops where it hovers (no move to queue). */
 const KNOCKBACK_SCALE = 2.4;
@@ -578,8 +578,6 @@ export class TacticalSim {
   // something lights it: any blast inside it (grenade, shell, mine, a flamer round, burning ground)
   // detonates the WHOLE cloud at once. Chokes whoever stands in it meanwhile. Rides serialize().
   readonly gasClouds: { id: string; x: number; z: number; radius: number; maxRadius: number }[] = [];
-  // Mortar smoke: flat shots through a cloud are lost in it; shrinks a turn per turn start. Rides serialize().
-  readonly smokeClouds: { id: string; x: number; z: number; radius: number; turnsLeft: number }[] = [];
   readonly mines: { id: string; x: number; z: number; team: Team; spring?: boolean }[] = [];
   // Loose cash caches scattered on the field at battle start: a unit that runs over one banks its
   // cash for that team, then it's gone. A "grab the loot" incentive to spread out and take ground.
@@ -779,7 +777,6 @@ export class TacticalSim {
     this.salvage.clear();
     this.burnZones.splice(0);
     this.gasClouds.splice(0);
-    this.smokeClouds.splice(0);
     this.mines.splice(0);
     this.placePickups();
     this.placeFieldMounts();
@@ -932,9 +929,9 @@ export class TacticalSim {
     const actor = this.requirePlayerActor();
     if (!actor) return false;
     if (!actor.status.canMove) return this.reject(`${actor.name} cannot move`);
-    // DEPLOYED artillery has its outriggers down: packing up to move takes the whole turn.
-    if (actor.kind === "artillery" && actor.deployed && (actor.commandPoints < actor.maxCommandPoints || this.orders.some((o) => o.actorId === actor.id))) {
-      return this.reject(`${actor.name} is deployed — packing up to move takes its whole turn`);
+    // ARTILLERY fires or moves in a turn, never both (2026-10-07: the deploy ritual was cut).
+    if (actor.kind === "artillery" && this.orders.some((o) => o.actorId === actor.id && (o.kind === "shoot" || o.kind === "grenade"))) {
+      return this.reject(`${actor.name} has fired this turn — the gun can't move as well`);
     }
     const start = this.projectedActorForPreview(actor).position;
     const desired = clampToArena(destination);
@@ -951,11 +948,6 @@ export class TacticalSim {
       return this.reject(`${actor.name} can't move that way`);
     }
     if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
-    if (actor.kind === "artillery" && actor.deployed) {
-      actor.commandPoints = 0;
-      actor.deployed = false;
-      this.pushLog(`${actor.name} packs up its outriggers to move`);
-    }
     // Say WHICH limit applied: range, or the obstacle already named in the log.
     if (dist(desired, limitedByRange) > 0.05 && dist(limitedByRange, limited) <= 0.05) this.pushLog(`${actor.name} move limited to ${moveRange(actor).toFixed(1)}m`);
     this.addOrder({
@@ -1205,7 +1197,7 @@ export class TacticalSim {
     if (!actor) return false;
     if (!canGroundShellAttack(actor)) return this.reject(`${actor.name} cannot fire at the ground`);
     if (!actor.status.canShoot) return this.reject(`${actor.name} cannot shoot`);
-    if (actor.kind === "artillery" && !actor.deployed) return this.reject(`${actor.name} must deploy before it can fire`);
+    if (actor.kind === "artillery" && this.orders.some((o) => o.actorId === actor.id && (o.kind === "move" || o.kind === "ram"))) return this.reject(`${actor.name} is moving this turn — the gun can't fire as well`);
     if (this.isPowerCut(actor)) return this.reject(`${actor.name} has no power — the conduit is cut`);
     const point = clampToArena(destination);
     const projected = this.projectedActorForPreview(actor);
@@ -1215,91 +1207,32 @@ export class TacticalSim {
     return true;
   }
 
-  // ---- Mortar smoke round ----
+  // ---- Mortar salvo: Walking Fire ----
 
-  smokeFailureReason(actor: CombatEntity | undefined, point?: Vec2): string | undefined {
+  salvoFailureReason(actor: CombatEntity | undefined, point?: Vec2): string | undefined {
     if (!actor) return "Select a unit first";
-    if (actor.kind !== "mortar") return "Only a mortar fires smoke rounds";
+    if (actor.kind !== "mortar") return "Only a mortar walks a salvo";
     if (!actor.status.alive) return `${actor.name} is disabled`;
     if (!actor.status.canShoot) return `${actor.name} cannot fire — its tube is destroyed`;
     if (actor.commandPoints <= 0) return `${actor.name} has no action points`;
     if (point) {
       const projected = this.projectedActorForPreview(actor);
-      if (dist(muzzlePoint(projected, "weapon"), point) > projectileRange(actor, "weapon")) return "Smoke target is out of range";
+      if (dist(muzzlePoint(projected, "weapon"), point) > projectileRange(actor, "weapon")) return "Salvo target is out of range";
     }
     return undefined;
   }
 
-  /** Player API: lob a smoke round at a ground point (1 CP, mortar range). The cloud that lands
-   *  blocks flat line of fire through it for SMOKE_TURNS turns; arcing rounds sail over it. */
-  queueSmokeAt(destination: Vec2): boolean {
+  /** Player API: WALKING FIRE. Three lighter shells land in a line through the spot, stepping away from the mortar (1 AP). */
+  queueSalvoAt(destination: Vec2): boolean {
     const actor = this.requirePlayerActor();
     if (!actor) return false;
     const point = clampToArena(destination);
-    const failure = this.smokeFailureReason(actor, point);
+    const failure = this.salvoFailureReason(actor, point);
     if (failure) return this.reject(failure);
     if (!spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
-    this.addOrder({ actorId: actor.id, kind: "smoke", destination: point, aim: "center", duration: 1.35 });
-    this.pushLog(`${actor.name} lays a smoke round on the marked spot`);
+    this.addOrder({ actorId: actor.id, kind: "salvo", destination: point, aim: "center", duration: 1.35 });
+    this.pushLog(`${actor.name} walks a salvo across the marked spot`);
     return true;
-  }
-
-  // ---- Artillery deploy ----
-
-  deployFailureReason(actor: CombatEntity | undefined): string | undefined {
-    if (!actor) return "Select a unit first";
-    if (actor.kind !== "artillery") return "Only artillery deploys";
-    if (!actor.status.alive) return `${actor.name} is disabled`;
-    if (actor.deployed) return `${actor.name} is already deployed`;
-    if (actor.commandPoints <= 0) return `${actor.name} has no action points`;
-    if (this.orders.some((o) => o.actorId === actor.id && (o.kind === "move" || o.kind === "ram"))) return `${actor.name} can't deploy while it has a move queued`;
-    return undefined;
-  }
-
-  /** Player API: plant the artillery's outriggers (whole turn). It fires only while deployed and
-   *  packing up to move costs a turn again. An artillery that simply does not move also deploys
-   *  on its own at end of turn — this order just says so explicitly. */
-  queueDeploy(): boolean {
-    const actor = this.requirePlayerActor();
-    if (!actor) return false;
-    const failure = this.deployFailureReason(actor);
-    if (failure) return this.reject(failure);
-    actor.commandPoints = 0;
-    this.addOrder({ actorId: actor.id, kind: "deploy", aim: "center", duration: 1.4 });
-    this.pushLog(`${actor.name} plants its outriggers`);
-    return true;
-  }
-
-  /** Whether a flat shot along from->to passes through a smoke cloud. */
-  private smokeBlocksSegment(from: Vec2, to: Vec2): boolean {
-    for (const cloud of this.smokeClouds) {
-      if (pointToSegmentDistance(cloud, from, to) <= cloud.radius) return true;
-    }
-    return false;
-  }
-
-  /** Where along from->to a flat round first enters a smoke cloud (0..1), or undefined. */
-  private smokeEntryProgress(from: Vec2, to: Vec2): number | undefined {
-    let best: number | undefined;
-    for (const cloud of this.smokeClouds) {
-      if (pointToSegmentDistance(cloud, from, to) > cloud.radius) continue;
-      const progress = clamp(segmentProgress(cloud, from, to), 0, 1);
-      if (best === undefined || progress < best) best = progress;
-    }
-    return best;
-  }
-
-  private burstSmokeAt(actor: CombatEntity, point: Vec2): void {
-    const at = clampToArena({ ...point });
-    this.smokeClouds.push({ id: `smoke-${++this.effectSeq}`, x: at.x, z: at.z, radius: SMOKE_RADIUS, turnsLeft: SMOKE_TURNS });
-    this.effect("blast", at, at, SMOKE_COLOR, 0.9, SMOKE_RADIUS);
-    this.pushLog(`${actor.name}'s smoke round blooms — flat shots through it are lost`);
-  }
-
-  private runSmokeTick(): void {
-    if (!this.smokeClouds.length) return;
-    for (const cloud of this.smokeClouds) cloud.turnsLeft -= 1;
-    this.smokeClouds.splice(0, this.smokeClouds.length, ...this.smokeClouds.filter((cloud) => cloud.turnsLeft > 0));
   }
 
   // True when the selected unit can aim its weapon at the ground (explosive direct/indirect fire).
@@ -2234,8 +2167,6 @@ export class TacticalSim {
     // A shot at a FLYING target sails up over ground cover (flyers forfeit terrain defense), so no
     // low prop intercepts it.
     const cover = ground || warning || intendedTarget.flying ? undefined : this.firstCoverBetweenShot(from, aimPoint, fromHeight, aimHeight, intendedTarget.id, arcHeight);
-    // Smoke swallows a FLAT round; a lobbed grenade or a mortar/artillery arc sails over the cloud.
-    const smoke = !ground && !warning && !cover && arcHeight <= 0.5 && this.smokeBlocksSegment(from, aimPoint);
     const impactTarget = warning ?? cover ?? intendedTarget;
     const impactPart = warning ? preferredPart(warning, warning.kind === "cover" ? "center" : "weakest") : cover ? preferredPart(cover, "center") : intendedPart;
     const aim = cover || warning ? "center" : aimForPart(intendedPart);
@@ -2256,7 +2187,7 @@ export class TacticalSim {
       aimHeight,
       impactHeight,
       // A dug-in target (Bastion) takes its multiplier inside applyDamage; the preview shows it too.
-      amount: ground || smoke ? 0 : Math.round(this.estimateShotDamage(actor, impactTarget, impactPart, aim, Boolean(cover), attackMode) * (attackMode === "weapon" ? burstCount(actor) : 1) * (impactTarget.dugIn ?? 1)),
+      amount: ground ? 0 : Math.round(this.estimateShotDamage(actor, impactTarget, impactPart, aim, Boolean(cover), attackMode) * (attackMode === "weapon" ? burstCount(actor) : 1) * (impactTarget.dugIn ?? 1)),
       accuracy: accuracy.rating,
       accuracyLabel: accuracy.label,
       hitChance: accuracy.hitChance,
@@ -2266,7 +2197,6 @@ export class TacticalSim {
       arcHeight,
       blockedById: cover?.id,
       blockedByGround: Boolean(ground),
-      blockedBySmoke: smoke,
       warningEntityId: friendlyWarning?.id,
       warningText: friendlyWarning ? `Friendly fire risk: ${friendlyWarning.name} is in the path` : undefined,
     };
@@ -2282,6 +2212,7 @@ export class TacticalSim {
       this.queueEnemyOrders();
     }
     this.queueBaseCannons();
+    this.queueHarpoonTowers();
     // HULL DOWN. A tank with no move/ram order this resolve settles in and takes 30% less damage
     // until it moves. Decided here so the enemy AI's tanks get it on the same terms.
     // DEPLOY. Artillery that does not move this resolve plants its outriggers (it can fire from
@@ -2302,20 +2233,6 @@ export class TacticalSim {
         this.pushLog(`${e.name} digs in`);
       }
       e.digging = true;
-    }
-    for (const e of this.entities) {
-      if (!e.status.alive || (e.kind !== "tank" && e.kind !== "artillery")) continue;
-      const moving = this.orders.some((o) => o.actorId === e.id && !o.done && (o.kind === "move" || o.kind === "ram"));
-      if (e.kind === "tank") {
-        const was = Boolean(e.hullDown);
-        e.hullDown = !moving;
-        if (e.hullDown && !was) this.pushLog(`${e.name} goes hull down`);
-      } else if (moving) {
-        e.deployed = false;
-      } else if (!e.deployed && !this.orders.some((o) => o.actorId === e.id && o.kind === "deploy")) {
-        e.deployed = true;
-        this.pushLog(`${e.name} deploys its outriggers`);
-      }
     }
     this.scheduleMapStrikes();
     this.scheduleSupportStrikes();
@@ -2552,7 +2469,6 @@ export class TacticalSim {
       salvage: [...this.salvage],
       burnZones: this.burnZones,
       gasClouds: this.gasClouds,
-      smokeClouds: this.smokeClouds,
       queuedSupport: this.queuedSupport,
       hotseat: this.hotseat,
       mines: this.mines,
@@ -2571,7 +2487,6 @@ export class TacticalSim {
         wrecked?: string[]; salvage?: [string, number][];
         burnZones?: { id: string; x: number; z: number; radius: number; turnsLeft: number; damage?: number }[];
         gasClouds?: { id: string; x: number; z: number; radius: number; maxRadius: number }[];
-        smokeClouds?: { id: string; x: number; z: number; radius: number; turnsLeft: number }[];
         queuedSupport?: { kind: SupportPowerKind; point: Vec2; dir: Vec2; team?: Team }[];
         hotseat?: boolean;
         mines?: { id: string; x: number; z: number; team: Team; spring?: boolean }[];
@@ -2620,7 +2535,6 @@ export class TacticalSim {
       for (const [id, amount] of data.salvage ?? []) this.salvage.set(id, amount);
       this.burnZones.splice(0, this.burnZones.length, ...(data.burnZones ?? []));
       this.gasClouds.splice(0, this.gasClouds.length, ...(data.gasClouds ?? []));
-      this.smokeClouds.splice(0, this.smokeClouds.length, ...(data.smokeClouds ?? []));
       this.hotseat = data.hotseat === true;
       this.sidesSwapped = false;
       this.mines.splice(0, this.mines.length, ...(data.mines ?? []));
@@ -2695,13 +2609,12 @@ export class TacticalSim {
 
   private queueShootFor(actor: CombatEntity, target: CombatEntity, aim: AimMode, partId?: string, free = false): boolean {
     if (!actor.status.canShoot) return this.reject(`${actor.name} cannot shoot`);
-    if (actor.kind === "artillery" && !actor.deployed) return this.reject(`${actor.name} must deploy before it can fire`);
+    if (actor.kind === "artillery" && this.orders.some((o) => o.actorId === actor.id && (o.kind === "move" || o.kind === "ram"))) return this.reject(`${actor.name} is moving this turn — the gun can't fire as well`);
     if (this.isPowerCut(actor)) return this.reject(`${actor.name} has no power — the conduit is cut`);
     // Ground units CAN shoot up at flyers -- that is the anti-air. (A gunship's autocannon also rakes ground targets; the bomber has no gun.)
     const requestedPart = partId ? this.targetableParts(target).find((part) => part.id === partId) : undefined;
     if (partId && !requestedPart) return this.reject(`${target.name} does not have that targetable part`);
     const targetPart = requestedPart ?? preferredPart(target, aim);
-    if (this.previewAttack(actor.id, target.id, targetPart.id, "weapon")?.blockedBySmoke) return this.reject(`${target.name} is hidden by smoke`);
     if (!free && !spendCommandPoint(actor)) return this.reject(`${actor.name} has no action points`);
     this.addOrder({
       actorId: actor.id,
@@ -2791,18 +2704,6 @@ export class TacticalSim {
           hit += 1;
         }
         this.pushLog(hit ? `${actor.name} swings the hammer: ${hit} thrown` : `${actor.name} swings the hammer at the air`);
-      }
-      if (order.elapsed >= order.duration) order.done = true;
-      return;
-    }
-
-    if (order.kind === "deploy") {
-      if (!order.fired && order.elapsed >= 0.7) {
-        order.fired = true;
-        if (!actor.deployed) {
-          actor.deployed = true;
-          this.pushLog(`${actor.name} is deployed — outriggers down, gun ready`);
-        }
       }
       if (order.elapsed >= order.duration) order.done = true;
       return;
@@ -2910,8 +2811,8 @@ export class TacticalSim {
       return;
     }
 
-    if (order.kind === "shoot" || order.kind === "grenade" || order.kind === "smoke") {
-      // Ground-targeted explosives (hand grenade, tank/artillery/turret shell, mortar smoke) carry a
+    if (order.kind === "shoot" || order.kind === "grenade" || order.kind === "salvo") {
+      // Ground-targeted explosives (hand grenade, tank/artillery/turret shell, a mortar salvo) carry a
       // destination but no specific entity; they fly to the marked spot and detonate.
       if (order.destination && !order.targetId) {
         if (order.fired) {
@@ -2931,9 +2832,19 @@ export class TacticalSim {
             for (const point of carpetDropPoints(actor, order.destination)) order.projectileId = this.launchGrenadeAtPoint(order, actor, point);
             this.pushLog(`${actor.name} carpets the line with ${CARPET_BOMBS} bombs`);
           } else {
-            order.projectileId = order.kind === "grenade"
-              ? this.launchGrenadeAtPoint(order, actor, order.destination)
-              : this.launchExplosiveAtPoint(order, actor, order.destination, order.kind === "smoke");
+            if (order.kind === "salvo") {
+              // WALKING FIRE: one short, one on the spot, one long, along the mortar's line to it.
+              const d = dist(actor.position, order.destination) || 1;
+              const step = { x: ((order.destination.x - actor.position.x) / d) * SALVO_STEP, z: ((order.destination.z - actor.position.z) / d) * SALVO_STEP };
+              for (let i = 0; i < SALVO_SHELLS; i += 1) {
+                const k = i - (SALVO_SHELLS - 1) / 2;
+                order.projectileId = this.launchExplosiveAtPoint(order, actor, clampToArena({ x: order.destination.x + step.x * k, z: order.destination.z + step.z * k }), true);
+              }
+            } else {
+              order.projectileId = order.kind === "grenade"
+                ? this.launchGrenadeAtPoint(order, actor, order.destination)
+                : this.launchExplosiveAtPoint(order, actor, order.destination);
+            }
           }
         }
         return;
@@ -3396,7 +3307,7 @@ export class TacticalSim {
   }
 
   // Lob a unit's explosive round (tank/artillery shell, turret shell) at a ground point.
-  private launchExplosiveAtPoint(order: TacticalOrder, actor: CombatEntity, point: Vec2, smoke = false): string {
+  private launchExplosiveAtPoint(order: TacticalOrder, actor: CombatEntity, point: Vec2, salvo = false): string {
     this.syncEntityElevation(actor);
     const origin = muzzlePoint(actor, "weapon");
     const originHeight = muzzleHeight(actor, "weapon");
@@ -3441,16 +3352,15 @@ export class TacticalSim {
       arcDistance: horizontalDistance,
       attackMode: "weapon",
       groundTarget: true,
-      smoke: smoke || undefined,
+      salvo: salvo || undefined,
       state: "flying",
       rollElapsed: 0,
       rollDuration: 0,
       rollSpeed: 0,
       ignoredEntityIds: [],
     };
-    if (smoke) projectile.color = SMOKE_COLOR;
     this.projectiles.push(projectile);
-    this.pushLog(smoke ? `${actor.name} fires a smoke round at the marked spot` : `${actor.name} fires at the marked spot`);
+    if (!salvo) this.pushLog(`${actor.name} fires at the marked spot`);
     return projectile.id;
   }
 
@@ -3531,11 +3441,11 @@ export class TacticalSim {
 
   // MID-AIR COLLISIONS (owner 2026-10-02): rounds from OPPOSED sides that cross each other this step
   // meet in the air. A grenade or shell that is hit goes off where it was hit; two plain rounds cancel.
-  // (Bombs dropped from aircraft fall too steeply and fast to be shot down, and smoke rounds are inert.)
+  // (Bombs dropped from aircraft fall too steeply and fast to be shot down, and nothing else is shot down.)
   private collideProjectilesInAir(): void {
     if (this.projectiles.length < 2) return;
     const team = (p: Projectile): Team | undefined => this.entity(p.actorId)?.team;
-    const live = this.projectiles.filter((p) => p.state === "flying" && !p.smoke && !(p.kind === "grenade" && p.originHeight > 2));
+    const live = this.projectiles.filter((p) => p.state === "flying" && !(p.kind === "grenade" && p.originHeight > 2));
     const gone = new Set<string>();
     for (let i = 0; i < live.length; i += 1) {
       for (let j = i + 1; j < live.length; j += 1) {
@@ -3631,17 +3541,6 @@ export class TacticalSim {
     const nextHeight = projectileHeightAt(projectile, nextTravel);
     const ground = firstGroundBetweenShot(projectile.position, next, projectile.height, nextHeight);
     const hit = this.firstEntityHitBySegment(projectile, projectile.position, next, projectile.height, nextHeight);
-    // SMOKE. A flat round that flies into a smoke cloud is lost in it (arcing rounds pass over).
-    const smokeAt = projectile.arcHeight <= 0.5 && !projectile.smoke && this.smokeClouds.length ? this.smokeEntryProgress(projectile.position, next) : undefined;
-    if (smokeAt !== undefined && (!ground || smokeAt <= ground.progress) && (!hit || smokeAt <= hit.progress)) {
-      projectile.travel += step * smokeAt;
-      projectile.position = { x: projectile.position.x + (next.x - projectile.position.x) * smokeAt, z: projectile.position.z + (next.z - projectile.position.z) * smokeAt };
-      this.effect("ping", { ...projectile.position }, { ...projectile.position }, SMOKE_COLOR, 0.5, 0.6);
-      this.pushLog(`${actor.name}'s shot is lost in the smoke${intendedTarget ? ` short of ${intendedTarget.name}` : ""}`);
-      this.removeProjectile(projectile.id);
-      if (order) order.done = true;
-      return;
-    }
     if (ground && (!hit || ground.progress <= hit.progress)) {
       projectile.travel += step * ground.progress;
       projectile.position = { ...ground.point };
@@ -3770,13 +3669,9 @@ export class TacticalSim {
   }
 
   private detonateGroundTarget(projectile: Projectile, actor: CombatEntity, order: TacticalOrder | undefined, point = projectile.position): void {
-    if (projectile.smoke) {
-      this.burstSmokeAt(actor, point);
-      this.removeProjectile(projectile.id);
-      if (order) order.done = true;
-      return;
-    }
-    const blast = explosiveBlast(projectile.kind, actor.kind);
+    const full = explosiveBlast(projectile.kind, actor.kind);
+    // A salvo shell is lighter: half the damage, a little less reach (three of them walk down the line).
+    const blast = projectile.salvo ? { ...full, damage: Math.round(full.damage * SALVO_SCALE), radius: full.radius * 0.85 } : full;
     const word = this.roundWord(actor);
     const blastPoint = { ...point };
     this.pushLog(`${actor.name}'s ${word} explodes at the marked spot`);
@@ -3816,12 +3711,6 @@ export class TacticalSim {
     const actor = this.entity(projectile.actorId);
     const intendedTarget = this.entity(projectile.targetId);
     const order = this.orders.find((candidate) => candidate.id === projectile.orderId);
-    if (projectile.smoke && actor) {
-      this.burstSmokeAt(actor, projectile.position);
-      this.removeProjectile(projectile.id);
-      if (order) order.done = true;
-      return;
-    }
     if (!actor) {
       this.removeProjectile(projectile.id);
       if (order) order.done = true;
@@ -4142,6 +4031,21 @@ export class TacticalSim {
     return best;
   }
 
+  /** HARPOON TOWERS fire by themselves at end of turn: a harpoon at the nearest ground foe in reach (its hit drags it in). */
+  private queueHarpoonTowers(): void {
+    for (const tower of this.entities) {
+      if (tower.kind !== "harpoon" || !tower.status.alive || !tower.status.canShoot) continue;
+      if (this.orders.some((o) => o.actorId === tower.id && !o.done)) continue;
+      const range = projectileRange(tower);
+      const foe = this.entities
+        .filter((e) => e.team !== tower.team && e.team !== "neutral" && e.status.alive && !e.flying && !e.burrowed && e.kind !== "cover" && !isBuildingKind(e.kind) && !isDefenseKind(e.kind) && dist(e.position, tower.position) <= range)
+        .sort((a, b) => dist(a.position, tower.position) - dist(b.position, tower.position))[0];
+      if (!foe) continue;
+      tower.commandPoints = Math.max(tower.commandPoints, 1);
+      this.queueShootFor(tower, foe, "center", undefined, true);
+    }
+  }
+
   /** Dropped tanks are scuttled when their time is out. Runs at turn start. */
   private runDropTick(): void {
     for (const e of [...this.entities]) {
@@ -4337,7 +4241,6 @@ export class TacticalSim {
     let base = baseShotDamage(actor.kind, attackMode);
     const range = dist(actor.position, target.position);
     const falloff = clamp(1.08 - range / 26, 0.65, 1);
-    if (target.kind === "tank" && target.hullDown) base *= HULL_DOWN_DAMAGE;
     const vulnerability = cover ? 1 : vulnerabilityMultiplier(target, targetPart);
     const explosiveActor = actor.kind === "tank" || actor.kind === "artillery" || actor.kind === "mortar" || actor.kind === "exturret";
     const shellObjectBoost = ((attackMode === "weapon" && explosiveActor) || attackMode === "grenade") && target.kind === "cover" ? 1.72 : 1;
@@ -4636,7 +4539,10 @@ export class TacticalSim {
   /** ROCKET SKATER: at the start of a boost, every foe trooper within BOWL_WIDTH of its line is bowled aside. */
   private bowlAlong(actor: CombatEntity, from: Vec2, to: Vec2): void {
     const bike = actor.kind === "chopbike";
-    const width = bike ? BIKE_WIDTH : BOWL_WIDTH, damage = bike ? BIKE_DAMAGE : BOWL_DAMAGE, thrown = bike ? BIKE_THROW : BOWL_THROW;
+    const tank = actor.kind === "tank"; // RUN OVER (2026-10-07, replacing Hull Down): a tank drives straight through troopers
+    const width = tank ? RUN_OVER_WIDTH : bike ? BIKE_WIDTH : BOWL_WIDTH;
+    const damage = tank ? RUN_OVER_DAMAGE : bike ? BIKE_DAMAGE : BOWL_DAMAGE;
+    const thrown = tank ? RUN_OVER_THROW : bike ? BIKE_THROW : BOWL_THROW;
     const dx = to.x - from.x, dz = to.z - from.z;
     const len = Math.hypot(dx, dz);
     if (len < 0.5) return;
@@ -4649,13 +4555,13 @@ export class TacticalSim {
       if (dist(on, e.position) > width + e.radius) continue;
       const result = applyDamage(e, preferredPart(e, "center").id, Math.round(damage * this.teamDamageScale(actor)));
       this.effect("strike", on, e.position, 0xffd9a0, 0.45, e.radius + 0.5);
-      this.afterDamage(actor, e, result, bike ? "Slash" : "Bowl");
+      this.afterDamage(actor, e, result, tank ? "Run Over" : bike ? "Slash" : "Bowl");
       // Thrown off the line, sideways (or to one side when it stood dead centre).
       const side = dist(on, e.position) > 0.05 ? on : { x: on.x - (dz / len) * 0.1, z: on.z + (dx / len) * 0.1 };
       this.applyKnockback(actor, e, side, 0, 1, { ringOut: true, maxThrow: thrown, force: thrown });
       bowled += 1;
     }
-    if (bowled) { this.pushLog(`${actor.name} ${bike ? "slashes through" : "bowls over"} ${bowled} trooper${bowled === 1 ? "" : "s"}`); this.tally(actor.team, bike ? "slashed" : "bowled", bowled); }
+    if (bowled) { this.pushLog(`${actor.name} ${tank ? "runs over" : bike ? "slashes through" : "bowls over"} ${bowled} trooper${bowled === 1 ? "" : "s"}`); this.tally(actor.team, tank ? "runover" : bike ? "slashed" : "bowled", bowled); }
   }
 
   /** Cover a Bulldozer's blade can push: loose props and wrecks, never terrain pieces, bridges or landmarks. */
@@ -5564,23 +5470,18 @@ export class TacticalSim {
     return false;
   }
 
-  /** SMOKE: a mortar screens a friend that two or more guns are working over, a third of the way to the shooters. */
-  private aiSmokeAct(actor: CombatEntity, foes: CombatEntity[], behind: boolean): boolean {
-    if (actor.kind !== "mortar" || actor.commandPoints <= 0 || !actor.status.canShoot || this.smokeClouds.length >= 2) return false;
-    let front: CombatEntity | undefined;
-    let worst = behind ? 2 : 3;
-    for (const u of this.fieldUnits("enemy")) {
-      if (u.id === actor.id || u.flying || u.kind === "mortar") continue;
-      const exposure = this.aiExposureAt(u.position, foes);
-      if (exposure >= worst) { worst = exposure; front = u; }
+  /** SALVO: a mortar with two or more foes standing near each other in reach walks its three shells across them. */
+  private aiSalvoAct(actor: CombatEntity, foes: CombatEntity[]): boolean {
+    if (actor.kind !== "mortar" || actor.commandPoints <= 0 || !actor.status.canShoot) return false;
+    const reach = projectileRange(actor, "weapon");
+    let best: { at: Vec2; n: number } | undefined;
+    for (const f of foes) {
+      if (f.flying || !f.status.alive || dist(f.position, actor.position) > reach) continue;
+      const n = foes.filter((o) => !o.flying && o.status.alive && dist(o.position, f.position) <= SALVO_STEP * 1.6).length;
+      if (n >= 2 && (!best || n > best.n)) best = { at: { ...f.position }, n };
     }
-    if (!front) return false;
-    const foe = nearest(front, foes);
-    if (!foe || dist(front.position, foe.position) < 5) return false;
-    const point = clampToArena({ x: front.position.x + (foe.position.x - front.position.x) * 0.35, z: front.position.z + (foe.position.z - front.position.z) * 0.35 });
-    if (this.smokeClouds.some((c) => dist(c, point) < SMOKE_RADIUS * 1.2) || this.smokeFailureReason(actor, point)) return false;
-    if (!spendCommandPoint(actor)) return false;
-    this.addOrder({ actorId: actor.id, kind: "smoke", destination: point, aim: "center", duration: 1.35 });
+    if (!best || this.salvoFailureReason(actor, best.at) || !spendCommandPoint(actor)) return false;
+    this.addOrder({ actorId: actor.id, kind: "salvo", destination: best.at, aim: "center", duration: 1.35 });
     return true;
   }
 
@@ -5817,7 +5718,6 @@ export class TacticalSim {
     const committed = new Map<string, number>();
     // HARD reads the balance of forces: well behind, it holds a defensive line and lets the player walk into its guns.
     const ratio = profile.tactical ? this.aiStrengthRatio() : 1;
-    const behind = ratio < 1;
     const holding = profile.tactical && this.aiX.posture && this.turn >= 2 && ratio < 0.75;
     const easyBrain = (this.brainOverride ?? this.difficulty) === "easy";
     for (const enemy of this.living("enemy")) {
@@ -5834,10 +5734,10 @@ export class TacticalSim {
       if (this.aiSlamAct(enemy, players)) continue;
       // Push: a foe with water or the edge behind it is a free kill (Hard only).
       if (profile.tactical && this.aiShoveAct(enemy, players)) continue;
-      // The rest of the toolkit (Hard only): carry troops, ram, screen with smoke, sow a mine.
+      // The rest of the toolkit (Hard only): ram, walk a salvo across a clump.
       if (profile.tactical && this.aiX.moves) {
         if (this.aiRamAct(enemy, players)) continue;
-        if (this.aiSmokeAct(enemy, players, behind)) continue;
+        if (this.aiSalvoAct(enemy, players)) continue;
       }
       // A trooper near a free emplacement with a foe in its reach goes and crews it (a Mortar Pit wants a mortarman).
       if (profile.tactical && enemy.commandPoints > 0 && isInfantryKind(enemy.kind)) {
@@ -5924,9 +5824,8 @@ export class TacticalSim {
           committed.set(fireTarget.id, (committed.get(fireTarget.id) ?? 0) + perShot * burst);
         }
       }
-      // Artillery is a POSITION piece: once it has a target in reach it stays put and deploys
-      // (it cannot fire until it has), and once deployed it does not pack up to chase.
-      if (enemy.kind === "artillery" && (shootTarget || enemy.deployed) && enemy.status.canShoot) continue;
+      // Artillery is a POSITION piece: with a target in reach it stays put and fires (it never fires on a turn it moves).
+      if (enemy.kind === "artillery" && shootTarget && enemy.status.canShoot) continue;
       // Otherwise advance: carriers run the flag home, crippled units fall back to base, others
       // push the objective or the nearest threat, routing around (and hugging) solid objects.
       if (enemy.status.canMove && enemy.commandPoints > 0) {
@@ -6123,7 +6022,7 @@ export class TacticalSim {
     const part = preferredPart(target, "center");
     const preview = this.previewAttack(actor.id, target.id, part.id, "weapon");
     if (!preview) return undefined;
-    if (preview.blockedByGround || preview.blockedBySmoke) return { terrain: true };
+    if (preview.blockedByGround) return { terrain: true };
     if (preview.impactEntityId && preview.impactEntityId !== target.id) {
       const blocker = this.entity(preview.impactEntityId);
       return { terrain: false, blocker };
@@ -6715,7 +6614,6 @@ export class TacticalSim {
     this.runBurnTick();
     this.runGasTick();
     this.runDropTick();
-    this.runSmokeTick();
     this.runIceTick();
     // A carrier killed by a turn-start tick (fire, gas) drops its riders now, not at the next resolve (chaos fuzz, 2026-10-07).
     // Forced events are single-turn debug overrides; clear them, then announce the new turn's events.
@@ -7555,6 +7453,7 @@ function makeEmplacement(kind: DefenseKind, id: string, name: string, team: Team
     case "turret": return createTurret(id, name, team, at);
     case "exturret": return createExTurret(id, name, team, at);
     case "bunker": return createBunker(id, name, team, at);
+    case "harpoon": return createHarpoonTower(id, name, team, at);
     case "gunpost": return createGunPost(id, name, team, at);
     case "mortarpit": return createMortarPit(id, name, team, at);
     case "rocketpost": return createRocketPost(id, name, team, at);
@@ -7630,7 +7529,7 @@ const MUZZLE_LOCAL: Partial<Record<string, { x: number; z: number; y: number }>>
   // emplacements
   turret: { x: 0, z: 1.45, y: 0.95 }, exturret: { x: 0, z: 1.1, y: 1.5 }, bunker: { x: 0, z: 1.5, y: 0.72 },
   gunpost: { x: 0, z: 1.1, y: 0.8 }, mortarpit: { x: 0, z: 0.7, y: 0.6 }, rocketpost: { x: 0, z: 1.15, y: 1.1 }, flamepost: { x: 0, z: 1.05, y: 0.62 }, cannonpost: { x: 0, z: 1.75, y: 0.95 },
-  base: { x: 0.2, z: 2.6, y: 3.8 },
+  base: { x: 0.2, z: 2.6, y: 3.8 }, harpoon: { x: 0, z: 0.9, y: 1.9 },
   // long guns carry the muzzle further out front than a carbine does
   sniper: { x: 0.5, z: 1.0, y: 1.12 }, bazooka: { x: 0.45, z: 1.0, y: 1.1 }, flamer: { x: 0.42, z: 0.9, y: 1.0 },
   mortar: { x: 0.46, z: 0.58, y: 1.02 },

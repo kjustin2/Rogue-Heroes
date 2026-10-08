@@ -126,7 +126,6 @@ describe("every unit's gun has an animation from trigger to landing", () => {
     it(kind, () => {
       const range = gun.dist ?? 10;
       const shooter = MAKERS[kind]("s", "Shooter", "player", { x: -6, z: -2 });
-      if (shooter.kind === "artillery") shooter.deployed = true;
       const target = gun.air
         ? pinned(createBomber("t", "Target", "enemy", { x: -6 + range, z: -2 }))
         : pinned(createHeavy("t", "Target", "enemy", { x: -6 + range, z: -2 }));
@@ -195,13 +194,14 @@ describe("every non-gun attack has an animation", () => {
     expect(trace.effects.has("blast")).toBe(true);
   });
 
-  it("mortar smoke: the tube animates and fires a smoke round that bursts", () => {
+  it("mortar salvo: the tube animates and fires three shells that burst", () => {
     const sim = new TacticalSim([createMortar("s", "M", "player", { x: -6, z: -2 }), pinned(createHeavy("t", "T", "enemy", { x: 8, z: 6 }))]);
     sim.select("s");
-    expect(sim.queueSmokeAt({ x: 4, z: -2 }), sim.log[0]).toBe(true);
+    expect(sim.queueSalvoAt({ x: 4, z: -2 }), sim.log[0]).toBe(true);
     const trace = resolve(sim, []);
-    expect(trace.animated.some((a) => a.actorKind === "mortar" && a.family === "launcher"), "the smoke shot never animates the mortar").toBe(true);
-    expect([...trace.families]).toEqual(["smoke"]);
+    expect(trace.animated.some((a) => a.actorKind === "mortar" && a.family === "launcher"), "the salvo never animates the mortar").toBe(true);
+    expect([...trace.families]).toEqual(["mortar"]);
+    expect(trace.rounds.length, "three shells").toBeGreaterThanOrEqual(3);
     for (const round of trace.rounds) expect(drawsSomething(round)).toBe(true);
     expect(trace.effects.has("blast")).toBe(true);
   });
@@ -344,7 +344,7 @@ describe("the renderer's attack choreography covers every family", () => {
     expect(attackFamilyForOrder("soldier", "shoot")).toBe("rifle");
     expect(attackFamilyForOrder("soldier", "grenade")).toBe("throw");
     expect(attackFamilyForOrder("soldier", "melee")).toBe("melee");
-    expect(attackFamilyForOrder("mortar", "smoke")).toBe("launcher");
+    expect(attackFamilyForOrder("mortar", "salvo")).toBe("launcher");
     expect(attackFamilyForOrder("gunship", "grenade")).toBeUndefined(); // a bomb bay, not a gun
     expect(attackFamilyForOrder("soldier", "move")).toBeUndefined();
   });

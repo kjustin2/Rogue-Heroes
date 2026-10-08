@@ -105,15 +105,12 @@ describe("hard AI brain: the full move set", () => {
     expect(mine.some((o) => o.kind === "move")).toBe(false);
   });
 
-  it("a mortar screens a friend that three guns are working over", () => {
+  it("a mortar walks a salvo across a clump of foes in reach", () => {
     const sim = hard();
     const mortar = arm(sim.debugSpawn("mortar", "enemy", { x: 14, z: 6 }));
-    sim.debugSpawn("heavy", "enemy", { x: 6, z: 0 });
     for (const z of [-1.5, 0, 1.5]) sim.debugSpawn("heavy", "player", { x: -4, z });
     settleCommand(sim);
-    expect(ordersOf(sim, mortar.id).some((o) => o.kind === "smoke")).toBe(true);
-    for (let t = 0; t < 20 && sim.phase === "resolve"; t += 0.05) sim.update(0.05);
-    expect(sim.smokeClouds.length).toBeGreaterThan(0);
+    expect(ordersOf(sim, mortar.id).some((o) => o.kind === "salvo")).toBe(true);
   });
 
   it("a trooper holding its ground under fire crouches with the action point it has left", () => {

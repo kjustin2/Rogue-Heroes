@@ -42,62 +42,21 @@ describe("flamer fear", () => {
   });
 });
 
-describe("artillery deploy", () => {
-  it("cannot fire until deployed, deploys by holding still or by order, and packing up to move costs the turn", () => {
+describe("artillery (2026-10-07: no deploy ritual)", () => {
+  it("fires any turn it holds still, but never fires and moves in the same turn", () => {
     const sim = staged();
     const gun = sim.debugSpawn("artillery", "player", { x: -14, z: 0 });
-    const target = sim.debugSpawn("soldier", "enemy", { x: 10, z: 0 });
-    disarm(target);
-    expect(gun.deployed).toBeFalsy();
+    const foe = sim.debugSpawn("soldier", "enemy", { x: 6, z: 0 });
+    disarm(foe);
     sim.debugSelect(gun.id);
-    expect(sim.queueShoot(target.id)).toBe(false);
-    expect(sim.log[0]).toContain("must deploy");
-    expect(sim.queueShootAt({ x: 10, z: 0 })).toBe(false);
-    // Holding still for a turn deploys it automatically…
-    sim.endTurn();
-    settle(sim);
-    expect(gun.deployed).toBe(true);
-    expect(sim.log.some((l) => l.includes("deploys its outriggers"))).toBe(true);
-    // …and deployed it fires (the round is a real order that resolves).
-    sim.debugSelect(gun.id);
-    expect(sim.queueShootAt({ x: 10, z: 0 })).toBe(true);
-    sim.endTurn();
-    settle(sim);
-    expect(sim.log.some((l) => l.includes("fires at the marked spot"))).toBe(true);
-    expect(gun.deployed).toBe(true); // it did not move: still deployed
-
-    // Packing up: a move needs the whole turn and undeploys; a half-spent turn is refused.
-    sim.debugSelect(gun.id);
-    gun.commandPoints = gun.maxCommandPoints - 1;
-    if (gun.commandPoints > 0) {
-      expect(sim.queueMove({ x: -14, z: -4 })).toBe(false);
-      expect(sim.log[0]).toContain("packing up");
-    }
-    gun.commandPoints = gun.maxCommandPoints;
-    expect(sim.queueMove({ x: -14, z: -4 })).toBe(true);
-    expect(gun.commandPoints).toBe(0);
-    expect(gun.deployed).toBe(false);
-    sim.endTurn();
-    settle(sim);
-    expect(gun.deployed).toBe(false); // moved this resolve, so no auto-deploy
-    expect(gun.position.z).toBeLessThan(-1); // it moved (blocked props on Dust Bowl shorten the step)
-
-    // The explicit order takes the whole turn and lands the same flag; it rides a save.
-    sim.debugSelect(gun.id);
-    expect(sim.queueDeploy()).toBe(true);
-    expect(gun.commandPoints).toBe(0);
-    expect(sim.queueDeploy()).toBe(false);
-    sim.endTurn();
-    settle(sim);
-    expect(gun.deployed).toBe(true);
-    const copy = new TacticalSim();
-    expect(copy.restore(sim.serialize())).toBe(true);
-    expect(copy.entity(gun.id)?.deployed).toBe(true);
-    // A plain tank never needs any of this.
-    const tank = sim.debugSpawn("tank", "player", { x: -14, z: 4 });
-    sim.debugSelect(tank.id);
-    expect(sim.queueDeploy()).toBe(false);
-    expect(sim.queueShootAt({ x: 10, z: 0 })).toBe(true);
+    expect(sim.queueShoot(foe.id), sim.log[0]).toBe(true);
+    expect(sim.queueMove({ x: -12, z: 2 }), "fired: can't move as well").toBe(false);
+    const sim2 = staged();
+    const gun2 = sim2.debugSpawn("artillery", "player", { x: -14, z: 0 });
+    const foe2 = sim2.debugSpawn("soldier", "enemy", { x: 6, z: 0 });
+    sim2.debugSelect(gun2.id);
+    expect(sim2.queueMove({ x: -12, z: 2 }), sim2.log[0]).toBe(true);
+    expect(sim2.queueShoot(foe2.id), "moving: can't fire as well").toBe(false);
   });
 });
 

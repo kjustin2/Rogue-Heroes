@@ -40,8 +40,14 @@ Wall, Turret, Spring Trap, Gun Post, Rocket Post. Base upgrades: the Fortress Ca
 - **Boulder Roll** (Bastion's starter, $150, `queueBoulder` / `boulderStep`): a stone the width of a lane rolls 18m down the line,
   bowling every unit aside (34 damage to troopers, thrown 4m off the lane); a heavy breaks it and ends the roll. Drawn as one `roll`
   effect (`boulderGeometry`), heard as a rumble.
-- **Decks now:** Vanguard Sandbags / Gun Turret / Spring Trap, Shockwave / Airstrike / Paradrop / Tank Drop; Syndicate Sandbags / Gun
-  Turret / Minefield, Minefield Drop / Napalm / Barrage (now Ordnance Lab); Bastion Sandbags / Gun Turret / Mortar Turret, Boulder Roll /
+- **Artillery** fires or moves in a turn, never both (the Deploy card, outrigger state and auto-deploy are gone; the outriggers are
+  always drawn down). **Tanks RUN OVER troopers** in their path (the bowling path, `RUN_OVER_*`; Hull Down is gone).
+- **Mortar SALVO (Walking Fire)** replaces the smoke round: three half-damage shells land short, on and long down the mortar's
+  line (`queueSalvoAt`, `SALVO_*`); smoke clouds no longer exist. The Hard bot walks a salvo across a clump (`aiSalvoAct`).
+- **Harpoon Tower** (defense, $180, Shock Troops, Vanguard + Syndicate): fires by itself at end of turn at the nearest ground foe in
+  14m (`queueHarpoonTowers`) and its hit drags the foe to the tower (the Hookshot's `pull`); heavies never move.
+- **Decks now:** Vanguard Sandbags / Gun Turret / Spring Trap / Harpoon Tower, Shockwave / Airstrike / Paradrop / Tank Drop; Syndicate Sandbags / Gun
+  Turret / Minefield / Harpoon Tower, Minefield Drop / Napalm / Barrage (now Ordnance Lab); Bastion Sandbags / Gun Turret / Mortar Turret, Boulder Roll /
   Gun Run / Tank Drop / Barrage. Tech: 12 nodes, one either/or (Fire Discipline vs Demolitions).
 
 ## Balance snapshot (2026-10-07, `balance.test.ts`: 6 maps x 24 seeds, both seats the Normal AI)

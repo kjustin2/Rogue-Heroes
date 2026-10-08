@@ -33,37 +33,20 @@ describe("suppression (heavy gunner)", () => {
   });
 });
 
-describe("hull down (tank)", () => {
-  it("a tank that did not move takes 30% less; one that moved takes full damage", () => {
+describe("run over (tank, 2026-10-07: replaces Hull Down)", () => {
+  it("a tank that drives through troopers hurts them and throws them off its path", () => {
     const sim = staged();
-    const tank = sim.debugSpawn("tank", "enemy", { x: 4, z: 0 });
-    disarm(tank);
-    const gun = sim.debugSpawn("tank", "player", { x: -8, z: 0 });
-    const before = hp(tank);
-    sim.debugSelect(gun.id);
-    const hull = tank.parts.find((p) => p.id === "hull")!;
-    expect(sim.queueShootPart(tank.id, hull.id)).toBe(true);
-    sim.orders[sim.orders.length - 1].aim = "center";
+    const tank = sim.debugSpawn("tank", "player", { x: -8, z: 0 });
+    const victim = sim.debugSpawn("soldier", "enemy", { x: -4.5, z: 0 });
+    disarm(victim);
+    const before = hp(victim), at = { ...victim.position };
+    sim.debugSelect(tank.id);
+    expect(sim.queueMove({ x: -2, z: 0 })).toBe(true);
     sim.endTurn();
     settle(sim);
-    expect(tank.hullDown).toBe(true);
-    expect(sim.log.some((l) => l.includes("goes hull down"))).toBe(true);
-    const dealtHullDown = before - hp(tank);
-    expect(dealtHullDown).toBeGreaterThan(0);
-    // Same shot against a tank that is not hull down: it moved this turn.
-    const sim2 = staged();
-    const tank2 = sim2.debugSpawn("tank", "enemy", { x: 4, z: 0 });
-    for (const p of tank2.parts) if (p.role === "weapon") p.hp = 0;
-    tank2.status.canShoot = false;
-    const gun2 = sim2.debugSpawn("tank", "player", { x: -8, z: 0 });
-    const before2 = hp(tank2);
-    sim2.debugSelect(gun2.id);
-    expect(sim2.queueShootPart(tank2.id, tank2.parts.find((p) => p.id === "hull")!.id)).toBe(true);
-    sim2.orders[sim2.orders.length - 1].aim = "center";
-    sim2.endTurn();
-    settle(sim2);
-    if (tank2.hullDown) return; // the AI chose not to move it this seed; nothing to compare
-    expect(before2 - hp(tank2)).toBeGreaterThan(dealtHullDown);
+    expect(hp(victim)).toBeLessThan(before);
+    expect(Math.abs(victim.position.z - at.z), "thrown off the line").toBeGreaterThan(1);
+    expect(sim.log.some((l) => l.includes("runs over"))).toBe(true);
   });
 });
 

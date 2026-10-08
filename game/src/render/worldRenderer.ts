@@ -9,7 +9,7 @@ import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec
 import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isMountKind, isVehicleKind, type CombatEntity, type CoverKind, type DamagePart, type Team, type EntityKind, type PartRole } from "../game/damageModel";
 import { factionDef, type FactionId } from "../game/factions";
 import type { OrderKind, Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
-import { CLASH_BLAST, CLASH_BOLT, IMMOVABLE_HEAVIES, PULSE_SMOKE, isDustBlast, isPulseBlast, minefieldPoints, muzzleFor } from "../game/sim";
+import { CLASH_BLAST, CLASH_BOLT, IMMOVABLE_HEAVIES, isDustBlast, isPulseBlast, minefieldPoints, muzzleFor } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type GroundSurfaceKind, type SkylineKind } from "../game/maps";
 import type { TroopKind } from "../game/units";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, climbsAlong, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainIce, terrainWater } from "../game/terrain";
@@ -545,28 +545,6 @@ export class WorldRenderer {
         );
         blob.position.set(cloud.x + Math.cos(t) * r, y + 0.45 + Math.sin(t * 1.7) * 0.2, cloud.z + Math.sin(t * 0.8) * r);
         blob.scale.y = 0.55;
-        this.environmentRoot.add(blob);
-      }
-    }
-    // SMOKE: a mortar smoke round. Grey, dense, harmless — it reads as a wall you cannot shoot
-    // through, so the blobs are opaque-ish and stacked high rather than a low sickly skirt.
-    for (const cloud of sim.smokeClouds) {
-      const y = drawnGroundAt(cloud) + 0.05;
-      const fade = Math.min(1, cloud.turnsLeft / 2);
-      const skirt = new THREE.Mesh(
-        drapedDisc(cloud.x, cloud.z, 0, cloud.radius, 40, 0.05),
-        this.envMat(THREE.MeshBasicMaterial, { color: 0x6f757a, transparent: true, opacity: 0.22 * fade, side: THREE.DoubleSide, depthWrite: false }),
-      );
-      this.environmentRoot.add(skirt);
-      for (let b = 0; b < 10; b += 1) {
-        const t = performance.now() * 0.00025 + b * 1.9 + (hash(cloud.id) % 13);
-        const r = cloud.radius * (0.1 + ((b * 41) % 65) / 100);
-        const blob = new THREE.Mesh(
-          new THREE.SphereGeometry(cloud.radius * (0.34 + (b % 3) * 0.1), 10, 7),
-          this.envMat(THREE.MeshBasicMaterial, { color: b % 2 ? 0xa3a9ae : 0x767d83, transparent: true, opacity: 0.36 * fade, depthWrite: false }),
-        );
-        blob.position.set(cloud.x + Math.cos(t) * r, y + 0.6 + (b % 4) * 0.35 + Math.sin(t * 1.5) * 0.15, cloud.z + Math.sin(t * 0.9) * r);
-        blob.scale.y = 0.8;
         this.environmentRoot.add(blob);
       }
     }
@@ -1823,15 +1801,8 @@ export class WorldRenderer {
         group.rotation.z += shift * 0.9;
         group.rotation.y += (Math.sin(t * 0.31) * 0.11 + Math.sin(t * 0.83) * 0.03) * idle;
       } else if (isVehicleKind(entity.kind)) {
-        // Hull down: the tank sits lower on its suspension and the engine tremor dies away.
-        if (entity.kind === "tank" && entity.hullDown) { group.position.y -= 0.09; group.rotation.x += 0.02; }
-        // Deployed artillery: settled onto its outriggers — lower, still, and nosed up a touch.
-        else if (entity.kind === "artillery" && entity.deployed) { group.position.y -= 0.07; group.rotation.x -= 0.03; }
-        if (entity.kind === "artillery") {
-          const legs = group.children.find((c) => c.userData.outriggers) as THREE.Group | undefined;
-          if (legs) legs.scale.setScalar(entity.deployed ? 1 : 0.001);
-        }
-        else group.position.y += Math.sin(t * 52) * 0.004 * idle;
+        // The engine tremor (the artillery sits on its outriggers, always down since 2026-10-07: no deploy ritual).
+        if (entity.kind !== "artillery") group.position.y += Math.sin(t * 52) * 0.004 * idle;
         group.rotation.x += Math.sin(t * 0.7) * 0.006 * idle + Math.sin(t * 47) * 0.0025 * idle;
         group.rotation.z += Math.sin(t * 0.45) * 0.005 * idle;
       } else if (entity.kind === "turret" || entity.kind === "exturret") {
@@ -3282,6 +3253,22 @@ export class WorldRenderer {
     // No faction vehicle dress: its cages and rails buried the slim bike under a junk pile (2026-10-07). The bike IS the silhouette.
   }
 
+  // HARPOON TOWER: a braced lattice mast on a sandbagged pad, a fat harpoon launcher on top with a barbed brass head in the muzzle,
+  // and a big cable drum at its foot. Tall and spindly: nothing else on the field is a mast with a spear on it.
+  private buildHarpoonTower(group: THREE.Group, entity: CombatEntity, glow: number): void {
+    this.box(group, entity, "mount", [1.4, 0.2, 1.4], [0, 0.1, 0], 0x3a3f46, { metalness: 0.3, bevel: 0.12 });
+    for (const [x, z] of [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]] as const) {
+      this.box(group, entity, "mount", [0.08, 1.7, 0.08], [x * 0.7, 1.0, z * 0.7], 0x2a2f34, { metalness: 0.45, rotation: [z * -0.12, 0, x * 0.12] });
+    }
+    for (const y of [0.6, 1.2]) this.box(group, entity, "mount", [0.9, 0.06, 0.06], [0, y, 0.35], 0x2a2f34, { metalness: 0.45, rotation: [0, 0, 0.5] });
+    this.cylinder(group, entity, "mount", 0.32, 0.36, [0, 0.38, -0.55], 0x4a3a28, [0, 0, Math.PI / 2], { metalness: 0.3 }); // the cable drum
+    this.cylinder(group, entity, "mount", 0.14, 0.4, [0, 0.38, -0.55], 0xd8c89a, [0, 0, Math.PI / 2], { accent: true });
+    this.box(group, entity, "gun", [0.34, 0.34, 1.2], [0, 1.9, 0.15], 0x3a4650, { metalness: 0.4, bevel: 0.2 });
+    this.cylinder(group, entity, "gun", 0.05, 0.5, [0, 1.92, 0.95], 0xc8a24a, [Math.PI / 2, 0, 0], { accent: true, metalness: 0.6 });
+    for (const side of [-1, 1]) this.box(group, entity, "gun", [0.04, 0.04, 0.2], [side * 0.08, 1.92, 1.18], 0xc8a24a, { accent: true, rotation: [0, side * 0.6, 0], metalness: 0.6 });
+    this.box(group, entity, "gun", [0.12, 0.08, 0.06], [0, 2.1, 0.5], 0xdaf7ff, { accent: true, emissive: glow, emissiveIntensity: 0.5 });
+  }
+
   // BULLDOZER: a wide hazard-striped BLADE out front on two push arms, wide tracks, a squat boxy body and a caged cab with a
   // small MG. The blade is wider than the hull: from any angle it reads as "this pushes things".
   private buildBulldozer(group: THREE.Group, entity: CombatEntity): void {
@@ -3394,6 +3381,7 @@ export class WorldRenderer {
     }
     if (isMountKind(entity.kind)) { this.buildMount(group, entity); return; }
     if (entity.kind === "bunker") { this.buildBunker(group, entity); return; }
+    if (entity.kind === "harpoon") { this.buildHarpoonTower(group, entity, glow); return; }
     // Shared emplacement base + traversing ring, dug in behind a sandbag berm.
     this.box(group, entity, "mount", [1.5, 0.36, 1.5], [0, 0.18, 0], 0x333a42, { metalness: 0.24, bevel: 0.12 });
     this.box(group, entity, "mount", [1.72, 0.14, 1.72], [0, 0.05, 0], 0x22272d, { metalness: 0.18, bevel: 0.1 });
@@ -5433,7 +5421,7 @@ export class WorldRenderer {
       // would otherwise vanish while its un-culled trail lingers.
       for (const part of makeProjectileTrail(projectile, family, history)) this.projectileRoot.add(part);
       // The Hookshot's harpoon pays out a CABLE from the gun: the drag that follows reads as the line reeling in.
-      if (projectile.sourceKind === "hookshot") this.projectileRoot.add(makeTubeLine(projectile.origin, projectile.position, 0x4a3a28, 1, projectile.originHeight, 0.028, projectile.height));
+      if (projectile.sourceKind === "hookshot" || projectile.sourceKind === "harpoon") this.projectileRoot.add(makeTubeLine(projectile.origin, projectile.position, 0x4a3a28, 1, projectile.originHeight, 0.028, projectile.height));
       // Only LOBBED rounds cast a ground shadow -- it is how you read where a shell or grenade will
       // land. A flat tracer's shadow was a dark disc sliding over the ground unattached to anything.
       if (isLobbed(family)) this.projectileRoot.add(makeProjectileShadow(projectile, family));
@@ -5696,10 +5684,9 @@ export class WorldRenderer {
         }
       } else if (effect.type === "blast" && isPulseBlast(effect.color)) {
         // A pulse throws light motes, not fire: a ring of small bright flecks lifting off the ground.
-        const smoke = effect.color === PULSE_SMOKE;
         fx.burst({
           x: effect.to.x, y: ground + 0.3, z: effect.to.z,
-          count: Math.round(14 + (effect.radius ?? 2) * 5), color: smoke ? [0xdfe5e8, 0xb8c0c4, 0x9aa3a8] : effect.color === 0x4f9fd0 ? [0xeaf6ff, 0x9fd0f0, 0x6fb4e4] : [0xbfeeff, 0x8de4ff, 0x5fb8e8],
+          count: Math.round(14 + (effect.radius ?? 2) * 5), color: effect.color === 0x4f9fd0 ? [0xeaf6ff, 0x9fd0f0, 0x6fb4e4] : [0xbfeeff, 0x8de4ff, 0x5fb8e8],
           speed: [1.5, 4.5], up: 0.9, size: [0.06, 0.16], life: [0.4, 1.0], gravity: -0.6, drag: 1.6, jitter: (effect.radius ?? 2) * 0.5,
           shape: ParticleShape.streak,
         });
@@ -6096,15 +6083,12 @@ function waveStrokeTexture(): THREE.CanvasTexture {
 }
 
 /**
- * Artillery outriggers: four dark legs with pads, splayed from the hull's corners, shown only while
- * the piece is DEPLOYED (`entity.deployed`) — the one visible "this cannot move now" cue.
+ * Artillery outriggers: four dark legs with pads, splayed from the hull's corners (always down: the
+ * deploy ritual was cut 2026-10-07; the piece fires or moves in a turn, never both).
  */
 function makeOutriggers(): THREE.Group {
   const group = new THREE.Group();
   group.userData.outriggers = true;
-  // Hidden by SCALE, not `visible`: an invisible mesh is skipped by warmUp's traverseVisible and
-  // would compile its program the first time a piece deploys mid-resolve.
-  group.scale.setScalar(0.001);
   const legMat = new THREE.MeshToonMaterial({ color: 0x2c3136, gradientMap: toonGradient() });
   const padMat = new THREE.MeshToonMaterial({ color: 0x1c2024, gradientMap: toonGradient() });
   legMat.userData.shared = true; padMat.userData.shared = true;
@@ -6914,7 +6898,7 @@ export function weaponFamily(kind: EntityKind): WeaponFamily {
  */
 export function attackFamilyForOrder(kind: EntityKind, orderKind: OrderKind): WeaponFamily | undefined {
   if (orderKind === "melee" || orderKind === "slam") return "melee";
-  if (orderKind === "shoot" || orderKind === "smoke") return weaponFamily(kind);
+  if (orderKind === "shoot" || orderKind === "salvo") return weaponFamily(kind);
   if (orderKind === "grenade") {
     // A hand grenade is THROWN: before this a Recruit raised its rifle and "fired" the grenade.
     // Aircraft bombs fall from a bay -- no gun to swing.

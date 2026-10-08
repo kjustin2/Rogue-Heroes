@@ -559,3 +559,24 @@ describe("shockwave, spring trap and tank drop", () => {
     expect(sim.entities.some((e) => e.coverKind === "wreck" && e.id === `wreck-${tank.id}`), "left a wreck").toBe(true);
   });
 });
+
+describe("harpoon tower (2026-10-07)", () => {
+  afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
+  it("fires by itself each turn and drags the nearest foe to its foot; a tank never moves", () => {
+    const sim = staged();
+    const tower = sim.debugStructure("harpoon", "player", { x: -10, z: 0 });
+    const foe = sim.debugSpawn("soldier", "enemy", { x: -1, z: 0 });
+    disarm(foe); tough(foe);
+    const d0 = Math.hypot(foe.position.x - tower.position.x, foe.position.z - tower.position.z);
+    sim.endTurn(); settle(sim);
+    const d1 = Math.hypot(foe.position.x - tower.position.x, foe.position.z - tower.position.z);
+    expect(d1, `dragged in: ${d0.toFixed(1)}m -> ${d1.toFixed(1)}m`).toBeLessThan(d0 - 3);
+    const sim2 = staged();
+    sim2.debugStructure("harpoon", "player", { x: -10, z: 0 });
+    const tank = sim2.debugSpawn("tank", "enemy", { x: -2, z: 0 });
+    disarm(tank); tough(tank);
+    const at = { ...tank.position };
+    sim2.endTurn(); settle(sim2);
+    expect(tank.position).toEqual(at);
+  });
+});

@@ -110,6 +110,7 @@ export const GUN_VOICES: Record<string, Voice> = {
   breaker: { group: "m1917", rate: 1.15, m: 1 },
   juggernaut: { group: "cannon", rate: 1.32, m: 0.8 },
   hookshot: { group: "crack", rate: 0.9, m: 0.8, synth: "whoosh" },
+  harpoon: { group: "crack", rate: 0.8, m: 0.85, synth: "whoosh" },
   skater: { group: "bersa", rate: 1.25, m: 0.9 },
   molotov: { group: "", rate: 1, m: 1, synth: "whoosh" },
   mole: { group: "ruger22", rate: 1.0, m: 0.9 },
