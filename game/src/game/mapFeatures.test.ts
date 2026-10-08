@@ -75,3 +75,44 @@ describe("map features", () => {
     expect(hp(sim.entity(near.id)!), "caught in the blast").toBeLessThan(before);
   });
 });
+
+describe("Crossfire's marked minefield (2026-10-07)", () => {
+  afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
+  it("lays neutral mines in two point-symmetric strips, and anyone who walks in sets one off", () => {
+    const sim = board("crossfire");
+    const field = sim.mines.filter((m) => m.team === "neutral");
+    expect(field.length).toBeGreaterThanOrEqual(6);
+    const west = field.filter((m) => m.x < 0).length, east = field.filter((m) => m.x > 0).length;
+    expect(Math.abs(west - east), "both flanks mined alike").toBeLessThanOrEqual(1);
+    const mine = field[0];
+    const walker = sim.debugSpawn("soldier", "player", { x: mine.x - 3, z: mine.z });
+    const before = hp(walker);
+    sim.debugSelect(walker.id);
+    expect(sim.queueMove({ x: mine.x + 1, z: mine.z })).toBe(true);
+    sim.endTurn(); settle(sim);
+    expect(sim.mines.some((m) => m.id === mine.id), "set off").toBe(false);
+    expect(hp(sim.entity(walker.id)!)).toBeLessThan(before);
+  });
+});
+
+describe("Ironworks conveyor belts (2026-10-07)", () => {
+  afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
+  it("carry a trooper standing on them along the belt at turn start; a tank stays put; the twin runs the other way", () => {
+    const sim = board("ironworks");
+    const belts = sim.conveyors();
+    expect(belts.length).toBe(2);
+    expect(belts[0].dir.x).toBe(-belts[1].dir.x);
+    const r = belts[0].rect;
+    const mid = { x: (r.minX + r.maxX) / 2, z: (r.minZ + r.maxZ) / 2 };
+    const rider = sim.debugSpawn("soldier", "player", mid);
+    const at = { ...rider.position };
+    sim.endTurn(); settle(sim);
+    const moved = (rider.position.x - at.x) * belts[0].dir.x + (rider.position.z - at.z) * belts[0].dir.z;
+    expect(moved, "carried along the belt").toBeGreaterThan(1.5);
+    const sim2 = board("ironworks");
+    const tank = sim2.debugSpawn("tank", "player", mid);
+    const t0 = { ...tank.position };
+    sim2.endTurn(); settle(sim2);
+    expect(tank.position).toEqual(t0);
+  });
+});

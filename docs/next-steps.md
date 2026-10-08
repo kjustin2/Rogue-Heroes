@@ -117,3 +117,9 @@ every blast throws troopers, heavies never move; new-turn + hazard sounds, every
 (`probe:mix`) and the multi-part-sound throttle bug fixed (`chord`); the Sledge swung by every brain, every combat kind balance-gated;
 ground plates clipped to the board (`shots:gpu -- corners`). OPEN: Dust Bowl is the slowest map (16 of 24 self-play games undecided at
 16 turns); the Rocketeer and Flak sit low in self-play (0.64x / 0.62x: specialists against an AI that fields few vehicles/aircraft).
+
+Focus round (2026-10-08, owner: "a focused set of only fun things"): pads, carrying, Crouch / Man / Leave / Deploy cards, the Mark,
+Hull Down, smoke, stat-bump tech, Cluster / Rail Strike / Sentry Drop and the four invisible map hazards cut; every Strike throws, a hop
+dodges, tanks run over troopers, Mortar Salvo, Harpoon Tower, Boulder Roll, themed posts, lane hazards (devil / stampede / boulder /
+icebreaker), Crossfire minefield, Ironworks belts (docs/game-systems.md). OPEN: Dust Bowl pace; per-map seat skews in self-play (Dust
+Bowl 8-1, Crossfire 12-5, Ironworks 6-13 of decided games: small samples, overall 49%).

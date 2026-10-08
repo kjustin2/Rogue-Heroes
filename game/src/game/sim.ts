@@ -82,7 +82,7 @@ import { TROOP_CATALOG, TROOP_KINDS, troopSpec, defenseSpec, supportPowerSpec, b
 import { TECH_TREE, techNode, aggregateTechEffect, type TechNode, type TechEffect } from "./tech";
 import { modeDef, type ModeId } from "./modes";
 import { DEFAULT_FACTION, factionDef, factionTroopLabel, type FactionDef, type FactionId } from "./factions";
-import { MAPS, mapDef, mapCenter, flagPositions, type MapDef, type MapEventConfig, type MapEventKind } from "./maps";
+import { MAPS, mapDef, mapCenter, flagPositions, type LaneHazard, type LaneKind, type MapDef, type MapEventConfig, type MapEventKind } from "./maps";
 
 export { TROOP_CATALOG, troopSpec, DEFENSE_CATALOG, defenseSpec, SUPPORT_POWERS, supportPowerSpec, BASE_UPGRADES, baseUpgradeSpec, type BaseUpgradeId, UNIT_STATS, unitStats, type TroopKind, type TroopSpec, type DefenseKind, type DefenseSpec, type SupportPowerKind, type SupportPowerSpec, type ProjectileKind, type UnitStats } from "./units";
 export { TECH_TREE, techNode, troopsUnlockedBy, type TechNode } from "./tech";
@@ -223,8 +223,7 @@ const SLAM_LANDING_DAMAGE = 34; // death from above (2026-10-07; was 15 on a str
 // Metres a piercing round carries on past a body it went through.
 const PIERCE_CARRY = 7;
 
-type StrikeKind = "train" | "barrage" | "collapse" | "airstrike" | "laser" | "lightning" | "slag" | "shockwave" | "tankdrop" | "napalm" | "paradrop" | "minedrop" | "boulder";
-const LIGHTNING_RADIUS = 2.0;
+type StrikeKind = "train" | "barrage" | "airstrike" | "laser" | "slag" | LaneKind | "shockwave" | "tankdrop" | "napalm" | "paradrop" | "minedrop" | "boulder";
 
 // Gas clouds (see runGasTick / igniteGasAt).
 const GAS_START_RADIUS = 2.2;
@@ -269,7 +268,7 @@ export const SHOCKWAVE_THROW = 12;
 export const SHOCKWAVE_FX = 0xd9b98a; // a warm dust ring, never a white flash
 /** Heavy things landing (a tank dropped from the sky, cover collapsing): a dust burst, not a fireball. */
 export const DUST_FX = 0xb59a72;
-/** Blasts that draw as a ring of dust and grit instead of fire (and leave no scorch): the shockwave, the tank drop, a collapse. */
+/** Blasts that draw as a ring of dust and grit instead of fire (and leave no scorch): the shockwave, the tank drop, a boulder breaking. */
 export const isDustBlast = (color: number | undefined): boolean => color === SHOCKWAVE_FX || color === DUST_FX;
 // TANK DROP (support): the crush under the chute, and how long the tank fights before it is scuttled.
 const TANK_DROP_CRUSH = 2.2;
@@ -277,6 +276,9 @@ const TANK_DROP_DAMAGE = 60;
 export const TANK_DROP_TURNS = 3;
 // SPRING TRAP (defense): a hidden plate that launches the first foe to step on it this far, away from its owner's base.
 export const SPRING_THROW = 13;
+// A SWEEP's look (the "roll" effect's colour names what crosses) and how long each kind takes to cross its lane.
+export const SWEEP_FX: Record<LaneKind, number> = { boulder: 0x8a7a66, devil: 0xd9c4a0, stampede: 0x6b4a2e, icebreaker: 0x3a4a5a };
+const SWEEP_SECONDS: Record<LaneKind, number> = { boulder: 1.8, devil: 2.6, stampede: 2.2, icebreaker: 3.0 };
 // BOULDER ROLL (support, Bastion's starter): a stone the width of a lane rolls this far down the line, in this long.
 const BOULDER_LENGTH = 18;
 const BOULDER_SECONDS = 1.8;
@@ -357,7 +359,7 @@ export interface VisualEvent {
   id: string;
   // "jet" = a strike aircraft flying from->to; "topple" = a tall cover column falling from `from` toward `to`.
   // "strike" = a melee blow landing at `to`, swung from `from`.
-  // "bolt" = lightning striking `to` from the sky; "land" = a jump trooper touching down at `to`.
+  // "land" = a jump trooper touching down at `to`; "roll" = a lane sweep (boulder, dust devil, herd, icebreaker) from -> to.
   // "shot" = a gun-run burst (gunship strafe): tracers from the aircraft's gun at `fromHeight`
   // down into `to`. It is resolved as direct damage, so it carries no Projectile of its own.
   // "clash" = two rounds meeting in mid-air at `fromHeight`; its colour names the family (CLASH_SPARK / CLASH_BOLT / CLASH_BLAST).
@@ -637,12 +639,10 @@ export class TacticalSim {
 
   // Dynamic map events are a pure function of the map config + current turn, so none of this
   // needs serializing — restore() just recomputes it. `forced*` are single-turn debug/test
-  // overrides; `pendingStrikes` are the staggered barrage/collapse detonations during a resolve.
+  // overrides; `pendingStrikes` are the staggered barrage / lane / support detonations during a resolve.
   eventNotice: string | undefined;
-  private forcedSandstorm = false;
-  private forcedIonStorm = false;
   private forcedZones: { kind: MapEventKind; x: number; z: number; radius: number }[] = [];
-  private pendingStrikes: { at: number; point: Vec2; radius: number; damage: number; kind: StrikeKind; team?: Team; fired?: boolean; roll?: string; dir?: Vec2 }[] = [];
+  private pendingStrikes: { at: number; point: Vec2; radius: number; damage: number; kind: StrikeKind; team?: Team; fired?: boolean; roll?: string; dir?: Vec2; throwM?: number; stop?: boolean }[] = [];
   private strikeClock = 0;
 
   constructor(init?: CombatEntity[] | { map?: MapDef; mode?: ModeId }) {
@@ -780,6 +780,7 @@ export class TacticalSim {
     this.mines.splice(0);
     this.placePickups();
     this.placeFieldMounts();
+    this.placeMapMinefield();
     this.killsBy.clear();
     for (const key of Object.keys(this.stats)) delete this.stats[key];
     this.playerLosses = 0;
@@ -808,8 +809,6 @@ export class TacticalSim {
     this.pendingSupport = undefined;
     this.queuedSupport = [];
     this.pendingFx = [];
-    this.forcedSandstorm = false;
-    this.forcedIonStorm = false;
     this.forcedZones = [];
     this.pendingStrikes = [];
     this.strikeClock = 0;
@@ -2556,8 +2555,6 @@ export class TacticalSim {
       this.selectedId = this.entities.find((e) => e.team === "player" && isBuildingKind(e.kind))?.id ?? this.entities[0]?.id ?? "";
       this.syncAllElevations();
       this.refreshDefendingStances();
-      this.forcedSandstorm = false;
-      this.forcedIonStorm = false;
       this.forcedZones = [];
       this.pendingStrikes = [];
       this.refreshEventNotice();
@@ -3967,6 +3964,25 @@ export class TacticalSim {
     }
   }
 
+  /** A MARKED MINEFIELD (MapDef.minefield): a grid of NEUTRAL mines, drawn with warning flags, that anyone sets off; and its twin. */
+  private placeMapMinefield(): void {
+    const f = this.mapDef.minefield;
+    if (!f) return;
+    const c = mapCenter(this.mapDef);
+    const clear = (p: Vec2): boolean => !pointInWater(p) && !this.pickups.some((q) => dist(q, p) < 1.6) && !this.entities.some((e) => e.status.alive && dist(e.position, p) < e.radius + 0.9);
+    let k = 0;
+    // In mirrored PAIRS: a mine goes down only where its twin's spot is clear too, so both flanks are mined alike.
+    for (let dx = -f.w / 2; dx <= f.w / 2 + 0.01; dx += 1.7) {
+      for (let dz = -f.d / 2; dz <= f.d / 2 + 0.01; dz += 1.7) {
+        const p = clampToArena({ x: f.x + dx, z: f.z + dz });
+        const q = clampToArena({ x: 2 * c.x - p.x, z: 2 * c.z - p.z });
+        if (!clear(p) || !clear(q)) continue;
+        k += 1;
+        this.mines.push({ id: `field-mine-1-${k}`, x: p.x, z: p.z, team: "neutral" }, { id: `field-mine-2-${k}`, x: q.x, z: q.z, team: "neutral" });
+      }
+    }
+  }
+
   /** A mirrored pair of neutral Gun Posts on the flanks, free for whoever walks up and crews one. */
   private placeFieldMounts(): void {
     for (let i = this.entities.length - 1; i >= 0; i -= 1) {
@@ -4007,12 +4023,14 @@ export class TacticalSim {
       }
     };
     const alongs = [0, 3, -3, 6, -6, 12, -12, 18, -18, 24, -24];
-    place("gunpost", "Gun Post", "post", [10, 8, 12, 6, 14, 5, 16, 18, 4, 3], alongs);
-    place("rocketpost", "Rocket Post", "rocket", [15, 17, 13, 19, 11], [14, -14, 20, -20, 8, -8, 26, -26]);
-    place("flamepost", "Flame Post", "flame", [4, 5, 6, 3, 7, 8, 2, 9, 11], [8, -8, 4, -4, 12, -12, 16, -16, 20, -20, 0]);
+    // THEMED POSTS (2026-10-07: five kinds on every map made the maps read alike and cluttered): each map carries its two.
+    const kinds = this.mapDef.posts ?? ["gunpost", "rocketpost", "flamepost", "mortarpit", "cannonpost"];
+    if (kinds.includes("gunpost")) place("gunpost", "Gun Post", "post", [10, 8, 12, 6, 14, 5, 16, 18, 4, 3], alongs);
+    if (kinds.includes("rocketpost")) place("rocketpost", "Rocket Post", "rocket", [15, 17, 13, 19, 11], [14, -14, 20, -20, 8, -8, 26, -26]);
+    if (kinds.includes("flamepost")) place("flamepost", "Flame Post", "flame", [4, 5, 6, 3, 7, 8, 2, 9, 11], [8, -8, 4, -4, 12, -12, 16, -16, 20, -20, 0]);
     // Heavier field pieces further back toward each side's half: a Mortar Pit to shell the middle and a Cannon Post that fires tank shells.
-    place("mortarpit", "Mortar Pit", "mortar", [20, 22, 18, 24, 16], [-16, 16, -20, 20, -12, 12, -24, 24]);
-    place("cannonpost", "Cannon Post", "cannon", [-16, -18, -14, -20, -12], [-10, 10, -14, 14, -6, 6, -18, 18]);
+    if (kinds.includes("mortarpit")) place("mortarpit", "Mortar Pit", "mortar", [20, 22, 18, 24, 16, 14, -14, -16, -18, -20, 12, -12, 10, -10], [-16, 16, -20, 20, -12, 12, -24, 24, -8, 8, -4, 4]);
+    if (kinds.includes("cannonpost")) place("cannonpost", "Cannon Post", "cannon", [-16, -18, -14, -20, -12, 16, 14, 18, 12, -10, 10, -22, 22], [-10, 10, -14, 14, -6, 6, -18, 18, -2, 2, -22, 22]);
   }
 
   // ---- Field hands ----
@@ -4119,7 +4137,10 @@ export class TacticalSim {
       if (mine.spring) { this.springLaunch(mine, mover); continue; }
       this.effect("blast", { x: mine.x, z: mine.z }, { x: mine.x, z: mine.z }, 0xffb02e, 0.8, MINE_SPLASH);
       this.pushLog(`${mover.name} triggers a mine!`);
-      this.applyExplosiveRadius(this.entity(`${mine.team === "player" ? "p" : "e"}-base-1`) ?? mover, { x: mine.x, z: mine.z }, MINE_SPLASH, MINE_DAMAGE, `${mover.name} is caught in the mine blast`);
+      // A field mine is nobody's: its blast is booked to the walker's opponent, so friendly-fire rules never spare the walker.
+      const layerTeam = mine.team === "neutral" ? (mover.team === "player" ? "enemy" : "player") : mine.team;
+      const layer = this.entity(`${layerTeam === "player" ? "p" : "e"}-base-1`) ?? mover;
+      this.applyExplosiveRadius(layer, { x: mine.x, z: mine.z }, MINE_SPLASH, MINE_DAMAGE, `${mover.name} is caught in the mine blast`);
     }
   }
 
@@ -5010,11 +5031,6 @@ export class TacticalSim {
     if (rangePenalty > 0.01) {
       spreadDegrees += rangePenalty;
       notes.push("long range");
-    }
-
-    if (this.sandstormActive()) {
-      spreadDegrees = spreadDegrees * 1.45 + 1.1;
-      notes.push("sandstorm");
     }
 
     // Ghillie Doctrine: the defending team's units are simply harder to hit.
@@ -6615,13 +6631,11 @@ export class TacticalSim {
     this.runGasTick();
     this.runDropTick();
     this.runIceTick();
+    this.runConveyorTick();
     // A carrier killed by a turn-start tick (fire, gas) drops its riders now, not at the next resolve (chaos fuzz, 2026-10-07).
     // Forced events are single-turn debug overrides; clear them, then announce the new turn's events.
     this.forcedZones = [];
-    this.forcedSandstorm = false;
-    this.forcedIonStorm = false;
     this.refreshEventNotice();
-    this.applyIonStormClamp(); // scramble command points if an ion storm is raking the field
     this.pushLog(`Turn ${this.turn} command phase`);
     this.seatLogMark = this.logSeq;
     this.bus.emit("TURN_START", { turn: this.turn });
@@ -6704,12 +6718,35 @@ export class TacticalSim {
     return train.tracks;
   }
 
-  /** On (or within `r` of) a freight track. */
+  /** On (or within `r` of) a freight track or a conveyor belt. */
   onMapFeature(p: Vec2, r: number): boolean {
-    return (this.mapDef.train?.tracks ?? []).some((t) => p.x >= t.minX - r && p.x <= t.maxX + r && p.z >= t.minZ - r && p.z <= t.maxZ + r);
+    const near = (t: TerrainRect): boolean => p.x >= t.minX - r && p.x <= t.maxX + r && p.z >= t.minZ - r && p.z <= t.maxZ + r;
+    return (this.mapDef.train?.tracks ?? []).some(near) || this.conveyors().some((c) => near(c.rect));
   }
 
-  // Whether reduced-accuracy sandstorm weather is in effect on a given turn.
+  /** Every conveyor belt on this map, the point-symmetric twin included (it runs the other way). */
+  conveyors(): { rect: TerrainRect; dir: Vec2; step: number }[] {
+    const c = mapCenter(this.mapDef);
+    return (this.mapDef.conveyors ?? []).flatMap((b) => [b, {
+      rect: { minX: 2 * c.x - b.rect.maxX, maxX: 2 * c.x - b.rect.minX, minZ: 2 * c.z - b.rect.maxZ, maxZ: 2 * c.z - b.rect.minZ },
+      dir: { x: -b.dir.x, z: -b.dir.z }, step: b.step,
+    }]);
+  }
+
+  /** CONVEYORS run at turn start: everything standing on a belt rides it `step` metres (stopped by walls, dropped into water
+   *  or slag like any shove; heavies stay put). */
+  private runConveyorTick(): void {
+    for (const belt of this.conveyors()) {
+      for (const e of [...this.entities]) {
+        if (!e.status.alive || e.flying || e.burrowed || e.kind === "cover" || isBuildingKind(e.kind) || isDefenseKind(e.kind)) continue;
+        const p = e.position;
+        if (p.x < belt.rect.minX || p.x > belt.rect.maxX || p.z < belt.rect.minZ || p.z > belt.rect.maxZ) continue;
+        this.applyKnockback(e, e, { x: p.x - belt.dir.x, z: p.z - belt.dir.z }, 0, 1, { maxThrow: belt.step, force: belt.step * (isVehicleKind(e.kind) ? 5.5 : 1) });
+        this.pushLog(`${e.name} rides the conveyor`);
+      }
+    }
+  }
+
   // Environmental forecast for the HUD bar: event kinds active now and over the next
   // `horizon` turns, so storms and barrages are plans instead of surprises.
   forecast(horizon = 2): { turn: number; kinds: MapEventKind[] }[] {
@@ -6717,29 +6754,11 @@ export class TacticalSim {
     for (let offset = 0; offset <= horizon; offset += 1) {
       const t = this.turn + offset;
       const kinds: MapEventKind[] = [];
-      if (this.sandstormActive(t)) kinds.push("sandstorm");
-      if (this.ionStormActive(t)) kinds.push("ionstorm");
+      for (const lane of this.lanesOn(t)) if (!kinds.includes(lane.kind)) kinds.push(lane.kind);
       for (const zone of this.eventZonesForTurn(t)) if (!kinds.includes(zone.kind)) kinds.push(zone.kind);
       out.push({ turn: t, kinds });
     }
     return out;
-  }
-
-  sandstormActive(turn: number = this.turn): boolean {
-    return this.forcedSandstorm || this.mapEvents().some((e) => e.kind === "sandstorm" && eventOccursWindow(e, turn));
-  }
-
-  // Whether a command-scrambling ion storm is in effect on a given turn (clamps units to 1 CP).
-  ionStormActive(turn: number = this.turn): boolean {
-    return this.forcedIonStorm || this.mapEvents().some((e) => e.kind === "ionstorm" && eventOccursWindow(e, turn));
-  }
-
-  // Ion storm: every field unit (not bases) is scrambled down to a single command point.
-  private applyIonStormClamp(): void {
-    if (!this.ionStormActive()) return;
-    for (const entity of this.entities) {
-      if (entity.status.alive && entity.kind !== "base") entity.commandPoints = Math.min(entity.commandPoints, 1);
-    }
   }
 
   private eventZone(e: MapEventConfig): { x: number; z: number; radius: number } {
@@ -6748,13 +6767,13 @@ export class TacticalSim {
     return { x: c.x, z: c.z, radius: 6 };
   }
 
-  // Barrage/collapse danger zones that fire during the given turn's resolve (for renderer rings).
+  // Barrage / slag danger zones that fire during the given turn's resolve (for renderer rings).
   eventZonesForTurn(turn: number = this.turn): { kind: MapEventKind; x: number; z: number; radius: number }[] {
     const fromMap = this.mapEvents()
-      .filter((e) => (e.kind === "barrage" || e.kind === "collapse" || e.kind === "lightning" || e.kind === "slag") && eventOccursWindow(e, turn))
+      .filter((e) => (e.kind === "barrage" || e.kind === "slag") && eventOccursWindow(e, turn))
       .flatMap((e) => e.kind === "slag"
         ? this.slagZones(e).map((z) => ({ kind: e.kind, ...z }))
-        : [{ kind: e.kind, ...(e.kind === "lightning" ? this.lightningZone(turn) : this.eventZone(e)) }]);
+        : [{ kind: e.kind, ...this.eventZone(e) }]);
     return [...fromMap, ...this.forcedZones];
   }
 
@@ -6766,26 +6785,39 @@ export class TacticalSim {
     return [zone, { x: -zone.x, z: -zone.z, radius: zone.radius }];
   }
 
-  // Where the storm strikes this turn: somewhere new every turn, but a pure function of the map
-  // and the turn number, so the telegraph the player sees during command is exactly where the
-  // bolt lands during resolve and a restored save agrees with itself. Never on a base.
-  private lightningZone(turn: number): { x: number; z: number; radius: number } {
-    const b = this.mapDef.terrain.bounds;
-    let seed = ((this.mapDef.seed ^ (turn * 0x9e3779b1)) >>> 0) || 1;
-    const next = (): number => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 0xffffffff; };
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      const x = b.minX + 4 + next() * (b.maxX - b.minX - 8);
-      const z = b.minZ + 3 + next() * (b.maxZ - b.minZ - 6);
-      const nearBase = this.entities.some((e) => e.kind === "base" && dist(e.position, { x, z }) < 7);
-      if (!nearBase) return { x, z, radius: LIGHTNING_RADIUS };
+  /** The lane hazards sweeping on turn `t`: every line of every lane whose timer fires that turn. */
+  lanesOn(t: number = this.turn): { kind: LaneKind; from: Vec2; to: Vec2; width: number; lane: LaneHazard }[] {
+    const out: { kind: LaneKind; from: Vec2; to: Vec2; width: number; lane: LaneHazard }[] = [];
+    for (const lane of this.mapDef.lanes ?? []) {
+      if (t < lane.startTurn || (t - lane.startTurn) % lane.period !== 0) continue;
+      for (const line of this.laneLines(lane)) out.push({ kind: lane.kind, ...line, width: lane.width, lane });
     }
+    return out;
+  }
+
+  /** Where a lane hazard's lines run (point-symmetric, so neither seat is favoured). */
+  private laneLines(lane: LaneHazard): { from: Vec2; to: Vec2 }[] {
+    const b = this.mapDef.terrain.bounds;
     const c = mapCenter(this.mapDef);
-    return { x: c.x, z: c.z, radius: LIGHTNING_RADIUS };
+    const top = b.minZ + 2.5, bottom = b.maxZ - 2.5;
+    if (lane.lines === "center") return [{ from: { x: c.x, z: top }, to: { x: c.x, z: bottom } }];
+    if (lane.lines === "flanks") {
+      const o = lane.offset ?? 8;
+      return [{ from: { x: c.x - o, z: top }, to: { x: c.x - o, z: bottom } }, { from: { x: c.x + o, z: bottom }, to: { x: c.x + o, z: top } }];
+    }
+    // Along each water channel's long axis, alternating direction.
+    return (this.mapDef.terrain.water ?? []).map((w, i) => {
+      const long = w.maxX - w.minX >= w.maxZ - w.minZ;
+      const mid = { x: (w.minX + w.maxX) / 2, z: (w.minZ + w.maxZ) / 2 };
+      const a = long ? { x: w.minX + 0.5, z: mid.z } : { x: mid.x, z: w.minZ + 0.5 };
+      const z = long ? { x: w.maxX - 0.5, z: mid.z } : { x: mid.x, z: w.maxZ - 0.5 };
+      return i % 2 ? { from: z, to: a } : { from: a, to: z };
+    });
   }
 
   // Read-only environment snapshot for the renderer + HUD.
   // `soon` = map hazards that strike NEXT turn (a turn of warning: "what would kill you" is on the ground before it fires).
-  environment(): { sandstorm: number; ionstorm: number; notice?: string; zones: { kind: MapEventKind; x: number; z: number; radius: number }[]; soon: { kind: MapEventKind; x: number; z: number; radius: number }[]; rails: { rect: TerrainRect; state: "idle" | "soon" | "now"; progress?: number }[] } {
+  environment(): { lanes: { kind: LaneKind; from: Vec2; to: Vec2; width: number; state: "soon" | "now" }[]; notice?: string; zones: { kind: MapEventKind; x: number; z: number; radius: number }[]; soon: { kind: MapEventKind; x: number; z: number; radius: number }[]; rails: { rect: TerrainRect; state: "idle" | "soon" | "now"; progress?: number }[] } {
     const zones = this.eventZonesForTurn();
     const soon = this.eventZonesForTurn(this.turn + 1).filter((z) => !this.forcedZones.includes(z) && !zones.some((n) => n.kind === z.kind && dist(n, z) < 0.5));
     const now = this.trainTracksOn(this.turn).length > 0;
@@ -6796,47 +6828,34 @@ export class TacticalSim {
       // The train crosses during its resolve: 0 = entering, 1 = gone. Undefined outside it.
       progress: now && this.phase === "resolve" ? clamp01((this.strikeClock - 0.2) / 1.6) : undefined,
     }));
-    return { sandstorm: this.sandstormActive() ? 1 : 0, ionstorm: this.ionStormActive() ? 1 : 0, notice: this.eventNotice, zones, soon, rails };
+    // A lane is drawn on the ground the turn before it sweeps ("soon") and on its turn ("now").
+    const lanes = [
+      ...this.lanesOn(this.turn).map((l) => ({ kind: l.kind, from: l.from, to: l.to, width: l.width, state: "now" as const })),
+      ...this.lanesOn(this.turn + 1).map((l) => ({ kind: l.kind, from: l.from, to: l.to, width: l.width, state: "soon" as const })),
+    ];
+    return { lanes, notice: this.eventNotice, zones, soon, rails };
   }
 
-  // Set the banner/log for the new turn's events (and announce sandstorm transitions).
+  // Set the banner/log for the new turn's events.
   private refreshEventNotice(): void {
     const t = this.turn;
     let notice: string | undefined;
-    const stormNow = this.sandstormActive(t);
-    const stormPrev = t > 1 && this.sandstormActive(t - 1);
-    if (stormNow && !stormPrev) {
-      this.pushLog("A sandstorm rolls in — fire is far less accurate until it clears.");
-      notice = "⚠ Sandstorm — fire is far less accurate until it clears.";
-    } else if (!stormNow && stormPrev) {
-      this.pushLog("The sandstorm clears.");
-    } else if (stormNow) {
-      notice = "⚠ Sandstorm — fire is far less accurate.";
-    }
-    const ionNow = this.ionStormActive(t);
-    const ionPrev = t > 1 && this.ionStormActive(t - 1);
-    if (ionNow && !ionPrev) {
-      this.pushLog("An ion storm scrambles command links — units are limited to one action point.");
-      notice = "⚠ Ion storm — units are scrambled to a single action point.";
-    } else if (ionNow) {
-      notice = "⚠ Ion storm — units limited to one action point.";
-    }
+    const LANE_WORDS: Record<LaneKind, string> = {
+      devil: "A dust devil is coming down the marked lane — get off it!",
+      stampede: "A stampede is coming down the marked lanes — get off them!",
+      boulder: "A boulder is rolling down the marked lane — get off it!",
+      icebreaker: "The icebreaker is coming up the channels — get off the ice!",
+    };
+    const lane = this.lanesOn(t)[0];
+    if (lane) { this.pushLog(LANE_WORDS[lane.kind]); notice = `⚠ ${LANE_WORDS[lane.kind]}`; }
     const zones = this.eventZonesForTurn(t);
     if (zones.some((z) => z.kind === "barrage")) {
       this.pushLog("Incoming artillery barrage — clear the marked zone!");
       notice = "⚠ Incoming barrage — clear the marked zone before you end your turn.";
     }
-    if (zones.some((z) => z.kind === "collapse")) {
-      this.pushLog("Structures in the marked zone are about to collapse.");
-      notice = notice ?? "⚠ Cover in the marked zone collapses this turn.";
-    }
     if (zones.some((z) => z.kind === "slag")) {
       this.pushLog("The furnaces are venting — molten slag will flood the marked zone this turn.");
       notice = notice ?? "⚠ Slag spill — the marked zone floods and burns this turn.";
-    }
-    if (zones.some((z) => z.kind === "lightning")) {
-      this.pushLog("The storm is building — lightning will strike the marked point this turn.");
-      notice = notice ?? "⚠ Lightning strikes the marked point this turn — stay clear of it.";
     }
     // No "next turn" banner: the forecast chip already shows a coming storm or barrage (fewest words on screen).
     this.eventNotice = notice;
@@ -6861,13 +6880,11 @@ export class TacticalSim {
       } else if (zone.kind === "slag") {
         const power = this.mapEvents().find((e) => e.kind === "slag")?.power ?? 18;
         this.pendingStrikes.push({ at: 0.45, point: { x: zone.x, z: zone.z }, radius: zone.radius, damage: power, kind: "slag" });
-      } else if (zone.kind === "lightning") {
-        const power = this.mapEvents().find((e) => e.kind === "lightning")?.power ?? 46;
-        this.pendingStrikes.push({ at: 0.6, point: { x: zone.x, z: zone.z }, radius: zone.radius, damage: power, kind: "lightning" });
-      } else {
-        const covers = this.entities.filter((e) => e.kind === "cover" && e.status.alive && dist(e.position, zone) <= zone.radius);
-        covers.forEach((c, i) => this.pendingStrikes.push({ at: 0.25 + i * 0.2, point: { ...c.position }, radius: 1.7, damage: 999, kind: "collapse" }));
       }
+    }
+    // LANE HAZARDS sweep their lines a second into the resolve.
+    for (const l of this.lanesOn(this.turn)) {
+      this.queueSweep(l.kind, l.from, l.to, { width: l.width, damage: l.lane.damage, throw: l.lane.throw, seconds: SWEEP_SECONDS[l.kind], at: 0.9, stopAtHeavy: l.kind === "boulder" });
     }
   }
 
@@ -6919,18 +6936,27 @@ export class TacticalSim {
   queueBoulder(point: Vec2, dir: Vec2, team: Team | undefined, at = 0.6): void {
     const from = clampToArena({ x: point.x - dir.x * BOULDER_LENGTH / 2, z: point.z - dir.z * BOULDER_LENGTH / 2 });
     const to = clampToArena({ x: point.x + dir.x * BOULDER_LENGTH / 2, z: point.z + dir.z * BOULDER_LENGTH / 2 });
+    this.queueSweep("boulder", from, to, { width: BOULDER_WIDTH, damage: BOULDER_DAMAGE, throw: BOULDER_THROW, seconds: BOULDER_SECONDS, at, stopAtHeavy: true, team });
+  }
+
+  /** ONE SWEEP: something big (a boulder, a dust devil, a herd, an icebreaker) crosses from -> to in `seconds`, drawn as one "roll"
+   *  effect (its colour names what it is: SWEEP_FX) and felt as timed sub-strikes along the line, so a unit is hit the moment it
+   *  arrives. Each unit is hit once per sweep; `stopAtHeavy` (the boulder) ends the sweep on the first heavy it meets. */
+  private queueSweep(kind: LaneKind, from: Vec2, to: Vec2, o: { width: number; damage: number; throw: number; seconds: number; at: number; stopAtHeavy: boolean; team?: Team }): void {
     const id = `roll-${++this.effectSeq}`;
-    this.pendingFx.push({ at, type: "roll", from, to, color: 0x8a7a66, duration: BOULDER_SECONDS, radius: BOULDER_WIDTH });
-    const steps = 10;
+    const len = dist(from, to) || 1;
+    const dir = { x: (to.x - from.x) / len, z: (to.z - from.z) / len };
+    this.pendingFx.push({ at: o.at, type: "roll", from, to, color: SWEEP_FX[kind], duration: o.seconds, radius: o.width });
+    const steps = Math.max(6, Math.ceil(len / 1.8));
     for (let i = 0; i <= steps; i += 1) {
       const t = i / steps;
       const p = { x: from.x + (to.x - from.x) * t, z: from.z + (to.z - from.z) * t };
-      this.pendingStrikes.push({ at: at + t * BOULDER_SECONDS, point: p, radius: BOULDER_WIDTH, damage: BOULDER_DAMAGE, kind: "boulder", team, roll: id, dir: { ...dir } });
+      this.pendingStrikes.push({ at: o.at + t * o.seconds, point: p, radius: o.width, damage: o.damage, kind, team: o.team, roll: id, dir, throwM: o.throw, stop: o.stopAtHeavy });
     }
   }
 
-  /** One step of a rolling boulder: everything it reaches is bowled aside (once per roll); a heavy stops the roll dead. */
-  private boulderStep(strike: { point: Vec2; radius: number; damage: number; team?: Team; roll?: string; dir?: Vec2 }): void {
+  /** One step of a sweep: everything it reaches is bowled aside (once per sweep); a heavy stops a boulder dead. */
+  private sweepStep(strike: { point: Vec2; radius: number; damage: number; kind: StrikeKind; team?: Team; roll?: string; dir?: Vec2; throwM?: number; stop?: boolean }): void {
     if (!strike.roll || this.stoppedRolls.has(strike.roll)) return;
     const hit = this.rollHits.get(strike.roll) ?? new Set<string>();
     this.rollHits.set(strike.roll, hit);
@@ -6938,6 +6964,12 @@ export class TacticalSim {
     for (const e of [...this.entities]) {
       if (!e.status.alive || e.flying || e.burrowed || hit.has(e.id) || e.kind === "cover" || isBuildingKind(e.kind) || isDefenseKind(e.kind)) continue;
       if (dist(e.position, strike.point) > strike.radius + e.radius * 0.6) continue;
+      if (IMMOVABLE_HEAVIES.has(e.kind) && !strike.stop) {
+        // A dust devil, a herd or a ship rakes armour and goes on: a dent, never a shove.
+        hit.add(e.id);
+        applyDamage(e, preferredPart(e, "center").id, Math.round(strike.damage * 0.5));
+        continue;
+      }
       if (IMMOVABLE_HEAVIES.has(e.kind)) {
         // The stone breaks on armour: a dent, a dust cloud, and the rest of the roll is called off.
         applyDamage(e, preferredPart(e, "center").id, Math.round(strike.damage * 0.5));
@@ -6949,13 +6981,15 @@ export class TacticalSim {
       hit.add(e.id);
       const result = applyDamage(e, preferredPart(e, "center").id, isInfantryKind(e.kind) ? strike.damage : Math.round(strike.damage * 0.5));
       if (owner) this.afterDamage(owner, e, result, "Boulder");
+      else for (const m of result.messages) this.pushLog(m);
       // Bowled aside, off the line, to whichever side it stood.
       const d = strike.dir ?? { x: 1, z: 0 };
       const side = (e.position.x - strike.point.x) * -d.z + (e.position.z - strike.point.z) * d.x >= 0 ? 1 : -1;
       const push = { x: e.position.x - (-d.z) * side, z: e.position.z - d.x * side };
-      if (e.status.alive) this.applyKnockback(owner ?? e, e, push, 0, 1, { ringOut: true, maxThrow: BOULDER_THROW, force: BOULDER_THROW });
+      const thrown = strike.throwM ?? BOULDER_THROW;
+      if (e.status.alive) this.applyKnockback(owner ?? e, e, push, 0, 1, { ringOut: true, maxThrow: thrown, force: thrown });
       this.effect("strike", strike.point, e.position, 0xd9c4a0, 0.45, e.radius + 0.5);
-      this.tally(strike.team ?? "player", "bowled");
+      if (strike.team) this.tally(strike.team, "bowled");
     }
   }
   private readonly rollHits = new Map<string, Set<string>>();
@@ -7027,9 +7061,9 @@ export class TacticalSim {
   // A single environmental detonation: a blast effect plus AoE damage to anything in range
   // (both teams — it's the battlefield, not a unit's attack). Bases are spared so the sky can't
   // hand someone the win.
-  private detonateStrike(strike: { point: Vec2; radius: number; damage: number; kind: StrikeKind; team?: Team; roll?: string; dir?: Vec2 }): void {
+  private detonateStrike(strike: { point: Vec2; radius: number; damage: number; kind: StrikeKind; team?: Team; roll?: string; dir?: Vec2; throwM?: number; stop?: boolean }): void {
     if (strike.kind === "shockwave") { this.landShockwave(strike.point, strike.team ?? "player"); return; }
-    if (strike.kind === "boulder") { this.boulderStep(strike); return; }
+    if (strike.kind === "boulder" || strike.kind === "devil" || strike.kind === "stampede" || strike.kind === "icebreaker") { this.sweepStep(strike); return; }
     if (strike.kind === "tankdrop") { this.landTankDrop(strike.point, strike.team ?? "player"); return; }
     if (strike.kind === "minedrop") {
       for (let i = 0; i < 5; i += 1) {
@@ -7042,12 +7076,6 @@ export class TacticalSim {
       this.effect("ping", strike.point, strike.point, 0xffb02e, 0.8, strike.radius);
       this.pushLog("Mines scatter across the point");
       return;
-    }
-    if (strike.kind === "lightning") {
-      // The bolt: a beam effect from the sky to the point, then the blast. Sets gas off like any
-      // other blast, and the ground burns briefly where it lands.
-      this.effect("bolt", strike.point, strike.point, 0xd8ecff, 0.45, 0.4);
-      this.burnZones.push({ id: `burn-${++this.effectSeq}`, x: strike.point.x, z: strike.point.z, radius: 1.2, turnsLeft: 1 });
     }
     if (strike.kind === "paradrop") {
       this.landParadrop(strike.point, strike.team ?? "player");
@@ -7062,11 +7090,9 @@ export class TacticalSim {
       this.burnZones.push({ id: `burn-${++this.effectSeq}`, x: strike.point.x, z: strike.point.z, radius: strike.radius * 0.85, turnsLeft: 2 });
     }
     if (strike.kind === "train") { this.runTrain(strike.damage); return; }
-    const color = strike.kind === "lightning" ? 0xd8ecff
-      : strike.kind === "napalm" ? 0xff6a1c
+    const color = strike.kind === "napalm" ? 0xff6a1c
       : strike.kind === "slag" ? 0xff7a2a
       : strike.kind === "barrage" ? 0xffac5a
-      : strike.kind === "collapse" ? DUST_FX
       : strike.kind === "laser" ? 0xffb84a
       : 0xff8c3a;
     this.effect("blast", strike.point, strike.point, color, 0.85, strike.radius);
@@ -7088,24 +7114,20 @@ export class TacticalSim {
       if (d > strike.radius + e.radius * 0.5) continue;
       const part = preferredPart(e, "center");
       const falloff = clamp01(1 - d / (strike.radius + 0.6));
-      const damage = strike.kind === "collapse" ? strike.damage : Math.max(8, Math.round(strike.damage * Math.max(0.4, falloff)));
+      const damage = Math.max(8, Math.round(strike.damage * Math.max(0.4, falloff)));
       applyDamage(e, part.id, damage);
       // EVERY BLAST THROWS (owner 2026-10-07): a bomb, a shell or a bolt blows troopers back like a grenade does (heavies hold).
-      if (strike.kind !== "collapse") this.applyKnockback(this.entities.find((b) => b.kind === "base" && b.team === strike.team) ?? e, e, strike.point, strike.damage, falloff);
+      this.applyKnockback(this.entities.find((b) => b.kind === "base" && b.team === strike.team) ?? e, e, strike.point, strike.damage, falloff);
     }
     // Environmental events log per shell (they threaten a marked zone); support strikes
     // logged once when tasked, so a 8-bomb cluster doesn't spam the feed.
     if (strike.kind === "barrage" && !strike.team) this.pushLog("Shells hammer the marked zone."); // a called barrage logged once when tasked
-    else if (strike.kind === "collapse") this.pushLog("Cover collapses in the marked zone.");
-    else if (strike.kind === "lightning") this.pushLog("Lightning strikes the marked point!");
     else if (strike.kind === "slag") this.pushLog("Molten slag floods the foundry floor!");
   }
 
   // Debug/test hook: force an environmental event onto the current turn (for screenshots/tests).
   debugForceEvent(kind: MapEventKind, zone?: { x: number; z: number; radius: number }): void {
-    if (kind === "sandstorm") this.forcedSandstorm = true;
-    else if (kind === "ionstorm") { this.forcedIonStorm = true; this.applyIonStormClamp(); }
-    else this.forcedZones.push({ kind, ...(zone ?? this.eventZone({ kind, startTurn: this.turn })) });
+    this.forcedZones.push({ kind, ...(zone ?? this.eventZone({ kind, startTurn: this.turn })) });
     this.refreshEventNotice();
   }
 
@@ -8041,15 +8063,11 @@ function coverIsTowardThreat(cover: Vec2, pos: Vec2, threat: Vec2): boolean {
   return (threat.x - pos.x) * (cover.x - pos.x) + (threat.z - pos.z) * (cover.z - pos.z) > 0;
 }
 
-// Whether a map event is active on a given turn, honoring its start turn, duration, and period.
+// Whether a map event fires on a given turn: its start turn, then every `period` turns.
 function eventOccursWindow(e: MapEventConfig, turn: number): boolean {
   if (turn < e.startTurn) return false;
-  const duration = Math.max(1, e.duration ?? 1);
-  if (e.period && e.period > 0) {
-    const phase = (turn - e.startTurn) % e.period;
-    return phase >= 0 && phase < duration;
-  }
-  return turn < e.startTurn + duration;
+  if (e.period && e.period > 0) return (turn - e.startTurn) % e.period === 0;
+  return turn === e.startTurn;
 }
 
 function preferredPartByIdOrAim(entity: CombatEntity, partId: string, aim: AimMode) {

@@ -37,7 +37,7 @@ import {
   FACTIONS,
   type FactionId,
   CLASH_BLAST,
-  DIG_FX, ERUPT_FX, HORN_FX, ICE_FX, LAUNCH_FX,
+  DIG_FX, ERUPT_FX, HORN_FX, ICE_FX, LAUNCH_FX, SWEEP_FX,
   PULSE_EMP,
   isPulseBlast,
   CLASH_BOLT,
@@ -381,13 +381,24 @@ function hazardAt(point: Vec2): string | undefined {
   if (rail) return rail.state === "now"
     ? "Freight train — it runs these rails when you end the turn: anything on them is hit hard and thrown off. Get clear."
     : "Freight train — it runs these rails NEXT turn. Don't end a move here then.";
+  // A lane hazard's band: the point lies within its width of the lane's line.
+  const onLane = env.lanes.find((l) => {
+    const dx = l.to.x - l.from.x, dz = l.to.z - l.from.z, len2 = dx * dx + dz * dz || 1;
+    const t = Math.max(0, Math.min(1, ((point.x - l.from.x) * dx + (point.z - l.from.z) * dz) / len2));
+    return Math.hypot(point.x - (l.from.x + dx * t), point.z - (l.from.z + dz * t)) <= l.width;
+  });
+  if (onLane) {
+    const what: Record<string, string> = {
+      devil: "Dust devil — it tears down this lane", stampede: "Stampede — the herd thunders down this lane",
+      boulder: "Rolling boulder — it flattens this lane", icebreaker: "Icebreaker — it ploughs this channel",
+    };
+    return `${what[onLane.kind] ?? "Danger lane"} ${onLane.state === "now" ? "when you end the turn: anything on it is hit and thrown. Get clear." : "NEXT turn. Don't end a move here then."}`;
+  }
   const zone = env.zones.find((z) => Math.hypot(point.x - z.x, point.z - z.z) <= z.radius);
   if (!zone) return undefined;
   const text: Record<string, string> = {
-    lightning: "Lightning — this circle is struck when you end the turn: heavy damage to anyone in it, and the ground burns. Move out.",
     slag: "Slag spill — molten slag floods this furnace corner when you end the turn, then burns for 2 turns. Stay clear.",
     barrage: "Artillery barrage — shells land in this zone when you end the turn, on both sides. Clear it.",
-    collapse: "Collapse — cover in this zone crumbles when you end the turn. Don't hide here.",
   };
   return text[zone.kind] ?? "Danger zone — something lands here when you end the turn.";
 }
@@ -1822,7 +1833,7 @@ const TUTORIAL_STEPS: Array<{ title: string; body: string }> = [
   { title: "Strike and Push", body: "Strike (B) rushes up to 3.5m and hits in one order. Push shoves a unit far away — into water or off the edge of the map, it is gone." },
   { title: "Cover and climbing", body: "Units crouched beside cover take less damage. Click a low prop to Climb it for height; tall walls and cliffs block movement and shots." },
   { title: "Support powers", body: "Once researched, the Support tab calls in a strike or a utility for money. It then cools down for a few turns before you can call — and pay for — it again." },
-  { title: "Hazards and capture", body: "Rings on the ground warn of lightning, barrages or slag: hover one to see what lands when you end the turn. Stand a unit beside a derelict turret or supply depot for a turn to capture it." },
+  { title: "Hazards and capture", body: "Rings and lanes on the ground warn of barrages, slag, boulders and stampedes: hover one to see what lands when you end the turn. Stand a unit beside a derelict turret or supply depot for a turn to capture it." },
   { title: "Win", body: "Destroy the enemy Home Base and every enemy unit. Press Space to end your turn — good luck, Commander." },
 ];
 let tutorialStep = 0;
@@ -2430,7 +2441,10 @@ function processBattleEvents(): void {
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.topple, 1.8);
       if (stage.isInView(effect.to)) feel.addTrauma(0.14);
     } else if (effect.type === "roll") {
-      sfx.verb("dig", heard); // a boulder rumbling down its lane
+      // What crosses the lane, by its colour (sim SWEEP_FX): a boulder rumbles, a dust devil howls, a herd thunders, a ship sounds its horn.
+      if (effect.color === SWEEP_FX.icebreaker) sfx.horn(heard);
+      else if (effect.color === SWEEP_FX.devil) sfx.verb("boost", heard);
+      else sfx.verb("dig", heard);
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.strike, 2);
       feel.addTrauma(0.1 * heard);
     } else if (effect.type === "jet") {
@@ -2649,7 +2663,7 @@ declare global {
       // Colorblind palette toggle for screenshot harnesses.
       setHighContrastTeams(on: boolean): void;
       // Dynamic map events: read current weather/zone state; force one for screenshots/tests.
-      environment(): { sandstorm: number; ionstorm: number; notice?: string; zones: Array<{ kind: string; x: number; z: number; radius: number }> };
+      environment(): { lanes: Array<{ kind: string; from: Vec2; to: Vec2; width: number; state: string }>; notice?: string; zones: Array<{ kind: string; x: number; z: number; radius: number }> };
       forceEvent(kind: MapEventKind): void;
       save(): boolean;
       // True when audio is silenced (settings mute or running under test automation).

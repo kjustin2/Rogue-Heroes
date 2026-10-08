@@ -91,17 +91,31 @@ export interface SignatureObject {
 }
 
 // Dynamic battlefield events — opt-in per map, deterministic (seeded), telegraphed a turn ahead.
-//  • sandstorm: a window of turns where accuracy drops and the fog thickens.
 //  • barrage: off-map artillery shells a zone during the turn's resolve (hits both sides).
 //  • collapse: cover inside a zone crumbles during the turn's resolve.
-// "lightning": a storm that strikes ONE telegraphed point per turn, somewhere new each turn.
-export type MapEventKind = "sandstorm" | "barrage" | "collapse" | "ionstorm" | "lightning" | "slag" | "train";
+export type MapEventKind = "barrage" | "slag" | "train" | LaneKind;
+
+/** LANE HAZARDS (2026-10-07: replace the invisible sandstorm / ion storm, the random lightning and the collapse): something big
+ *  sweeps a marked lane on a timer, warned a turn early, bowling everything on it aside. `lines` picks where the lanes run:
+ *  "center" = one lateral lane through the middle, "flanks" = a point-symmetric pair `offset` metres either side of it,
+ *  "channels" = along every water channel's long axis. */
+export type LaneKind = "devil" | "stampede" | "boulder" | "icebreaker";
+export interface LaneHazard {
+  kind: LaneKind;
+  lines: "center" | "flanks" | "channels";
+  offset?: number;
+  startTurn: number;
+  period: number;
+  width: number;
+  damage: number;
+  /** Metres a trooper on the lane is thrown aside. */
+  throw: number;
+}
 
 export interface MapEventConfig {
   kind: MapEventKind;
   startTurn: number; // first turn it fires
   period?: number; // repeat every N turns (omit = one-shot)
-  duration?: number; // turns it stays active — sandstorm only (default 1)
   zone?: { x: number; z: number; radius: number }; // affected area (barrage/collapse); omit = map center
   power?: number; // tuning knob (barrage shell damage); omit = sensible default
 }
@@ -125,6 +139,14 @@ export interface MapDef {
   scatter: ScatterGroup[];
   signature?: SignatureObject[];
   events?: MapEventConfig[];
+  lanes?: LaneHazard[];
+  /** CONVEYOR BELTS (Ironworks): at every turn start, anything standing on a belt is carried `step` metres along `dir` (the
+   *  point-symmetric twin runs the other way). Heavies stay put (IMMOVABLE_HEAVIES). */
+  conveyors?: Array<{ rect: TerrainRect; dir: Vec2; step: number }>;
+  /** A MARKED MINEFIELD (Crossfire): a strip of neutral mines anyone can see and anyone sets off, and its point-symmetric twin. */
+  minefield?: { x: number; z: number; w: number; d: number };
+  /** The two field-post kinds this map carries in mirrored pairs (owner 2026-10-07: themed, not all five everywhere). */
+  posts?: Array<"gunpost" | "rocketpost" | "flamepost" | "mortarpit" | "cannonpost">;
   // Capturable neutral field structures; mirror places a point-symmetric twin for fairness.
   neutrals?: Array<{ kind: "turret" | "depot"; x: number; z: number; mirror?: boolean }>;
   /** A FREIGHT TRAIN runs these tracks every `period` turns from `startTurn`: anything standing on one takes `damage` and is thrown off. */
@@ -235,6 +257,7 @@ function scaleMapDef(def: MapDef): MapDef {
     neutrals: def.neutrals?.map((n) => ({ ...n, x: n.x * f, z: n.z * f })),
     events: def.events?.map((e) => (e.zone ? { ...e, zone: { x: e.zone.x * f, z: e.zone.z * f, radius: e.zone.radius * f } } : e)),
     train: def.train ? { ...def.train, tracks: def.train.tracks.map((r) => scaleRect(r, f)) } : undefined,
+    conveyors: def.conveyors?.map((c) => ({ ...c, rect: scaleRect(c.rect, f) })),
   };
 }
 
@@ -499,6 +522,7 @@ const RAW_MAPS: readonly MapDef[] = [
   // lanes down the river, infantry through the canyons, and the mesas decide who sees whom.
   {
     id: "dustbowl",
+    posts: ["rocketpost", "gunpost"],
     name: "Dust Bowl",
     blurb: "A dead supply road through a desert basin, walled by canyons.",
     feel: "Armour down the dry river bed, infantry through the canyon passes; the plateau derricks watch it all.",
@@ -558,8 +582,8 @@ const RAW_MAPS: readonly MapDef[] = [
       { kind: "bones", x: -22, z: -9, mirror: true },
       { kind: "barrels", x: -9, z: 6, mirror: true }, // RED BARRELS (2026-10-07): shoot them and they go up, and so does whoever stands beside them
     ],
-    // Recurring sandstorms sweep the open basin — accuracy and visibility drop in waves.
-    events: [{ kind: "sandstorm", startTurn: 3, duration: 2, period: 6 }],
+    // A DUST DEVIL tears down the middle of the basin every few turns, flinging anyone on its lane (warned a turn early).
+    lanes: [{ kind: "devil", lines: "center", startTurn: 3, period: 3, width: 2.4, damage: 12, throw: 9 }],
     // Twin supply depots by the spires: hold them for extra income.
     neutrals: [{ kind: "depot", x: -19, z: -2.3, mirror: true }],
   },
@@ -572,6 +596,7 @@ const RAW_MAPS: readonly MapDef[] = [
   // lanes, and the furnaces are the walls at the corners.
   {
     id: "ironworks",
+    posts: ["cannonpost", "flamepost"],
     name: "Ironworks",
     blurb: "A working foundry: furnace, rail yard, and the overpass between.",
     feel: "Rail-car lanes for infantry, the overpass for whoever holds the middle, a lit furnace at each corner.",
@@ -619,6 +644,8 @@ const RAW_MAPS: readonly MapDef[] = [
     // THE FREIGHT LINE (owner 2026-10-07: "more fun and unique maps"): a train runs both rail-yard tracks every fourth turn.
     // The rails glow the turn before; anything standing on them is hit and thrown clear. Bait them onto it.
     train: { tracks: [{ minX: -7.5, maxX: 7.5, minZ: -11.2, maxZ: -9.8 }, { minX: -7.5, maxX: 7.5, minZ: 9.8, maxZ: 11.2 }], startTurn: 4, period: 4, damage: 140 },
+    // CONVEYOR BELTS: a strip of foundry floor on each side that carries whatever stands on it 4m a turn, toward the slag.
+    conveyors: [{ rect: { minX: -9, maxX: -4, minZ: 5.6, maxZ: 7.4 }, dir: { x: -1, z: 0 }, step: 4 }],
     // Derelict foundry turrets guard the throat of each rail yard — first squad to reach one owns it.
     neutrals: [{ kind: "turret", x: -3.5, z: -8, mirror: true }],
   },
@@ -633,6 +660,7 @@ const RAW_MAPS: readonly MapDef[] = [
   // in and one green to be seen on, and each side's terrace flight starts nearer its own base.
   {
     id: "verdant",
+    posts: ["flamepost", "mortarpit"],
     name: "Verdant Pass",
     blurb: "A farmed valley: terraced slopes, orchard rows, a chapel ruin and the mill pond.",
     feel: "Climb the terraces for a long view down the valley, fight through the orchard rows, or cross the open chapel green.",
@@ -675,8 +703,8 @@ const RAW_MAPS: readonly MapDef[] = [
     flagOffset: 3.4,
     hill: { x: 0, z: 0 },
     hillRadius: 5.0,
-    // A storm rolls through the valley: from turn 4, lightning strikes one marked point every turn.
-    events: [{ kind: "lightning", startTurn: 4, period: 1, power: 46 }],
+    // A STAMPEDE: two herds thunder down the flanks every few turns, trampling and scattering troopers (warned a turn early).
+    lanes: [{ kind: "stampede", lines: "flanks", offset: 8, startTurn: 4, period: 4, width: 2, damage: 26, throw: 5 }],
     // MINIMAL BY DESIGN (owner 2026-09-23: "way too many items... blocks movement"; "enough space
     // for 2 tanks to get through any space"). Listed in PRIORITY order -- landmark, then the thing
     // that blows, then the rest -- and each is placed at the nearest spot to its authored one that
@@ -699,6 +727,7 @@ const RAW_MAPS: readonly MapDef[] = [
   // the far side's harbour is on your south, its village on your north.
   {
     id: "causeway",
+    posts: ["cannonpost", "gunpost"],
     name: "Frozen Causeway",
     blurb: "A harbour the ice took: a beached freighter, a fishing village, one land bridge between.",
     feel: "Head-on down the causeway, or take the bridges out to the harbour and the village on the flanks.",
@@ -760,7 +789,8 @@ const RAW_MAPS: readonly MapDef[] = [
       { kind: "barrels", x: -14, z: -2.5, mirror: true }, // RED BARRELS (2026-10-07): shoot them and they go up, and so does whoever stands beside them
     ],
     // Ion storms rake the exposed causeway, scrambling command links (units lose command points).
-    events: [{ kind: "ionstorm", startTurn: 3, duration: 1, period: 4 }],
+    // The ICEBREAKER ploughs both channels every few turns, smashing anyone out on the ice (warned a turn early).
+    lanes: [{ kind: "icebreaker", lines: "channels", startTurn: 3, period: 4, width: 3, damage: 90, throw: 5 }],
   },
   // RUINS OF KARAK — a temple city gone to ruin. Sections: the TEMPLE PRECINCT (the centre: the
   // dais, a colonnade of standing pillars down each side of it, and the FALLEN COLOSSUS landmark
@@ -772,6 +802,7 @@ const RAW_MAPS: readonly MapDef[] = [
   // amphitheatre faces their mesa across the ravines.
   {
     id: "karak",
+    posts: ["mortarpit", "rocketpost"],
     name: "Ruins of Karak",
     blurb: "A temple city in ruin: colonnade, fallen colossus, amphitheatre and cistern.",
     feel: "Cross the ravines into the precinct, hold the colossus or climb the amphitheatre steps.",
@@ -832,7 +863,8 @@ const RAW_MAPS: readonly MapDef[] = [
       { kind: "barrels", x: -11, z: 3, mirror: true }, // RED BARRELS (2026-10-07): shoot them and they go up, and so does whoever stands beside them
     ],
     // The ancient colonnades give way: cover near the central dais collapses every few turns.
-    events: [{ kind: "collapse", startTurn: 4, period: 4, zone: { x: 0, z: 0, radius: 9 } }],
+    // A ROLLING BOULDER breaks loose from the colossus and rolls down the middle every few turns (warned a turn early).
+    lanes: [{ kind: "boulder", lines: "center", startTurn: 4, period: 4, width: 1.6, damage: 40, throw: 4 }],
   },
   // CROSSFIRE BASIN — a militarised border. Sections: the CHECKPOINT (the centre lane: each side's
   // gate landmark — booth, raised boom, sign — facing the other across the knoll, the crossing
@@ -843,6 +875,9 @@ const RAW_MAPS: readonly MapDef[] = [
   // wide). Mirrored, so each side has a station to hold and a trench to push down.
   {
     id: "crossfire",
+    // A MARKED MINEFIELD across each flank: flags up, mines down, anyone's boots set them off.
+    minefield: { x: -9, z: 12, w: 3.4, d: 6 },
+    posts: ["gunpost", "mortarpit"],
     name: "Crossfire Basin",
     blurb: "A militarised border: checkpoint gates, a radar station, a trench line.",
     feel: "Push the trench line, hold the radar station, meet at the checkpoint — mirrored to the bag.",

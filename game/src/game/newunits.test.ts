@@ -133,10 +133,11 @@ describe("new strikes", () => {
     call(sim, "boulder", { x: -6, z: 6 }, "enemy");
     expect(hp(sim.entity(pins.id)!), "bowled over").toBeLessThan(hp0);
     expect(Math.hypot(pins.position.x - at.x, pins.position.z - at.z), "knocked off the lane").toBeGreaterThan(1);
-    const wall = sim.debugSpawn("tank", "player", { x: -6, z: -6 });
-    const behind = sim.debugSpawn("soldier", "player", { x: -2, z: -6 });
+    // (Kept off Dust Bowl's centre lane: its dust devil sweeps x = 0 on turn 3.)
+    const wall = sim.debugSpawn("tank", "player", { x: -14, z: -6 });
+    const behind = sim.debugSpawn("soldier", "player", { x: -10, z: -6 });
     const hpBehind = hp(behind), tankAt = { ...wall.position };
-    call(sim, "boulder", { x: -4, z: -6 }, "enemy");
+    call(sim, "boulder", { x: -12, z: -6 }, "enemy");
     expect(wall.position, "the tank never moves").toEqual(tankAt);
     expect(hp(sim.entity(behind.id)!), "the roll stops at the tank").toBe(hpBehind);
   });
@@ -145,11 +146,14 @@ describe("new strikes", () => {
 describe("the new posts and the roster split", () => {
   afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
 
-  it("every map has a mirrored pair each of Gun Posts, Rocket Posts and Flame Posts", () => {
+  it("every map carries a mirrored pair of each of its OWN two post kinds, and no others (themed, 2026-10-07)", () => {
+    const ALL = ["gunpost", "rocketpost", "flamepost", "mortarpit", "cannonpost"];
     for (const id of ["dustbowl", "ironworks", "verdant", "causeway", "karak", "crossfire"]) {
       const sim = new TacticalSim();
       sim.configure(mapDef(id), "destroy", "normal");
-      for (const kind of ["gunpost", "rocketpost", "flamepost"]) expect(sim.entities.filter((e) => e.kind === kind && e.team === "neutral").length, `${id}/${kind}`).toBe(2);
+      const own = mapDef(id).posts!;
+      expect(own.length, id).toBe(2);
+      for (const kind of ALL) expect(sim.entities.filter((e) => e.kind === kind && e.team === "neutral").length, `${id}/${kind}`).toBe(own.includes(kind as never) ? 2 : 0);
     }
   });
 

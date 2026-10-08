@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TacticalSim, mapDef } from "./sim";
 import { DEFAULT_TERRAIN, pointInWater, setActiveTerrain } from "./terrain";
+import { isMountKind } from "./damageModel";
 const pointInWaterAt = (x: number, z: number): boolean => pointInWater({ x, z });
 
 // FIELD HANDS (owner 2026-10-03): charges, barriers, the rocketeer, manned posts.
@@ -42,12 +43,12 @@ describe("manned emplacements", () => {
     return e;
   };
 
-  it("every map starts with a mirrored pair of free Gun Posts", () => {
+  it("every map starts with two mirrored pairs of free posts (its own two kinds)", () => {
     for (const id of ["dustbowl", "ironworks", "verdant", "causeway", "karak", "crossfire"]) {
       const sim = new TacticalSim();
       sim.configure(mapDef(id), "destroy", "normal");
-      const posts = sim.entities.filter((e) => e.kind === "gunpost" && e.team === "neutral");
-      expect(posts.length, id).toBe(2);
+      const posts = sim.entities.filter((e) => isMountKind(e.kind) && e.team === "neutral");
+      expect(posts.length, id).toBe(4);
     }
     setActiveTerrain(DEFAULT_TERRAIN);
   });

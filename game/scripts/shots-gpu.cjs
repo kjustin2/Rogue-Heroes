@@ -793,6 +793,28 @@ app.whenReady().then(async () => {
         await js(`window.__rht.setTimeScale(1); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = ""))`);
         continue;
       }
+      if (s === "lanes") {
+        // 2026-10-07 map hazards: each lane the turn before (telegraph), then mid-sweep; plus Crossfire's minefield and the Ironworks belts.
+        for (const m of ["dustbowl", "verdant", "karak", "causeway"]) {
+          await js(`window.__rht.setTimeScale(1); window.__rht.startBattle(${JSON.stringify(m)}, "destroy", "normal")`);
+          await sleep(1500);
+          await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = "hidden"));
+            const lane = sim.mapDef.lanes[0]; sim.turn = lane.startTurn - 1;
+            const l = sim.lanesOn(lane.startTurn)[0]; r.setView({ x: (l.from.x + l.to.x) / 2, z: (l.from.z + l.to.z) / 2, zoom: 0.62, pitch: 0.8, yaw: 0.2 }); })()`);
+          await sleep(900); await shot(`lanes-${m}-soon`);
+          await js(`(() => { const r = window.__rht, sim = r.sim; sim.turn = sim.mapDef.lanes[0].startTurn; r.holdCamera(true); sim.endTurn(); r.setTimeScale(0.6); })()`);
+          for (let i = 0; i < 2; i += 1) { await sleep(i === 0 ? 3000 : 1300); await shot(`lanes-${m}-sweep${i}`); }
+          await js(`window.__rht.holdCamera(false)`);
+        }
+        for (const [m, look] of [["crossfire", "sim.mines.find((x) => x.team === 'neutral')"], ["ironworks", "(() => { const b = sim.conveyors()[0].rect; return { x: (b.minX + b.maxX) / 2, z: (b.minZ + b.maxZ) / 2 }; })()"]]) {
+          await js(`window.__rht.setTimeScale(1); window.__rht.startBattle(${JSON.stringify(m)}, "destroy", "normal")`);
+          await sleep(1500);
+          await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); const p = ${look}; r.setView({ x: p.x, z: p.z, zoom: 0.32, pitch: 0.7, yaw: 0.3 }); })()`);
+          await sleep(900); await shot(`lanes-${m}-feature`);
+        }
+        await js(`window.__rht.setTimeScale(1); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = ""))`);
+        continue;
+      }
       if (s === "corners") {
         // Owner 2026-10-07: "in corners of map make sure parts of map don't spill out ... a circle went off the border of the map".
         // The four corners of every map at play zoom, HUD hidden, in Hill mode (the zone ring) with the deploy rings up.

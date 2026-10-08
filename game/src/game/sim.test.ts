@@ -2264,18 +2264,6 @@ describe("the one tech choice left: Fire Discipline or Demolitions", () => {
 });
 
 describe("dynamic map events", () => {
-  it("a sandstorm widens accuracy spread", () => {
-    const spread = (storm: boolean): number => {
-      const sim = new TacticalSim([
-        createSoldier("p", "Rook", "player", { x: 0, z: 0 }),
-        createSoldier("e", "Foe", "enemy", { x: 8, z: 0 }),
-      ]);
-      if (storm) sim.debugForceEvent("sandstorm");
-      return sim.previewShot("p", "e", "body")?.spreadDegrees ?? 0;
-    };
-    expect(spread(true)).toBeGreaterThan(spread(false));
-  });
-
   it("an artillery barrage damages units caught in the zone", () => {
     const victim = createSoldier("victim", "Victim", "enemy", { x: 0, z: 0 });
     // Observer sits inside the victim's no-chase radius so the enemy holds at the zone (it can't be
@@ -2290,26 +2278,6 @@ describe("dynamic map events", () => {
     expect(victim.parts.some((p) => p.hp < p.maxHp)).toBe(true);
   });
 
-  it("an ion storm scrambles units down to one action point", () => {
-    const unit = createSoldier("u", "Unit", "player", { x: 0, z: 0 });
-    unit.commandPoints = 2;
-    const sim = new TacticalSim([unit]);
-    expect(unit.commandPoints).toBe(2);
-    sim.debugForceEvent("ionstorm");
-    expect(unit.commandPoints).toBe(1);
-  });
-
-  it("collapsing cover wrecks cover inside the zone", () => {
-    const cover = createCover("c1", "Pillar", { x: 0, z: 0 });
-    const sim = new TacticalSim([
-      createSoldier("p", "Rook", "player", { x: -10, z: 0 }),
-      cover,
-    ]);
-    sim.debugForceEvent("collapse", { x: 0, z: 0, radius: 4 });
-    sim.endTurn();
-    advance(sim, 4);
-    expect(cover.status.alive).toBe(false);
-  });
 });
 
 function advance(sim: TacticalSim, seconds: number): void {

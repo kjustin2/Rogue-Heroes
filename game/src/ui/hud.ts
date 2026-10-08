@@ -1087,7 +1087,7 @@ function bossBar(sim: TacticalSim): string {
   `;
 }
 
-// A warning chip for the active/upcoming dynamic map event (sandstorm, barrage, collapse).
+// A warning chip for the active/upcoming dynamic map event (a barrage, a slag spill, a lane hazard).
 function eventChip(sim: TacticalSim): string {
   const notice = sim.environment().notice;
   if (!notice) return "";
@@ -1097,11 +1097,11 @@ function eventChip(sim: TacticalSim): string {
 }
 
 const EVENT_GLYPHS: Record<string, { glyph: string; name: string; label: string }> = {
-  sandstorm: { glyph: "≋", name: "Sandstorm", label: "Sandstorm — accuracy drops" },
-  ionstorm: { glyph: "⌁", name: "Ion storm", label: "Ion storm — units limited to 1 AP" },
   barrage: { glyph: "☄", name: "Barrage", label: "Artillery barrage on the marked zone" },
-  collapse: { glyph: "▽", name: "Collapse", label: "Structural collapse in the marked zone" },
-  lightning: { glyph: "ϟ", name: "Lightning", label: "Lightning strikes the marked point" },
+  devil: { glyph: "∿", name: "Dust devil", label: "Dust devil — anyone on the marked lane is flung" },
+  stampede: { glyph: "≫", name: "Stampede", label: "Stampede — the herd tramples the marked lanes" },
+  boulder: { glyph: "◉", name: "Boulder", label: "Rolling boulder — the marked lane is flattened" },
+  icebreaker: { glyph: "⊳", name: "Icebreaker", label: "Icebreaker — anyone out on the channel ice is hit" },
   slag: { glyph: "♨", name: "Slag spill", label: "Slag spill — the marked zone floods and burns" },
   train: { glyph: "▤", name: "Freight train", label: "Freight train — anything on the glowing rails is hit and thrown off" },
 };

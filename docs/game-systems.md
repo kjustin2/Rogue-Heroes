@@ -50,6 +50,21 @@ Wall, Turret, Spring Trap, Gun Post, Rocket Post. Base upgrades: the Fortress Ca
   Turret / Minefield / Harpoon Tower, Minefield Drop / Napalm / Barrage (now Ordnance Lab); Bastion Sandbags / Gun Turret / Mortar Turret, Boulder Roll /
   Gun Run / Tank Drop / Barrage. Tech: 12 nodes, one either/or (Fire Discipline vs Demolitions).
 
+## Maps made their own (2026-10-07, focus round)
+- **Themed field posts** (`MapDef.posts`): two kinds per map in mirrored pairs, not all five everywhere. Dust Bowl rocket + gun,
+  Ironworks cannon + flame, Verdant flame + mortar, Causeway cannon + gun, Karak mortar + rocket, Crossfire gun + mortar.
+- **Lane hazards** (`MapDef.lanes`, `lanesOn`, `queueSweep` / `sweepStep`, shared with the Boulder Roll): something big sweeps a
+  marked lane on a timer, warned the turn before by a draped band + chevrons (`drapedRibbon`), hits and throws everything on it
+  aside once (heavies dented, never moved; only the boulder stops on one). Dust Bowl DUST DEVIL (centre lane, every 3rd turn from
+  3), Verdant STAMPEDE (two herds down the flanks, every 4th from 4), Karak ROLLING BOULDER (centre, every 4th from 4), Causeway
+  ICEBREAKER (up both channels, every 4th from 3; it sounds the horn). They replace the sandstorm, the ion storm, the lightning and
+  the collapse, which are gone with their code. Lanes are point-symmetric (`storm.test.ts`).
+- **Crossfire's marked minefield** (`MapDef.minefield`, `placeMapMinefield`): neutral mines under red pennants, in mirrored pairs,
+  set off by anyone. **Ironworks conveyor belts** (`MapDef.conveyors`, `runConveyorTick`): at turn start anything on a belt rides
+  it 4m toward the slag (heavies stay put); its chevrons crawl.
+- Not done: Dust Bowl is still the slowest map (15 of 24 undecided); shrinking it squeezed out its props (tried and reverted).
+  Oil geysers were skipped (a launch, which the owner cut). `npm run shots:gpu -- lanes` shows every lane before and mid-sweep.
+
 ## Balance snapshot (2026-10-07, `balance.test.ts`: 6 maps x 24 seeds, both seats the Normal AI)
 Every combat kind is gated now (`UNGATED` is empty): the Sledge's hammer is swung by every brain and closes in first (`aiSlamAct`:
 move + slam in one turn), which took it from 0.11x to 0.77x of the median damage per $; the bomber measures 1.98x. Spread: Tank 1.61x,

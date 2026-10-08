@@ -9,7 +9,7 @@ import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec
 import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isMountKind, isVehicleKind, type CombatEntity, type CoverKind, type DamagePart, type Team, type EntityKind, type PartRole } from "../game/damageModel";
 import { factionDef, type FactionId } from "../game/factions";
 import type { OrderKind, Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
-import { CLASH_BLAST, CLASH_BOLT, IMMOVABLE_HEAVIES, isDustBlast, isPulseBlast, minefieldPoints, muzzleFor } from "../game/sim";
+import { CLASH_BLAST, CLASH_BOLT, IMMOVABLE_HEAVIES, SWEEP_FX, isDustBlast, isPulseBlast, minefieldPoints, muzzleFor } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type GroundSurfaceKind, type SkylineKind } from "../game/maps";
 import type { TroopKind } from "../game/units";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, climbsAlong, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainIce, terrainWater } from "../game/terrain";
@@ -85,11 +85,6 @@ export class WorldRenderer {
   private baseFogColor = 0xd9b27a;
   private baseFogDensity = 0.012;
   private baseSkyColor = 0xe8c98f;
-  private sandstormBlend = 0;
-  private ionBlend = 0;
-  private readonly envScratch = new THREE.Color();
-  private readonly envSand = new THREE.Color(0xcaa46a);
-  private readonly envIon = new THREE.Color(0x5aa0ff);
   // Per-map ambient particle bed (dust/embers/pollen/snow/ash) that drifts to give the map life.
   private ambientPoints: THREE.Points | null = null;
   private ambientVel: Float32Array | null = null;
@@ -443,42 +438,28 @@ export class WorldRenderer {
       }
     }
     const env = sim.environment();
-    this.sandstormBlend += (env.sandstorm - this.sandstormBlend) * 0.06;
-    const fog = this.scene.fog as THREE.FogExp2 | null;
-    // The silhouette shape test owns the sky and the fog while it runs; the weather sync would
-    // repaint its white field with the map's sky colour on the very next frame.
+    // The silhouette shape test owns the sky and the fog while it runs.
     if (this.silhouetteMode) return;
-    if (fog && "density" in fog) {
-      // A readable dusty haze, not a brown-out: keep units visible while the field clearly hazes.
-      fog.color.copy(this.envScratch.setHex(this.baseFogColor)).lerp(this.envSand, this.sandstormBlend * 0.7);
-      fog.density = this.baseFogDensity * (1 + this.sandstormBlend * 1.6);
-    }
-    if (this.scene.background instanceof THREE.Color) {
-      this.scene.background.copy(this.envScratch.setHex(this.baseSkyColor)).lerp(this.envSand, this.sandstormBlend * 0.45);
-    }
-    // Ion storm: an electric-blue cast that flickers, plus a few crackling arcs over the field.
-    this.ionBlend += ((env.ionstorm ? 1 : 0) - this.ionBlend) * 0.08;
-    if (this.ionBlend > 0.01) {
-      const flicker = 1 + Math.sin(performance.now() * 0.021) * 0.18 * this.ionBlend;
-      if (fog && "density" in fog) {
-        fog.color.lerp(this.envIon, this.ionBlend * 0.55);
-        fog.density *= flicker;
-      }
-      if (this.scene.background instanceof THREE.Color) this.scene.background.lerp(this.envIon, this.ionBlend * 0.4);
-      if (this.ionBlend > 0.3) {
-        const halfW = arenaWidth() * 0.36;
-        const halfD = arenaDepth() * 0.36;
-        for (let k = 0; k < 3; k += 1) {
-          const t = performance.now() * 0.004 + k * 2.3;
-          const x = Math.sin(t * 1.7) * halfW;
-          const z = Math.cos(t * 1.1) * halfD;
-          const h = 3.2 + Math.sin(t * 6) * 1.6;
-          const geo = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(x, 0, z),
-            new THREE.Vector3(x + Math.sin(t * 11) * 0.5, h, z + Math.cos(t * 9) * 0.5),
-          ]);
-          const arc = new THREE.Line(geo, this.envMat(THREE.LineBasicMaterial, { color: 0x9ad0ff, transparent: true, opacity: (0.4 + 0.5 * Math.abs(Math.sin(t * 7))) * this.ionBlend }));
-          this.environmentRoot.add(arc);
+    const fog = this.scene.fog as THREE.FogExp2 | null;
+    if (fog && "density" in fog) { fog.color.setHex(this.baseFogColor); fog.density = this.baseFogDensity; }
+    if (this.scene.background instanceof THREE.Color) this.scene.background.setHex(this.baseSkyColor);
+    // LANE HAZARDS: the lane a dust devil / herd / boulder / icebreaker will sweep is painted on the ground the turn before
+    // (a steady band) and on its turn (pulsing), in its hazard colour, with chevrons pointing the way it comes.
+    const lanePulse = (Math.sin(performance.now() * 0.007) + 1) * 0.5;
+    for (const lane of env.lanes) {
+      const now = lane.state === "now";
+      this.environmentRoot.add(new THREE.Mesh(
+        drapedRibbon(lane.from, lane.to, lane.width, 0.07),
+        this.envMat(THREE.MeshBasicMaterial, { color: hazardColor(lane.kind), transparent: true, opacity: now ? 0.1 + lanePulse * 0.1 : 0.09, side: THREE.DoubleSide, depthWrite: false }),
+      ));
+      const len = Math.hypot(lane.to.x - lane.from.x, lane.to.z - lane.from.z) || 1;
+      const dx = (lane.to.x - lane.from.x) / len, dz = (lane.to.z - lane.from.z) / len;
+      for (let d = 3; d < len - 1; d += 6) {
+        const p = { x: lane.from.x + dx * d, z: lane.from.z + dz * d };
+        for (const side of [-1, 1]) {
+          const tip = { x: p.x + dx * 0.6, z: p.z + dz * 0.6 };
+          const tail = { x: p.x - dx * 0.4 + -dz * side * 0.7, z: p.z - dz * 0.4 + dx * side * 0.7 };
+          this.environmentRoot.add(makeLine(tail, tip, hazardColor(lane.kind), now ? 0.6 + lanePulse * 0.4 : 0.55, drawnGroundAt(p) + 0.1));
         }
       }
     }
@@ -551,6 +532,21 @@ export class WorldRenderer {
     // Friendly mines only — the enemy never sees yours until they step on one.
     const minePulse = Math.sin(performance.now() * 0.009) > 0.2;
     for (const mine of sim.mines) {
+      if (mine.team === "neutral") {
+        // A MARKED FIELD MINE: a dark plate and a stake with a red warning pennant, so everyone can see the field.
+        const g = drawnGroundAt(mine);
+        this.environmentRoot.add(new THREE.Mesh(drapedDisc(mine.x, mine.z, 0, 0.24, 14, 0.05), this.envMat(THREE.MeshBasicMaterial, { color: 0x2a2f34, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false })));
+        const stake = new THREE.Mesh(projectileGeometry("bar"), this.envMat(THREE.MeshBasicMaterial, { color: 0x5a4a3a }));
+        stake.position.set(mine.x + 0.3, g + 0.35, mine.z);
+        stake.scale.set(0.04, 0.7, 0.04);
+        this.environmentRoot.add(stake);
+        const flag = new THREE.Mesh(projectileGeometry("bar"), this.envMat(THREE.MeshBasicMaterial, { color: 0xd8322a }));
+        flag.position.set(mine.x + 0.42, g + 0.62, mine.z);
+        flag.scale.set(0.22, 0.14, 0.02);
+        flag.rotation.y = Math.sin(performance.now() * 0.004 + mine.x) * 0.3;
+        this.environmentRoot.add(flag);
+        continue;
+      }
       if (mine.team !== "player") continue;
       const y = drawnGroundAt(mine) + 0.05;
       if (mine.spring) {
@@ -706,8 +702,42 @@ export class WorldRenderer {
         this.featureRoot.add(train);
         this.trains.push(train);
       });
+      // CONVEYOR BELTS: a dark rubber belt between steel side rails; its chevrons crawl the way it carries (drawn per frame below).
+    for (const belt of sim.conveyors()) {
+      const r = belt.rect;
+      const cx = (r.minX + r.maxX) / 2, cz = (r.minZ + r.maxZ) / 2;
+      const y = drawnGroundAt({ x: cx, z: cz });
+      const w = r.maxX - r.minX, d = r.maxZ - r.minZ;
+      const bed = new THREE.Mesh(new THREE.BoxGeometry(w, 0.12, d), new THREE.MeshStandardMaterial({ color: 0x1d2024, roughness: 0.8 }));
+      bed.position.set(cx, y + 0.06, cz);
+      bed.receiveShadow = true;
+      this.featureRoot.add(bed);
+      const along = Math.abs(belt.dir.x) > 0.5;
+      for (const side of [-1, 1]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(along ? w : 0.14, 0.22, along ? 0.14 : d), new THREE.MeshStandardMaterial({ color: 0xf2c230, roughness: 0.5, metalness: 0.4 }));
+        rail.position.set(along ? cx : cx + side * (w / 2), y + 0.11, along ? cz + side * (d / 2) : cz);
+        this.featureRoot.add(rail);
+      }
     }
-    // Per frame: the rail glow and the trains.
+    }
+    // Per frame: the conveyor chevrons crawl, then the rail glow and the trains.
+    const crawl = (performance.now() * 0.0008) % 1;
+    for (const belt of sim.conveyors()) {
+      const r = belt.rect;
+      const along = Math.abs(belt.dir.x) > 0.5;
+      const len = along ? r.maxX - r.minX : r.maxZ - r.minZ;
+      const cx = (r.minX + r.maxX) / 2, cz = (r.minZ + r.maxZ) / 2;
+      for (let k = 0; k < len; k += 1.2) {
+        const s2 = ((k + crawl * 1.2) % len) - len / 2;
+        const p = along ? { x: cx + s2 * Math.sign(belt.dir.x), z: cz } : { x: cx, z: cz + s2 * Math.sign(belt.dir.z) };
+        const yaw = Math.atan2(belt.dir.x, belt.dir.z);
+        for (const side of [-1, 1]) {
+          const tip = { x: p.x + Math.sin(yaw) * 0.3, z: p.z + Math.cos(yaw) * 0.3 };
+          const tail = { x: p.x - Math.sin(yaw) * 0.2 + Math.cos(yaw) * side * 0.5, z: p.z - Math.cos(yaw) * 0.2 - Math.sin(yaw) * side * 0.5 };
+          this.environmentRoot.add(makeLine(tail, tip, 0xf2c230, 0.8, drawnGroundAt(p) + 0.14));
+        }
+      }
+    }
     const env = sim.environment();
     const pulse = (Math.sin(performance.now() * 0.006) + 1) * 0.5;
     env.rails.forEach((r, i) => {
@@ -1198,7 +1228,6 @@ export class WorldRenderer {
     this.baseFogDensity = theme.fogDensity * 0.72;
     this.surfaceKind = theme.surface ?? "cracked";
     this.baseSkyColor = theme.sky;
-    this.sandstormBlend = 0;
     if (this.skyTexture) this.skyTexture.dispose();
     const sky = makeThemeSky(theme);
     this.skyTexture = sky.texture;
@@ -5811,6 +5840,55 @@ export class WorldRenderer {
         shadow.position.set(x, terrainHeightAt({ x, z }) + 0.03, z);
         shadow.scale.set(1, 1.9, 1);
         this.effectRoot.add(shadow);
+      } else if (effect.type === "roll" && effect.color !== SWEEP_FX.boulder) {
+        const dx = effect.to.x - effect.from.x, dz = effect.to.z - effect.from.z;
+        const p = { x: effect.from.x + dx * t, z: effect.from.z + dz * t };
+        const g = drawnGroundAt(p);
+        const yaw = Math.atan2(dx, dz);
+        if (effect.color === SWEEP_FX.devil) {
+          // A DUST DEVIL: three stacked, spinning, widening cones of dust, leaning with its travel.
+          for (let k = 0; k < 3; k += 1) {
+            const cone = new THREE.Mesh(new THREE.ConeGeometry(0.5 + k * 0.55, 1.6, 10, 1, true), new THREE.MeshStandardMaterial({ color: k % 2 ? 0x8a6a48 : 0x6e5238, roughness: 1, side: THREE.DoubleSide }));
+            cone.rotation.x = Math.PI; // narrow end down
+            cone.position.set(p.x + Math.sin(t * 20 + k) * 0.2, g + 0.8 + k * 1.3, p.z + Math.cos(t * 17 + k) * 0.2);
+            cone.rotation.y = performance.now() * 0.012 * (k % 2 ? -1 : 1);
+            this.effectRoot.add(cone);
+          }
+        } else if (effect.color === SWEEP_FX.stampede) {
+          // THE HERD: five boxy cattle loping down the lane, staggered, heads down, bobbing in step.
+          for (let k = 0; k < 5; k += 1) {
+            const lag = (k % 3) * 1.4, off = ((k * 37) % 5 - 2) * 0.45;
+            const q = { x: p.x - Math.sin(yaw) * lag + Math.cos(yaw) * off, z: p.z - Math.cos(yaw) * lag - Math.sin(yaw) * off };
+            const cow = new THREE.Group();
+            const hide = new THREE.MeshStandardMaterial({ color: k % 2 ? 0x6b4a2e : 0x3a2a1e, roughness: 0.9 });
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.6, 1.3), hide); body.position.y = 0.75; cow.add(body);
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.38, 0.45), hide); head.position.set(0, 0.7, 0.8); cow.add(head);
+            for (const side of [-1, 1]) {
+              const horn = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.06, 0.06), new THREE.MeshStandardMaterial({ color: 0xe8dcc0 }));
+              horn.position.set(side * 0.24, 0.92, 0.85); cow.add(horn);
+            }
+            for (const [lx, lz] of [[-0.22, 0.45], [0.22, 0.45], [-0.22, -0.45], [0.22, -0.45]] as const) {
+              const leg = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.5, 0.14), hide);
+              leg.position.set(lx, 0.25, lz); leg.rotation.x = Math.sin(t * 40 + k + lz) * 0.5; cow.add(leg);
+            }
+            cow.position.set(q.x, drawnGroundAt(q) + Math.abs(Math.sin(t * 40 + k)) * 0.12, q.z);
+            cow.rotation.y = yaw;
+            this.effectRoot.add(cow);
+          }
+        } else {
+          // THE ICEBREAKER: a red-and-black hull with a raked prow, a white bridge and a funnel, ploughing up the channel.
+          const ship = new THREE.Group();
+          const hull = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.0, 6), new THREE.MeshStandardMaterial({ color: 0xa8322a, roughness: 0.7 })); hull.position.y = 0.3; ship.add(hull);
+          const belt = new THREE.Mesh(new THREE.BoxGeometry(2.45, 0.35, 6.05), new THREE.MeshStandardMaterial({ color: 0x1d1f22 })); belt.position.y = -0.05; ship.add(belt);
+          const prow = new THREE.Mesh(new THREE.ConeGeometry(1.2, 1.6, 4), new THREE.MeshStandardMaterial({ color: 0xa8322a, roughness: 0.7 }));
+          prow.rotation.x = Math.PI / 2; prow.rotation.y = Math.PI / 4; prow.position.set(0, 0.3, 3.7); ship.add(prow);
+          const bridge = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.2, 1.8), new THREE.MeshStandardMaterial({ color: 0xeef0ee, roughness: 0.6 })); bridge.position.set(0, 1.4, -1.2); ship.add(bridge);
+          const funnel = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.35, 1.2, 10), new THREE.MeshStandardMaterial({ color: 0x1d1f22 })); funnel.position.set(0, 2.4, -1.8); ship.add(funnel);
+          ship.position.set(p.x, -0.2 + Math.sin(t * 9) * 0.06, p.z);
+          ship.rotation.y = yaw;
+          ship.rotation.z = Math.sin(t * 7) * 0.03;
+          this.effectRoot.add(ship);
+        }
       } else if (effect.type === "roll") {
         const dx = effect.to.x - effect.from.x, dz = effect.to.z - effect.from.z;
         const len = Math.hypot(dx, dz) || 1;
@@ -6135,7 +6213,28 @@ function drawnGroundAt(p: Vec2): number {
  */
 const drapedDiscs = new Map<string, THREE.BufferGeometry>();
 // Danger zones are molten orange-red, never the supply caches' gold (a slag ring read as loot).
-function hazardColor(kind: string): number { return kind === "barrage" ? 0xff4a2e : kind === "lightning" ? 0xbfe4ff : 0xff6a1c; }
+function hazardColor(kind: string): number { return kind === "barrage" ? 0xff4a2e : kind === "icebreaker" ? 0xff4a2e : 0xff6a1c; }
+
+/** A flat ribbon `width` wide laid along from -> to, sampled every metre so it drapes over the drawn ground. */
+function drapedRibbon(from: { x: number; z: number }, to: { x: number; z: number }, width: number, lift: number): THREE.BufferGeometry {
+  const len = Math.hypot(to.x - from.x, to.z - from.z) || 1;
+  const dx = (to.x - from.x) / len, dz = (to.z - from.z) / len;
+  const n = Math.max(2, Math.ceil(len));
+  const pos: number[] = [];
+  const idx: number[] = [];
+  for (let i = 0; i <= n; i += 1) {
+    const t = (i / n) * len;
+    for (const side of [-1, 1]) {
+      const x = from.x + dx * t - dz * side * width, z = from.z + dz * t + dx * side * width;
+      pos.push(x, drawnGroundAt({ x, z }) + lift, z);
+    }
+    if (i < n) { const k = i * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  return g;
+}
 
 function drapedDisc(x: number, z: number, inner: number, outer: number, segments: number, lift: number): THREE.BufferGeometry {
   // A ring that crosses a ledge needs vertices close enough that the lip is a CLEAN break, not a slanted ramp (the "teeth" and kinks
