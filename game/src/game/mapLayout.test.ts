@@ -39,14 +39,15 @@ describe("map layout: nothing overlaps, nothing straddles a step", () => {
   }
 });
 
-// The map features stay clear: nothing set down on a freight track.
+// The map features stay clear: nothing set down on a freight track, a belt or a lane hazard's path (a boulder, a herd or a ship
+// ploughing through a statue reads as a glitch, 2026-10-08). Bridge spans cross the channels by design.
 describe("map features are clear", () => {
   afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
-  for (const map of MAPS.filter((m) => m.train)) {
+  for (const map of MAPS.filter((m) => m.train || m.lanes || m.conveyors)) {
     it(map.id, () => {
       const sim = new TacticalSim(); sim.configure(mapDef(map.id), "destroy", "normal"); setActiveTerrain(map.terrain);
       const things = [
-        ...sim.entities.filter((e) => e.status.alive && !["ridge", "cliff", "span", "wall"].includes(e.coverKind ?? "") && e.kind !== "base").map((e) => ({ n: `${e.kind}/${e.coverKind ?? ""}`, x: e.position.x, z: e.position.z, r: e.radius })),
+        ...sim.entities.filter((e) => e.status.alive && !["ridge", "cliff", "span", "wall"].includes(e.coverKind ?? "") && e.kind !== "base").map((e) => ({ n: `${e.kind}/${e.coverKind ?? ""}`, x: e.position.x, z: e.position.z, r: e.radius + (isLandmarkKind(e.coverKind) ? 1.2 : 0) })),
       ];
       const blocking = things.filter((t) => sim.onMapFeature(t, t.r * 0.9));
       expect(blocking.map((t) => `${t.n} @${t.x.toFixed(1)},${t.z.toFixed(1)}`)).toEqual([]);

@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { ParticleShape, Particles } from "./particles";
+import { drawSweep, makeChute, sweepWarmUp, type SweepDraw } from "./sweepFx";
 import { hasMotionBank, sampleMotion } from "./infantryMotion";
 import { ANKLE_Y, CROUCH_GAIT, GAIT_TIERS, HIP_Y, HIP_Z, KNEE_Y, bodyAt, footAt, gaitTier, solveLeg, type GaitParams, type LegPose } from "./gait";
 import { splitAtKnee } from "./legSplit";
@@ -690,6 +691,11 @@ export class WorldRenderer {
         const rail = new THREE.Mesh(new THREE.BoxGeometry(along ? w : 0.14, 0.22, along ? 0.14 : d), new THREE.MeshStandardMaterial({ color: 0xf2c230, roughness: 0.5, metalness: 0.4 }));
         rail.position.set(along ? cx : cx + side * (w / 2), y + 0.11, along ? cz + side * (d / 2) : cz);
         this.featureRoot.add(rail);
+        // A steel drum roller at each end, the belt wrapping it.
+        const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, along ? d : w, 14), new THREE.MeshStandardMaterial({ color: 0x5a5e64, roughness: 0.4, metalness: 0.6 }));
+        roller.rotation.set(along ? Math.PI / 2 : 0, 0, along ? 0 : Math.PI / 2);
+        roller.position.set(along ? cx + side * (w / 2) : cx, y + 0.12, along ? cz : cz + side * (d / 2));
+        this.featureRoot.add(roller);
       }
     }
     }
@@ -878,7 +884,7 @@ export class WorldRenderer {
     geoNoUv.deleteAttribute("uv");
     geoNoUv.setAttribute("color", new THREE.BufferAttribute(new Float32Array(n * 3).fill(1), 3));
     const geos = [geo, geo4, geoNoUv];
-    const out: THREE.Object3D[] = [];
+    const out: THREE.Object3D[] = [sweepWarmUp()]; // every lane hazard / rolling strike, drawn once (sweepFx.ts)
     // Every opaque standard material in the scene gets a TRANSPARENT twin compiled now. Units and
     // props fade out when they die, and that fade is the only thing that flips a material's
     // `opaque` program bit — measured by soak:gpu as the two programs that compiled mid-resolve
@@ -1717,6 +1723,17 @@ export class WorldRenderer {
       if (group.userData.droppedAt === undefined) group.userData.droppedAt = this.commandPhase ? -Infinity : performance.now();
       const t = (performance.now() - (group.userData.droppedAt as number)) / 650;
       if (t < 1) group.position.y += (1 - t * t) * 14;
+    }
+    // COMMANDO DROP: the trooper drifts the last 9m down under a chute (~0.9s), which folds away as he lands.
+    if (entity.chuted) {
+      if (group.userData.droppedAt === undefined) group.userData.droppedAt = this.commandPhase ? -Infinity : performance.now();
+      const t = (performance.now() - (group.userData.droppedAt as number)) / 900;
+      let chute = group.getObjectByName("chute");
+      if (t < 1) {
+        group.position.y += (1 - t) * (1 - t) * 9;
+        if (!chute) { chute = makeChute(); group.add(chute); }
+        chute.scale.setScalar(Math.min(1, (1 - t) * 4));
+      } else if (chute) group.remove(chute);
     }
     if (entity.burning && entity.status.alive) this.burnFx(group);
     // PER-INSTANCE VARIETY on scenery. Every rock, tree and crate was the same mesh at the same
@@ -5780,68 +5797,10 @@ export class WorldRenderer {
         shadow.position.set(x, terrainHeightAt({ x, z }) + 0.03, z);
         shadow.scale.set(1, 1.9, 1);
         this.effectRoot.add(shadow);
-      } else if (effect.type === "roll" && effect.color !== SWEEP_FX.boulder) {
-        const dx = effect.to.x - effect.from.x, dz = effect.to.z - effect.from.z;
-        const p = { x: effect.from.x + dx * t, z: effect.from.z + dz * t };
-        const g = drawnGroundAt(p);
-        const yaw = Math.atan2(dx, dz);
-        if (effect.color === SWEEP_FX.devil) {
-          // A DUST DEVIL: three stacked, spinning, widening cones of dust, leaning with its travel.
-          for (let k = 0; k < 3; k += 1) {
-            const cone = new THREE.Mesh(new THREE.ConeGeometry(0.5 + k * 0.55, 1.6, 10, 1, true), new THREE.MeshStandardMaterial({ color: k % 2 ? 0x8a6a48 : 0x6e5238, roughness: 1, side: THREE.DoubleSide }));
-            cone.rotation.x = Math.PI; // narrow end down
-            cone.position.set(p.x + Math.sin(t * 20 + k) * 0.2, g + 0.8 + k * 1.3, p.z + Math.cos(t * 17 + k) * 0.2);
-            cone.rotation.y = performance.now() * 0.012 * (k % 2 ? -1 : 1);
-            this.effectRoot.add(cone);
-          }
-        } else if (effect.color === SWEEP_FX.stampede) {
-          // THE HERD: five boxy cattle loping down the lane, staggered, heads down, bobbing in step.
-          for (let k = 0; k < 5; k += 1) {
-            const lag = (k % 3) * 1.4, off = ((k * 37) % 5 - 2) * 0.45;
-            const q = { x: p.x - Math.sin(yaw) * lag + Math.cos(yaw) * off, z: p.z - Math.cos(yaw) * lag - Math.sin(yaw) * off };
-            const cow = new THREE.Group();
-            const hide = new THREE.MeshStandardMaterial({ color: k % 2 ? 0x6b4a2e : 0x3a2a1e, roughness: 0.9 });
-            const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.6, 1.3), hide); body.position.y = 0.75; cow.add(body);
-            const head = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.38, 0.45), hide); head.position.set(0, 0.7, 0.8); cow.add(head);
-            for (const side of [-1, 1]) {
-              const horn = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.06, 0.06), new THREE.MeshStandardMaterial({ color: 0xe8dcc0 }));
-              horn.position.set(side * 0.24, 0.92, 0.85); cow.add(horn);
-            }
-            for (const [lx, lz] of [[-0.22, 0.45], [0.22, 0.45], [-0.22, -0.45], [0.22, -0.45]] as const) {
-              const leg = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.5, 0.14), hide);
-              leg.position.set(lx, 0.25, lz); leg.rotation.x = Math.sin(t * 40 + k + lz) * 0.5; cow.add(leg);
-            }
-            cow.position.set(q.x, drawnGroundAt(q) + Math.abs(Math.sin(t * 40 + k)) * 0.12, q.z);
-            cow.rotation.y = yaw;
-            this.effectRoot.add(cow);
-          }
-        } else {
-          // THE ICEBREAKER: a red-and-black hull with a raked prow, a white bridge and a funnel, ploughing up the channel.
-          const ship = new THREE.Group();
-          const hull = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.0, 6), new THREE.MeshStandardMaterial({ color: 0xa8322a, roughness: 0.7 })); hull.position.y = 0.3; ship.add(hull);
-          const belt = new THREE.Mesh(new THREE.BoxGeometry(2.45, 0.35, 6.05), new THREE.MeshStandardMaterial({ color: 0x1d1f22 })); belt.position.y = -0.05; ship.add(belt);
-          const prow = new THREE.Mesh(new THREE.ConeGeometry(1.2, 1.6, 4), new THREE.MeshStandardMaterial({ color: 0xa8322a, roughness: 0.7 }));
-          prow.rotation.x = Math.PI / 2; prow.rotation.y = Math.PI / 4; prow.position.set(0, 0.3, 3.7); ship.add(prow);
-          const bridge = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.2, 1.8), new THREE.MeshStandardMaterial({ color: 0xeef0ee, roughness: 0.6 })); bridge.position.set(0, 1.4, -1.2); ship.add(bridge);
-          const funnel = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.35, 1.2, 10), new THREE.MeshStandardMaterial({ color: 0x1d1f22 })); funnel.position.set(0, 2.4, -1.8); ship.add(funnel);
-          ship.position.set(p.x, -0.2 + Math.sin(t * 9) * 0.06, p.z);
-          ship.rotation.y = yaw;
-          ship.rotation.z = Math.sin(t * 7) * 0.03;
-          this.effectRoot.add(ship);
-        }
       } else if (effect.type === "roll") {
-        const dx = effect.to.x - effect.from.x, dz = effect.to.z - effect.from.z;
-        const len = Math.hypot(dx, dz) || 1;
-        const r = effect.radius ?? 1.4;
-        const p = { x: effect.from.x + dx * t, z: effect.from.z + dz * t };
-        const stone = new THREE.Mesh(boulderGeometry(), boulderMaterial());
-        stone.scale.setScalar(r);
-        stone.position.set(p.x, drawnGroundAt(p) + r * 0.92, p.z);
-        // Rolling without slipping: the spin angle is the distance travelled over the radius.
-        stone.rotation.y = Math.atan2(dx, dz);
-        stone.rotateX((t * len) / r);
-        stone.castShadow = true;
-        this.effectRoot.add(stone);
+        // What crosses the lane, by its colour (sim SWEEP_FX): sweepFx.ts draws each one.
+        const kind = (Object.keys(SWEEP_FX) as SweepDraw[]).find((k) => SWEEP_FX[k] === effect.color) ?? "boulder";
+        drawSweep(this.effectRoot, kind, effect, t, drawnGroundAt);
       } else if (effect.type === "topple") {
         // A felled column pivots at its base and slams along the from->to line, kicking
         // dust at the impact end. The dead cover mesh hides itself, so this IS the fall.
@@ -9112,28 +9071,6 @@ function hexColor(hex: number): THREE.Color {
 }
 
 const _fuseScratch = new THREE.Vector3();
-/** The rolling boulder (Boulder Roll): a lumpy unit-radius rock, shared and pooled. */
-let _boulderGeo: THREE.BufferGeometry | undefined;
-let _boulderMat: THREE.MeshStandardMaterial | undefined;
-function boulderGeometry(): THREE.BufferGeometry {
-  if (!_boulderGeo) {
-    const g = new THREE.IcosahedronGeometry(1, 1);
-    const pos = g.getAttribute("position") as THREE.BufferAttribute;
-    for (let i = 0; i < pos.count; i += 1) {
-      const k = 0.86 + ((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1 * 0.22; // fixed lumps, no Math.random
-      pos.setXYZ(i, pos.getX(i) * k, pos.getY(i) * k, pos.getZ(i) * k);
-    }
-    g.computeVertexNormals();
-    g.userData.shared = true;
-    _boulderGeo = g;
-  }
-  return _boulderGeo;
-}
-function boulderMaterial(): THREE.MeshStandardMaterial {
-  if (!_boulderMat) { _boulderMat = new THREE.MeshStandardMaterial({ color: 0x8a7a66, roughness: 0.95, flatShading: true }); _boulderMat.userData.shared = true; }
-  return _boulderMat;
-}
-
 // Scratch colors reused by paintPart's per-frame, per-mesh hot path (avoids allocating).
 const _paintColor = new THREE.Color();
 // Scratch id->part map reused by syncEntity's per-frame traverse.

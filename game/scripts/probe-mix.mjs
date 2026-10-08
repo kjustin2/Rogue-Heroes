@@ -3,7 +3,8 @@
 // OfflineAudioContext, never the speakers) and gated on its peak and its loudness (the loudest 400ms window's RMS) in dBFS:
 //   - nothing clips (peak <= +0.5 dBFS at master gain 1; the live master sits at 0.6, ~4.4 dB of headroom),
 //   - nothing is silent (peak > -40 dBFS: a dropped part or a missing sample shows up here),
-//   - the UI sits at least 5 dB under the combat median, and an ability verb within 9 dB of the gun median (the target is
+//   - the UI sits at least 5 dB under the combat median, a map event (Sfx.hazard) within 9 dB of it, and an ability verb
+//     within 9 dB of the gun median (the target is
 //     6 / 8: a run's random sample + pitch picks move a median ~2 dB, so the gates carry a dB of slack).
 // Run: npm run probe:mix   (prints the table; exits non-zero on a broken gate)
 import { launchGame } from "../improve/lib/harness.mjs";
@@ -27,6 +28,7 @@ try {
     if (r.peak < -40) why.push("silent");
     if (r.group === "ui" && r.rms > combat - 5) why.push(`UI not 5 dB under combat (${(r.rms - combat).toFixed(1)})`);
     if (r.group === "verb" && Math.abs(r.rms - guns) > 9) why.push(`verb ${(r.rms - guns).toFixed(1)} dB off the guns`);
+    if (r.group === "event" && Math.abs(r.rms - combat) > 9) why.push(`map event ${(r.rms - combat).toFixed(1)} dB off the combat median`);
     if (why.length) failed += 1;
     console.log(`${r.group.padEnd(7)} ${r.name.padEnd(12)} peak ${r.peak.toFixed(1).padStart(6)}  rms ${r.rms.toFixed(1).padStart(6)}  ${why.join("; ") || "ok"}`);
   }

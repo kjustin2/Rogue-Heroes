@@ -13,13 +13,21 @@ mkdirSync(OUT, { recursive: true });
 const fail = (msg) => { throw new Error(msg); };
 // EVERY PICK IS HEARD (owner 2026-10-07): a real pointer click on a menu or HUD control must request a sound (muted or not).
 const silent = [];
-const clickHeard = async (sel) => {
+const clickHeard = async (sel, family) => {
   await page.hover(sel).catch(() => undefined); // the hover whisper is not the click's sound: settle it first
-  const before = await page.evaluate(() => window.__rht?.sfxPlayed?.() ?? -1);
+  await page.waitForTimeout(150);
+  const before = await page.evaluate(() => window.__rht.sfxUiLog().count);
   await page.click(sel);
-  const after = await page.evaluate(() => window.__rht?.sfxPlayed?.() ?? -1);
-  if (before >= 0 && after <= before) silent.push(sel);
+  const after = await page.evaluate(() => window.__rht.sfxUiLog());
+  // What this click asked for: the voices since, minus the hover whisper a re-rendered button gets under the pointer.
+  // (Before 2026-10-08 this counted ANY sound, and nine silent controls passed on that whisper alone.)
+  const heard = after.log.slice(after.log.length - Math.min(after.log.length, after.count - before)).filter((n) => n !== "hover");
+  if (!heard.length) silent.push(sel);
+  if (family && (!heard.includes(family) || (family !== "ui" && heard.includes("ui")))) wrongFamily.push(`${sel} (heard ${heard.join("+") || "nothing"}, wanted ${family} alone)`);
+  heardAs.push(`${sel} -> ${heard.join("+")}`);
 };
+const wrongFamily = [];
+const heardAs = [];
 
 const { page, errors, close } = await launchGame({
   port: PORT,
@@ -38,14 +46,14 @@ try {
   // 2) Settings — every control.
   await clickHeard('[data-menu="settings"]');
   await page.waitForSelector('[data-set="mute"]');
-  await clickHeard('[data-set="mute"]');
+  await clickHeard('[data-set="mute"]', "toggle");
   if (await muted(page) !== true) fail("Mute toggle did not mute");
-  await clickHeard('[data-set="mute"]');
+  await clickHeard('[data-set="mute"]', "toggle");
   if (await muted(page) !== false) fail("Mute toggle did not unmute");
   await clickHeard('[data-set="motion"]');
   await page.$$eval('[data-set="diff"]', (els) => els.forEach((e) => e.click()));
   await page.evaluate(() => { const r = document.querySelector('input[data-set="volume"]'); if (r) { r.value = "40"; r.dispatchEvent(new Event("input", { bubbles: true })); } });
-  await clickHeard('[data-back]');
+  await clickHeard('[data-back]', "back");
   await page.waitForSelector(".main-menu");
 
   // 3) Armory — unlock + equip a cosmetic.
@@ -58,11 +66,11 @@ try {
   }
   const equipBtn = await page.$('[data-equip]:not(.on)');
   if (equipBtn) { await equipBtn.click(); await page.waitForSelector(".armory-grid"); }
-  await clickHeard('[data-back]');
+  await clickHeard('[data-back]', "back");
   await page.waitForSelector(".main-menu");
 
   // 4) Deploy screen — every map preview renders, mode + difficulty selectable.
-  await clickHeard('[data-menu="play"]');
+  await clickHeard('[data-menu="play"]', "turn");
   await page.waitForSelector(".map-preview-canvas");
   const mapIds = await page.$$eval("[data-map]", (els) => els.map((e) => e.dataset.map));
   for (const id of mapIds) {
@@ -104,7 +112,7 @@ try {
   await page.waitForSelector('[data-spawn="soldier"]');
   // Placed deploy: the card click arms the ring (nothing spent yet), then a ground point inside it
   // fields the troop THERE. Mirrors the build flow below.
-  await clickHeard('[data-spawn="soldier"]');
+  await clickHeard('[data-spawn="soldier"]', "arm");
   const armed = await page.evaluate(() => ({ pending: window.__rht.sim.pendingDeploy, intent: window.__rht.sim.intent, ring: Boolean(window.__rht.sim.deployPlacement()), spawned: window.__rht.sim.entities.some((e) => e.id.startsWith("p-spawn-")) }));
   if (armed.pending !== "soldier" || armed.intent !== "deploy" || !armed.ring) fail(`Deploy card did not arm placement: ${JSON.stringify(armed)}`);
   if (armed.spawned) fail("Arming placement must not spawn");
@@ -125,18 +133,18 @@ try {
   await clickHeard('[data-base-tab="tech"]');
   await clickHeard('[data-tech-lane="recon"]'); // one lane shows at a time
   await page.waitForSelector('[data-tech="recon"]');
-  await clickHeard('[data-tech="recon"]');
+  await clickHeard('[data-tech="recon"]', "deploy");
   if (!(await page.evaluate(() => (window.__rht.sim.entities.find((e) => e.kind === "base" && e.team === "player").unlockedTech ?? []).includes("recon")))) fail("Tech button did not research");
   await refreshBaseCp(page, baseId);
   await clickHeard('[data-base-tab="upgrade"]');
   await page.waitForSelector('[data-base-upgrade="income"]');
-  await clickHeard('[data-base-upgrade="income"]');
+  await clickHeard('[data-base-upgrade="income"]', "build");
   if (await page.evaluate(() => (window.__rht.sim.entities.find((e) => e.kind === "base" && e.team === "player").incomeLevel ?? 0)) < 1) fail("Income upgrade button failed");
   await refreshBaseCp(page, baseId);
   // The Barrel Stack is every faction's starter defense: no research, so this tests the Build button and placement.
   await clickHeard('[data-base-tab="defenses"]');
   await page.waitForSelector('[data-build="barrels"]');
-  await clickHeard('[data-build="barrels"]');
+  await clickHeard('[data-build="barrels"]', "arm");
   await page.evaluate(() => {
     const sim = window.__rht.sim;
     const base = sim.entities.find((e) => e.kind === "base" && e.team === "player");
@@ -166,7 +174,7 @@ try {
   await clickHeard('[data-order-action="shoot"]');
   await page.waitForSelector(".target-panel");
   const ebaseId = await page.evaluate(() => window.__rht.sim.entities.find((e) => e.kind === "base" && e.team === "enemy").id);
-  await clickHeard(`[data-select="${ebaseId}"]`);
+  await clickHeard(`[data-select="${ebaseId}"]`, "select");
   await page.waitForSelector(".part-choice");
   await clickHeard(".part-choice");
   const confirm = await page.$('[data-confirm="shoot"][data-disabled="false"]');
@@ -198,14 +206,14 @@ try {
   await page.waitForFunction(() => document.querySelector("[data-feedback]")?.textContent?.includes("saved"));
   await clickHeard('[data-pause="controls"]');
   await page.waitForSelector(".controls-grid");
-  await clickHeard('[data-back]');
+  await clickHeard('[data-back]', "back");
   await page.waitForSelector(".pause-buttons");
-  await clickHeard('[data-pause="resume"]');
+  await clickHeard('[data-pause="resume"]', "back");
   await page.waitForFunction(() => !document.querySelector(".pause-overlay"));
 
   // 10) End Turn button resolves.
   const turnBefore = await page.evaluate(() => window.__rht.sim.turn);
-  await clickHeard('[data-command="end"]');
+  await clickHeard('[data-command="end"]', "turn");
   await page.waitForFunction((t) => window.__rht.sim.phase === "command" && window.__rht.sim.turn > t, turnBefore, { timeout: 16000 });
 
   // 11) End screen buttons -> Play Again and Main Menu. (Flag a victory to surface the screen.)
@@ -218,6 +226,7 @@ try {
 
   if (errors.length) fail(`Console errors:\n${errors.slice(0, 12).join("\n")}`);
   if (silent.length) fail(`These clicks made no sound: ${[...new Set(silent)].join(", ")}`);
+  if (wrongFamily.length) fail(`These clicks made the wrong kind of sound: ${wrongFamily.join("; ")}\n${heardAs.join("\n")}`);
   console.log("Buttons smoke passed: menus, base deck, unit actions, log, edit, pause/save, end turn, end screen; every click heard.");
 } finally {
   await close();

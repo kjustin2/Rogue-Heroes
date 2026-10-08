@@ -37,7 +37,7 @@ import {
   FACTIONS,
   type FactionId,
   CLASH_BLAST,
-  DIG_FX, ERUPT_FX, HORN_FX, ICE_FX, LAUNCH_FX, SWEEP_FX,
+  CONVEYOR_FX, COMMANDO_JET, DIG_FX, ERUPT_FX, HORN_FX, ICE_FX, LAUNCH_FX, SWEEP_FX,
   PULSE_EMP,
   isPulseBlast,
   CLASH_BOLT,
@@ -247,7 +247,7 @@ const hud = new Hud(uiRoot, sim, {
     return ok;
   },
   beginDeploy: (kind: TroopKind) => {
-    if (sim.setPendingDeploy(kind)) sfx.ui();
+    if (sim.setPendingDeploy(kind)) sfx.arm();
     else refused();
   },
   cancelDeploy: () => sim.setPendingDeploy(undefined),
@@ -257,10 +257,10 @@ const hud = new Hud(uiRoot, sim, {
     else refused();
     return ok;
   },
-  upgradeBaseIncome: () => sim.upgradeBaseIncome(),
-  upgradeBase: (id) => sim.upgradeBaseWith(id),
+  upgradeBaseIncome: () => { const ok = sim.upgradeBaseIncome(); if (ok) sfx.build(); else refused(); return ok; },
+  upgradeBase: (id) => { const ok = sim.upgradeBaseWith(id); if (ok) sfx.build(); else refused(); return ok; },
   beginBuild: (kind: DefenseKind) => {
-    if (sim.setPendingBuild(kind)) sfx.ui();
+    if (sim.setPendingBuild(kind)) sfx.arm();
     else refused();
   },
   cancelBuild: () => sim.setPendingBuild(undefined),
@@ -271,7 +271,7 @@ const hud = new Hud(uiRoot, sim, {
     return ok;
   },
   beginSupport: (kind) => {
-    if (sim.setPendingSupport(kind)) sfx.ui();
+    if (sim.setPendingSupport(kind)) sfx.arm();
     else refused();
   },
   cancelSupport: () => sim.setPendingSupport(undefined),
@@ -413,11 +413,15 @@ canvas.addEventListener("contextmenu", (event) => {
   if (sim.phase === "command" && !anyOverlayOpen() && hud.handleEscape()) sfx.back();
 });
 
-// A click anywhere in the HUD plays a soft UI blip (the deploy/build/turn cues layer on top).
+// A click anywhere in the HUD plays a soft UI blip. Controls with a voice of their own (arming a deck card, research, an
+// upgrade, a unit's detail, End Turn) are left to it, so a press is one sound, never the blip under its own (2026-10-08).
+const OWN_VOICE = "[data-spawn], [data-build], [data-support], [data-tech], [data-base-upgrade], [data-detail], [data-command='end']";
 uiRoot.addEventListener("pointerdown", (event) => {
   sfx.unlock();
   const el = event.target as HTMLElement;
   const pick = el.closest<HTMLElement>("[data-select]");
+  const own = el.closest<HTMLElement>(OWN_VOICE);
+  if (own && !own.matches(":disabled, [data-disabled='true']")) return;
   if (el.closest("button, .menu-card, [data-part]") && !pick) sfx.ui();
   // Your own units answer through select() (sfx.unit); clicking a foe or a neutral marks it as a target.
   else if (pick && sim.entity(pick.dataset.select ?? "")?.team !== "player") sfx.select();
@@ -2373,6 +2377,12 @@ function processBattleEvents(): void {
     const heard = stage.isInView(effect.to) ? 1 : 0.35;
     if (effect.type === "land" && effect.color === DIG_FX) {
       // dirt and dust puffs (a burrowing Mole, the train's wake): silent
+    } else if (effect.type === "ping" && effect.color === CONVEYOR_FX) {
+      sfx.conveyor(heard);
+    } else if (effect.type === "jet" && effect.color === COMMANDO_JET) {
+      sfx.jet();
+      sfx.chute(heard);
+      resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.strike, 2);
     } else if (effect.type === "ping" && effect.color === HORN_FX) {
       sfx.horn();
     } else if (effect.type === "ping" && effect.color === ICE_FX) {
@@ -2425,10 +2435,9 @@ function processBattleEvents(): void {
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.topple, 1.8);
       if (stage.isInView(effect.to)) feel.addTrauma(0.14);
     } else if (effect.type === "roll") {
-      // What crosses the lane, by its colour (sim SWEEP_FX): a boulder rumbles, a dust devil howls, a herd thunders, a ship sounds its horn.
-      if (effect.color === SWEEP_FX.icebreaker) sfx.horn(heard);
-      else if (effect.color === SWEEP_FX.devil) sfx.verb("boost", heard);
-      else sfx.verb("dig", heard);
+      // What crosses the lane, by its colour (sim SWEEP_FX), heard for as long as it runs (Sfx.hazard).
+      const sweep = (Object.keys(SWEEP_FX) as (keyof typeof SWEEP_FX)[]).find((k) => SWEEP_FX[k] === effect.color) ?? "boulder";
+      sfx.hazard(sweep, effect.duration, heard);
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.strike, 2);
       feel.addTrauma(0.1 * heard);
     } else if (effect.type === "jet") {
@@ -2589,6 +2598,7 @@ declare global {
       setView(view: { x?: number; z?: number; zoom?: number; yaw?: number; pitch?: number; overview?: boolean }): void;
       holdCamera(on: boolean): void;
       sfxPlayed(): number;
+      sfxUiLog(): { count: number; log: string[] };
       bounds(): { minX: number; maxX: number; minZ: number; maxZ: number };
       measureMix(): Promise<Array<{ group: string; name: string; peak: number; rms: number }>>;
       view(): { x: number; z: number; zoom: number; yaw: number; pitch: number };
@@ -2710,6 +2720,7 @@ window.__rht = {
   setView: (view) => stage.debugSetView(view),
   holdCamera: (on) => { directorHeld = on; },
   sfxPlayed: () => sfx.played,
+  sfxUiLog: () => ({ count: sfx.uiCount, log: [...sfx.uiLog] }),
   bounds: () => ({ ...ARENA_BOUNDS }),
   measureMix: () => measureMix(sfx),
   view: () => stage.viewState(),

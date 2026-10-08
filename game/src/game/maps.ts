@@ -1,5 +1,5 @@
 import { Rng } from "../core/rng";
-import { dist, type Vec2 } from "../core/math";
+import { dist, pointToSegmentDistance, type Vec2 } from "../core/math";
 import { COVER_PROFILES, createCover, type CombatEntity, type CoverKind } from "./damageModel";
 import { TERRAIN_STEP, onTerrainEdge, pointInWater, terrainHeightAt, type TerrainRect, type TerrainSpec } from "./terrain";
 
@@ -156,6 +156,31 @@ export interface MapDef {
 export function mapCenter(map: MapDef): Vec2 {
   const b = map.terrain.bounds;
   return { x: (b.minX + b.maxX) / 2, z: (b.minZ + b.maxZ) / 2 };
+}
+
+/** Where a lane hazard's lines run (point-symmetric, so neither seat is favoured): the centre line, two flank lines, or along
+ *  each water channel's long axis in alternating directions. */
+export function laneLines(map: MapDef, lane: LaneHazard): { from: Vec2; to: Vec2 }[] {
+  const b = map.terrain.bounds;
+  const c = mapCenter(map);
+  const top = b.minZ + 2.5, bottom = b.maxZ - 2.5;
+  if (lane.lines === "center") return [{ from: { x: c.x, z: top }, to: { x: c.x, z: bottom } }];
+  if (lane.lines === "flanks") {
+    const o = lane.offset ?? 8;
+    return [{ from: { x: c.x - o, z: top }, to: { x: c.x - o, z: bottom } }, { from: { x: c.x + o, z: bottom }, to: { x: c.x + o, z: top } }];
+  }
+  return (map.terrain.water ?? []).map((w, i) => {
+    const long = w.maxX - w.minX >= w.maxZ - w.minZ;
+    const mid = { x: (w.minX + w.maxX) / 2, z: (w.minZ + w.maxZ) / 2 };
+    const a = long ? { x: w.minX + 0.5, z: mid.z } : { x: mid.x, z: w.minZ + 0.5 };
+    const z = long ? { x: w.maxX - 0.5, z: mid.z } : { x: mid.x, z: w.maxZ - 0.5 };
+    return i % 2 ? { from: z, to: a } : { from: a, to: z };
+  });
+}
+
+/** Within `r` of a lane hazard's path (its hit width added): nothing is set down there. */
+export function onLane(map: MapDef, p: Vec2, r: number): boolean {
+  return (map.lanes ?? []).some((lane) => laneLines(map, lane).some((l) => pointToSegmentDistance(p, l.from, l.to) < r + lane.width));
 }
 
 export type MapSize = "small" | "medium" | "large";
@@ -344,7 +369,8 @@ export function buildMapObjects(map: MapDef): CombatEntity[] {
       x.x > bounds.minX + r && x.x < bounds.maxX - r && x.z > bounds.minZ + r && x.z < bounds.maxZ - r &&
       !solids().some((o) => dist(x, o) < o.r + r + WALK_GAP - 0.01) &&
       !steepHere(x, edgeR) && !pointInWater(x) && !pinchesTerrain(x, r, bounds) &&
-      !(map.terrain.bridges ?? []).some((b) => x.x >= b.minX - r && x.x <= b.maxX + r && x.z >= b.minZ - r && x.z <= b.maxZ + r);
+      !(map.terrain.bridges ?? []).some((b) => x.x >= b.minX - r && x.x <= b.maxX + r && x.z >= b.minZ - r && x.z <= b.maxZ + r) &&
+      !onLane(map, x, r); // a boulder, a herd or a ship ploughing through a prop reads as a glitch (2026-10-08)
     return ok(q) && (!mirrored || (ok(twin) && dist(q, twin) >= 2 * r + WALK_GAP - 0.01));
   };
   // The nearest spot to the authored one that fits, searched outward in rings (deterministic).
@@ -580,7 +606,7 @@ const RAW_MAPS: readonly MapDef[] = [
       { kind: "rock", x: -6, z: 4, mirror: true, radius: 1.3, height: 1.6 },
       { kind: "cactus", x: -22, z: 15, mirror: true },
       { kind: "bones", x: -22, z: -9, mirror: true },
-      { kind: "barrels", x: -9, z: 6, mirror: true }, // RED BARRELS (2026-10-07): shoot them and they go up, and so does whoever stands beside them
+      { kind: "barrels", x: -11, z: -4, mirror: true }, // RED BARRELS (2026-10-07): shoot them and they go up, and so does whoever stands beside them
     ],
     // A DUST DEVIL tears down the middle of the basin every few turns, flinging anyone on its lane (warned a turn early).
     lanes: [{ kind: "devil", lines: "center", startTurn: 3, period: 3, width: 2.4, damage: 12, throw: 9 }],
@@ -714,7 +740,7 @@ const RAW_MAPS: readonly MapDef[] = [
       { kind: "mill", x: -16.2, z: 8.6, yaw: 0, mirror: true }, // on the mill pond's bank
       { kind: "chapel", x: -17, z: -8, yaw: 0.35, mirror: true }, // the ruin stands alone on the south green
       { kind: "fuel", x: -10, z: -3, mirror: true }, // the farm's fuel drum: the one thing here that blows
-      { kind: "tree", x: -11, z: 4, mirror: true }, // a lone field oak: it topples
+      { kind: "tree", x: -3.5, z: 4.5, mirror: true }, // a lone field oak: it topples
       { kind: "rock", x: -4.5, z: -6.8, mirror: true, radius: 1.1 },
       { kind: "barrels", x: -5, z: 13, mirror: true }, // RED BARRELS (2026-10-07): shoot them and they go up, and so does whoever stands beside them
     ],
@@ -857,7 +883,7 @@ const RAW_MAPS: readonly MapDef[] = [
     // leaves WALK_GAP round it (findRoom); a piece with no room is left out, never crammed in.
     scatter: [],
     signature: [
-      { kind: "colossus", x: -2.6, z: 9.6, yaw: 0.25, mirror: true },
+      { kind: "colossus", x: -5.6, z: 10.4, yaw: 0.25, mirror: true }, // clear of the boulder's centre lane (it breaks loose beside it)
       { kind: "brazier", x: -15, z: -4, mirror: true }, // the temple's oil brazier: it bursts and burns
       { kind: "obelisk", x: -6.8, z: -11, mirror: true }, // the precinct's gatepost; it topples
       { kind: "barrels", x: -11, z: 3, mirror: true }, // RED BARRELS (2026-10-07): shoot them and they go up, and so does whoever stands beside them

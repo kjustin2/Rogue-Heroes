@@ -567,7 +567,7 @@ app.whenReady().then(async () => {
       }
       if (s === "strikes") {
         // The loud support strikes, filmed: shockwave, car bomb, commando drop, tank drop, boulder.
-        for (const [fac, kind] of [["vanguard", "shockwave"], ["syndicate", "carbomb"], ["vanguard", "commando"], ["bastion", "tankdrop"], ["bastion", "boulder"]]) {
+        for (const [fac, kind] of [["vanguard", "shockwave"], ["syndicate", "carbomb"], ["vanguard", "commando"], ["bastion", "tankdrop"], ["bastion", "boulder"]].filter(([, k]) => !process.env.KINDS || process.env.KINDS.split(",").includes(k))) {
           await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal", ${JSON.stringify(fac)}, "vanguard")`);
           await sleep(1500);
           const info = await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("player", 9000); sim.economy.set("enemy", 0);
@@ -800,6 +800,30 @@ app.whenReady().then(async () => {
         await js(`window.__rht.setTimeScale(1); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = ""))`);
         continue;
       }
+      if (s === "sweeps") {
+        // 2026-10-08 polish: every sweep (dust devil, herd, boulder, icebreaker, car bomb) at fixed points of its run, close up, HUD
+        // hidden. The sweep is INJECTED as its roll effect at a set age with time slowed to the floor, so each frame is reproducible.
+        const SWEEPS = [["devil", "dustbowl", 0xd9c4a0, 2.6, 1.6], ["stampede", "verdant", 0x6b4a2e, 2.2, 1.6], ["boulder", "karak", 0x8a7a66, 1.8, 1.4], ["icebreaker", "causeway", 0x3a4a5a, 3.0, 1.6], ["carbomb", "dustbowl", 0x7a3a22, 1.9, 1.3]];
+        for (const [kind, m, color, seconds, width] of SWEEPS) {
+          await js(`window.__rht.setTimeScale(1); window.__rht.startBattle(${JSON.stringify(m)}, "destroy", "normal")`);
+          await sleep(1500);
+          for (const t of [0.2, 0.45, 0.7]) {
+            await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); r.setTimeScale(0.02); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = "hidden"));
+              const lane = sim.mapDef.lanes && sim.lanesOn(sim.mapDef.lanes[0].startTurn)[0];
+              const from = lane && ${JSON.stringify(kind)} !== "carbomb" ? lane.from : { x: -7, z: -8 }, to = lane && ${JSON.stringify(kind)} !== "carbomb" ? lane.to : { x: 7, z: -8 };
+              sim.effects.splice(0);
+              window.__sweepFx = { id: "shot-sweep", type: "roll", from, to, color: ${color}, age: ${t} * ${seconds}, duration: ${seconds}, radius: ${width} }; sim.effects.push(window.__sweepFx);
+              const p = { x: from.x + (to.x - from.x) * ${t}, z: from.z + (to.z - from.z) * ${t} };
+              r.setView({ x: p.x, z: p.z, zoom: ${kind === "devil" ? 0.5 : 0.36}, pitch: 0.62, yaw: 0.5 }); })()`);
+            // Outside a resolve the sim clock is not slowed: re-pin the age once the camera has settled, then shoot at once.
+            await sleep(800);
+            await js(`(() => { const sim = window.__rht.sim; const e = sim.effects.find((x) => x.id === "shot-sweep") ?? window.__sweepFx; window.__sweepFx = e; e.age = ${t} * ${seconds}; if (!sim.effects.includes(e)) sim.effects.push(e); })()`);
+            await sleep(60); await shot(`sweep-${kind}-${Math.round(t * 100)}`);
+          }
+        }
+        await js(`window.__rht.setTimeScale(1); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = ""))`);
+        continue;
+      }
       if (s === "corners") {
         // Owner 2026-10-07: "in corners of map make sure parts of map don't spill out ... a circle went off the border of the map".
         // The four corners of every map at play zoom, HUD hidden, in Hill mode (the zone ring) with the deploy rings up.
@@ -825,7 +849,6 @@ app.whenReady().then(async () => {
           await sleep(1500);
           await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = "hidden"));
             for (let i = sim.entities.length - 1; i >= 0; i -= 1) { const e = sim.entities[i]; if ((e.kind === "cover" || e.team === "neutral") && Math.hypot(e.position.x, e.position.z + 8) < 9) sim.entities.splice(i, 1); }
-            sim.pickups.splice(0);
             ${setup}
             r.setView({ x: 0, z: -8, zoom: 0.5, pitch: 0.62, yaw: 0.25 }); })()`);
           await sleep(900); await shot(`fundeck-${name}-pre`);

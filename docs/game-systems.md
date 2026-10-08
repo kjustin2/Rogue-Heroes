@@ -41,6 +41,25 @@ derelict turrets and its sandbag walls stay (map neutrals / cover, not buildable
 - **Movement fix found by the oracle:** a ground move that runs out of time on a bent (shoved) path could stop with its hull in a step. `settleHalt`
   now falls back to the nearest ground the hull fits on (`nearestFittingGround`).
 
+## Map events look and sound right (2026-10-08)
+- **Drawn** by `src/render/sweepFx.ts` (`drawSweep`, keyed by the roll effect's `SWEEP_FX` colour), all shared geometry, nothing additive,
+  deterministic from the sweep's progress (a dust trail is the puffs kicked at earlier t): the DUST DEVIL is a twisted, banded lathe
+  funnel that spins, leans and weaves, with a churning dust skirt and debris (clods, a plank, a tumbleweed) orbiting up it; the
+  STAMPEDE is six low-poly cattle (horns, ears, muzzle, hide patches, swishing tail) in a loose wedge whose rotary gallop is driven by
+  distance travelled; the BOULDER hops, flings grit and leaves a plume; the ICEBREAKER throws bow spray and ice shards, leaves a foam V
+  wake and funnel smoke; the CAR BOMB is a rusty car with lashed red barrels, a fizzing fuse and exhaust. The Commando falls under a
+  chute (`makeChute`). Conveyors got end rollers. `sweepWarmUp()` compiles them at load.
+- **No prop sits in a lane**: `onLane` (maps.ts) is part of the layout's `fits` and the sim's `onMapFeature`; Karak's colossus moved
+  off the boulder's centre lane; `mapLayout.test` "map features are clear" covers every lane map. Known: the Causeway icebreaker
+  still sails across the low bridge spans.
+- **Heard** (`Sfx.hazard`, for the sweep's whole length): devil wind howl over a rumble; stampede gallop-pair hoof drum swelling and
+  fading plus three moos; boulder grinding rumble with a thud each turn; icebreaker horn, engine chug, ice cracking; car bomb engine
+  through its gears and a fuse fizz. A conveyor ride clanks (`CONVEYOR_FX`), the commando jet brings a chute flutter (`COMMANDO_JET`).
+  `probe:mix` gates them as group `event` (within 9 dB of the combat median).
+- **Buttons, one voice per family**: click `ui`, deck card armed `arm` (new rising double tick), order confirmed `select`, deploy /
+  research `deploy`, build / base upgrade `build`, back `back`, toggle/chip `toggle`, start / End Turn `turn`, refused `error`.
+  Controls with their own voice no longer also play the click (`OWN_VOICE` in main.ts).
+
 ## The fun deck (2026-10-07)
 Owner: "the sensor scans are not super cool or fun ... audit across base actions, defenses, support". CUT: Recon Sweep, Sensor Mast,
 Watch Radar (and the whole enemy-orders preview: `enemyIntents`, `revealedOrders`, the hotseat recon seat), Medevac, Resupply Drop,

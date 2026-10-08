@@ -22,6 +22,8 @@ flame-post drums no longer mimic red barrels). Watch: Jump Trooper is the lowest
 
 Round 8 (2026-10-08, third fun audit): cut Paradrop, Minefield Drop, Airstrike, Sandbags, Gun Turret, Runabout, supply caches and the
 second base order; added the Commando Drop, Car Bomb and Barrel Stack (`docs/game-systems.md`, "Fun audit, round 3").
+Then: the map events redrawn (twisting tornado, galloping herd, boulder grit, icebreaker wake, car bomb) and heard for their whole run;
+lanes kept clear of props; one sound per button family. Known: the Causeway icebreaker crosses its low bridges.
 
 State of `main`: `npm run verify` green (574 vitest incl. chaos, balance self-play and the movement +
 projectile oracle), `npm run smoke:core` green (11 smokes), `npm run probe:terrain` 0 offenders,

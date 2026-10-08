@@ -80,7 +80,7 @@ import { TROOP_CATALOG, TROOP_KINDS, troopSpec, defenseSpec, supportPowerSpec, b
 import { TECH_TREE, techNode, aggregateTechEffect, type TechNode, type TechEffect } from "./tech";
 import { modeDef, type ModeId } from "./modes";
 import { DEFAULT_FACTION, factionDef, factionTroopLabel, type FactionDef, type FactionId } from "./factions";
-import { MAPS, mapDef, mapCenter, flagPositions, type LaneHazard, type LaneKind, type MapDef, type MapEventConfig, type MapEventKind } from "./maps";
+import { MAPS, mapDef, mapCenter, flagPositions, laneLines, onLane, type LaneHazard, type LaneKind, type MapDef, type MapEventConfig, type MapEventKind } from "./maps";
 
 export { TROOP_CATALOG, troopSpec, DEFENSE_CATALOG, defenseSpec, SUPPORT_POWERS, supportPowerSpec, BASE_UPGRADES, baseUpgradeSpec, type BaseUpgradeId, UNIT_STATS, unitStats, type TroopKind, type TroopSpec, type DefenseKind, type DefenseSpec, type SupportPowerKind, type SupportPowerSpec, type ProjectileKind, type UnitStats } from "./units";
 export { TECH_TREE, techNode, troopsUnlockedBy, type TechNode } from "./tech";
@@ -189,6 +189,8 @@ const JUMP_SLAM_THROW = 4;
 export const LAUNCH_FX = 0xffe14a; // a spring trap firing
 export const DIG_FX = 0x8a6a43;
 export const CAR_BOMB_FX = 0xff5a1e; // the car bomb going up (its own boom)
+export const CONVEYOR_FX = 0x5a5e65; // a belt carrying someone (a clank and a motor whine)
+export const COMMANDO_JET = 0xbfe8fe; // the commando's transport (the jet is heard with a chute flutter)
 export const HORN_FX = 0x5a3a2a;
 export const ICE_FX = 0xd8f0ff;
 export const ERUPT_FX = 0x8a6a41;
@@ -1858,7 +1860,7 @@ export class TacticalSim {
       } else if (kind === "commando") {
         const from = clampToArena({ x: point.x - dir.x * 16, z: point.z - dir.z * 16 });
         const to = clampToArena({ x: point.x + dir.x * 16, z: point.z + dir.z * 16 });
-        this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: 0xbfe8ff, duration: 1.7 });
+        this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: COMMANDO_JET, duration: 1.7 });
         this.pendingStrikes.push({ at: 1.2, point, radius: JUMP_SLAM_RADIUS, damage: 0, kind: "commando", team: call.team });
       } else if (kind === "napalm") {
         // Three firebombs along the run; each leaves the flamer's burning ground (fear and tick free).
@@ -6598,7 +6600,9 @@ export class TacticalSim {
   /** On (or within `r` of) a freight track or a conveyor belt. */
   onMapFeature(p: Vec2, r: number): boolean {
     const near = (t: TerrainRect): boolean => p.x >= t.minX - r && p.x <= t.maxX + r && p.z >= t.minZ - r && p.z <= t.maxZ + r;
-    return (this.mapDef.train?.tracks ?? []).some(near) || this.conveyors().some((c) => near(c.rect));
+    return (this.mapDef.train?.tracks ?? []).some(near) || this.conveyors().some((c) => near(c.rect))
+      // ...and a lane hazard's path: nothing set down where a boulder, a herd or a ship will plough through it (2026-10-08).
+      || onLane(this.mapDef, p, r);
   }
 
   /** Every conveyor belt on this map, the point-symmetric twin included (it runs the other way). */
@@ -6620,6 +6624,7 @@ export class TacticalSim {
         if (p.x < belt.rect.minX || p.x > belt.rect.maxX || p.z < belt.rect.minZ || p.z > belt.rect.maxZ) continue;
         this.applyKnockback(e, e, { x: p.x - belt.dir.x, z: p.z - belt.dir.z }, 0, 1, { maxThrow: belt.step, force: belt.step * (isVehicleKind(e.kind) ? 5.5 : 1) });
         this.pushLog(`${e.name} rides the conveyor`);
+        this.effect("ping", { ...e.position }, { ...e.position }, CONVEYOR_FX, 0.3, 0.1);
       }
     }
   }
@@ -6672,24 +6677,9 @@ export class TacticalSim {
     return out;
   }
 
-  /** Where a lane hazard's lines run (point-symmetric, so neither seat is favoured). */
+  /** Where a lane hazard's lines run (maps.ts `laneLines`, shared with the layout so no prop sits in a lane). */
   private laneLines(lane: LaneHazard): { from: Vec2; to: Vec2 }[] {
-    const b = this.mapDef.terrain.bounds;
-    const c = mapCenter(this.mapDef);
-    const top = b.minZ + 2.5, bottom = b.maxZ - 2.5;
-    if (lane.lines === "center") return [{ from: { x: c.x, z: top }, to: { x: c.x, z: bottom } }];
-    if (lane.lines === "flanks") {
-      const o = lane.offset ?? 8;
-      return [{ from: { x: c.x - o, z: top }, to: { x: c.x - o, z: bottom } }, { from: { x: c.x + o, z: bottom }, to: { x: c.x + o, z: top } }];
-    }
-    // Along each water channel's long axis, alternating direction.
-    return (this.mapDef.terrain.water ?? []).map((w, i) => {
-      const long = w.maxX - w.minX >= w.maxZ - w.minZ;
-      const mid = { x: (w.minX + w.maxX) / 2, z: (w.minZ + w.maxZ) / 2 };
-      const a = long ? { x: w.minX + 0.5, z: mid.z } : { x: mid.x, z: w.minZ + 0.5 };
-      const z = long ? { x: w.maxX - 0.5, z: mid.z } : { x: mid.x, z: w.maxZ - 0.5 };
-      return i % 2 ? { from: z, to: a } : { from: a, to: z };
-    });
+    return laneLines(this.mapDef, lane);
   }
 
   // Read-only environment snapshot for the renderer + HUD.

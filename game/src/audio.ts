@@ -183,6 +183,14 @@ export class Sfx {
   private voices = 0;
   /** Every sound request, muted or not (debug seam: smoke:buttons asserts a menu click makes a sound). */
   played = 0;
+  /** Every UI voice asked for, in order (smoke:buttons: each click is heard as its own family, never just the hover whisper). */
+  readonly uiLog: string[] = [];
+  uiCount = 0;
+  private heardUi(name: string): void {
+    this.uiCount += 1;
+    this.uiLog.push(name);
+    if (this.uiLog.length > 64) this.uiLog.shift();
+  }
   private lastPlayed = new Map<string, number>();
   private loading: Promise<void> = Promise.resolve();
 
@@ -443,6 +451,66 @@ export class Sfx {
     else this.sweep(1600, 600, 0.22, 0.85 * gain, 1.6); // swing: a short airy swish
   }
 
+  /**
+   * THE MAP EVENTS AND THE ROLLING STRIKES, HEARD (owner 2026-10-08: "map effects having proper sound effects for boulder or
+   * cattle crossing"). Each lasts the sweep's own `seconds` and is built from the same synth parts as the verbs:
+   *   devil     a wind howl that rises and falls (overlapping noise bands sweeping up and down) over a low rumble;
+   *   stampede  a hoof drum (rapid low thumps that swell in and fade out) and two or three low moos;
+   *   boulder   a grinding rumble with a heavy thud each turn of the stone;
+   *   icebreaker the horn, an engine chug and ice cracking off the bow;
+   *   carbomb   an engine straining up through its gears and a fizzing fuse (the blast at the end is the explosion voice).
+   */
+  hazard(kind: "devil" | "stampede" | "boulder" | "icebreaker" | "carbomb", seconds: number, gain = 1): void {
+    this.chord(() => {
+      const s = Math.max(1, seconds);
+      if (kind === "devil") {
+        for (let i = 0; i < 3; i += 1) {
+          const at = (i * s) / 3.2;
+          this.sweep(240, 1100, s * 0.45, 0.62 * gain, 1.6, at);
+          this.sweep(1100, 300, s * 0.4, 0.5 * gain, 1.6, at + s * 0.3);
+        }
+        this.sweep(70, 50, s, 0.7 * gain, 0.6);
+      } else if (kind === "stampede") {
+        // The thumps come in gallop pairs, swelling to the middle of the run and fading.
+        for (let k = 0, at = 0; at < s; k += 1, at += k % 2 ? 0.07 : 0.13) {
+          const swell = Math.sin(Math.PI * (at / s));
+          this.boom(68 + (k % 3) * 9, 0.14, (0.12 + 0.3 * swell) * gain, at);
+        }
+        for (const [at, f] of [[0.2, 150], [s * 0.45, 128], [s * 0.75, 170]] as const) {
+          this.glide(f, f * 0.72, 0.75, "sawtooth", 0.11 * gain, at); // moo: a low saw gliding down
+          this.glide(f * 1.5, f * 1.08, 0.7, "triangle", 0.05 * gain, at + 0.03);
+        }
+      } else if (kind === "boulder") {
+        this.sweep(140, 80, s, 0.34 * gain, 0.7);
+        for (let at = 0; at < s; at += 0.34) this.boom(52, 0.26, 0.24 * gain, at);
+      } else if (kind === "icebreaker") {
+        for (const at of [0, 0.7]) {
+          this.blip(196, 0.55, "sawtooth", 0.11 * gain, at);
+          this.blip(247, 0.55, "sawtooth", 0.09 * gain, at);
+        }
+        for (let at = 0.2; at < s; at += 0.36) this.boom(46, 0.2, 0.22 * gain, at); // the engine chug
+        for (let i = 0; i < 6; i += 1) this.crack(0.18, 0.28 * gain, 0.5 + (i * (s - 0.6)) / 6); // ice breaking off the bow
+      } else {
+        this.glide(90, 210, s * 0.45, "sawtooth", 0.13 * gain);
+        this.glide(150, 290, s * 0.5, "sawtooth", 0.11 * gain, s * 0.42);
+        this.sweep(4200, 6200, s, 0.12 * gain, 6); // the fuse fizz
+      }
+    });
+  }
+
+  /** A conveyor carrying someone: a clank and a short motor whine. */
+  conveyor(gain = 1): void {
+    this.chord(() => {
+      this.boom(130, 0.1, 0.18 * gain);
+      this.glide(220, 300, 0.45, "square", 0.05 * gain, 0.04);
+    });
+  }
+
+  /** A commando coming down under a chute: the canopy fluttering. (The slam lands as the strike's own impacts.) */
+  chute(gain = 1): void {
+    this.chord(() => { for (let i = 0; i < 5; i += 1) this.sweep(500, 900, 0.14, 0.5 * gain, 2, i * 0.11); });
+  }
+
   /** A new command turn: a low drum hit under a rising two-note, as the banner sweeps in. */
   newTurn(): void {
     this.chord(() => {
@@ -690,62 +758,79 @@ export class Sfx {
 
   /** A plain button press. */
   ui(): void {
+    this.heardUi("ui");
     if (this.sample("ui_select", GROUP_GAIN.ui_select, 1, 0.03)) return;
     this.blip(540, 0.04, "triangle", 0.18);
   }
 
   /** The pointer moving onto something clickable: barely there. */
   hover(): void {
+    this.heardUi("hover");
     this.sample("ui_hover", GROUP_GAIN.ui_hover, 1, 0.05);
   }
 
   /** A unit picked on the board or in the roster. */
   unit(): void {
+    this.heardUi("unit");
     if (this.sample("ui_unit", GROUP_GAIN.ui_unit, 1, 0.05)) return;
     this.blip(720, 0.05, "sine", 0.2);
   }
 
+  /** A deck card armed (deploy / build / strike): a quick rising double tick, "now pick the spot". */
+  arm(): void {
+    this.heardUi("arm");
+    this.chord(() => { this.blip(620, 0.04, "triangle", 0.16); this.blip(930, 0.06, "triangle", 0.14, 0.05); });
+  }
+
   /** A refused order. */
   error(): void {
+    this.heardUi("error");
     if (this.sample("ui_error", GROUP_GAIN.ui_error, 1, 0.08)) return;
     this.chord(() => { this.blip(220, 0.07, "square", 0.12); this.blip(196, 0.09, "square", 0.1, 0.06); });
   }
 
   /** An order accepted. */
   select(): void {
+    this.heardUi("select");
     if (this.sample("ui_confirm", GROUP_GAIN.ui_confirm, 1, 0.05)) return;
     this.blip(720, 0.05, "sine", 0.2);
   }
 
   /** Back / cancel / closing something. */
   back(): void {
+    this.heardUi("back");
     if (this.sample("ui_back", GROUP_GAIN.ui_back, 1, 0.05)) return;
     this.blip(330, 0.06, "sine", 0.14);
   }
 
   toggle(): void {
+    this.heardUi("toggle");
     if (this.sample("ui_toggle", GROUP_GAIN.ui_toggle, 1, 0.05)) return;
     this.blip(640, 0.04, "triangle", 0.16);
   }
 
   /** A menu or panel opening. */
   open(): void {
+    this.heardUi("open");
     if (this.sample("ui_open", GROUP_GAIN.ui_open, 1, 0.1)) return;
     this.blip(400, 0.06, "sine", 0.16);
   }
 
   deploy(): void {
+    this.heardUi("deploy");
     if (this.sample("ui_deploy", GROUP_GAIN.ui_deploy, 1, 0.1) && this.sample("ui_drop", GROUP_GAIN.ui_drop, 1, 0)) return;
     this.chord(() => { this.blip(330, 0.08, "sawtooth", 0.22); this.blip(440, 0.1, "sawtooth", 0.16, 0.06); });
   }
 
   build(): void {
+    this.heardUi("build");
     if (this.sample("ui_drop", GROUP_GAIN.ui_drop, 0.9, 0.08)) return;
     this.chord(() => { this.thunk(160, 0.14); this.blip(300, 0.06, "square", 0.16, 0.05); });
   }
 
   /** Ending the turn / a strike called. */
   turn(): void {
+    this.heardUi("turn");
     if (this.sample("ui_turn", GROUP_GAIN.ui_turn, 1, 0.1)) return;
     this.chord(() => { this.blip(420, 0.07, "sine", 0.22); this.blip(560, 0.09, "sine", 0.18, 0.07); });
   }
@@ -798,10 +883,10 @@ export class Sfx {
     osc.stop(t + dur + 0.02);
   }
 
-  private crack(dur: number, gain = 0.45): void {
+  private crack(dur: number, gain = 0.45, delay = 0): void {
     if (!this.ready()) return;
     const ctx = this.ctx!;
-    const t = ctx.currentTime;
+    const t = ctx.currentTime + delay;
     const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * dur), ctx.sampleRate);
     const data = buffer.getChannelData(0);
     for (let i = 0; i < data.length; i += 1) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
@@ -818,10 +903,10 @@ export class Sfx {
     src.stop(t + dur + 0.02);
   }
 
-  private boom(freq: number, dur: number, gain: number): void {
+  private boom(freq: number, dur: number, gain: number, delay = 0): void {
     if (!this.ready()) return;
     const ctx = this.ctx!;
-    const t = ctx.currentTime;
+    const t = ctx.currentTime + delay;
     const osc = ctx.createOscillator();
     const env = ctx.createGain();
     osc.type = "sine";
@@ -834,7 +919,7 @@ export class Sfx {
     osc.stop(t + dur + 0.03);
     // a little noise body for grit (part of this boom, not a second sound)
     this.chordDepth += 1;
-    try { this.crack(Math.min(0.12, dur * 0.4), gain * 0.5); } finally { this.chordDepth -= 1; }
+    try { this.crack(Math.min(0.12, dur * 0.4), gain * 0.5, delay); } finally { this.chordDepth -= 1; }
   }
 
   private thunk(freq: number, dur: number): void {
@@ -868,8 +953,9 @@ export async function measureMix(s: Sfx): Promise<Array<{ group: string; name: s
   for (const d of ["fall", "hull", "crash"] as const) jobs.push(["death", d, (x) => x.down(d)]);
   for (const r of [1, 2, 4]) jobs.push(["boom", `blast ${r}m`, (x) => x.explosion(r)]);
   jobs.push(["boom", "crash", (x) => x.crash()], ["boom", "ignite", (x) => x.ignite()], ["boom", "strike", (x) => x.strike()]);
-  for (const m of ["newTurn", "alarm", "turn", "victory", "defeat", "coin", "horn", "jet", "allSet", "achievement"] as const) jobs.push(["moment", m, (x) => (x[m] as () => void).call(x)]);
-  for (const u of ["ui", "hover", "unit", "error", "select", "back", "toggle", "open", "deploy", "build"] as const) jobs.push(["ui", u, (x) => (x[u] as () => void).call(x)]);
+  for (const m of ["newTurn", "alarm", "turn", "victory", "defeat", "coin", "horn", "jet", "allSet", "achievement", "conveyor", "chute"] as const) jobs.push(["moment", m, (x) => (x[m] as () => void).call(x)]);
+  for (const [h, sec] of [["devil", 2.6], ["stampede", 2.2], ["boulder", 1.8], ["icebreaker", 3.0], ["carbomb", 1.9]] as const) jobs.push(["event", h, (x) => x.hazard(h, sec)]);
+  for (const u of ["ui", "hover", "unit", "error", "select", "back", "toggle", "open", "deploy", "build", "arm"] as const) jobs.push(["ui", u, (x) => (x[u] as () => void).call(x)]);
   const out: Array<{ group: string; name: string; peak: number; rms: number }> = [];
   for (const [group, name, play] of jobs) out.push({ group, name, ...(await s.measure(play)) });
   return out;

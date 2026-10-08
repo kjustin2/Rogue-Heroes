@@ -42,7 +42,9 @@ zones, pads and landing rings inside the bounds (fault-injected).
 **`npm run probe:mix`** (2026-10-07): every Sfx voice (guns, verbs, deaths, booms, moments, UI) rendered offline in a hidden muted
 browser (`__rht.measureMix()`), peak + loudest-400ms RMS in dBFS. Gates: no clip (peak <= +0.5), nothing silent (peak > -40), UI >= 5 dB
 under the combat median, verbs within 9 dB of the gun median (targets 6 / 8; a run's random picks move a median ~2 dB). Fault-injected
-(the old 0.6 confirm gain fails). `smoke:buttons` also fails if any real click makes no sound.
+(the old 0.6 confirm gain fails). `smoke:buttons` also fails if any real click makes no sound of its own (the hover whisper does not count: it once hid nine
+silent controls) or the wrong family's sound (`__rht.sfxUiLog`). `npm run shots:gpu -- sweeps` films every lane hazard and rolling
+strike at fixed points of its run (injected effect, pinned age).
 
 **The balance gate (`balance.test.ts`, inside `npm test`)** measures damage per dollar against the median kind. Two crediting rules
 (2026-10-06), both measured, not tuned: a KILLING blow also counts the health it denied (a Marksman's one-shot head kill used to count as
