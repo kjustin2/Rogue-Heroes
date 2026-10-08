@@ -2608,6 +2608,7 @@ declare global {
       setView(view: { x?: number; z?: number; zoom?: number; yaw?: number; pitch?: number; overview?: boolean }): void;
       holdCamera(on: boolean): void;
       sfxPlayed(): number;
+      bounds(): { minX: number; maxX: number; minZ: number; maxZ: number };
       measureMix(): Promise<Array<{ group: string; name: string; peak: number; rms: number }>>;
       view(): { x: number; z: number; zoom: number; yaw: number; pitch: number };
       projectToScreen(point: { x: number; z: number }, height?: number): { x: number; y: number; visible: boolean; behind: boolean };
@@ -2733,6 +2734,7 @@ window.__rht = {
   setView: (view) => stage.debugSetView(view),
   holdCamera: (on) => { directorHeld = on; },
   sfxPlayed: () => sfx.played,
+  bounds: () => ({ ...ARENA_BOUNDS }),
   measureMix: () => measureMix(sfx),
   view: () => stage.viewState(),
   projectToScreen: (point, height) => stage.projectToScreen(point, height),

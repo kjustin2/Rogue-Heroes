@@ -7492,6 +7492,7 @@ function setGroundPaint(theme: MapTheme): void {
   groundPaintUniforms.uPaintA.value.setHex(paint.patches[0]);
   groundPaintUniforms.uPaintB.value.setHex(paint.patches[1]);
   groundPaintUniforms.uPaintPath.value.setHex(paint.path);
+  groundPaintUniforms.uBoard.value.set(ARENA_BOUNDS.minX, ARENA_BOUNDS.minZ, ARENA_BOUNDS.maxX, ARENA_BOUNDS.maxZ);
   const [a, b] = plateKeepClear;
   if (a && b) {
     groundPaintUniforms.uBases.value.set(a.x, a.z, b.x, b.z);
@@ -7844,6 +7845,9 @@ const groundPaintUniforms = {
   uPaintPath: { value: new THREE.Color() },
   uBases: { value: new THREE.Vector4(1e4, 1e4, 1e4 + 1, 1e4) },
   uBend: { value: 0 },
+  // The board rect (minX, minZ, maxX, maxZ): the paint stops at the rim (owner 2026-10-07: patches ran across the board edge into
+  // the plain outside, the "circle off the border" he saw). The title diorama has no board: a huge rect.
+  uBoard: { value: new THREE.Vector4(-1e4, -1e4, 1e4, 1e4) },
 };
 
 function applyCloudShadows(material: THREE.MeshStandardMaterial, noise: THREE.Texture): void {
@@ -7865,7 +7869,8 @@ uniform vec3 uPaintA;
 uniform vec3 uPaintB;
 uniform vec3 uPaintPath;
 uniform vec4 uBases;
-uniform float uBend;`)
+uniform float uBend;
+uniform vec4 uBoard;`)
       .replace("#include <map_fragment>", `#include <map_fragment>
 // ~85 world units per cloud, so a shadow is a feature of the map rather than of a texture.
 float cloud = texture2D(uCloudMap, vCloudXZ / 85.0 + uCloudOffset).g;
@@ -7878,10 +7883,12 @@ diffuseColor.rgb *= mix(0.86, 1.0, smoothstep(0.35, 0.72, cloud));
   // Same fields and lane as laneDistance() in TS -- the plates skip the lane by that function.
   vec2 p = vCloudXZ;
   vec3 tex = sampledDiffuseColor.rgb;
+  // 1 on the board, 0 past the rim (a quarter-metre fade, hidden under the lip).
+  float onBoard = 1.0 - smoothstep(-0.1, 0.25, max(max(uBoard.x - p.x, p.x - uBoard.z), max(uBoard.y - p.y, p.y - uBoard.w)));
   float fa = sin(p.x * 0.083 + 0.6) * cos(p.y * 0.071 - 1.3) + 0.45 * sin((p.x - p.y) * 0.151 + 2.1);
   float fb = sin(p.x * 0.057 - 2.2) * cos(p.y * 0.093 + 0.8) + 0.45 * cos((p.x + p.y) * 0.127 - 0.5);
-  float wa = smoothstep(0.5, 0.85, fa);
-  float wb = smoothstep(0.52, 0.88, fb) * (1.0 - wa);
+  float wa = smoothstep(0.5, 0.85, fa) * onBoard;
+  float wb = smoothstep(0.52, 0.88, fb) * (1.0 - wa) * onBoard;
   diffuseColor.rgb = mix(diffuseColor.rgb, uPaintA * tex, wa * 0.85);
   diffuseColor.rgb = mix(diffuseColor.rgb, uPaintB * tex, wb * 0.8);
   vec2 A = uBases.xy;
@@ -7891,7 +7898,7 @@ diffuseColor.rgb *= mix(0.86, 1.0, smoothstep(0.35, 0.72, cloud));
   vec2 lc = A + AB * t + vec2(-AB.y, AB.x) / L * sin(t * 6.2831853) * uBend;
   float lane = 1.0 - smoothstep(1.4, 3.4, distance(p, lc));
   float apron = max(1.0 - smoothstep(5.5, 9.0, distance(p, A)), 1.0 - smoothstep(5.5, 9.0, distance(p, uBases.zw)));
-  diffuseColor.rgb = mix(diffuseColor.rgb, uPaintPath * tex, max(lane * 0.8, apron * 0.7));
+  diffuseColor.rgb = mix(diffuseColor.rgb, uPaintPath * tex, max(lane * 0.8, apron * 0.7) * onBoard);
 }
 #endif`);
   };
@@ -8227,6 +8234,15 @@ function makeGroundPlates(theme: MapTheme, width: number, depth: number, surface
     const merged = mergeGeometries(parts, false);
     for (const geo of parts) geo.dispose();
     if (!merged) continue;
+    // THE BOARD EDGE CUTS THEM (owner 2026-10-07: "parts of map spill out ... a circle went off the border"). A blob near
+    // the edge reached up to ~23m past its centre, so patches ran across the rim into the dark surround. Clamping every
+    // vertex to the board cuts each blob flat along the rim (under the lip); triangles wholly outside collapse to nothing.
+    const pos = merged.getAttribute("position") as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i += 1) {
+      pos.setX(i, clamp(pos.getX(i), ARENA_BOUNDS.minX + 0.05, ARENA_BOUNDS.maxX - 0.05));
+      pos.setZ(i, clamp(pos.getZ(i), ARENA_BOUNDS.minZ + 0.05, ARENA_BOUNDS.maxZ - 0.05));
+    }
+    pos.needsUpdate = true;
     // WORLD-SPACE UVs. Each slab's own UVs run 0..1 across a ~7-unit patch, so with the floor's
     // repeat (one tile per 11 world units) applied on top, the plates tiled roughly eleven times
     // finer than the ground they sit on -- which aliased into diagonal moiré hatching at tactical

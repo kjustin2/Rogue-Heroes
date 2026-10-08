@@ -793,6 +793,23 @@ app.whenReady().then(async () => {
         await js(`window.__rht.setTimeScale(1); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = ""))`);
         continue;
       }
+      if (s === "corners") {
+        // Owner 2026-10-07: "in corners of map make sure parts of map don't spill out ... a circle went off the border of the map".
+        // The four corners of every map at play zoom, HUD hidden, in Hill mode (the zone ring) with the deploy rings up.
+        for (const m of (process.env.MAPS ? process.env.MAPS.split(",") : ["dustbowl", "ironworks", "verdant", "causeway", "karak", "crossfire"])) {
+          await js(`window.__rht.setTimeScale(1); window.__rht.startBattle(${JSON.stringify(m)}, "hill", "normal")`);
+          await sleep(1500);
+          const b = await js(`(() => { const r = window.__rht; r.deselect(); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = "hidden")); return r.bounds(); })()`);
+          const bx = b ?? { minX: -26, maxX: 26, minZ: -17, maxZ: 17 };
+          const corners = [["nw", bx.minX + 6, bx.minZ + 5], ["ne", bx.maxX - 6, bx.minZ + 5], ["sw", bx.minX + 6, bx.maxZ - 5], ["se", bx.maxX - 6, bx.maxZ - 5]];
+          for (const [tag, x, z] of corners) {
+            await js(`window.__rht.setView({ x: ${x}, z: ${z}, zoom: 0.5, pitch: 0.75, yaw: 0.0 })`);
+            await sleep(700); await shot(`corners-${m}-${tag}`);
+          }
+        }
+        await js(`document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = ""))`);
+        continue;
+      }
       if (s === "fundeck") {
         // The 2026-10-07 deck: a Shockwave on a squad beside a tank (the troopers fly, the tank rocks), a Spring Trap
         // launching a trooper, and a Tank Drop falling onto its point. Slow motion, four frames each.

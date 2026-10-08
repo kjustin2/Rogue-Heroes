@@ -34,6 +34,11 @@ A new number in a tip gets a line here; a cut unit gets added to `CUT`.
 framed before the resolve (`-pre`) and in four slow-motion frames with the camera held (`__rht.holdCamera(true)`: the resolve director
 otherwise pans away). Victims are PLAYER units hit by an enemy call: the enemy AI walks its own troopers off before a strike lands.
 
+**`npm run shots:gpu -- corners`** (2026-10-07): the four corners of every map at play zoom, HUD hidden, Hill mode. It found the ground
+PLATES (the soft value patches, `makeGroundPlates`) running across the rim into the dark surround: blobs centred near the edge reached
+~23m. Plate vertices are now clamped to the board. `mapLayout.test.ts` "every drawn ring is on the board" holds the hill zone, hazard
+zones, pads and landing rings inside the bounds (fault-injected).
+
 **`npm run probe:mix`** (2026-10-07): every Sfx voice (guns, verbs, deaths, booms, moments, UI) rendered offline in a hidden muted
 browser (`__rht.measureMix()`), peak + loudest-400ms RMS in dBFS. Gates: no clip (peak <= +0.5), nothing silent (peak > -40), UI >= 5 dB
 under the combat median, verbs within 9 dB of the gun median (targets 6 / 8; a run's random picks move a median ~2 dB). Fault-injected

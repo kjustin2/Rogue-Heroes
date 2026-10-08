@@ -1,4 +1,4 @@
-# Next steps — the roadmap (updated 2026-10-01)
+# Next steps — the roadmap (updated 2026-10-07)
 
 The ONE live planning doc: where the game is, what is next, what is deliberately deferred. Read it at the
 start of every session; update it at the end. Finished work lives in `git log`, not here.
@@ -111,3 +111,9 @@ MapDef.train into lanes).
 Polish pass (2026-10-07): `wording.test.ts` (tips match constants, no cut names), ability + death sounds, Orbital Lance -> Gun Run (no
 lasers), Boomer fuse sparks, Skater glide + exhaust, Chop Bike rider, Bastion kettle brim (rifleman IoU 0.81 -> 0.77). Music checked:
 16 tracks within -18.5..-20.9 LUFS, three per map, stingers duck. Not done: Breaker punch / Boomer detonate / Mole mound poses.
+
+Fun + balance audit (2026-10-07, done): the deck cut (scans, heals, stat bumps, soft utility) and Shockwave / Spring Trap / Tank Drop;
+every blast throws troopers, heavies never move; new-turn + hazard sounds, every menu click heard (smoke:buttons), the mix measured
+(`probe:mix`) and the multi-part-sound throttle bug fixed (`chord`); the Sledge swung by every brain, every combat kind balance-gated;
+ground plates clipped to the board (`shots:gpu -- corners`). OPEN: Dust Bowl is the slowest map (16 of 24 self-play games undecided at
+16 turns); the Rocketeer and Flak sit low in self-play (0.64x / 0.62x: specialists against an AI that fields few vehicles/aircraft).

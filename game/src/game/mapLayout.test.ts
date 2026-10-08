@@ -73,3 +73,22 @@ describe("map features are clear", () => {
     });
   }
 });
+
+// THE BOARD EDGE (owner 2026-10-07: "parts of map don't spill out ... a circle went off the border"). Every ring the game draws
+// on the ground lies wholly on the board: the hill zone, every hazard zone's marked circle, every launch pad and its landing
+// ring. (Caches and posts are held above; deploy rings are fitted by fitBases; the ground paint and plates are clipped to the
+// board in the renderer -- shots:gpu -- corners.)
+describe("every drawn ring is on the board", () => {
+  afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
+  for (const map of MAPS) {
+    it(map.id, () => {
+      const sim = new TacticalSim(); sim.configure(mapDef(map.id), "hill", "normal"); setActiveTerrain(sim.mapDef.terrain);
+      const b = ARENA_BOUNDS;
+      const rings: { n: string; x: number; z: number; r: number }[] = [{ n: "hill", ...sim.mapDef.hill, r: sim.mapDef.hillRadius }];
+      for (const e of sim.mapDef.events ?? []) if (e.zone) rings.push({ n: `event ${e.kind}`, x: e.zone.x, z: e.zone.z, r: e.zone.radius });
+      for (const p of sim.launchPads()) rings.push({ n: "pad", x: p.x, z: p.z, r: 1.2 }, { n: "pad landing", x: p.to.x, z: p.to.z, r: 1.2 });
+      const off = rings.filter((t) => Math.min(t.x - b.minX, b.maxX - t.x, t.z - b.minZ, b.maxZ - t.z) < t.r - 0.05);
+      expect(off.map((t) => `${t.n} @${t.x.toFixed(1)},${t.z.toFixed(1)} r${t.r}`)).toEqual([]);
+    });
+  }
+});
