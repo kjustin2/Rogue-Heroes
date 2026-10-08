@@ -156,16 +156,21 @@ describe("hard AI brain: the full move set", () => {
     expect(ordersOf(sim, striker.id).some((o) => o.kind === "melee" && o.shove)).toBe(true);
   });
 
-  it("a Sledge slams a clump it is standing in, and does nothing special at range", () => {
+  it("a Sledge slams a clump it is standing in, runs in and swings at one a run away, and does nothing special beyond", () => {
     const sim = hard();
     const sledge = arm(sim.debugSpawn("sledge", "enemy", { x: 4, z: 0 }));
     sim.debugSpawn("soldier", "player", { x: 2.4, z: 0 });
     sim.debugSpawn("soldier", "player", { x: 2.4, z: 1.4 });
     settleCommand(sim);
     expect(ordersOf(sim, sledge.id).some((o) => o.kind === "slam")).toBe(true);
+    const run = hard();
+    const s1 = arm(run.debugSpawn("sledge", "enemy", { x: 10, z: 0 }));
+    run.debugSpawn("soldier", "player", { x: 2, z: 0 });
+    settleCommand(run);
+    expect(ordersOf(run, s1.id).map((o) => o.kind), "move, then the hammer").toEqual(["move", "slam"]);
     const far = hard();
-    const s2 = arm(far.debugSpawn("sledge", "enemy", { x: 14, z: 0 }));
-    far.debugSpawn("soldier", "player", { x: -4, z: 0 });
+    const s2 = arm(far.debugSpawn("sledge", "enemy", { x: 30, z: 0 }));
+    far.debugSpawn("soldier", "player", { x: -14, z: 0 });
     settleCommand(far);
     expect(ordersOf(far, s2.id).some((o) => o.kind === "slam")).toBe(false);
   });
