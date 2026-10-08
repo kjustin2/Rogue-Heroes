@@ -1,4 +1,4 @@
-# Next steps — the roadmap (updated 2026-10-07)
+# Next steps — the roadmap (updated 2026-10-08)
 
 The ONE live planning doc: where the game is, what is next, what is deliberately deferred. Read it at the
 start of every session; update it at the end. Finished work lives in `git log`, not here.
@@ -19,6 +19,9 @@ Round 7 (2026-10-07, second fun audit): cut Scout, Ricochet Gunner, Turret Tech 
 Rocket Skater, Molotov, Mole Sapper. Caches mirrored (the player-seat lean is gone: 53%). Map features landed (Ironworks train, launch pads,
 thin ice, red barrels). Sound + visual audit done (fire never booms, silent dig puffs, train horn, ice/eruption crashes, pad whoosh;
 flame-post drums no longer mimic red barrels). Watch: Jump Trooper is the lowest-value unit in self-play (0.52x).
+
+Round 8 (2026-10-08, third fun audit): cut Paradrop, Minefield Drop, Airstrike, Sandbags, Gun Turret, Runabout, supply caches and the
+second base order; added the Commando Drop, Car Bomb and Barrel Stack (`docs/game-systems.md`, "Fun audit, round 3").
 
 State of `main`: `npm run verify` green (574 vitest incl. chaos, balance self-play and the movement +
 projectile oracle), `npm run smoke:core` green (11 smokes), `npm run probe:terrain` 0 offenders,
@@ -65,7 +68,7 @@ three movement bugs the oracle found; the per-frame GL depth-blit error (postpro
    A bombing run (move over the nearest ground foe, release on arrival) alone took it to 1.8x the median;
    do the run AND a bomber retune (fewer loads or a smaller carpet) in one change, then un-gate it.
 4. **The bot and the new decks.** It drops its strongest strike on a crowd, but never builds a defense, lays a
-   minefield, paradrops or calls a utility power. Add only after the owner has played the new decks.
+   minefield or stacks barrels. Add only after the owner has played the new decks.
 5. ~~The AI never uses Push~~ Done 2026-10-03 (Hard brain, `aiShoveAct`).
 6. **Attack arms.** The Blender motion banks' `shoulderPitch` / `shoulderYaw` / `offhandPitch` never reach an
    arm: arms are `"body"`-part meshes and the pose code's `part.role === "core"` branch catches them first.
@@ -75,7 +78,7 @@ three movement bugs the oracle found; the per-frame GL depth-blit error (postpro
 7. **Karak's landform.** It is the last map built on stepped pyramid mesas; a canyon, crater ring or dune
    field would give it its own. Constraints: impassable = step > `TERRAIN_STEP` or water; shelves deep enough
    to stop on (`spawnClearance`); `scatter.test.ts`, `props.test.ts`, `movement.test.ts` green; rerun self-play.
-8. **Remaining unit-identity ideas** (only if asked): engineer bridge span (sandbags are now in every Defenses deck); a flak tracer wall
+8. **Remaining unit-identity ideas** (only if asked): engineer bridge span; a flak tracer wall
    that blocks air movement (needs a new persistent, serialized line object).
 9. **Elites / bosses** survive in code (`debugSpawn` options + the boss bar) for a possible set piece — only
    when asked.

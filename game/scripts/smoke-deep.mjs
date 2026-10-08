@@ -61,32 +61,6 @@ try {
   await assertLit(page, "air-to-air");
   await page.screenshot({ path: join(OUT, "31-air-to-air.png") });
 
-  // 2) Runabout: pick up a friendly soldier, carry it (link + passenger list), then drop it off.
-  const t = await page.evaluate(() => {
-    const sim = window.__rht.sim;
-    sim.reset();
-    sim.economy.set("player", 3000);
-    const tr = sim.debugSpawn("runabout", "player", { x: -6, z: 0 });
-    const s = sim.debugSpawn("soldier", "player", { x: -4, z: 0 });
-    sim.select(tr.id);
-    const queued = sim.queueLoad(s.id);
-    return { t: tr.id, s: s.id, queued };
-  });
-  if (!t.queued) fail("runabout could not queue a load order");
-  await endTurnAndSettle(page);
-  const carried = await page.evaluate((ids) => {
-    const sim = window.__rht.sim;
-    const tr = sim.entity(ids.t); const s = sim.entity(ids.s);
-    return { carriedBy: s?.carriedById, passengers: tr?.passengerIds ?? [] };
-  }, t);
-  if (carried.carriedBy !== t.t || !carried.passengers.includes(t.s)) fail(`runabout did not pick up the soldier: ${JSON.stringify(carried)}`);
-  await page.evaluate((ids) => { const sim = window.__rht.sim; sim.select(ids.t); const tr = sim.entity(ids.t); window.__rht.queueUnload({ x: tr.position.x + 2, z: tr.position.z }); }, t); // a car sets its troops down beside itself
-  await endTurnAndSettle(page);
-  const dropped = await page.evaluate((ids) => { const s = window.__rht.sim.entity(ids.s); return { carriedBy: s?.carriedById, alive: s?.status.alive }; }, t);
-  if (dropped.carriedBy || !dropped.alive) fail(`runabout did not drop the soldier: ${JSON.stringify(dropped)}`);
-  await assertLit(page, "runabout carry");
-  await page.screenshot({ path: join(OUT, "32-runabout.png") });
-
   // 3) Bomb straight-down: a bomber over a (held) ground foe detonates beneath itself.
   const bomb = await page.evaluate(() => {
     const sim = window.__rht.sim;
@@ -132,7 +106,7 @@ try {
   await page.screenshot({ path: join(OUT, "34-victory.png") });
 
   if (errors.length) fail(`Console errors:\n${errors.slice(0, 12).join("\n")}`);
-  console.log("Deep smoke passed: air fleet render, air-to-air, runabout load/carry/unload, straight-down bomb, serialize round-trip, victory screen.");
+  console.log("Deep smoke passed: air fleet render, air-to-air, straight-down bomb, serialize round-trip, victory screen.");
 } finally {
   await close();
 }

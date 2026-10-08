@@ -151,6 +151,8 @@ export interface CombatEntity {
   dodgeTurn?: number;
   // TANK DROP: turns left before the dropped tank's crew scuttles it into a wreck.
   dropTtl?: number;
+  // COMMANDO DROP: this trooper came down under a chute (the renderer drops it in).
+  chuted?: boolean;
   // FACTION TRAITS (factions.ts unitMods), stamped at deploy: the same Recruit is quicker for Vanguard and sturdier for Bastion.
   mods?: { hp?: number; move?: number; range?: number; damage?: number; grenades?: number };
 }
@@ -274,13 +276,6 @@ export function createTank(id: string, name: string, team: Team, position: Vec2)
     hullLabel: "Hull",
     turretLabel: "Turret Ring",
     cannonLabel: "Cannon",
-  });
-}
-
-export function createRunabout(id: string, name: string, team: Team, position: Vec2): CombatEntity {
-  return createVehicle(id, name, "runabout", team, position, {
-    radius: 1.2, height: 1.15, hullHp: 70, turretHp: 30, cannonHp: 24, treadHp: 30, frontHp: 26,
-    hullLabel: "Chassis", turretLabel: "Gun Mount", cannonLabel: "Mounted MG",
   });
 }
 

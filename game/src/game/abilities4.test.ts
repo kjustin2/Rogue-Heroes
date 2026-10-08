@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CARPET_BOMBS, CLASH_BLAST, CLASH_BOLT, TacticalSim, mapDef } from "./sim";
 import { createBase, createSoldier } from "./damageModel";
-import { DEFAULT_TERRAIN, discSamples, onTerrainEdge, pointInWater, setActiveTerrain } from "./terrain";
+import { DEFAULT_TERRAIN, setActiveTerrain } from "./terrain";
 
 // Unit identity abilities, round four (unit-identity picks 5, 9, 10, 14, 15, 17, 18):
 // grenadier AIRBURST, flamer FEAR, drone op RECON, APC CARRY, artillery DEPLOY, gunship STRAFE,
@@ -219,21 +219,6 @@ describe("base systems cost their owner something", () => {
   });
 });
 
-describe("cash caches sit on solid ground", () => {
-  it("no cache on any map is in or beside water, on a ledge edge, or inside a base's deploy ring", () => {
-    for (const id of ["dustbowl", "ironworks", "verdant", "causeway", "karak", "crossfire"]) {
-      const sim = new TacticalSim();
-      sim.configure(mapDef(id), "destroy", "normal");
-      for (const p of sim.pickups) {
-        expect(pointInWater(p), `${id} cache in water`).toBe(false);
-        expect(discSamples(p, 1.5).some(pointInWater), `${id} cache on the shore`).toBe(false);
-        expect(onTerrainEdge(p, 1.5), `${id} cache on a ledge`).toBe(false);
-        for (const b of sim.entities.filter((e) => e.kind === "base")) expect(Math.hypot(p.x - b.position.x, p.z - b.position.z), `${id} cache in a ring`).toBeGreaterThan(13);
-      }
-    }
-    setActiveTerrain(DEFAULT_TERRAIN);
-  });
-});
 
 describe("smart bot economy (owner 2026-10-02: smarter AI)", () => {
   it("a Hard bot turns its money into an army instead of hoarding it or researching the whole tree", () => {

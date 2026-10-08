@@ -64,7 +64,7 @@ function defaultPoints(m: MedalSeed): number {
 }
 
 const AIR_KINDS = ["gunship", "bomber"];
-const VEHICLE_KINDS = ["tank", "runabout", "artillery", "flak", "chopbike", "bulldozer"];
+const VEHICLE_KINDS = ["tank", "artillery", "flak", "chopbike", "bulldozer"];
 const killsOf = (s: CommanderStats, kinds: string[]): number => kinds.reduce((sum, k) => sum + (s.killsByKind[k] ?? 0), 0);
 const INFANTRY_KILLS = (s: CommanderStats): number => s.kills - killsOf(s, AIR_KINDS) - killsOf(s, VEHICLE_KINDS);
 
@@ -139,7 +139,6 @@ const MEDAL_SEEDS: readonly MedalSeed[] = [
     ["clash50", "Point Defense", "See 50 rounds meet in mid-air.", "clashes", 50, 70],
     ["cannon10", "Big Gun", "Fire the Fortress Cannon 10 times.", "cannon", 10, 30],
     ["cannon50", "Fortress Master", "Fire the Fortress Cannon 50 times.", "cannon", 50, 75],
-    ["carkills", "Road Warrior", "Kill 25 foes with Runabouts.", "killer:runabout", 25, 30],
     ["hops50", "Hopper", "Make 50 hops.", "hops", 50, 20],
     ["hops300", "Kangaroo", "Make 300 hops.", "hops", 300, 55],
     ["fling30", "Gone With the Wind", "Fling 30 troopers with Shockwaves.", "flung", 30, 30],
@@ -165,7 +164,7 @@ const MEDAL_SEEDS: readonly MedalSeed[] = [
   { id: "rocketkills", page: "Arsenal", name: "Post Haste", blurb: "Kill 15 vehicles' worth of foes from Rocket Posts.", points: 40, progress: (st) => [st.counters["killer:rocketpost"] ?? 0, 15] },
 ];
 
-const NEW_KINDS = ["runabout", "sledge", "breaker", "boomer", "juggernaut", "hookshot", "skater", "molotov", "mole", "chopbike", "bulldozer"];
+const NEW_KINDS = ["sledge", "breaker", "boomer", "juggernaut", "hookshot", "skater", "molotov", "mole", "chopbike", "bulldozer"];
 const triedKinds = (st: CommanderStats, kinds: readonly string[]): number => kinds.filter((k) => (st.counters[`deploy:${k}`] ?? 0) > 0).length;
 const triedTech = (st: CommanderStats): number => TECH_TREE.filter((n) => (st.counters[`research:${n.id}`] ?? 0) > 0).length;
 

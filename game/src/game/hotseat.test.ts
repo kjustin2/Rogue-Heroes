@@ -68,7 +68,7 @@ describe("hotseat", () => {
     expect(sim.queueMove({ x: -4, z: 0 })).toBe(true);
     expect(sim.log.some((l) => l.includes(p1.name))).toBe(true);
     sim.setIntent("move");
-    sim.setPendingSupport("airstrike");
+    sim.setPendingSupport("shockwave");
     sim.swapSides();
     expect(sim.log.some((l) => l.includes(p1.name))).toBe(false);
     expect(sim.log).toEqual(opening); // what both players saw before planning is still there
@@ -105,9 +105,9 @@ describe("hotseat", () => {
     const sim = new TacticalSim([base, enemyBase, victim]);
     sim.economy.set("player", 1000);
     base.commandPoints = 1;
-    base.unlockedTech = ["recon", "support"]; // the Airstrike needs Support Wing (nothing is callable on turn 1)
+    base.unlockedTech = ["recon", "support"]; // the Commando Drop needs Support Wing (nothing is callable on turn 1)
     sim.select("p-base-1");
-    sim.setPendingSupport("airstrike");
+    sim.setPendingSupport("commando");
     expect(sim.queueSupportAt({ x: 4, z: 0 })).toBe(true);
     const copy = new TacticalSim([]);
     expect(copy.restore(sim.serialize())).toBe(true);

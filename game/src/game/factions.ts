@@ -74,12 +74,12 @@ export interface FactionDef {
 // ROSTER DESIGN (2026-09-23, owner: "the factions still feel too similar in look and gameplay").
 //
 // The first faction pass filtered ONE shared roster, and every faction kept most of it -- three
-// decks of fourteen with ten cards in common, all calling the same Airstrike. They now share only
+// decks of fourteen with ten cards in common, all calling the same strike. They now share only
 // a CORE (the rifleman, the heavy gunner, the marksman and the flak track, so each keeps
 // an answer to air; the two regular armies also share the tank)
 // and each owns a block of units nobody else fields:
 //   Vanguard  -- air cavalry: Jump Trooper, Breaker, Hookshot, Rocket Skater, Gunship. No indirect fire.
-//   Syndicate -- raiders: Striker, Flamer, Molotov, Sledge, Boomer, the Chop Bike and the Runabout. No tank.
+//   Syndicate -- raiders: Striker, Flamer, Molotov, Sledge, Boomer, and the Chop Bike. No tank.
 //   Bastion   -- fortress: Mortar, Juggernaut, Mole Sapper, Bulldozer, Artillery, Bomber, Mortar Turret. Nothing fast.
 // The Heavy Gunner is CORE: whoever lacked it lost AI-vs-AI games outright (Bastion-only, Bastion
 // beat Vanguard 22-3; with Vanguard and Bastion only, the Syndicate won 10 of 96).
@@ -93,10 +93,10 @@ export const FACTIONS: readonly FactionDef[] = [
     name: "Vanguard",
     blurb: "Full air wing. No artillery.",
     detail: "Air-mobile shock troops. Jump troopers, rocket-fisted Breakers, Hookshots that drag foes in, Rocket Skaters and the only gunships, with Rocketeers for armour. No mortar or artillery: a dug-in enemy has to be taken, not shelled.",
-    roster: ["soldier", "sniper", "jumper", "heavy", "bazooka", "breaker", "hookshot", "skater", "tank", "runabout", "flak", "gunship"],
+    roster: ["soldier", "sniper", "jumper", "heavy", "bazooka", "breaker", "hookshot", "skater", "tank", "flak", "gunship"],
     tech: ["recon", "assault", "shock", "motorpool", "armor", "airwing", "support", "fieldworks"],
-    defenses: ["sandbag", "turret", "springtrap", "harpoon"],
-    supports: ["shockwave", "airstrike", "paradrop", "tankdrop"],
+    defenses: ["barrels", "springtrap", "harpoon"],
+    supports: ["shockwave", "commando", "tankdrop"],
     accent: 0x8cefff,
     aiPreference: ["tank", "gunship", "breaker", "hookshot", "skater", "heavy", "jumper", "sniper"],
     aiTechPath: ["assault", "motorpool", "armor", "recon", "airwing", "shock"],
@@ -118,13 +118,13 @@ export const FACTIONS: readonly FactionDef[] = [
     id: "syndicate",
     name: "Syndicate",
     blurb: "Fire and blades. Kills pay.",
-    detail: "Fast, cheap and attritional. Strikers, flamers, Molotov throwers, Chop Bikes, the Sledge and kamikaze Boomers, carried in by Runabouts, with tank-hunting rocketeers behind them. No tank and no siege gun, so it cannot win a slugging match -- only a quicker one.",
-    roster: ["soldier", "sniper", "heavy", "striker", "flamer", "boomer", "molotov", "bazooka", "sledge", "chopbike", "runabout", "flak"],
+    detail: "Fast, cheap and attritional. Strikers, flamers, Molotov throwers, Chop Bikes, the Sledge and kamikaze Boomers, with tank-hunting rocketeers behind them. No tank and no siege gun, so it cannot win a slugging match -- only a quicker one.",
+    roster: ["soldier", "sniper", "heavy", "striker", "flamer", "boomer", "molotov", "bazooka", "sledge", "chopbike", "flak"],
     tech: ["recon", "assault", "shock", "motorpool", "fieldworks", "ordnance", "incendiary", "demolition"],
-    defenses: ["sandbag", "turret", "minefield", "harpoon"],
-    supports: ["minedrop", "napalm", "barrage"],
+    defenses: ["barrels", "minefield", "harpoon"],
+    supports: ["napalm", "carbomb", "barrage"],
     accent: 0xffca6b,
-    aiPreference: ["flamer", "molotov", "sledge", "boomer", "striker", "chopbike", "runabout", "heavy", "bazooka"],
+    aiPreference: ["flamer", "molotov", "sledge", "boomer", "striker", "chopbike", "heavy", "bazooka"],
     aiTechPath: ["assault", "ordnance", "incendiary", "motorpool", "shock", "recon"],
     doctrine: {
       name: "Scavengers",
@@ -146,9 +146,9 @@ export const FACTIONS: readonly FactionDef[] = [
     name: "Bastion",
     blurb: "Siege guns. Troops dig in.",
     detail: "Siege and fortification. Mortars, artillery, cannon-armed Juggernauts, burrowing Mole Sappers, Bulldozers, the heavy bomber and the only Mortar Turret. No Striker, no Chop Bike, no gunship: nothing it fails to kill will be caught.",
-    roster: ["soldier", "sniper", "heavy", "mortar", "juggernaut", "mole", "bulldozer", "tank", "artillery", "runabout", "flak", "bomber"],
-    tech: ["recon", "assault", "shock", "motorpool", "armor", "siege", "airwing", "support", "fieldworks", "ordnance"],
-    defenses: ["sandbag", "turret", "exturret"],
+    roster: ["soldier", "sniper", "heavy", "mortar", "juggernaut", "mole", "bulldozer", "tank", "artillery", "flak", "bomber"],
+    tech: ["recon", "assault", "shock", "motorpool", "armor", "siege", "airwing", "fieldworks", "ordnance"],
+    defenses: ["barrels", "exturret", "harpoon"],
     supports: ["boulder", "laser", "tankdrop", "barrage"],
     accent: 0x9ef0b8,
     aiPreference: ["tank", "heavy", "artillery", "juggernaut", "mole", "bulldozer", "mortar", "sniper"],

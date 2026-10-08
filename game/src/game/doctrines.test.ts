@@ -96,7 +96,7 @@ describe("Vanguard — Rapid Response", () => {
     expect(van.troopCooldownFor("enemy", "tank")).toBe(troopSpec("tank").cooldown);
     // Never below one turn: the rifleman stays on a one-turn cooldown.
     expect(van.troopCooldownFor("player", "soldier")).toBe(1);
-    expect(van.supportCooldownFor("player", "airstrike")).toBe(2);
+    expect(van.supportCooldownFor("player", "commando")).toBe(3);
     expect(van.deployPlacementRadius(baseOf(van, "player")) - van.deployPlacementRadius(baseOf(van, "enemy"))).toBe(factionDef("vanguard").doctrine.deployReach);
   });
 

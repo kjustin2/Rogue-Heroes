@@ -116,7 +116,6 @@ export const GUN_VOICES: Record<string, Voice> = {
   mole: { group: "ruger22", rate: 1.0, m: 0.9 },
   chopbike: { group: "colt1911", rate: 1.22, m: 0.9 },
   bulldozer: { group: "ak47burst", rate: 1.15, m: 0.8, burst: true },
-  runabout: { group: "ppshburst", rate: 1.12, m: 0.9, burst: true },
 };
 /** A hand grenade leaving a hand, and a bomb leaving a bay. */
 const THROW_VOICE: Voice = { group: "", rate: 1, m: 1, synth: "whoosh" };

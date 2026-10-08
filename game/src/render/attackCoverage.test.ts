@@ -5,7 +5,7 @@ import {
   createArtillery, createBomber, createExTurret, createFlak,
   createBase, createFlamer, createGunship, createHeavy, createJumper, createMortar,
   createBazooka,
-  createSledge, createHookshot, createSkater, createMolotov, createMole, createBreaker, createBoomer, createJuggernaut, createRunabout, createChopBike, createBulldozer,
+  createSledge, createHookshot, createSkater, createMolotov, createMole, createBreaker, createBoomer, createJuggernaut, createChopBike, createBulldozer,
   createSniper, createSoldier, createStriker, createTank, createTurret,
   type CombatEntity,
 } from "../game/damageModel";
@@ -33,7 +33,7 @@ const MAKERS: Record<TroopKind, Maker> = {
   bomber: createBomber,
   bazooka: createBazooka,
   sledge: createSledge, hookshot: createHookshot, skater: createSkater, molotov: createMolotov, mole: createMole, breaker: createBreaker, boomer: createBoomer, juggernaut: createJuggernaut,
-  runabout: createRunabout, chopbike: createChopBike, bulldozer: createBulldozer,
+  chopbike: createChopBike, bulldozer: createBulldozer,
 };
 
 /** How each troop's main gun is exercised. `null` = the kind has no gun, and says why. */
@@ -42,7 +42,7 @@ const GUN: Record<TroopKind, { dist?: number; air?: boolean } | { none: string }
   flamer: { dist: 5 }, mortar: {},
   tank: {}, artillery: { dist: 14 }, flak: { air: true },
   gunship: { air: true },
-  sledge: {}, hookshot: {}, skater: {}, molotov: {}, mole: {}, runabout: {}, chopbike: {}, bulldozer: {}, breaker: {}, juggernaut: {},
+  sledge: {}, hookshot: {}, skater: {}, molotov: {}, mole: {}, chopbike: {}, bulldozer: {}, breaker: {}, juggernaut: {},
   striker: { none: "melee only (its strike is covered below)" },
   bomber: { none: "bombs only (carpet covered below)" },
   boomer: { none: "no gun: it detonates" },
@@ -325,16 +325,11 @@ describe("every non-gun attack has an animation", () => {
       const delivery = trace.effects.has("jet") || trace.effects.has("roll") || trace.rounds.length > 0;
       const seen = delivery || trace.effects.has("blast") || trace.effects.has("ping") || trace.effects.has("land");
       expect(seen, `${power.kind}: nothing on screen (${[...trace.effects].join(",")})`).toBe(true);
-      if (["airstrike", "laser", "napalm", "barrage", "shockwave", "tankdrop", "boulder"].includes(power.kind)) {
-        // The barrage is off-map guns: its shells arrive, nothing flies over.
-        if (power.kind !== "barrage") expect(delivery, `${power.kind}: nothing flies in (${[...trace.effects].join(",")})`).toBe(true);
-        expect(trace.effects.has("blast") || (power.kind === "boulder" && trace.effects.has("strike")), `${power.kind}: nothing lands`).toBe(true); // the boulder lands as a bowling hit, not a blast
-        expect(trace.hpLost, `${power.kind}: no damage`).toBeGreaterThan(0);
-      } else {
-        // Delivery powers (paradrop, minefield drop, sentry drop) land a payload, not a blast.
-        expect(trace.hpLost, `${power.kind}: a utility power hurt someone`).toBe(0);
-        if (power.kind === "paradrop") expect(sim.entities.filter((e) => e.kind === "soldier" && e.team === "player").length, "two troopers landed").toBe(2);
-      }
+      // Every power is loud (2026-10-08: the delivery-only powers were cut). The barrage is off-map guns: its shells arrive,
+      // nothing flies over. The boulder and the commando land as bowling / slam hits, not a blast.
+      if (power.kind !== "barrage") expect(delivery, `${power.kind}: nothing flies in (${[...trace.effects].join(",")})`).toBe(true);
+      expect(trace.effects.has("blast") || ((power.kind === "boulder" || power.kind === "commando") && trace.effects.has("strike")), `${power.kind}: nothing lands`).toBe(true);
+      expect(trace.hpLost, `${power.kind}: no damage`).toBeGreaterThan(0);
     }
   });
 });

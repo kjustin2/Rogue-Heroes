@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { TacticalSim, mapDef, unitStats } from "./sim";
+import { TacticalSim, mapDef } from "./sim";
 import { FACTIONS } from "./factions";
 import { recomputeStatus } from "./damageModel";
 import { PULSE_EMP, isPulseBlast } from "./sim";
@@ -98,22 +98,6 @@ describe("the hammer, the spade and the ricochet", () => {
 
 });
 
-describe("the Runabout", () => {
-  afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
-
-  it("its MG fires on its own (no gunner seat, no passengers: owner 2026-10-07)", () => {
-    const sim = staged();
-    const car = sim.debugSpawn("runabout", "player", { x: -12, z: 0 });
-    const foe = sim.debugSpawn("soldier", "enemy", { x: -4, z: 0 });
-    sim.debugSelect(car.id);
-    expect(sim.queueShoot(foe.id)).toBe(true);
-  });
-
-  it("drives far in one move", () => {
-    expect(unitStats("runabout").moveRange).toBeGreaterThan(unitStats("tank").moveRange * 2);
-  });
-});
-
 describe("new strikes", () => {
   afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
   const call = (sim: TacticalSim, kind: string, point: { x: number; z: number }, team = "player"): void => {
@@ -122,10 +106,8 @@ describe("new strikes", () => {
     sim.endTurn(); settle(sim);
   };
 
-  it("Minefield Drop seeds mines; a Boulder Roll bowls troopers off its lane and breaks on a tank", () => {
+  it("a Boulder Roll bowls troopers off its lane and breaks on a tank", () => {
     const sim = staged();
-    call(sim, "minedrop", { x: 4, z: 0 });
-    expect(sim.mines.filter((m) => m.team === "player").length).toBeGreaterThanOrEqual(3);
     // Victims are the CALLER's foes on the player side (an enemy-side victim is walked off by the enemy AI before the stone arrives).
     const pins = sim.debugSpawn("soldier", "player", { x: -6, z: 6 });
     const at = { ...pins.position };
@@ -182,14 +164,14 @@ describe("the new posts and the roster split", () => {
     expect(before - hp(sim.entity(tank.id)!)).toBeGreaterThan(50);
   });
 
-  it("each faction fields the two shared new kinds and at least two of its own", () => {
-    const NEW = ["runabout", "sledge", "breaker", "boomer", "juggernaut", "hookshot", "skater", "molotov", "mole", "chopbike", "bulldozer"];
+  it("each faction fields at least two new kinds of its own, and none is shared", () => {
+    const NEW = ["sledge", "breaker", "boomer", "juggernaut", "hookshot", "skater", "molotov", "mole", "chopbike", "bulldozer"];
     for (const f of FACTIONS) {
       const mine = f.roster.filter((k) => NEW.includes(k));
       const own = mine.filter((k) => FACTIONS.every((o) => o.id === f.id || !o.roster.includes(k as never)));
       const shared = mine.filter((k) => FACTIONS.every((o) => o.roster.includes(k as never)));
       expect(own.length, `${f.id} exclusives`).toBeGreaterThanOrEqual(2);
-      expect([...shared].sort(), `${f.id} shared`).toEqual(["runabout"]);
+      expect(shared, `${f.id} shared`).toEqual([]);
     }
   });
 });
@@ -517,10 +499,10 @@ describe("shockwave, spring trap and tank drop", () => {
   };
   const run = (sim: TacticalSim): void => { sim.endTurn(); for (let t = 0; t < 40 && sim.phase === "resolve"; t += 0.05) sim.update(0.05); };
 
-  it("a shockwave flings troopers far, nudges a light car and never moves a tank", () => {
+  it("a shockwave flings troopers far, nudges a light bike and never moves a tank", () => {
     const sim = staged();
     const trooper = sim.debugSpawn("soldier", "enemy", { x: 1.5, z: 0 });
-    const car = sim.debugSpawn("runabout", "enemy", { x: -2, z: 1.5 });
+    const car = sim.debugSpawn("chopbike", "enemy", { x: -2, z: 1.5 });
     const tank = sim.debugSpawn("tank", "enemy", { x: 0, z: -2.6 });
     for (const e of [trooper, car, tank]) { disarm(e); tough(e); }
     const t0 = { ...trooper.position }, c0 = { ...car.position }, k0 = { ...tank.position };
@@ -561,6 +543,44 @@ describe("shockwave, spring trap and tank drop", () => {
     for (let i = 0; i < 4; i += 1) run(sim);
     expect(sim.entity(tank.id)?.status.alive, "scuttled").toBe(false);
     expect(sim.entities.some((e) => e.coverKind === "wreck" && e.id === `wreck-${tank.id}`), "left a wreck").toBe(true);
+  });
+
+  it("a commando drop lands a Jump Trooper that slams everyone near it (2026-10-08)", () => {
+    const sim = staged();
+    const near = sim.debugSpawn("soldier", "enemy", { x: 1.6, z: 0 });
+    const far = sim.debugSpawn("soldier", "enemy", { x: 6, z: 0 });
+    for (const e of [near, far]) { disarm(e); tough(e); }
+    const n0 = { ...near.position }, hpNear = hp(near), hpFar = hp(far);
+    call(sim, "commando", { x: 0, z: 0 });
+    run(sim);
+    const commando = sim.entities.find((e) => e.kind === "jumper" && e.team === "player" && e.chuted);
+    expect(commando, "landed").toBeTruthy();
+    expect(hp(near), "slammed").toBeLessThan(hpNear);
+    expect(Math.hypot(near.position.x - n0.x, near.position.z - n0.z), "thrown").toBeGreaterThan(1.5);
+    expect(hp(far), "out of reach").toBe(hpFar);
+  });
+
+  it("a car bomb bowls troopers down its line and blows up at the end; a tank in the way sets it off there", () => {
+    const sim = staged();
+    const inLine = sim.debugSpawn("soldier", "enemy", { x: -3, z: 0 });
+    const atEnd = sim.debugSpawn("soldier", "enemy", { x: 7.5, z: 1.2 });
+    for (const e of [inLine, atEnd]) { disarm(e); tough(e); }
+    const hpLine = hp(inLine), hpEnd = hp(atEnd);
+    call(sim, "carbomb", { x: 0, z: 0 });
+    run(sim);
+    expect(hp(inLine), "rammed").toBeLessThan(hpLine);
+    expect(hp(atEnd), "caught in the blast at the end").toBeLessThan(hpEnd);
+    expect(sim.log.some((l) => l.includes("car bomb goes up"))).toBe(true);
+    const sim2 = staged();
+    const tank = sim2.debugSpawn("tank", "enemy", { x: -2, z: 0 });
+    const behind = sim2.debugSpawn("soldier", "enemy", { x: 7.5, z: 0 });
+    for (const e of [tank, behind]) { disarm(e); tough(e); }
+    const hpTank = hp(tank), hpBehind = hp(behind), at = { ...tank.position };
+    call(sim2, "carbomb", { x: 0, z: 0 });
+    run(sim2);
+    expect(hp(tank), "blown up against the tank").toBeLessThan(hpTank);
+    expect(tank.position, "a tank never moves").toEqual(at);
+    expect(hp(behind), "the run stopped at the tank").toBe(hpBehind);
   });
 });
 

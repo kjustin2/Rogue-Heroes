@@ -71,7 +71,7 @@ export function projectileFamily(p: Projectile): ProjectileFamily {
     return "grenade";
   }
   if (src === "sniper") return "sniper";
-  if (src === "heavy" || src === "gunpost" || src === "runabout" || src === "bulldozer") return "mg";
+  if (src === "heavy" || src === "gunpost" || src === "bulldozer") return "mg";
   if (src === "striker" || src === "sledge" || src === "mole" || src === "chopbike") return "pistol";
   if (src === "flamer" || src === "flamepost") return "flame";
   if (src === "jumper" || src === "breaker" || src === "skater") return "carbine";

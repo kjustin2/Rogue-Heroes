@@ -16,7 +16,6 @@ import {
   generatorEfficiency,
   baseIncome,
   incomeUpgradeCost,
-  commandUpgradeCost,
   isTechUnlocked,
   troopSheet,
   unitStats,
@@ -143,7 +142,6 @@ export interface HudCallbacks {
   cancelDeploy(): void;
   queueDeployAt(kind: TroopKind, point: Vec2): boolean;
   upgradeBaseIncome(): boolean;
-  upgradeBaseCommand(): boolean;
   upgradeBase(id: BaseUpgradeId): boolean;
   beginBuild(kind: DefenseKind): void;
   cancelBuild(): void;
@@ -628,9 +626,6 @@ export class Hud {
     const baseUpgrade = target.closest<HTMLElement>("[data-base-upgrade]")?.dataset.baseUpgrade;
     if (baseUpgrade === "income") {
       if (this.callbacks.upgradeBaseIncome()) this.afterConfirmedOrder();
-    }
-    if (baseUpgrade === "command") {
-      if (this.callbacks.upgradeBaseCommand()) this.afterConfirmedOrder();
     }
     if (baseUpgrade && BASE_UPGRADES.some((u) => u.id === baseUpgrade)) {
       if (this.callbacks.upgradeBase(baseUpgrade as BaseUpgradeId)) this.afterConfirmedOrder();
@@ -1751,9 +1746,9 @@ function deployNoteHtml(sim: TacticalSim): string {
 }
 
 /** Strikes laid along a line, so they show Rotate (T). */
-export const LINE_SUPPORTS: ReadonlySet<SupportPowerKind> = new Set<SupportPowerKind>(["airstrike", "laser", "napalm", "boulder"]);
+export const LINE_SUPPORTS: ReadonlySet<SupportPowerKind> = new Set<SupportPowerKind>(["laser", "napalm", "boulder", "carbomb"]);
 /** Placements whose facing matters, so they show Rotate (T). */
-export const ROTATABLE_BUILDS: ReadonlySet<DefenseKind> = new Set<DefenseKind>(["wall", "sandbag", "minefield"]);
+export const ROTATABLE_BUILDS: ReadonlySet<DefenseKind> = new Set<DefenseKind>(["wall", "minefield"]);
 
 function defenseDeckHtml(base: CombatEntity, sim: TacticalSim): string {
   const money = sim.money(base.team);
@@ -1835,19 +1830,10 @@ function upgradeDeckHtml(base: CombatEntity, sim: TacticalSim): string {
   const incomeTip = incomeCost === undefined
     ? `Income is fully upgraded: $${nowIncome} a turn.`
     : `Income $${nowIncome} → $${nextIncome} a turn (+$${gain}). Pays for itself in ${payback} turns. Costs 1 AP and $${incomeCost}.`;
-  const cmdCost = commandUpgradeCost(base);
-  const cmdReady = hasCp && cmdCost !== undefined && money >= cmdCost;
-  const cmdTip = cmdCost === undefined
-    ? "Command is already upgraded to 2 action points per turn."
-    : `The base acts TWICE a turn instead of once: deploy and research, or two deploys. Costs 1 AP and $${cmdCost}.`;
   return `<div class="upgrade-options part-options">
       <button class="btn confirm ${incomeReady ? "" : "disabled"}" data-base-upgrade="income" data-disabled="${!incomeReady}" data-tip="${escapeAttr(incomeTip)}">
         ${incomeCost === undefined ? `Income $${nowIncome}/turn` : `Income +$${gain}/turn`}
         <span>${incomeCost === undefined ? "Maxed" : `$${incomeCost} · back in ${payback} turns`}</span>
-      </button>
-      <button class="btn confirm ${cmdReady ? "" : "disabled"}" data-base-upgrade="command" data-disabled="${!cmdReady}" data-tip="${escapeAttr(cmdTip)}">
-        Base acts twice
-        <span>${cmdCost === undefined ? "Done" : `$${cmdCost}`}</span>
       </button>
       ${BASE_UPGRADES.filter((u) => faction.tech.includes(u.tech)).map((u) => {
         const reason = sim.baseUpgradeFailureReason(base, u.id);

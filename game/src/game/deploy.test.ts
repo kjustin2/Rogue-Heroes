@@ -29,7 +29,7 @@ describe("placed deploy", () => {
     expect(ring!.center).toEqual(base.position);
     expect(ring!.radius).toBe(sim.deployPlacementRadius(base));
     // Arming a build cancels the deploy (one placement at a time), and vice versa.
-    sim.setPendingBuild("sandbag");
+    sim.setPendingBuild("barrels");
     expect(sim.pendingDeploy).toBeUndefined();
     expect(sim.deployPlacement()).toBeUndefined();
     sim.setPendingDeploy("soldier");

@@ -258,7 +258,6 @@ const hud = new Hud(uiRoot, sim, {
     return ok;
   },
   upgradeBaseIncome: () => sim.upgradeBaseIncome(),
-  upgradeBaseCommand: () => sim.upgradeBaseCommand(),
   upgradeBase: (id) => sim.upgradeBaseWith(id),
   beginBuild: (kind: DefenseKind) => {
     if (sim.setPendingBuild(kind)) sfx.ui();
@@ -335,13 +334,6 @@ canvas.addEventListener("pointerdown", (event) => {
   if (anyOverlayOpen()) return;
   const pick = stage.pick(event.clientX, event.clientY, world.pickables);
   if (pick) {
-    if (pick.pickupId) {
-      // With Move armed a cache is a DESTINATION: the unit walks onto it and banks it. Otherwise it explains itself.
-      const cache = sim.pickups.find((c) => c.id === pick.pickupId);
-      if (cache && sim.intent === "move" && sim.phase === "command") { hud.chooseGround({ x: cache.x, z: cache.z }); hud.update(); return; }
-      inspectPickup(pick.pickupId);
-      return;
-    }
     const entity = sim.entity(pick.entityId);
     if (!entity) return;
     hud.chooseBoardEntity(entity.id);
@@ -972,7 +964,7 @@ function stageMenuDiorama(): void {
     const u = sim.debugSpawn(kind, "player", { x, z }, { clearTerrain: true });
     u.yaw = Math.PI * 0.5 + (x + z) * 0.05;
   }
-  const patrol: [TroopKind, number, number][] = [["striker", 7.5, -1.2], ["soldier", 8.8, 1.6], ["runabout", 11, 0]];
+  const patrol: [TroopKind, number, number][] = [["striker", 7.5, -1.2], ["soldier", 8.8, 1.6], ["chopbike", 11, 0]];
   for (const [kind, x, z] of patrol) {
     const u = sim.debugSpawn(kind, "enemy", { x, z }, { clearTerrain: true });
     u.yaw = -Math.PI * 0.5;
@@ -2002,7 +1994,7 @@ function showToast(text: string, lifeMs = 2600): void {
     document.body.appendChild(host);
   }
   // The same line twice in a row is one toast, not a stack of two (a click handled by two listeners
-  // showed "Field cache" twice).
+  // showed the same toast twice).
   if ([...host.children].some((c) => c.textContent === text && c.classList.contains("show"))) return;
   const toast = document.createElement("div");
   toast.className = "toast";
@@ -2025,14 +2017,6 @@ function applyDebugCheats(): void {
     const base = sim.entities.find((e) => e.kind === "base" && e.team === "player");
     if (base?.spawnCooldowns) for (const key of Object.keys(base.spawnCooldowns)) (base.spawnCooldowns as Record<string, number>)[key] = 0;
   }
-}
-
-// Clicking a ground cash cache surfaces how much it pays and how to collect it.
-function inspectPickup(id: string): void {
-  const cache = sim.pickups.find((p) => p.id === id);
-  if (!cache) return;
-  showToast(`💰 Field cache — walk a unit onto it to bank $${cache.amount}`);
-  sfx.ui();
 }
 
 function clearToasts(): void {
@@ -2463,8 +2447,6 @@ function processBattleEvents(): void {
       world.flashLight(effect.to, family === "blast" ? 0xffa24d : 0xffe2a8, (family === "blast" ? 4 : 2) * onScreen, 120, 1.4);
     } else if (effect.type === "ping" && effect.color === 0x8effa6) {
       sfx.heal();
-    } else if (effect.type === "ping" && effect.color === 0xffe08a) {
-      sfx.coin(heard); // a cash cache grabbed
     } else if (effect.type === "ping" && effect.color === 0xff3b30) {
       sfx.fuse();
     } else if (effect.type === "ping" && effect.color === 0x8de4ff && (effect.radius ?? 0) < 4) {
@@ -2598,11 +2580,9 @@ declare global {
       queueSupportAt(point: Vec2): boolean;
       queueCapture(id: string): boolean;
       upgradeBaseIncome(): boolean;
-      upgradeBaseCommand(): boolean;
       upgradeBase(id: string): boolean;
       researchTech(nodeId: string): boolean;
       startBattle(mapId: string, modeId: ModeId, difficulty?: Difficulty, faction?: FactionId, enemyFaction?: FactionId): void;
-      inspectPickup(id: string): void;
       money(team: Team): number;
       cancelOrder(id: string): void;
       camera(): { x: number; z: number; zoom: number; yaw: number; pitch: number };
@@ -2721,11 +2701,9 @@ window.__rht = {
   queueSupportAt: (point) => sim.queueSupportAt(point),
   queueCapture: (id) => sim.queueCapture(id),
   upgradeBaseIncome: () => sim.upgradeBaseIncome(),
-  upgradeBaseCommand: () => sim.upgradeBaseCommand(),
   upgradeBase: (id) => sim.upgradeBaseWith(id as never),
   researchTech: (nodeId) => sim.researchTech(nodeId),
   startBattle: (mapId, modeId, difficulty, faction, enemyFaction) => startBattle(mapId, modeId, difficulty, faction, undefined, enemyFaction),
-  inspectPickup: (id: string) => inspectPickup(id),
   money: (team) => sim.money(team),
   cancelOrder: (id) => sim.cancelOrder(id),
   camera: () => stage.viewState(),

@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import { applyDamage, createCover, createSkater, createSoldier, createStriker, createTank } from "./damageModel";
-import { COMMAND_UPGRADE_COST, TacticalSim, defenseSpec, mapDef, troopSpec } from "./sim";
+import { TacticalSim, defenseSpec, mapDef, troopSpec } from "./sim";
 import { SCENARIOS, SCENARIO_IDS, applyScenario } from "./scenarios";
 
 function advanceUntil(sim: TacticalSim, predicate: () => boolean, seconds = 16): void {
@@ -107,7 +107,7 @@ describe("loop goals", () => {
     const sim = freshMatch();
     const base = playerBase(sim);
     sim.select(base.id);
-    sim.setPendingBuild("sandbag"); // a starter: the turret needs research first
+    sim.setPendingBuild("barrels"); // a starter
     const b = sim.buildPlacement();
     expect(b).toBeTruthy();
     expect(b!.radius).toBeGreaterThan(0);
@@ -137,14 +137,10 @@ function deployForTest(sim: TacticalSim, kind: Parameters<TacticalSim["queueSpaw
 }
 
 describe("batch balance + UX fixes", () => {
-  it("the +1 AP command upgrade is a heavier investment than before", () => {
-    expect(COMMAND_UPGRADE_COST).toBeGreaterThan(320);
-  });
-
   it("higher-tier units and emplacements cost more than line troops", () => {
     expect(troopSpec("artillery").cost).toBeGreaterThan(troopSpec("soldier").cost);
     expect(troopSpec("tank").cost).toBeGreaterThan(troopSpec("heavy").cost);
-    expect(defenseSpec("exturret").cost).toBeGreaterThan(defenseSpec("turret").cost);
+    expect(defenseSpec("exturret").cost).toBeGreaterThan(defenseSpec("barrels").cost);
   });
 
   it("a tank fields with much more health than a recruit, matching its higher cost", () => {

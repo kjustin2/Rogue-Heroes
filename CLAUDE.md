@@ -81,6 +81,9 @@ always run muted. Scratch diagnostics go in `game/scripts/_*.mjs` and are delete
   tech, no sentries. Banned: `launchPads`, `passengerIds`, `carriedById`, `queueLoad`, `queueUnload`, `markedUntilTurn`,
   `sentryTtl`, `createSentry`, `railstrike`, `"cluster"` (the support), `spotterBoost`, `hullDown`, `queueDeploy`,
   `smokeClouds`, `queueSmokeAt`.
+- **ONLY FUN THINGS, round 3** (2026-10-08): no Paradrop, Minefield Drop, Airstrike, Sandbags (buildable), Gun Turret (buildable),
+  Runabout, supply caches or second base order. Banned: `paradrop`, `minedrop`, `airstrike`, `runabout`, `pickups`, `placePickups`,
+  `checkPickups`, `upgradeBaseCommand`, `COMMAND_UPGRADE_COST`, `"sandbag"` / `"turret"` as a `DefenseKind`.
 - **HEAVIES NEVER MOVE** (2026-10-07): tank, artillery and bulldozer are not thrown, pulled or shoved (`IMMOVABLE_HEAVIES`); troopers
   always fly from a blast.
 - **NO MESHY, no AI-generated models** (2026-09-20). Every model is a validated Blender kit or

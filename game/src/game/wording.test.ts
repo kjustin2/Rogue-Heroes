@@ -54,12 +54,13 @@ describe("tips quote the numbers the sim uses", () => {
     expect(defense("flamepost")).toContain(`${BURN_STATUS_TURNS} turns`);
     expect(support("shockwave")).toContain(m(SHOCKWAVE_RADIUS));
     expect(support("tankdrop")).toContain(`${TANK_DROP_TURNS} turns`);
+    expect(support("commando")).toContain(m(JUMP_SLAM_RADIUS));
   });
 });
 
 describe("no text names something that was cut", () => {
-  // Units and systems removed 2026-10-04..07 (and the not-fun deck items, 2026-10-07), plus the hard-rule bans (CLAUDE.md).
-  const CUT = /\b(Turret Tech|Trencher|Scout(?! Car)|Grenadier|Hornet|Ironclad|Fortifier|Drone Operator|Bounty Hunter|Ricochet|Lancer|Orbital|laser beam|overwatch|Command Points?|Recon Sweep|Sensor Mast|Watch Radar|Radar Net|Medevac|Resupply|Smoke Screen|Base Armor|Sentry|Rail Strike|Cluster Strike|Launch Pad|Jump Pad|five aboard|Quick crouch|Crouch where|Hull down|outriggers|smoke round|smoke cloud)/i;
+  // Units and systems removed 2026-10-04..08 (and the not-fun deck items, 2026-10-07/08), plus the hard-rule bans (CLAUDE.md).
+  const CUT = /\b(Turret Tech|Trencher|Scout(?! Car)|Grenadier|Hornet|Ironclad|Fortifier|Drone Operator|Bounty Hunter|Ricochet|Lancer|Orbital|laser beam|overwatch|Command Points?|Recon Sweep|Sensor Mast|Watch Radar|Radar Net|Medevac|Resupply|Smoke Screen|Base Armor|Sentry|Rail Strike|Cluster Strike|Launch Pad|Jump Pad|five aboard|Quick crouch|Crouch where|Hull down|outriggers|smoke round|smoke cloud|Paradrop|Airstrike|Air strike|Minefield Drop|sandbag line|Gun Turret|Runabout|field cache|cash cache|acts twice)/i;
   const texts: Array<[string, string]> = [
     ...TROOP_CATALOG.map((t) => [`troop ${t.kind}`, `${t.label} ${t.role} ${t.tip}`] as [string, string]),
     ...DEFENSE_CATALOG.map((t) => [`defense ${t.kind}`, `${t.label} ${t.role} ${t.tip}`] as [string, string]),

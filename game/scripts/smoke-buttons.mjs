@@ -133,24 +133,16 @@ try {
   await clickHeard('[data-base-upgrade="income"]');
   if (await page.evaluate(() => (window.__rht.sim.entities.find((e) => e.kind === "base" && e.team === "player").incomeLevel ?? 0)) < 1) fail("Income upgrade button failed");
   await refreshBaseCp(page, baseId);
-  await clickHeard('[data-base-upgrade="command"]');
-  if (await page.evaluate(() => window.__rht.sim.entities.find((e) => e.kind === "base" && e.team === "player").maxCommandPoints) !== 2) fail("Command upgrade button failed");
-  await refreshBaseCp(page, baseId);
-  // The Gun Turret is research-gated (Assault doctrine) since batch 3: unlock it the way the tech
-  // button would, so this step tests the Build button and placement, not the tree.
-  await page.evaluate(() => {
-    const base = window.__rht.sim.entities.find((e) => e.kind === "base" && e.team === "player");
-    base.unlockedTech = [...(base.unlockedTech ?? []), "assault"];
-  });
+  // The Barrel Stack is every faction's starter defense: no research, so this tests the Build button and placement.
   await clickHeard('[data-base-tab="defenses"]');
-  await page.waitForSelector('[data-build="turret"]');
-  await clickHeard('[data-build="turret"]');
+  await page.waitForSelector('[data-build="barrels"]');
+  await clickHeard('[data-build="barrels"]');
   await page.evaluate(() => {
     const sim = window.__rht.sim;
     const base = sim.entities.find((e) => e.kind === "base" && e.team === "player");
     window.__rht.queueBuildStructure({ x: base.position.x + 4, z: base.position.z + 3 });
   });
-  if (!(await page.evaluate(() => window.__rht.sim.entities.some((e) => e.kind === "turret")))) fail("Build button + placement failed");
+  if (!(await page.evaluate(() => window.__rht.sim.entities.some((e) => e.coverKind === "barrels" && e.id.startsWith("cover-bx-"))))) fail("Build button + placement failed");
 
   // 6) Unit action chain — select, Move arms, Shoot -> part -> Confirm queues an order.
   await page.evaluate(() => {
@@ -181,13 +173,6 @@ try {
   if (!confirm) fail("Shoot confirm button was not enabled against a close base");
   await confirm.click();
   if (await page.evaluate(() => window.__rht.sim.orders.length) < 1) fail("Confirm Shoot did not queue an order");
-
-  // Crouch the soldier via its action button.
-  await page.evaluate(() => { const sim = window.__rht.sim; const sol = sim.entities.find((e) => e.id.startsWith("p-spawn-") && e.kind === "soldier"); sol.commandPoints = 2; sim.select(sol.id); });
-  await clickHeard(`[data-select="${solId}"]`);
-  await clickHeard('[data-order-action="defend"]');
-  await clickHeard('[data-confirm="defend"]');
-  if (await page.evaluate(() => window.__rht.sim.orders.some((o) => o.kind === "defend")) !== true) fail("Crouch/defend button did not queue");
 
   // 7) Log toggle open + close.
   await clickHeard(".log-toggle");

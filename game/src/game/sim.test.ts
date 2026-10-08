@@ -1461,52 +1461,32 @@ describe("game modes, tech tree, and unit variety", () => {
 });
 
 describe("defenses, difficulty, and base upgrades", () => {
-  it("upgrades the base to two action points per turn", () => {
-    const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 });
-    const sim = new TacticalSim([base]);
-    sim.economy.set("player", 800);
-    sim.select("p-base-1");
-
-    expect(base.maxCommandPoints).toBe(1);
-    expect(sim.upgradeBaseCommand()).toBe(true);
-    expect(base.maxCommandPoints).toBe(2);
-    expect(base.commandPoints).toBe(0); // spent its CP on the upgrade
-
-    // Next turn it refills to two command points.
-    sim.endTurn();
-    advance(sim, 3);
-    sim.select("p-base-1");
-    expect(base.commandPoints).toBe(2);
-    // A second upgrade is rejected.
-    expect(sim.upgradeBaseCommand()).toBe(false);
-  });
-
-  it("builds a defensive turret near the base but rejects far or overlapping spots", () => {
+  it("builds a harpoon tower near the base but rejects far or overlapping spots", () => {
     const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 });
     const sim = new TacticalSim([base]);
     sim.economy.set("player", 1500);
     sim.select("p-base-1");
-    // A locked Gun Turret will not even ARM (owner 2026-10-01: it armed, then every click failed).
-    expect(sim.setPendingBuild("turret")).toBe(false);
+    // A locked Harpoon Tower will not even ARM (owner 2026-10-01: a locked piece armed, then every click failed).
+    expect(sim.setPendingBuild("harpoon")).toBe(false);
     expect(sim.pendingBuild).toBeUndefined();
-    expect(sim.log[0]).toContain("Assault Doctrine");
-    base.unlockedTech = ["assault"];
+    expect(sim.log[0]).toContain("Shock Troops");
+    base.unlockedTech = ["assault", "shock"];
 
-    sim.setPendingBuild("turret");
+    sim.setPendingBuild("harpoon");
     // Too far from the base.
     expect(sim.queueBuildStructure({ x: 14, z: 5 })).toBe(false);
     expect(sim.log[0]).toContain("closer to the base");
 
     expect(sim.queueBuildStructure({ x: -10.5, z: -5 })).toBe(true);
-    const turret = sim.entities.find((e) => e.kind === "turret" && e.team === "player");
+    const turret = sim.entities.find((e) => e.kind === "harpoon" && e.team === "player");
     expect(turret).toBeDefined();
     expect(turret!.status.canShoot).toBe(true);
     expect(turret!.status.canMove).toBe(false);
     expect(base.commandPoints).toBe(0);
 
-    // Sandbags can't be dropped on top of the turret we just built.
+    // A barrel stack can't be dropped on top of the tower we just built.
     base.commandPoints = 1;
-    sim.setPendingBuild("sandbag");
+    sim.setPendingBuild("barrels");
     expect(sim.queueBuildStructure({ x: -10.5, z: -5 })).toBe(false);
     expect(sim.log[0]).toContain("blocked");
   });
@@ -1550,7 +1530,7 @@ describe("defenses, difficulty, and base upgrades", () => {
     setActiveTerrain(DEFAULT_TERRAIN);
   });
 
-  it("builds every new defense: sandbags become cover, a minefield three mines, emplacements that act", () => {
+  it("builds every new defense: a barrel stack becomes volatile cover, a minefield three mines, emplacements that act", () => {
     const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: -5 });
     const sim = new TacticalSim([base]);
     sim.economy.set("player", 5000);
@@ -1565,8 +1545,8 @@ describe("defenses, difficulty, and base upgrades", () => {
     // Faction decks are asserted to differ: Vanguard cannot lay mines.
     sim.select(base.id);
     expect(sim.setPendingBuild("minefield")).toBe(false);
-    build("sandbag", { x: -10, z: -8 });
-    expect(sim.entities.some((e) => e.kind === "cover" && e.coverKind === "sandbag")).toBe(true);
+    build("barrels", { x: -10, z: -8 });
+    expect(sim.entities.some((e) => e.kind === "cover" && e.coverKind === "barrels")).toBe(true);
     build("springtrap", { x: -17, z: -1 });
     expect(sim.mines.some((m) => m.team === "player" && m.spring), "a spring trap is a hidden plate").toBe(true);
     playAs("syndicate");
@@ -1738,22 +1718,22 @@ describe("tactical enemy AI", () => {
     expect(spawnedKind("easy")).toBeDefined();
   });
 
-  it("airstrike support power: pays, cools down, flies in, and damages the line", () => {
+  it("commando drop: pays, cools down, flies in, and slams the point", () => {
     const base = createBase("p-base-1", "HQ", "player", { x: -14, z: 0 });
     const enemyBase = createBase("e-base-1", "Enemy HQ", "enemy", { x: 14, z: 8 });
     const victim = createSoldier("e-victim", "Victim", "enemy", { x: 4, z: 0 });
     const sim = new TacticalSim([base, enemyBase, victim]);
     sim.economy.set("player", 1000);
     base.commandPoints = 1;
-    expect(sim.supportFailureReason(base, "airstrike")).toMatch(/Support Wing/); // nothing callable on turn 1
+    expect(sim.supportFailureReason(base, "commando")).toMatch(/Support Wing/); // nothing callable on turn 1
     base.unlockedTech = ["recon", "support"];
     sim.select("p-base-1");
-    sim.setPendingSupport("airstrike");
+    sim.setPendingSupport("commando");
     expect(sim.queueSupportAt({ x: 4, z: 0 })).toBe(true);
-    expect(sim.money("player")).toBe(1000 - 320);
-    expect(sim.supportCooldown(base, "airstrike")).toBe(2); // 3, less a turn for Vanguard's Rapid Response
+    expect(sim.money("player")).toBe(1000 - 300);
+    expect(sim.supportCooldown(base, "commando")).toBe(3); // 4, less a turn for Vanguard's Rapid Response
     // On cooldown + no CP: a second call is rejected.
-    sim.setPendingSupport("airstrike");
+    sim.setPendingSupport("commando");
     expect(sim.queueSupportAt({ x: 4, z: 0 })).toBe(false);
 
     const hpBefore = victim.parts.reduce((sum, p) => sum + p.hp, 0);
@@ -2092,21 +2072,6 @@ describe("tactical enemy AI", () => {
     expect(pref[0]).toBe("flak"); // contest the air lane before anything else
   });
 
-  it("AI economy: an idle enemy diverts to grab a nearby cash cache", () => {
-    const enemy = createSoldier("e", "Scav", "enemy", { x: 0, z: 0 });
-    applyDamage(enemy, "rifle", 999); // disarmed → no shot to take
-    enemy.grenades = 0; // and no grenade to lob, so its only useful move is toward loot
-    const sim = new TacticalSim([
-      createBase("p-base", "HQ", "player", { x: 2, z: 0 }), // close, so it holds instead of chasing
-      enemy,
-    ]);
-    sim.pickups.push({ id: "cache", x: -4, z: 0, amount: 60 });
-    sim.endTurn();
-    const move = sim.orders.find((o) => o.actorId === "e" && o.kind === "move");
-    expect(move).toBeTruthy();
-    expect(move?.destination?.x ?? 0).toBeLessThan(-0.5); // headed toward the cache at x=-4
-  });
-
   it("AI air counter-play: over several turns the enemy actually fields anti-air against a flyer", () => {
     const sim = new TacticalSim([
       createBase("p-base", "HQ", "player", { x: -16, z: 0 }),
@@ -2145,24 +2110,6 @@ describe("tactical enemy AI", () => {
     const pick = (sim as unknown as { pickShootTarget(s: unknown, c: unknown[], m: Map<string, number>, r: number): { id: string } | undefined })
       .pickShootTarget(sim.entity("r"), [sim.entity("f"), sim.entity("g")], new Map(), 30);
     expect(pick?.id).toBe("g");
-  });
-
-  it("a unit that runs over a cash cache banks it", () => {
-    const soldier = createSoldier("p", "Vega", "player", { x: 0, z: 0 });
-    const sim = new TacticalSim([
-      createBase("p-base-1", "HQ", "player", { x: -14, z: 0 }),
-      createBase("e-base-1", "Enemy HQ", "enemy", { x: 14, z: 0 }),
-      soldier,
-    ]);
-    sim.pickups.push({ id: "c1", x: 0, z: 2, amount: 60 });
-    const before = sim.money("player");
-    sim.select("p");
-    expect(sim.queueMove({ x: 0, z: 2 })).toBe(true);
-    sim.endTurn();
-    let guard = 0;
-    while (sim.phase === "resolve" && guard++ < 400) sim.update(0.05);
-    expect(sim.pickups.length).toBe(0); // grabbed and gone
-    expect(sim.money("player") - before).toBeGreaterThanOrEqual(60);
   });
 
   it("a shot into an exposed rear flanks for more damage than a head-on shot", () => {

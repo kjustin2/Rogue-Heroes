@@ -21,7 +21,6 @@ import { GradeEffect } from "./gradeEffect";
 export interface PickResult {
   entityId: string;
   partId?: string;
-  pickupId?: string; // set instead of entityId when a ground cash-cache is clicked
 }
 
 export interface CameraGuideTarget {
@@ -502,7 +501,6 @@ export class Stage {
     for (const hit of hits) {
       const data = hit.object.userData as Partial<PickResult>;
       if (typeof data.entityId === "string") return { entityId: data.entityId, partId: data.partId };
-      if (typeof data.pickupId === "string") return { entityId: "", pickupId: data.pickupId };
     }
     return undefined;
   }

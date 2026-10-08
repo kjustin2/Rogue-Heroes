@@ -13,7 +13,35 @@ Owner: "Any unit that isn't super FUN and exciting to use should be removed." Th
   `PLACEABLES`, `queuePlace`; the sentry entity stays for the Sentry Drop strike). The **Runabout** lost its gunner seat: its MG always fires.
 - An old save holding a retired kind loads without it (`restore()` drops unknown kinds).
 
-## The fun deck (2026-10-07; supersedes every older deck list)
+## Fun audit, round 3 (2026-10-08; supersedes every older deck list)
+Owner: "I don't want any support or defense or base upgrade or units or things on map that aren't fun". CUT: Paradrop, Minefield Drop,
+Airstrike (supports), Sandbags and the Gun Turret (defenses), the Runabout (unit), the supply/cash caches (`pickups`, `placePickups`,
+`checkPickups`, the cache render and click) and the second base order (`upgradeBaseCommand`, `COMMAND_UPGRADE_COST`). The map's
+derelict turrets and its sandbag walls stay (map neutrals / cover, not buildables). ADDED, each on an existing engine:
+- **Commando Drop** (support, $300, Support Wing, Vanguard, `landCommando`): one Jump Trooper parachutes onto the point and lands with
+  the jet-pack slam (`slamLanding`, shared with the Jump Trooper's own landing: `SLAM_LANDING_DAMAGE`, thrown within
+  `JUMP_SLAM_RADIUS`). He acts from next turn (`chuted` marks him for the renderer's fall); a full field gets the slam only.
+- **Car Bomb** (support, $220, Demolitions, Syndicate): a driverless wreck rolls `CAR_BOMB_LENGTH` (14m) down the line as a sweep
+  (`queueSweep("carbomb")`, ramming 16 and throwing 3m), then a `carblast` (62 damage, `CAR_BOMB_RADIUS` 3m) where it ends; a heavy in
+  its path stops it and it goes up against the heavy there.
+- **Barrel Stack** (defense, $70, every faction's starter): the map's red-barrel cover (`coverKind: "barrels"`), neutral and volatile,
+  so whoever shoots it sets off the chain.
+- **Napalm** is now the Syndicate's starter (no tech). The Support Wing tech unlocks the Commando Drop; Demolitions the Boomer and
+  the Car Bomb; Motor Pool the Chop Bike.
+- **Decks:**
+  - Vanguard: Barrel Stack / Spring Trap / Harpoon Tower; Shockwave (start) / Commando Drop / Tank Drop.
+  - Syndicate: Barrel Stack / Minefield / Harpoon Tower; Napalm (start) / Car Bomb / Barrage.
+  - Bastion: Barrel Stack / Mortar Turret / Harpoon Tower; Boulder Roll (start) / Gun Run / Tank Drop / Barrage.
+  - Base: income and the Fortress Cannon.
+  - Rosters: 11 each.
+- Every support power now damages (`DAMAGING_SUPPORT` holds them all, `attackCoverage.test` asserts each lands and hurts).
+- **Balance (self-play, 2026-10-08):** player seat 53% of decided. Per map: Dust Bowl 4-6, Ironworks 11-9, Verdant 9-8, Causeway 9-5,
+  Karak 6-8, Crossfire 9-7. The Flak Track's shot went 18 -> 20: it sat at 0.48x the median once the Gun Turret stopped being a
+  target.
+- **Movement fix found by the oracle:** a ground move that runs out of time on a bent (shoved) path could stop with its hull in a step. `settleHalt`
+  now falls back to the nearest ground the hull fits on (`nearestFittingGround`).
+
+## The fun deck (2026-10-07)
 Owner: "the sensor scans are not super cool or fun ... audit across base actions, defenses, support". CUT: Recon Sweep, Sensor Mast,
 Watch Radar (and the whole enemy-orders preview: `enemyIntents`, `revealedOrders`, the hotseat recon seat), Medevac, Resupply Drop,
 Base Armor I/II, Smoke Screen (the support; the Mortar's own Smoke order stays), EMP Burst (`disabledUntilTurn`), the Radar Net tech.

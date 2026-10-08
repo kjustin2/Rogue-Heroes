@@ -31,7 +31,7 @@ const SUBJECTS = [
 ];
 const ROSTERS = {
   vanguard: ["soldier", "skater", "sniper", "jumper", "heavy", "breaker", "tank", "flak", "gunship"],
-  syndicate: ["soldier", "sniper", "heavy", "striker", "molotov", "flamer", "boomer", "runabout", "flak"],
+  syndicate: ["soldier", "sniper", "heavy", "striker", "molotov", "flamer", "boomer", "chopbike", "flak"],
   bastion: ["soldier", "sniper", "heavy", "mortar", "juggernaut", "tank", "artillery", "flak", "bomber"],
 };
 const GOAL = { infantryIoU: 0.8, baseIoU: 0.7, hueDeg: 40, memberMargin: 15 };

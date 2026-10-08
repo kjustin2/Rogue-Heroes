@@ -124,7 +124,7 @@ app.whenReady().then(async () => {
         // Every unit each faction fields, colour only, for the membership check (does a signature
         // unit read as its faction?). Flyers are framed from higher up.
         const ROSTERS = { vanguard: ["soldier", "skater", "sniper", "jumper", "heavy", "breaker", "tank", "flak", "gunship"],
-          syndicate: ["soldier", "sniper", "heavy", "striker", "molotov", "flamer", "boomer", "runabout", "flak"],
+          syndicate: ["soldier", "sniper", "heavy", "striker", "molotov", "flamer", "boomer", "chopbike", "flak"],
           bastion: ["soldier", "sniper", "heavy", "mortar", "juggernaut", "tank", "artillery", "flak", "bomber"] };
         for (const f of ["vanguard", "syndicate", "bastion"]) {
           await js(`window.__rht.startBattle("verdant", "destroy", "normal", ${JSON.stringify(f)}, ${JSON.stringify(f === "vanguard" ? "bastion" : "vanguard")})`);
@@ -342,17 +342,17 @@ app.whenReady().then(async () => {
           await js(`(() => { const sim = window.__rht.sim; sim.economy.set("player", 9000); const hq = sim.entities.find(e => e.team === "player" && e.kind === "base"); hq.unlockedTech = ["recon","assault","support","ordnance","armor","siege","airwing"]; })()`);
           await pick("defenses"); await shot(`defenses-${faction}-open`);
           await pick("support"); await shot(`support-${faction}-open`);
-          // A turret ghost at a legal spot and at a refused one (inside the base).
-          await js(`(() => { const sim = window.__rht.sim; const hq = sim.entities.find(e => e.team === "player" && e.kind === "base"); sim.select(hq.id); sim.setPendingBuild("turret"); window.__rht.hoverGround({ x: hq.position.x + 6, z: hq.position.z + 2 }); window.__rht.setView({ x: hq.position.x + 5, z: hq.position.z + 1, zoom: 0.8, pitch: 0.75, yaw: 0.3 }); })()`);
+          // A harpoon tower ghost at a legal spot and at a refused one (inside the base).
+          await js(`(() => { const sim = window.__rht.sim; const hq = sim.entities.find(e => e.team === "player" && e.kind === "base"); sim.select(hq.id); sim.setPendingBuild("harpoon"); window.__rht.hoverGround({ x: hq.position.x + 6, z: hq.position.z + 2 }); window.__rht.setView({ x: hq.position.x + 5, z: hq.position.z + 1, zoom: 0.8, pitch: 0.75, yaw: 0.3 }); })()`);
           await sleep(900); await shot(`ghost-${faction}-ok`);
           await js(`(() => { const sim = window.__rht.sim; const hq = sim.entities.find(e => e.team === "player" && e.kind === "base"); window.__rht.hoverGround({ x: hq.position.x + 13, z: hq.position.z + 2 }); window.__rht.setView({ x: hq.position.x + 8, z: hq.position.z + 1, zoom: 0.9, pitch: 0.75, yaw: 0.3 }); })()`);
           await sleep(700); await shot(`ghost-${faction}-refused`);
-          // The faction's top support's reticle (napalm / paradrop / barrage), out in the field.
-          await js(`(() => { const sim = window.__rht.sim; sim.setPendingBuild(undefined); const hq = sim.entities.find(e => e.team === "player" && e.kind === "base"); sim.select(hq.id); const kind = sim.factionOf("player").supports.find((k) => ["paradrop", "napalm", "barrage"].includes(k)); sim.setPendingSupport(kind); window.__rht.hoverGround({ x: 0, z: 0 }); window.__rht.setView({ x: 0, z: 0, zoom: 0.8, pitch: 0.8, yaw: 0.3 }); })()`);
+          // The faction's top support's reticle (commando / car bomb / barrage), out in the field.
+          await js(`(() => { const sim = window.__rht.sim; sim.setPendingBuild(undefined); const hq = sim.entities.find(e => e.team === "player" && e.kind === "base"); sim.select(hq.id); const kind = sim.factionOf("player").supports.find((k) => ["commando", "carbomb", "barrage"].includes(k)); sim.setPendingSupport(kind); window.__rht.hoverGround({ x: 0, z: 0 }); window.__rht.setView({ x: 0, z: 0, zoom: 0.8, pitch: 0.8, yaw: 0.3 }); })()`);
           await sleep(800); await shot(`reticle-${faction}`);
           await js(`window.__rht.sim.setPendingSupport(undefined)`);
           await js(`(() => { const sim = window.__rht.sim; sim.setPendingBuild(undefined); window.__rht.deselect(); const hq = sim.entities.find(e => e.team === "player" && e.kind === "base");
-            const kinds = sim.factionOf("player").defenses.filter((k) => k !== "minefield" && k !== "sandbag");
+            const kinds = sim.factionOf("player").defenses.filter((k) => k !== "minefield");
             kinds.forEach((k, i) => sim.debugBuild(k, "player", { x: hq.position.x + 7 + (i % 3) * 3.2, z: hq.position.z - 3 + Math.floor(i / 3) * 3.6 }));
             window.__rht.setView({ x: hq.position.x + 10, z: hq.position.z - 1, zoom: 0.7, pitch: 0.7, yaw: 0.45 }); })()`);
           await sleep(1200); await shot(`emplacements-${faction}`);
@@ -423,7 +423,7 @@ app.whenReady().then(async () => {
         continue;
       }
       if (s === "circles") {
-        // Every ring that lies on the ground, across ledges: the Hill ring on all six maps, a cash cache and a depot beside a step.
+        // Every ring that lies on the ground, across ledges: the Hill ring on all six maps.
         for (const map of ["dustbowl", "ironworks", "verdant", "causeway", "karak", "crossfire"]) {
           await js(`window.__rht.startBattle(${JSON.stringify(map)}, "hill", "normal")`);
           await sleep(1800);
@@ -464,21 +464,6 @@ app.whenReady().then(async () => {
         })()`);
         console.log("controls3 cursors", cursors);
         if (/"hasUrl":false|"decodes":false/.test(cursors)) throw new Error("a custom cursor does not apply or its SVG does not decode: " + cursors);
-        // FIELD CACHE AS A DESTINATION: with Move armed, a real click on a cache queues a move onto it, and the unit banks it.
-        const cache = await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); const c = sim.pickups[0]; const u = sim.debugSpawn("skater", "player", { x: c.x - 6, z: c.z }); sim.debugSelect(u.id); r.setView({ x: c.x - 3, z: c.z, zoom: 0.5, pitch: 0.85, yaw: 0 }); window.__cacheUnit = u.id; return JSON.stringify({ x: c.x, z: c.z, amount: c.amount, money: sim.money("player"), n: sim.pickups.length }); })()`);
-        await sleep(900);
-        await js(`document.querySelector('[data-order-action="move"]').click()`);
-        await sleep(300);
-        const c = JSON.parse(cache);
-        await js(`window.__rht.hud && 0; window.__rht.clickWorld({ x: ${c.x}, z: ${c.z} }, 0.5)`);
-        await sleep(300);
-        const queued = await js(`JSON.stringify(window.__rht.sim.orders.filter((o) => o.actorId === window.__cacheUnit).map((o) => ({ k: o.kind, d: o.destination })))`);
-        console.log("controls3 cache click queued", queued);
-        await js(`window.__rht.endTurn()`);
-        for (let i = 0; i < 60; i += 1) { await sleep(250); if (await js(`window.__rht.sim.phase === "command"`)) break; }
-        const after = JSON.parse(await js(`JSON.stringify({ money: window.__rht.sim.money("player"), n: window.__rht.sim.pickups.length })`));
-        console.log("controls3 cache banked", JSON.stringify({ before: c.money, after: after.money, gain: after.money - c.money, expected: c.amount, cachesLeft: after.n, was: c.n }));
-        if (!(after.n < c.n)) throw new Error("clicking a field cache with Move armed did not send the unit onto it");
         continue;
       }
       if (s === "groundaim") {
@@ -546,7 +531,7 @@ app.whenReady().then(async () => {
       if (s === "newunits") {
         // The eight newest troop types, each faction's own four, on the line: both teams, close, one frame per faction.
         for (const f of ["vanguard", "syndicate", "bastion"]) {
-          const kinds = { vanguard: ["runabout", "hookshot", "skater", "breaker"], syndicate: ["runabout", "molotov", "sledge", "boomer"], bastion: ["runabout", "mole", "bulldozer", "juggernaut"] }[f];
+          const kinds = { vanguard: ["hookshot", "skater", "breaker"], syndicate: ["molotov", "sledge", "boomer"], bastion: ["mole", "bulldozer", "juggernaut"] }[f];
           await js(`window.__rht.startBattle("dustbowl", "destroy", "normal", ${JSON.stringify(f)}, ${JSON.stringify(f)})`);
           await sleep(1500);
           await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("enemy", 0); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = "hidden"));
@@ -563,13 +548,13 @@ app.whenReady().then(async () => {
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal", "syndicate", "vanguard")`);
         await sleep(1500);
         await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("player", 9000); sim.economy.set("enemy", 0);
-          const kinds = ["sledge", "boomer", "runabout", "mole", "flamer", "breaker", "juggernaut", "bulldozer", "hookshot", "chopbike"];
+          const kinds = ["sledge", "boomer", "mole", "flamer", "breaker", "juggernaut", "bulldozer", "hookshot", "chopbike"];
           kinds.forEach((k, i) => { const u = sim.debugSpawn(k, "player", { x: -20 + i * 2.6, z: 4 }); u.yaw = 0.3; });
           const foe = sim.debugSpawn("soldier", "enemy", { x: -6, z: -4 }); foe.burning = { turns: 3, dmg: 8 };
           const f2 = sim.debugSpawn("tank", "enemy", { x: -2, z: -3 });
           r.setView({ x: -6, z: 2, zoom: 0.5, pitch: 0.6, yaw: 0.2 }); })()`);
         await sleep(1000);
-        for (const k of ["sledge", "boomer", "runabout", "mole", "flamer", "breaker", "juggernaut", "bulldozer", "hookshot", "chopbike"]) {
+        for (const k of ["sledge", "boomer", "mole", "flamer", "breaker", "juggernaut", "bulldozer", "hookshot", "chopbike"]) {
           await js(`(() => { const sim = window.__rht.sim; const u = sim.entities.find((e) => e.team === "player" && e.kind === ${JSON.stringify(k)}); sim.select(u.id); })()`);
           await sleep(500);
           await shot("review-" + k);
@@ -581,8 +566,8 @@ app.whenReady().then(async () => {
         continue;
       }
       if (s === "strikes") {
-        // The five new support strikes, filmed: EMP, minefield, medevac, sentry drop, rail strike.
-        for (const [fac, kind] of [["vanguard", "shockwave"], ["syndicate", "minedrop"], ["syndicate", "railstrike"], ["bastion", "sentrydrop"], ["bastion", "tankdrop"]]) {
+        // The loud support strikes, filmed: shockwave, car bomb, commando drop, tank drop, boulder.
+        for (const [fac, kind] of [["vanguard", "shockwave"], ["syndicate", "carbomb"], ["vanguard", "commando"], ["bastion", "tankdrop"], ["bastion", "boulder"]]) {
           await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal", ${JSON.stringify(fac)}, "vanguard")`);
           await sleep(1500);
           const info = await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("player", 9000); sim.economy.set("enemy", 0);
@@ -631,7 +616,7 @@ app.whenReady().then(async () => {
       }
       if (s === "muzzles") {
         // One shooter per kind, mid-flight of its first round, tight on the muzzle: the round must leave the gun, not float above it.
-        const kinds = ["gunship", "soldier", "sniper", "bazooka", "flamer", "tank", "chopbike", "runabout", "flak", "artillery"];
+        const kinds = ["gunship", "soldier", "sniper", "bazooka", "flamer", "tank", "chopbike", "flak", "artillery"];
         for (const kind of kinds) {
           await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal")`);
           await sleep(1300);
@@ -648,7 +633,7 @@ app.whenReady().then(async () => {
       }
       if (s === "muzzlecheck") {
         // DATA, not pictures: for every shooter, fire one round and measure how far the sim's round origin is from the nearest drawn weapon-part box.
-        const kinds = ["gunship", "soldier", "sniper", "heavy", "skater", "striker", "molotov", "mortar", "bazooka", "flamer", "hookshot", "bulldozer", "mole", "breaker", "juggernaut", "tank", "chopbike", "runabout", "flak", "artillery"];
+        const kinds = ["gunship", "soldier", "sniper", "heavy", "skater", "striker", "molotov", "mortar", "bazooka", "flamer", "hookshot", "bulldozer", "mole", "breaker", "juggernaut", "tank", "chopbike", "flak", "artillery"];
         const rows = [];
         for (const kind of kinds) {
           await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal")`);
@@ -1286,7 +1271,7 @@ app.whenReady().then(async () => {
           await sleep(1800);
           await js(`(() => { const sim = window.__rht.sim; const base = sim.entities.find((e) => e.team === "player" && e.kind === "base");
             const at = (dx, dz) => ({ x: base.position.x + dx, z: base.position.z + dz });
-            const v = sim.debugSpawn("${f}" === "syndicate" ? "runabout" : "tank", "player", at(6, -3)); v.yaw = 1.2;
+            const v = sim.debugSpawn("${f}" === "syndicate" ? "chopbike" : "tank", "player", at(6, -3)); v.yaw = 1.2;
             ["soldier", "heavy", "sniper"].forEach((k, i) => { const u = sim.debugSpawn(k, "player", at(4.5 + i * 1.2, 2.6)); u.yaw = 1.3; });
             window.__rht.deselect(); window.__rht.setView({ x: base.position.x + 3.6, z: base.position.z, zoom: 0.52, pitch: 0.5, yaw: 0.45 }); })()`);
           await sleep(1500);

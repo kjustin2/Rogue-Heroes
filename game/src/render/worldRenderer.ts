@@ -587,33 +587,6 @@ export class WorldRenderer {
         ));
       }
     }
-    // Cash caches: a spinning gold diamond bobbing over a warm ground glow — "run over this for money".
-    const cachePulse = (Math.sin(performance.now() * 0.005) + 1) * 0.5;
-    for (const cache of sim.pickups) {
-      const y = drawnGroundAt(cache) + 0.05;
-      const ring = new THREE.Mesh(
-        drapedDisc(cache.x, cache.z, 0.5, 0.74, 32, 0.05),
-        this.envMat(THREE.MeshBasicMaterial, { color: 0xffd166, transparent: true, opacity: 0.26 + cachePulse * 0.24, side: THREE.DoubleSide, depthWrite: false }),
-      );
-      this.environmentRoot.add(ring);
-      const coin = new THREE.Mesh(
-        new THREE.OctahedronGeometry(0.26),
-        this.envMat(THREE.MeshStandardMaterial, { color: 0xffcf4d, emissive: 0xffb020, emissiveIntensity: 0.65, metalness: 0.75, roughness: 0.32 }),
-      );
-      coin.position.set(cache.x, y + 0.52 + cachePulse * 0.16, cache.z);
-      coin.rotation.set(0.32, performance.now() * 0.0032, 0);
-      coin.userData.pickupId = cache.id;
-      this.environmentRoot.add(coin);
-      // A flat, invisible-but-raycastable disc over the whole footprint so the cache is easy to
-      // click (the thin ring + floating coin alone are a fiddly target). Clicking it shows its payout.
-      const hit = new THREE.Mesh(
-        drapedDisc(cache.x, cache.z, 0, 0.74, 16, 0.08),
-        this.envMat(THREE.MeshBasicMaterial, { transparent: true, opacity: 0, depthWrite: false }),
-      );
-      hit.userData.pickupId = cache.id;
-      this.environmentRoot.add(hit);
-      this.pickables.push(hit, coin);
-    }
     const pulse = (Math.sin(performance.now() * 0.006) + 1) * 0.5;
     for (const e of sim.entities) {
       if (e.crackedTurn === undefined || !e.status.alive) continue;
@@ -2224,7 +2197,6 @@ export class WorldRenderer {
     if (entity.kind === "gunship") this.buildGunship(group, entity);
     else if (entity.kind === "bomber") this.buildBomber(group, entity);
     else if (entity.kind === "flak") this.buildFlak(group, entity);
-    else if (entity.kind === "runabout") this.buildRunabout(group, entity);
     else if (entity.kind === "chopbike") this.buildChopBike(group, entity);
     else if (entity.kind === "bulldozer") this.buildBulldozer(group, entity);
     else if (isVehicleKind(entity.kind)) { if (kit) this.buildVehicleKit(group, entity); else this.buildTank(group, entity); }
@@ -3218,35 +3190,6 @@ export class WorldRenderer {
   }
 
   /** A manned emplacement: a ring of sandbags round a pit, with the weapon on a mount in the middle. Walk up and crew it. */
-  // RUNABOUT: a light open car. Low chassis, a roll bar, four fat wheels, a bench for four riders and a pintle MG at the
-  // back that always fires. Sand paint, team lamps: unmistakably not a tank, not an APC.
-  private buildRunabout(group: THREE.Group, entity: CombatEntity): void {
-    const glow = entity.team === "enemy" ? TEAMS.enemyAccent : (entity.accent ?? this.playerAccent);
-    const lamp = { accent: true, emissive: glow, emissiveIntensity: 0.4, bevel: 0.3 } as const;
-    this.box(group, entity, "hull", [1.5, 0.4, 2.3], [0, 0.58, 0], 0xc9a35a, { metalness: 0.2, bevel: 0.12 });
-    this.box(group, entity, "front-plate", [1.34, 0.32, 0.82], [0, 0.84, 0.92], 0xb88e48, { metalness: 0.2, bevel: 0.14 });
-    for (const x of [-0.44, 0.44]) this.box(group, entity, "front-plate", [0.28, 0.16, 0.08], [x, 0.78, 1.34], 0xffe2a8, lamp);
-    this.box(group, entity, "hull", [1.3, 0.14, 0.92], [0, 0.88, -0.78], 0x6a5a3a, { bevel: 0.2 }); // the riders' bench
-    this.box(group, entity, "hull", [1.3, 0.34, 0.1], [0, 1.1, -1.18], 0x6a5a3a, { bevel: 0.2 }); // seat back
-    for (const side of [-1, 1]) {
-      this.cylinder(group, entity, "turret", 0.04, 0.95, [side * 0.62, 1.24, 0.1], 0x2a2f34, [0, 0, 0], { metalness: 0.4 });
-      this.cylinder(group, entity, "turret", 0.04, 0.95, [side * 0.62, 1.36, -1.0], 0x2a2f34, [0, 0, 0], { metalness: 0.4 });
-    }
-    this.cylinder(group, entity, "turret", 0.04, 1.2, [0, 1.72, 0.1], 0x2a2f34, [0, 0, Math.PI / 2], { metalness: 0.4 });
-    this.cylinder(group, entity, "turret", 0.04, 1.1, [0, 1.84, -1.0], 0x2a2f34, [0, 0, Math.PI / 2], { metalness: 0.4 });
-    for (const side of [-1, 1]) for (const z of [-0.8, 0.8]) {
-      this.cylinder(group, entity, side < 0 ? "left-tread" : "right-tread", 0.4, 0.3, [side * 0.86, 0.4, z], 0x1d2124, [0, 0, Math.PI / 2], { metalness: 0.1 });
-      this.cylinder(group, entity, side < 0 ? "left-tread" : "right-tread", 0.16, 0.32, [side * 0.86, 0.4, z], 0x9aa0a8, [0, 0, Math.PI / 2], { accent: true, metalness: 0.4 });
-    }
-    this.box(group, entity, "turret", [0.34, 0.3, 0.34], [0, 1.12, -0.56], 0x2b3036, { metalness: 0.3 });
-    this.box(group, entity, "cannon", [0.12, 0.12, 1.0], [0, 1.4, 0.0], 0x8e9c98, { metalness: 0.4 });
-    this.box(group, entity, "cannon", [0.2, 0.2, 0.18], [0, 1.4, 0.56], 0x1d2226, { metalness: 0.5 });
-    this.box(group, entity, "cannon", [0.22, 0.2, 0.3], [0.3, 1.24, -0.4], 0x5a5a3a, { accent: true });
-    this.cylinder(group, entity, "hull", 0.025, 1.4, [0.7, 1.6, -1.1], 0xdfeaf2, [0, 0, 0], { accent: true });
-    this.box(group, entity, "hull", [0.3, 0.2, 0.04], [0.86, 2.2, -1.1], glow, { accent: true, emissive: glow, emissiveIntensity: 0.4 });
-    this.factionVehicleDress(group, entity);
-  }
-
   // CHOP BIKE: a long low chopper. Raked front forks and a fat front wheel, a big rear wheel, twin chrome exhaust pipes, a
   // hunched rider with a blade held out to the side. Narrow and long: nothing else on the field is that shape.
   private buildChopBike(group: THREE.Group, entity: CombatEntity): void {
@@ -5227,7 +5170,7 @@ export class WorldRenderer {
           this.groundAimRoot.add(mine);
         }
       } else {
-        const shape = kind === "wall" ? "wall" : kind === "sandbag" ? "sandbag" : kind === "bunker" ? "bunker" : "emplacement";
+        const shape = kind === "wall" ? "wall" : kind === "barrels" ? "barrels" : kind === "bunker" ? "bunker" : "emplacement";
         const ghost = new THREE.Mesh(shape === "wall" ? wallGhostGeometry() : defenseGhostGeometry(shape), wallGhostMaterial(ok));
         ghost.position.set(point.x, ground + (shape === "wall" ? 0.78 : 0), point.z);
         ghost.rotation.y = yaw;
@@ -5324,8 +5267,8 @@ export class WorldRenderer {
     if (spot.snapped) this.groundAimRoot.add(makeLine(point, spot.point, color, 0.6, y));
   }
 
-  // The hover footprint while calling in a support power: line of bomb circles (airstrike),
-  // a wide saturation disc (cluster), or the strafing line (gun run, id laser). Line powers align
+  // The hover footprint while calling in a support power: the lane of a roll (boulder, car bomb), a blast disc,
+  // or the strafing line (gun run, id laser). Line powers align
   // away from the calling base, so the preview shows the true strike axis.
   private drawSupportReticle(sim: TacticalSim, kind: string, point: Vec2): void {
     const base = sim.selected;
@@ -5334,13 +5277,7 @@ export class WorldRenderer {
     const dir = { x: Math.sin(yaw), z: Math.cos(yaw) };
     const pulse = (Math.sin(performance.now() * 0.008) + 1) * 0.5;
     const y = terrainHeightAt(point) + 0.07;
-    if (kind === "airstrike") {
-      for (let i = 0; i < 5; i += 1) {
-        const p = { x: point.x + dir.x * (i - 2) * 1.7, z: point.z + dir.z * (i - 2) * 1.7 };
-        this.groundAimRoot.add(makeSplashDisc(p, 0xff8c3a, 1.9));
-      }
-      this.groundAimRoot.add(makeLine({ x: point.x - dir.x * 6, z: point.z - dir.z * 6 }, { x: point.x + dir.x * 6, z: point.z + dir.z * 6 }, 0xff8c3a, 0.5 + pulse * 0.3, y));
-    } else if (kind === "napalm") {
+    if (kind === "napalm") {
       // Three firebombs along the line, each a 1.7m burn patch (sim: scheduleSupportStrikes).
       for (let i = 0; i < 3; i += 1) {
         const p = { x: point.x + dir.x * (i - 1) * 1.8, z: point.z + dir.z * (i - 1) * 1.8 };
@@ -5350,13 +5287,16 @@ export class WorldRenderer {
     } else if (kind === "barrage") {
       this.groundAimRoot.add(makeSplashDisc(point, 0xffac5a, 4.5 + 1.6));
       this.groundAimRoot.add(makeEndpoint(point, 0xffac5a, 0.6, y));
-    } else if (kind === "paradrop") {
-      // Where the two troopers land: a small drop zone, team blue, no blast.
-      this.groundAimRoot.add(makeSplashDisc(point, 0xbfe8ff, 2.2));
+    } else if (kind === "commando") {
+      // The slam ring the commando lands in (JUMP_SLAM_RADIUS).
+      this.groundAimRoot.add(makeSplashDisc(point, 0xbfe8ff, 2.5));
       this.groundAimRoot.add(makeEndpoint(point, 0xbfe8ff, 0.7 + pulse * 0.2, y));
-    } else if (kind === "minedrop") {
-      this.groundAimRoot.add(makeSplashDisc(point, 0xffb02e, 3));
-      this.groundAimRoot.add(makeEndpoint(point, 0xffb02e, 0.6, y));
+    } else if (kind === "carbomb") {
+      // The car's 14m lane (CAR_BOMB_LENGTH) and the blast where it ends (CAR_BOMB_RADIUS).
+      const a = { x: point.x - dir.x * 7, z: point.z - dir.z * 7 };
+      const b = { x: point.x + dir.x * 7, z: point.z + dir.z * 7 };
+      this.groundAimRoot.add(makeLine(a, b, 0xff7a3a, 0.5 + pulse * 0.3, y));
+      this.groundAimRoot.add(makeSplashDisc(b, 0xff5a1e, 3));
     } else if (kind === "boulder") {
       // The boulder's lane: 18m down the line through the point, a stone's width wide (BOULDER_LENGTH / BOULDER_WIDTH).
       const a = { x: point.x - dir.x * 9, z: point.z - dir.z * 9 };
@@ -6818,10 +6758,10 @@ function wallGhostGeometry(): THREE.BoxGeometry {
 }
 /** A translucent stand-in for a defense being placed: its rough volume, feet at y = 0. Cached, shared. */
 const _defenseGhosts = new Map<string, THREE.BufferGeometry>();
-function defenseGhostGeometry(shape: "emplacement" | "bunker" | "mast" | "sandbag" | "mine"): THREE.BufferGeometry {
+function defenseGhostGeometry(shape: "emplacement" | "bunker" | "mast" | "barrels" | "mine"): THREE.BufferGeometry {
   let geo = _defenseGhosts.get(shape);
   if (!geo) {
-    geo = shape === "sandbag" ? new THREE.BoxGeometry(1.9, 0.75, 0.62).translate(0, 0.375, 0)
+    geo = shape === "barrels" ? new THREE.CylinderGeometry(0.85, 0.85, 1.1, 16).translate(0, 0.55, 0)
       : shape === "bunker" ? new THREE.CylinderGeometry(1.0, 1.3, 1.1, 20).translate(0, 0.55, 0)
       : shape === "mast" ? new THREE.CylinderGeometry(0.18, 0.4, 3.1, 10).translate(0, 1.55, 0)
       : shape === "mine" ? new THREE.CylinderGeometry(0.28, 0.32, 0.1, 14)

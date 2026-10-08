@@ -14,7 +14,7 @@ Every command, smoke, probe and oracle, and the hard-won ledgers behind them. Ru
 | Full gate + smokes | `npm run test:full` |
 | Every smoke, serially (buttons flow economy deep ground ui-audit faction animation attacks director hotseat) | `npm run smoke:core` |
 | Movement + projectile oracle (AI vs AI, all maps; part of `npm test`) | `npx vitest run src/game/movement.test.ts` |
-| Map layout: no props/posts/caches overlap, nothing straddles a step (part of `npm test`) | `npx vitest run src/game/mapLayout.test.ts` |
+| Map layout: no props/posts overlap, nothing straddles a step (part of `npm test`) | `npx vitest run src/game/mapLayout.test.ts` |
 | Fun units close up + their verbs mid-action (real GPU; `FUN=faction:kind,...` to pick) | `npm run shots:gpu -- fununits` |
 | Map features: rails + train, launch pad, thin ice, barrels (real GPU) | `npm run shots:gpu -- mapfx` |
 | Map features through the sim (train, pads, ice, barrels) | `npx vitest run src/game/mapFeatures.test.ts` |
@@ -47,7 +47,7 @@ under the combat median, verbs within 9 dB of the gun median (targets 6 / 8; a r
 **The balance gate (`balance.test.ts`, inside `npm test`)** measures damage per dollar against the median kind. Two crediting rules
 (2026-10-06), both measured, not tuned: a KILLING blow also counts the health it denied (a Marksman's one-shot head kill used to count as
 16 damage and read as a dead buy), and a Turret Tech is credited with its sentries' damage and charged their $70. The player seat lean (~60-69%) was
-the unmirrored supply caches; with mirrored pairs it reads ~53% (`mapLayout.test` "supply caches are fair" pins them).
+the unmirrored supply caches (cut 2026-10-08); it reads ~53%.
 | Perf bench + leak probe | `npm run perf` (`-- --update-baseline` to rebase) |
 | AI vision inspector | `npm run vision` (`-- <scenario>` or `-- all`) |
 | Scenario screenshot gallery | `npm run improve:gallery` |

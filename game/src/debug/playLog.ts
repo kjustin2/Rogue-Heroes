@@ -14,7 +14,7 @@ export function play(text: string): void {
   console.info(`[play] ${text}`);
 }
 
-/** The button/control a click landed on, as one readable line ("Gun Turret $210 [build=turret]"). */
+/** The button/control a click landed on, as one readable line ("Barrel Stack $70 [build=barrels]"). */
 function describe(el: Element): string {
   const control = el.closest("button, a, [data-select], [data-tech], [data-map], [data-faction], [data-faction2], input, select, label") ?? el;
   const text = (control.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 60);

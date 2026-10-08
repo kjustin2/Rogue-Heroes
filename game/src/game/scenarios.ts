@@ -47,10 +47,10 @@ export const SCENARIOS: Scenario[] = [
       sim.debugGrant("player", 5000);
       const eb = sim.mapDef.enemyBase;
       const dir = Math.sign(sim.mapDef.playerBase.x - eb.x) || -1;
-      // Enemy base ringed with walls + a gun turret + a mortar turret.
+      // Enemy base ringed with walls + a harpoon tower + a mortar turret.
       sim.debugBuild("wall", "enemy", { x: eb.x + dir * 4, z: eb.z - 2 });
       sim.debugBuild("wall", "enemy", { x: eb.x + dir * 4, z: eb.z + 2 });
-      sim.debugBuild("turret", "enemy", { x: eb.x + dir * 3, z: eb.z + 4 });
+      sim.debugBuild("harpoon", "enemy", { x: eb.x + dir * 3, z: eb.z + 4 });
       sim.debugBuild("exturret", "enemy", { x: eb.x + dir * 3, z: eb.z - 4 });
       sim.debugSpawn("heavy", "enemy", { x: eb.x + dir * 5, z: eb.z });
       // Player siege column a short distance off, ready to fire.
@@ -118,7 +118,7 @@ export const SCENARIOS: Scenario[] = [
       const pb = sim.mapDef.playerBase;
       const dir = Math.sign(sim.mapDef.enemyBase.x - pb.x) || 1;
       sim.debugBuild("wall", "player", { x: pb.x + dir * 4, z: pb.z });
-      sim.debugBuild("turret", "player", { x: pb.x + dir * 3, z: pb.z - 3 });
+      sim.debugBuild("harpoon", "player", { x: pb.x + dir * 3, z: pb.z - 3 });
       sim.debugBuild("exturret", "player", { x: pb.x + dir * 3, z: pb.z + 3 });
       sim.debugSpawn("heavy", "player", { x: pb.x + dir * 5.5, z: pb.z - 1.5 });
       sim.debugSpawn("tank", "enemy", { x: pb.x + dir * 11, z: pb.z - 1 });
@@ -149,7 +149,7 @@ export const SCENARIOS: Scenario[] = [
         sim.debugBuild("wall", "player", { x: -6, z: i * 2.4 });
         sim.debugBuild("wall", "enemy", { x: 6, z: i * 2.4 });
       }
-      sim.debugBuild("turret", "player", { x: -8, z: 0 });
+      sim.debugBuild("harpoon", "player", { x: -8, z: 0 });
       sim.debugBuild("exturret", "enemy", { x: 8, z: 0 });
       sim.deselect();
     },
