@@ -34,6 +34,11 @@ A new number in a tip gets a line here; a cut unit gets added to `CUT`.
 framed before the resolve (`-pre`) and in four slow-motion frames with the camera held (`__rht.holdCamera(true)`: the resolve director
 otherwise pans away). Victims are PLAYER units hit by an enemy call: the enemy AI walks its own troopers off before a strike lands.
 
+**`npm run probe:mix`** (2026-10-07): every Sfx voice (guns, verbs, deaths, booms, moments, UI) rendered offline in a hidden muted
+browser (`__rht.measureMix()`), peak + loudest-400ms RMS in dBFS. Gates: no clip (peak <= +0.5), nothing silent (peak > -40), UI >= 5 dB
+under the combat median, verbs within 9 dB of the gun median (targets 6 / 8; a run's random picks move a median ~2 dB). Fault-injected
+(the old 0.6 confirm gain fails). `smoke:buttons` also fails if any real click makes no sound.
+
 **The balance gate (`balance.test.ts`, inside `npm test`)** measures damage per dollar against the median kind. Two crediting rules
 (2026-10-06), both measured, not tuned: a KILLING blow also counts the health it denied (a Marksman's one-shot head kill used to count as
 16 damage and read as a dead buy), and a Turret Tech is credited with its sentries' damage and charged their $70. The player seat lean (~60-69%) was

@@ -47,7 +47,7 @@ import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isVehicleKind
 import { TECH_TREE, troopsUnlockedBy } from "./game/tech";
 import { supportPowerSpec, troopSpec, unitStats } from "./game/units";
 import { factionDef, factionTroopLabel, signatureUnits } from "./game/factions";
-import { deathSound, sfx, verbSound } from "./audio";
+import { deathSound, measureMix, sfx, verbSound } from "./audio";
 import { music } from "./music";
 import { progression, COSMETICS, COSMETIC_CATEGORIES, type Cosmetic } from "./progression";
 import { battleReward } from "./progression";
@@ -422,7 +422,10 @@ canvas.addEventListener("contextmenu", (event) => {
 uiRoot.addEventListener("pointerdown", (event) => {
   sfx.unlock();
   const el = event.target as HTMLElement;
-  if (el.closest("button, .menu-card, [data-part]") && !el.closest("[data-select]")) sfx.ui();
+  const pick = el.closest<HTMLElement>("[data-select]");
+  if (el.closest("button, .menu-card, [data-part]") && !pick) sfx.ui();
+  // Your own units answer through select() (sfx.unit); clicking a foe or a neutral marks it as a target.
+  else if (pick && sim.entity(pick.dataset.select ?? "")?.team !== "player") sfx.select();
 });
 
 // MENUS AND PANELS HAVE SOUND TOO: hover is a whisper, a press is a click, a toggle or a chip pick its own tick, and Back / Close step back.
@@ -437,12 +440,23 @@ document.addEventListener("pointerdown", (event) => {
   const el = event.target as Element | null;
   if (!el || !el.closest(".menu-screen, .pause-overlay, .edit-overlay")) return;
   sfx.unlock();
+  // Checkboxes (and their labels) toggle; sliders tick while dragged (the "input" listener below).
+  if (el.closest("label, input[type=checkbox]") && !el.closest("button")) { sfx.toggle(); return; }
   const btn = el.closest("button, .menu-card, .menu-chip, .menu-toggle");
   if (!btn || btn.matches(":disabled")) return;
   if (btn.matches("[data-back], [data-pause='resume'], [data-overlay-close], [data-step-go='back']")) sfx.back();
   else if (btn.matches(".menu-toggle, .menu-chip")) sfx.toggle();
   else if (btn.matches("[data-start], .title-start")) sfx.turn();
   else sfx.ui();
+});
+
+// A slider dragged anywhere in the menus ticks, pitched by its value, at most every 70ms.
+let lastSliderTick = 0;
+document.addEventListener("input", (event) => {
+  const el = event.target as HTMLInputElement | null;
+  if (!el || el.type !== "range" || performance.now() - lastSliderTick < 70) return;
+  lastSliderTick = performance.now();
+  sfx.tick((Number(el.value) - Number(el.min || 0)) / Math.max(1, Number(el.max || 100) - Number(el.min || 0)));
 });
 
 const heldKeys = new Set<string>();
@@ -1877,6 +1891,9 @@ let roundTransitionEl: HTMLDivElement | undefined;
 function showRoundTransition(turn: number): void {
   if (anyOverlayOpen() || sim.gameOver) return;
   roundTransitionEl?.remove();
+  sfx.newTurn();
+  // A hazard strikes next turn: two alarm pips just after the banner (the forecast chip shows what and where).
+  if (sim.forecast(1).some((cell) => cell.turn === turn + 1 && cell.kinds.length)) window.setTimeout(() => sfx.alarm(), 650);
   const el = document.createElement("div");
   el.className = "round-transition";
   el.innerHTML = `<div class="round-transition__bar"></div><div class="round-transition__label"><span>Next</span><strong>Turn ${turn}</strong></div>`;
@@ -2590,6 +2607,8 @@ declare global {
       camera(): { x: number; z: number; zoom: number; yaw: number; pitch: number };
       setView(view: { x?: number; z?: number; zoom?: number; yaw?: number; pitch?: number; overview?: boolean }): void;
       holdCamera(on: boolean): void;
+      sfxPlayed(): number;
+      measureMix(): Promise<Array<{ group: string; name: string; peak: number; rms: number }>>;
       view(): { x: number; z: number; zoom: number; yaw: number; pitch: number };
       projectToScreen(point: { x: number; z: number }, height?: number): { x: number; y: number; visible: boolean; behind: boolean };
       renderDebug(): WorldRenderDebug;
@@ -2713,6 +2732,8 @@ window.__rht = {
   camera: () => stage.viewState(),
   setView: (view) => stage.debugSetView(view),
   holdCamera: (on) => { directorHeld = on; },
+  sfxPlayed: () => sfx.played,
+  measureMix: () => measureMix(sfx),
   view: () => stage.viewState(),
   projectToScreen: (point, height) => stage.projectToScreen(point, height),
   viewState: () => stage.viewState(),

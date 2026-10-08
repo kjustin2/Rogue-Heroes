@@ -29,6 +29,19 @@ Decks: Vanguard Shockwave (start) / Airstrike / Paradrop / Tank Drop; Syndicate 
 Rail Strike; Bastion Sentry Drop (start, no tech now) / Gun Run / Tank Drop / Barrage / Rail Strike. Vanguard's Defenses: Sandbags,
 Wall, Turret, Spring Trap, Gun Post, Rocket Post. Base upgrades: the Fortress Cannon only. Decks hold 4-6 powers (`doctrines.test.ts`).
 
+## Sound moments and the mix (2026-10-07)
+- **Moments**: the new-turn banner plays `sfx.newTurn` (a low drum + rising two-note); a map hazard due next turn adds `sfx.alarm`
+  (two pips, 650ms later; `sim.forecast(1)`). End turn, victory, defeat, medals, cash and the train horn had theirs already.
+- **Menus**: every real pointer click on a control is heard: buttons / chips / toggles (existing handlers), checkboxes and their labels
+  (`sfx.toggle`), sliders tick while dragged (`sfx.tick`, pitched by value, 70ms apart), clicking a foe in a list marks it
+  (`sfx.select`). `smoke:buttons` asserts it via `__rht.sfxPlayed()` (hover first, so the hover whisper never counts as the click).
+- **ONE SOUND, SEVERAL PARTS**: `ready()` throttles synth calls 12ms apart (burst stacking), and that silently dropped every part after
+  the first of a multi-part sound (the horn's 2nd note, the medal chime's 2nd/3rd, every synth boom's grit, the new layers). Multi-part
+  sounds now go through `Sfx.chord()`: the throttle applies once per sound.
+- **The mix is measured**: `npm run probe:mix` renders every voice offline (`Sfx.measure`, an OfflineAudioContext) and gates peak and
+  loudness (loudest 400ms RMS). It found the UI LEVEL WITH the guns (the confirm and deploy clicks 8-10 dB over) and the jet pack /
+  rocket fist / swing 12-20 dB under: UI gains cut to sit >= 6 dB under combat, those verbs raised to the guns' level.
+
 ## Explosions throw, heavies hold (2026-10-07)
 Every blast throws a trooper: grenades, shells and mines already ran `applyExplosiveRadius` -> `applyKnockback`; support and map
 strikes (`detonateStrike`) now do too (collapse excepted). `IMMOVABLE_HEAVIES` (tank, artillery, bulldozer) have infinite `blastMass`:

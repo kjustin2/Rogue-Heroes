@@ -14,6 +14,7 @@
     "smoke:flow": "node scripts/smoke-flow.mjs",
     "smoke:economy": "node scripts/smoke-economy.mjs",
     "smoke:buttons": "node scripts/smoke-buttons.mjs",
+    "probe:mix": "node scripts/probe-mix.mjs",
     "smoke:deep": "node scripts/smoke-deep.mjs",
     "smoke:ui-audit": "node scripts/smoke-ui-audit.mjs",
     "smoke:hotseat": "node scripts/smoke-hotseat.mjs",
