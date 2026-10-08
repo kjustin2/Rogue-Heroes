@@ -5791,15 +5791,27 @@ export class TacticalSim {
     return true;
   }
 
-  /** SLAM: a Sledge with foes inside the hammer's circle swings (two or more, or any trooper: it is a throw as much as a blow). */
+  /** SLAM: a Sledge with foes inside the hammer's circle swings (two or more, or any trooper: it is a throw as much as a blow).
+   *  With none in reach but a trooper within a run, it closes in and swings in the same turn (move + slam, like the Boomer). */
   private aiSlamAct(actor: CombatEntity, foes: CombatEntity[]): boolean {
     if (actor.kind !== "sledge" || this.slamFailureReason(actor)) return false;
-    const inReach = foes.filter((f) => !f.flying && f.status.alive && !isBuildingKind(f.kind) && dist(f.position, actor.position) <= SLAM_RADIUS + f.radius);
-    if (!inReach.length) return false;
-    const worth = inReach.length >= 2 || inReach.some((f) => isInfantryKind(f.kind));
-    if (!worth || !spendCommandPoint(actor)) return false; // (the hammer only hits foes, so friends beside it are safe)
-    this.addOrder({ actorId: actor.id, kind: "slam", aim: "center", duration: 0.9 });
-    return true;
+    const ground = foes.filter((f) => !f.flying && f.status.alive && !isBuildingKind(f.kind) && f.kind !== "cover");
+    const reach = (at: Vec2): CombatEntity[] => ground.filter((f) => dist(f.position, at) <= SLAM_RADIUS + f.radius);
+    const worth = (hit: CombatEntity[]): boolean => hit.length >= 2 || hit.some((f) => isInfantryKind(f.kind));
+    const swing = (): boolean => { this.addOrder({ actorId: actor.id, kind: "slam", aim: "center", duration: 0.9 }); return true; };
+    if (worth(reach(actor.position))) return spendCommandPoint(actor) && swing(); // (the hammer only hits foes, so friends beside it are safe)
+    if (!actor.status.canMove || actor.commandPoints < 2) return false;
+    let best: { to: Vec2; n: number } | undefined;
+    for (const f of ground) {
+      if (!isInfantryKind(f.kind) || dist(f.position, actor.position) > moveRange(actor) + SLAM_RADIUS - 0.5) continue;
+      const to = this.navigateToward(actor, f.position, moveRange(actor));
+      const hit = reach(to);
+      if (worth(hit) && (!best || hit.length > best.n)) best = { to, n: hit.length };
+    }
+    if (!best) return false;
+    spendCommandPoint(actor);
+    this.addOrder({ actorId: actor.id, kind: "move", destination: best.to, aim: "center", duration: 1.5 });
+    return spendCommandPoint(actor) && swing();
   }
 
 
@@ -6053,13 +6065,13 @@ export class TacticalSim {
       if (this.aiSkaterAct(enemy, players)) continue;
       if (this.aiMoleAct(enemy, players)) continue;
       if (this.aiDozerAct(enemy, players)) continue;
+      if (this.aiSlamAct(enemy, players)) continue;
       // Push: a foe with water or the edge behind it is a free kill (Hard only).
       if (profile.tactical && this.aiShoveAct(enemy, players)) continue;
       // The rest of the toolkit (Hard only): carry troops, ram, screen with smoke, sow a mine.
       if (profile.tactical && this.aiX.moves) {
         if (this.aiCarryAct(enemy, players)) continue;
         if (this.aiRamAct(enemy, players)) continue;
-        if (this.aiSlamAct(enemy, players)) continue;
         if (this.aiSmokeAct(enemy, players, behind)) continue;
       }
       // A trooper near a free emplacement with a foe in its reach goes and crews it (a Mortar Pit wants a mortarman).

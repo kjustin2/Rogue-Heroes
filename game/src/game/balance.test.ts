@@ -45,7 +45,8 @@ const BAND_HIGH = 2.5;
 // ~27 damage a game and the row swung 0.42x-0.56x on a map layout change alone. Given a bombing
 // run (move over a group, release on arrival) the same aircraft measured 1.8x-2.3x -- see
 // docs/next-steps.md. Re-gate it when the AI flies real bombing runs.
-const UNGATED: readonly TroopKind[] = ["bomber", "sledge"];
+// 2026-10-07: every brain now swings the Sledge's hammer (closing in first) and the bomber earns 2.2x: both re-gated.
+const UNGATED: readonly TroopKind[] = [];
 
 interface Tally { damage: number; spent: number; fielded: number }
 

@@ -29,6 +29,13 @@ Decks: Vanguard Shockwave (start) / Airstrike / Paradrop / Tank Drop; Syndicate 
 Rail Strike; Bastion Sentry Drop (start, no tech now) / Gun Run / Tank Drop / Barrage / Rail Strike. Vanguard's Defenses: Sandbags,
 Wall, Turret, Spring Trap, Gun Post, Rocket Post. Base upgrades: the Fortress Cannon only. Decks hold 4-6 powers (`doctrines.test.ts`).
 
+## Balance snapshot (2026-10-07, `balance.test.ts`: 6 maps x 24 seeds, both seats the Normal AI)
+Every combat kind is gated now (`UNGATED` is empty): the Sledge's hammer is swung by every brain and closes in first (`aiSlamAct`:
+move + slam in one turn), which took it from 0.11x to 0.77x of the median damage per $; the bomber measures 1.98x. Spread: Tank 1.61x,
+Striker / Chop Bike / Breaker / Bulldozer ~1.45-1.55x, line infantry ~0.9-1.0x, Mortar 0.72x, Flak 0.62x (an AA specialist against an
+AI that fields few aircraft), Rocketeer 0.64x (likewise anti-armour). Seats 51% / 49%. OPEN: Dust Bowl ends 16 of 24 games undecided
+inside the 16-turn cap (the median map ~9): the slowest map, a candidate for a closer layout or a shorter sandstorm.
+
 ## Sound moments and the mix (2026-10-07)
 - **Moments**: the new-turn banner plays `sfx.newTurn` (a low drum + rising two-note); a map hazard due next turn adds `sfx.alarm`
   (two pips, 650ms later; `sim.forecast(1)`). End turn, victory, defeat, medals, cash and the train horn had theirs already.
