@@ -582,11 +582,11 @@ app.whenReady().then(async () => {
       }
       if (s === "strikes") {
         // The five new support strikes, filmed: EMP, minefield, medevac, sentry drop, rail strike.
-        for (const [fac, kind] of [["syndicate", "smokescreen"], ["syndicate", "minedrop"], ["syndicate", "railstrike"], ["vanguard", "sentrydrop"]]) {
+        for (const [fac, kind] of [["vanguard", "shockwave"], ["syndicate", "minedrop"], ["syndicate", "railstrike"], ["bastion", "sentrydrop"], ["bastion", "tankdrop"]]) {
           await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal", ${JSON.stringify(fac)}, "vanguard")`);
           await sleep(1500);
           const info = await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); sim.economy.set("player", 9000); sim.economy.set("enemy", 0);
-            const base = sim.entities.find((e) => e.team === "player" && e.kind === "base"); base.unlockedTech = sim.techIds ? sim.techIds() : ["recon","assault","armor","support","radar","motorpool","siege","airwing","shock","ordnance","incendiary","demolition","fieldworks","optics","marksman","breach","bulwark","thermobarics","cluster","plating","hunter","ghillie"];
+            const base = sim.entities.find((e) => e.team === "player" && e.kind === "base"); base.unlockedTech = sim.techIds ? sim.techIds() : ["recon","assault","armor","support","motorpool","siege","airwing","shock","ordnance","incendiary","demolition","fieldworks","optics","marksman","breach","bulwark","thermobarics","cluster","plating","hunter","ghillie"];
             const bx = base.position.x;
             const tgt = { x: bx + 14, z: 0 };
             const foes = [];
@@ -790,6 +790,32 @@ app.whenReady().then(async () => {
             r.setView({ x: -6, z: -8, zoom: 0.3, pitch: 0.6, yaw: 0.2 }); sim.endTurn(); window.__rht.setTimeScale(0.5); })()`);
           for (let i = 0; i < 4; i += 1) { await sleep(i === 0 ? 700 : 450); await shot(`fun-${k}-act${i}`); }
         }
+        await js(`window.__rht.setTimeScale(1); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = ""))`);
+        continue;
+      }
+      if (s === "fundeck") {
+        // The 2026-10-07 deck: a Shockwave on a squad beside a tank (the troopers fly, the tank rocks), a Spring Trap
+        // launching a trooper, and a Tank Drop falling onto its point. Slow motion, four frames each.
+        const stage = async (name, setup) => {
+          await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal", "vanguard")`);
+          await sleep(1500);
+          await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = "hidden"));
+            for (let i = sim.entities.length - 1; i >= 0; i -= 1) { const e = sim.entities[i]; if ((e.kind === "cover" || e.team === "neutral") && Math.hypot(e.position.x, e.position.z + 8) < 9) sim.entities.splice(i, 1); }
+            sim.pickups.splice(0);
+            ${setup}
+            r.setView({ x: 0, z: -8, zoom: 0.5, pitch: 0.62, yaw: 0.25 }); })()`);
+          await sleep(900); await shot(`fundeck-${name}-pre`);
+          await js(`(() => { const r = window.__rht; r.holdCamera(true); r.setView({ x: 0, z: -8, zoom: 0.5, pitch: 0.62, yaw: 0.25 }); r.sim.endTurn(); r.setTimeScale(0.45); })()`);
+          for (let i = 0; i < 4; i += 1) { await sleep(i === 0 ? 2300 : 420); await shot(`fundeck-${name}-${i}`); }
+          await js(`window.__rht.holdCamera(false)`);
+        };
+        await stage("shockwave", `for (const [x, z] of [[1, -8], [-1, -7.2], [0, -9.4], [1.8, -9.6]]) { const t = sim.debugSpawn("soldier", "player", { x, z }); t.commandPoints = 0; }
+          const k = sim.debugSpawn("tank", "player", { x: -2.4, z: -9.6 }); k.commandPoints = 0;
+          sim.queuedSupport.push({ kind: "shockwave", point: { x: 0, z: -8.4 }, dir: { x: 1, z: 0 }, team: "enemy" });`);
+        await stage("spring", `sim.mines.push({ id: "spring-shot", x: 0, z: -8, team: "enemy", spring: true });
+          const u = sim.debugSpawn("soldier", "player", { x: -3, z: -8 }); sim.debugSelect(u.id); sim.queueMove({ x: 2, z: -8 });`);
+        await stage("tankdrop", `const v = sim.debugSpawn("soldier", "player", { x: 0.4, z: -8 }); v.commandPoints = 0;
+          sim.queuedSupport.push({ kind: "tankdrop", point: { x: 0, z: -8 }, dir: { x: 1, z: 0 }, team: "enemy" });`);
         await js(`window.__rht.setTimeScale(1); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = ""))`);
         continue;
       }

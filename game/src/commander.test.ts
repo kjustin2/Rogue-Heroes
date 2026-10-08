@@ -123,7 +123,7 @@ describe("achievement pages (2026-10-02)", () => {
     // The Arsenal page counts what the sim tallies; give it a long career of everything.
     const counters: Record<string, number> = {
       slams: 1000, thrown: 1000, ringouts: 10, burned: 1000, clashes: 100, cannon: 100, booms: 100, punches: 100, hooks: 100, bowled: 100, molotovs: 100, erupts: 100, slashed: 100, shoved: 100,
-      fullcar: 1, hops: 1000, empHits: 100, supportCalls: 1000, "upgrade:armor2": 1, "upgrade:cannon": 1, "upgrade:radar": 1,
+      fullcar: 1, hops: 1000, flung: 100, tankdrops: 10, supportCalls: 1000, "upgrade:cannon": 1,
       "killer:sledge": 100, "killer:bounty": 100, "killer:flamer": 100, "killer:rocketpost": 100,
     };
     for (const kind of TROOP_KINDS) counters[`deploy:${kind}`] = 1;

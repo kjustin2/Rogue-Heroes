@@ -47,9 +47,9 @@ describe("faction rosters differ", () => {
     }
   });
 
-  it("gives every faction five or six support powers: a tech-free starter, the rest by research it can reach, and at least one nobody else has", () => {
+  it("gives every faction four to six support powers: a tech-free starter, the rest by research it can reach, and at least one nobody else has", () => {
     for (const f of FACTIONS) {
-      expect(f.supports.length, `${f.id} supports`).toBeGreaterThanOrEqual(5);
+      expect(f.supports.length, `${f.id} supports`).toBeGreaterThanOrEqual(4); // 4 since the not-fun cut (2026-10-07)
       expect(f.supports.length, `${f.id} supports`).toBeLessThanOrEqual(6);
       for (const [i, kind] of f.supports.entries()) {
         const spec = SUPPORT_POWERS.find((p) => p.kind === kind);

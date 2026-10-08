@@ -51,7 +51,6 @@ import {
   COVER_PROFILES,
   createExTurret,
   createBunker,
-  createSensor,
   createWall,
   factionLiving,
   isBuildingKind,
@@ -149,11 +148,7 @@ const RESOLVE_SETTLE_TIMEOUT = 18;
 const RESOLVE_HARD_CEILING = 20;
 
 // Support powers that land damage (the bot's strike logic only drops these on a crowd).
-const DAMAGING_SUPPORT: ReadonlySet<SupportPowerKind> = new Set<SupportPowerKind>(["airstrike", "cluster", "laser", "napalm", "barrage"]);
-/** A Sensor Mast's spotter relay reaches this far (a spotter unit's reaches 6.2m). */
-export const SENSOR_REACH = 10;
-export const RESUPPLY_RADIUS = 4;
-export const RESUPPLY_HEAL = 40;
+const DAMAGING_SUPPORT: ReadonlySet<SupportPowerKind> = new Set<SupportPowerKind>(["airstrike", "cluster", "laser", "napalm", "barrage", "railstrike", "shockwave", "tankdrop"]);
 // Half-angle of a unit's FRONT: a shot from outside this ±60° wedge around its facing flanks it.
 const FRONT_ARC_HALF = Math.PI / 3;
 // Salvage economy: each vehicle wreck holds this much money, stripped this fast by an
@@ -230,7 +225,7 @@ const SLAM_LANDING_DAMAGE = 34; // death from above (2026-10-07; was 15 on a str
 // Metres a piercing round carries on past a body it went through.
 const PIERCE_CARRY = 7;
 
-type StrikeKind = "train" | "barrage" | "collapse" | "airstrike" | "cluster" | "laser" | "lightning" | "slag" | "smokedrop" | "resupply" | "napalm" | "paradrop" | "emp" | "minedrop" | "medevac" | "sentrydrop" | "railstrike";
+type StrikeKind = "train" | "barrage" | "collapse" | "airstrike" | "cluster" | "laser" | "lightning" | "slag" | "shockwave" | "tankdrop" | "napalm" | "paradrop" | "minedrop" | "sentrydrop" | "railstrike";
 const LIGHTNING_RADIUS = 2.0;
 
 // Gas clouds (see runGasTick / igniteGasAt).
@@ -271,6 +266,21 @@ const SMOKE_COLOR = 0x9aa3a8;
 // against a unit a sniper fired at, until the turn after.
 const MARK_SPREAD_SCALE = 0.8;
 const MARK_ACCURATE_BONUS = 0.2;
+// SHOCKWAVE (support, owner 2026-10-07: knockback chaos): a 4m air-burst, little damage, a huge throw.
+export const SHOCKWAVE_RADIUS = 4;
+const SHOCKWAVE_DAMAGE = 15;
+export const SHOCKWAVE_THROW = 12;
+export const SHOCKWAVE_FX = 0xd9b98a; // a warm dust ring, never a white flash
+/** Heavy things landing (a tank dropped from the sky, cover collapsing): a dust burst, not a fireball. */
+export const DUST_FX = 0xb59a72;
+/** Blasts that draw as a ring of dust and grit instead of fire (and leave no scorch): the shockwave, the tank drop, a collapse. */
+export const isDustBlast = (color: number | undefined): boolean => color === SHOCKWAVE_FX || color === DUST_FX;
+// TANK DROP (support): the crush under the chute, and how long the tank fights before it is scuttled.
+const TANK_DROP_CRUSH = 2.2;
+const TANK_DROP_DAMAGE = 60;
+export const TANK_DROP_TURNS = 3;
+// SPRING TRAP (defense): a hidden plate that launches the first foe to step on it this far, away from its owner's base.
+export const SPRING_THROW = 13;
 // Proximity mines (the Minefield defense and the Minefield Drop strike).
 const MINE_TRIGGER = 0.85;
 const MINE_SPLASH = 1.5;
@@ -341,14 +351,6 @@ export interface TacticalOrder {
   /** A move that ended on a launch pad and carried on as a launch (never re-launches on landing). */
   launched?: boolean;
   projectileId?: string;
-}
-
-/** One enemy unit's planned order for the coming resolve, as revealed by the Watch Radar. */
-export interface EnemyIntent {
-  actorId: string;
-  kind: OrderKind;
-  destination?: Vec2;
-  targetId?: string;
 }
 
 export interface VisualEvent {
@@ -528,7 +530,7 @@ function pairAngle(a: string, b: string): number {
 export const CLASH_SPARK = 0xffd27a;
 export const CLASH_BOLT = 0xd8ecff;
 export const CLASH_BLAST = 0xff9a3a;
-/** Utility "blasts" that are a pulse, not an explosion: an EMP burst and a smoke shell opening. They draw a ring of light or a puff, never a fireball, a scorch or a shove. */
+/** Utility "blasts" that are a pulse, not an explosion: an electrical burst and a smoke shell opening. They draw a ring of light or a puff, never a fireball, a scorch or a shove. */
 export const PULSE_EMP = 0x8de4ff;
 export const PULSE_SMOKE = 0x9aa3a8; // SMOKE_COLOR
 export const PULSE_WATER = 0x4f9fd0; // a trooper or vehicle going under: a ring and spray, never a fireball
@@ -542,9 +544,13 @@ const KNOCKBACK_MAX = 6;
 const SHOVE_FORCE = 90;
 const SHOVE_MAX = 9;
 
+// HEAVIES HOLD (owner 2026-10-07: "heavy units like a tank aren't pushed back in explosion/push scenarios"): a tank, the
+// artillery and the bulldozer are never displaced by a blast, punch, hook, shove, bike or bomb. The renderer rocks them.
+export const IMMOVABLE_HEAVIES: ReadonlySet<string> = new Set(["tank", "artillery", "bulldozer"]);
+
 function blastMass(entity: CombatEntity): number {
-  if (entity.kind === "cover" || isBuildingKind(entity.kind) || isDefenseKind(entity.kind)) return Infinity;
-  if (isVehicleKind(entity.kind)) return 5.5;
+  if (entity.kind === "cover" || isBuildingKind(entity.kind) || isDefenseKind(entity.kind) || IMMOVABLE_HEAVIES.has(entity.kind)) return Infinity;
+  if (isVehicleKind(entity.kind)) return 5.5; // the light vehicles (Runabout, Chop Bike, Flak Track) slide a short way
   return 1;
 }
 
@@ -572,17 +578,7 @@ export class TacticalSim {
   readonly gasClouds: { id: string; x: number; z: number; radius: number; maxRadius: number }[] = [];
   // Mortar smoke: flat shots through a cloud are lost in it; shrinks a turn per turn start. Rides serialize().
   readonly smokeClouds: { id: string; x: number; z: number; radius: number; turnsLeft: number }[] = [];
-  // REVEAL (Watch Radar): set when the radar reveals; the enemy's NEXT command is revealed, so
-  // during the following command phase enemyIntents() can show what each enemy unit will do.
-  // Cleared once that command is actually issued. Rides serialize().
-  revealedOrders = false;
-  // Which side the pulse was flown for. Only the player ever recons against the bot, but in hotseat
-  // either seat can, and the reveal belongs to whoever flew it (flips with the seats).
-  revealedTeam: Team = "player";
-  private enemyIntentCache?: { turn: number; list: EnemyIntent[] };
-  // True while enemyIntents() dry-runs the enemy AI: addOrder stays silent (no log, no bus event).
-  private previewingEnemy = false;
-  readonly mines: { id: string; x: number; z: number; team: Team }[] = [];
+  readonly mines: { id: string; x: number; z: number; team: Team; spring?: boolean }[] = [];
   // Loose cash caches scattered on the field at battle start: a unit that runs over one banks its
   // cash for that team, then it's gone. A "grab the loot" incentive to spread out and take ground.
   readonly pickups: { id: string; x: number; z: number; amount: number }[] = [];
@@ -782,9 +778,6 @@ export class TacticalSim {
     this.burnZones.splice(0);
     this.gasClouds.splice(0);
     this.smokeClouds.splice(0);
-    this.revealedOrders = false;
-    this.revealedTeam = "player";
-    this.enemyIntentCache = undefined;
     this.mines.splice(0);
     this.placePickups();
     this.placeFieldMounts();
@@ -1354,48 +1347,6 @@ export class TacticalSim {
     return true;
   }
 
-  /**
-   * What each enemy unit will do this coming resolve, once a recon pulse has revealed it: the
-   * enemy AI is DRY-RUN against the current board and everything it touched (command points,
-   * grenades, the order list, the log, the rng stream) is put back, so the real decision at
-   * endTurn is byte-identical to the preview. Cached per turn; empty when nothing is revealed.
-   */
-  enemyIntents(): EnemyIntent[] {
-    if (!this.revealedOrders || this.phase !== "command") return [];
-    // HOTSEAT: the other seat is a human, so there is no AI to dry-run. The seat that flew the pulse
-    // plans SECOND the next turn (main.ts) and sees the other human's real, already-queued orders.
-    if (this.hotseat) {
-      if (this.revealedTeam !== "player") return [];
-      return this.orders
-        .filter((o) => !o.done && this.entity(o.actorId)?.team === "enemy")
-        .map((o) => ({ actorId: o.actorId, kind: o.kind, destination: o.destination ? { ...o.destination } : undefined, targetId: o.targetId }));
-    }
-    if (this.enemyIntentCache?.turn === this.turn) return this.enemyIntentCache.list;
-    const rngState = this.rng.save();
-    const snapshot = this.entities.map((e) => ({ e, cp: e.commandPoints, grenades: e.grenades, yaw: e.yaw }));
-    const orderCount = this.orders.length;
-    const orderSeq = this.orderSeq;
-    const logBefore = this.log.slice();
-    this.previewingEnemy = true;
-    try {
-      this.queueEnemyOrders(true);
-    } finally {
-      this.previewingEnemy = false;
-    }
-    const list: EnemyIntent[] = this.orders.slice(orderCount).map((o) => ({
-      actorId: o.actorId, kind: o.kind,
-      destination: o.destination ? { ...o.destination } : undefined,
-      targetId: o.targetId,
-    }));
-    this.orders.length = orderCount;
-    this.orderSeq = orderSeq;
-    this.log.splice(0, this.log.length, ...logBefore);
-    for (const { e, cp, grenades, yaw } of snapshot) { e.commandPoints = cp; e.grenades = grenades; e.yaw = yaw; }
-    this.rng.load(rngState);
-    this.enemyIntentCache = { turn: this.turn, list };
-    return list;
-  }
-
   /** Whether a flat shot along from->to passes through a smoke cloud. */
   private smokeBlocksSegment(from: Vec2, to: Vec2): boolean {
     for (const cloud of this.smokeClouds) {
@@ -1882,10 +1833,7 @@ export class TacticalSim {
   }
 
   baseUpgradeOwned(base: CombatEntity, id: BaseUpgradeId): boolean {
-    if (id === "armor1") return (base.armorLevel ?? 0) >= 1;
-    if (id === "armor2") return (base.armorLevel ?? 0) >= 2;
-    if (id === "cannon") return base.parts.some((p) => p.id === "cannon");
-    return Boolean(base.radarOnline);
+    return id === "cannon" && base.parts.some((p) => p.id === "cannon");
   }
 
   /** Player API: buy a Home Base upgrade (1 base order + its cost). */
@@ -1901,16 +1849,10 @@ export class TacticalSim {
     const spec = baseUpgradeSpec(id);
     spendCommandPoint(base);
     this.addMoney(base.team, -spec.cost);
-    if (id === "armor1" || id === "armor2") {
-      base.armorLevel = (base.armorLevel ?? 0) + 1;
-      for (const part of base.parts) { part.maxHp = Math.round(part.maxHp * 1.3); part.hp = Math.round(part.hp * 1.3); }
-      recomputeStatus(base);
-    } else if (id === "cannon") {
+    if (id === "cannon") {
       base.parts.push({ id: "cannon", label: "Fortress Cannon", role: "weapon", maxHp: 90, hp: 90, exposed: true });
       base.cannonReadyTurn = this.turn + 1;
       recomputeStatus(base);
-    } else {
-      base.radarOnline = true;
     }
     this.tally(base.team, `upgrade:${id}`);
     this.pushLog(`${base.name} builds ${spec.label}`);
@@ -2059,17 +2001,14 @@ export class TacticalSim {
       kind === "airstrike" ? `${base.name} tasks a strike wing — bombs on the next resolve`
       : kind === "cluster" ? `${base.name} authorizes a cluster strike — saturation on the next resolve`
       : kind === "laser" ? `${base.name} calls a gun run — strafing on the next resolve`
-      : kind === "reconsweep" ? `${base.name} sends a spotter plane — the enemy's next orders will be revealed`
-      : kind === "smokescreen" ? `${base.name} calls smoke on the point — it blooms on the next resolve`
+      : kind === "shockwave" ? `${base.name} calls a shockwave — everything on the point flies on the next resolve`
+      : kind === "tankdrop" ? `${base.name} orders a tank drop — it lands on the next resolve`
       : kind === "paradrop" ? `${base.name} sends a paradrop — two troopers land on the next resolve`
       : kind === "napalm" ? `${base.name} orders napalm — the point burns on the next resolve`
       : kind === "barrage" ? `${base.name} calls a barrage — six shells on the next resolve`
-      : kind === "emp" ? `${base.name} charges an EMP burst — machines in the zone go dark on the next resolve`
       : kind === "minedrop" ? `${base.name} seeds a minefield — mines drop on the next resolve`
-      : kind === "medevac" ? `${base.name} scrambles a medevac — the point is patched up on the next resolve`
       : kind === "sentrydrop" ? `${base.name} drops a sentry — it lands on the next resolve`
-      : kind === "railstrike" ? `${base.name} lines up a rail strike — three rods on the next resolve`
-      : `${base.name} calls a resupply drop — crates land on the next resolve`,
+      : `${base.name} lines up a rail strike — three rods on the next resolve`,
     );
     return true;
   }
@@ -2097,23 +2036,17 @@ export class TacticalSim {
           const p = clampToArena({ x: point.x + Math.sin(angle) * r, z: point.z + Math.cos(angle) * r });
           this.pendingStrikes.push({ at: 1.1 + i * 0.09, point: p, radius: 1.35, damage: 24, kind: "cluster" });
         }
-      } else if (kind === "reconsweep") {
-        // Pure intel: the same reveal the Watch Radar gives, for the caller's side. Set
-        // here, after endTurn has cleared last turn's reveal, so it covers the NEXT command phase.
-        this.revealedOrders = true;
-        this.revealedTeam = call.team ?? "player";
-        this.enemyIntentCache = undefined;
-        // ...and every foe the spotter plane saw is MARKED for the next turn: the caller's shooters hit them straighter.
-        for (const foe of this.entities) {
-          if (foe.team === (call.team ?? "player") || foe.team === "neutral" || !foe.status.alive || foe.kind === "cover" || isBuildingKind(foe.kind)) continue;
-          foe.markedUntilTurn = this.turn + 1;
-          foe.markedById = `recon-${call.team ?? "player"}`;
-        }
+      } else if (kind === "shockwave") {
+        // SHOCKWAVE: a bomber's single fat air-burst. Little damage, a huge throw (landShockwave).
         const from = clampToArena({ x: point.x - dir.x * 16, z: point.z - dir.z * 16 });
         const to = clampToArena({ x: point.x + dir.x * 16, z: point.z + dir.z * 16 });
-        this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: 0x9dd8ff, duration: 1.6 });
-      } else if (kind === "smokescreen") {
-        this.pendingStrikes.push({ at: 0.9, point, radius: SMOKE_RADIUS, damage: 0, kind: "smokedrop", team: call.team });
+        this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: 0xffd08a, duration: 1.5 });
+        this.pendingStrikes.push({ at: 1.05, point, radius: SHOCKWAVE_RADIUS, damage: SHOCKWAVE_DAMAGE, kind: "shockwave", team: call.team });
+      } else if (kind === "tankdrop") {
+        const from = clampToArena({ x: point.x - dir.x * 16, z: point.z - dir.z * 16 });
+        const to = clampToArena({ x: point.x + dir.x * 16, z: point.z + dir.z * 16 });
+        this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: 0xbfe8ff, duration: 1.7 });
+        this.pendingStrikes.push({ at: 1.1, point, radius: TANK_DROP_CRUSH, damage: TANK_DROP_DAMAGE, kind: "tankdrop", team: call.team });
       } else if (kind === "paradrop") {
         const from = clampToArena({ x: point.x - dir.x * 16, z: point.z - dir.z * 16 });
         const to = clampToArena({ x: point.x + dir.x * 16, z: point.z + dir.z * 16 });
@@ -2136,18 +2069,11 @@ export class TacticalSim {
           const p = clampToArena({ x: point.x + Math.sin(angle) * r, z: point.z + Math.cos(angle) * r });
           this.pendingStrikes.push({ at: 0.9 + i * 0.32, point: p, radius: 1.6, damage: 38, kind: "barrage", team: call.team });
         }
-      } else if (kind === "emp") {
-        const from = clampToArena({ x: point.x - dir.x * 14, z: point.z - dir.z * 14 });
-        const to = clampToArena({ x: point.x + dir.x * 14, z: point.z + dir.z * 14 });
-        this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: 0x8de4ff, duration: 1.5 });
-        this.pendingStrikes.push({ at: 1.0, point, radius: 4, damage: 0, kind: "emp", team: call.team });
       } else if (kind === "minedrop") {
         const from = clampToArena({ x: point.x - dir.x * 14, z: point.z - dir.z * 14 });
         const to = clampToArena({ x: point.x + dir.x * 14, z: point.z + dir.z * 14 });
         this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: 0xffb02e, duration: 1.5 });
         this.pendingStrikes.push({ at: 1.0, point, radius: 3, damage: 0, kind: "minedrop", team: call.team });
-      } else if (kind === "medevac") {
-        this.pendingStrikes.push({ at: 1.0, point, radius: 5, damage: 0, kind: "medevac", team: call.team });
       } else if (kind === "sentrydrop") {
         this.pendingStrikes.push({ at: 1.0, point, radius: 1, damage: 0, kind: "sentrydrop", team: call.team });
       } else if (kind === "railstrike") {
@@ -2158,11 +2084,6 @@ export class TacticalSim {
           const p = clampToArena({ x: point.x + dir.x * (i - 1) * 1.5, z: point.z + dir.z * (i - 1) * 1.5 });
           this.pendingStrikes.push({ at: 1.0 + i * 0.18, point: p, radius: 1.25, damage: 95, kind: "railstrike", team: call.team });
         }
-      } else if (kind === "resupply") {
-        const from = clampToArena({ x: point.x - dir.x * 14, z: point.z - dir.z * 14 });
-        const to = clampToArena({ x: point.x + dir.x * 14, z: point.z + dir.z * 14 });
-        this.pendingFx.push({ at: 0.2, type: "jet", from, to, color: 0x9ef0b8, duration: 1.5 });
-        this.pendingStrikes.push({ at: 1.0, point, radius: RESUPPLY_RADIUS, damage: 0, kind: "resupply", team: call.team });
       } else {
         // GUN RUN (internal id "laser"; it was a beam until 2026-10-07, and the game has no lasers):
         // a jet strafes the line and its cannon shells walk down it.
@@ -2206,6 +2127,7 @@ export class TacticalSim {
     if (blocked) return "Spot is blocked by another object";
     if (pointInWater(point)) return "Cannot build in the water";
     if (kind === "minefield" && this.mines.some((m) => m.team === base.team && dist(m, point) < 2.4)) return "There is already a minefield here";
+    if (kind === "springtrap" && this.mines.some((m) => m.team === base.team && dist(m, point) < 1.6)) return "There is already a trap here";
     return undefined;
   }
 
@@ -2230,6 +2152,13 @@ export class TacticalSim {
       this.pendingBuild = undefined;
       this.intent = "select";
       this.pushLog(`${base.name} lays a minefield`);
+      return true;
+    }
+    if (kind === "springtrap") {
+      this.mines.push({ id: `spring-${++this.effectSeq}`, x: point.x, z: point.z, team: base.team, spring: true });
+      this.pendingBuild = undefined;
+      this.intent = "select";
+      this.pushLog(`${base.name} sets a spring trap`);
       return true;
     }
     if (kind === "sandbag") {
@@ -2315,7 +2244,7 @@ export class TacticalSim {
   }
 
   /** The nearest clear ground for a unit of `unitRadius`, searched outward in rings from `ring`. */
-  private freeSpotNear(center: Vec2, unitRadius: number, ring = 0, forward = 1, ignoreId = ""): Vec2 {
+  private freeSpotNear(center: Vec2, unitRadius: number, ring = 0, forward = 1, ignoreId = "", ignore?: (e: CombatEntity) => boolean): Vec2 {
     for (let radius = ring; radius <= ring + 6; radius += 0.8) {
       for (let i = 0; i < 12; i += 1) {
         const angle = (Math.PI * 2 * i) / 12 + (forward > 0 ? 0 : Math.PI);
@@ -2323,7 +2252,7 @@ export class TacticalSim {
           x: center.x + Math.sin(angle) * radius,
           z: center.z + Math.cos(angle) * radius,
         });
-        const blocked = this.entities.some((e) => e.id !== ignoreId && e.status.alive && !e.carriedById && dist(e.position, point) < e.radius + unitRadius + SPAWN_GAP)
+        const blocked = this.entities.some((e) => e.id !== ignoreId && e.status.alive && !e.carriedById && !ignore?.(e) && dist(e.position, point) < e.radius + unitRadius + SPAWN_GAP)
           || onTerrainEdge(point, spawnClearance(unitRadius))
           || pointInWater(point); // a rider bailing out of a car on a riverbank must land on the bank (chaos fuzz, 2026-10-07)
         if (!blocked) return point;
@@ -2449,8 +2378,6 @@ export class TacticalSim {
     }
     this.queueSentryOrders();
     this.queueBaseCannons();
-    this.revealedOrders = false; // the pulse covered exactly this one enemy command
-    this.enemyIntentCache = undefined;
     // HULL DOWN. A tank with no move/ram order this resolve settles in and takes 30% less damage
     // until it moves. Decided here so the enemy AI's tanks get it on the same terms.
     // DEPLOY. Artillery that does not move this resolve plants its outriggers (it can fire from
@@ -2580,11 +2507,6 @@ export class TacticalSim {
     return (team === "player") !== this.sidesSwapped ? 1 : 2;
   }
 
-  /** Hotseat: the seat that flew a recon pulse last resolve (it plans second this turn), if any. */
-  revealedSeat(): 1 | 2 | undefined {
-    return this.hotseat && this.revealedOrders ? this.seatOf(this.revealedTeam) : undefined;
-  }
-
   /** How the log names a side: "You" / "Enemy" against the bot, "Player 1" / "Player 2" in hotseat. */
   private sideName(team: Team, vsBot: string): string {
     return this.hotseat && (team === "player" || team === "enemy") ? `Player ${this.seatOf(team)}` : vsBot;
@@ -2608,7 +2530,6 @@ export class TacticalSim {
     if (s.hillHolder) s.hillHolder = flip(s.hillHolder);
     if (s.hillHolders) s.hillHolders = s.hillHolders.map((h) => (h ? flip(h) : h));
     for (const flag of s.flags) flag.team = flip(flag.team);
-    this.revealedTeam = flip(this.revealedTeam);
   }
 
   debugSpawn(kind: TroopKind, team: Team, position: Vec2, options: { elite?: boolean; bossName?: string; clearTerrain?: boolean } = {}): CombatEntity {
@@ -2728,8 +2649,6 @@ export class TacticalSim {
       burnZones: this.burnZones,
       gasClouds: this.gasClouds,
       smokeClouds: this.smokeClouds,
-      revealedOrders: this.revealedOrders,
-      revealedTeam: this.revealedTeam,
       queuedSupport: this.queuedSupport,
       hotseat: this.hotseat,
       mines: this.mines,
@@ -2749,11 +2668,9 @@ export class TacticalSim {
         burnZones?: { id: string; x: number; z: number; radius: number; turnsLeft: number; damage?: number }[];
         gasClouds?: { id: string; x: number; z: number; radius: number; maxRadius: number }[];
         smokeClouds?: { id: string; x: number; z: number; radius: number; turnsLeft: number }[];
-        revealedOrders?: boolean;
-        revealedTeam?: Team;
         queuedSupport?: { kind: SupportPowerKind; point: Vec2; dir: Vec2; team?: Team }[];
         hotseat?: boolean;
-        mines?: { id: string; x: number; z: number; team: Team }[];
+        mines?: { id: string; x: number; z: number; team: Team; spring?: boolean }[];
         pickups?: { id: string; x: number; z: number; amount: number }[];
       };
       const map = mapDef(data.map);
@@ -2800,11 +2717,8 @@ export class TacticalSim {
       this.burnZones.splice(0, this.burnZones.length, ...(data.burnZones ?? []));
       this.gasClouds.splice(0, this.gasClouds.length, ...(data.gasClouds ?? []));
       this.smokeClouds.splice(0, this.smokeClouds.length, ...(data.smokeClouds ?? []));
-      this.revealedOrders = data.revealedOrders === true;
-      this.revealedTeam = data.revealedTeam === "enemy" ? "enemy" : "player";
       this.hotseat = data.hotseat === true;
       this.sidesSwapped = false;
-      this.enemyIntentCache = undefined;
       this.mines.splice(0, this.mines.length, ...(data.mines ?? []));
       this.pickups.splice(0, this.pickups.length, ...(data.pickups ?? []));
       this.log.splice(0);
@@ -2925,7 +2839,6 @@ export class TacticalSim {
       done: false,
     };
     this.orders.push(order);
-    if (this.previewingEnemy) return;
     this.pushLog(`${this.entity(order.actorId)?.name ?? "Unit"} queued ${orderLabel(order, this.entity(order.actorId), this.entity(order.targetId)).text}`);
     this.bus.emit("ORDER_QUEUED", { actorId: order.actorId, kind: order.kind });
   }
@@ -4403,9 +4316,18 @@ export class TacticalSim {
     return sentry;
   }
 
-  /** Sentries pack up when their time is out. Runs at turn start. */
+  /** Sentries pack up, and dropped tanks are scuttled, when their time is out. Runs at turn start. */
   private runSentryTick(): void {
-    for (const e of this.entities) {
+    for (const e of [...this.entities]) {
+      if (e.dropTtl !== undefined && e.status.alive) {
+        e.dropTtl -= 1;
+        if (e.dropTtl <= 0) {
+          for (const part of e.parts) part.hp = 0;
+          recomputeStatus(e);
+          this.afterDamage(e, e, [`${e.name}'s crew scuttles it`]);
+        }
+        continue;
+      }
       if (e.kind !== "sentry" || !e.status.alive || e.sentryTtl === undefined) continue;
       e.sentryTtl -= 1;
       if (e.sentryTtl <= 0) {
@@ -4490,10 +4412,26 @@ export class TacticalSim {
       if (mine.team === mover.team) continue;
       if (dist(mine, mover.position) > MINE_TRIGGER + mover.radius * 0.5) continue;
       this.mines.splice(i, 1);
+      if (mine.spring) { this.springLaunch(mine, mover); continue; }
       this.effect("blast", { x: mine.x, z: mine.z }, { x: mine.x, z: mine.z }, 0xffb02e, 0.8, MINE_SPLASH);
       this.pushLog(`${mover.name} triggers a mine!`);
       this.applyExplosiveRadius(this.entity(`${mine.team === "player" ? "p" : "e"}-base-1`) ?? mover, { x: mine.x, z: mine.z }, MINE_SPLASH, MINE_DAMAGE, `${mover.name} is caught in the mine blast`);
     }
+  }
+
+  /** SPRING TRAP: the plate fires the stepper away from the trap owner's base, SPRING_THROW metres (a thrown body: it
+   *  arcs and tumbles, slams into whatever stops it, drowns in water and is gone over the board edge). Heavies only rock. */
+  private springLaunch(trap: { x: number; z: number; team: Team }, mover: CombatEntity): void {
+    const base = this.entities.find((e) => e.kind === "base" && e.team === trap.team) ?? mover;
+    let dx = mover.position.x - base.position.x, dz = mover.position.z - base.position.z;
+    const len = Math.hypot(dx, dz) || 1;
+    dx /= len; dz /= len;
+    this.effect("ping", { x: trap.x, z: trap.z }, { x: trap.x, z: trap.z }, LAUNCH_FX, 0.6, 1.2);
+    this.pushLog(`${mover.name} steps on a spring trap!`);
+    this.tally(trap.team, "launches");
+    // The flight ends whatever move it was on (otherwise it would walk straight back to the plate).
+    for (const o of this.orders) if (o.actorId === mover.id && o.kind === "move" && !o.done) o.done = true;
+    this.applyKnockback(base, mover, { x: mover.position.x - dx, z: mover.position.z - dz }, 0, 1, { ringOut: true, maxThrow: SPRING_THROW, force: SPRING_THROW });
   }
 
   // Same move-resolve hook as mines: a unit that runs over a cash cache banks it.
@@ -4710,13 +4648,14 @@ export class TacticalSim {
    * outright, so it is logged loudly and it cannot happen to a flyer.
    */
   /** Would a thrown body land inside another one? Mirrors the separation rule movement keeps. */
-  private applyKnockback(actor: CombatEntity, entity: CombatEntity, point: Vec2, baseDamage: number, falloff: number, opts: { ringOut?: boolean; maxThrow?: number; pull?: number; force?: number } = {}): void {
+  private applyKnockback(actor: CombatEntity, entity: CombatEntity, point: Vec2, baseDamage: number, falloff: number, opts: { ringOut?: boolean; maxThrow?: number; pull?: number; force?: number; train?: boolean } = {}): void {
     if (!entity.status.alive || entity.flying || entity.burrowed) return;
     // The Juggernaut's cannon throws harder (and further) than anything else that size.
     const kb = unitStats(actor.kind).knockback ?? 1;
     if (kb !== 1) { baseDamage *= kb; opts = { ...opts, maxThrow: (opts.maxThrow ?? KNOCKBACK_MAX) * Math.min(kb, 1.6) }; }
-    const mass = blastMass(entity);
-    if (!Number.isFinite(mass)) return; // bolted down: bases, defenses, cover
+    // Only the freight train moves a heavy (it would otherwise be hit again on every run).
+    const mass = opts.train && IMMOVABLE_HEAVIES.has(entity.kind) ? 5.5 : blastMass(entity);
+    if (!Number.isFinite(mass)) return; // bolted down: bases, defenses, cover, and the heavies
     const dx = entity.position.x - point.x;
     const dz = entity.position.z - point.z;
     const len = Math.hypot(dx, dz);
@@ -4881,7 +4820,7 @@ export class TacticalSim {
     if (selfResult.amount > 0) this.afterDamage(actor, actor, selfResult, "Ram recoil");
   }
 
-  /** HOOKSHOT: reel the hooked body in, stopping a stride short of the shooter; armour (mass 5.5) barely budges. */
+  /** HOOKSHOT: reel the hooked body in, stopping a stride short of the shooter; light armour (mass 5.5) barely budges, heavies not at all. */
   private hookPull(actor: CombatEntity, target: CombatEntity): void {
     const gap = dist(actor.position, target.position) - (actor.radius + target.radius + 0.25);
     if (gap < 0.3) return;
@@ -5408,7 +5347,7 @@ export class TacticalSim {
       entity.id !== actor.id &&
       entity.team === actor.team &&
       entity.status.alive &&
-      dist(entity.position, actor.position) <= (entity.kind === "sensor" ? SENSOR_REACH : 6.2) &&
+      dist(entity.position, actor.position) <= 6.2 &&
       entity.parts.some((part) => part.hp > 0 && part.tags?.includes("spotter-aura"))
     );
     if (!spotter) return 1;
@@ -6682,9 +6621,9 @@ export class TacticalSim {
     // 3. Compounding income early.
     const incomeCost = incomeUpgradeCost(base);
     if (incomeCost !== undefined && this.turn <= 9 && mine >= 3 && money >= incomeCost + cheapest && this.upgradeIncomeFor(base)) return true;
-    // 3b. Armour, then the cannon, once it has an army and the money (never at the cost of falling behind).
+    // 3b. The cannon, once it has an army and the money (never at the cost of falling behind).
     if (mine >= 5 && mine >= theirs && this.turn >= 5) {
-      for (const id of ["armor1", "cannon", "armor2"] as const) {
+      for (const id of ["cannon"] as const) {
         const spec = baseUpgradeSpec(id);
         if (!this.baseUpgradeFailureReason(base, id) && money >= spec.cost + cheapest * 2 && this.upgradeBaseFor(base, id)) return true;
       }
@@ -6722,7 +6661,7 @@ export class TacticalSim {
 
   private enemyStrikeAct(base: CombatEntity): boolean {
     const foe: Team = base.team === "enemy" ? "player" : "enemy";
-    // Only a STRIKE is worth dropping on a crowd; the utility powers (recon / smoke / resupply) are not bombs.
+    // Only a STRIKE is worth dropping on a crowd (the Sentry Drop and Paradrop are not bombs).
     // Its strongest strike it can afford with $150 to spare (the list runs from starter to top tier).
     const kind = [...this.factionOf(base.team).supports].reverse().find((k) =>
       DAMAGING_SUPPORT.has(k) && !this.supportFailureReason(base, k) && this.money(base.team) >= supportPowerSpec(k).cost + 150);
@@ -6987,10 +6926,6 @@ export class TacticalSim {
         entity.markedUntilTurn = undefined;
         entity.markedById = undefined;
       }
-      if (entity.disabledUntilTurn !== undefined) {
-        if (entity.disabledUntilTurn >= this.turn && entity.status.alive) entity.commandPoints = 0;
-        else entity.disabledUntilTurn = undefined;
-      }
       if (entity.suppressedUntilTurn !== undefined) {
         if (entity.suppressedUntilTurn >= this.turn && entity.status.alive) {
           entity.commandPoints = Math.min(entity.commandPoints, 1);
@@ -7001,7 +6936,6 @@ export class TacticalSim {
       }
     }
     this.refreshMounts();
-    if (!this.hotseat && this.entities.some((e) => e.kind === "base" && e.team === "player" && e.status.alive && e.radarOnline)) { this.revealedOrders = true; this.revealedTeam = "player"; this.enemyIntentCache = undefined; }
     this.runEconomyTick();
     this.runSalvageTick();
     this.runCaptureTick();
@@ -7310,12 +7244,58 @@ export class TacticalSim {
         for (const m of result.messages) this.pushLog(m);
         // Off the rails, to whichever side it stood nearer.
         const side = e.position.z >= midZ ? 1 : -1;
-        this.applyKnockback(e, e, { x: e.position.x, z: midZ - side * 0.5 }, 0, 1, { force: (track.maxZ - track.minZ) / 2 + e.radius + 2.2, maxThrow: 6 });
+        this.applyKnockback(e, e, { x: e.position.x, z: midZ - side * 0.5 }, 0, 1, { force: (track.maxZ - track.minZ) / 2 + e.radius + 2.2, maxThrow: 6, train: true });
         hit += 1;
       }
     }
     this.pushLog(hit ? `The freight train thunders through: ${hit} caught on the tracks` : "The freight train thunders through");
     this.checkEndState();
+  }
+
+  /** SHOCKWAVE: a fat air-burst. A little damage, then every ground unit within SHOCKWAVE_RADIUS is thrown away from the
+   *  point (troopers far, light vehicles a little, heavies not at all: blastMass). Water, ledges and the board edge kill. */
+  private landShockwave(point: Vec2, team: Team): void {
+    const base = this.entities.find((e) => e.kind === "base" && e.team === team) ?? this.entities[0];
+    this.effect("blast", point, point, SHOCKWAVE_FX, 0.9, SHOCKWAVE_RADIUS);
+    let flung = 0;
+    for (const e of [...this.entities]) {
+      if (!e.status.alive || e.flying || e.team === "neutral" || e.kind === "cover" || e.kind === "base" || isBuildingKind(e.kind) || isDefenseKind(e.kind)) continue;
+      const d = dist(e.position, point);
+      if (d > SHOCKWAVE_RADIUS + e.radius * 0.5) continue;
+      const falloff = clamp01(1 - d / (SHOCKWAVE_RADIUS + 0.6));
+      applyDamage(e, preferredPart(e, "center").id, Math.max(6, Math.round(SHOCKWAVE_DAMAGE * Math.max(0.5, falloff))));
+      const force = SHOCKWAVE_THROW * (0.55 + 0.45 * falloff);
+      this.applyKnockback(base, e, point, 0, 1, { ringOut: true, maxThrow: SHOCKWAVE_THROW, force });
+      if (isInfantryKind(e.kind)) flung += 1;
+    }
+    this.tally(team, "flung", flung);
+    this.pushLog(flung ? `The shockwave flings ${flung} trooper${flung === 1 ? "" : "s"}` : "The shockwave rolls over empty ground");
+  }
+
+  /** TANK DROP: troopers under the chute are crushed and shoved clear, then a tank lands for the caller and fights for
+   *  TANK_DROP_TURNS turns before its crew scuttles it (runSentryTick). The field cap holds: a full field gets the crush only. */
+  private landTankDrop(point: Vec2, team: Team): void {
+    const base = this.entities.find((e) => e.kind === "base" && e.team === team && e.status.alive);
+    // The crush lands where the tank does: on the point, or the nearest spot a tank fits (troopers do not block it, they get crushed).
+    const spot = nearestDryPoint(this.freeSpotNear(point, 1.6, 0, 1, "", (e) => isInfantryKind(e.kind)));
+    this.effect("blast", spot, spot, DUST_FX, 0.7, TANK_DROP_CRUSH);
+    for (const e of [...this.entities]) {
+      if (!e.status.alive || e.flying || e.team === team || e.team === "neutral" || !isInfantryKind(e.kind)) continue;
+      if (dist(e.position, spot) > TANK_DROP_CRUSH + e.radius * 0.5) continue;
+      const result = applyDamage(e, preferredPart(e, "center").id, TANK_DROP_DAMAGE);
+      if (base) this.afterDamage(base, e, result, "Tank Drop");
+      if (e.status.alive && base) this.applyKnockback(base, e, spot, 0, 1, { maxThrow: 3, force: 3 });
+    }
+    if (!base || this.fieldUnitCount(team) >= POP_CAP) { this.pushLog("Tank drop: the field is full, the crate lands empty"); return; }
+    const tank = this.createTroop("tank", base, nearestDryPoint(this.freeSpotNear(spot, 1.6)));
+    tank.commandPoints = 0;
+    tank.dropTtl = TANK_DROP_TURNS;
+    tank.yaw = Math.atan2(point.x - base.position.x, point.z - base.position.z);
+    this.entities.push(tank);
+    this.syncEntityElevation(tank);
+    this.effect("land", tank.position, tank.position, 0xbfe9ff, 0.6, 2.2);
+    this.tally(team, "tankdrops");
+    this.pushLog("A tank thunders down from the sky");
   }
 
   // PARADROP: two of the caller's line troopers land around the point (dry, clear ground; never past
@@ -7339,27 +7319,8 @@ export class TacticalSim {
   // (both teams — it's the battlefield, not a unit's attack). Bases are spared so the sky can't
   // hand someone the win.
   private detonateStrike(strike: { point: Vec2; radius: number; damage: number; kind: StrikeKind; team?: Team }): void {
-    // Utility support powers land a payload, not a blast.
-    if (strike.kind === "smokedrop") {
-      this.smokeClouds.push({ id: `smoke-${++this.effectSeq}`, x: strike.point.x, z: strike.point.z, radius: SMOKE_RADIUS, turnsLeft: SMOKE_TURNS });
-      this.effect("blast", strike.point, strike.point, SMOKE_COLOR, 0.9, SMOKE_RADIUS);
-      this.pushLog("The smoke screen blooms — flat shots through it are lost");
-      return;
-    }
-    if (strike.kind === "emp") {
-      let hit = 0;
-      for (const e of this.entities) {
-        if (!e.status.alive || e.team === strike.team || (!isVehicleKind(e.kind) && !isDefenseKind(e.kind)) || e.kind === "wall") continue;
-        if (dist(e.position, strike.point) > strike.radius + e.radius) continue;
-        e.disabledUntilTurn = this.turn + 1;
-        this.effect("ping", { ...e.position }, { ...e.position }, 0x8de4ff, 0.9, e.radius + 0.8);
-        hit += 1;
-      }
-      this.effect("blast", strike.point, strike.point, PULSE_EMP, 0.7, strike.radius);
-      this.tally(strike.team ?? "player", "empHits", hit);
-      this.pushLog(hit ? `The EMP burst kills the power on ${hit} machine${hit === 1 ? "" : "s"}` : "The EMP burst fizzles on empty ground");
-      return;
-    }
+    if (strike.kind === "shockwave") { this.landShockwave(strike.point, strike.team ?? "player"); return; }
+    if (strike.kind === "tankdrop") { this.landTankDrop(strike.point, strike.team ?? "player"); return; }
     if (strike.kind === "minedrop") {
       for (let i = 0; i < 5; i += 1) {
         const angle = this.rng.range(0, Math.PI * 2);
@@ -7372,38 +7333,11 @@ export class TacticalSim {
       this.pushLog("Mines scatter across the point");
       return;
     }
-    if (strike.kind === "medevac") {
-      let helped = 0;
-      for (const e of this.entities) {
-        if (!e.status.alive) continue;
-        if (e.team !== strike.team || !isInfantryKind(e.kind) || dist(e.position, strike.point) > strike.radius + e.radius) continue;
-        for (const part of e.parts) part.hp = part.maxHp;
-        e.burning = undefined;
-        recomputeStatus(e);
-        helped += 1;
-      }
-      this.effect("ping", strike.point, strike.point, 0x8effa6, 0.9, strike.radius);
-      this.pushLog(helped ? `Medevac: ${helped} trooper${helped === 1 ? "" : "s"} patched to full` : "Medevac lands on empty ground");
-      return;
-    }
     if (strike.kind === "sentrydrop") {
       const team = strike.team ?? "player";
       const base = this.entities.find((e) => e.kind === "base" && e.team === team);
       const yaw = base ? Math.atan2(strike.point.x - base.position.x, strike.point.z - base.position.z) : 0;
       this.deploySentry(team, nearestDryPoint(this.freeSpotNear(strike.point, 0.6)), yaw, "A dropped");
-      return;
-    }
-    if (strike.kind === "resupply") {
-      let helped = 0;
-      for (const e of this.entities) {
-        if (!e.status.alive || e.team !== strike.team || e.kind === "base" || isDefenseKind(e.kind) || e.kind === "cover") continue;
-        if (dist(e.position, strike.point) > strike.radius + e.radius) continue;
-        this.healEntity(e, RESUPPLY_HEAL);
-        e.grenades = e.maxGrenades;
-        helped += 1;
-      }
-      this.effect("ping", strike.point, strike.point, 0x9ef0b8, 0.9, strike.radius);
-      this.pushLog(helped ? `Resupply lands — ${helped} unit${helped === 1 ? "" : "s"} patched up and rearmed` : "Resupply lands on empty ground");
       return;
     }
     if (strike.kind === "lightning") {
@@ -7429,7 +7363,7 @@ export class TacticalSim {
       : strike.kind === "napalm" ? 0xff6a1c
       : strike.kind === "slag" ? 0xff7a2a
       : strike.kind === "barrage" ? 0xffac5a
-      : strike.kind === "collapse" ? 0xb59a72
+      : strike.kind === "collapse" ? DUST_FX
       : strike.kind === "laser" ? 0xffb84a
       : strike.kind === "cluster" ? 0xffb02e
       : strike.kind === "railstrike" ? 0xc9d3dc
@@ -7455,6 +7389,8 @@ export class TacticalSim {
       const falloff = clamp01(1 - d / (strike.radius + 0.6));
       const damage = strike.kind === "collapse" ? strike.damage : Math.max(8, Math.round(strike.damage * Math.max(0.4, falloff)));
       applyDamage(e, part.id, damage);
+      // EVERY BLAST THROWS (owner 2026-10-07): a bomb, a shell or a bolt blows troopers back like a grenade does (heavies hold).
+      if (strike.kind !== "collapse") this.applyKnockback(this.entities.find((b) => b.kind === "base" && b.team === strike.team) ?? e, e, strike.point, strike.damage, falloff);
     }
     // Environmental events log per shell (they threaten a marked zone); support strikes
     // logged once when tasked, so a 8-bomb cluster doesn't spam the feed.
@@ -7573,16 +7509,6 @@ export class TacticalSim {
     }
   }
 
-
-  private healEntity(entity: CombatEntity, amount: number): boolean {
-    const damaged = entity.parts
-      .filter((p) => p.hp > 0 && p.hp < p.maxHp)
-      .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
-    if (!damaged) return false;
-    damaged.hp = Math.min(damaged.maxHp, damaged.hp + amount);
-    recomputeStatus(entity);
-    return true;
-  }
 
   private runEconomyTick(): void {
     // Held supply depots pay their owner every turn.
@@ -7814,7 +7740,7 @@ function defenseRadius(kind: DefenseKind): number {
   if (kind === "exturret") return 1.0;
   if (kind === "bunker") return 1.2;
   if (isMountKind(kind)) return 1.0;
-  if (kind === "sensor") return 0.7;
+  if (kind === "springtrap") return 0.6;
   if (kind === "sandbag") return COVER_PROFILES.sandbag.radius;
   if (kind === "minefield") return 1.4; // the triangle's reach
   return 0.95;
@@ -7826,7 +7752,6 @@ function makeEmplacement(kind: DefenseKind, id: string, name: string, team: Team
     case "turret": return createTurret(id, name, team, at);
     case "exturret": return createExTurret(id, name, team, at);
     case "bunker": return createBunker(id, name, team, at);
-    case "sensor": return createSensor(id, name, team, at);
     case "gunpost": return createGunPost(id, name, team, at);
     case "mortarpit": return createMortarPit(id, name, team, at);
     case "rocketpost": return createRocketPost(id, name, team, at);

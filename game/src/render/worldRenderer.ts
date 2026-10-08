@@ -9,7 +9,7 @@ import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec
 import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isMountKind, isVehicleKind, type CombatEntity, type CoverKind, type DamagePart, type Team, type EntityKind, type PartRole } from "../game/damageModel";
 import { factionDef, type FactionId } from "../game/factions";
 import type { OrderKind, Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
-import { CLASH_BLAST, CLASH_BOLT, PULSE_SMOKE, isPulseBlast, minefieldPoints, muzzleFor } from "../game/sim";
+import { CLASH_BLAST, CLASH_BOLT, IMMOVABLE_HEAVIES, PULSE_SMOKE, isDustBlast, isPulseBlast, minefieldPoints, muzzleFor } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type GroundSurfaceKind, type SkylineKind } from "../game/maps";
 import type { TroopKind } from "../game/units";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, climbsAlong, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainIce, terrainWater } from "../game/terrain";
@@ -575,6 +575,18 @@ export class WorldRenderer {
     for (const mine of sim.mines) {
       if (mine.team !== "player") continue;
       const y = drawnGroundAt(mine) + 0.05;
+      if (mine.spring) {
+        // A yellow-and-black plate on a fat coil: "step here and you fly".
+        this.environmentRoot.add(new THREE.Mesh(
+          drapedDisc(mine.x, mine.z, 0, 0.5, 20, 0.05),
+          this.envMat(THREE.MeshBasicMaterial, { color: 0xf2c230, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false }),
+        ));
+        this.environmentRoot.add(new THREE.Mesh(
+          drapedDisc(mine.x, mine.z, 0.22, 0.34, 20, 0.06),
+          this.envMat(THREE.MeshBasicMaterial, { color: 0x1a1a1a, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false }),
+        ));
+        continue;
+      }
       const disc = new THREE.Mesh(
         drapedDisc(mine.x, mine.z, 0, 0.26, 16, 0.05),
         this.envMat(THREE.MeshBasicMaterial, { color: 0x39434a, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }),
@@ -1607,7 +1619,7 @@ export class WorldRenderer {
     let group = this.groups.get(entity.id);
     // Captured structures change team: rebuild so team-colored trim/glow follows the flag -- and a
     // faction change (new battle, a hotseat swap) rebuilds too, because the faction DRESS is geometry.
-    const teamKey = `${entity.team}:${factionOfEntity(entity) ?? ""}${entity.kind === "base" ? `:${entity.armorLevel ?? 0}${entity.parts.some((p) => p.id === "cannon") ? "c" : ""}${entity.radarOnline ? "r" : ""}` : ""}`;
+    const teamKey = `${entity.team}:${factionOfEntity(entity) ?? ""}${entity.kind === "base" ? `:${entity.parts.some((p) => p.id === "cannon") ? "c" : ""}` : ""}`;
     if (group && group.userData.team !== teamKey) {
       disposeSubtree(group);
       this.entityRoot.remove(group);
@@ -1771,6 +1783,12 @@ export class WorldRenderer {
     // and tumble backwards (a full flip on a long throw), vehicles only hop and rock -- with a dust
     // puff on landing. Renderer-only: the sim position is already final.
     this.flyThrownBody(entity, group, renderElevation - bob);
+    // TANK DROP: a dropped tank falls the last 14m onto its spot in ~0.65s (only when it first appears in a resolve).
+    if (entity.dropTtl !== undefined) {
+      if (group.userData.droppedAt === undefined) group.userData.droppedAt = this.commandPhase ? -Infinity : performance.now();
+      const t = (performance.now() - (group.userData.droppedAt as number)) / 650;
+      if (t < 1) group.position.y += (1 - t * t) * 14;
+    }
     if (entity.burning && entity.status.alive) this.burnFx(group);
     // PER-INSTANCE VARIETY on scenery. Every rock, tree and crate was the same mesh at the same
     // size on the same bearing, so a map read as stamped rather than grown — the single most
@@ -1961,10 +1979,14 @@ export class WorldRenderer {
     // shudder and a brief downward absorb, so a landed hit reads as a physical reaction.
     const flinch = entity.status.alive && entity.kind !== "cover" ? this.entityFlinch(entity.id) : undefined;
     if (flinch) {
-      const kindScale = isVehicleKind(entity.kind) ? 0.4 : isInfantryKind(entity.kind) ? 1.6 : 0.6;
+      // A heavy (tank, artillery, bulldozer) never slides (sim: IMMOVABLE_HEAVIES): it ROCKS on its suspension instead.
+      const heavy = IMMOVABLE_HEAVIES.has(entity.kind);
+      const kindScale = heavy ? 0.9 : isVehicleKind(entity.kind) ? 0.4 : isInfantryKind(entity.kind) ? 1.6 : 0.6;
       const s = flinch.f * kindScale;
-      group.position.x += flinch.dx * s * 0.18;
-      group.position.z += flinch.dz * s * 0.18;
+      if (!heavy) {
+        group.position.x += flinch.dx * s * 0.18;
+        group.position.z += flinch.dz * s * 0.18;
+      }
       group.position.y -= s * 0.05;
       group.rotation.x += s * 0.14;
       group.rotation.z += Math.sin(performance.now() * 0.075) * s * 0.07;
@@ -2644,17 +2666,8 @@ export class WorldRenderer {
     this.baseUpgradeDress(group, entity);
   }
 
-  /** What the owner has built onto the HQ: armour plating per level, the Fortress Cannon on the roof, the Watch Radar dish. */
+  /** What the owner has built onto the HQ: the Fortress Cannon on the roof. */
   private baseUpgradeDress(group: THREE.Group, entity: CombatEntity): void {
-    const glow = entity.team === "enemy" ? TEAMS.enemyAccent : this.playerAccent;
-    for (let level = 1; level <= (entity.armorLevel ?? 0); level += 1) {
-      const grow = (level - 1) * 0.16;
-      for (const side of [-1, 1]) {
-        this.box(group, entity, "core", [0.2, 1.0 + level * 0.16, 1.7], [side * (1.42 + grow), 0.62 + level * 0.1, 0.0], 0x6c7480, { metalness: 0.5, roughness: 0.6, bevel: 0.15, rotation: [0, 0, side * -0.14] });
-        this.box(group, entity, "core", [0.22, 0.1, 1.74], [side * (1.42 + grow), 1.2 + level * 0.18, 0.0], glow, { accent: true, emissive: glow, emissiveIntensity: 0.25, rotation: [0, 0, side * -0.14] });
-      }
-      this.box(group, entity, "core", [2.6, 0.5 + level * 0.14, 0.2], [0, 0.45 + level * 0.1, -1.18 - grow], 0x5f6773, { metalness: 0.5, bevel: 0.15 });
-    }
     if (entity.parts.some((p) => p.id === "cannon")) {
       // FORTRESS CANNON: a squat armoured turret on the roof with a long barrel, muzzle brake and ammunition racks.
       this.box(group, entity, "cannon", [1.0, 0.44, 1.0], [0.1, 3.5, -0.3], 0x59616c, { metalness: 0.45, bevel: 0.14 });
@@ -2662,11 +2675,6 @@ export class WorldRenderer {
       this.cylinder(group, entity, "cannon", 0.16, 2.8, [0.1, 3.84, 1.2], 0x2a2f36, [Math.PI / 2, 0, 0], { metalness: 0.5 });
       this.cylinder(group, entity, "cannon", 0.24, 0.3, [0.1, 3.84, 2.5], 0x1a1d22, [Math.PI / 2, 0, 0], { metalness: 0.5 });
       this.box(group, entity, "cannon", [0.4, 0.26, 0.5], [0.1, 3.7, -0.95], 0xffb14a, { accent: true, emissive: 0xff7d1e, emissiveIntensity: 0.3 });
-    }
-    if (entity.radarOnline) {
-      this.cylinder(group, entity, "comms", 0.05, 0.9, [-1.0, 3.05, 0.5], 0x9aa096, [0, 0, 0], { metalness: 0.4 });
-      this.cylinder(group, entity, "comms", 0.5, 0.06, [-1.0, 3.6, 0.5], 0xdfe8ee, [1.1, 0, 0], { metalness: 0.4 }).userData.spinY = 0.0016;
-      this.box(group, entity, "comms", [0.1, 0.1, 0.1], [-1.0, 3.62, 0.5], 0x9dfcff, { accent: true, emissive: glow, emissiveIntensity: 0.6 }).userData.blink = 0.007;
     }
   }
 
@@ -3448,7 +3456,6 @@ export class WorldRenderer {
     if (isMountKind(entity.kind)) { this.buildMount(group, entity); return; }
     if (entity.kind === "sentry") { this.buildSentry(group, entity, glow); return; }
     if (entity.kind === "bunker") { this.buildBunker(group, entity); return; }
-    if (entity.kind === "sensor") { this.buildSensorMast(group, entity, glow); return; }
     // Shared emplacement base + traversing ring, dug in behind a sandbag berm.
     this.box(group, entity, "mount", [1.5, 0.36, 1.5], [0, 0.18, 0], 0x333a42, { metalness: 0.24, bevel: 0.12 });
     this.box(group, entity, "mount", [1.72, 0.14, 1.72], [0, 0.05, 0], 0x22272d, { metalness: 0.18, bevel: 0.1 });
@@ -3491,20 +3498,6 @@ export class WorldRenderer {
     for (const a of [-1.9, -1.25, 1.25, 1.9]) {
       this.box(group, entity, "shell", [0.52, 0.26, 0.3], [Math.sin(a) * 1.28, 0.13, Math.cos(a) * 1.28], 0x8a7f66, { accent: true, metalness: 0.04, bevel: 0.45, rotation: [0, a, 0] });
     }
-  }
-
-  // SENSOR MAST: the tallest, thinnest defense -- a braced lattice mast with a sweeping array on top.
-  private buildSensorMast(group: THREE.Group, entity: CombatEntity, glow: number): void {
-    this.box(group, entity, "mast", [0.9, 0.2, 0.9], [0, 0.1, 0], 0x333a42, { metalness: 0.24, bevel: 0.15 });
-    for (const [x, z] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]] as const) {
-      this.cylinder(group, entity, "mast", 0.035, 2.7, [x * 0.7, 1.45, z * 0.7], 0x4a535c, [0, 0, 0], { metalness: 0.45, radiusBottom: 0.05 });
-    }
-    for (const y of [0.7, 1.4, 2.1]) this.box(group, entity, "mast", [0.34, 0.05, 0.34], [0, y, 0], 0x5a646e, { metalness: 0.4, bevel: 0.3 });
-    // The array: a wide flat panel that sweeps, with a lit sensor strip -- the only light on it.
-    const head = this.box(group, entity, "array", [1.1, 0.34, 0.12], [0, 2.95, 0], 0x8796a3, { metalness: 0.35, bevel: 0.2 });
-    head.userData.spinY = 0.0009;
-    // Centred on the panel (through both faces) so it sweeps WITH it: both spin about the same axis.
-    this.box(group, entity, "array", [0.8, 0.07, 0.15], [0, 2.95, 0], 0xdaf7ff, { emissive: glow, emissiveIntensity: 0.55, bevel: 0.3 }).userData.spinY = 0.0009;
   }
 
   // Twin mortar tubes on a braced cradle, fed from a rack of shells behind.
@@ -5232,19 +5225,6 @@ export class WorldRenderer {
       this.orderRoot.add(makeLine(lineFrom, end, color, 0.62, fromY + 0.05, toY + 0.05));
       if (aimed) this.orderRoot.add(makeEndpoint(end, color, 0.3, toY + 0.03));
     }
-    // RECON PULSE: the enemy's next orders as ghost arrows — enemy red, thinner and fainter than the
-    // player's own, with a hollow endpoint so they read as intent, not as an order you gave.
-    for (const intent of sim.enemyIntents()) {
-      const actor = sim.entity(intent.actorId);
-      const to = intent.destination ?? (intent.targetId ? sim.entity(intent.targetId)?.position : undefined);
-      if (!actor || !to || !actor.status.alive) continue;
-      const from = actor.position;
-      const color = intent.kind === "move" ? 0xff8c7a : 0xff5c5c;
-      const fromY = terrainHeightAt(from) + 0.22;
-      const toY = terrainHeightAt(to) + 0.22;
-      this.orderRoot.add(makeLine(from, to, color, 0.5, fromY + 0.05, toY + 0.05));
-      this.orderRoot.add(makeEndpoint(to, color, (intent.kind === "move" ? actor.radius : 0.3) + 0.2, toY + 0.035));
-    }
   }
 
   private syncShotPreview(sim: TacticalSim, targetId: string | undefined, targetPartId: string | undefined): void {
@@ -5285,14 +5265,14 @@ export class WorldRenderer {
       const yaw = sim.placementYaw(sim.selected.position, point);
       const ok = !sim.buildFailureReason(sim.selected, kind, point);
       const ground = drawnGroundAt(point);
-      if (kind === "minefield") {
-        for (const p of minefieldPoints(point, yaw)) {
+      if (kind === "minefield" || kind === "springtrap") {
+        for (const p of kind === "springtrap" ? [point] : minefieldPoints(point, yaw)) {
           const mine = new THREE.Mesh(defenseGhostGeometry("mine"), wallGhostMaterial(ok));
           mine.position.set(p.x, drawnGroundAt(p) + 0.08, p.z);
           this.groundAimRoot.add(mine);
         }
       } else {
-        const shape = kind === "wall" ? "wall" : kind === "sandbag" ? "sandbag" : kind === "sensor" ? "mast" : kind === "bunker" ? "bunker" : "emplacement";
+        const shape = kind === "wall" ? "wall" : kind === "sandbag" ? "sandbag" : kind === "bunker" ? "bunker" : "emplacement";
         const ghost = new THREE.Mesh(shape === "wall" ? wallGhostGeometry() : defenseGhostGeometry(shape), wallGhostMaterial(ok));
         ghost.position.set(point.x, ground + (shape === "wall" ? 0.78 : 0), point.z);
         ghost.rotation.y = yaw;
@@ -5408,12 +5388,6 @@ export class WorldRenderer {
     } else if (kind === "cluster") {
       this.groundAimRoot.add(makeSplashDisc(point, 0xffb02e, 3.2 + 1.35));
       this.groundAimRoot.add(makeEndpoint(point, 0xffb02e, 0.6, y));
-    } else if (kind === "smokescreen") {
-      this.groundAimRoot.add(makeSplashDisc(point, 0xc9d3dc, 3)); // SMOKE_RADIUS
-      this.groundAimRoot.add(makeEndpoint(point, 0xc9d3dc, 0.6, y));
-    } else if (kind === "resupply") {
-      this.groundAimRoot.add(makeSplashDisc(point, 0x9ef0b8, 4)); // RESUPPLY_RADIUS
-      this.groundAimRoot.add(makeEndpoint(point, 0x9ef0b8, 0.6, y));
     } else if (kind === "napalm") {
       // Three firebombs along the line, each a 1.7m burn patch (sim: scheduleSupportStrikes).
       for (let i = 0; i < 3; i += 1) {
@@ -5428,24 +5402,21 @@ export class WorldRenderer {
       // Where the two troopers land: a small drop zone, team blue, no blast.
       this.groundAimRoot.add(makeSplashDisc(point, 0xbfe8ff, 2.2));
       this.groundAimRoot.add(makeEndpoint(point, 0xbfe8ff, 0.7 + pulse * 0.2, y));
-    } else if (kind === "emp") {
-      this.groundAimRoot.add(makeSplashDisc(point, 0x8de4ff, 4)); // EMP_RADIUS
-      this.groundAimRoot.add(makeEndpoint(point, 0x8de4ff, 0.6, y));
     } else if (kind === "minedrop") {
       this.groundAimRoot.add(makeSplashDisc(point, 0xffb02e, 3));
       this.groundAimRoot.add(makeEndpoint(point, 0xffb02e, 0.6, y));
-    } else if (kind === "medevac") {
-      this.groundAimRoot.add(makeSplashDisc(point, 0x8effa6, 5));
-      this.groundAimRoot.add(makeEndpoint(point, 0x8effa6, 0.6, y));
     } else if (kind === "sentrydrop") {
       this.groundAimRoot.add(makeSplashDisc(point, 0xbfe9ff, 1.1));
       this.groundAimRoot.add(makeEndpoint(point, 0xbfe9ff, 0.5 + pulse * 0.2, y));
     } else if (kind === "railstrike") {
       for (let i = 0; i < 3; i += 1) this.groundAimRoot.add(makeSplashDisc({ x: point.x + dir.x * (i - 1) * 1.5, z: point.z + dir.z * (i - 1) * 1.5 }, 0xc9d3dc, 1.25));
       this.groundAimRoot.add(makeLine({ x: point.x - dir.x * 5, z: point.z - dir.z * 5 }, { x: point.x + dir.x * 5, z: point.z + dir.z * 5 }, 0xc9d3dc, 0.5 + pulse * 0.3, y));
-    } else if (kind === "reconsweep") {
-      // No footprint: it maps the whole enemy army. Just mark the click.
-      this.groundAimRoot.add(makeEndpoint(point, 0x9dd8ff, 0.8 + pulse * 0.2, y));
+    } else if (kind === "shockwave") {
+      this.groundAimRoot.add(makeSplashDisc(point, 0xd9b98a, 4)); // SHOCKWAVE_RADIUS
+      this.groundAimRoot.add(makeEndpoint(point, 0xd9b98a, 0.6 + pulse * 0.2, y));
+    } else if (kind === "tankdrop") {
+      this.groundAimRoot.add(makeSplashDisc(point, 0xbfe8ff, 2.2)); // TANK_DROP_CRUSH
+      this.groundAimRoot.add(makeEndpoint(point, 0xbfe8ff, 0.7 + pulse * 0.2, y));
     } else {
       const from = { x: point.x - dir.x * 4.5, z: point.z - dir.z * 4.5 };
       const to = { x: point.x + dir.x * 4.5, z: point.z + dir.z * 4.5 };
@@ -5797,6 +5768,20 @@ export class WorldRenderer {
           speed: [1.5, 4.5], up: 0.9, size: [0.06, 0.16], life: [0.4, 1.0], gravity: -0.6, drag: 1.6, jitter: (effect.radius ?? 2) * 0.5,
           shape: ParticleShape.streak,
         });
+      } else if (effect.type === "blast" && isDustBlast(effect.color)) {
+        // A DUST BLAST (shockwave, tank drop, collapse): a fast ring of grit along the ground and a low tan cloud. No fire.
+        const radius = effect.radius ?? 2;
+        fx.burst({
+          x: effect.to.x, y: ground + 0.25, z: effect.to.z,
+          count: Math.round(16 + radius * 8), color: [0xd9c4a0, 0xb59a72, 0x8f7a5a],
+          speed: [4, 8 + radius * 1.5], up: 0.15, vertical: 0.1, size: [0.35, 0.8], life: [0.5, 1.1],
+          gravity: -0.2, drag: 2.2, jitter: radius * 0.15,
+        });
+        fx.burst({
+          x: effect.to.x, y: ground + 0.3, z: effect.to.z,
+          count: Math.round(8 + radius * 4), color: [0x4a4034, 0x6a5c4a],
+          speed: [3, 7], up: 0.4, vertical: 0.4, size: [0.06, 0.15], life: [0.5, 1.2], gravity: 8, drag: 0.5, shape: ParticleShape.shard,
+        });
       } else if (effect.type === "blast") {
         const radius = effect.radius ?? 2;
         // Fireball: fast, hot, short. Embers: slower, gravity-bound, longer -- the two together are
@@ -5934,6 +5919,14 @@ export class WorldRenderer {
         }
       } else if (effect.type === "blast" && isPulseBlast(effect.color)) {
         for (const part of makePulse(effect, t, terrainHeightAt(effect.to))) this.effectRoot.add(part);
+      } else if (effect.type === "blast" && isDustBlast(effect.color)) {
+        // The dust ring racing outward to the blast's reach, thinning as it goes: draped on the ground, no scorch, no fire.
+        const r = (effect.radius ?? 2) * (0.25 + 0.85 * Math.sqrt(t));
+        const ring = new THREE.Mesh(
+          drapedDisc(effect.to.x, effect.to.z, Math.max(0, r - 0.9), r, 40, 0.08),
+          new THREE.MeshBasicMaterial({ color: 0xcfb894, transparent: true, opacity: 0.6 * (1 - t), side: THREE.DoubleSide, depthWrite: false }),
+        );
+        this.effectRoot.add(ring);
       } else if (effect.type === "blast") {
         // Battle scar: the first frame of every blast burns a scorch decal into the ground
         // that persists for the whole battle (FIFO-capped so long sieges stay cheap).

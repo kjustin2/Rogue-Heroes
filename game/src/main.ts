@@ -621,13 +621,7 @@ function startBattle(mapId: string, modeId: ModeId, difficulty: Difficulty = set
 // sim.swapSides(); the sim swaps back before it resolves.
 // ---------------------------------------------------------------------------
 let hotseatSeatsDone = 0;
-// A recon pulse flown last resolve buys its seat the SECOND plan this turn, with the other human's
-// orders drawn on the board -- that is what the pulse promises against the bot, too.
-const hotseatFirst = (): 1 | 2 => {
-  const revealed = sim.revealedSeat();
-  if (revealed) return revealed === 1 ? 2 : 1;
-  return sim.turn % 2 === 1 ? 1 : 2;
-};
+const hotseatFirst = (): 1 | 2 => (sim.turn % 2 === 1 ? 1 : 2);
 const hotseatSeat = (): 1 | 2 => (hotseatSeatsDone === 0 ? hotseatFirst() : hotseatFirst() === 1 ? 2 : 1);
 // Where each human left the camera, so a handoff puts them back on their own front instead of
 // wherever the other player was looking. Reset per battle. A seat's first view is its own base
@@ -665,9 +659,6 @@ function handToHotseatSeat(): void {
   document.querySelector(".hotseat-handoff")?.remove();
   const other = leaving;
   const notes: string[] = [];
-  if (sim.revealedSeat() === seat && hotseatSeatsDone === 1) {
-    notes.push(`Recon: Player ${other}'s orders shown in red`);
-  }
   // Research the other side finished before this turn, and this seat has not been told about yet.
   const theirBase = sim.entities.find((e) => e.kind === "base" && e.team === "enemy");
   for (const id of (theirBase && hotseatTechAtTurnStart.get(theirBase.id)) ?? []) {
@@ -2155,6 +2146,8 @@ let lastHudUpdateAt = 0;
 let lastHudPhase = sim.phase;
 let lastHudLogHead = "";
 const seenProjectileIds = new Set<string>();
+/** Debug seam (holdCamera): screenshot cases pin the view through a resolve so the action stays framed. */
+let directorHeld = false;
 const seenOrderIds = new Set<string>();
 // Debug-seam slow motion for the resolve clock (1 = normal). Filmstrips shoot swings at 0.25.
 let resolveScale = 1;
@@ -2192,7 +2185,7 @@ function frameBody(now: number): void {
   });
   // Camera direction runs on REAL time, not the paced sim clock, so the action-pace setting
   // changes how fast the battle plays out without changing how the camera moves.
-  resolveCam.enabled = !settings.reducedMotion;
+  resolveCam.enabled = !settings.reducedMotion && !directorHeld;
   const shot = resolveCam.update(dt);
   // Hitstop freezes the sim by SKIPPING the step, never by scaling dt: scaling would change the
   // step sequence the sim sees, while skipping delays everything uniformly and preserves ordering.
@@ -2596,6 +2589,7 @@ declare global {
       cancelOrder(id: string): void;
       camera(): { x: number; z: number; zoom: number; yaw: number; pitch: number };
       setView(view: { x?: number; z?: number; zoom?: number; yaw?: number; pitch?: number; overview?: boolean }): void;
+      holdCamera(on: boolean): void;
       view(): { x: number; z: number; zoom: number; yaw: number; pitch: number };
       projectToScreen(point: { x: number; z: number }, height?: number): { x: number; y: number; visible: boolean; behind: boolean };
       renderDebug(): WorldRenderDebug;
@@ -2718,6 +2712,7 @@ window.__rht = {
   cancelOrder: (id) => sim.cancelOrder(id),
   camera: () => stage.viewState(),
   setView: (view) => stage.debugSetView(view),
+  holdCamera: (on) => { directorHeld = on; },
   view: () => stage.viewState(),
   projectToScreen: (point, height) => stage.projectToScreen(point, height),
   viewState: () => stage.viewState(),

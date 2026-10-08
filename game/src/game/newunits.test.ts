@@ -139,25 +139,10 @@ describe("new strikes", () => {
     sim.endTurn(); settle(sim);
   };
 
-  it("EMP Burst leaves vehicles in range with no actions next turn and spares troopers", () => {
-    const sim = staged();
-    const tank = sim.debugSpawn("tank", "enemy", { x: 2, z: 0 });
-    tank.status.canMove = false; // stays put under the pulse
-    const man = sim.debugSpawn("soldier", "enemy", { x: 2, z: 3 });
-    man.status.canMove = false;
-    call(sim, "emp", { x: 2, z: 0 });
-    expect(sim.entity(tank.id)!.commandPoints, "dead in the water").toBe(0);
-    expect(sim.entity(man.id)!.commandPoints).toBeGreaterThan(0);
-  });
-
-  it("Minefield Drop seeds mines, Medevac heals to full, Sentry Drop lands a sentry, Rail Strike hits hard", () => {
+  it("Minefield Drop seeds mines, Sentry Drop lands a sentry, Rail Strike hits hard", () => {
     const sim = staged();
     call(sim, "minedrop", { x: 4, z: 0 });
     expect(sim.mines.filter((m) => m.team === "player").length).toBeGreaterThanOrEqual(3);
-    const hurt = sim.debugSpawn("soldier", "player", { x: -6, z: 0 });
-    for (const p of hurt.parts) p.hp = 2;
-    call(sim, "medevac", { x: -6, z: 0 });
-    expect(hp(sim.entity(hurt.id)!)).toBe(hurt.parts.reduce((s, p) => s + p.maxHp, 0));
     call(sim, "sentrydrop", { x: -4, z: 4 });
     expect(sim.entities.some((e) => e.kind === "sentry" && e.team === "player")).toBe(true);
     const hull = sim.debugSpawn("tank", "enemy", { x: 8, z: -6 });
@@ -220,21 +205,6 @@ describe("Home Base upgrades", () => {
   afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
   const base = (sim: TacticalSim) => sim.entities.find((e) => e.kind === "base" && e.team === "player")!;
 
-  it("armour adds 30% health a level, in order, behind its tech and its price", () => {
-    const sim = staged();
-    const b = base(sim);
-    sim.select(b.id);
-    expect(sim.baseUpgradeFailureReason(b, "armor1")).toMatch(/Research/);
-    b.unlockedTech = ["assault", "shock"];
-    const before = b.parts.reduce((s, p) => s + p.maxHp, 0);
-    expect(sim.baseUpgradeFailureReason(b, "armor2")).toMatch(/Needs Base Armor I/);
-    expect(sim.upgradeBaseWith("armor1"), sim.log[0]).toBe(true);
-    expect(b.parts.reduce((s, p) => s + p.maxHp, 0)).toBeGreaterThanOrEqual(Math.round(before * 1.29));
-    b.commandPoints = b.maxCommandPoints;
-    expect(sim.upgradeBaseWith("armor2"), sim.log[0]).toBe(true);
-    expect(b.armorLevel).toBe(2);
-  });
-
   it("the Fortress Cannon fires by itself every second turn at the dearest ground foe in 40m, and stops when it is shot out", () => {
     const sim = staged();
     const b = base(sim);
@@ -257,17 +227,7 @@ describe("Home Base upgrades", () => {
     expect(sim.entity(b.id)!.status.canShoot, "shot out").toBe(false);
   });
 
-  it("the Watch Radar reveals the enemy's orders at the start of every turn", () => {
-    const sim = staged();
-    const b = base(sim);
-    b.unlockedTech = ["recon", "radar"];
-    sim.select(b.id);
-    expect(sim.upgradeBaseWith("radar"), sim.log[0]).toBe(true);
-    sim.endTurn(); settle(sim);
-    expect((sim as unknown as { revealedOrders: boolean }).revealedOrders).toBe(true);
-  });
-
-  it("a Hard bot with an army and money buys armour and the cannon", () => {
+  it("a Hard bot with an army and money buys the cannon", () => {
     const sim = new TacticalSim();
     sim.configure(mapDef("dustbowl"), "destroy", "hard");
     const e = sim.entities.find((x) => x.kind === "base" && x.team === "enemy")!;
@@ -277,23 +237,15 @@ describe("Home Base upgrades", () => {
     sim.economy.set("enemy", 3000);
     sim.turn = 6;
     for (let t = 0; t < 4; t += 1) { sim.endTurn(); settle(sim); sim.economy.set("enemy", 3000); }
-    expect(e.armorLevel ?? 0, "bought armour").toBeGreaterThanOrEqual(1);
+    expect(e.parts.some((p) => p.id === "cannon"), "bought the cannon").toBe(true);
   });
 });
 
 describe("pulses are not explosions (2026-10-03 review)", () => {
   afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
 
-  it("an EMP burst draws as a pulse, never as a fire blast", () => {
-    const sim = staged();
-    const blasts: number[] = [];
-    const seen = new Set<string>();
-    const watch = (): void => { for (const e of sim.effects) if (e.type === "blast" && !seen.has(e.id)) { seen.add(e.id); blasts.push(e.color); } };
-    sim.debugSpawn("tank", "enemy", { x: 2, z: 0 });
-    (sim as unknown as { queuedSupport: unknown[] }).queuedSupport.push({ kind: "emp", point: { x: 2, z: 0 }, dir: { x: 1, z: 0 }, team: "player" });
-    sim.endTurn(); watch();
-    for (let t = 0; t < 40 && sim.phase === "resolve"; t += 0.05) { sim.update(0.05); watch(); }
-    expect(blasts).toContain(PULSE_EMP);
+  it("a fire blast is not a pulse; an electrical burst is", () => {
+    expect(isPulseBlast(PULSE_EMP)).toBe(true);
     expect(isPulseBlast(0xff7a2a), "a fire blast is not a pulse").toBe(false);
   });
 
@@ -561,5 +513,60 @@ describe("round 8 units", () => {
       expect(hp(sim.entity(f.id)!), `foe ${i} hurt`).toBeLessThan(h[i] - 20);
       expect(moved(sim.entity(f.id)!.position, at[i]), `foe ${i} thrown`).toBeGreaterThan(1.5);
     });
+  });
+});
+
+// THE FUN DECK (owner 2026-10-07: scans, heals, stat bumps and soft utility cut; these three in).
+describe("shockwave, spring trap and tank drop", () => {
+  afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
+  const call = (sim: TacticalSim, kind: string, point: { x: number; z: number }, team = "player"): void => {
+    (sim as unknown as { queuedSupport: unknown[] }).queuedSupport.push({ kind, point, dir: { x: 1, z: 0 }, team });
+  };
+  const run = (sim: TacticalSim): void => { sim.endTurn(); for (let t = 0; t < 40 && sim.phase === "resolve"; t += 0.05) sim.update(0.05); };
+
+  it("a shockwave flings troopers far, nudges a light car and never moves a tank", () => {
+    const sim = staged();
+    const trooper = sim.debugSpawn("soldier", "enemy", { x: 1.5, z: 0 });
+    const car = sim.debugSpawn("runabout", "enemy", { x: -2, z: 1.5 });
+    const tank = sim.debugSpawn("tank", "enemy", { x: 0, z: -2.6 });
+    for (const e of [trooper, car, tank]) { disarm(e); tough(e); }
+    const t0 = { ...trooper.position }, c0 = { ...car.position }, k0 = { ...tank.position };
+    call(sim, "shockwave", { x: 0, z: 0 });
+    run(sim);
+    const d = (a: { x: number; z: number }, b: { x: number; z: number }): number => Math.hypot(a.x - b.x, a.z - b.z);
+    expect(d(trooper.position, t0), "trooper flung").toBeGreaterThan(4);
+    expect(d(car.position, c0), "car nudged").toBeLessThan(3);
+    expect(d(tank.position, k0), "tank never moves").toBe(0);
+  });
+
+  it("a spring trap launches the first foe to step on it, once", () => {
+    const sim = staged();
+    const at = { x: 0, z: 0 };
+    (sim as unknown as { mines: unknown[] }).mines.push({ id: "spring-t", x: at.x, z: at.z, team: "enemy", spring: true });
+    const foe = sim.debugSpawn("soldier", "player", { x: at.x - 3, z: at.z });
+    tough(foe);
+    sim.debugSelect(foe.id);
+    expect(sim.queueMove({ x: at.x + 2, z: at.z })).toBe(true);
+    run(sim);
+    expect(Math.hypot(foe.position.x - at.x, foe.position.z - at.z), "thrown well past the plate").toBeGreaterThan(6);
+    expect(sim.mines.some((m) => m.id === "spring-t"), "one use").toBe(false);
+  });
+
+  it("a tank drop crushes troopers under it, lands a tank that fights for 3 turns, then is scuttled into a wreck", () => {
+    const sim = staged();
+    const victim = sim.debugSpawn("soldier", "enemy", { x: 0, z: 0 });
+    disarm(victim);
+    const hp0 = hp(victim);
+    call(sim, "tankdrop", { x: 0, z: 0 });
+    run(sim);
+    expect(hp(victim), "crushed").toBeLessThan(hp0);
+    const tank = sim.entities.find((e) => e.kind === "tank" && e.team === "player" && e.dropTtl !== undefined)!;
+    expect(tank, "landed").toBeTruthy();
+    const restored = new TacticalSim();
+    restored.restore(sim.serialize());
+    expect(restored.entities.find((e) => e.id === tank.id)?.dropTtl, "rides the save").toBe(tank.dropTtl);
+    for (let i = 0; i < 4; i += 1) run(sim);
+    expect(sim.entity(tank.id)?.status.alive, "scuttled").toBe(false);
+    expect(sim.entities.some((e) => e.coverKind === "wreck" && e.id === `wreck-${tank.id}`), "left a wreck").toBe(true);
   });
 });

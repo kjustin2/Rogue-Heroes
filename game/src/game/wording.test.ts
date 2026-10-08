@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   BOOM_RADIUS, BREAKER_CHARGE, BURN_STATUS_TURNS, BURN_TURNS, ERUPT_RADIUS, HOOK_REEL, HULL_DOWN_DAMAGE, JUMP_SLAM_RADIUS, MELEE_RUSH,
-  PUNCH_MAX, RESUPPLY_HEAL, RESUPPLY_RADIUS, SENSOR_REACH, SENTRY_COST_TURNS, SLAM_RADIUS, SMOKE_TURNS, STRIKER_CHARGE,
+  PUNCH_MAX, SENTRY_COST_TURNS, SHOCKWAVE_RADIUS, SLAM_RADIUS, SMOKE_TURNS, STRIKER_CHARGE, TANK_DROP_TURNS,
 } from "./sim";
 import { DEFENSE_CATALOG, SUPPORT_POWERS, TROOP_CATALOG, unitStats } from "./units";
 
@@ -53,17 +53,15 @@ describe("tips quote the numbers the sim uses", () => {
   });
   it("defenses and support powers", () => {
     expect(defense("flamepost")).toContain(`${BURN_STATUS_TURNS} turns`);
-    expect(defense("sensor")).toContain(m(SENSOR_REACH));
-    expect(support("resupply")).toContain(m(RESUPPLY_RADIUS));
-    expect(support("resupply")).toContain(`heals ${RESUPPLY_HEAL}`);
     expect(support("sentrydrop")).toContain(`after ${SENTRY_COST_TURNS}`);
-    expect(support("smokescreen")).toContain(`${SMOKE_TURNS}-turn`);
+    expect(support("shockwave")).toContain(m(SHOCKWAVE_RADIUS));
+    expect(support("tankdrop")).toContain(`${TANK_DROP_TURNS} turns`);
   });
 });
 
 describe("no text names something that was cut", () => {
-  // Units and systems removed 2026-10-04..07, plus the hard-rule bans (CLAUDE.md).
-  const CUT = /\b(Turret Tech|Trencher|Scout(?! Car)|Grenadier|Hornet|Ironclad|Fortifier|Drone Operator|Bounty Hunter|Ricochet|Lancer|Orbital|laser beam|overwatch|Command Points?)/i;
+  // Units and systems removed 2026-10-04..07 (and the not-fun deck items, 2026-10-07), plus the hard-rule bans (CLAUDE.md).
+  const CUT = /\b(Turret Tech|Trencher|Scout(?! Car)|Grenadier|Hornet|Ironclad|Fortifier|Drone Operator|Bounty Hunter|Ricochet|Lancer|Orbital|laser beam|overwatch|Command Points?|Recon Sweep|Sensor Mast|Watch Radar|Radar Net|Medevac|Resupply|Smoke Screen|Base Armor)/i;
   const texts: Array<[string, string]> = [
     ...TROOP_CATALOG.map((t) => [`troop ${t.kind}`, `${t.label} ${t.role} ${t.tip}`] as [string, string]),
     ...DEFENSE_CATALOG.map((t) => [`defense ${t.kind}`, `${t.label} ${t.role} ${t.tip}`] as [string, string]),
@@ -75,6 +73,7 @@ describe("no text names something that was cut", () => {
   it.each(texts)("%s", (_name, text) => {
     expect([...text.matchAll(new RegExp(CUT, "gi"))].map((x) => x[0])).toEqual([]);
     expect(text.match(/\bCP\b/)?.[0], "AP, never CP").toBeUndefined();
+    expect(text.match(/\bEMP\b/)?.[0], "the EMP Burst was cut").toBeUndefined();
   });
 });
 
@@ -83,5 +82,15 @@ describe("fewest words", () => {
     const labels = [...hud.matchAll(/label: "([^"]+)", tip:/g)].map((x) => x[1]);
     expect(labels.length).toBeGreaterThan(20);
     for (const label of labels) expect(label.split(" ").length, label).toBeLessThanOrEqual(2);
+  });
+});
+
+describe("the push rule reads right (2026-10-07: heavies never move)", () => {
+  it("every push/throw tip says tanks don't budge", () => {
+    expect(troop("breaker")).toContain("tanks don't budge");
+    expect(troop("hookshot")).toContain("tanks don't budge");
+    expect(card("Hook")[0]).toContain("Tanks don't budge");
+    expect(card("Push")[0]).toContain("Tanks don't budge");
+    expect(support("shockwave")).toContain("Tanks don't budge");
   });
 });

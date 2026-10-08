@@ -29,7 +29,7 @@ export type AirKind = "gunship" | "bomber";
 export type TroopKind = InfantryKind | GroundVehicleKind | AirKind;
 
 /** Emplacements and scenery: never deployed as troops, but they are damageable entities. */
-export type StructureKind = "base" | "turret" | "exturret" | "bunker" | "sensor" | "wall" | "cover" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost" | "cannonpost" | "sentry";
+export type StructureKind = "base" | "turret" | "exturret" | "bunker" | "wall" | "cover" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost" | "cannonpost" | "sentry";
 
 /** Every kind that can exist as a CombatEntity. */
 export type EntityKind = TroopKind | StructureKind;
@@ -75,7 +75,7 @@ export interface UnitStats {
   jump?: boolean;
   /** Rounds keep going through BODIES (cover still stops them), losing this fraction of damage per body. */
   pierce?: number;
-  /** The Hookshot's harpoon: a landed hit DRAGS the target to the shooter's feet (vehicles barely budge). */
+  /** The Hookshot's harpoon: a landed hit DRAGS the target to the shooter's feet (light vehicles barely budge; heavies never move). */
   pull?: boolean;
   /** The Rocket Skater: its move bowls over every foe trooper near the line it boosts along. */
   bowl?: boolean;
@@ -245,7 +245,6 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   flamepost: u({ shotDamage: 34, weaponRange: 8, accurateFraction: 0.9, accuracyLabel: "flame post", hpMultiplier: 1.1, aiValue: 5 }),
   // SENTRY: a small auto-turret set down by a Turret Tech. Fires on its own each turn, packs up after a few.
   sentry: u({ shotDamage: 20, weaponRange: 20, projectile: "bolt", projectileSpeed: 2.8, spread: 2.6, accurateFraction: 0.4, accuracyLabel: "sentry gun", hpMultiplier: 0.8, aiValue: 3 }),
-  sensor: u({ aiValue: 3 }),
   wall: u({ aiValue: 1 }),
   cover: u({}),
 };
@@ -274,10 +273,10 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "flamer", label: "Flamer", role: "Burn", cost: 260, cooldown: 2, tech: "incendiary", tip: "Short-range flame projector. Hits leave burning ground for 2 turns: run, don't crouch. FEAR: enemy infantry near the flames break and run from them. Its fuel tanks explode when shot." },
   { kind: "bazooka", label: "Rocketeer", role: "Anti-Armor", cost: 300, cooldown: 2, tech: "shock", tip: "Shoulder-fired rocket: hits vehicles half again as hard (96 against armour). Slow, short-ranged and fragile: armour will hunt it." },
   { kind: "sledge", label: "Sledge", role: "Hammer", cost: 360, cooldown: 3, tech: "shock", tip: "SLAM: swings a huge hammer in a circle: every foe within 3m is hurt and flung. Fast, brittle, brutal against a clump or a ledge." },
-  { kind: "breaker", label: "Breaker", role: "Rocket Fist", cost: 300, cooldown: 2, tech: "shock", tip: "PUNCH: dashes up to 7m and sends one foe flying ~18m: into water, off the map, into a wall. Vehicles barely budge." },
+  { kind: "breaker", label: "Breaker", role: "Rocket Fist", cost: 300, cooldown: 2, tech: "shock", tip: "PUNCH: dashes up to 7m and sends one foe flying ~18m: into water, off the map, into a wall. Light vehicles slide a little; tanks don't budge." },
   { kind: "boomer", label: "Boomer", role: "Kamikaze", cost: 110, cooldown: 1, tech: "demolition", tip: "Fast, fragile, no gun. DETONATE: blows itself up, wrecking and flinging everything within 3.6m. Shot first, it blows where it falls." },
   { kind: "juggernaut", label: "Juggernaut", role: "Blast Cannon", cost: 340, cooldown: 3, tech: "fieldworks", tip: "Slow and tough. Its shoulder cannon's blasts throw troopers far." },
-  { kind: "hookshot", label: "Hookshot", role: "Grapple", cost: 170, cooldown: 2, tech: "shock", tip: "Its harpoon DRAGS whatever it hits to its feet (vehicles barely budge). Its Reel hops 10m onto ledges." },
+  { kind: "hookshot", label: "Hookshot", role: "Grapple", cost: 170, cooldown: 2, tech: "shock", tip: "Its harpoon DRAGS whatever it hits to its feet (tanks don't budge). Its Reel hops 10m onto ledges." },
   { kind: "skater", label: "Rocket Skater", role: "Bowler", cost: 240, cooldown: 2, tech: "shock", tip: "Fastest trooper. Every move is a rocket boost that bowls over troopers on its line." },
   { kind: "molotov", label: "Molotov", role: "Fire Bottles", cost: 170, cooldown: 2, tech: "incendiary", tip: "Lobs a fire bottle 16m, over cover: burning ground for 2 turns that sets troopers alight." },
   { kind: "mole", label: "Mole Sapper", role: "Burrower", cost: 320, cooldown: 2, tech: "fieldworks", tip: "Moves underground (can't be shot) and erupts where it surfaces, throwing every foe within 2m." },
@@ -299,7 +298,7 @@ export function troopSpec(kind: TroopKind): TroopSpec {
 
 /** Buildable from the base's Defenses deck. Sandbags become cover and a minefield becomes mines;
  *  every other kind is an emplacement entity of the same name. */
-export type DefenseKind = "wall" | "sandbag" | "turret" | "exturret" | "bunker" | "sensor" | "minefield" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost";
+export type DefenseKind = "wall" | "sandbag" | "turret" | "exturret" | "bunker" | "springtrap" | "minefield" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost";
 
 export interface DefenseSpec {
   kind: DefenseKind;
@@ -313,7 +312,7 @@ export interface DefenseSpec {
 // DEFENSES (owner 2026-10-01: "not a lot in them ... should start out with some starter thing and have
 // more options based on your tech line and possibly differ per faction"). Two starters everyone has
 // (Sandbags, Blast Wall), a shared tech piece (Gun Turret) and each faction's own:
-// Vanguard's Sensor Mast, the Syndicate's Minefield, Bastion's Mortar Turret and MG Bunker.
+// Vanguard's Spring Trap, the Syndicate's Minefield, Bastion's Mortar Turret and MG Bunker.
 // Prices sit against the troops they replace: a Gun Turret ($210) is a Recruit's gun that cannot move
 // or be flanked; the Bunker is a Heavy Gunner
 // with three times the armour that cannot advance. Which faction gets which: factions.ts.
@@ -325,7 +324,7 @@ export const DEFENSE_CATALOG: readonly DefenseSpec[] = [
   { kind: "mortarpit", label: "Mortar Pit", role: "Manned", cost: 140, tech: "ordnance", tip: "A dug-in mortar that fires only while a trooper crews it (Man it). Longer reach and harder hits than a Mortar Team, behind sandbags." },
   { kind: "rocketpost", label: "Rocket Post", role: "Manned", cost: 170, tech: "shock", tip: "A sandbag ring with an anti-armour launcher: it fires only while a trooper crews it (Man it). One heavy rocket a shot, long reach, hard on hulls." },
   { kind: "flamepost", label: "Flame Post", role: "Manned", cost: 150, tech: "incendiary", tip: "A sandbag ring with a flame projector: it fires only while a trooper crews it (Man it). Short reach; whoever it hits burns for 3 turns." },
-  { kind: "sensor", label: "Sensor Mast", role: "Spotter", cost: 150, tech: "recon", tip: "No gun. Every ally within 10m shoots straighter, like a spotter standing beside them." },
+  { kind: "springtrap", label: "Spring Trap", role: "Launcher", cost: 100, tip: "A hidden spring plate. The first foe to step on it is LAUNCHED far across the map: into water, off a ledge, off the board. One use." },
   { kind: "minefield", label: "Minefield", role: "Trap", cost: 110, tech: "ordnance", tip: "Three hidden mines in a small triangle. The first enemy to step on each sets it off." },
   { kind: "exturret", label: "Mortar Turret", role: "Siege", cost: 360, tech: "ordnance", tip: "Stationary splash battery: hits harder and soaks more than a gun turret. Clears cover and clusters; detonates if its magazine is hit." },
   { kind: "bunker", label: "MG Bunker", role: "Hold", cost: 300, tech: "armor", tip: "A concrete machine-gun nest: a long suppressing burst, short reach, very hard to crack." },
@@ -335,9 +334,10 @@ export function defenseSpec(kind: DefenseKind): DefenseSpec {
   return DEFENSE_CATALOG.find((spec) => spec.kind === kind) ?? DEFENSE_CATALOG[0];
 }
 
-// ---- Home Base upgrades (beyond income and the second order): armour, a cannon, a radar. Each is gated by tech. ----
+// ---- Home Base upgrades (beyond income and the second order): the Fortress Cannon. Armour and the Watch Radar were cut
+// as not fun (owner 2026-10-07). ----
 
-export type BaseUpgradeId = "armor1" | "armor2" | "cannon" | "radar";
+export type BaseUpgradeId = "cannon";
 
 export interface BaseUpgradeSpec {
   id: BaseUpgradeId;
@@ -349,10 +349,7 @@ export interface BaseUpgradeSpec {
 }
 
 export const BASE_UPGRADES: readonly BaseUpgradeSpec[] = [
-  { id: "armor1", label: "Base Armor I", cost: 260, tech: "assault", tip: "+30% health on every part of the Home Base." },
-  { id: "armor2", label: "Base Armor II", cost: 380, tech: "shock", requires: "armor1", tip: "+30% health again: a fortress." },
   { id: "cannon", label: "Fortress Cannon", cost: 850, tech: "shock", tip: "The base fires a 120-damage shell at the most valuable foe in 40m, every second turn, on its own. It is a part: shoot it out and it stops." },
-  { id: "radar", label: "Watch Radar", cost: 300, tech: "radar", tip: "Every turn begins with the enemy's next orders drawn on the board." },
 ];
 
 export function baseUpgradeSpec(id: BaseUpgradeId): BaseUpgradeSpec {
@@ -361,7 +358,7 @@ export function baseUpgradeSpec(id: BaseUpgradeId): BaseUpgradeSpec {
 
 // ---- Off-map support powers the Home Base can call in (cost money + the base CP). ----
 
-export type SupportPowerKind = "airstrike" | "cluster" | "laser" | "reconsweep" | "smokescreen" | "resupply" | "paradrop" | "napalm" | "barrage" | "emp" | "minedrop" | "medevac" | "sentrydrop" | "railstrike";
+export type SupportPowerKind = "airstrike" | "cluster" | "laser" | "shockwave" | "tankdrop" | "paradrop" | "napalm" | "barrage" | "minedrop" | "sentrydrop" | "railstrike";
 
 export interface SupportPowerSpec {
   kind: SupportPowerKind;
@@ -374,21 +371,17 @@ export interface SupportPowerSpec {
 }
 
 export const SUPPORT_POWERS: readonly SupportPowerSpec[] = [
-  // Each faction has THREE, all its own (owner 2026-10-01, replacing "nothing on turn 1"): a cheap
-  // UTILITY it starts with, and two researched powers. Vanguard: Recon Sweep / Airstrike / Paradrop.
-  // Syndicate: Smoke Screen / Napalm / Cluster Strike. Bastion: Resupply / Orbital Lance / Barrage.
+  // Each faction starts with one power and researches the rest (decks: factions.ts). Scans, heals and soft utility were
+  // cut as not fun (owner 2026-10-07): every power now does something loud on the board.
   { kind: "airstrike", label: "Airstrike", role: "Line", cost: 320, cooldown: 3, tech: "support", tip: "A strike wing carpets a line of bombs through the target point, aligned away from your base. Hardened HQs are unaffected." },
   { kind: "cluster", label: "Cluster Strike", role: "Area", cost: 300, cooldown: 3, tech: "ordnance", tip: "Bomblets saturate a wide area around the target point. Hardened HQs are unaffected." },
   { kind: "laser", label: "Gun Run", role: "Strafe", cost: 420, cooldown: 4, tech: "armor", tip: "A jet strafes a line through the target point: seven cannon shells walk down it. Hardened HQs are unaffected." },
-  { kind: "reconsweep", label: "Recon Sweep", role: "Intel", cost: 60, cooldown: 2, tip: "A spotter plane maps the enemy: you see every enemy unit's next order in red, and every foe is MARKED so your shooters hit them straighter next turn. Click anywhere to call it." },
-  { kind: "smokescreen", label: "Smoke Screen", role: "Cover", cost: 90, cooldown: 2, tip: "Smoke shells land on the point: a 3-turn cloud that swallows flat shots through it. Arcing fire sails over. Cover an advance." },
-  { kind: "resupply", label: "Resupply Drop", role: "Sustain", cost: 140, cooldown: 3, tip: "A crate drop at the point: every one of your units within 4m heals 40 and refills its grenades." },
+  { kind: "shockwave", label: "Shockwave", role: "Fling", cost: 130, cooldown: 2, tip: "A huge blast of air on the point: little damage, but every trooper within 4m is FLUNG far. Into water, off ledges, off the map. Tanks don't budge." },
+  { kind: "tankdrop", label: "Tank Drop", role: "Crush", cost: 460, cooldown: 4, tech: "armor", tip: "A tank parachutes onto the point, crushing troopers under it, and fights for you for 3 turns before its crew scuttles it." },
   { kind: "paradrop", label: "Paradrop", role: "Insert", cost: 320, cooldown: 4, tech: "airwing", tip: "A transport drops two Troopers on the point at the end of the turn. They act from next turn. Needs room in your 10-unit field." },
   { kind: "napalm", label: "Napalm", role: "Burn", cost: 240, cooldown: 3, tech: "incendiary", tip: "Firebombs set a wide patch alight: a light blast, then burning ground for 2 turns that infantry flee." },
-  { kind: "emp", label: "EMP Burst", role: "Disable", cost: 200, cooldown: 3, tech: "radar", tip: "A pulse over the point: every vehicle and aircraft within 4m is dead in the water next turn (no actions). Troopers do not care." },
-  { kind: "minedrop", label: "Minefield Drop", role: "Trap", cost: 170, cooldown: 3, tech: "demolition", tip: "Five mines scattered across the point at the end of the turn. Hidden; the first foes to step on them set them off." },
-  { kind: "medevac", label: "Medevac", role: "Heal", cost: 220, cooldown: 3, tech: "support", tip: "A rescue chopper over the point: every one of your troopers within 5m is restored to full and the downed get back up." },
-  { kind: "sentrydrop", label: "Sentry Drop", role: "Defence", cost: 190, cooldown: 3, tech: "fieldworks", tip: "A sentry parachutes onto the point: an auto-turret that fires on its own each turn and packs up after 4." },
+  { kind: "minedrop", label: "Minefield Drop", role: "Trap", cost: 170, cooldown: 3, tip: "Five mines scattered across the point at the end of the turn. Hidden; the first foes to step on them set them off." },
+  { kind: "sentrydrop", label: "Sentry Drop", role: "Defence", cost: 190, cooldown: 3, tip: "A sentry parachutes onto the point: an auto-turret that fires on its own each turn and packs up after 4." },
   { kind: "railstrike", label: "Rail Strike", role: "Pierce", cost: 280, cooldown: 3, tech: "marksman", tip: "Three tungsten rods in a tight line: huge damage in a thin column. Built for tanks and bunkers. Hardened HQs are unaffected." },
   { kind: "barrage", label: "Barrage", role: "Siege", cost: 340, cooldown: 4, tech: "siege", tip: "Six heavy shells walk across a wide circle around the point, one after another. Hardened HQs are unaffected." },
 ];

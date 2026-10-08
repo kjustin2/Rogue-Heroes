@@ -156,3 +156,32 @@ describe("slams", () => {
     expect(dist(trooper.position, wall.position)).toBeGreaterThan((trooper.radius + wall.radius) * 0.9);
   });
 });
+
+// EVERY BLAST THROWS, HEAVIES HOLD (owner 2026-10-07). One row per explosion source: a trooper beside the blast is
+// thrown at least a metre; a tank, an artillery piece and a bulldozer in the same blast never move.
+describe("every explosion source throws troopers and never moves a heavy", () => {
+  const hp = (e: { parts: { hp: number }[] }): number => e.parts.reduce((sum, p) => sum + p.hp, 0);
+  afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
+  const SOURCES: Array<[string, (sim: TacticalSim) => void]> = [
+    ["grenade", (sim) => { armed(sim, { x: 0, z: 8 }); sim.queueGrenadeAt({ x: 0, z: 0 }); }],
+    ["mine", (sim) => { sim.mines.push({ id: "m", x: 0, z: 0, team: "enemy" }); const w = sim.debugSpawn("soldier", "player", { x: -2, z: 0 }); sim.debugSelect(w.id); sim.queueMove({ x: 0.2, z: 0 }); }],
+    ...(["airstrike", "cluster", "laser", "barrage", "railstrike", "napalm", "shockwave"] as const).map((kind): [string, (sim: TacticalSim) => void] => [
+      kind, (sim) => { (sim as unknown as { queuedSupport: unknown[] }).queuedSupport.push({ kind, point: { x: 0, z: 0 }, dir: { x: 0, z: 1 }, team: "enemy" }); },
+    ]),
+  ];
+  it.each(SOURCES)("%s", (_name, fire) => {
+    const sim = staged();
+    const trooper = sim.debugSpawn("soldier", "player", { x: 1.3, z: 0 });
+    const heavies = [sim.debugSpawn("tank", "player", { x: -2.4, z: 0 }), sim.debugSpawn("artillery", "player", { x: -0.4, z: 2.6 }), sim.debugSpawn("bulldozer", "player", { x: -0.4, z: -2.8 })];
+    for (const e of [trooper, ...heavies]) { for (const p of e.parts) { p.maxHp *= 20; p.hp = p.maxHp; } e.commandPoints = 0; }
+    const t0 = { ...trooper.position };
+    const hp0 = hp(trooper);
+    const h0 = heavies.map((h) => ({ ...h.position }));
+    fire(sim);
+    sim.endTurn();
+    settle(sim);
+    // A barrage's six shells scatter: a trooper they all miss is not the point. Hit = thrown.
+    if (_name !== "barrage" || hp(trooper) < hp0) expect(dist(trooper.position, t0), "the trooper is thrown").toBeGreaterThan(1);
+    heavies.forEach((h, i) => expect(dist(h.position, h0[i]), `${h.kind} never moves`).toBe(0));
+  });
+});

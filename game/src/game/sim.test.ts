@@ -1567,10 +1567,11 @@ describe("defenses, difficulty, and base upgrades", () => {
     expect(sim.setPendingBuild("minefield")).toBe(false);
     build("sandbag", { x: -10, z: -8 });
     expect(sim.entities.some((e) => e.kind === "cover" && e.coverKind === "sandbag")).toBe(true);
-    build("sensor", { x: -17, z: -1 });
+    build("springtrap", { x: -17, z: -1 });
+    expect(sim.mines.some((m) => m.team === "player" && m.spring), "a spring trap is a hidden plate").toBe(true);
     playAs("syndicate");
     build("minefield", { x: -10, z: -2 });
-    expect(sim.mines.filter((m) => m.team === "player").length).toBe(3);
+    expect(sim.mines.filter((m) => m.team === "player" && !m.spring).length).toBe(3);
     playAs("bastion");
     build("bunker", { x: -9, z: -12 });
     for (const kind of ["bunker"] as const) {
@@ -1578,10 +1579,6 @@ describe("defenses, difficulty, and base upgrades", () => {
       expect(e.status.canShoot, kind).toBe(true);
       expect(e.status.canMove, kind).toBe(false);
     }
-    // The mast relays: an ally beside it shoots straighter than one far away.
-    const near = createSoldier("p-n", "Near", "player", { x: -17, z: 4 });
-    const assist = (sim as unknown as { accuracyAssistMultiplier(a: unknown): number }).accuracyAssistMultiplier(near);
-    expect(assist).toBeLessThan(1);
   });
 
   it("lets a tank fire an explosive shell at a ground spot", () => {

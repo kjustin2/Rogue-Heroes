@@ -13,6 +13,29 @@ Owner: "Any unit that isn't super FUN and exciting to use should be removed." Th
   `PLACEABLES`, `queuePlace`; the sentry entity stays for the Sentry Drop strike). The **Runabout** lost its gunner seat: its MG always fires.
 - An old save holding a retired kind loads without it (`restore()` drops unknown kinds).
 
+## The fun deck (2026-10-07; supersedes every older deck list)
+Owner: "the sensor scans are not super cool or fun ... audit across base actions, defenses, support". CUT: Recon Sweep, Sensor Mast,
+Watch Radar (and the whole enemy-orders preview: `enemyIntents`, `revealedOrders`, the hotseat recon seat), Medevac, Resupply Drop,
+Base Armor I/II, Smoke Screen (the support; the Mortar's own Smoke order stays), EMP Burst (`disabledUntilTurn`), the Radar Net tech.
+ADDED:
+- **Shockwave** (support, $130, Vanguard starter, `landShockwave`): a 4m air-burst, ~15 damage, every ground unit thrown up to 12m
+  away from the point (ring-out at the edge, drowning in water). A dust ring, no fire (`isDustBlast`). Medal "Gone With the Wind".
+- **Spring Trap** (defense, $100, Vanguard, no tech): a hidden plate in the `mines` list (`spring: true`). The first foe to step on it is
+  thrown `SPRING_THROW` (13m) away from the owner's base (`springLaunch`), its move ended. Friendly ones draw as a hazard-yellow plate.
+- **Tank Drop** (support, $460, Armor Bay, Vanguard + Bastion, `landTankDrop`): troopers under the chute take 60 and are shoved clear,
+  then a tank lands for the caller (it falls the last 14m in the renderer) and fights `TANK_DROP_TURNS` (3) turns before it is
+  scuttled into a wreck (`dropTtl`, `runSentryTick`). Medal "Special Delivery".
+Decks: Vanguard Shockwave (start) / Airstrike / Paradrop / Tank Drop; Syndicate Minefield Drop (start, no tech now) / Napalm / Cluster /
+Rail Strike; Bastion Sentry Drop (start, no tech now) / Gun Run / Tank Drop / Barrage / Rail Strike. Vanguard's Defenses: Sandbags,
+Wall, Turret, Spring Trap, Gun Post, Rocket Post. Base upgrades: the Fortress Cannon only. Decks hold 4-6 powers (`doctrines.test.ts`).
+
+## Explosions throw, heavies hold (2026-10-07)
+Every blast throws a trooper: grenades, shells and mines already ran `applyExplosiveRadius` -> `applyKnockback`; support and map
+strikes (`detonateStrike`) now do too (collapse excepted). `IMMOVABLE_HEAVIES` (tank, artillery, bulldozer) have infinite `blastMass`:
+no blast, punch, hook, shove, bike or spring moves them; the renderer ROCKS them on the hit flinch instead of sliding them. Only the
+freight train still moves a heavy (`opts.train`, or a parked tank is hit every run). Light vehicles (Runabout, Chop Bike, Flak Track)
+keep mass 5.5. Guarded by `knockback.test.ts` (one row per source: trooper thrown >= 1m, three heavies moved 0; fault-injected).
+
 The fun units (each verb is the unit; the HUD card is named after it via `UNIT_VERBS` in `hud.ts`):
 - **Breaker** (Vanguard, $300) — **Punch**: the push with a 7m dash, 26 damage and an 18m throw (`PUNCH_*`).
 - **Hookshot** (Vanguard, $170, Shock Troops) — **Hook**: its shot drags what it hits to its feet (`UnitStats.pull`, `hookPull`, 20 yank

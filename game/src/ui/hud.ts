@@ -78,7 +78,7 @@ const UNIT_VERBS: Partial<Record<string, Partial<Record<Intent, { label: string;
   bulldozer: { move: { label: "Shove", tip: "Select Shove, then ground in range: everything ahead of the blade is pushed along, into walls, water or off the map. 1 AP." } },
   breaker: { push: { label: "Punch", tip: "Select Punch, then a foe within 7m: the Breaker dashes in and sends it ~18m. Water, ledges and the map edge kill. 1 AP." } },
   hookshot: {
-    shoot: { label: "Hook", tip: "Select Hook, then a foe within 14m: the harpoon drags it to your feet. Vehicles barely budge. 1 AP." },
+    shoot: { label: "Hook", tip: "Select Hook, then a foe within 14m: the harpoon drags it to your feet. Tanks don't budge. 1 AP." },
     leap: { label: "Reel", tip: "Select Reel, then ground or a ledge within 10m: the grapple pulls the Hookshot there. 1 AP." },
   },
   skater: { move: { label: "Boost", tip: "Select Boost, then ground in range: a straight rocket dash that bowls over every trooper on the line. 1 AP." } },
@@ -92,7 +92,7 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "grenade", label: "Grenade", tip: "Soldier only. Throw a limited-supply grenade in a short arc with splash damage." },
   { id: "ram", label: "Ram", tip: "Tank only. Select a close target or wall, then confirm. Costs 1 AP, deals 72 damage, and damages your front armor." },
   { id: "melee", label: "Strike", tip: "Infantry only. Rush up to 3.5m and strike in ONE order (Strikers charge 6.5m and hit hardest). Needs an intact weapon." },
-  { id: "push", label: "Push", tip: "Infantry only. Rush in and SHOVE a unit far away. Into water it drowns; over the edge of the map it is gone. Vehicles barely budge." },
+  { id: "push", label: "Push", tip: "Infantry only. Rush in and SHOVE a unit far away. Into water it drowns; over the edge of the map it is gone. Tanks don't budge." },
   { id: "defend", label: "Crouch", tip: "Infantry only. Improves accuracy and makes head shots harder, but slows the next move." },
   { id: "smoke", label: "Smoke", tip: "Mortar only. Lay a 3-turn smoke cloud that swallows flat shots; arcing rounds sail over. 1 AP." },
   { id: "load", label: "Load", tip: "Runabout. Click a friendly trooper beside the hull to take it aboard. 1 AP." },

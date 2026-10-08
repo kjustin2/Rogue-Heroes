@@ -325,13 +325,13 @@ describe("every non-gun attack has an animation", () => {
       const delivery = trace.effects.has("jet") || trace.rounds.length > 0;
       const seen = delivery || trace.effects.has("blast") || trace.effects.has("ping") || trace.effects.has("land");
       expect(seen, `${power.kind}: nothing on screen (${[...trace.effects].join(",")})`).toBe(true);
-      if (["airstrike", "cluster", "laser", "napalm", "barrage", "railstrike"].includes(power.kind)) {
+      if (["airstrike", "cluster", "laser", "napalm", "barrage", "railstrike", "shockwave", "tankdrop"].includes(power.kind)) {
         // The barrage is off-map guns: its shells arrive, nothing flies over.
         if (power.kind !== "barrage") expect(delivery, `${power.kind}: nothing flies in (${[...trace.effects].join(",")})`).toBe(true);
         expect(trace.effects.has("blast"), `${power.kind}: nothing lands`).toBe(true);
         expect(trace.hpLost, `${power.kind}: no damage`).toBeGreaterThan(0);
       } else {
-        // Utility powers (recon sweep, smoke screen, resupply) are delivered, not detonated.
+        // Delivery powers (paradrop, minefield drop, sentry drop) land a payload, not a blast.
         expect(trace.hpLost, `${power.kind}: a utility power hurt someone`).toBe(0);
         if (power.kind === "paradrop") expect(sim.entities.filter((e) => e.kind === "soldier" && e.team === "player").length, "two troopers landed").toBe(2);
       }

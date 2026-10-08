@@ -156,17 +156,14 @@ export interface CombatEntity {
   crackedTurn?: number;
   // A manned emplacement (gun post, mortar pit): the trooper crewing it. It fires only while crewed.
   occupantId?: string;
-  // HOME BASE UPGRADES (see BASE_UPGRADES): armour level 0-2, the Fortress Cannon, the Watch Radar.
-  armorLevel?: number;
   cannonReadyTurn?: number;
-  radarOnline?: boolean;
   // BURNING (flamethrower, napalm, oil fire): infantry only. `dmg` to the body at the start of each of its next `turns` turns.
   /** On fire: turns left, damage a turn, and who lit it (credited with the burn, like any hit). */
   burning?: { turns: number; dmg: number; by?: string };
-  // A sentry (set down by a Turret Tech or dropped): turns left before it packs up. It fires on its own each turn.
+  // A sentry (dropped by the Sentry Drop): turns left before it packs up. It fires on its own each turn.
   sentryTtl?: number;
-  // EMP: no actions for this entity until the turn stamped here has passed.
-  disabledUntilTurn?: number;
+  // TANK DROP: turns left before the dropped tank's crew scuttles it into a wreck.
+  dropTtl?: number;
   // FACTION TRAITS (factions.ts unitMods), stamped at deploy: the same Recruit is quicker for Vanguard and sturdier for Bastion.
   mods?: { hp?: number; move?: number; range?: number; damage?: number; grenades?: number };
 }
@@ -675,7 +672,7 @@ export function createBase(id: string, name: string, team: Team, position: Vec2)
 function createDefense(
   id: string,
   name: string,
-  kind: "turret" | "exturret" | "bunker" | "sensor" | "wall" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost" | "cannonpost" | "sentry",
+  kind: "turret" | "exturret" | "bunker" | "wall" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost" | "cannonpost" | "sentry",
   team: Team,
   position: Vec2,
   config: { radius: number; height: number; parts: DamagePart[]; canAct: boolean }
@@ -776,19 +773,6 @@ export function createBunker(id: string, name: string, team: Team, position: Vec
     parts: [
       part("shell", "Concrete Shell", "core", 150, { critical: true }),
       part("gun", "Bunker MG", "weapon", 44),
-    ],
-  });
-}
-
-// A sensor mast: no gun. Its array is a spotter relay for every ally around it (sim reads the tag).
-export function createSensor(id: string, name: string, team: Team, position: Vec2): CombatEntity {
-  return createDefense(id, name, "sensor", team, position, {
-    radius: 0.7,
-    height: 3.2,
-    canAct: false,
-    parts: [
-      part("mast", "Mast", "core", 70, { critical: true }),
-      part("array", "Sensor Array", "utility", 30, { tags: ["spotter-aura"] }),
     ],
   });
 }
@@ -1070,7 +1054,7 @@ export function isMountKind(kind: string): boolean {
 }
 
 export function isDefenseKind(kind: EntityKind): boolean {
-  return kind === "turret" || kind === "exturret" || kind === "bunker" || kind === "sensor" || kind === "wall" || kind === "gunpost" || kind === "mortarpit" || kind === "rocketpost" || kind === "flamepost" || kind === "cannonpost" || kind === "sentry";
+  return kind === "turret" || kind === "exturret" || kind === "bunker" || kind === "wall" || kind === "gunpost" || kind === "mortarpit" || kind === "rocketpost" || kind === "flamepost" || kind === "cannonpost" || kind === "sentry";
 }
 
 function utilityMessages(entity: CombatEntity, part: DamagePart): string[] {

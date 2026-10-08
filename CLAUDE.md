@@ -74,6 +74,11 @@ always run muted. Scratch diagnostics go in `game/scripts/_*.mjs` and are delete
   Play Skirmish, tutorial link, Achievements / Armory / Settings / Exit.
 - **OVERWATCH IS GONE** (2026-09-23). No reaction-fire / watch order. Banned: `overwatch`,
   `queueOverwatch`, `checkOverwatch`, `overwatching`, `makeWatchCone`.
+- **NO SCANS, HEALS, STAT BUMPS OR SOFT UTILITY** in decks (2026-10-07): every defense, support power and base option does something loud
+  on the board. Banned (grep to zero outside tests' CUT list): `reconsweep`, `sensor` (the mast), `radarOnline`, `enemyIntents`,
+  `revealedOrders`, `medevac`, `resupply`, `armorLevel`, `smokescreen`, `emp` (the burst), `disabledUntilTurn`.
+- **HEAVIES NEVER MOVE** (2026-10-07): tank, artillery and bulldozer are not thrown, pulled or shoved (`IMMOVABLE_HEAVIES`); troopers
+  always fly from a blast.
 - **NO MESHY, no AI-generated models** (2026-09-20). Every model is a validated Blender kit or
   procedural; every GLB has a procedural fallback and the game runs with `public/models/` empty.
 - **NO SKIPPING THE SET-UP PICKS** (2026-10-01). No "Deploy now" shortcut: the deploy button exists only on

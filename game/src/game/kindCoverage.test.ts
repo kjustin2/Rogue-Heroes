@@ -51,7 +51,7 @@ describe("every troop kind is wired end to end", () => {
 // ladders did its job at the moment of the flip and is gone; what remains worth asserting is that
 // every kind is described and that the description is internally coherent.
 describe("UNIT_STATS describes every kind coherently", () => {
-  const STRUCTURES: readonly EntityKind[] = ["base", "turret", "exturret", "bunker", "sensor", "wall", "cover", "gunpost", "mortarpit", "rocketpost", "flamepost", "cannonpost", "sentry"];
+  const STRUCTURES: readonly EntityKind[] = ["base", "turret", "exturret", "bunker", "wall", "cover", "gunpost", "mortarpit", "rocketpost", "flamepost", "cannonpost", "sentry"];
   const ALL: readonly EntityKind[] = [...ALL_KINDS, ...STRUCTURES];
 
   it("has an entry for every entity kind and no strays", () => {
