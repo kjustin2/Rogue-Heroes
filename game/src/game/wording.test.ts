@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   BOOM_RADIUS, BREAKER_CHARGE, BURN_STATUS_TURNS, BURN_TURNS, ERUPT_RADIUS, HOOK_REEL, HULL_DOWN_DAMAGE, JUMP_SLAM_RADIUS, MELEE_RUSH,
-  PUNCH_MAX, SENTRY_COST_TURNS, SHOCKWAVE_RADIUS, SLAM_RADIUS, SMOKE_TURNS, STRIKER_CHARGE, TANK_DROP_TURNS,
+  PUNCH_MAX, SHOCKWAVE_RADIUS, SLAM_RADIUS, SMOKE_TURNS, STRIKER_CHARGE, TANK_DROP_TURNS,
 } from "./sim";
 import { DEFENSE_CATALOG, SUPPORT_POWERS, TROOP_CATALOG, unitStats } from "./units";
 
@@ -53,7 +53,6 @@ describe("tips quote the numbers the sim uses", () => {
   });
   it("defenses and support powers", () => {
     expect(defense("flamepost")).toContain(`${BURN_STATUS_TURNS} turns`);
-    expect(support("sentrydrop")).toContain(`after ${SENTRY_COST_TURNS}`);
     expect(support("shockwave")).toContain(m(SHOCKWAVE_RADIUS));
     expect(support("tankdrop")).toContain(`${TANK_DROP_TURNS} turns`);
   });
@@ -61,7 +60,7 @@ describe("tips quote the numbers the sim uses", () => {
 
 describe("no text names something that was cut", () => {
   // Units and systems removed 2026-10-04..07 (and the not-fun deck items, 2026-10-07), plus the hard-rule bans (CLAUDE.md).
-  const CUT = /\b(Turret Tech|Trencher|Scout(?! Car)|Grenadier|Hornet|Ironclad|Fortifier|Drone Operator|Bounty Hunter|Ricochet|Lancer|Orbital|laser beam|overwatch|Command Points?|Recon Sweep|Sensor Mast|Watch Radar|Radar Net|Medevac|Resupply|Smoke Screen|Base Armor)/i;
+  const CUT = /\b(Turret Tech|Trencher|Scout(?! Car)|Grenadier|Hornet|Ironclad|Fortifier|Drone Operator|Bounty Hunter|Ricochet|Lancer|Orbital|laser beam|overwatch|Command Points?|Recon Sweep|Sensor Mast|Watch Radar|Radar Net|Medevac|Resupply|Smoke Screen|Base Armor|Sentry|Rail Strike|Cluster Strike|Launch Pad|Jump Pad|five aboard|Quick crouch|Crouch where)/i;
   const texts: Array<[string, string]> = [
     ...TROOP_CATALOG.map((t) => [`troop ${t.kind}`, `${t.label} ${t.role} ${t.tip}`] as [string, string]),
     ...DEFENSE_CATALOG.map((t) => [`defense ${t.kind}`, `${t.label} ${t.role} ${t.tip}`] as [string, string]),

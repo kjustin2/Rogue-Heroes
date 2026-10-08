@@ -104,7 +104,7 @@ describe("climbing (real maps)", () => {
         settle(sim);
       }
       for (const e of sim.entities) {
-        if (!e.status.alive || e.flying || e.kind === "cover" || e.carriedById) continue;
+        if (!e.status.alive || e.flying || e.kind === "cover") continue;
         const ground = terrainHeightAt(e.position);
         // Standing on climbable cover is legal (elevation above ground); below ground never is.
         expect(e.elevation, `${id}: ${e.name}`).toBeGreaterThanOrEqual(ground - 0.06);

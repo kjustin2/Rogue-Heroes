@@ -106,7 +106,6 @@ export const GUN_VOICES: Record<string, Voice> = {
   gunpost: { group: "ppshburst", rate: 0.9, m: 1, burst: true },
   rocketpost: { group: "crack", rate: 0.62, m: 1, synth: "rocket" },
   flamepost: { group: "", rate: 0.9, m: 1, synth: "flame" },
-  sentry: { group: "marlin", rate: 1.35, m: 0.75 },
   sledge: { group: "singlesix", rate: 0.8, m: 0.9 },
   breaker: { group: "m1917", rate: 1.15, m: 1 },
   juggernaut: { group: "cannon", rate: 1.32, m: 0.8 },

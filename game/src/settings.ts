@@ -21,16 +21,14 @@ export const RENDER_SCALE_DPR: Record<RenderScale, number> = { performance: 0.62
 // Rebindable battle keys (KeyboardEvent.code values). Camera (WASD/arrows), digits,
 // Escape, and R stay fixed.
 export type BindableAction =
-  | "endTurn" | "move" | "shoot" | "grenade" | "ram" | "defend" | "melee" | "crouch" | "log" | "confirm" | "cycle";
+  | "endTurn" | "move" | "shoot" | "grenade" | "ram" | "melee" | "log" | "confirm" | "cycle";
 export const DEFAULT_KEYBINDS: Record<BindableAction, string> = {
   endTurn: "Space",
   move: "KeyM",
   shoot: "KeyF",
   grenade: "KeyG",
   ram: "KeyX",
-  defend: "KeyV",
   melee: "KeyB",
-  crouch: "KeyC",
   log: "KeyL",
   confirm: "Enter",
   cycle: "Tab",
@@ -41,9 +39,7 @@ export const KEYBIND_LABELS: Record<BindableAction, string> = {
   shoot: "Shoot order",
   grenade: "Grenade order",
   ram: "Ram order",
-  defend: "Crouch panel",
   melee: "Strike order",
-  crouch: "Quick crouch",
   log: "Toggle log",
   confirm: "Confirm action",
   cycle: "Cycle units",

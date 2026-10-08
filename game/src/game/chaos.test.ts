@@ -18,7 +18,7 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-const isGround = (e: CombatEntity): boolean => !e.flying && !e.carriedById;
+const isGround = (e: CombatEntity): boolean => !e.flying;
 const isPerched = (unit: CombatEntity, cover: CombatEntity): boolean =>
   unit.kind !== "cover" && cover.kind === "cover" && cover.height <= 1.22 && cover.coverKind !== "wall" && cover.coverKind !== "ridge" &&
   Math.hypot(unit.position.x - cover.position.x, unit.position.z - cover.position.z) <= Math.max(0.35, cover.radius * 0.65);
@@ -26,7 +26,7 @@ const isPerched = (unit: CombatEntity, cover: CombatEntity): boolean =>
 // Return a list of invariant violations for the current sim state (empty = healthy).
 function auditInvariants(sim: TacticalSim, tag: string): string[] {
   const v: string[] = [];
-  const living = sim.entities.filter((e) => e.status.alive && !e.carriedById);
+  const living = sim.entities.filter((e) => e.status.alive);
   for (const e of living) {
     // NO-NAN
     if (!Number.isFinite(e.position.x) || !Number.isFinite(e.position.z)) v.push(`${tag}: ${e.id} NaN pos`);
@@ -64,7 +64,7 @@ function auditInvariants(sim: TacticalSim, tag: string): string[] {
 function chaosTurn(sim: TacticalSim, rng: () => number): void {
   const bounds = ARENA_BOUNDS;
   const randPoint = () => ({ x: bounds.minX + rng() * (bounds.maxX - bounds.minX), z: bounds.minZ + rng() * (bounds.maxZ - bounds.minZ) });
-  const mine = sim.entities.filter((e) => e.team === "player" && e.status.alive && !e.carriedById);
+  const mine = sim.entities.filter((e) => e.team === "player" && e.status.alive);
   for (const u of mine) {
     let guard = 0;
     while (u.commandPoints > 0 && guard++ < 4) {
@@ -73,7 +73,7 @@ function chaosTurn(sim: TacticalSim, rng: () => number): void {
       if (roll < 0.6) {
         if (!sim.queueMove(randPoint())) break; // bias toward movement — it stresses collision hardest
       } else if (roll < 0.85) {
-        const foe = sim.entities.find((e) => e.team === "enemy" && e.status.alive && !e.carriedById);
+        const foe = sim.entities.find((e) => e.team === "enemy" && e.status.alive);
         if (!foe || !sim.queueShoot(foe.id)) { if (!sim.queueMove(randPoint())) break; }
       } else {
         if (!sim.queueDefend(rng() < 0.5 ? "crouched" : "prone")) break;

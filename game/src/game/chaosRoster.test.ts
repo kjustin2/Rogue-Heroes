@@ -10,16 +10,16 @@ function run(seed: number, mapId: string): string[] {
   for (let turn = 0; turn < 9 && !sim.gameOver; turn += 1) {
     const base = sim.entities.find((e) => e.team === "player" && e.kind === "base");
     for (let k = 0; k < 3 && base; k += 1) { const kind = TROOP_KINDS[Math.floor(r() * TROOP_KINDS.length)]; const a = r() * 6.28; sim.debugSpawn(kind, "player", { x: base.position.x + Math.cos(a) * 6, z: base.position.z + Math.sin(a) * 6 }); }
-    for (const u of sim.entities.filter((e) => e.team === "player" && e.status.alive && !e.carriedById && e.kind !== "base")) {
+    for (const u of sim.entities.filter((e) => e.team === "player" && e.status.alive && e.kind !== "base")) {
       let g = 0;
       while (u.commandPoints > 0 && g++ < 4) {
         sim.select(u.id);
-        const foes = sim.entities.filter((e) => e.team === "enemy" && e.status.alive && !e.carriedById); const foe = foes[Math.floor(r() * foes.length)];
+        const foes = sim.entities.filter((e) => e.team === "enemy" && e.status.alive); const foe = foes[Math.floor(r() * foes.length)];
         const mates = sim.entities.filter((e) => e.team === "player" && e.status.alive && e.id !== u.id); const mate = mates[Math.floor(r() * mates.length)];
         const roll = r(); let ok = false;
         try {
           if (roll < 0.25) ok = sim.queueMove(pt()); else if (roll < 0.45 && foe) ok = sim.queueShoot(foe.id); else if (roll < 0.5) ok = sim.queueSlam();
-          else if (roll < 0.6) ok = sim.queueLeap(pt()); else if (roll < 0.72 && mate) ok = sim.queueLoad(mate.id); else if (roll < 0.77) ok = sim.queueUnload(pt());
+          else if (roll < 0.6) ok = sim.queueLeap(pt()); else if (roll < 0.77) ok = sim.queueMove(pt());
           else if (roll < 0.82 && mate) ok = sim.queueMan(mate.id); else if (roll < 0.85) ok = sim.queueDismount(); else if (roll < 0.9 && foe) ok = sim.queueMelee(foe.id); else if (roll < 0.94 && foe) ok = sim.queueShove(foe.id);
           else if (roll < 0.97) ok = sim.queueBombDrop(pt()); else ok = sim.queueGrenadeAt(pt());
         } catch (e) { out.push(`${u.kind} threw: ${(e as Error).stack?.split("\n").slice(0, 3).join(" | ")}`); }
@@ -30,10 +30,10 @@ function run(seed: number, mapId: string): string[] {
     if (sim.phase !== "command" && !sim.gameOver) out.push(`seed${seed}/${mapId}/t${turn} never settled`);
     for (const e of sim.entities) { if (!e.status.alive) continue; const p = e.position;
       if (!Number.isFinite(p.x) || !Number.isFinite(p.z)) out.push(`${e.id}(${e.kind}) NaN`);
-      if (!e.carriedById && (p.x < b.minX - 0.1 || p.x > b.maxX + 0.1 || p.z < b.minZ - 0.1 || p.z > b.maxZ + 0.1)) out.push(`${e.kind} OOB`);
+      if ((p.x < b.minX - 0.1 || p.x > b.maxX + 0.1 || p.z < b.minZ - 0.1 || p.z > b.maxZ + 0.1)) out.push(`${e.kind} OOB`);
       for (const part of e.parts) if (!Number.isFinite(part.hp) || part.hp < -0.01 || part.hp > part.maxHp + 0.01) out.push(`${e.kind}.${part.id} hp ${part.hp}`);
-      if (!e.flying && !e.carriedById && pointInWater(p) && e.kind !== "cover") out.push(`${e.kind} in water`);
-      if (e.carriedById) { const c = sim.entity(e.carriedById); if (!c || !c.status.alive) out.push(`${e.kind} carried by dead`); } }
+      if (!e.flying && pointInWater(p) && e.kind !== "cover") out.push(`${e.kind} in water`);
+    }
     if (!sim.restore(sim.serialize())) out.push("restore failed");
   }
   return out;

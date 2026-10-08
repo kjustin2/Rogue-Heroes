@@ -1,5 +1,5 @@
 import { dist, type Vec2 } from "../core/math";
-import { isBuildingKind, isDefenseKind, isInfantryKind, isMountKind, type CombatEntity, type DamagePart, type InfantryStance } from "../game/damageModel";
+import { isBuildingKind, isDefenseKind, isInfantryKind, isMountKind, type CombatEntity, type DamagePart } from "../game/damageModel";
 import {
   POP_CAP,
   TROOP_CATALOG,
@@ -91,16 +91,11 @@ const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
   { id: "shoot", label: "Shoot", tip: "Select Shoot, pick an enemy part, then confirm. The line previews cover, damage and accuracy." },
   { id: "grenade", label: "Grenade", tip: "Soldier only. Throw a limited-supply grenade in a short arc with splash damage." },
   { id: "ram", label: "Ram", tip: "Tank only. Select a close target or wall, then confirm. Costs 1 AP, deals 72 damage, and damages your front armor." },
-  { id: "melee", label: "Strike", tip: "Infantry only. Rush up to 3.5m and strike in ONE order (Strikers charge 6.5m and hit hardest). Needs an intact weapon." },
-  { id: "push", label: "Push", tip: "Infantry only. Rush in and SHOVE a unit far away. Into water it drowns; over the edge of the map it is gone. Tanks don't budge." },
-  { id: "defend", label: "Crouch", tip: "Infantry only. Improves accuracy and makes head shots harder, but slows the next move." },
+  { id: "melee", label: "Strike", tip: "Infantry only. Rush up to 3.5m and strike in ONE order: the blow knocks the target back (Strikers charge 6.5m and hit hardest). Tanks don't budge." },
+  { id: "push", label: "Push", tip: "Breaker only. Rush in and punch a unit far away. Into water it drowns; over the edge of the map it is gone. Tanks don't budge." },
   { id: "smoke", label: "Smoke", tip: "Mortar only. Lay a 3-turn smoke cloud that swallows flat shots; arcing rounds sail over. 1 AP." },
-  { id: "load", label: "Load", tip: "Runabout. Click a friendly trooper beside the hull to take it aboard. 1 AP." },
-  { id: "unload", label: "Unload", tip: "Runabout. Sets its passengers down beside itself. 1 AP." },
   { id: "deploy", label: "Deploy", tip: "Artillery only. Outriggers down (whole turn): the gun fires only deployed, deploys itself any turn it holds still, and packing up to move costs a turn." },
-  { id: "leap", label: "Jump", tip: "Infantry: hop a few metres, over a crate or a low wall, up onto a ledge, across a gap. Light, quick troopers go farther and higher. 1 AP." },
-  { id: "man", label: "Man", tip: "Walk up to a free post (Gun, Mortar, Rocket, Cannon or Flame) and crew it. It fires from next turn, twice a turn. 1 AP." },
-  { id: "dismount", label: "Leave", tip: "Let the crew step away from this emplacement. It stops firing until someone crews it again." },
+  { id: "leap", label: "Jump", tip: "Infantry: hop a few metres, over a crate or a low wall, up onto a ledge, across a gap. A trooper mid-hop is hard to hit. 1 AP." },
   { id: "slam", label: "Slam", tip: "Sledge only. Swing the hammer in a circle: every foe within 3m is hurt and flung far. 1 AP." },
   { id: "detonate", label: "Detonate", tip: "Boomer only. Blows itself up after its other orders: everything within 3.6m is wrecked and flung. Move first, then Detonate. 1 AP." },
 ];
@@ -116,11 +111,7 @@ const ACTION_HOW: Partial<Record<Intent, string>> = {
   grenade: "Select Grenade, then click ground or an enemy within throw range. Splash damage; limited supply.",
   ram: "Select Ram, click a target beside the tank, then Confirm. 72 damage; dents your front armor. 1 AP.",
   melee: "Select Strike, click an enemy within reach, then Confirm. Strikers hit hardest. 1 AP.",
-  defend: "Crouch where you stand: better accuracy, harder to head-shot, slower next move. 1 AP.",
-  load: "Select Load, then click a friendly ground unit to lift it aboard. 1 AP.",
-  leap: "Select Jump, then click ground within the ring: the trooper arcs there, over low cover and up onto a ledge. 1 AP.",
-  man: "Select Man, then click a post in reach.",
-  unload: "Select Unload, then click ground to fly there and set passengers down. 1 AP.",
+  leap: "Select Jump, then click ground within the ring: the trooper arcs there, over low cover and up onto a ledge, and is hard to hit this turn. 1 AP.",
 };
 
 export interface HudCallbacks {
@@ -144,13 +135,10 @@ export interface HudCallbacks {
   queueDismount(): boolean;
   queueSlam(): boolean;
   queueDetonate(): boolean;
-  queueLoad(passengerId: string): boolean;
-  queueUnload(destination: Vec2): boolean;
   queueRam(id: string): boolean;
   queueMelee(id: string): boolean;
   queueMeleePart(id: string, partId: string): boolean;
   queueShove(id: string): boolean;
-  queueDefend(stance?: InfantryStance): boolean;
   queueDeploy(): boolean;
   queueSpawnTroop(kind: TroopKind): boolean;
   beginDeploy(kind: TroopKind): void;
@@ -233,16 +221,8 @@ export class Hud {
       this.chooseGround(entity.position);
       return;
     }
-    // Board: with Load armed, clicking a friendly trooper takes it aboard the Runabout.
-    if (this.action === "load" && this.sim.phase === "command") {
-      if (this.callbacks.queueLoad(entity.id)) {
-        this.action = "select";
-        this.callbacks.setIntent("select");
-      }
-      return;
-    }
-    // Man: clicking an emplacement sends the trooper to crew it.
-    if (this.action === "man" && this.sim.phase === "command") {
+    // POSTS CREW THEMSELVES (2026-10-07: no Man / Leave cards): a trooper ordered onto a free post climbs in; walking away leaves it.
+    if ((this.action === "man" || this.action === "move") && isMountKind(entity.kind) && this.sim.selected && isInfantryKind(this.sim.selected.kind) && this.sim.phase === "command") {
       if (this.callbacks.queueMan(entity.id)) {
         this.action = "select";
         this.callbacks.setIntent("select");
@@ -453,14 +433,6 @@ export class Hud {
     // Smoke: the mortar lobs a smoke round onto the clicked ground point.
     if (this.action === "smoke" && this.sim.phase === "command") {
       if (this.callbacks.queueSmokeAt(destination)) {
-        this.action = "select";
-        this.callbacks.setIntent("select");
-      }
-      return;
-    }
-    // Unload: the clicked ground point is where the transport flies to and sets its passengers down.
-    if (this.action === "unload" && this.sim.phase === "command") {
-      if (this.callbacks.queueUnload(destination)) {
         this.action = "select";
         this.callbacks.setIntent("select");
       }
@@ -707,9 +679,6 @@ export class Hud {
     }
     if (confirm === "melee" && this.targetId && this.targetPartId) {
       if (this.callbacks.queueMeleePart(this.targetId, this.targetPartId)) this.afterConfirmedOrder();
-    }
-    if (confirm === "defend") {
-      if (this.callbacks.queueDefend("crouched")) this.afterConfirmedOrder();
     }
     if (confirm === "deploy") {
       if (this.callbacks.queueDeploy()) this.afterConfirmedOrder();
@@ -1033,11 +1002,7 @@ function emptyTargetPanel(action: Intent, flying = false): string {
       ? "Click an enemy or cover beside the tank, or a card below."
       : action === "grenade"
         ? `Click ground to ${flying ? "bomb" : "throw"} there, or an enemy card below.`
-        : action === "load"
-          ? "Click a friendly ground unit to lift it aboard."
-          : action === "unload"
-            ? "Click ground to fly there and set passengers down."
-            : "Click an enemy on the map or a card below, then pick a part.";
+        : "Click an enemy on the map or a card below, then pick a part.";
   return `
     <div class="inspect-head">
       <div>
@@ -1233,13 +1198,9 @@ function orderPlanner(
   const meleeStatus = target ? sim.previewMelee(target.id) : undefined;
   const canRam = Boolean(actor && target && target.team !== "player" && actor.kind === "tank" && actor.status.canMove && actor.commandPoints > 0 && sim.phase === "command" && ramStatus?.ok);
   const canMelee = Boolean(actor && target && target.team !== "player" && selectedPart && isInfantryKind(actor.kind) && actor.status.canMove && actor.commandPoints > 0 && sim.phase === "command" && meleeStatus?.ok);
-  const canDefend = Boolean(actor && isInfantryKind(actor.kind) && actor.status.canMove && actor.commandPoints > 0 && sim.phase === "command");
   const ramTip = actor?.kind === "tank"
     ? "Costs 1 AP. Deals 72 damage to the target and 14 damage to your front armor."
     : "Only tanks can ram.";
-  const defendTip = actor && isInfantryKind(actor.kind)
-    ? "Costs 1 AP. Crouch improves accuracy and head-shot defense, but slows this unit's next move."
-    : "Only infantry can change stance.";
   const focusedAction = action !== "select" || Boolean(target);
   const showActions = Boolean(actor && actor.commandPoints > 0 && !focusedAction && sim.phase === "command");
 
@@ -1252,7 +1213,6 @@ function orderPlanner(
     action === "melee" ? meleeState(target, targetPartId, canMelee, meleeStatus?.reason, sim) : "",
     action === "interact" ? coverInteractionState(actor, target, sim) : "",
     action === "inspect" ? inspectTargetState(actor, target, sim) : "",
-    action === "defend" ? defendState(canDefend, defendTip) : "",
     action === "deploy" ? deployState(actor, sim) : "",
   ].filter(Boolean).join("");
 
@@ -1660,16 +1620,6 @@ function ramState(target: CombatEntity | undefined, canRam: boolean, reason: str
   `;
 }
 
-function defendState(canDefend: boolean, tip: string): string {
-  return `
-    ${canDefend ? "" : `<div class="order-note">${escapeHtml(tip)}</div>`}
-    <button class="btn confirm ${canDefend ? "" : "disabled"}" data-confirm="defend" data-disabled="${!canDefend}" data-tip="${escapeAttr("Crouch improves accuracy and avoids direct head shots during resolve, but slows the next move.")}">
-      Confirm Crouch
-      <span>+accuracy</span>
-    </button>
-  `;
-}
-
 function deployState(actor: CombatEntity | undefined, sim: TacticalSim): string {
   const reason = actor ? sim.deployFailureReason(actor) : "Select artillery first";
   return `
@@ -1821,7 +1771,7 @@ function deployNoteHtml(sim: TacticalSim): string {
 }
 
 /** Strikes laid along a line, so they show Rotate (T). */
-export const LINE_SUPPORTS: ReadonlySet<SupportPowerKind> = new Set<SupportPowerKind>(["airstrike", "laser", "napalm"]);
+export const LINE_SUPPORTS: ReadonlySet<SupportPowerKind> = new Set<SupportPowerKind>(["airstrike", "laser", "napalm", "boulder"]);
 /** Placements whose facing matters, so they show Rotate (T). */
 export const ROTATABLE_BUILDS: ReadonlySet<DefenseKind> = new Set<DefenseKind>(["wall", "sandbag", "minefield"]);
 
@@ -2276,36 +2226,28 @@ function actionDisabled(action: Intent, actor: CombatEntity | undefined, sim: Ta
   if (action === "ram") return actor.kind !== "tank" || !actor.status.canMove;
   if (action === "melee") return !isInfantryKind(actor.kind) || !actor.status.canMove || !hasStrikeWeapon(actor);
   if (action === "push") return !isInfantryKind(actor.kind) || !actor.status.canMove;
-  if (action === "defend") return !isInfantryKind(actor.kind) || !actor.status.canMove;
   if (action === "smoke") return Boolean(sim.smokeFailureReason(actor));
   if (action === "leap") return !actor.status.canMove;
   if (action === "slam") return Boolean(sim.slamFailureReason(actor));
   if (action === "detonate") return Boolean(sim.detonateFailureReason(actor));
   if (action === "dismount") return !actor.occupantId;
   if (action === "man") return !actor.status.canMove || !sim.entities.some((e) => isMountKind(e.kind) && !sim.manFailureReason(actor, e));
-  if (action === "load") return !isCarrier(actor) || !actor.status.canMove || (actor.passengerIds?.length ?? 0) >= (actor.kind === "runabout" ? 5 : 2);
-  if (action === "unload") return !isCarrier(actor) || !(actor.passengerIds?.length);
   if (action === "deploy") return Boolean(sim.deployFailureReason(actor));
   return false;
-}
-
-// The Runabout carries (the sim's isCarrierKind).
-/** What a unit's finite supply is called: aircraft carry bombs, everyone else grenades. */
-function supply(entity: CombatEntity): { tip: string; chip: string; stat: string } {
-  const n = entity.grenades;
-  return entity.flying
-      ? { tip: "Bombs left this battle", chip: `${n} bomb${n === 1 ? "" : "s"}`, stat: "Bombs" }
-      : { tip: "Grenades left this battle", chip: `${n} grenade${n === 1 ? "" : "s"}`, stat: "Grenades" };
-}
-
-function isCarrier(actor: CombatEntity): boolean {
-  return actor.kind === "runabout";
 }
 
 // Mirrors the sim's melee-weapon check: a unit needs an intact weapon part to bayonet/strike,
 // so the Strike affordance stays hidden for a disarmed unit instead of offering a failing order.
 function hasStrikeWeapon(actor: CombatEntity): boolean {
   return actor.parts.some((part) => part.role === "weapon" && part.hp > 0);
+}
+
+/** What a unit's finite supply is called: aircraft carry bombs, everyone else grenades. */
+function supply(entity: CombatEntity): { tip: string; chip: string; stat: string } {
+  const n = entity.grenades;
+  return entity.flying
+      ? { tip: "Bombs left this battle", chip: `${n} bomb${n === 1 ? "" : "s"}`, stat: "Bombs" }
+      : { tip: "Grenades left this battle", chip: `${n} grenade${n === 1 ? "" : "s"}`, stat: "Grenades" };
 }
 
 /**
@@ -2323,15 +2265,14 @@ function actionApplicable(action: Intent, actor: CombatEntity | undefined): bool
   if (!actor) return false;
   if (action === "move" && isDefenseKind(actor.kind)) return false; // emplacements never move: no dead card
   if (action === "ram") return actor.kind === "tank";
-  if (action === "melee" || action === "push") return isInfantryKind(actor.kind) && actor.kind !== "boomer";
-  if (action === "defend") return isInfantryKind(actor.kind);
+  if (action === "melee") return isInfantryKind(actor.kind) && actor.kind !== "boomer";
+  if (action === "push") return actor.kind === "breaker"; // every Strike throws now (2026-10-07): the Push card is the Breaker's Punch
   if (action === "smoke") return actor.kind === "mortar";
   if (action === "leap") return isInfantryKind(actor.kind) && actor.kind !== "jumper";
   if (action === "dismount") return isMountKind(actor.kind);
   if (action === "slam") return actor.kind === "sledge";
   if (action === "detonate") return actor.kind === "boomer";
   if (action === "man") return isInfantryKind(actor.kind);
-  if (action === "load" || action === "unload") return isCarrier(actor);
   if (action === "deploy") return actor.kind === "artillery";
   if (action === "grenade") return (actor.kind === "soldier" || actor.flying === true) && actor.maxGrenades > 0;
   if (action === "shoot") return actor.kind !== "boomer"; // no gun at all: no dead card
@@ -2343,7 +2284,7 @@ function actionApplicable(action: Intent, actor: CombatEntity | undefined): bool
 function actionDisabledReason(action: Intent, actor: CombatEntity | undefined, sim: TacticalSim): string | undefined {
   if (!actor || sim.phase !== "command") return "Not during the resolve phase.";
   if (actor.commandPoints <= 0) return `${actor.name} has no action points left this turn.`;
-  if ((action === "move" || action === "ram" || action === "melee" || action === "push" || action === "defend" || action === "load") && !actor.status.canMove) {
+  if ((action === "move" || action === "ram" || action === "melee" || action === "push") && !actor.status.canMove) {
     return `${actor.name} cannot move — its legs or treads are destroyed.`;
   }
   if (action === "shoot" && !actor.status.canShoot) return `${actor.name} cannot shoot — its weapon is destroyed.`;
@@ -2354,8 +2295,6 @@ function actionDisabledReason(action: Intent, actor: CombatEntity | undefined, s
   if (action === "leap") return `${actor.name} cannot jump: its legs are destroyed.`;
   if (action === "dismount") return "No crew to send away";
   if (action === "man") return !actor.status.canMove ? `${actor.name} cannot move` : "No free post in reach";
-  if (action === "load" && (actor.passengerIds?.length ?? 0) >= 2) return "The Runabout is full.";
-  if (action === "unload" && !(actor.passengerIds?.length)) return "The Runabout is empty.";
   if (action === "deploy") return sim.deployFailureReason(actor) ?? undefined;
   if (action === "detonate") return sim.detonateFailureReason(actor) ?? undefined;
   return undefined;
@@ -2365,12 +2304,10 @@ function actionVisible(action: Intent, actor: CombatEntity | undefined, sim: Tac
   if (!actor || sim.phase !== "command") return false;
   if (action === "ram") return actor.kind === "tank" && actor.status.canMove;
   if (action === "melee") return isInfantryKind(actor.kind) && actor.status.canMove && hasStrikeWeapon(actor);
-  if (action === "push") return isInfantryKind(actor.kind) && actor.status.canMove;
-  if (action === "defend") return isInfantryKind(actor.kind) && actor.status.canMove;
+  if (action === "push") return actor.kind === "breaker" && actor.status.canMove;
   if (action === "smoke") return actor.kind === "mortar" && actor.status.canShoot;
   if (action === "leap") return isInfantryKind(actor.kind) && actor.kind !== "jumper" && actor.status.canMove;
   if (action === "man") return isInfantryKind(actor.kind);
-  if (action === "load" || action === "unload") return isCarrier(actor);
   if (action === "deploy") return actor.kind === "artillery";
   if (action === "grenade") return (actor.kind === "soldier" || actor.flying === true) && actor.maxGrenades > 0;
   if (action === "shoot") return actor.status.canShoot;

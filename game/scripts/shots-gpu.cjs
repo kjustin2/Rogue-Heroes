@@ -848,13 +848,6 @@ app.whenReady().then(async () => {
         await sleep(900); await shot("mapfx-rails-soon");
         await js(`(() => { const sim = window.__rht.sim; sim.turn = sim.mapDef.train.startTurn; sim.endTurn(); window.__rht.setTimeScale(0.5); })()`);
         for (let i = 0; i < 4; i += 1) { await sleep(i === 0 ? 900 : 500); await shot("mapfx-train-" + i); }
-        await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("karak", "destroy", "normal")`);
-        await sleep(1500);
-        await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); const pad = sim.launchPads()[0];
-          r.setView({ x: (pad.x + pad.to.x) / 2, z: (pad.z + pad.to.z) / 2, zoom: 0.55, pitch: 0.7, yaw: 0.2 }); })()`);
-        await sleep(900); await shot("mapfx-pad");
-        await js(`(() => { const r = window.__rht, sim = r.sim; const pad = sim.launchPads()[0]; const u = sim.debugSpawn("soldier", "player", { x: pad.x - 2, z: pad.z }); sim.debugSelect(u.id); sim.queueMove({ x: pad.x, z: pad.z }); r.deselect(); sim.endTurn(); window.__rht.setTimeScale(0.5); })()`);
-        for (let i = 0; i < 4; i += 1) { await sleep(i === 0 ? 900 : 450); await shot("mapfx-launch-" + i); }
         await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("causeway", "destroy", "normal")`);
         await sleep(1500);
         await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); const ice = sim.mapDef.terrain.ice[0]; const c = { x: (ice.minX + ice.maxX) / 2, z: (ice.minZ + ice.maxZ) / 2 };

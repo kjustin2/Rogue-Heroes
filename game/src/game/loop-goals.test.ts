@@ -107,7 +107,7 @@ describe("loop goals", () => {
     const sim = freshMatch();
     const base = playerBase(sim);
     sim.select(base.id);
-    sim.setPendingBuild("wall"); // a starter: the turret needs research first
+    sim.setPendingBuild("sandbag"); // a starter: the turret needs research first
     const b = sim.buildPlacement();
     expect(b).toBeTruthy();
     expect(b!.radius).toBeGreaterThan(0);

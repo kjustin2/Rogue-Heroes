@@ -21,7 +21,7 @@ const DT = 0.05;
 const solid = (e: CombatEntity): boolean =>
   e.status.alive && ((e.kind === "cover" && e.coverKind !== "ridge") || e.kind === "base" || isDefenseKind(e.kind));
 const groundUnit = (e: CombatEntity): boolean =>
-  e.status.alive && !e.flying && !e.carriedById && e.kind !== "cover" && e.kind !== "base" && !isDefenseKind(e.kind);
+  e.status.alive && !e.flying && e.kind !== "cover" && e.kind !== "base" && !isDefenseKind(e.kind);
 // A trooper standing ON low cover (the sim's climbable-cover rule) is a legal stance, not a walk-through.
 const standingOn = (u: CombatEntity, c: CombatEntity): boolean =>
   c.kind === "cover" && u.elevation > terrainHeightAt(u.position) + 0.15;

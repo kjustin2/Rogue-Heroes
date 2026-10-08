@@ -29,6 +29,21 @@ Decks: Vanguard Shockwave (start) / Airstrike / Paradrop / Tank Drop; Syndicate 
 Rail Strike; Bastion Sentry Drop (start, no tech now) / Gun Run / Tank Drop / Barrage / Rail Strike. Vanguard's Defenses: Sandbags,
 Wall, Turret, Spring Trap, Gun Post, Rocket Post. Base upgrades: the Fortress Cannon only. Decks hold 4-6 powers (`doctrines.test.ts`).
 
+## Focus cut, round 2 (2026-10-07, owner: "a focused set of only fun things"; picks in docs/fun-ideas.md)
+- **Gone:** launch pads (Karak, Crossfire) and every carrying rule (Runabout Load / Unload, `passengerIds`, `carriedById`, the AI
+  ferry); the Crouch card (the stance stays: cover and suppression still crouch a trooper); the Marksman's Mark; the Man / Leave
+  cards (a trooper ordered onto a free post crews it, walking away leaves it); the buildable Gun Post, Mortar Pit, Rocket Post, Flame
+  Post, MG Bunker and Blast Wall (the posts stay on the maps); the four stat-bump tech pairs and Sharpshooters; Cluster Strike, Rail
+  Strike and the Sentry Drop (with the whole sentry entity).
+- **Every Strike throws** (`STRIKE_FORCE` / `STRIKE_MAX` 6m); the Push card is the Breaker's Punch only.
+- **A hop is a dodge**: shots at a trooper that jumped this resolve scatter `DODGE_SPREAD` (1.7x) wider (`dodgeTurn`).
+- **Boulder Roll** (Bastion's starter, $150, `queueBoulder` / `boulderStep`): a stone the width of a lane rolls 18m down the line,
+  bowling every unit aside (34 damage to troopers, thrown 4m off the lane); a heavy breaks it and ends the roll. Drawn as one `roll`
+  effect (`boulderGeometry`), heard as a rumble.
+- **Decks now:** Vanguard Sandbags / Gun Turret / Spring Trap, Shockwave / Airstrike / Paradrop / Tank Drop; Syndicate Sandbags / Gun
+  Turret / Minefield, Minefield Drop / Napalm / Barrage (now Ordnance Lab); Bastion Sandbags / Gun Turret / Mortar Turret, Boulder Roll /
+  Gun Run / Tank Drop / Barrage. Tech: 12 nodes, one either/or (Fire Discipline vs Demolitions).
+
 ## Balance snapshot (2026-10-07, `balance.test.ts`: 6 maps x 24 seeds, both seats the Normal AI)
 Every combat kind is gated now (`UNGATED` is empty): the Sledge's hammer is swung by every brain and closes in first (`aiSlamAct`:
 move + slam in one turn), which took it from 0.11x to 0.77x of the median damage per $; the bomber measures 1.98x. Spread: Tank 1.61x,

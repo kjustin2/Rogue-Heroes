@@ -322,13 +322,13 @@ describe("every non-gun attack has an animation", () => {
       (sim as unknown as { queuedSupport: { kind: string; point: { x: number; z: number }; dir: { x: number; z: number } }[] })
         .queuedSupport.push({ kind: power.kind, point: { x: 2, z: 0 }, dir: { x: 1, z: 0 } });
       const trace = resolve(sim, [sim.entity("t")!]);
-      const delivery = trace.effects.has("jet") || trace.rounds.length > 0;
+      const delivery = trace.effects.has("jet") || trace.effects.has("roll") || trace.rounds.length > 0;
       const seen = delivery || trace.effects.has("blast") || trace.effects.has("ping") || trace.effects.has("land");
       expect(seen, `${power.kind}: nothing on screen (${[...trace.effects].join(",")})`).toBe(true);
-      if (["airstrike", "cluster", "laser", "napalm", "barrage", "railstrike", "shockwave", "tankdrop"].includes(power.kind)) {
+      if (["airstrike", "laser", "napalm", "barrage", "shockwave", "tankdrop", "boulder"].includes(power.kind)) {
         // The barrage is off-map guns: its shells arrive, nothing flies over.
         if (power.kind !== "barrage") expect(delivery, `${power.kind}: nothing flies in (${[...trace.effects].join(",")})`).toBe(true);
-        expect(trace.effects.has("blast"), `${power.kind}: nothing lands`).toBe(true);
+        expect(trace.effects.has("blast") || (power.kind === "boulder" && trace.effects.has("strike")), `${power.kind}: nothing lands`).toBe(true); // the boulder lands as a bowling hit, not a blast
         expect(trace.hpLost, `${power.kind}: no damage`).toBeGreaterThan(0);
       } else {
         // Delivery powers (paradrop, minefield drop, sentry drop) land a payload, not a blast.

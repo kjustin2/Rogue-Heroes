@@ -237,13 +237,10 @@ const hud = new Hud(uiRoot, sim, {
   queueDismount: () => { const ok = sim.queueDismount(); if (!ok) refused(); return ok; },
   queueSlam: () => { const ok = sim.queueSlam(); if (!ok) refused(); else sfx.turn(); return ok; },
   queueDetonate: () => { const ok = sim.queueDetonate(); if (!ok) refused(); else sfx.turn(); return ok; },
-  queueLoad: (passengerId: string) => sim.queueLoad(passengerId),
-  queueUnload: (destination) => sim.queueUnload(destination),
   queueRam: (id: string) => sim.queueRam(id),
   queueMelee: (id: string) => sim.queueMelee(id),
   queueMeleePart: (id: string, partId: string) => sim.queueMeleePart(id, partId),
   queueShove: (id: string) => sim.queueShove(id),
-  queueDefend: (stance) => sim.queueDefend(stance),
   queueSpawnTroop: (kind) => {
     const ok = sim.queueSpawnTroop(kind);
     if (ok) sfx.deploy();
@@ -571,11 +568,7 @@ window.addEventListener("keydown", (event) => {
     case "shoot": hud.setAction("shoot"); break;
     case "grenade": hud.setAction("grenade"); break;
     case "ram": hud.setAction("ram"); break;
-    case "defend": hud.setAction("defend"); break;
     case "melee": hud.setAction("melee"); break;
-    case "crouch":
-      if (sim.queueDefend("crouched")) hud.setAction("select");
-      break;
     case "log": hud.toggleLog(); break;
     case "confirm":
       event.preventDefault();
@@ -721,7 +714,7 @@ function requestEndTurn(skipApCheck = false): void {
   // units that could still act asks first, naming them; "don't show again" turns it off for good
   // and the Gameplay tab turns it back on. The Home Base is not counted: saving money is a choice.
   if (!skipApCheck && settings.warnUnusedAp && !AUTOMATED) {
-    const idle = sim.entities.filter((e) => e.team === "player" && e.status.alive && !e.carriedById &&
+    const idle = sim.entities.filter((e) => e.team === "player" && e.status.alive &&
       e.kind !== "base" && e.kind !== "wall" && e.kind !== "cover" && e.commandPoints > 0);
     if (idle.length) { showApWarning(idle); return; }
   }
@@ -1690,8 +1683,7 @@ function showControls(): void {
     ["[  ]", "Base tabs"],
     ["M / F / G", "Move / Shoot / Grenade"],
     ["J / P", "Jump / Push"],
-    ["X / B / V", "Ram / Strike / Crouch"],
-    ["C", "Quick crouch"],
+    ["X / B", "Ram / Strike"],
     ["T", "Turn a placement"],
     ["Enter", "Confirm"],
     ["Z", "Undo last order"],
@@ -1827,7 +1819,7 @@ function safeStorageSet(key: string, value: string): boolean {
 // cooldowns, cover, climbing, capture, push -- answered before it is asked.
 const TUTORIAL_STEPS: Array<{ title: string; body: string }> = [
   { title: "Plan, then watch", body: "Each turn you give orders, then End Turn plays them out. Both sides act at the SAME time — the enemy is planning while you are." },
-  { title: "Action points (AP)", body: "Every unit gets 2 AP a turn; your Home Base gets 1. Each order — move, shoot, strike, push, crouch — costs 1 AP. Unspent AP is lost when the turn ends." },
+  { title: "Action points (AP)", body: "Every unit gets 2 AP a turn; your Home Base gets 1. Each order — move, shoot, jump, strike — costs 1 AP. Unspent AP is lost when the turn ends." },
   { title: "Deploy a Recruit", body: "Click your blue Home Base, then Recruit in its Deploy tab, then a spot inside the green ring. That spends the base's 1 AP and the Recruit's price." },
   { title: "Money and research", body: "Your money is the gold plate bottom-left, with next turn's income under it. The Tech tab unlocks NEW UNITS, defenses and support; UPGRADE cards boost what you already have." },
   { title: "Move", body: "Select a unit and press M. The cyan ring is how far it can go this turn; the path shows ▲ CLIMB where it steps up onto higher ground." },
@@ -2093,7 +2085,7 @@ const UNIT_HINTS: Partial<Record<TroopKind, (name: string) => string>> = {
 function updateOnboardingHints(): void {
   if (!inBattle || tutorialActive || sim.phase !== "command") return;
   if (HINT_IDS.every((id) => seenHints.has(id))) return;
-  const squad = sim.living("player").filter((e) => e.kind !== "base" && e.kind !== "cover" && !e.carriedById);
+  const squad = sim.living("player").filter((e) => e.kind !== "base" && e.kind !== "cover");
   const base = sim.entities.find((e) => e.kind === "base" && e.team === "player" && e.status.alive);
 
   // 1. Nothing on the field yet: the only move is the base.
@@ -2112,7 +2104,7 @@ function updateOnboardingHints(): void {
 
   // 4. The first time one of your units can actually hit something.
   if (!seenHints.has("in-range")) {
-    const enemies = sim.living("enemy").filter((e) => e.kind !== "cover" && !e.carriedById);
+    const enemies = sim.living("enemy").filter((e) => e.kind !== "cover");
     for (const actor of squad) {
       if (!actor.status.canShoot || actor.commandPoints <= 0) continue;
       const range = unitStats(actor.kind).weaponRange;
@@ -2131,7 +2123,7 @@ function updateOnboardingHints(): void {
   const selected = sim.entity(sim.selectedId);
   if (selected && selected.team === "player" && isInfantryKind(selected.kind) && !sim.defending.has(selected.id) && selected.commandPoints > 0) {
     const nearCover = sim.entities.some((e) => e.kind === "cover" && e.status.alive && e.height >= 1 && dist(e.position, selected.position) <= 3.6);
-    if (nearCover && hintOnce("cover", `Cover nearby: ${hintKey("crouch")} to crouch.`)) return;
+    if (nearCover && hintOnce("cover", "Cover nearby: click it to take cover behind it.")) return;
   }
 
   // 6. Some units are done and others still have points: don't end the turn yet.
@@ -2314,7 +2306,6 @@ function entityAtPoint(at: { x: number; z: number }): { kind: string; coverKind?
   let best: CombatEntity | undefined;
   let bestGap = 0.9;
   for (const e of sim.entities) {
-    if (e.carriedById) continue;
     const gap = Math.hypot(e.position.x - at.x, e.position.z - at.z) - e.radius;
     if (gap < bestGap) { bestGap = gap; best = e; }
   }
@@ -2328,7 +2319,7 @@ function updateMoveBed(): void {
   if (sim.phase !== "resolve") { sfx.moveBed(0, 0, 0); lastSpot.clear(); return; }
   let infantry = 0, vehicles = 0, air = 0;
   for (const e of sim.entities) {
-    if (!e.status.alive || e.kind === "cover" || isBuildingKind(e.kind) || isDefenseKind(e.kind) || e.carriedById) continue;
+    if (!e.status.alive || e.kind === "cover" || isBuildingKind(e.kind) || isDefenseKind(e.kind)) continue;
     const before = lastSpot.get(e.id);
     lastSpot.set(e.id, { x: e.position.x, z: e.position.z });
     if (!before || Math.hypot(e.position.x - before.x, e.position.z - before.z) < 0.004 || !stage.isInView(e.position)) continue;
@@ -2443,6 +2434,10 @@ function processBattleEvents(): void {
       sfx.crash(heard);
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.topple, 1.8);
       if (stage.isInView(effect.to)) feel.addTrauma(0.14);
+    } else if (effect.type === "roll") {
+      sfx.verb("dig", heard); // a boulder rumbling down its lane
+      resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.strike, 2);
+      feel.addTrauma(0.1 * heard);
     } else if (effect.type === "jet") {
       sfx.jet();
       resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.strike, 2);
@@ -2576,8 +2571,6 @@ declare global {
       queueSlam(): boolean;
       queueDetonate(): boolean;
       queueBombDrop(at?: Vec2): boolean;
-      queueLoad(passengerId: string): boolean;
-      queueUnload(destination: Vec2): boolean;
       queueShootAt(destination: Vec2): boolean;
       queueMelee(id: string): boolean;
       queueMeleePart(id: string, partId: string): boolean;
@@ -2699,8 +2692,6 @@ window.__rht = {
   queueSlam: () => sim.queueSlam(),
   queueDetonate: () => sim.queueDetonate(),
   queueBombDrop: (at) => sim.queueBombDrop(at),
-  queueLoad: (passengerId: string) => sim.queueLoad(passengerId),
-  queueUnload: (destination) => sim.queueUnload(destination),
   queueShootAt: (destination) => sim.queueShootAt(destination),
   queueMelee: (id) => sim.queueMelee(id),
   queueMeleePart: (id, partId) => sim.queueMeleePart(id, partId),

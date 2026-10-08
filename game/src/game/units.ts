@@ -29,7 +29,7 @@ export type AirKind = "gunship" | "bomber";
 export type TroopKind = InfantryKind | GroundVehicleKind | AirKind;
 
 /** Emplacements and scenery: never deployed as troops, but they are damageable entities. */
-export type StructureKind = "base" | "turret" | "exturret" | "bunker" | "wall" | "cover" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost" | "cannonpost" | "sentry";
+export type StructureKind = "base" | "turret" | "exturret" | "bunker" | "wall" | "cover" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost" | "cannonpost";
 
 /** Every kind that can exist as a CombatEntity. */
 export type EntityKind = TroopKind | StructureKind;
@@ -213,7 +213,7 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   tank: u({ moveRange: 5.4, moveSpeed: 5.5, shotDamage: 78, weaponRange: 28, projectile: "shell", projectileSpeed: 2.45, spread: 2.65, accurateFraction: 0.5, accuracyLabel: "stabilized cannon", ramRange: 2.85, groundShell: true, hpMultiplier: 1.6, aiValue: 3 }),
   artillery: u({ moveRange: 4.2, moveSpeed: 4.4, shotDamage: 88, weaponRange: 42, projectile: "shell", projectileSpeed: 2.45, spread: 4.6, accurateFraction: 0.55, accuracyLabel: "siege gun", groundShell: true, hpMultiplier: 1.2, aiValue: 9 }),
   flak: u({ moveRange: 6.0, moveSpeed: 6.2, shotDamage: 18, weaponRange: 32, accurateFraction: 0.3, projectile: "bolt", accuracyLabel: "flak cannon", aiValue: 6 }),
-  // RUNABOUT: a light car that drives far (13m a move), carries five troopers, and its mounted MG always fires.
+  // RUNABOUT: a light car that drives far (13m a move) and its mounted MG always fires (carrying was cut, 2026-10-07).
   runabout: u({ moveRange: 13, moveSpeed: 11.5, shotDamage: 16, weaponRange: 22, burst: 3, spread: 3.4, accurateFraction: 0.4, spreadPerMeter: 0.12, accuracyLabel: "mounted MG", hpMultiplier: 0.8, aiValue: 3 }),
 
   // ROUND 8 (2026-10-07): CHOP BIKE (Syndicate) rides THROUGH a line of troopers, slashing every one it passes (the Skater's sweep,
@@ -244,7 +244,6 @@ export const UNIT_STATS: Record<EntityKind, UnitStats> = {
   // FLAME POST: a flame projector on a sandbag ring (crewed). Short reach, sets infantry alight.
   flamepost: u({ shotDamage: 34, weaponRange: 8, accurateFraction: 0.9, accuracyLabel: "flame post", hpMultiplier: 1.1, aiValue: 5 }),
   // SENTRY: a small auto-turret set down by a Turret Tech. Fires on its own each turn, packs up after a few.
-  sentry: u({ shotDamage: 20, weaponRange: 20, projectile: "bolt", projectileSpeed: 2.8, spread: 2.6, accurateFraction: 0.4, accuracyLabel: "sentry gun", hpMultiplier: 0.8, aiValue: 3 }),
   wall: u({ aiValue: 1 }),
   cover: u({}),
 };
@@ -265,7 +264,7 @@ export interface TroopSpec {
 
 export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "soldier", label: "Recruit", role: "Rifle", cost: 150, cooldown: 1, tip: "Versatile rifle infantry with hand grenades. Always available." },
-  { kind: "sniper", label: "Marksman", role: "Sniper", cost: 160, cooldown: 2, tech: "recon", tip: "Rail rifle that pierces every body on its line (cover still stops it). Whatever it fires at is MARKED: allies hit it easier this turn." },
+  { kind: "sniper", label: "Marksman", role: "Sniper", cost: 160, cooldown: 2, tech: "recon", tip: "Rail rifle that pierces every body on its line (cover still stops it)." },
   { kind: "striker", label: "Striker", role: "Melee", cost: 470, cooldown: 2, tech: "assault", tip: "CHARGE: the strike order closes up to 6.5m for free before the blade lands, so anything within a lunge is already in reach." },
   { kind: "heavy", label: "Heavy Gunner", role: "Suppression", cost: 250, cooldown: 2, tech: "assault", tip: "Machine-gun bursts SUPPRESS whoever they hit: one action point and a forced crouch next turn. Strays rake nearby targets." },
   { kind: "mortar", label: "Mortar Team", role: "Indirect", cost: 260, cooldown: 3, tech: "ordnance", tip: "High-arc fire over walls and ridges. SMOKE order: a 3-turn cloud that swallows flat shots; arcing rounds sail over." },
@@ -282,7 +281,7 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "mole", label: "Mole Sapper", role: "Burrower", cost: 320, cooldown: 2, tech: "fieldworks", tip: "Moves underground (can't be shot) and erupts where it surfaces, throwing every foe within 2m." },
   { kind: "chopbike", label: "Chop Bike", role: "Raider", cost: 260, cooldown: 2, tech: "motorpool", tip: "A fast bike. Every move rides THROUGH troopers, slashing and scattering each one it passes." },
   { kind: "bulldozer", label: "Bulldozer", role: "Shover", cost: 380, cooldown: 3, tech: "fieldworks", tip: "Slow and armoured. Every move SHOVES everything ahead of its blade: troopers, tanks, props, wrecks. Into walls, water, off the map." },
-  { kind: "runabout", label: "Runabout", role: "Scout Car", cost: 300, cooldown: 2, tech: "motorpool", tip: "A light car: drives 13m a move, carries five troopers, and its mounted MG always fires." },
+  { kind: "runabout", label: "Runabout", role: "Scout Car", cost: 300, cooldown: 2, tech: "motorpool", tip: "A fast light car: drives 13m a move and its mounted MG always fires." },
   { kind: "tank", label: "Tank", role: "Armor", cost: 760, cooldown: 3, tech: "armor", tip: "Massive HP, big gun, rams and crushes cover. HULL DOWN: a turn spent still takes 30% less damage until it moves." },
   { kind: "artillery", label: "Artillery", role: "Siege", cost: 380, cooldown: 3, tech: "siege", tip: "Long-range siege gun; devastating at distance and tough, but helpless up close. DEPLOY: fires only with outriggers down (a turn, or any turn it holds still); packing up to move costs a turn." },
   { kind: "flak", label: "Flak Track", role: "Anti-Air", cost: 240, cooldown: 2, tech: "recon", tip: "Anti-air specialist: shreds aircraft at range. Weak against ground armour." },
@@ -358,7 +357,7 @@ export function baseUpgradeSpec(id: BaseUpgradeId): BaseUpgradeSpec {
 
 // ---- Off-map support powers the Home Base can call in (cost money + the base CP). ----
 
-export type SupportPowerKind = "airstrike" | "cluster" | "laser" | "shockwave" | "tankdrop" | "paradrop" | "napalm" | "barrage" | "minedrop" | "sentrydrop" | "railstrike";
+export type SupportPowerKind = "airstrike" | "laser" | "shockwave" | "tankdrop" | "paradrop" | "napalm" | "barrage" | "minedrop" | "boulder";
 
 export interface SupportPowerSpec {
   kind: SupportPowerKind;
@@ -374,16 +373,14 @@ export const SUPPORT_POWERS: readonly SupportPowerSpec[] = [
   // Each faction starts with one power and researches the rest (decks: factions.ts). Scans, heals and soft utility were
   // cut as not fun (owner 2026-10-07): every power now does something loud on the board.
   { kind: "airstrike", label: "Airstrike", role: "Line", cost: 320, cooldown: 3, tech: "support", tip: "A strike wing carpets a line of bombs through the target point, aligned away from your base. Hardened HQs are unaffected." },
-  { kind: "cluster", label: "Cluster Strike", role: "Area", cost: 300, cooldown: 3, tech: "ordnance", tip: "Bomblets saturate a wide area around the target point. Hardened HQs are unaffected." },
   { kind: "laser", label: "Gun Run", role: "Strafe", cost: 420, cooldown: 4, tech: "armor", tip: "A jet strafes a line through the target point: seven cannon shells walk down it. Hardened HQs are unaffected." },
   { kind: "shockwave", label: "Shockwave", role: "Fling", cost: 130, cooldown: 2, tip: "A huge blast of air on the point: little damage, but every trooper within 4m is FLUNG far. Into water, off ledges, off the map. Tanks don't budge." },
   { kind: "tankdrop", label: "Tank Drop", role: "Crush", cost: 460, cooldown: 4, tech: "armor", tip: "A tank parachutes onto the point, crushing troopers under it, and fights for you for 3 turns before its crew scuttles it." },
   { kind: "paradrop", label: "Paradrop", role: "Insert", cost: 320, cooldown: 4, tech: "airwing", tip: "A transport drops two Troopers on the point at the end of the turn. They act from next turn. Needs room in your 10-unit field." },
   { kind: "napalm", label: "Napalm", role: "Burn", cost: 240, cooldown: 3, tech: "incendiary", tip: "Firebombs set a wide patch alight: a light blast, then burning ground for 2 turns that infantry flee." },
   { kind: "minedrop", label: "Minefield Drop", role: "Trap", cost: 170, cooldown: 3, tip: "Five mines scattered across the point at the end of the turn. Hidden; the first foes to step on them set them off." },
-  { kind: "sentrydrop", label: "Sentry Drop", role: "Defence", cost: 190, cooldown: 3, tip: "A sentry parachutes onto the point: an auto-turret that fires on its own each turn and packs up after 4." },
-  { kind: "railstrike", label: "Rail Strike", role: "Pierce", cost: 280, cooldown: 3, tech: "marksman", tip: "Three tungsten rods in a tight line: huge damage in a thin column. Built for tanks and bunkers. Hardened HQs are unaffected." },
-  { kind: "barrage", label: "Barrage", role: "Siege", cost: 340, cooldown: 4, tech: "siege", tip: "Six heavy shells walk across a wide circle around the point, one after another. Hardened HQs are unaffected." },
+  { kind: "boulder", label: "Boulder Roll", role: "Bowl", cost: 150, cooldown: 2, tip: "A giant boulder rolls down a line through the point, bowling over every trooper in its path. Tanks stop it." },
+  { kind: "barrage", label: "Barrage", role: "Siege", cost: 340, cooldown: 4, tech: "ordnance", tip: "Six heavy shells walk across a wide circle around the point, one after another. Hardened HQs are unaffected." },
 ];
 
 export function supportPowerSpec(kind: SupportPowerKind): SupportPowerSpec {

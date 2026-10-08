@@ -101,29 +101,12 @@ describe("the hammer, the spade and the ricochet", () => {
 describe("the Runabout", () => {
   afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
 
-  it("seats five, and its MG fires with nobody aboard (no gunner seat: owner 2026-10-07)", () => {
+  it("its MG fires on its own (no gunner seat, no passengers: owner 2026-10-07)", () => {
     const sim = staged();
     const car = sim.debugSpawn("runabout", "player", { x: -12, z: 0 });
     const foe = sim.debugSpawn("soldier", "enemy", { x: -4, z: 0 });
-    disarm(foe);
     sim.debugSelect(car.id);
-    const empty = staged();
-    const car0 = empty.debugSpawn("runabout", "player", { x: -12, z: 0 });
-    const foe0 = empty.debugSpawn("soldier", "enemy", { x: -4, z: 0 });
-    empty.debugSelect(car0.id);
-    expect(empty.queueShoot(foe0.id), "an empty car still shoots").toBe(true);
-    const riders = Array.from({ length: 6 }, (_, i) => sim.debugSpawn("soldier", "player", { x: -12, z: 1.6 + (i % 3) * 0.1 + Math.floor(i / 3) * 0.1 }));
-    let boarded = 0;
-    for (const r of riders) {
-      car.commandPoints = car.maxCommandPoints;
-      sim.debugSelect(car.id);
-      if (sim.queueLoad(r.id)) { boarded += 1; sim.endTurn(); settle(sim); }
-    }
-    expect(boarded, "five seats").toBe(5);
-    expect(sim.entity(car.id)!.passengerIds?.length).toBe(5);
-    car.commandPoints = car.maxCommandPoints;
-    sim.debugSelect(car.id);
-    expect(sim.queueShoot(foe.id), "and a full one").toBe(true);
+    expect(sim.queueShoot(foe.id)).toBe(true);
   });
 
   it("drives far in one move", () => {
@@ -133,23 +116,29 @@ describe("the Runabout", () => {
 
 describe("new strikes", () => {
   afterEach(() => setActiveTerrain(DEFAULT_TERRAIN));
-  const call = (sim: TacticalSim, kind: string, point: { x: number; z: number }): void => {
+  const call = (sim: TacticalSim, kind: string, point: { x: number; z: number }, team = "player"): void => {
     (sim as unknown as { queuedSupport: { kind: string; point: { x: number; z: number }; dir: { x: number; z: number }; team: string }[] })
-      .queuedSupport.push({ kind, point, dir: { x: 1, z: 0 }, team: "player" });
+      .queuedSupport.push({ kind, point, dir: { x: 1, z: 0 }, team });
     sim.endTurn(); settle(sim);
   };
 
-  it("Minefield Drop seeds mines, Sentry Drop lands a sentry, Rail Strike hits hard", () => {
+  it("Minefield Drop seeds mines; a Boulder Roll bowls troopers off its lane and breaks on a tank", () => {
     const sim = staged();
     call(sim, "minedrop", { x: 4, z: 0 });
     expect(sim.mines.filter((m) => m.team === "player").length).toBeGreaterThanOrEqual(3);
-    call(sim, "sentrydrop", { x: -4, z: 4 });
-    expect(sim.entities.some((e) => e.kind === "sentry" && e.team === "player")).toBe(true);
-    const hull = sim.debugSpawn("tank", "enemy", { x: 8, z: -6 });
-    disarm(hull);
-    const before = hp(hull);
-    call(sim, "railstrike", { x: 8, z: -6 });
-    expect(before - hp(sim.entity(hull.id)!)).toBeGreaterThan(90);
+    // Victims are the CALLER's foes on the player side (an enemy-side victim is walked off by the enemy AI before the stone arrives).
+    const pins = sim.debugSpawn("soldier", "player", { x: -6, z: 6 });
+    const at = { ...pins.position };
+    const hp0 = hp(pins);
+    call(sim, "boulder", { x: -6, z: 6 }, "enemy");
+    expect(hp(sim.entity(pins.id)!), "bowled over").toBeLessThan(hp0);
+    expect(Math.hypot(pins.position.x - at.x, pins.position.z - at.z), "knocked off the lane").toBeGreaterThan(1);
+    const wall = sim.debugSpawn("tank", "player", { x: -6, z: -6 });
+    const behind = sim.debugSpawn("soldier", "player", { x: -2, z: -6 });
+    const hpBehind = hp(behind), tankAt = { ...wall.position };
+    call(sim, "boulder", { x: -4, z: -6 }, "enemy");
+    expect(wall.position, "the tank never moves").toEqual(tankAt);
+    expect(hp(sim.entity(behind.id)!), "the roll stops at the tank").toBe(hpBehind);
   });
 });
 
@@ -305,7 +294,7 @@ describe("the fun units", () => {
     expect(hp(sim.entity(friend.id)!), "its own side is caught too").toBeLessThan(before);
   });
 
-  it("a Breaker's punch throws a trooper about twice as far as a soldier's push, and barely moves a tank", () => {
+  it("a Breaker's punch throws a trooper about twice as far as a soldier's strike, and never moves a tank", () => {
     const throwOf = (kind: "breaker" | "soldier", foeKind: "soldier" | "tank"): number => {
       const sim = staged();
       const a = sim.debugSpawn(kind, "player", { x: -12, z: -3 });
@@ -313,14 +302,14 @@ describe("the fun units", () => {
       disarm(foe); tough(foe);
       const at = where(foe);
       sim.debugSelect(a.id);
-      expect(sim.queueShove(foe.id)).toBe(true);
+      expect(kind === "breaker" ? sim.queueShove(foe.id) : sim.queueMelee(foe.id)).toBe(true);
       sim.endTurn(); settle(sim);
       return moved(sim.entity(foe.id)!.position, at);
     };
     const punch = throwOf("breaker", "soldier");
-    const push = throwOf("soldier", "soldier");
-    expect(punch, `punch ${punch.toFixed(1)}m vs push ${push.toFixed(1)}m`).toBeGreaterThan(push * 1.6);
-    expect(throwOf("breaker", "tank")).toBeLessThan(4);
+    const strike = throwOf("soldier", "soldier");
+    expect(punch, `punch ${punch.toFixed(1)}m vs strike ${strike.toFixed(1)}m`).toBeGreaterThan(strike * 1.6);
+    expect(throwOf("breaker", "tank")).toBe(0);
   });
 
   it("a Breaker's punch reaches a foe 7m away in one order; a soldier's push does not", () => {

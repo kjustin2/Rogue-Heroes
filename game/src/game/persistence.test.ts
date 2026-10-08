@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createBomber, createRunabout, createSoldier, createTank } from "./damageModel";
+import { createBomber, createSoldier, createTank } from "./damageModel";
 import { TacticalSim } from "./sim";
 
 function advance(sim: TacticalSim, seconds: number): void {
@@ -23,25 +23,6 @@ describe("serialize / restore fidelity", () => {
     const clone2 = new TacticalSim([createSoldier("x", "x", "player", { x: 0, z: 0 })]);
     expect(clone2.restore(s1)).toBe(true);
     expect(clone2.serialize()).toBe(s1);
-  });
-
-  it("preserves a carried passenger through a save/load", () => {
-    const sim = new TacticalSim([
-      createRunabout("t1", "Jeep", "player", { x: -6, z: 0 }),
-      createSoldier("s1", "Rider", "player", { x: -4, z: 0 }),
-      createSoldier("e1", "Foe", "enemy", { x: 20, z: 0 }),
-    ]);
-    sim.select("t1");
-    expect(sim.queueLoad("s1")).toBe(true);
-    sim.endTurn();
-    advance(sim, 10);
-    expect(sim.entity("s1")!.carriedById).toBe("t1"); // picked up
-
-    const saved = sim.serialize();
-    const reloaded = new TacticalSim([createSoldier("x", "x", "player", { x: 0, z: 0 })]);
-    expect(reloaded.restore(saved)).toBe(true);
-    expect(reloaded.entity("s1")!.carriedById).toBe("t1");
-    expect(reloaded.entity("t1")!.passengerIds).toContain("s1");
   });
 
   it("conserves action points across a command-phase save (order or refund, never both lost)", () => {

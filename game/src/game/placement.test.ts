@@ -28,15 +28,15 @@ describe("rotatable placement", () => {
     expect(queued(b.sim)[0].dir.x).toBeCloseTo(0);
   });
 
-  it("a wall is built facing the way it was turned, and a new placement starts unturned", () => {
+  it("a sandbag line is built facing the way it was turned, and a new placement starts unturned", () => {
     const { sim, base } = staged();
-    sim.setPendingBuild("wall");
+    sim.setPendingBuild("sandbag");
     sim.rotatePlacement(1);
     expect(sim.queueBuildStructure({ x: -8, z: 0 })).toBe(true);
-    const wall = sim.entities.find((e) => e.kind === "wall")!;
-    expect(wall.yaw).toBeCloseTo(Math.atan2(6, 0) + Math.PI / 4);
+    const bags = sim.entities.find((e) => e.coverKind === "sandbag")!;
+    expect(bags.yaw).toBeCloseTo(Math.atan2(6, 0) + Math.PI / 4);
     base.commandPoints = 1;
-    sim.setPendingBuild("wall");
+    sim.setPendingBuild("sandbag");
     expect(sim.placementTurn).toBe(0);
   });
 });

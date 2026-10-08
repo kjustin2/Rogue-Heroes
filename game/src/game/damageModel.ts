@@ -126,10 +126,6 @@ export interface CombatEntity {
   // movement, forfeits terrain defense, and cannot capture. Undefined/false = a ground unit.
   flying?: boolean;
   agl?: number;
-  // Air transport: units this aircraft is currently carrying (moved with it, hidden, inert). The
-  // carried unit points back via `carriedById`. Both ride serialize() inside the entity list.
-  passengerIds?: string[];
-  carriedById?: string;
   // SUPPRESSED: a machine-gun burst that lands leaves the target with one command point next
   // turn and drops it to a crouch. Set to the turn it wears off; read at turn start.
   suppressedUntilTurn?: number;
@@ -144,10 +140,6 @@ export interface CombatEntity {
   // DEPLOYED (artillery): outriggers down. The gun only fires deployed; deploying costs a turn
   // (an explicit order, or automatically when it does not move), and moving undeploys it.
   deployed?: boolean;
-  // MARKED (sniper): after a sniper fires at this unit, every other friendly shooter is more
-  // accurate against it until the turn stamped here has passed.
-  markedUntilTurn?: number;
-  markedById?: string;
   // Who set this down (a sentry), for the log and pop-in.
   ownerTeam?: Team;
   /** A Mole Sapper under the ground (mid-move): not shot, not blocked, not drawn; it erupts when the move ends. */
@@ -160,8 +152,8 @@ export interface CombatEntity {
   // BURNING (flamethrower, napalm, oil fire): infantry only. `dmg` to the body at the start of each of its next `turns` turns.
   /** On fire: turns left, damage a turn, and who lit it (credited with the burn, like any hit). */
   burning?: { turns: number; dmg: number; by?: string };
-  // A sentry (dropped by the Sentry Drop): turns left before it packs up. It fires on its own each turn.
-  sentryTtl?: number;
+  // A HOP IS A DODGE: the turn this trooper last jumped (shots at it that resolve scatter wide).
+  dodgeTurn?: number;
   // TANK DROP: turns left before the dropped tank's crew scuttles it into a wreck.
   dropTtl?: number;
   // FACTION TRAITS (factions.ts unitMods), stamped at deploy: the same Recruit is quicker for Vanguard and sturdier for Bastion.
@@ -209,7 +201,7 @@ function part(id: string, label: string, role: PartRole, maxHp: number, extras: 
 }
 
 function statusFor(kind: EntityKind): EntityStatus {
-  const defenseShooter = kind === "turret" || kind === "exturret" || kind === "bunker" || kind === "sentry";
+  const defenseShooter = kind === "turret" || kind === "exturret" || kind === "bunker";
   return {
     alive: true,
     canMove: isInfantryKind(kind) || isVehicleKind(kind),
@@ -672,7 +664,7 @@ export function createBase(id: string, name: string, team: Team, position: Vec2)
 function createDefense(
   id: string,
   name: string,
-  kind: "turret" | "exturret" | "bunker" | "wall" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost" | "cannonpost" | "sentry",
+  kind: "turret" | "exturret" | "bunker" | "wall" | "gunpost" | "mortarpit" | "rocketpost" | "flamepost" | "cannonpost",
   team: Team,
   position: Vec2,
   config: { radius: number; height: number; parts: DamagePart[]; canAct: boolean }
@@ -748,21 +740,6 @@ export const createMortarPit = (id: string, name: string, team: Team, position: 
 export const createRocketPost = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createMount(id, name, "rocketpost", team, position);
 export const createCannonPost = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createMount(id, name, "cannonpost", team, position);
 export const createFlamePost = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createMount(id, name, "flamepost", team, position);
-
-// A sentry: a small auto-turret a Turret Tech sets down. Light, fragile, fires by itself each turn.
-export function createSentry(id: string, name: string, team: Team, position: Vec2): CombatEntity {
-  const sentry = createDefense(id, name, "sentry", team, position, {
-    radius: 0.6,
-    height: 1.0,
-    canAct: true,
-    parts: [
-      part("mount", "Tripod", "core", 40, { critical: true }),
-      part("gun", "Sentry Gun", "weapon", 22),
-    ],
-  });
-  sentry.sentryTtl = 4;
-  return sentry;
-}
 
 // A concrete machine-gun nest: low, wide and very tough; its gun pokes through a slit.
 export function createBunker(id: string, name: string, team: Team, position: Vec2): CombatEntity {
@@ -1054,7 +1031,7 @@ export function isMountKind(kind: string): boolean {
 }
 
 export function isDefenseKind(kind: EntityKind): boolean {
-  return kind === "turret" || kind === "exturret" || kind === "bunker" || kind === "wall" || kind === "gunpost" || kind === "mortarpit" || kind === "rocketpost" || kind === "flamepost" || kind === "cannonpost" || kind === "sentry";
+  return kind === "turret" || kind === "exturret" || kind === "bunker" || kind === "wall" || kind === "gunpost" || kind === "mortarpit" || kind === "rocketpost" || kind === "flamepost" || kind === "cannonpost";
 }
 
 function utilityMessages(entity: CombatEntity, part: DamagePart): string[] {

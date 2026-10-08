@@ -129,8 +129,6 @@ export interface MapDef {
   neutrals?: Array<{ kind: "turret" | "depot"; x: number; z: number; mirror?: boolean }>;
   /** A FREIGHT TRAIN runs these tracks every `period` turns from `startTurn`: anything standing on one takes `damage` and is thrown off. */
   train?: { tracks: TerrainRect[]; startTurn: number; period: number; damage: number };
-  /** LAUNCH PADS: a trooper that ends a move on one is flung to `to` (an arc over anything). `mirror` adds the point-symmetric twin. */
-  pads?: Array<{ x: number; z: number; to: Vec2; mirror?: boolean }>;
 }
 
 export function mapCenter(map: MapDef): Vec2 {
@@ -237,7 +235,6 @@ function scaleMapDef(def: MapDef): MapDef {
     neutrals: def.neutrals?.map((n) => ({ ...n, x: n.x * f, z: n.z * f })),
     events: def.events?.map((e) => (e.zone ? { ...e, zone: { x: e.zone.x * f, z: e.zone.z * f, radius: e.zone.radius * f } } : e)),
     train: def.train ? { ...def.train, tracks: def.train.tracks.map((r) => scaleRect(r, f)) } : undefined,
-    pads: def.pads?.map((pad) => ({ ...pad, x: pad.x * f, z: pad.z * f, to: { x: pad.to.x * f, z: pad.to.z * f } })),
   };
 }
 
@@ -836,8 +833,6 @@ const RAW_MAPS: readonly MapDef[] = [
     ],
     // The ancient colonnades give way: cover near the central dais collapses every few turns.
     events: [{ kind: "collapse", startTurn: 4, period: 4, zone: { x: 0, z: 0, radius: 9 } }],
-    // LAUNCH PADS (2026-10-07): an old temple catapult on each side flings a trooper clean over the ravine.
-    pads: [{ x: -13.5, z: 3.5, to: { x: -5.5, z: 5.5 }, mirror: true }],
   },
   // CROSSFIRE BASIN — a militarised border. Sections: the CHECKPOINT (the centre lane: each side's
   // gate landmark — booth, raised boom, sign — facing the other across the knoll, the crossing
@@ -904,8 +899,6 @@ const RAW_MAPS: readonly MapDef[] = [
     ],
     // Off-map artillery ranges in on the central basin on a steady cadence — don't loiter there.
     events: [{ kind: "barrage", startTurn: 3, period: 4, zone: { x: 0, z: 0, radius: 6 }, power: 34 }],
-    // LAUNCH PADS (2026-10-07): a pad behind each line flings a trooper up onto the forward nest's crown (high ground in one move).
-    pads: [{ x: -18, z: -4, to: { x: -13.5, z: -8.5 }, mirror: true }],
   },
 ];
 

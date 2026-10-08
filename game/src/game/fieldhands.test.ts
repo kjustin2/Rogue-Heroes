@@ -174,7 +174,7 @@ describe("bot push", () => {
     hunter.commandPoints = hunter.maxCommandPoints;
     sim.endTurn();
     settle(sim);
-    expect(sim.log.join(" | ")).toContain("shoves");
+    expect(sim.log.join(" | ")).toMatch(/strikes|drowns|drown/);
     setActiveTerrain(DEFAULT_TERRAIN);
   });
 });

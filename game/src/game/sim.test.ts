@@ -1504,9 +1504,9 @@ describe("defenses, difficulty, and base upgrades", () => {
     expect(turret!.status.canMove).toBe(false);
     expect(base.commandPoints).toBe(0);
 
-    // A wall can't be dropped on top of the turret we just built.
+    // Sandbags can't be dropped on top of the turret we just built.
     base.commandPoints = 1;
-    sim.setPendingBuild("wall");
+    sim.setPendingBuild("sandbag");
     expect(sim.queueBuildStructure({ x: -10.5, z: -5 })).toBe(false);
     expect(sim.log[0]).toContain("blocked");
   });
@@ -1573,8 +1573,9 @@ describe("defenses, difficulty, and base upgrades", () => {
     build("minefield", { x: -10, z: -2 });
     expect(sim.mines.filter((m) => m.team === "player" && !m.spring).length).toBe(3);
     playAs("bastion");
-    build("bunker", { x: -9, z: -12 });
-    for (const kind of ["bunker"] as const) {
+    base.unlockedTech = [...(base.unlockedTech ?? []), "ordnance"];
+    build("exturret", { x: -9, z: -12 });
+    for (const kind of ["exturret"] as const) {
       const e = sim.entities.find((x) => x.kind === kind)!;
       expect(e.status.canShoot, kind).toBe(true);
       expect(e.status.canMove, kind).toBe(false);
@@ -1781,10 +1782,10 @@ describe("tactical enemy AI", () => {
       return { sim, base };
     };
 
-    const cluster = staged("syndicate");
-    expect(cluster.sim.supportFailureReason(cluster.base, "cluster")).toMatch(/Ordnance/i);
-    cluster.base.unlockedTech = ["assault", "ordnance"];
-    expect(cluster.sim.supportFailureReason(cluster.base, "cluster")).toBeUndefined();
+    const barrage = staged("syndicate");
+    expect(barrage.sim.supportFailureReason(barrage.base, "barrage")).toMatch(/Ordnance/i);
+    barrage.base.unlockedTech = ["assault", "ordnance"];
+    expect(barrage.sim.supportFailureReason(barrage.base, "barrage")).toBeUndefined();
 
     const laser = staged("bastion");
     expect(laser.sim.supportFailureReason(laser.base, "laser")).toMatch(/Armor Bay/i);
@@ -2247,76 +2248,18 @@ describe("tactical enemy AI", () => {
   });
 });
 
-describe("tech specializations", () => {
-  it("makes specialization pairs mutually exclusive", () => {
+describe("the one tech choice left: Fire Discipline or Demolitions", () => {
+  it("researching one locks the other out", () => {
     const base = createBase("p-base-1", "Home Base", "player", { x: -14, z: 0 });
     const sim = new TacticalSim([base]);
-    base.unlockedTech = ["assault"];
+    sim.setFaction("player", "syndicate");
+    base.unlockedTech = ["assault", "ordnance"];
     sim.economy.set("player", 9999);
     base.commandPoints = 5;
     sim.select("p-base-1");
-
-    expect(sim.researchTech("breach")).toBe(true);
-    expect(sim.researchFailureReason(base, "bulwark")).toMatch(/locked out/i);
-    expect(sim.researchTech("bulwark")).toBe(false);
-  });
-
-  it("breaching rounds raise infantry damage", () => {
-    const previewDamage = (tech: string[]) => {
-      const base = createBase("p-base-1", "HQ", "player", { x: -14, z: 0 });
-      base.unlockedTech = tech;
-      const sim = new TacticalSim([
-        base,
-        createSoldier("p", "Rook", "player", { x: 0, z: 0 }),
-        createSoldier("e", "Foe", "enemy", { x: 4, z: 0 }),
-      ]);
-      return sim.previewShot("p", "e", "body")?.amount ?? 0;
-    };
-    expect(previewDamage(["assault", "breach"])).toBeGreaterThan(previewDamage([]));
-  });
-
-  it("bulwark training deploys infantry with more HP", () => {
-    const spawnBodyHp = (tech: string[]) => {
-      const base = createBase("p-base-1", "HQ", "player", { x: -14, z: 0 });
-      base.unlockedTech = tech;
-      const sim = new TacticalSim([base]);
-      sim.economy.set("player", 9999);
-      base.commandPoints = 1;
-      sim.select("p-base-1");
-      sim.queueSpawnTroop("soldier");
-      const spawn = sim.entities.find((e) => e.id.startsWith("p-spawn-"));
-      return spawn?.parts.find((p) => p.id === "body")?.maxHp ?? 0;
-    };
-    expect(spawnBodyHp(["assault", "bulwark"])).toBeGreaterThan(spawnBodyHp(["assault"]));
-  });
-
-  it("ghillie doctrine makes your units harder to hit", () => {
-    const spread = (enemyTech: string[]): number => {
-      const enemyBase = createBase("e-base", "Relay", "enemy", { x: 14, z: 0 });
-      enemyBase.unlockedTech = enemyTech;
-      const sim = new TacticalSim([
-        enemyBase,
-        createSoldier("p", "Rook", "player", { x: 0, z: 0 }),
-        createSoldier("e", "Foe", "enemy", { x: 8, z: 0 }),
-      ]);
-      return sim.previewShot("p", "e", "body")?.spreadDegrees ?? 0;
-    };
-    expect(spread(["recon", "ghillie"])).toBeGreaterThan(spread([]));
-  });
-
-  it("thermobarics increases explosive splash damage", () => {
-    const splashTotal = (tech: string[]): number => {
-      const base = createBase("p-base-1", "HQ", "player", { x: -14, z: 0 });
-      base.unlockedTech = tech;
-      const enemyTank = createTank("et", "Breaker", "enemy", { x: 5, z: 0 });
-      const sim = new TacticalSim([base, createTank("pt", "Hammer", "player", { x: 0, z: 0 }), enemyTank]);
-      sim.select("pt");
-      sim.queueShootPart("et", "turret");
-      sim.endTurn();
-      advance(sim, 6);
-      return enemyTank.parts.reduce((sum, p) => sum + (p.maxHp - p.hp), 0);
-    };
-    expect(splashTotal(["assault", "ordnance", "thermobarics"])).toBeGreaterThan(splashTotal([]));
+    expect(sim.researchTech("incendiary")).toBe(true);
+    expect(sim.researchFailureReason(base, "demolition")).toMatch(/locked out/i);
+    expect(sim.researchTech("demolition")).toBe(false);
   });
 });
 

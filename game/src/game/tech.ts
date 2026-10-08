@@ -16,7 +16,6 @@ export interface TechEffect {
   splashDamage?: number; // ×explosive / grenade splash damage
   splashRadius?: number; // ×explosive splash radius
   evasion?: number; // ×spread of shots fired AT this team (>1 = harder to hit)
-  spotterBoost?: number; // 1 = spotter relays sharpen allied fire further
 }
 
 export interface TechNode {
@@ -39,24 +38,15 @@ export interface TechNode {
 export const TECH_TREE: readonly TechNode[] = [
   // ===== RECON: eyes, precision, the answer to air =====
   { id: "recon", name: "Recon Doctrine", branch: "recon", cost: 100, requires: [], tier: 1, blurb: "Marksmen and the Flak Track: precision, and the answer to air." },
-  { id: "marksman", name: "Sharpshooters", branch: "recon", cost: 140, requires: ["recon"], tier: 2, blurb: "The Rail Strike: kill what is worth killing." },
-  { id: "optics", name: "Optics Array", branch: "recon", cost: 130, requires: ["recon"], tier: 4, excludes: ["ghillie"], effect: { spotterBoost: 1 }, blurb: "Marksman relays sharpen nearby allied fire far more. Locks out Ghillie Doctrine." },
-  { id: "ghillie", name: "Ghillie Doctrine", branch: "recon", cost: 130, requires: ["recon"], tier: 4, excludes: ["optics"], effect: { evasion: 1.4 }, blurb: "Shots fired at your units scatter much wider. Locks out Optics Array." },
   // ===== ASSAULT: pressure, shock, the answer to armour =====
   { id: "assault", name: "Assault Doctrine", branch: "assault", cost: 100, requires: [], tier: 1, blurb: "Strikers, Heavy Gunners and the Gun Turret: pressure." },
-  { id: "shock", name: "Shock Troops", branch: "assault", cost: 150, requires: ["assault"], tier: 2, blurb: "Jump Troopers, Breakers, Hookshots, Rocket Skaters, Rocketeers, Sledges and the Rocket Post: the answer to armour, and a fist for the front." },
-  { id: "breach", name: "Breaching Rounds", branch: "assault", cost: 140, requires: ["assault"], tier: 4, excludes: ["bulwark"], effect: { infantryDamage: 1.25 }, blurb: "+25% infantry weapon damage. Locks out Bulwark Training." },
-  { id: "bulwark", name: "Bulwark Training", branch: "assault", cost: 140, requires: ["assault"], tier: 4, excludes: ["breach"], effect: { infantryHp: 1.25 }, blurb: "Infantry deploy with +25% HP. Locks out Breaching Rounds." },
-  { id: "ordnance", name: "Ordnance Lab", branch: "assault", cost: 160, requires: ["assault"], tier: 2, blurb: "Mortars, the Mortar Pit and Turret, Minefields, Cluster Strike: area denial." },
-  { id: "incendiary", name: "Fire Discipline", branch: "assault", cost: 170, requires: ["ordnance"], tier: 3, excludes: ["demolition"], blurb: "Flamers, Molotovs, the Flame Post and Napalm: set them alight. Locks out Demolitions." },
+  { id: "shock", name: "Shock Troops", branch: "assault", cost: 150, requires: ["assault"], tier: 2, blurb: "Jump Troopers, Breakers, Hookshots, Rocket Skaters, Rocketeers and Sledges: the answer to armour, and a fist for the front." },
+  { id: "ordnance", name: "Ordnance Lab", branch: "assault", cost: 160, requires: ["assault"], tier: 2, blurb: "Mortars, the Mortar Turret, Minefields and the Barrage: area denial." },
+  { id: "incendiary", name: "Fire Discipline", branch: "assault", cost: 170, requires: ["ordnance"], tier: 3, excludes: ["demolition"], blurb: "Flamers, Molotovs and Napalm: set them alight. Locks out Demolitions." },
   { id: "demolition", name: "Demolitions", branch: "assault", cost: 170, requires: ["ordnance"], tier: 3, excludes: ["incendiary"], blurb: "Boomers: break and bury. Locks out Fire Discipline." },
-  { id: "thermobarics", name: "Thermobarics", branch: "assault", cost: 160, requires: ["ordnance"], tier: 4, excludes: ["cluster"], effect: { splashDamage: 1.4 }, blurb: "+40% explosive and grenade splash damage. Locks out Cluster Munitions." },
-  { id: "cluster", name: "Cluster Munitions", branch: "assault", cost: 160, requires: ["ordnance"], tier: 4, excludes: ["thermobarics"], effect: { splashRadius: 1.5 }, blurb: "Explosive blasts cover 50% more ground. Locks out Thermobarics." },
   // ===== ARMOR: wheels, steel, then the deep end =====
   { id: "motorpool", name: "Motor Pool", branch: "armor", cost: 140, requires: ["assault"], tier: 2, blurb: "Runabouts and Chop Bikes: fast light machines that carry the fight." },
-  { id: "armor", name: "Armor Bay", branch: "armor", cost: 200, requires: ["motorpool"], tier: 3, blurb: "Tanks, the MG Bunker, the Gun Run and the Tank Drop: rolling steel." },
-  { id: "plating", name: "Reactive Plating", branch: "armor", cost: 160, requires: ["armor"], tier: 4, excludes: ["hunter"], effect: { vehicleHp: 1.25 }, blurb: "Vehicles deploy with +25% HP. Locks out Hunter Rounds." },
-  { id: "hunter", name: "Hunter Rounds", branch: "armor", cost: 160, requires: ["armor"], tier: 4, excludes: ["plating"], effect: { vsVehicleDamage: 1.3 }, blurb: "+30% damage dealt to vehicles. Locks out Reactive Plating." },
+  { id: "armor", name: "Armor Bay", branch: "armor", cost: 200, requires: ["motorpool"], tier: 3, blurb: "Tanks, the Gun Run and the Tank Drop: rolling steel." },
   { id: "siege", name: "Siege Works", branch: "armor", cost: 240, requires: ["armor", "recon"], tier: 4, blurb: "Artillery: needs armour to haul it and Recon to spot for it." },
   { id: "airwing", name: "Air Wing", branch: "armor", cost: 260, requires: ["armor", "recon"], tier: 4, blurb: "Aircraft: needs Armor Bay for the airfield and Recon for the radar." },
   // ===== SUPPORT: keep them fighting, then pick a school =====
@@ -79,7 +69,7 @@ export function troopsUnlockedBy(id: string): TroopKind[] {
 export function aggregateTechEffect(ids: readonly string[], passive?: TechEffect): Required<TechEffect> {
   const acc: Required<TechEffect> = {
     infantryDamage: 1, vsVehicleDamage: 1, infantryHp: 1, vehicleHp: 1,
-    splashDamage: 1, splashRadius: 1, evasion: 1, spotterBoost: 0,
+    splashDamage: 1, splashRadius: 1, evasion: 1,
   };
   const effects = ids.map((id) => techNode(id)?.effect).concat(passive ? [passive] : []);
   for (const eff of effects) {
@@ -91,7 +81,6 @@ export function aggregateTechEffect(ids: readonly string[], passive?: TechEffect
     if (eff.splashDamage) acc.splashDamage *= eff.splashDamage;
     if (eff.splashRadius) acc.splashRadius *= eff.splashRadius;
     if (eff.evasion) acc.evasion *= eff.evasion;
-    if (eff.spotterBoost) acc.spotterBoost = 1;
   }
   return acc;
 }

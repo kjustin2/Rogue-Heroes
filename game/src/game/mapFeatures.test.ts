@@ -43,20 +43,6 @@ describe("map features", () => {
     expect(hp(sim.entity(bystander.id)!), "beside the line is safe").toBe(standers);
   });
 
-  it("a launch pad flings a trooper that ends its move on it to the landing spot; a vehicle is not launched", () => {
-    for (const id of ["karak", "crossfire"]) {
-      const sim = board(id);
-      const pad = sim.launchPads()[0];
-      const t = sim.debugSpawn("soldier", "player", { x: pad.x - 2, z: pad.z });
-      sim.debugSelect(t.id);
-      expect(sim.queueMove({ x: pad.x, z: pad.z }), `${id}: ${sim.log[0]}`).toBe(true);
-      sim.endTurn(); settle(sim);
-      const at = sim.entity(t.id)!.position;
-      expect(Math.hypot(at.x - pad.to.x, at.z - pad.to.z), `${id}: landed at the pad's spot`).toBeLessThan(1.6);
-      expect(pointInWater(at)).toBe(false);
-    }
-  });
-
   it("Causeway thin ice: troopers walk it; a vehicle that stays on it cracks it, then goes through", () => {
     const sim = board("causeway");
     const ice = mapDef("causeway").terrain.ice![0];

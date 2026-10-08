@@ -116,27 +116,6 @@ describe("hard AI brain: the full move set", () => {
     expect(sim.smokeClouds.length).toBeGreaterThan(0);
   });
 
-  it("a Runabout far from the fight boards a rifleman beside it, and sets troops down when it arrives", () => {
-    const sim = hard();
-    const apc = arm(sim.debugSpawn("runabout", "enemy", { x: 20, z: 0 }));
-    const rider = arm(sim.debugSpawn("soldier", "enemy", { x: 20, z: 3.0 }));
-    sim.debugSpawn("soldier", "player", { x: -20, z: 0 });
-    settleCommand(sim);
-    const load = ordersOf(sim, apc.id).find((o) => o.kind === "load");
-    expect(load?.targetId).toBe(rider.id);
-    expect(ordersOf(sim, rider.id)).toHaveLength(0); // it was told to board, not to walk off
-    for (let t = 0; t < 20 && sim.phase === "resolve"; t += 0.05) sim.update(0.05);
-    expect(sim.entity(rider.id)!.carriedById).toBe(apc.id); // and the order really plays out
-    const sim2 = hard();
-    const apc2 = arm(sim2.debugSpawn("runabout", "enemy", { x: 4, z: 0 }));
-    const rider2 = sim2.debugSpawn("soldier", "enemy", { x: 4, z: 3.0 });
-    apc2.passengerIds = [rider2.id];
-    rider2.carriedById = apc2.id;
-    sim2.debugSpawn("soldier", "player", { x: -6, z: 0 });
-    settleCommand(sim2);
-    expect(ordersOf(sim2, apc2.id).some((o) => o.kind === "unload")).toBe(true);
-  });
-
   it("a trooper holding its ground under fire crouches with the action point it has left", () => {
     const sim = hard();
     const grunt = arm(sim.debugSpawn("heavy", "enemy", { x: 9, z: 0 }));
@@ -147,13 +126,13 @@ describe("hard AI brain: the full move set", () => {
     expect(mine.some((o) => o.kind === "defend")).toBe(true);
   });
 
-  it("shoves a foe toward its own mine", () => {
+  it("strikes a foe toward its own mine (every strike throws)", () => {
     const sim = hard();
     const striker = arm(sim.debugSpawn("striker", "enemy", { x: 2, z: 0 }));
     const foe = sim.debugSpawn("soldier", "player", { x: 0.6, z: 0 });
     sim.mines.push({ id: "m-test", x: foe.position.x - 2.6, z: 0, team: "enemy" });
     settleCommand(sim);
-    expect(ordersOf(sim, striker.id).some((o) => o.kind === "melee" && o.shove)).toBe(true);
+    expect(ordersOf(sim, striker.id).some((o) => o.kind === "melee")).toBe(true);
   });
 
   it("a Sledge slams a clump it is standing in, runs in and swings at one a run away, and does nothing special beyond", () => {

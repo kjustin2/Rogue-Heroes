@@ -47,9 +47,9 @@ describe("faction rosters differ", () => {
     }
   });
 
-  it("gives every faction four to six support powers: a tech-free starter, the rest by research it can reach, and at least one nobody else has", () => {
+  it("gives every faction three to six support powers: a tech-free starter, the rest by research it can reach, and at least one nobody else has", () => {
     for (const f of FACTIONS) {
-      expect(f.supports.length, `${f.id} supports`).toBeGreaterThanOrEqual(4); // 4 since the not-fun cut (2026-10-07)
+      expect(f.supports.length, `${f.id} supports`).toBeGreaterThanOrEqual(3); // the focused decks (2026-10-07)
       expect(f.supports.length, `${f.id} supports`).toBeLessThanOrEqual(6);
       for (const [i, kind] of f.supports.entries()) {
         const spec = SUPPORT_POWERS.find((p) => p.kind === kind);
@@ -67,8 +67,8 @@ describe("faction rosters differ", () => {
   it("gives every faction a defenses deck with tech-free starters and research-gated pieces it can reach", () => {
     for (const f of FACTIONS) {
       const specs = f.defenses.map((k) => DEFENSE_CATALOG.find((d) => d.kind === k)!);
-      expect(specs.filter((d) => !d.tech).length, `${f.id} starters`).toBeGreaterThanOrEqual(2);
-      expect(specs.length, `${f.id} deck size`).toBeGreaterThanOrEqual(5);
+      expect(specs.filter((d) => !d.tech).length, `${f.id} starters`).toBeGreaterThanOrEqual(1);
+      expect(specs.length, `${f.id} deck size`).toBeGreaterThanOrEqual(3); // focused: no manned posts, walls or bunkers (2026-10-07)
       for (const d of specs) if (d.tech) expect(f.tech.includes(d.tech), `${f.id} cannot research ${d.tech} for ${d.kind}`).toBe(true);
     }
     // Each faction owns at least one piece nobody else builds.
@@ -187,15 +187,15 @@ describe("the bot calls its faction's strike", () => {
     return sim;
   };
 
-  it("drops a Cluster Strike on a clump of hostiles", () => {
+  it("drops a Barrage on a clump of hostiles", () => {
     const sim = scene(false);
     sim.endTurn();
-    expect(sim.supportCooldown(baseOf(sim, "enemy"), "cluster")).toBeGreaterThan(0);
+    expect(sim.supportCooldown(baseOf(sim, "enemy"), "barrage")).toBeGreaterThan(0);
   });
 
   it("holds it when its own troops stand in the blast", () => {
     const sim = scene(true);
     sim.endTurn();
-    expect(sim.supportCooldown(baseOf(sim, "enemy"), "cluster")).toBe(0);
+    expect(sim.supportCooldown(baseOf(sim, "enemy"), "barrage")).toBe(0);
   });
 });

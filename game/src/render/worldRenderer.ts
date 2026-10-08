@@ -52,7 +52,7 @@ export class WorldRenderer {
   private readonly orderRoot = new THREE.Group();
   private readonly previewRoot = new THREE.Group();
   private readonly projectileRoot = new THREE.Group();
-  /** Map-owned features built once per map (rails, trains, launch pads); glow and train motion update per frame. */
+  /** Map-owned features built once per map (rails, trains); glow and train motion update per frame. */
   private readonly featureRoot = new THREE.Group();
   private featureKey = "";
   private railGlows: THREE.Mesh[] = [];
@@ -352,7 +352,7 @@ export class WorldRenderer {
     const crouchMovers = _crouchMovers;
     for (const entity of sim.entities) {
       // A unit aboard a carrier, or a Mole Sapper underground, is hidden — don't draw it (nor make it clickable).
-      if (entity.carriedById || entity.burrowed) {
+      if (entity.burrowed) {
         const group = this.groups.get(entity.id);
         if (group) group.visible = false;
         continue;
@@ -672,7 +672,7 @@ export class WorldRenderer {
     }
   }
 
-  /** Rails, freight trains and launch pads: built once per map, then only the rail glow and the trains move. */
+  /** Rails and freight trains: built once per map, then only the rail glow and the trains move. */
   private syncMapFeatures(sim: TacticalSim): void {
     const def = sim.mapDef;
     if (this.featureKey !== def.id) {
@@ -728,39 +728,6 @@ export class WorldRenderer {
         this.featureRoot.add(train);
         this.trains.push(train);
       });
-      // LAUNCH PADS: a dark steel plate with a hazard-striped rim and chevrons pointing at the landing ring.
-      const plateMat = new THREE.MeshStandardMaterial({ color: 0x3a3f46, roughness: 0.5, metalness: 0.5 });
-      const hazard = new THREE.MeshBasicMaterial({ color: 0xf2c230 });
-      const chevMat = new THREE.MeshStandardMaterial({ color: 0xffb040, emissive: 0xff7a1e, emissiveIntensity: 0.5 });
-      for (const pad of sim.launchPads()) {
-        const y = drawnGroundAt(pad);
-        const plate = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.15, 0.16, 24), plateMat);
-        plate.position.set(pad.x, y + 0.08, pad.z);
-        plate.receiveShadow = true;
-        this.featureRoot.add(plate);
-        for (let k = 0; k < 12; k += 2) {
-          const a = (k / 12) * Math.PI * 2;
-          const seg = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.04, 0.16), hazard);
-          seg.position.set(pad.x + Math.cos(a) * 0.95, y + 0.17, pad.z + Math.sin(a) * 0.95);
-          seg.rotation.y = -a + Math.PI / 2;
-          this.featureRoot.add(seg);
-        }
-        const yaw = Math.atan2(pad.to.x - pad.x, pad.to.z - pad.z);
-        for (const k of [-0.35, 0.05, 0.45]) {
-          const chev = new THREE.Group();
-          for (const side of [-1, 1]) {
-            const arm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.42), chevMat);
-            arm.position.set(side * 0.14, 0, 0);
-            arm.rotation.y = side * 0.7;
-            chev.add(arm);
-          }
-          chev.position.set(pad.x + Math.sin(yaw) * k, y + 0.19, pad.z + Math.cos(yaw) * k);
-          chev.rotation.y = yaw + Math.PI; // the arms splay BACK from the tip, so the chevron points at the landing ring
-          this.featureRoot.add(chev);
-        }
-        const landing = new THREE.Mesh(drapedDisc(pad.to.x, pad.to.z, 0.85, 1.05, 32, 0.06), new THREE.MeshBasicMaterial({ color: 0xf2c230, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false }));
-        this.featureRoot.add(landing);
-      }
     }
     // Per frame: the rail glow and the trains.
     const env = sim.environment();
@@ -871,7 +838,7 @@ export class WorldRenderer {
   private shoveNear(sim: TacticalSim, point: Vec2, radius: number, power: number, from?: Vec2): void {
     const now = performance.now();
     for (const entity of sim.entities) {
-      if (!entity.status.alive || entity.kind === "cover" || entity.flying || entity.carriedById) continue;
+      if (!entity.status.alive || entity.kind === "cover" || entity.flying) continue;
       const d = dist(entity.position, point);
       if (d > radius + entity.radius) continue;
       const origin = from ?? point;
@@ -1552,24 +1519,6 @@ export class WorldRenderer {
         this.markerRoot.add(marker);
       }
       updateUnitMarker(marker, entity, color, pulse);
-      // SNIPER MARK: a spinning red diamond over the marked unit until it wears off.
-      const marked = entity.markedUntilTurn !== undefined && entity.markedUntilTurn >= sim.turn;
-      let bracket = marker.userData.bracket as THREE.Mesh | undefined;
-      if (marked && !bracket) {
-        bracket = new THREE.Mesh(
-          new THREE.RingGeometry(0.62, 0.74, 4),
-          new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, depthTest: false }),
-        );
-        bracket.rotation.x = -Math.PI / 2;
-        bracket.position.y = 0.02;
-        marker.userData.bracket = bracket;
-        marker.add(bracket);
-      }
-      if (bracket) {
-        bracket.visible = marked;
-        bracket.rotation.z = performance.now() * 0.0015;
-        (bracket.material as THREE.MeshBasicMaterial).opacity = 0.6 + pulse * 0.4;
-      }
       this.debug.unitMarkers += 1;
     }
     for (const [id, marker] of this.unitMarkers) {
@@ -1637,7 +1586,7 @@ export class WorldRenderer {
     }
     group.userData.ghosted = ghosted;
     const digRing = group.userData.digInRing as THREE.Group | undefined;
-    if (digRing) digRing.visible = Boolean(entity.dugIn) && entity.status.alive && !entity.carriedById;
+    if (digRing) digRing.visible = Boolean(entity.dugIn) && entity.status.alive;
     // DEATH. A unit used to vanish on the frame it died. Now it stays for deathMs() and plays its
     // family's death (poseDeath: thrown / crumple / spin / wreck / spiral) before sinking.
     if (!entity.status.alive && group.userData.diedAt === undefined && entity.kind !== "cover") {
@@ -3357,16 +3306,6 @@ export class WorldRenderer {
     this.factionVehicleDress(group, entity);
   }
 
-  // SENTRY: a squat tripod gun with a lit sensor eye: small, obviously temporary.
-  private buildSentry(group: THREE.Group, entity: CombatEntity, glow: number): void {
-    for (const [x, z] of [[-0.3, 0.2], [0.3, 0.2], [0, -0.32]] as const) this.box(group, entity, "mount", [0.06, 0.56, 0.06], [x, 0.3, z], 0x2a2f34, { rotation: [z < 0 ? -0.4 : 0.3, 0, x * 0.7], metalness: 0.4 });
-    this.box(group, entity, "mount", [0.5, 0.1, 0.5], [0, 0.06, 0], 0x1d2226, { metalness: 0.3 });
-    this.box(group, entity, "gun", [0.3, 0.26, 0.6], [0, 0.64, 0.05], 0x3a4650, { metalness: 0.4, bevel: 0.2 });
-    this.cylinder(group, entity, "gun", 0.045, 0.6, [0, 0.66, 0.5], 0x1d2226, [Math.PI / 2, 0, 0], { metalness: 0.5 });
-    this.box(group, entity, "gun", [0.1, 0.08, 0.08], [0, 0.84, 0.0], 0xdaf7ff, { accent: true, emissive: glow, emissiveIntensity: 0.6 }).userData.blink = 0.008;
-    this.box(group, entity, "gun", [0.2, 0.16, 0.2], [0.24, 0.52, -0.1], 0x5a5a3a, { accent: true });
-  }
-
   private buildMount(group: THREE.Group, entity: CombatEntity): void {
     // The ring: ten sandbag blocks round the rim, open at the back (+z is the crew's side).
     for (let i = 0; i < 10; i += 1) {
@@ -3454,7 +3393,6 @@ export class WorldRenderer {
       return;
     }
     if (isMountKind(entity.kind)) { this.buildMount(group, entity); return; }
-    if (entity.kind === "sentry") { this.buildSentry(group, entity, glow); return; }
     if (entity.kind === "bunker") { this.buildBunker(group, entity); return; }
     // Shared emplacement base + traversing ring, dug in behind a sandbag berm.
     this.box(group, entity, "mount", [1.5, 0.36, 1.5], [0, 0.18, 0], 0x333a42, { metalness: 0.24, bevel: 0.12 });
@@ -5385,9 +5323,6 @@ export class WorldRenderer {
         this.groundAimRoot.add(makeSplashDisc(p, 0xff8c3a, 1.9));
       }
       this.groundAimRoot.add(makeLine({ x: point.x - dir.x * 6, z: point.z - dir.z * 6 }, { x: point.x + dir.x * 6, z: point.z + dir.z * 6 }, 0xff8c3a, 0.5 + pulse * 0.3, y));
-    } else if (kind === "cluster") {
-      this.groundAimRoot.add(makeSplashDisc(point, 0xffb02e, 3.2 + 1.35));
-      this.groundAimRoot.add(makeEndpoint(point, 0xffb02e, 0.6, y));
     } else if (kind === "napalm") {
       // Three firebombs along the line, each a 1.7m burn patch (sim: scheduleSupportStrikes).
       for (let i = 0; i < 3; i += 1) {
@@ -5405,12 +5340,12 @@ export class WorldRenderer {
     } else if (kind === "minedrop") {
       this.groundAimRoot.add(makeSplashDisc(point, 0xffb02e, 3));
       this.groundAimRoot.add(makeEndpoint(point, 0xffb02e, 0.6, y));
-    } else if (kind === "sentrydrop") {
-      this.groundAimRoot.add(makeSplashDisc(point, 0xbfe9ff, 1.1));
-      this.groundAimRoot.add(makeEndpoint(point, 0xbfe9ff, 0.5 + pulse * 0.2, y));
-    } else if (kind === "railstrike") {
-      for (let i = 0; i < 3; i += 1) this.groundAimRoot.add(makeSplashDisc({ x: point.x + dir.x * (i - 1) * 1.5, z: point.z + dir.z * (i - 1) * 1.5 }, 0xc9d3dc, 1.25));
-      this.groundAimRoot.add(makeLine({ x: point.x - dir.x * 5, z: point.z - dir.z * 5 }, { x: point.x + dir.x * 5, z: point.z + dir.z * 5 }, 0xc9d3dc, 0.5 + pulse * 0.3, y));
+    } else if (kind === "boulder") {
+      // The boulder's lane: 18m down the line through the point, a stone's width wide (BOULDER_LENGTH / BOULDER_WIDTH).
+      const a = { x: point.x - dir.x * 9, z: point.z - dir.z * 9 };
+      const b = { x: point.x + dir.x * 9, z: point.z + dir.z * 9 };
+      for (let i = 0; i <= 4; i += 1) this.groundAimRoot.add(makeSplashDisc({ x: a.x + (b.x - a.x) * i / 4, z: a.z + (b.z - a.z) * i / 4 }, 0xd9c4a0, 1.4));
+      this.groundAimRoot.add(makeLine(a, b, 0xd9c4a0, 0.5 + pulse * 0.3, y));
     } else if (kind === "shockwave") {
       this.groundAimRoot.add(makeSplashDisc(point, 0xd9b98a, 4)); // SHOCKWAVE_RADIUS
       this.groundAimRoot.add(makeEndpoint(point, 0xd9b98a, 0.6 + pulse * 0.2, y));
@@ -5889,6 +5824,19 @@ export class WorldRenderer {
         shadow.position.set(x, terrainHeightAt({ x, z }) + 0.03, z);
         shadow.scale.set(1, 1.9, 1);
         this.effectRoot.add(shadow);
+      } else if (effect.type === "roll") {
+        const dx = effect.to.x - effect.from.x, dz = effect.to.z - effect.from.z;
+        const len = Math.hypot(dx, dz) || 1;
+        const r = effect.radius ?? 1.4;
+        const p = { x: effect.from.x + dx * t, z: effect.from.z + dz * t };
+        const stone = new THREE.Mesh(boulderGeometry(), boulderMaterial());
+        stone.scale.setScalar(r);
+        stone.position.set(p.x, drawnGroundAt(p) + r * 0.92, p.z);
+        // Rolling without slipping: the spin angle is the distance travelled over the radius.
+        stone.rotation.y = Math.atan2(dx, dz);
+        stone.rotateX((t * len) / r);
+        stone.castShadow = true;
+        this.effectRoot.add(stone);
       } else if (effect.type === "topple") {
         // A felled column pivots at its base and slams along the from->to line, kicking
         // dust at the impact end. The dead cover mesh hides itself, so this IS the fall.
@@ -9141,6 +9089,28 @@ function hexColor(hex: number): THREE.Color {
 }
 
 const _fuseScratch = new THREE.Vector3();
+/** The rolling boulder (Boulder Roll): a lumpy unit-radius rock, shared and pooled. */
+let _boulderGeo: THREE.BufferGeometry | undefined;
+let _boulderMat: THREE.MeshStandardMaterial | undefined;
+function boulderGeometry(): THREE.BufferGeometry {
+  if (!_boulderGeo) {
+    const g = new THREE.IcosahedronGeometry(1, 1);
+    const pos = g.getAttribute("position") as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i += 1) {
+      const k = 0.86 + ((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1 * 0.22; // fixed lumps, no Math.random
+      pos.setXYZ(i, pos.getX(i) * k, pos.getY(i) * k, pos.getZ(i) * k);
+    }
+    g.computeVertexNormals();
+    g.userData.shared = true;
+    _boulderGeo = g;
+  }
+  return _boulderGeo;
+}
+function boulderMaterial(): THREE.MeshStandardMaterial {
+  if (!_boulderMat) { _boulderMat = new THREE.MeshStandardMaterial({ color: 0x8a7a66, roughness: 0.95, flatShading: true }); _boulderMat.userData.shared = true; }
+  return _boulderMat;
+}
+
 // Scratch colors reused by paintPart's per-frame, per-mesh hot path (avoids allocating).
 const _paintColor = new THREE.Color();
 // Scratch id->part map reused by syncEntity's per-frame traverse.

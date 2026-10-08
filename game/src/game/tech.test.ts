@@ -40,30 +40,16 @@ describe("TECH_TREE structure", () => {
 });
 
 describe("aggregateTechEffect", () => {
-  it("returns neutral defaults with no specializations", () => {
+  it("returns neutral defaults with nothing researched (the stat-bump upgrades were cut, 2026-10-07)", () => {
     expect(aggregateTechEffect([])).toEqual({
       infantryDamage: 1, vsVehicleDamage: 1, infantryHp: 1, vehicleHp: 1,
-      splashDamage: 1, splashRadius: 1, evasion: 1, spotterBoost: 0,
+      splashDamage: 1, splashRadius: 1, evasion: 1,
     });
+    expect(aggregateTechEffect(["recon", "assault", "nope"])).toEqual(aggregateTechEffect([]));
   });
 
-  it("applies a single specialization's payoff", () => {
-    expect(aggregateTechEffect(["breach"]).infantryDamage).toBeCloseTo(1.25);
-    expect(aggregateTechEffect(["hunter"]).vsVehicleDamage).toBeCloseTo(1.3);
-    expect(aggregateTechEffect(["cluster"]).splashRadius).toBeCloseTo(1.5);
-    expect(aggregateTechEffect(["optics"]).spotterBoost).toBe(1);
-  });
-
-  it("sums flat bonuses and multiplies scalar bonuses across nodes", () => {
-    const both = aggregateTechEffect(["breach", "hunter"]);
-    expect(both.infantryDamage).toBeCloseTo(1.25);
-    expect(both.vsVehicleDamage).toBeCloseTo(1.3);
-    // Multiplicative stacking (contrived, but proves the aggregation math).
-    expect(aggregateTechEffect(["breach", "breach"]).infantryDamage).toBeCloseTo(1.25 * 1.25);
-  });
-
-  it("ignores unknown or effect-less ids", () => {
-    expect(aggregateTechEffect(["assault", "bogus"])).toEqual(aggregateTechEffect([]));
+  it("folds in a faction's built-in passive", () => {
+    expect(aggregateTechEffect([], { infantryHp: 1.1 }).infantryHp).toBeCloseTo(1.1);
   });
 });
 
@@ -83,11 +69,10 @@ describe("tech tree design", () => {
     expect(troopsUnlockedBy("shock")).toContain("bazooka");
   });
 
-  it("the tree is deep: four branches, five layers, and a real choice (an exclusive pair) on most of them", () => {
+  it("the tree is focused: every node opens something you can see, four layers deep, one real either/or", () => {
     const depth = (id: string): number => 1 + Math.max(0, ...techNode(id)!.requires.map(depth));
     expect(Math.max(...TECH_TREE.map((n) => depth(n.id)))).toBeGreaterThanOrEqual(4);
-    expect(TECH_TREE.length).toBeGreaterThanOrEqual(20);
-    expect(TECH_TREE.filter((n) => (n.excludes ?? []).length > 0).length).toBeGreaterThanOrEqual(10);
+    expect(TECH_TREE.filter((n) => n.effect)).toEqual([]); // no invisible stat bumps (owner 2026-10-07)
     // The pairs that unlock units, not just numbers: Fire Discipline vs Demolitions.
     expect(techNode("incendiary")!.excludes).toContain("demolition");
   });
@@ -98,9 +83,5 @@ describe("tech tree design", () => {
     }
     expect(techNode("airwing")!.requires).toContain("recon");
     expect(techNode("armor")!.requires).toContain("motorpool"); // tanks sit behind the light vehicles
-  });
-
-  it("an upgrade costs no more than a trooper and a half (it also spends the base order)", () => {
-    for (const spec of TECH_TREE.filter((n) => n.effect)) expect(spec.cost, spec.id).toBeLessThanOrEqual(160);
   });
 });
