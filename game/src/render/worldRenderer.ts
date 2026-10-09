@@ -13,7 +13,7 @@ import type { OrderKind, Projectile, ShotPreview, TacticalSim, VisualEvent } fro
 import { CLASH_BLAST, CLASH_BOLT, IMMOVABLE_HEAVIES, SWEEP_FX, isDustBlast, isPulseBlast, minefieldPoints, muzzleFor } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type GroundSurfaceKind, type SkylineKind } from "../game/maps";
 import type { TroopKind } from "../game/units";
-import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, climbsAlong, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainIce, terrainWater } from "../game/terrain";
+import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, climbsAlong, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainIce, terrainWater, type TerrainRect } from "../game/terrain";
 import { kitGeometry, modelsVersion, propGeometry, toonGradient, vehicleGeometry, vehiclesKitReady, type KitPart, type PropsKind, type VehiclesPart } from "./models";
 import { VEHICLE_LAYOUT } from "./vehiclesLayout";
 import { damageLabel } from "./damageLabel";
@@ -120,6 +120,8 @@ export class WorldRenderer {
   private lastRangeSig = "";
   private resolving = false;
   private waterWaves: THREE.Texture | undefined;
+  /** The bridge decks, each hinged at one bank (makeWaterAndBridges): lifted while the icebreaker passes. */
+  private bridgeLeaves: THREE.Group[] = [];
   private lastPlacementSig = "";
   private readonly placementRing: THREE.Mesh;
   private readonly placementDisc: THREE.Mesh;
@@ -358,6 +360,7 @@ export class WorldRenderer {
       this.resolving = sim.phase === "resolve";
       this.syncEntity(entity, sim.selectedId, targetId, targetPartId, sim.defending.has(entity.id), this.ghostedEntityIds.has(entity.id), crouchMovers.has(entity.id));
     }
+    this.liftBridges(sim);
     this.syncUnitMarkers(sim);
     this.syncSelection(sim);
     this.syncTarget(sim, targetId);
@@ -1394,6 +1397,7 @@ export class WorldRenderer {
     const water = makeWaterAndBridges(theme, surface);
     this.waterRipple = (water.userData.ripple as THREE.Texture | undefined) ?? undefined;
     this.waterWaves = (water.userData.waves as THREE.Texture | undefined) ?? undefined;
+    this.bridgeLeaves = (water.userData.leaves as THREE.Group[] | undefined) ?? [];
     this.sceneryRoot.add(water);
     this.sceneryRoot.add(makeSurroundings(theme, width, depth));
 
@@ -5284,6 +5288,34 @@ export class WorldRenderer {
     if (spot.snapped) this.groundAimRoot.add(makeLine(point, spot.point, color, 0.6, y));
   }
 
+  /** THE CAUSEWAY DRAWBRIDGES: a crossing within reach of the icebreaker's hull swings up on its bank hinge (up to ~70
+   *  degrees), and drops back once the ship is past. Drawn from the sweep's progress only; the sim's bridge never moves. The span
+   *  planks on a raised deck are hidden while it is up (they would otherwise hang in the air). */
+  private liftBridges(sim: TacticalSim): void {
+    if (!this.bridgeLeaves.length) return;
+    const ships = sim.effects.filter((e) => e.type === "roll" && e.color === SWEEP_FX.icebreaker).map((e) => {
+      const t = clamp01(e.age / e.duration);
+      return { x: e.from.x + (e.to.x - e.from.x) * t, z: e.from.z + (e.to.z - e.from.z) * t };
+    });
+    for (const leaf of this.bridgeLeaves) {
+      const r = leaf.userData.rect as TerrainRect;
+      let lift = 0;
+      for (const p of ships) {
+        const d = Math.hypot(Math.max(r.minX - p.x, p.x - r.maxX, 0), Math.max(r.minZ - p.z, p.z - r.maxZ, 0));
+        lift = Math.max(lift, 1 - clamp01((d - 4.5) / 4)); // full within 4.5m of the hull's centre, eased out by 8.5m
+      }
+      const a = lift * lift * (3 - 2 * lift) * 1.2;
+      leaf.rotation.set(leaf.userData.along ? 0 : -a, 0, leaf.userData.along ? a : 0);
+      leaf.userData.lift = a;
+    }
+    for (const e of sim.entities) {
+      if (e.coverKind !== "span" || !e.status.alive) continue;
+      const leaf = this.bridgeLeaves.find((l) => { const r = l.userData.rect as TerrainRect; return e.position.x >= r.minX - 0.5 && e.position.x <= r.maxX + 0.5 && e.position.z >= r.minZ - 0.5 && e.position.z <= r.maxZ + 0.5; });
+      const group = this.groups.get(e.id);
+      if (group && leaf) group.visible = !((leaf.userData.lift as number) > 0.05);
+    }
+  }
+
   // The hover footprint while calling in a support power: the lane of a roll (boulder, car bomb), a blast disc,
   // or the strafing line (gun run, id laser). Line powers align
   // away from the calling base, so the preview shows the true strike axis.
@@ -8549,11 +8581,20 @@ function makeWaterAndBridges(theme: MapTheme, surface: GroundSurface): THREE.Gro
     const along = w >= d;
     const span = along ? w : d;
 
+    // THE LEAF: deck, walkway lips and rails hinge at the bridge's low end (min x or min z), so the renderer can swing the
+    // crossing up when the Causeway icebreaker comes through (bridgeLifts, 2026-10-08). The piles stay put.
+    const leaf = new THREE.Group();
+    leaf.name = "bridge-leaf";
+    leaf.position.set(along ? r.minX : cx, 0, along ? cz : r.minZ);
+    leaf.userData = { rect: r, along };
+    group.add(leaf);
+    (group.userData.leaves ??= [] as THREE.Group[]).push(leaf);
+    const onLeaf = (o: THREE.Object3D): void => { o.position.sub(leaf.position); leaf.add(o); };
     const deck = new THREE.Mesh(new THREE.BoxGeometry(w, 0.16, d), deckMat);
     deck.position.set(cx, 0.09, cz);
     deck.castShadow = true;
     deck.receiveShadow = true;
-    group.add(deck);
+    onLeaf(deck);
 
     // Piles down into the channel bed. A deck floating over open water was the other half of why
     // a crossing read as a painted rectangle rather than a structure.
@@ -8578,7 +8619,7 @@ function makeWaterAndBridges(theme: MapTheme, surface: GroundSurface): THREE.Gro
       const lip = new THREE.Mesh(new THREE.BoxGeometry(along ? span : 0.12, 0.02, along ? 0.12 : span), edgeMat);
       const off = (along ? d : w) / 2 - 0.34;
       lip.position.set(cx + (along ? 0 : side * off), 0.175, cz + (along ? side * off : 0));
-      group.add(lip);
+      onLeaf(lip);
     }
     // Low side rails along the bridge's long axis so it reads as a crossing, not just a plank.
     const railThick = 0.14;
@@ -8590,7 +8631,7 @@ function makeWaterAndBridges(theme: MapTheme, surface: GroundSurface): THREE.Gro
       const off = (along ? d : w) / 2 - railThick / 2;
       rail.position.set(cx + (along ? 0 : side * off), 0.26, cz + (along ? side * off : 0));
       rail.castShadow = true;
-      group.add(rail);
+      onLeaf(rail);
     }
   }
   return group;

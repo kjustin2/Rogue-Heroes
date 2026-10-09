@@ -65,6 +65,7 @@
     "art:validate:selftest": "node scripts/blender.mjs art/infantry/validate_selftest.py",
     "art:inspect": "node scripts/inspect-glb.mjs",
     "probe:map": "node scripts/probe-map.mjs",
+    "probe:map-fit": "vite-node src/game/mapFit.probe.ts",
     "shots:diff": "node scripts/shot-diff.mjs",
     "smoke:core": "npm run smoke:buttons && npm run smoke:flow && npm run smoke:economy && npm run smoke:deep && npm run smoke:ground && npm run smoke:ui-audit && npm run smoke:faction && npm run smoke:animation && npm run smoke:attacks && npm run smoke:director && npm run smoke:hotseat",
     "test:full": "npm run verify && npm run smoke:core",

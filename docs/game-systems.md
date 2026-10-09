@@ -52,6 +52,26 @@ derelict turrets and its sandbag walls stay (map neutrals / cover, not buildable
   their speed bonus dropped 12% -> 6%. The Jump Trooper stays $170: at $185 the Normal bot stops buying it and Vanguard falls to
   ~30% (a buying threshold, not a smooth knob). The Bomber went $470 -> $560 (it sat at 2.35x the median damage per dollar).
 
+## Maps fit the units (2026-10-08, audit pass)
+`npm run probe:map-fit` (src/game/mapFit.probe.ts, pure, ~3s) measures what each map offers each unit class:
+
+| map | tank routes | tank drive | cover (centre) | high ground | ring-out on the route |
+| --- | --- | --- | --- | --- | --- |
+| Dust Bowl | 4 | 83m | 46% | 541 m2 | 0% |
+| Ironworks | 3 | 42m | 58% | 74 m2 | 44% |
+| Verdant | 4 | 49m | 53% | 441 m2 | 6% |
+| Causeway | 3 | 95m | 27% | 83 m2 | 0% |
+| Karak | 4 | 50m | 43% | 185 m2 | 52% |
+| Crossfire | 2 | 58m | 58% | 121 m2 | 15% |
+
+Every map has 2+ tank-width routes and infantry cover in the middle. The draw-heavy maps (Dust Bowl 14/24, Causeway ~9/24 in
+the 16-turn self-play) are the two long drives. MEASURED AND REJECTED: shortening them (large-map scale 1.41 -> 1.25/1.33 and
+bases pulled in: drives 83 -> 64-75m) left Dust Bowl at 14 draws and cost three props to the walking-gap rule, so it was
+reverted. Those two maps simply deal less damage per game (~1,220 vs ~1,500 elsewhere); lanes are not the cause (a no-lane run
+changed nothing). Their pace is a design call for the owner, not a bug.
+- **Causeway drawbridges**: each bridge deck is a leaf hinged at one bank (`makeWaterAndBridges`, `bridgeLeaves`); while the
+  icebreaker passes, a crossing within ~4.5m of its hull swings up ~70 degrees and drops back after (`liftBridges`, renderer only).
+
 ## Map events look and sound right (2026-10-08)
 - **Drawn** by `src/render/sweepFx.ts` (`drawSweep`, keyed by the roll effect's `SWEEP_FX` colour), all shared geometry, nothing additive,
   deterministic from the sweep's progress (a dust trail is the puffs kicked at earlier t): the DUST DEVIL is a twisted, banded lathe

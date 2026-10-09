@@ -14,6 +14,7 @@ Every command, smoke, probe and oracle, and the hard-won ledgers behind them. Ru
 | Full gate + smokes | `npm run test:full` |
 | Every smoke, serially (buttons flow economy deep ground ui-audit faction animation attacks director hotseat) | `npm run smoke:core` |
 | Movement + projectile oracle (AI vs AI, all maps; part of `npm test`) | `npx vitest run src/game/movement.test.ts` |
+| Map fit per unit class (tank routes, drive, cover, high ground, ring-out) | `npm run probe:map-fit` |
 | Map layout: no props/posts overlap, nothing straddles a step (part of `npm test`) | `npx vitest run src/game/mapLayout.test.ts` |
 | Fun units close up + their verbs mid-action (real GPU; `FUN=faction:kind,...` to pick) | `npm run shots:gpu -- fununits` |
 | Map features: rails + train, launch pad, thin ice, barrels (real GPU) | `npm run shots:gpu -- mapfx` |
