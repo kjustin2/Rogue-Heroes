@@ -582,6 +582,20 @@ describe("shockwave, spring trap and tank drop", () => {
     expect(tank.position, "a tank never moves").toEqual(at);
     expect(hp(behind), "the run stopped at the tank").toBe(hpBehind);
   });
+
+  it("a car bomb goes up against a solid prop in its path, never through it (visual QA 2026-10-08)", () => {
+    const sim = staged();
+    const crate = sim.debugCover("crate", { x: -1, z: 0 });
+    const past = sim.debugSpawn("soldier", "enemy", { x: 5, z: 0 });
+    disarm(past); tough(past);
+    const hpPast = hp(past);
+    call(sim, "carbomb", { x: 0, z: 0 });
+    run(sim);
+    expect(sim.log.some((l) => l.includes("car bomb goes up"))).toBe(true);
+    expect(crate.parts.reduce((a, p) => a + p.hp, 0), "the crate took the blast").toBeLessThan(crate.parts.reduce((a, p) => a + p.maxHp, 0));
+    expect(hp(past), "nothing past the crate was rammed").toBe(hpPast);
+    expect(sim.effects.some((e) => e.type === "roll"), "the car is no longer drawn").toBe(false);
+  });
 });
 
 describe("harpoon tower (2026-10-07)", () => {

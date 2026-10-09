@@ -37,7 +37,7 @@ try {
 
   // Settings screen (a canonical review shot).
   await page.click('[data-menu="settings"]');
-  await page.waitForSelector('[data-set="skin"]');
+  await page.waitForSelector('[data-set="mute"]');
   await delay(400);
   await page.screenshot({ path: join(OUT, "polish-2-settings.png") });
 

@@ -72,6 +72,19 @@ changed nothing). Their pace is a design call for the owner, not a bug.
 - **Causeway drawbridges**: each bridge deck is a leaf hinged at one bank (`makeWaterAndBridges`, `bridgeLeaves`); while the
   icebreaker passes, a crossing within ~4.5m of its hull swings up ~70 degrees and drops back after (`liftBridges`, renderer only).
 
+## Visual + audio QA pass (2026-10-08, independent visual-qa agent on fresh real-GPU shots)
+Fixed (ranked majors): the boulder tore into loose triangles (`boulderGeometry` lumped an unwelded icosahedron per index:
+now `mergeVertices` first); the transport jet's contrail drew a white band over a low camera (it fades within ~7-14m of the
+camera; the engine dots are no longer additive); the Car Bomb drove through props (it now goes up against the first solid
+prop / post / wall: `sweepStep`; a stopped sweep stops being drawn, `stopSweep`, so a boulder no longer rolls on through the
+tank that broke it); the icebreaker left the ice whole (it opens a dark channel with floes over `terrainIce`); the NEXT TURN
+banner covered the last blast (it waits for blasts / sweeps / landings to finish, up to 2s); the parachute canopy hung out of
+frame (lower canopy, 6m drop); the devil's wireframe tumbleweed is solid. `npm run screens` works again (its settings selector).
+Audio: `src/audioCoverage.test.ts` fails if a VisualEvent type or an exported `*_FX` colour has no sound branch in main.ts
+(fault-injection proven); the dead "shot" effect (gun run) was removed. Every map has its music set and ambience bed.
+Deferred minors (not bugs): cattle carry no ink outline; Vanguard artillery foot-pads read apart from the legs; part-debris chunks
+linger into the next turn; the resolve camera can frame a commando at the edge.
+
 ## Map events look and sound right (2026-10-08)
 - **Drawn** by `src/render/sweepFx.ts` (`drawSweep`, keyed by the roll effect's `SWEEP_FX` colour), all shared geometry, nothing additive,
   deterministic from the sweep's progress (a dust trail is the puffs kicked at earlier t): the DUST DEVIL is a twisted, banded lathe

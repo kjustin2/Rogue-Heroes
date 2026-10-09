@@ -358,10 +358,8 @@ export interface VisualEvent {
   // "jet" = a strike aircraft flying from->to; "topple" = a tall cover column falling from `from` toward `to`.
   // "strike" = a melee blow landing at `to`, swung from `from`.
   // "land" = a jump trooper touching down at `to`; "roll" = a lane sweep (boulder, dust devil, herd, icebreaker) from -> to.
-  // "shot" = a gun-run burst (gunship strafe): tracers from the aircraft's gun at `fromHeight`
-  // down into `to`. It is resolved as direct damage, so it carries no Projectile of its own.
   // "clash" = two rounds meeting in mid-air at `fromHeight`; its colour names the family (CLASH_SPARK / CLASH_BOLT / CLASH_BLAST).
-  type: "shot" | "impact" | "blast" | "ping" | "jet" | "topple" | "strike" | "bolt" | "land" | "clash" | "roll";
+  type: "impact" | "blast" | "ping" | "jet" | "topple" | "strike" | "bolt" | "land" | "clash" | "roll";
   from: Vec2;
   to: Vec2;
   color: number;
@@ -621,7 +619,7 @@ export class TacticalSim {
   // Support strikes committed this command phase; they fly in during the next resolve.
   private queuedSupport: { kind: SupportPowerKind; point: Vec2; dir: Vec2; team?: Team }[] = [];
   // Timed one-shot visual events (strike jets) played during a resolve.
-  private pendingFx: { at: number; type: VisualEvent["type"]; from: Vec2; to: Vec2; color: number; duration: number; radius?: number; fired?: boolean }[] = [];
+  private pendingFx: { at: number; type: VisualEvent["type"]; from: Vec2; to: Vec2; color: number; duration: number; radius?: number; fired?: boolean; sweep?: string }[] = [];
 
   private orderSeq = 0;
   private effectSeq = 0;
@@ -6474,6 +6472,9 @@ export class TacticalSim {
   }
 
   private finishResolve(): void {
+    this.rollHits.clear(); // sweeps never outlive their resolve
+    this.stoppedRolls.clear();
+    this.sweepEffects.clear();
     this.orders.splice(0);
     this.projectiles.splice(0);
     this.defending.clear();
@@ -6762,6 +6763,7 @@ export class TacticalSim {
       if (fx.fired || this.strikeClock < fx.at) continue;
       fx.fired = true;
       this.effect(fx.type, fx.from, fx.to, fx.color, fx.duration, fx.radius);
+      if (fx.sweep) this.sweepEffects.set(fx.sweep, this.effects[this.effects.length - 1]);
     }
     this.pendingFx = this.pendingFx.filter((fx) => !fx.fired);
     let detonated = false;
@@ -6813,7 +6815,7 @@ export class TacticalSim {
     const id = `roll-${++this.effectSeq}`;
     const len = dist(from, to) || 1;
     const dir = { x: (to.x - from.x) / len, z: (to.z - from.z) / len };
-    this.pendingFx.push({ at: o.at, type: "roll", from, to, color: SWEEP_FX[kind], duration: o.seconds, radius: o.width });
+    this.pendingFx.push({ at: o.at, type: "roll", from, to, color: SWEEP_FX[kind], duration: o.seconds, radius: o.width, sweep: id });
     const steps = Math.max(6, Math.ceil(len / 1.8));
     for (let i = 0; i <= steps; i += 1) {
       const t = i / steps;
@@ -6829,6 +6831,17 @@ export class TacticalSim {
     const hit = this.rollHits.get(strike.roll) ?? new Set<string>();
     this.rollHits.set(strike.roll, hit);
     const owner = this.entities.find((e) => e.kind === "base" && e.team === strike.team);
+    // A CAR BOMB hits solid things too: it goes up against the first prop, post or wall in its path, never through it
+    // (visual QA 2026-10-08: it drove through Dust Bowl's wrecked truck).
+    if (strike.kind === "carbomb") {
+      const wall = this.entities.find((e) => e.status.alive && !e.flying && ((e.kind === "cover" && !["ridge", "span"].includes(e.coverKind ?? "")) || isDefenseKind(e.kind) || isBuildingKind(e.kind))
+        && dist(e.position, strike.point) <= e.radius + strike.radius * 0.8);
+      if (wall) {
+        this.stopSweep(strike.roll);
+        this.detonateStrike({ point: strike.point, radius: CAR_BOMB_RADIUS, damage: CAR_BOMB_DAMAGE, kind: "carblast", team: strike.team });
+        return;
+      }
+    }
     for (const e of [...this.entities]) {
       if (!e.status.alive || e.flying || e.burrowed || hit.has(e.id) || e.kind === "cover" || isBuildingKind(e.kind) || isDefenseKind(e.kind)) continue;
       if (dist(e.position, strike.point) > strike.radius + e.radius * 0.6) continue;
@@ -6841,7 +6854,7 @@ export class TacticalSim {
       if (IMMOVABLE_HEAVIES.has(e.kind)) {
         // The stone breaks on armour: a dent, a dust cloud, and the rest of the roll is called off.
         applyDamage(e, preferredPart(e, "center").id, Math.round(strike.damage * 0.5));
-        this.stoppedRolls.add(strike.roll);
+        this.stopSweep(strike.roll);
         if (strike.kind === "carbomb") {
           // The car bomb rams the heavy and goes up against it.
           this.detonateStrike({ point: strike.point, radius: CAR_BOMB_RADIUS, damage: CAR_BOMB_DAMAGE, kind: "carblast", team: strike.team });
@@ -6879,6 +6892,13 @@ export class TacticalSim {
     }
   }
   private readonly rollHits = new Map<string, Set<string>>();
+  /** The drawn roll effect of each live sweep, so a sweep stopped dead (a boulder on a tank, a car bomb going up) stops being drawn there. */
+  private readonly sweepEffects = new Map<string, VisualEvent>();
+  private stopSweep(roll: string): void {
+    this.stoppedRolls.add(roll);
+    const fx = this.sweepEffects.get(roll);
+    if (fx) { const i = this.effects.indexOf(fx); if (i >= 0) this.effects.splice(i, 1); this.sweepEffects.delete(roll); }
+  }
   private readonly stoppedRolls = new Set<string>();
 
   /** SHOCKWAVE: a fat air-burst. A little damage, then every ground unit within SHOCKWAVE_RADIUS is thrown away from the

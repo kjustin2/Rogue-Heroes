@@ -1906,7 +1906,11 @@ function showRoundTransition(turn: number): void {
 
 sim.bus.on("TURN_START", ({ turn }) => {
   if (sim.hotseat && inBattle && sim.phase === "command") beginHotseatTurn();
-  showRoundTransition(turn);
+  // The banner waits for the last big payoff (a blast, a sweep, a landing) to finish, at most 2s: it used to land on top of a
+  // car bomb going up (visual QA 2026-10-08). Outside a resolve the sim clock runs in real time, so effect seconds are ms/1000.
+  const payoff = Math.min(2, Math.max(0, ...sim.effects.filter((e) => e.type === "blast" || e.type === "roll" || e.type === "land").map((e) => e.duration - e.age)));
+  if (payoff > 0.05) window.setTimeout(() => showRoundTransition(turn), payoff * 1000);
+  else showRoundTransition(turn);
   // Back out to the zoom the player was planning at before the resolve pushed in.
   if (resolveEntryZoom !== undefined) {
     const view = stage.viewState();

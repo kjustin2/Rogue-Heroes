@@ -262,13 +262,10 @@ describe("every non-gun attack has an animation", () => {
     // A move past a hostile must NOT gun it (owner 2026-10-02: "gunship auto shot at targets below me").
     expect(sim.queueMove({ x: 4, z: 0 })).toBe(true);
     sim.endTurn();
-    const idle: VisualEvent[] = [];
     for (let t = 0; t < 30 && sim.phase === "resolve"; t += 0.05) {
       sim.update(0.05);
-      for (const e of sim.effects) if (e.type === "shot" && !idle.some((s) => s.id === e.id)) idle.push({ ...e });
       expect(sim.projectiles.length, "the move fired a round").toBe(0);
     }
-    expect(idle.length, "a gun run happened without being ordered").toBe(0);
     // Ordered, it fires from up in the air.
     const g2 = createGunship("g", "G", "player", { x: -8, z: 0 });
     const sim2 = new TacticalSim([g2, pinned(createSoldier("v", "V", "enemy", { x: -2, z: 0.5 }))]);

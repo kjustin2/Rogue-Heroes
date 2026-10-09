@@ -1,5 +1,7 @@
 import * as THREE from "three";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { Vec2 } from "../core/math";
+import { terrainIce } from "../game/terrain";
 
 // THE MAP EVENTS AND THE ROLLING STRIKES, DRAWN (owner 2026-10-08: "polish ... like tornado look and animation or cattle animation").
 // One function per sweep (a dust devil, a stampede, a boulder, an icebreaker, a car bomb). Each is drawn fresh every frame from the
@@ -135,7 +137,7 @@ function drawDevil(root: THREE.Object3D, e: SweepEffect, t: number, ground: Grou
   // Debris carried round and up the column: clods, a plank, a tumbleweed.
   const clod = mat("clod", { color: 0x5e4630, flatShading: true });
   const wood = mat("plank", { color: 0x8c6a42 });
-  const weed = mat("weed", { color: 0x9a8656, wireframe: true });
+  const weed = mat("weed", { color: 0x9a8656, flatShading: true });
   for (let i = 0; i < 7; i += 1) {
     const cycle = ((now * 0.00035 + rnd(i + 20)) % 1);
     const h = 0.4 + cycle * (DEVIL_HEIGHT - 1.2);
@@ -233,7 +235,9 @@ function drawStampede(root: THREE.Object3D, e: SweepEffect, t: number, ground: G
 
 function boulderGeometry(): THREE.BufferGeometry {
   return once("boulder", () => {
-    const g = new THREE.IcosahedronGeometry(1, 1);
+    // Welded first: the icosahedron's triangles each own their corners, so lumping per vertex index tore the stone into loose
+    // triangles with holes (visual QA 2026-10-08). After the weld each corner is shared, and one scale moves every face on it.
+    const g = mergeVertices(new THREE.IcosahedronGeometry(1, 1).deleteAttribute("normal").deleteAttribute("uv"));
     const pos = g.getAttribute("position") as THREE.BufferAttribute;
     for (let i = 0; i < pos.count; i += 1) {
       const k = 0.86 + rnd(i) * 0.22; // fixed lumps
@@ -289,6 +293,32 @@ function drawIcebreaker(root: THREE.Object3D, e: SweepEffect, t: number, ground:
   ship.rotation.z = Math.sin(t * 7) * 0.03;
   root.add(ship);
   const water = (): number => -0.05;
+  // THE CHANNEL IT OPENS: over thin ice, the hull's width behind it is broken water with floes along its edges (visual QA
+  // 2026-10-08: the ice stayed whole behind the ship). Clipped to the ice sheets, so open water gets no strip.
+  const half = 1.4;
+  const lo = { x: Math.min(e.from.x, p.x) - (Math.abs(dir.z) > 0.5 ? half : 0), z: Math.min(e.from.z, p.z) - (Math.abs(dir.x) > 0.5 ? half : 0) };
+  const hi = { x: Math.max(e.from.x, p.x) + (Math.abs(dir.z) > 0.5 ? half : 0), z: Math.max(e.from.z, p.z) + (Math.abs(dir.x) > 0.5 ? half : 0) };
+  const open = mat("open-water", { color: 0x1f3b52, roughness: 0.2 });
+  const floe = mat("floe", { color: 0xe4f2f8, flatShading: true });
+  for (const r of terrainIce()) {
+    const minX = Math.max(lo.x, r.minX), maxX = Math.min(hi.x, r.maxX), minZ = Math.max(lo.z, r.minZ), maxZ = Math.min(hi.z, r.maxZ);
+    if (maxX - minX < 0.2 || maxZ - minZ < 0.2) continue;
+    const strip = new THREE.Mesh(box(1, 1, 1), open);
+    strip.scale.set(maxX - minX, 0.02, maxZ - minZ);
+    strip.position.set((minX + maxX) / 2, 0.05, (minZ + maxZ) / 2);
+    root.add(strip);
+    const along = Math.abs(dir.x) > 0.5;
+    const span = along ? maxX - minX : maxZ - minZ;
+    for (let k = 0; k < span; k += 0.9) for (const sd of [-1, 1]) {
+      const n = Math.round(k * 10) + (sd > 0 ? 7 : 0);
+      const u = (along ? minX : minZ) + k + rnd(n) * 0.5;
+      const v = (along ? (minZ + maxZ) / 2 : (minX + maxX) / 2) + sd * (half - 0.25 - rnd(n + 3) * 0.5);
+      const f = mesh(box(1, 1, 1), floe, along ? u : v, 0.07, along ? v : u, 1);
+      f.scale.set(0.35 + rnd(n + 1) * 0.4, 0.08, 0.3 + rnd(n + 2) * 0.35);
+      f.rotation.y = rnd(n + 4) * 3;
+      root.add(f);
+    }
+  }
   // Bow spray: white puffs thrown up and out either side of the prow.
   const foam = puffMat("foam", 0xf2f6f8, 0.75);
   const bow = { x: p.x + dir.x * 3.9, z: p.z + dir.z * 3.9 };
@@ -380,13 +410,13 @@ export function makeChute(): THREE.Group {
   const g = new THREE.Group();
   g.name = "chute";
   const canopy = new THREE.Mesh(once("chute-dome", () => shared(new THREE.SphereGeometry(1.5, 14, 6, 0, Math.PI * 2, 0, Math.PI / 2.4))), mat("chute", { color: 0x6e7a4a, side: THREE.DoubleSide }));
-  canopy.position.y = 3.6;
+  canopy.position.y = 2.7; // low over the trooper so the canopy stays in frame with him
   g.add(canopy);
   const line = mat("chute-line", { color: 0x2a2a24 });
   for (let i = 0; i < 4; i += 1) {
     const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-    const l = new THREE.Mesh(box(0.03, 2.1, 0.03), line);
-    l.position.set(Math.cos(a) * 0.55, 2.6, Math.sin(a) * 0.55);
+    const l = new THREE.Mesh(box(0.03, 1.2, 0.03), line);
+    l.position.set(Math.cos(a) * 0.55, 2.1, Math.sin(a) * 0.55);
     l.rotation.set(Math.sin(a) * 0.42, 0, -Math.cos(a) * 0.42);
     g.add(l);
   }

@@ -22,7 +22,7 @@ import {
   isLobbed, makeLightning, makeMuzzleFlash, makePing, makeProjectileModel, makeProjectileShadow, makeProjectileTrail,
   makeScorchStar, makeStrikeFlash, orientAlongVelocity, prewarmProjectileFx, projectileFamily,
   projectileFxWarmUpMaterials, projectileGeometry, projectileMaterial, pushTrailPoint, setFxViewer,
-  makeChimneySmoke, makeGunRun, type LandingHint, type ProjectileFamily, type TrailPoint,
+  makeChimneySmoke, type LandingHint, type ProjectileFamily, type TrailPoint,
 } from "./projectileFx";
 
 // Cover kinds built by buildBiomeProp (the per-map furniture added 2026-09-23).
@@ -120,6 +120,8 @@ export class WorldRenderer {
   private lastRangeSig = "";
   private resolving = false;
   private waterWaves: THREE.Texture | undefined;
+  /** Where the camera is this frame (for FX that must thin out when they pass right by it). */
+  private viewer: THREE.Vector3 | undefined;
   /** The bridge decks, each hinged at one bank (makeWaterAndBridges): lifted while the icebreaker passes. */
   private bridgeLeaves: THREE.Group[] = [];
   private lastPlacementSig = "";
@@ -382,7 +384,7 @@ export class WorldRenderer {
     }
     // Flat cut-outs (the impact star, the POW burst) turn to face the camera; the FX module needs
     // to know where it is, and it changes once a frame.
-    if (camera) setFxViewer(camera.position);
+    if (camera) { setFxViewer(camera.position); this.viewer = camera.position; }
     this.syncProjectiles(sim.projectiles);
     this.syncEffects(sim.effects);
     this.syncFlashLights();
@@ -1728,13 +1730,13 @@ export class WorldRenderer {
       const t = (performance.now() - (group.userData.droppedAt as number)) / 650;
       if (t < 1) group.position.y += (1 - t * t) * 14;
     }
-    // COMMANDO DROP: the trooper drifts the last 9m down under a chute (~0.9s), which folds away as he lands.
+    // COMMANDO DROP: the trooper drifts the last 6m down under a chute (~0.9s), which folds away as he lands.
     if (entity.chuted) {
       if (group.userData.droppedAt === undefined) group.userData.droppedAt = this.commandPhase ? -Infinity : performance.now();
       const t = (performance.now() - (group.userData.droppedAt as number)) / 900;
       let chute = group.getObjectByName("chute");
       if (t < 1) {
-        group.position.y += (1 - t) * (1 - t) * 9;
+        group.position.y += (1 - t) * (1 - t) * 6;
         if (!chute) { chute = makeChute(); group.add(chute); }
         chute.scale.setScalar(Math.min(1, (1 - t) * 4));
       } else if (chute) group.remove(chute);
@@ -5792,9 +5794,7 @@ export class WorldRenderer {
     for (const effect of effects) {
       const t = clamp01(effect.age / effect.duration);
       const opacity = 1 - t;
-      if (effect.type === "shot") {
-        for (const part of makeGunRun(effect, t, terrainHeightAt(effect.to), terrainHeightAt(effect.from))) this.effectRoot.add(part);
-      } else if (effect.type === "jet") {
+      if (effect.type === "jet") {
         // A strike aircraft crossing the field: dark delta silhouette + engine glow +
         // contrail, plus a racing ground shadow so the flyby reads at tactics zoom.
         const x = effect.from.x + (effect.to.x - effect.from.x) * t;
@@ -5814,7 +5814,7 @@ export class WorldRenderer {
         for (const side of [-1, 1]) {
           const engine = new THREE.Mesh(
             new THREE.SphereGeometry(0.09, 8, 6),
-            new THREE.MeshBasicMaterial({ color: effect.color, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }),
+            new THREE.MeshBasicMaterial({ color: effect.color }), // a plain warm dot: no additive glow in a flyover
           );
           engine.position.set(side * 0.32, -0.02, -0.72);
           jet.add(engine);
@@ -5823,7 +5823,10 @@ export class WorldRenderer {
         jet.rotation.y = Math.atan2(dirX, dirZ);
         this.effectRoot.add(jet);
         const back = { x: x - (dirX / len) * 3.4, z: z - (dirZ / len) * 3.4 };
-        this.effectRoot.add(makeTubeLine(back, { x, z }, 0xffffff, 0.22, alt, 0.06, alt));
+        // The contrail fades out as the jet nears the camera: a low resolve camera under the flight line saw it as a white band
+        // across a quarter of the frame (visual QA 2026-10-08; no FX may fill the screen).
+        const near = this.viewer ? clamp01((Math.hypot(this.viewer.x - x, this.viewer.y - alt, this.viewer.z - z) - 7) / 7) : 1;
+        if (near > 0.05) this.effectRoot.add(makeTubeLine(back, { x, z }, 0xffffff, 0.22 * near, alt, 0.06, alt));
         const shadow = new THREE.Mesh(projectileShadowGeometry(0.5), projectileShadowMaterial(0x000000, 0.2));
         shadow.rotation.x = -Math.PI / 2;
         shadow.position.set(x, terrainHeightAt({ x, z }) + 0.03, z);
