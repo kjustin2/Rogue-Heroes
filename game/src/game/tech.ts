@@ -39,19 +39,19 @@ export const TECH_TREE: readonly TechNode[] = [
   // ===== RECON: eyes, precision, the answer to air =====
   { id: "recon", name: "Recon Doctrine", branch: "recon", cost: 100, requires: [], tier: 1, blurb: "Marksmen and the Flak Track: precision, and the answer to air." },
   // ===== ASSAULT: pressure, shock, the answer to armour =====
-  { id: "assault", name: "Assault Doctrine", branch: "assault", cost: 100, requires: [], tier: 1, blurb: "Strikers and Heavy Gunners: pressure." },
-  { id: "shock", name: "Shock Troops", branch: "assault", cost: 150, requires: ["assault"], tier: 2, blurb: "Jump Troopers, Breakers, Hookshots, Rocket Skaters, Rocketeers and Sledges: the answer to armour, and a fist for the front." },
+  { id: "assault", name: "Assault Doctrine", branch: "assault", cost: 100, requires: [], tier: 1, blurb: "Heavy Gunners, plus Vanguard's Jump Troopers and the Syndicate's Strikers: pressure." },
+  { id: "shock", name: "Shock Troops", branch: "assault", cost: 150, requires: ["assault"], tier: 2, blurb: "Rocketeers (the answer to armour) and each faction's fist: Breakers and Hookshots, the Sledge, the Harpoon Tower." },
   { id: "ordnance", name: "Ordnance Lab", branch: "assault", cost: 160, requires: ["assault"], tier: 2, blurb: "Mortars, the Mortar Turret, Minefields and the Barrage: area denial." },
   { id: "incendiary", name: "Fire Discipline", branch: "assault", cost: 170, requires: ["ordnance"], tier: 3, excludes: ["demolition"], blurb: "Flamers and Molotovs: set them alight. Locks out Demolitions." },
   { id: "demolition", name: "Demolitions", branch: "assault", cost: 170, requires: ["ordnance"], tier: 3, excludes: ["incendiary"], blurb: "Boomers and the Car Bomb: break and bury. Locks out Fire Discipline." },
   // ===== ARMOR: wheels, steel, then the deep end =====
-  { id: "motorpool", name: "Motor Pool", branch: "armor", cost: 140, requires: ["assault"], tier: 2, blurb: "Chop Bikes: fast light machines that carry the fight." },
+  { id: "motorpool", name: "Motor Pool", branch: "armor", cost: 140, requires: ["assault"], tier: 2, blurb: "Each faction's light machine: the Rocket Skater, the Chop Bike, the Bulldozer. The road to the tanks." },
   { id: "armor", name: "Armor Bay", branch: "armor", cost: 200, requires: ["motorpool"], tier: 3, blurb: "Tanks, the Gun Run and the Tank Drop: rolling steel." },
   { id: "siege", name: "Siege Works", branch: "armor", cost: 240, requires: ["armor", "recon"], tier: 4, blurb: "Artillery: needs armour to haul it and Recon to spot for it." },
   { id: "airwing", name: "Air Wing", branch: "armor", cost: 260, requires: ["armor", "recon"], tier: 4, blurb: "Aircraft: needs Armor Bay for the airfield and Recon for the radar." },
   // ===== SUPPORT: keep them fighting, then pick a school =====
   { id: "support", name: "Support Wing", branch: "support", cost: 150, requires: ["recon"], tier: 2, blurb: "The Commando Drop: an elite trooper on call." },
-  { id: "fieldworks", name: "Field Works", branch: "support", cost: 150, requires: ["assault"], tier: 2, blurb: "Juggernauts, Mole Sappers and Bulldozers: dig in and hold." },
+  { id: "fieldworks", name: "Field Works", branch: "support", cost: 150, requires: ["assault"], tier: 2, blurb: "Juggernauts and Mole Sappers: dig in and hold." },
 ];
 
 

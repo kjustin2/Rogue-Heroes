@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { aggregateTechEffect, TECH_TREE, techNode, troopsUnlockedBy } from "./tech";
-import { DEFENSE_CATALOG, SUPPORT_POWERS } from "./units";
+import { BASE_UPGRADES, DEFENSE_CATALOG, SUPPORT_POWERS, TROOP_CATALOG } from "./units";
+import { FACTIONS } from "./factions";
 
 describe("techNode", () => {
   it("looks up nodes and returns undefined for unknown ids", () => {
@@ -62,6 +63,27 @@ describe("tech tree design", () => {
 
   it("every node opens something or carries an effect, so no branch is a dead end", () => {
     for (const node of TECH_TREE) expect(opens(node.id) + (node.effect ? 1 : 0) + TECH_TREE.filter((n) => n.requires.includes(node.id)).length, node.id).toBeGreaterThan(0);
+  });
+
+  // TECH THAT MAKES SENSE (owner 2026-10-08): every node a faction can research gives THAT faction something (a troop in its
+  // roster, a defense or strike in its decks, a base upgrade), or is the road to a node that does; and everything in its decks
+  // and roster is reachable through its own list.
+  it("every faction's tech list is all signal: no hollow node, nothing unreachable", () => {
+    for (const f of FACTIONS) {
+      const gives = (id: string): number => f.roster.filter((k) => TROOP_CATALOG.find((t) => t.kind === k)?.tech === id).length
+        + f.defenses.filter((k) => DEFENSE_CATALOG.find((d) => d.kind === k)?.tech === id).length
+        + f.supports.filter((k) => SUPPORT_POWERS.find((p) => p.kind === k)?.tech === id).length
+        + BASE_UPGRADES.filter((u) => u.tech === id).length;
+      const useful = (id: string): boolean => gives(id) > 0 || f.tech.some((o) => techNode(o)!.requires.includes(id) && useful(o));
+      for (const id of f.tech) expect(useful(id), `${f.id}: ${id} gives it nothing`).toBe(true);
+      const needed = [
+        ...f.roster.map((k) => TROOP_CATALOG.find((t) => t.kind === k)?.tech),
+        ...f.defenses.map((k) => DEFENSE_CATALOG.find((d) => d.kind === k)?.tech),
+        ...f.supports.map((k) => SUPPORT_POWERS.find((p) => p.kind === k)?.tech),
+      ].filter((t): t is string => Boolean(t));
+      const reach = (id: string): string[] => [id, ...techNode(id)!.requires.flatMap(reach)];
+      for (const id of needed) for (const r of reach(id)) expect(f.tech, `${f.id} needs ${r} (for ${id})`).toContain(r);
+    }
   });
 
   it("recon answers air and shock troops answer armour, so neither threat needs the armour road", () => {

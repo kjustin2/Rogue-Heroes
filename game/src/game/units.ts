@@ -268,7 +268,7 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "striker", label: "Striker", role: "Melee", cost: 470, cooldown: 2, tech: "assault", tip: "CHARGE: the strike order closes up to 6.5m for free before the blade lands, so anything within a lunge is already in reach." },
   { kind: "heavy", label: "Heavy Gunner", role: "Suppression", cost: 250, cooldown: 2, tech: "assault", tip: "Machine-gun bursts SUPPRESS whoever they hit: one action point and a forced crouch next turn. Strays rake nearby targets." },
   { kind: "mortar", label: "Mortar Team", role: "Indirect", cost: 260, cooldown: 3, tech: "ordnance", tip: "High-arc fire over walls and ridges. SALVO: three lighter shells walk down a line through the spot, short, on it and long." },
-  { kind: "jumper", label: "Jump Trooper", role: "Vertical", cost: 170, cooldown: 2, tech: "shock", tip: "Jet pack: its move is a leap over cliffs, water and walls. It lands like a bomb, hurting and throwing every foe within 2.5m. Flak can catch it mid-arc." },
+  { kind: "jumper", label: "Jump Trooper", role: "Vertical", cost: 170, cooldown: 2, tech: "assault", tip: "Jet pack: its move is a leap over cliffs, water and walls. It lands like a bomb, hurting and throwing every foe within 2.5m. Flak can catch it mid-arc." },
   { kind: "flamer", label: "Flamer", role: "Burn", cost: 260, cooldown: 2, tech: "incendiary", tip: "Short-range flame projector. Hits leave burning ground for 2 turns: run, don't crouch. FEAR: enemy infantry near the flames break and run from them. Its fuel tanks explode when shot." },
   { kind: "bazooka", label: "Rocketeer", role: "Anti-Armor", cost: 300, cooldown: 2, tech: "shock", tip: "Shoulder-fired rocket: hits vehicles half again as hard (96 against armour). Slow, short-ranged and fragile: armour will hunt it." },
   { kind: "sledge", label: "Sledge", role: "Hammer", cost: 300, cooldown: 3, tech: "shock", tip: "SLAM: swings a huge hammer in a circle: every foe within 3m is hurt and flung. Fast, brittle, brutal against a clump or a ledge." },
@@ -276,16 +276,16 @@ export const TROOP_CATALOG: readonly TroopSpec[] = [
   { kind: "boomer", label: "Boomer", role: "Kamikaze", cost: 110, cooldown: 1, tech: "demolition", tip: "Fast, fragile, no gun. DETONATE: blows itself up, wrecking and flinging everything within 3.6m. Shot first, it blows where it falls." },
   { kind: "juggernaut", label: "Juggernaut", role: "Blast Cannon", cost: 340, cooldown: 3, tech: "fieldworks", tip: "Slow and tough. Its shoulder cannon's blasts throw troopers far." },
   { kind: "hookshot", label: "Hookshot", role: "Grapple", cost: 170, cooldown: 2, tech: "shock", tip: "Its harpoon DRAGS whatever it hits to its feet (tanks don't budge). Its Reel hops 10m onto ledges." },
-  { kind: "skater", label: "Rocket Skater", role: "Bowler", cost: 240, cooldown: 2, tech: "shock", tip: "Fastest trooper. Every move is a rocket boost that bowls over troopers on its line." },
+  { kind: "skater", label: "Rocket Skater", role: "Bowler", cost: 240, cooldown: 2, tech: "motorpool", tip: "Fastest trooper. Every move is a rocket boost that bowls over troopers on its line." },
   { kind: "molotov", label: "Molotov", role: "Fire Bottles", cost: 170, cooldown: 2, tech: "incendiary", tip: "Lobs a fire bottle 16m, over cover: burning ground for 2 turns that sets troopers alight." },
   { kind: "mole", label: "Mole Sapper", role: "Burrower", cost: 320, cooldown: 2, tech: "fieldworks", tip: "Moves underground (can't be shot) and erupts where it surfaces, throwing every foe within 2m." },
   { kind: "chopbike", label: "Chop Bike", role: "Raider", cost: 260, cooldown: 2, tech: "motorpool", tip: "A fast bike. Every move rides THROUGH troopers, slashing and scattering each one it passes." },
-  { kind: "bulldozer", label: "Bulldozer", role: "Shover", cost: 380, cooldown: 3, tech: "fieldworks", tip: "Slow and armoured. Every move SHOVES everything ahead of its blade: troopers, tanks, props, wrecks. Into walls, water, off the map." },
+  { kind: "bulldozer", label: "Bulldozer", role: "Shover", cost: 380, cooldown: 3, tech: "motorpool", tip: "Slow and armoured. Every move SHOVES everything ahead of its blade: troopers, light vehicles, props, wrecks. Into walls, water, off the map. Tanks don't budge." },
   { kind: "tank", label: "Tank", role: "Armor", cost: 760, cooldown: 3, tech: "armor", tip: "Massive HP, big gun, rams and crushes cover. RUNS OVER troopers in its path, throwing them aside." },
   { kind: "artillery", label: "Artillery", role: "Siege", cost: 380, cooldown: 3, tech: "siege", tip: "Long-range siege gun; devastating at distance and tough, but helpless up close. It fires or moves in a turn, never both." },
   { kind: "flak", label: "Flak Track", role: "Anti-Air", cost: 240, cooldown: 2, tech: "recon", tip: "Anti-air specialist: shreds aircraft at range. Weak against ground armour." },
   { kind: "gunship", label: "Gunship", role: "Air", cost: 420, cooldown: 3, tech: "airwing", tip: "Overflies all terrain. Its autocannon rakes ground troops and aircraft alike; BOMB drops a huge blast on any spot in reach, no flight needed, that throws troops flying. Fragile to flak; cannot capture." },
-  { kind: "bomber", label: "Bomber", role: "Heavy Bomber", cost: 470, cooldown: 4, tech: "airwing", tip: "Slow, tough heavy bomber. CARPET: each drop is three bombs in a line across the spot. No gun at all, so send an escort." },
+  { kind: "bomber", label: "Bomber", role: "Heavy Bomber", cost: 560, cooldown: 4, tech: "airwing", tip: "Slow, tough heavy bomber. CARPET: each drop is three bombs in a line across the spot. No gun at all, so send an escort." },
 ];
 
 export function troopSpec(kind: TroopKind): TroopSpec {

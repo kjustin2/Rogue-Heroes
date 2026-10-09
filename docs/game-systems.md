@@ -41,6 +41,17 @@ derelict turrets and its sandbag walls stay (map neutrals / cover, not buildable
 - **Movement fix found by the oracle:** a ground move that runs out of time on a bent (shoved) path could stop with its hull in a step. `settleHalt`
   now falls back to the nearest ground the hull fits on (`nearestFittingGround`).
 
+## Tech that makes sense (2026-10-08, audit pass)
+- Rule (`tech.test` "every faction's tech list is all signal"): every node in a faction's list gives THAT faction a troop, defense,
+  strike or base upgrade, or is the road to one that does; everything in its roster and decks is reachable through its own list.
+- Motor Pool is each faction's light machine (Rocket Skater / Chop Bike / Bulldozer) and stays the road to Armor Bay. Vanguard's
+  Jump Trooper moved to Assault (its Shock node held five units, its Assault one). Field Works is Bastion's alone (Juggernaut,
+  Mole). Bastion's bot now researches Field Works. The Bulldozer tip no longer claims it shoves tanks.
+- Faction matchups (`SEEDS=11,23,37,59,71,83,97,101 npm run balance:factions`, 288 games): Vanguard over Syndicate 35-24, over
+  Bastion 37-22; Syndicate over Bastion 30-18: all inside 35-65%. Bastion troopers lost their 8% move penalty, Vanguard's
+  their speed bonus dropped 12% -> 6%. The Jump Trooper stays $170: at $185 the Normal bot stops buying it and Vanguard falls to
+  ~30% (a buying threshold, not a smooth knob). The Bomber went $470 -> $560 (it sat at 2.35x the median damage per dollar).
+
 ## Map events look and sound right (2026-10-08)
 - **Drawn** by `src/render/sweepFx.ts` (`drawSweep`, keyed by the roll effect's `SWEEP_FX` colour), all shared geometry, nothing additive,
   deterministic from the sweep's progress (a dust trail is the puffs kicked at earlier t): the DUST DEVIL is a twisted, banded lathe

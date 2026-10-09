@@ -94,7 +94,7 @@ export const FACTIONS: readonly FactionDef[] = [
     blurb: "Full air wing. No artillery.",
     detail: "Air-mobile shock troops. Jump troopers, rocket-fisted Breakers, Hookshots that drag foes in, Rocket Skaters and the only gunships, with Rocketeers for armour. No mortar or artillery: a dug-in enemy has to be taken, not shelled.",
     roster: ["soldier", "sniper", "jumper", "heavy", "bazooka", "breaker", "hookshot", "skater", "tank", "flak", "gunship"],
-    tech: ["recon", "assault", "shock", "motorpool", "armor", "airwing", "support", "fieldworks"],
+    tech: ["recon", "assault", "shock", "motorpool", "armor", "airwing", "support"],
     defenses: ["barrels", "springtrap", "harpoon"],
     supports: ["shockwave", "commando", "tankdrop"],
     accent: 0x8cefff,
@@ -109,7 +109,7 @@ export const FACTIONS: readonly FactionDef[] = [
     labels: { soldier: "Trooper", flak: "Skyguard" },
     // Quick and light: it gets there first and pays for it in armour.
     unitMods: {
-      soldier: { move: 1.12, hp: 0.95 }, skater: { move: 1.06 }, sniper: { range: 1.08 }, jumper: { move: 1.1, hp: 0.95 },
+      soldier: { move: 1.06, hp: 0.95 }, skater: { move: 1.06 }, sniper: { range: 1.08 }, jumper: { move: 1.1, hp: 0.95 },
       heavy: { move: 1.12 }, bazooka: { move: 1.1 }, breaker: { move: 1.08 },
       tank: { move: 1.1, hp: 0.92 }, flak: { range: 1.06 }, gunship: { damage: 1.08, hp: 0.92 },
     },
@@ -120,7 +120,7 @@ export const FACTIONS: readonly FactionDef[] = [
     blurb: "Fire and blades. Kills pay.",
     detail: "Fast, cheap and attritional. Strikers, flamers, Molotov throwers, Chop Bikes, the Sledge and kamikaze Boomers, with tank-hunting rocketeers behind them. No tank and no siege gun, so it cannot win a slugging match -- only a quicker one.",
     roster: ["soldier", "sniper", "heavy", "striker", "flamer", "boomer", "molotov", "bazooka", "sledge", "chopbike", "flak"],
-    tech: ["recon", "assault", "shock", "motorpool", "fieldworks", "ordnance", "incendiary", "demolition"],
+    tech: ["recon", "assault", "shock", "motorpool", "ordnance", "incendiary", "demolition"],
     defenses: ["barrels", "minefield", "harpoon"],
     supports: ["napalm", "carbomb", "barrage"],
     accent: 0xffca6b,
@@ -152,7 +152,7 @@ export const FACTIONS: readonly FactionDef[] = [
     supports: ["boulder", "laser", "tankdrop", "barrage"],
     accent: 0x9ef0b8,
     aiPreference: ["tank", "heavy", "artillery", "juggernaut", "mole", "bulldozer", "mortar", "sniper"],
-    aiTechPath: ["assault", "motorpool", "armor", "shock", "recon", "siege"],
+    aiTechPath: ["assault", "motorpool", "armor", "fieldworks", "shock", "recon", "siege"],
     doctrine: {
       name: "Dig In",
       text: "A ground unit that holds its ground for a full turn digs in: 20% less damage until it moves.",
@@ -161,7 +161,7 @@ export const FACTIONS: readonly FactionDef[] = [
     labels: { soldier: "Guardsman", sniper: "Sentinel" },
     // Tough, slow and long-ranged: nothing it fields is quick, and everything outlasts its price.
     unitMods: {
-      soldier: { hp: 1.12, move: 0.92 }, heavy: { hp: 1.1, move: 0.92 }, sniper: { range: 1.06, move: 0.95 }, mortar: { range: 1.1, move: 0.9 },
+      soldier: { hp: 1.12 }, heavy: { hp: 1.1 }, sniper: { range: 1.06, move: 0.95 }, mortar: { range: 1.1, move: 0.9 },
       juggernaut: { hp: 1.08 }, tank: { hp: 1.12, move: 0.94 }, artillery: { range: 1.1, hp: 1.1 }, flak: { hp: 1.1 }, bomber: { hp: 1.1 },
     },
   },
