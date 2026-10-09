@@ -263,29 +263,29 @@ export interface TroopSpec {
 }
 
 export const TROOP_CATALOG: readonly TroopSpec[] = [
-  { kind: "soldier", label: "Recruit", role: "Rifle", cost: 150, cooldown: 1, tip: "Versatile rifle infantry with hand grenades. Always available." },
-  { kind: "sniper", label: "Marksman", role: "Sniper", cost: 160, cooldown: 2, tech: "recon", tip: "Rail rifle that pierces every body on its line (cover still stops it)." },
-  { kind: "striker", label: "Striker", role: "Melee", cost: 470, cooldown: 2, tech: "assault", tip: "CHARGE: the strike order closes up to 6.5m for free before the blade lands, so anything within a lunge is already in reach." },
-  { kind: "heavy", label: "Heavy Gunner", role: "Suppression", cost: 250, cooldown: 2, tech: "assault", tip: "Machine-gun bursts SUPPRESS whoever they hit: one action point and a forced crouch next turn. Strays rake nearby targets." },
-  { kind: "mortar", label: "Mortar Team", role: "Indirect", cost: 260, cooldown: 3, tech: "ordnance", tip: "High-arc fire over walls and ridges. SALVO: three lighter shells walk down a line through the spot, short, on it and long." },
-  { kind: "jumper", label: "Jump Trooper", role: "Vertical", cost: 170, cooldown: 2, tech: "assault", tip: "Jet pack: its move is a leap over cliffs, water and walls. It lands like a bomb, hurting and throwing every foe within 2.5m. Flak can catch it mid-arc." },
-  { kind: "flamer", label: "Flamer", role: "Burn", cost: 260, cooldown: 2, tech: "incendiary", tip: "Short-range flame projector. Hits leave burning ground for 2 turns: run, don't crouch. FEAR: enemy infantry near the flames break and run from them. Its fuel tanks explode when shot." },
-  { kind: "bazooka", label: "Rocketeer", role: "Anti-Armor", cost: 300, cooldown: 2, tech: "shock", tip: "Shoulder-fired rocket: hits vehicles half again as hard (96 against armour). Slow, short-ranged and fragile: armour will hunt it." },
-  { kind: "sledge", label: "Sledge", role: "Hammer", cost: 300, cooldown: 3, tech: "shock", tip: "SLAM: swings a huge hammer in a circle: every foe within 3m is hurt and flung. Fast, brittle, brutal against a clump or a ledge." },
-  { kind: "breaker", label: "Breaker", role: "Rocket Fist", cost: 300, cooldown: 2, tech: "shock", tip: "PUNCH: dashes up to 7m and sends one foe flying ~18m: into water, off the map, into a wall. Light vehicles slide a little; tanks don't budge." },
-  { kind: "boomer", label: "Boomer", role: "Kamikaze", cost: 110, cooldown: 1, tech: "demolition", tip: "Fast, fragile, no gun. DETONATE: blows itself up, wrecking and flinging everything within 3.6m. Shot first, it blows where it falls." },
-  { kind: "juggernaut", label: "Juggernaut", role: "Blast Cannon", cost: 340, cooldown: 3, tech: "fieldworks", tip: "Slow and tough. Its shoulder cannon's blasts throw troopers far." },
-  { kind: "hookshot", label: "Hookshot", role: "Grapple", cost: 170, cooldown: 2, tech: "shock", tip: "Its harpoon DRAGS whatever it hits to its feet (tanks don't budge). Its Reel hops 10m onto ledges." },
-  { kind: "skater", label: "Rocket Skater", role: "Bowler", cost: 240, cooldown: 2, tech: "motorpool", tip: "Fastest trooper. Every move is a rocket boost that bowls over troopers on its line." },
-  { kind: "molotov", label: "Molotov", role: "Fire Bottles", cost: 170, cooldown: 2, tech: "incendiary", tip: "Lobs a fire bottle 16m, over cover: burning ground for 2 turns that sets troopers alight." },
-  { kind: "mole", label: "Mole Sapper", role: "Burrower", cost: 320, cooldown: 2, tech: "fieldworks", tip: "Moves underground (can't be shot) and erupts where it surfaces, throwing every foe within 2m." },
-  { kind: "chopbike", label: "Chop Bike", role: "Raider", cost: 260, cooldown: 2, tech: "motorpool", tip: "A fast bike. Every move rides THROUGH troopers, slashing and scattering each one it passes." },
-  { kind: "bulldozer", label: "Bulldozer", role: "Shover", cost: 380, cooldown: 3, tech: "motorpool", tip: "Slow and armoured. Every move SHOVES everything ahead of its blade: troopers, light vehicles, props, wrecks. Into walls, water, off the map. Tanks don't budge." },
-  { kind: "tank", label: "Tank", role: "Armor", cost: 760, cooldown: 3, tech: "armor", tip: "Massive HP, big gun, rams and crushes cover. RUNS OVER troopers in its path, throwing them aside." },
-  { kind: "artillery", label: "Artillery", role: "Siege", cost: 380, cooldown: 3, tech: "siege", tip: "Long-range siege gun; devastating at distance and tough, but helpless up close. It fires or moves in a turn, never both." },
-  { kind: "flak", label: "Flak Track", role: "Anti-Air", cost: 240, cooldown: 2, tech: "recon", tip: "Anti-air specialist: shreds aircraft at range. Weak against ground armour." },
-  { kind: "gunship", label: "Gunship", role: "Air", cost: 420, cooldown: 3, tech: "airwing", tip: "Overflies all terrain. Its autocannon rakes ground troops and aircraft alike; BOMB drops a huge blast on any spot in reach, no flight needed, that throws troops flying. Fragile to flak; cannot capture." },
-  { kind: "bomber", label: "Bomber", role: "Heavy Bomber", cost: 560, cooldown: 4, tech: "airwing", tip: "Slow, tough heavy bomber. CARPET: each drop is three bombs in a line across the spot. No gun at all, so send an escort." },
+  { kind: "soldier", label: "Recruit", role: "Rifle", cost: 150, cooldown: 1, tip: "Rifle infantry with hand grenades. Always available." },
+  { kind: "sniper", label: "Marksman", role: "Sniper", cost: 160, cooldown: 2, tech: "recon", tip: "Long-range rifle. Each shot pierces every body on its line, but cover still stops it." },
+  { kind: "striker", label: "Striker", role: "Melee", cost: 470, cooldown: 2, tech: "assault", tip: "Melee fighter. Its Strike charges up to 6.5m before the blade lands." },
+  { kind: "heavy", label: "Heavy Gunner", role: "Suppression", cost: 250, cooldown: 2, tech: "assault", tip: "Machine gun. A unit it hits is suppressed: next turn it has 1 AP and crouches." },
+  { kind: "mortar", label: "Mortar Team", role: "Indirect", cost: 260, cooldown: 3, tech: "ordnance", tip: "Lobs shells over walls and ridges. Salvo fires three lighter shells down a line: short, on target and long." },
+  { kind: "jumper", label: "Jump Trooper", role: "Vertical", cost: 170, cooldown: 2, tech: "assault", tip: "Its move is a jet-pack leap over cliffs, water and walls. It lands hard, hurting and throwing every foe within 2.5m." },
+  { kind: "flamer", label: "Flamer", role: "Burn", cost: 260, cooldown: 2, tech: "incendiary", tip: "Short-range flamethrower: burning ground for 2 turns that enemy infantry run from. Its fuel tanks explode when shot." },
+  { kind: "bazooka", label: "Rocketeer", role: "Anti-Armor", cost: 300, cooldown: 2, tech: "shock", tip: "Rocket launcher that hits vehicles harder (96 against armour). Slow, short-ranged and fragile." },
+  { kind: "sledge", label: "Sledge", role: "Hammer", cost: 300, cooldown: 3, tech: "shock", tip: "Swings a hammer in a circle: every foe within 3m is hurt and thrown. Fast but fragile." },
+  { kind: "breaker", label: "Breaker", role: "Rocket Fist", cost: 300, cooldown: 2, tech: "shock", tip: "Punch dashes up to 7m and knocks one foe ~18m, into water, off a ledge or off the map. Light vehicles slide; tanks don't budge." },
+  { kind: "boomer", label: "Boomer", role: "Kamikaze", cost: 110, cooldown: 1, tech: "demolition", tip: "Fast and fragile, with no gun. Detonate blows it up, wrecking and throwing everything within 3.6m." },
+  { kind: "juggernaut", label: "Juggernaut", role: "Blast Cannon", cost: 340, cooldown: 3, tech: "fieldworks", tip: "Slow and tough. Its cannon's blasts throw troopers far." },
+  { kind: "hookshot", label: "Hookshot", role: "Grapple", cost: 170, cooldown: 2, tech: "shock", tip: "Its harpoon drags whatever it hits to its feet; tanks don't budge. Reel pulls it 10m onto a ledge." },
+  { kind: "skater", label: "Rocket Skater", role: "Bowler", cost: 240, cooldown: 2, tech: "motorpool", tip: "Fastest trooper. Each move is a rocket dash that knocks over troopers on its line." },
+  { kind: "molotov", label: "Molotov", role: "Fire Bottles", cost: 170, cooldown: 2, tech: "incendiary", tip: "Throws a fire bottle 16m, over cover. It leaves burning ground for 2 turns that sets troopers alight." },
+  { kind: "mole", label: "Mole Sapper", role: "Burrower", cost: 320, cooldown: 2, tech: "fieldworks", tip: "Tunnels underground, where it can't be shot, and bursts up throwing every foe within 2m." },
+  { kind: "chopbike", label: "Chop Bike", role: "Raider", cost: 260, cooldown: 2, tech: "motorpool", tip: "Fast bike. Each move rides through troopers, slashing and scattering them." },
+  { kind: "bulldozer", label: "Bulldozer", role: "Shover", cost: 380, cooldown: 3, tech: "motorpool", tip: "Slow and armoured. Each move shoves everything ahead of its blade into walls, water or off the map; tanks don't budge." },
+  { kind: "tank", label: "Tank", role: "Armor", cost: 760, cooldown: 3, tech: "armor", tip: "Heavy armour and a big gun. It rams, and runs over troopers in its path." },
+  { kind: "artillery", label: "Artillery", role: "Siege", cost: 380, cooldown: 3, tech: "siege", tip: "Long-range gun, weak up close. It can fire or move in a turn, not both." },
+  { kind: "flak", label: "Flak Track", role: "Anti-Air", cost: 240, cooldown: 2, tech: "recon", tip: "Anti-air gun: strong against aircraft, weak against ground armour." },
+  { kind: "gunship", label: "Gunship", role: "Air", cost: 420, cooldown: 3, tech: "airwing", tip: "Flies over all terrain, but flak hurts it. Its cannon hits ground and air; Bomb drops a big blast on a spot in reach." },
+  { kind: "bomber", label: "Bomber", role: "Heavy Bomber", cost: 560, cooldown: 4, tech: "airwing", tip: "Slow, tough bomber with no gun. Each drop is three bombs in a line." },
 ];
 
 export function troopSpec(kind: TroopKind): TroopSpec {
@@ -314,17 +314,17 @@ export interface DefenseSpec {
 // Prices sit against the troops they replace: the Bunker is a Heavy Gunner
 // with three times the armour that cannot advance. Which faction gets which: factions.ts.
 export const DEFENSE_CATALOG: readonly DefenseSpec[] = [
-  { kind: "barrels", label: "Barrel Stack", role: "Bomb", cost: 70, tip: "A stack of red fuel barrels. Shoot it and it goes up, setting off every barrel near it. Bait them in." },
-  { kind: "wall", label: "Blast Wall", role: "Barrier", cost: 130, tip: "Tall, tough barrier that blocks shots aimed at your base. Cannot be walked or built through." },
-  { kind: "gunpost", label: "Gun Post", role: "Manned", cost: 90, tip: "A sandbag ring with a heavy machine gun: it fires only while a trooper crews it (Man it). Out-ranges and out-shoots a Bunker; it dies if the gunner does." },
-  { kind: "mortarpit", label: "Mortar Pit", role: "Manned", cost: 140, tech: "ordnance", tip: "A dug-in mortar that fires only while a trooper crews it (Man it). Longer reach and harder hits than a Mortar Team, behind sandbags." },
-  { kind: "rocketpost", label: "Rocket Post", role: "Manned", cost: 170, tech: "shock", tip: "A sandbag ring with an anti-armour launcher: it fires only while a trooper crews it (Man it). One heavy rocket a shot, long reach, hard on hulls." },
-  { kind: "flamepost", label: "Flame Post", role: "Manned", cost: 150, tech: "incendiary", tip: "A sandbag ring with a flame projector: it fires only while a trooper crews it (Man it). Short reach; whoever it hits burns for 3 turns." },
-  { kind: "harpoon", label: "Harpoon Tower", role: "Grapple", cost: 180, tech: "shock", tip: "Fires by itself every turn: a harpoon at the nearest foe within 14m that drags it to the tower's foot. Tanks don't budge." },
-  { kind: "springtrap", label: "Spring Trap", role: "Launcher", cost: 100, tip: "A hidden spring plate. The first foe to step on it is LAUNCHED far across the map: into water, off a ledge, off the board. One use." },
-  { kind: "minefield", label: "Minefield", role: "Trap", cost: 110, tech: "ordnance", tip: "Three hidden mines in a small triangle. The first enemy to step on each sets it off." },
-  { kind: "exturret", label: "Mortar Turret", role: "Siege", cost: 360, tech: "ordnance", tip: "Stationary splash battery: lobs heavy shells that clear cover and clusters; detonates if its magazine is hit." },
-  { kind: "bunker", label: "MG Bunker", role: "Hold", cost: 300, tech: "armor", tip: "A concrete machine-gun nest: a long suppressing burst, short reach, very hard to crack." },
+  { kind: "barrels", label: "Barrel Stack", role: "Bomb", cost: 70, tip: "A stack of red fuel barrels. Shoot it and it explodes, setting off any barrels nearby." },
+  { kind: "wall", label: "Blast Wall", role: "Barrier", cost: 130, tip: "A tall barrier that blocks shots and movement." },
+  { kind: "gunpost", label: "Gun Post", role: "Manned", cost: 90, tip: "A machine gun in a sandbag ring. It fires while a trooper stands in it." },
+  { kind: "mortarpit", label: "Mortar Pit", role: "Manned", cost: 140, tech: "ordnance", tip: "A dug-in mortar that fires while a trooper stands in it. Longer reach and harder hits than a Mortar Team." },
+  { kind: "rocketpost", label: "Rocket Post", role: "Manned", cost: 170, tech: "shock", tip: "An anti-armour launcher in a sandbag ring. It fires one heavy rocket a shot while a trooper stands in it." },
+  { kind: "flamepost", label: "Flame Post", role: "Manned", cost: 150, tech: "incendiary", tip: "A flamethrower in a sandbag ring. It fires while a trooper stands in it; whoever it hits burns for 3 turns." },
+  { kind: "harpoon", label: "Harpoon Tower", role: "Grapple", cost: 180, tech: "shock", tip: "Fires on its own each turn at the nearest foe within 14m and drags it to the tower. Tanks don't budge." },
+  { kind: "springtrap", label: "Spring Trap", role: "Launcher", cost: 100, tip: "A hidden plate: the first foe to step on it is launched far, into water, off a ledge or off the map. One use." },
+  { kind: "minefield", label: "Minefield", role: "Trap", cost: 110, tech: "ordnance", tip: "Three hidden mines in a triangle. Each goes off under the first enemy to step on it." },
+  { kind: "exturret", label: "Mortar Turret", role: "Siege", cost: 360, tech: "ordnance", tip: "A fixed mortar battery that clears cover and groups. It explodes if its ammo is hit." },
+  { kind: "bunker", label: "MG Bunker", role: "Hold", cost: 300, tech: "armor", tip: "A concrete machine-gun nest: long bursts, short reach, very tough." },
 ];
 
 export function defenseSpec(kind: DefenseKind): DefenseSpec {
@@ -346,7 +346,7 @@ export interface BaseUpgradeSpec {
 }
 
 export const BASE_UPGRADES: readonly BaseUpgradeSpec[] = [
-  { id: "cannon", label: "Fortress Cannon", cost: 850, tech: "shock", tip: "The base fires a 120-damage shell at the most valuable foe in 40m, every second turn, on its own. It is a part: shoot it out and it stops." },
+  { id: "cannon", label: "Fortress Cannon", cost: 850, tech: "shock", tip: "The base fires a 120-damage shell at the most valuable foe within 40m every other turn. Destroy its cannon to stop it." },
 ];
 
 export function baseUpgradeSpec(id: BaseUpgradeId): BaseUpgradeSpec {
@@ -370,14 +370,14 @@ export interface SupportPowerSpec {
 export const SUPPORT_POWERS: readonly SupportPowerSpec[] = [
   // Each faction starts with one power and researches the rest (decks: factions.ts). Scans, heals and soft utility were
   // cut as not fun (owner 2026-10-07): every power now does something loud on the board.
-  { kind: "laser", label: "Gun Run", role: "Strafe", cost: 420, cooldown: 4, tech: "armor", tip: "A jet strafes a line through the target point: seven cannon shells walk down it. Hardened HQs are unaffected." },
-  { kind: "shockwave", label: "Shockwave", role: "Fling", cost: 130, cooldown: 2, tip: "A huge blast of air on the point: little damage, but every trooper within 4m is FLUNG far. Into water, off ledges, off the map. Tanks don't budge." },
-  { kind: "tankdrop", label: "Tank Drop", role: "Crush", cost: 460, cooldown: 4, tech: "armor", tip: "A tank parachutes onto the point, crushing troopers under it, and fights for you for 3 turns before its crew scuttles it." },
-  { kind: "commando", label: "Commando Drop", role: "Slam", cost: 300, cooldown: 4, tech: "support", tip: "An elite Jump Trooper parachutes onto the point and SLAMS down: everyone within 2.5m is hurt and thrown. He fights for you from next turn." },
-  { kind: "napalm", label: "Napalm", role: "Burn", cost: 240, cooldown: 3, tip: "Firebombs set a wide patch alight: a light blast, then burning ground for 2 turns that infantry flee." },
-  { kind: "carbomb", label: "Car Bomb", role: "Ram", cost: 220, cooldown: 3, tech: "demolition", tip: "A driverless wreck rolls down a line through the point, bowling troopers aside, then BLOWS UP at the end of its run. Tanks stop it." },
-  { kind: "boulder", label: "Boulder Roll", role: "Bowl", cost: 150, cooldown: 2, tip: "A giant boulder rolls down a line through the point, bowling over every trooper in its path. Tanks stop it." },
-  { kind: "barrage", label: "Barrage", role: "Siege", cost: 340, cooldown: 4, tech: "ordnance", tip: "Six heavy shells walk across a wide circle around the point, one after another. Hardened HQs are unaffected." },
+  { kind: "laser", label: "Gun Run", role: "Strafe", cost: 420, cooldown: 4, tech: "armor", tip: "A jet strafes a line through the point with seven cannon shells. HQs take no damage." },
+  { kind: "shockwave", label: "Shockwave", role: "Fling", cost: 130, cooldown: 2, tip: "A blast of air on the point: little damage, but every trooper within 4m is thrown far. Tanks don't budge." },
+  { kind: "tankdrop", label: "Tank Drop", role: "Crush", cost: 460, cooldown: 4, tech: "armor", tip: "A tank lands on the point, crushing troopers under it. It fights for you for 3 turns, then its crew scuttles it." },
+  { kind: "commando", label: "Commando Drop", role: "Slam", cost: 300, cooldown: 4, tech: "support", tip: "A Jump Trooper parachutes onto the point, hurting and throwing everyone within 2.5m. He fights for you from next turn." },
+  { kind: "napalm", label: "Napalm", role: "Burn", cost: 240, cooldown: 3, tip: "Firebombs set a wide patch alight: a light blast, then burning ground for 2 turns." },
+  { kind: "carbomb", label: "Car Bomb", role: "Ram", cost: 220, cooldown: 3, tech: "demolition", tip: "A driverless car rolls down a line through the point, knocking troopers aside, and explodes where it stops." },
+  { kind: "boulder", label: "Boulder Roll", role: "Bowl", cost: 150, cooldown: 2, tip: "A boulder rolls down a line through the point, knocking every trooper aside. Tanks and walls stop it." },
+  { kind: "barrage", label: "Barrage", role: "Siege", cost: 340, cooldown: 4, tech: "ordnance", tip: "Six heavy shells land one after another across a wide circle around the point. HQs take no damage." },
 ];
 
 export function supportPowerSpec(kind: SupportPowerKind): SupportPowerSpec {

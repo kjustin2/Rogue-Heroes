@@ -70,3 +70,11 @@ tokens are remapped there so the older layers inherit it. Rules that fall out of
   The tab opens on the lane of the faction's next suggested step. Smokes click `[data-tech-lane]` before `[data-tech]`.
 - **Orders are named in one place** (`src/game/orderLabel.ts`): the queue chip, the Undo tooltip and the sim log all use it, so a bomb
   is "Bomb", a push "Push", a jump "Jump" (never the raw enum). Aircraft supply reads bombs, not grenades.
+
+
+## Plain English (2026-10-08, owner: "plain english without weird AI fluff ... concise and direct")
+Every description a player reads (unit / defense / strike / upgrade tips, tech blurbs, faction and map text, order cards, the
+tutorial) says what the thing does and its number, in at most two sentences and about 30 words (a closing "1 AP." tag does not
+count), with no em dashes (a period, colon or comma instead), no capitals for emphasis, and none of the hype words
+(`FLUFF` in `wording.test.ts`: loud, devastating, unleash, the answer to, truly, simply, seamless, epic, brutal, massive...).
+No logged, toasted or refused line carries an em dash either. Every rule is enforced by `wording.test.ts` "plain English".

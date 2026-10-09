@@ -279,7 +279,7 @@ const hud = new Hud(uiRoot, sim, {
     const ok = sim.queueSupportAt(point);
     if (ok) {
       sfx.turn();
-      showToast("Strike inbound — resolves at end of turn");
+      showToast("Strike inbound: resolves at end of turn");
     } else refused();
     return ok;
   },
@@ -294,7 +294,7 @@ const hud = new Hud(uiRoot, sim, {
         showToast(`Declassified: ${revealed.join(" + ")} now deployable`);
         sfx.deploy();
       } else if (decrypted) {
-        showToast("R&D files decrypted — check the tech deck");
+        showToast("R&D files decrypted: check the tech deck");
       }
       // Doctrine mastery: lifetime research counters with tier-up toasts.
       const before = commander.masteryTier(nodeId);
@@ -302,7 +302,7 @@ const hud = new Hud(uiRoot, sim, {
       const after = commander.masteryTier(nodeId);
       if (after > before) {
         const node = TECH_TREE.find((n) => n.id === nodeId);
-        showToast(`Doctrine mastery ${"I".repeat(after)} — ${node?.name ?? nodeId} (lifetime)`);
+        showToast(`Doctrine mastery ${"I".repeat(after)}: ${node?.name ?? nodeId} (lifetime)`);
       }
     }
     return ok;
@@ -371,8 +371,8 @@ function hazardAt(point: Vec2): string | undefined {
   const env = sim.environment();
   const rail = env.rails.find((r) => r.state !== "idle" && point.x >= r.rect.minX && point.x <= r.rect.maxX && point.z >= r.rect.minZ && point.z <= r.rect.maxZ);
   if (rail) return rail.state === "now"
-    ? "Freight train — it runs these rails when you end the turn: anything on them is hit hard and thrown off. Get clear."
-    : "Freight train — it runs these rails NEXT turn. Don't end a move here then.";
+    ? "Freight train: it runs these rails when you end the turn: anything on them is hit hard and thrown off. Get clear."
+    : "Freight train: it runs these rails NEXT turn. Don't end a move here then.";
   // A lane hazard's band: the point lies within its width of the lane's line.
   const onLane = env.lanes.find((l) => {
     const dx = l.to.x - l.from.x, dz = l.to.z - l.from.z, len2 = dx * dx + dz * dz || 1;
@@ -381,18 +381,18 @@ function hazardAt(point: Vec2): string | undefined {
   });
   if (onLane) {
     const what: Record<string, string> = {
-      devil: "Dust devil — it tears down this lane", stampede: "Stampede — the herd thunders down this lane",
-      boulder: "Rolling boulder — it flattens this lane", icebreaker: "Icebreaker — it ploughs this channel",
+      devil: "Dust devil: it tears down this lane", stampede: "Stampede: the herd thunders down this lane",
+      boulder: "Rolling boulder: it flattens this lane", icebreaker: "Icebreaker: it ploughs this channel",
     };
     return `${what[onLane.kind] ?? "Danger lane"} ${onLane.state === "now" ? "when you end the turn: anything on it is hit and thrown. Get clear." : "NEXT turn. Don't end a move here then."}`;
   }
   const zone = env.zones.find((z) => Math.hypot(point.x - z.x, point.z - z.z) <= z.radius);
   if (!zone) return undefined;
   const text: Record<string, string> = {
-    slag: "Slag spill — molten slag floods this furnace corner when you end the turn, then burns for 2 turns. Stay clear.",
-    barrage: "Artillery barrage — shells land in this zone when you end the turn, on both sides. Clear it.",
+    slag: "Slag spill: molten slag floods this furnace corner when you end the turn, then burns for 2 turns. Stay clear.",
+    barrage: "Artillery barrage: shells land in this zone when you end the turn, on both sides. Clear it.",
   };
-  return text[zone.kind] ?? "Danger zone — something lands here when you end the turn.";
+  return text[zone.kind] ?? "Danger zone: something lands here when you end the turn.";
 }
 
 const stopOrbit = (event: PointerEvent): void => {
@@ -736,7 +736,7 @@ function requestEndTurn(skipApCheck = false): void {
 
 function showApWarning(idle: { name: string; commandPoints: number }[]): void {
   const total = idle.reduce((n, e) => n + e.commandPoints, 0);
-  const list = idle.slice(0, 6).map((e) => `<li><strong>${escapeHtml(e.name)}</strong> — ${e.commandPoints} AP left</li>`).join("");
+  const list = idle.slice(0, 6).map((e) => `<li><strong>${escapeHtml(e.name)}</strong>: ${e.commandPoints} AP left</li>`).join("");
   const more = idle.length > 6 ? `<li>…and ${idle.length - 6} more</li>` : "";
   const screen = mountScreen(
     `
@@ -877,7 +877,7 @@ function deployWithLoadingScreen(mapId: string, modeId: ModeId, difficulty: Diff
     startBattle(mapId, modeId, difficulty, faction, player2, botFaction);
     // First time the player tries a mode, spell out how it's won (the tutorial only covers Annihilation).
     const mode = modeDef(modeId);
-    hintOnce(`mode-${modeId}`, `${mode.name} — ${mode.blurb}`);
+    hintOnce(`mode-${modeId}`, `${mode.name}: ${mode.blurb}`);
     if (!player2) runMissionIntro();
     const hold = Math.max(0, minVisible - (performance.now() - startedAt));
     window.setTimeout(() => {
@@ -1510,7 +1510,7 @@ function armoryCardHtml(c: Cosmetic): string {
     c.kind === "accent"
       ? `<div class="armory-swatch" style="--swatch:#${(c.accent ?? 0).toString(16).padStart(6, "0")}"></div>`
       : c.kind === "emblem"
-        ? `<div class="armory-glyph">${c.emblem || "—"}</div>`
+        ? `<div class="armory-glyph">${c.emblem || ": "}</div>`
         : `<div class="armory-glyph armory-glyph--title">“${escapeHtml(c.title ?? "")}”</div>`;
   return `<div class="armory-card ${active ? "active" : ""}">
     ${preview}
@@ -1567,7 +1567,7 @@ function showAchievements(): void {
         <div><span>Wins / Losses</span><strong>${s.wins} / ${s.losses}</strong></div>
         <div><span>Unit Kills</span><strong>${s.kills.toLocaleString()}</strong></div>
         <div><span>Best Streak</span><strong>${s.bestStreak}</strong></div>
-        <div><span>Deadliest Unit</span><strong>${top ? escapeHtml(top) : "—"}</strong></div>
+        <div><span>Deadliest Unit</span><strong>${top ? escapeHtml(top) : ": "}</strong></div>
       </div>
       <div class="chip-row achievement-pages">${pageTabs}</div>
       <div class="achievement-grid">${medals}</div>
@@ -1820,17 +1820,17 @@ function safeStorageSet(key: string, value: string): boolean {
 // basic a first game raises -- AP, both sides moving at once, where a shot lands on a moving target,
 // cooldowns, cover, climbing, capture, push -- answered before it is asked.
 const TUTORIAL_STEPS: Array<{ title: string; body: string }> = [
-  { title: "Plan, then watch", body: "Each turn you give orders, then End Turn plays them out. Both sides act at the SAME time — the enemy is planning while you are." },
-  { title: "Action points (AP)", body: "Every unit gets 2 AP a turn; your Home Base gets 1. Each order — move, shoot, jump, strike — costs 1 AP. Unspent AP is lost when the turn ends." },
-  { title: "Deploy a Recruit", body: "Click your blue Home Base, then Recruit in its Deploy tab, then a spot inside the green ring. That spends the base's 1 AP and the Recruit's price." },
-  { title: "Money and research", body: "Your money is the gold plate bottom-left, with next turn's income under it. The Tech tab unlocks NEW UNITS, defenses and support; UPGRADE cards boost what you already have." },
-  { title: "Move", body: "Select a unit and press M. The cyan ring is how far it can go this turn; the path shows ▲ CLIMB where it steps up onto higher ground." },
-  { title: "Shoot", body: "Press F, click an enemy, pick a body part, Confirm. Your unit fires at where the target IS when the shot goes off — it follows a unit that moved, but a runner can still outpace the round." },
-  { title: "Strike and Push", body: "Strike (B) rushes up to 3.5m and hits in one order. Push shoves a unit far away — into water or off the edge of the map, it is gone." },
-  { title: "Cover and climbing", body: "Units crouched beside cover take less damage. Click a low prop to Climb it for height; tall walls and cliffs block movement and shots." },
-  { title: "Support powers", body: "Once researched, the Support tab calls in a strike or a utility for money. It then cools down for a few turns before you can call — and pay for — it again." },
-  { title: "Hazards and capture", body: "Rings and lanes on the ground warn of barrages, slag, boulders and stampedes: hover one to see what lands when you end the turn. Stand a unit beside a derelict turret or supply depot for a turn to capture it." },
-  { title: "Win", body: "Destroy the enemy Home Base and every enemy unit. Press Space to end your turn — good luck, Commander." },
+  { title: "Plan, then watch", body: "Give your orders, then End Turn plays them out. Both sides act at the same time." },
+  { title: "Action points (AP)", body: "Every unit gets 2 AP a turn and your Home Base gets 1. Each order costs 1 AP, and unused AP is lost." },
+  { title: "Deploy a Recruit", body: "Click your blue Home Base, pick Recruit in the Deploy tab, then click a spot inside the green ring. That costs the base's AP and the Recruit's price." },
+  { title: "Money and research", body: "Your money is bottom-left, with next turn's income under it. The Tech tab unlocks new units, defenses and strikes." },
+  { title: "Move", body: "Select a unit and press M. The cyan ring shows how far it can go, and the path marks where it climbs onto higher ground." },
+  { title: "Shoot", body: "Press F, click an enemy, pick a body part, then Confirm. The shot aims where the target is when it fires, so a fast mover can still escape it." },
+  { title: "Strike", body: "Strike (B) rushes up to 3.5m and hits in one order, knocking the target back. A unit knocked into water or off the map is lost." },
+  { title: "Cover and climbing", body: "Units beside cover take less damage. Click a low prop to climb it; tall walls and cliffs block movement and shots." },
+  { title: "Support", body: "Once researched, the Support tab calls in a strike for money. Each strike then needs a few turns before you can call it again." },
+  { title: "Hazards and capture", body: "Marks on the ground show where a hazard hits next turn; hover one to see it. A unit beside a derelict turret or supply depot for a turn captures it." },
+  { title: "Win", body: "Destroy the enemy Home Base and every enemy unit. Press Space to end your turn." },
 ];
 let tutorialStep = 0;
 
@@ -1941,7 +1941,7 @@ function watchEnemyIntel(): void {
     // Pre-seeded tech (campaign setups) lands on turn 1 — only mid-battle research is news.
     if (inBattle && sim.turn > 1) {
       const node = TECH_TREE.find((n) => n.id === id);
-      if (node) showToast(`INTEL — enemy ${node.name} online`);
+      if (node) showToast(`INTEL: enemy ${node.name} online`);
     }
   }
 }
@@ -2078,7 +2078,7 @@ const HINT_IDS = ["base", "controls", "in-range", "cover", "unspent", "unit-jump
 const UNIT_HINTS: Partial<Record<TroopKind, (name: string) => string>> = {
   jumper: (name) => `${name}: press ${hintKey("move")}, then click ground to leap over cliffs and water.`,
   mortar: (name) => `${name} lobs over walls: ${hintKey("shoot")}.`,
-  sniper: (name) => `${name} shoots through bodies — line them up.`,
+  sniper: (name) => `${name} shoots through bodies: line them up.`,
 };
 function updateOnboardingHints(): void {
   if (!inBattle || tutorialActive || sim.phase !== "command") return;

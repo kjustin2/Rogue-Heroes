@@ -25,7 +25,7 @@ export const SCENARIOS: Scenario[] = [
   {
     id: "roster",
     title: "Unit roster",
-    description: "Every player unit type laid out in a grid — for at-a-glance differentiation.",
+    description: "Every player unit type laid out in a grid: for at-a-glance differentiation.",
     apply(sim) {
       sim.configure(mapDef("ironworks"), "destroy", "normal");
       sim.debugGrant("player", 5000);
@@ -130,7 +130,7 @@ export const SCENARIOS: Scenario[] = [
   {
     id: "stress",
     title: "Stress test (perf)",
-    description: "A crowded battlefield — two large mixed armies plus fortifications — for benchmarking frame time, draw calls, and resolve-phase load.",
+    description: "A crowded battlefield: two large mixed armies plus fortifications: for benchmarking frame time, draw calls, and resolve-phase load.",
     apply(sim) {
       sim.configure(mapDef("dustbowl"), "destroy", "normal");
       sim.debugGrant("player", 99999);
@@ -157,7 +157,7 @@ export const SCENARIOS: Scenario[] = [
   {
     id: "victory",
     title: "Victory end screen",
-    description: "Player force standing, enemy eliminated — the victory report.",
+    description: "Player force standing, enemy eliminated: the victory report.",
     apply(sim) {
       sim.configure(mapDef("ironworks"), "destroy", "normal");
       row(sim, ["soldier", "heavy", "tank"], "player", -4, 0, 2.6);
@@ -169,7 +169,7 @@ export const SCENARIOS: Scenario[] = [
   {
     id: "defeat",
     title: "Defeat end screen",
-    description: "Enemy force standing, player eliminated — the defeat report.",
+    description: "Enemy force standing, player eliminated: the defeat report.",
     apply(sim) {
       sim.configure(mapDef("ironworks"), "destroy", "normal");
       row(sim, ["soldier", "heavy", "tank"], "enemy", 2, 0, 2.6);

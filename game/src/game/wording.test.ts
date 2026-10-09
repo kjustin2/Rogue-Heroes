@@ -7,7 +7,10 @@ import {
   BOOM_RADIUS, BREAKER_CHARGE, BURN_STATUS_TURNS, BURN_TURNS, ERUPT_RADIUS, HOOK_REEL, JUMP_SLAM_RADIUS, MELEE_RUSH,
   PUNCH_MAX, SHOCKWAVE_RADIUS, SALVO_SHELLS, SLAM_RADIUS, STRIKER_CHARGE, TANK_DROP_TURNS,
 } from "./sim";
-import { DEFENSE_CATALOG, SUPPORT_POWERS, TROOP_CATALOG, unitStats } from "./units";
+import { BASE_UPGRADES, DEFENSE_CATALOG, SUPPORT_POWERS, TROOP_CATALOG, unitStats } from "./units";
+import { TECH_TREE } from "./tech";
+import { FACTIONS } from "./factions";
+import { MAPS } from "./maps";
 
 const troop = (kind: string): string => TROOP_CATALOG.find((t) => t.kind === kind)!.tip;
 const defense = (kind: string): string => DEFENSE_CATALOG.find((t) => t.kind === kind)!.tip;
@@ -91,5 +94,44 @@ describe("the push rule reads right (2026-10-07: heavies never move)", () => {
     expect(card("Hook")[0]).toContain("Tanks don't budge");
     expect(card("Push")[0]).toContain("Tanks don't budge");
     expect(support("shockwave")).toContain("Tanks don't budge");
+  });
+});
+
+// PLAIN ENGLISH (owner 2026-10-08: "plain english without weird AI fluff ... concise and direct"). Every description a player
+// reads says what the thing does, in at most two sentences of about 30 words, with no em dashes, no capitals for emphasis and
+// none of the hype words a generated text reaches for.
+describe("plain English", () => {
+  const FLUFF = /\b(loud|devastating|unleash\w*|the answer to|truly|simply|seamless\w*|epic|brutal|massive|good luck|Commander|lethal|unstoppable|game.changing)\b/i;
+  const tutorial = [...src("../main.ts").matchAll(/\{ title: "([^"]+)", body: "([^"]+)" \}/g)].map((m) => [`tutorial ${m[1]}`, m[2]] as [string, string]);
+  const descriptions: Array<[string, string]> = [
+    ...TROOP_CATALOG.map((t) => [`troop ${t.kind}`, t.tip] as [string, string]),
+    ...DEFENSE_CATALOG.map((t) => [`defense ${t.kind}`, t.tip] as [string, string]),
+    ...SUPPORT_POWERS.map((t) => [`support ${t.kind}`, t.tip] as [string, string]),
+    ...BASE_UPGRADES.map((t) => [`upgrade ${t.id}`, t.tip] as [string, string]),
+    ...TECH_TREE.map((t) => [`tech ${t.id}`, t.blurb] as [string, string]),
+    ...FACTIONS.flatMap((f) => [[`faction ${f.id}`, f.detail], [`doctrine ${f.id}`, f.doctrine.text]] as Array<[string, string]>),
+    ...MAPS.flatMap((m) => [[`map ${m.id}`, m.blurb], [`map feel ${m.id}`, m.feel]] as Array<[string, string]>),
+    ...[...hud.matchAll(/label: "([^"]+)", tip: "([^"]+)"/g)].map((m) => [`card ${m[1]}`, m[2]] as [string, string]),
+    ...tutorial,
+  ];
+  it("found the text to check", () => {
+    expect(descriptions.length).toBeGreaterThan(100);
+    expect(tutorial.length).toBeGreaterThan(8);
+  });
+  it.each(descriptions)("%s", (_name, text) => {
+    expect(text, "no em dashes: a period or a comma").not.toMatch(/—/);
+    expect(text.match(FLUFF)?.[0], "no hype words").toBeUndefined();
+    // The closing cost tag ("1 AP.") is a label, not a sentence.
+    expect(text.replace(/\s*1 AP\.$/, "").split(/(?<=[.!?])\s+(?=[A-Z])/).filter(Boolean).length, `at most two sentences: ${text}`).toBeLessThanOrEqual(2);
+    expect(text.split(/\s+/).length, `about 30 words at most: ${text}`).toBeLessThanOrEqual(32);
+    expect(text.match(/\b(?!HQs\b)[A-Z]{4,}\b/)?.[0], "no capitals for emphasis").toBeUndefined();
+  });
+  it("no em dash in any line the game shows (logs, toasts, refusals, menus)", () => {
+    // String literals on code lines only: comments are history, not text on screen.
+    const literals = (file: string): string[] => src(file).split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).map((l) => l.split(" // ")[0])
+      .flatMap((l) => [...l.matchAll(/"([^"\n]*)"|`([^`\n]*)`/g)].map((m) => m[1] ?? m[2]));
+    for (const file of ["../ui/hud.ts", "../main.ts", "./sim.ts", "../commander.ts"]) {
+      expect(literals(file).filter((l) => l.includes("—")), file).toEqual([]);
+    }
   });
 });

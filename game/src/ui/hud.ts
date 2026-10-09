@@ -72,7 +72,7 @@ function syncRevealTracking(base: CombatEntity): void {
 
 /** Per-unit names for a shared verb: the card reads as the unit's own move. */
 const UNIT_VERBS: Partial<Record<string, Partial<Record<Intent, { label: string; tip: string }>>>> = {
-  jumper: { move: { label: "Jump", tip: "Select Jump, then any dry ground in range, over cliffs, water and walls. It lands like a bomb: every foe within 2.5m is hurt and thrown. Flak can catch it mid-air. 1 AP." } },
+  jumper: { move: { label: "Jump", tip: "Select Jump, then dry ground in range, over cliffs, water and walls. It lands hard: every foe within 2.5m is hurt and thrown. 1 AP." } },
   chopbike: { move: { label: "Ride", tip: "Select Ride, then ground in range: the bike rides straight through, slashing and scattering every trooper on its line. 1 AP." } },
   bulldozer: { move: { label: "Shove", tip: "Select Shove, then ground in range: everything ahead of the blade is pushed along, into walls, water or off the map. 1 AP." } },
   breaker: { push: { label: "Punch", tip: "Select Punch, then a foe within 7m: the Breaker dashes in and sends it ~18m. Water, ledges and the map edge kill. 1 AP." } },
@@ -86,16 +86,16 @@ const UNIT_VERBS: Partial<Record<string, Partial<Record<Intent, { label: string;
 };
 
 const ORDER_ACTIONS: Array<{ id: Intent; label: string; tip: string }> = [
-  { id: "move", label: "Move", tip: "Select Move, then click ground or a cover object. Costs 1 AP. Soldiers move farther than heavy units." },
+  { id: "move", label: "Move", tip: "Select Move, then click ground or cover. 1 AP." },
   { id: "shoot", label: "Shoot", tip: "Select Shoot, pick an enemy part, then confirm. The line previews cover, damage and accuracy." },
-  { id: "grenade", label: "Grenade", tip: "Soldier only. Throw a limited-supply grenade in a short arc with splash damage." },
-  { id: "ram", label: "Ram", tip: "Tank only. Select a close target or wall, then confirm. Costs 1 AP, deals 72 damage, and damages your front armor." },
-  { id: "melee", label: "Strike", tip: "Infantry only. Rush up to 3.5m and strike in ONE order: the blow knocks the target back (Strikers charge 6.5m and hit hardest). Tanks don't budge." },
-  { id: "push", label: "Push", tip: "Breaker only. Rush in and punch a unit far away. Into water it drowns; over the edge of the map it is gone. Tanks don't budge." },
+  { id: "grenade", label: "Grenade", tip: "Throw a grenade in a short arc. Limited supply. 1 AP." },
+  { id: "ram", label: "Ram", tip: "Tank only. Drive into a close target or wall: 72 damage to it, some to your front armour. 1 AP." },
+  { id: "melee", label: "Strike", tip: "Infantry only: rush up to 3.5m and hit in one order, knocking the target back (Strikers charge 6.5m). Tanks don't budge." },
+  { id: "push", label: "Push", tip: "Breaker only: rush in and knock a unit far away. Tanks don't budge." },
   { id: "salvo", label: "Salvo", tip: "Mortar only. Three lighter shells walk down a line through the spot: short, on it, long. 1 AP." },
-  { id: "leap", label: "Jump", tip: "Infantry: hop a few metres, over a crate or a low wall, up onto a ledge, across a gap. A trooper mid-hop is hard to hit. 1 AP." },
+  { id: "leap", label: "Jump", tip: "Hop a few metres over a crate, a low wall or a gap, or up onto a ledge. A trooper mid-hop is hard to hit. 1 AP." },
   { id: "slam", label: "Slam", tip: "Sledge only. Swing the hammer in a circle: every foe within 3m is hurt and flung far. 1 AP." },
-  { id: "detonate", label: "Detonate", tip: "Boomer only. Blows itself up after its other orders: everything within 3.6m is wrecked and flung. Move first, then Detonate. 1 AP." },
+  { id: "detonate", label: "Detonate", tip: "Boomer only. It explodes after its other orders: everything within 3.6m is wrecked and thrown. 1 AP." },
 ];
 
 // WHAT THE CARD DOES, AS AN INSTRUCTION. The catalog tips above are reference text (what the
@@ -911,7 +911,7 @@ function healthStrip(entity: CombatEntity): string {
   const pct = total > 0 ? Math.round((left / total) * 100) : 0;
   const band = pct <= 34 ? "critical" : pct <= 68 ? "hurt" : "ok";
   const broken = entity.parts.filter((part) => part.hp <= 0).map((part) => part.label);
-  const tip = broken.length ? `${pct}% condition — lost: ${broken.join(", ")}` : `${pct}% condition`;
+  const tip = broken.length ? `${pct}% condition: lost: ${broken.join(", ")}` : `${pct}% condition`;
   return `<span class="unit-health unit-health--${band}" data-tip="${escapeAttr(tip)}"><i style="width:${pct}%"></i></span>`;
 }
 
@@ -1093,12 +1093,12 @@ function eventChip(sim: TacticalSim): string {
 
 const EVENT_GLYPHS: Record<string, { glyph: string; name: string; label: string }> = {
   barrage: { glyph: "☄", name: "Barrage", label: "Artillery barrage on the marked zone" },
-  devil: { glyph: "∿", name: "Dust devil", label: "Dust devil — anyone on the marked lane is flung" },
-  stampede: { glyph: "≫", name: "Stampede", label: "Stampede — the herd tramples the marked lanes" },
-  boulder: { glyph: "◉", name: "Boulder", label: "Rolling boulder — the marked lane is flattened" },
-  icebreaker: { glyph: "⊳", name: "Icebreaker", label: "Icebreaker — anyone out on the channel ice is hit" },
-  slag: { glyph: "♨", name: "Slag spill", label: "Slag spill — the marked zone floods and burns" },
-  train: { glyph: "▤", name: "Freight train", label: "Freight train — anything on the glowing rails is hit and thrown off" },
+  devil: { glyph: "∿", name: "Dust devil", label: "Dust devil: anyone on the marked lane is flung" },
+  stampede: { glyph: "≫", name: "Stampede", label: "Stampede: the herd tramples the marked lanes" },
+  boulder: { glyph: "◉", name: "Boulder", label: "Rolling boulder: the marked lane is flattened" },
+  icebreaker: { glyph: "⊳", name: "Icebreaker", label: "Icebreaker: anyone out on the channel ice is hit" },
+  slag: { glyph: "♨", name: "Slag spill", label: "Slag spill: the marked zone floods and burns" },
+  train: { glyph: "▤", name: "Freight train", label: "Freight train: anything on the glowing rails is hit and thrown off" },
 };
 
 // Environmental forecast: icons for events hitting NOW / next turn / the turn after,
@@ -1490,18 +1490,18 @@ function coverBlurb(entity: CombatEntity): string | undefined {
   if (entity.capturable || kind === "depot") {
     const owner = entity.team === "player" ? "You hold it" : entity.team === "enemy" ? "Enemy-held" : "Unclaimed";
     if (kind === "depot") {
-      return `Supply Depot — ${owner}. Send a unit to stand beside it and it flips to your team next turn, paying $${DEPOT_INCOME}/turn while you keep a unit close. The enemy can seize it back the same way.`;
+      return `Supply Depot: ${owner}. Send a unit to stand beside it and it flips to your team next turn, paying $${DEPOT_INCOME}/turn while you keep a unit close. The enemy can seize it back the same way.`;
     }
     return entity.team === "player"
-      ? "Captured turret — yours. Select it like any unit and give it a Shoot order; it cannot move."
-      : `Derelict Turret — ${owner}. Stand a unit beside it and end the turn: it becomes YOUR turret, and from the next turn you select it and fire it like any unit.`;
+      ? "Captured turret: yours. Select it like any unit and give it a Shoot order; it cannot move."
+      : `Derelict Turret: ${owner}. Stand a unit beside it and end the turn: it becomes YOUR turret, and from the next turn you select it and fire it like any unit.`;
   }
-  if (kind === "wreck") return "Burnt-out wreck — hard cover. Park a unit beside it to strip its salvage money.";
+  if (kind === "wreck") return "Burnt-out wreck: hard cover. Park a unit beside it to strip its salvage money.";
   if (kind === "gas") {
-    return `${kindLabel(entity)} — VOLATILE. Shoot it and it LEAKS: a gas cloud that spreads every turn and chokes anyone standing in it. Any explosion or fire inside the cloud detonates all of it at once.`;
+    return `${kindLabel(entity)}: VOLATILE. Shoot it and it LEAKS: a gas cloud that spreads every turn and chokes anyone standing in it. Any explosion or fire inside the cloud detonates all of it at once.`;
   }
   if (kind === "fuel" || kind === "ammo" || kind === "conduit") {
-    return `${kindLabel(entity)} — VOLATILE. Shoot it and it detonates, splashing everything nearby. Lure enemies in close, then set it off — and keep your own units clear of the blast.`;
+    return `${kindLabel(entity)}: VOLATILE. Shoot it and it detonates, splashing everything nearby. Lure enemies in close, then set it off: and keep your own units clear of the blast.`;
   }
   return undefined;
 }
@@ -1516,7 +1516,7 @@ function captureButton(actor: CombatEntity | undefined, target: CombatEntity, si
   const tip = reason
     ? reason
     : inReach
-      ? `${actor?.name ?? "This unit"} is in position — end the turn with it here (uncontested) to take ${target.name}.`
+      ? `${actor?.name ?? "This unit"} is in position: end the turn with it here (uncontested) to take ${target.name}.`
       : `Send ${actor?.name ?? "a unit"} to stand beside ${target.name}; it flips to you at the start of next turn if the enemy doesn't contest it.`;
   return `<button class="btn confirm ${ready ? "" : "disabled"} ${inReach ? "active" : ""}" data-cover-action="capture" data-disabled="${!ready}" data-tip="${escapeAttr(tip)}">
     ${label}
@@ -1673,11 +1673,11 @@ function baseCommandBody(base: CombatEntity, sim: TacticalSim): string {
   if (sim.pendingDeploy) activeBaseTab = "deploy";
 
   const tabs: Array<{ id: BaseTab; label: string; tip: string }> = [
-    { id: "deploy", label: "Deploy", tip: "Deploy a troop onto the battlefield." },
-    { id: "tech", label: "Tech", tip: "Research doctrines and specializations on the tech tree." },
-    { id: "defenses", label: "Defenses", tip: "Build stationary defenses near your base." },
-    { id: "support", label: "Support", tip: "Call an off-map support strike." },
-    { id: "upgrade", label: "Base", tip: "Upgrade the base's income and action points." },
+    { id: "deploy", label: "Deploy", tip: "Deploy a troop." },
+    { id: "tech", label: "Tech", tip: "Research new units, defenses and strikes." },
+    { id: "defenses", label: "Defenses", tip: "Build defenses near your base." },
+    { id: "support", label: "Support", tip: "Call in a strike." },
+    { id: "upgrade", label: "Base", tip: "Upgrade the base." },
   ];
   const tabBar = `<div class="base-tabs">${tabs.map((t) =>
     `<button class="base-tab ${activeBaseTab === t.id ? "active" : ""}" data-base-tab="${t.id}" data-tip="${escapeAttr(t.tip)}">${escapeHtml(t.label)}</button>`
@@ -2249,9 +2249,9 @@ function actionDisabledReason(action: Intent, actor: CombatEntity | undefined, s
   if (!actor || sim.phase !== "command") return "Not during the resolve phase.";
   if (actor.commandPoints <= 0) return `${actor.name} has no action points left this turn.`;
   if ((action === "move" || action === "ram" || action === "melee" || action === "push") && !actor.status.canMove) {
-    return `${actor.name} cannot move — its legs or treads are destroyed.`;
+    return `${actor.name} cannot move: its legs or treads are destroyed.`;
   }
-  if (action === "shoot" && !actor.status.canShoot) return `${actor.name} cannot shoot — its weapon is destroyed.`;
+  if (action === "shoot" && !actor.status.canShoot) return `${actor.name} cannot shoot: its weapon is destroyed.`;
   if (action === "melee" && !hasStrikeWeapon(actor)) return `${actor.name} has no intact weapon to strike with.`;
   if (action === "grenade" && actor.grenades <= 0) return `${actor.name} is out of ${actor.flying ? "bombs" : "grenades"}.`;
   if (action === "salvo") return sim.salvoFailureReason(actor) ?? undefined;

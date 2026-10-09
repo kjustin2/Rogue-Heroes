@@ -810,7 +810,7 @@ export class TacticalSim {
     this.strikeClock = 0;
     this.eventNotice = undefined;
     this.syncAllElevations();
-    this.pushLog(`${modeDef(mode).name} — ${map.name}`);
+    this.pushLog(`${modeDef(mode).name}: ${map.name}`);
     this.pushLog("Turn 1 command phase");
     this.refreshEventNotice();
     this.seatLogMark = this.logSeq;
@@ -926,7 +926,7 @@ export class TacticalSim {
     if (!actor.status.canMove) return this.reject(`${actor.name} cannot move`);
     // ARTILLERY fires or moves in a turn, never both (2026-10-07: the deploy ritual was cut).
     if (actor.kind === "artillery" && this.orders.some((o) => o.actorId === actor.id && (o.kind === "shoot" || o.kind === "grenade"))) {
-      return this.reject(`${actor.name} has fired this turn — the gun can't move as well`);
+      return this.reject(`${actor.name} has fired this turn: the gun can't move as well`);
     }
     const start = this.projectedActorForPreview(actor).position;
     const desired = clampToArena(destination);
@@ -1088,7 +1088,7 @@ export class TacticalSim {
     if (failure) return this.reject(failure);
     if (!actor || !structure) return false;
     if (this.captureInReach(actor, structure)) {
-      this.pushLog(`${actor.name} holds ${structure.name} — it flips to you next turn unless the enemy contests it`);
+      this.pushLog(`${actor.name} holds ${structure.name}: it flips to you next turn unless the enemy contests it`);
       return true;
     }
     const destination = this.coverDestination(actor, structure);
@@ -1118,7 +1118,7 @@ export class TacticalSim {
     const target = this.entity(targetId);
     if (actor && target && isAirBomber(actor)) {
       if (target.team === actor.team) return this.reject("Cannot bomb friendly units");
-      if (target.flying) return this.reject("Bombs can't hit aircraft — use guns on flyers");
+      if (target.flying) return this.reject("Bombs can't hit aircraft: use guns on flyers");
       return this.queueBombRun(actor, target.position);
     }
     if (!actor || !target || actor.id === target.id) return false;
@@ -1192,8 +1192,8 @@ export class TacticalSim {
     if (!actor) return false;
     if (!canGroundShellAttack(actor)) return this.reject(`${actor.name} cannot fire at the ground`);
     if (!actor.status.canShoot) return this.reject(`${actor.name} cannot shoot`);
-    if (actor.kind === "artillery" && this.orders.some((o) => o.actorId === actor.id && (o.kind === "move" || o.kind === "ram"))) return this.reject(`${actor.name} is moving this turn — the gun can't fire as well`);
-    if (this.isPowerCut(actor)) return this.reject(`${actor.name} has no power — the conduit is cut`);
+    if (actor.kind === "artillery" && this.orders.some((o) => o.actorId === actor.id && (o.kind === "move" || o.kind === "ram"))) return this.reject(`${actor.name} is moving this turn: the gun can't fire as well`);
+    if (this.isPowerCut(actor)) return this.reject(`${actor.name} has no power: the conduit is cut`);
     const point = clampToArena(destination);
     const projected = this.projectedActorForPreview(actor);
     if (dist(muzzlePoint(projected, "weapon"), point) > projectileRange(actor, "weapon")) return this.reject("Ground target is out of range");
@@ -1208,7 +1208,7 @@ export class TacticalSim {
     if (!actor) return "Select a unit first";
     if (actor.kind !== "mortar") return "Only a mortar walks a salvo";
     if (!actor.status.alive) return `${actor.name} is disabled`;
-    if (!actor.status.canShoot) return `${actor.name} cannot fire — its tube is destroyed`;
+    if (!actor.status.canShoot) return `${actor.name} cannot fire: its tube is destroyed`;
     if (actor.commandPoints <= 0) return `${actor.name} has no action points`;
     if (point) {
       const projected = this.projectedActorForPreview(actor);
@@ -1831,15 +1831,15 @@ export class TacticalSim {
       this.intent = "select";
     }
     this.pushLog(
-      kind === "laser" ? `${base.name} calls a gun run — strafing on the next resolve`
-      : kind === "shockwave" ? `${base.name} calls a shockwave — everything on the point flies on the next resolve`
-      : kind === "tankdrop" ? `${base.name} orders a tank drop — it lands on the next resolve`
-      : kind === "commando" ? `${base.name} sends a commando — he slams down on the next resolve`
-      : kind === "napalm" ? `${base.name} orders napalm — the point burns on the next resolve`
-      : kind === "barrage" ? `${base.name} calls a barrage — six shells on the next resolve`
-      : kind === "carbomb" ? `${base.name} rolls a car bomb — on the next resolve`
-      : kind === "boulder" ? `${base.name} sends a boulder rolling — on the next resolve`
-      : `${base.name} lines up a rail strike — three rods on the next resolve`,
+      kind === "laser" ? `${base.name} calls a gun run: strafing on the next resolve`
+      : kind === "shockwave" ? `${base.name} calls a shockwave: everything on the point flies on the next resolve`
+      : kind === "tankdrop" ? `${base.name} orders a tank drop: it lands on the next resolve`
+      : kind === "commando" ? `${base.name} sends a commando: he slams down on the next resolve`
+      : kind === "napalm" ? `${base.name} orders napalm: the point burns on the next resolve`
+      : kind === "barrage" ? `${base.name} calls a barrage: six shells on the next resolve`
+      : kind === "carbomb" ? `${base.name} rolls a car bomb: on the next resolve`
+      : kind === "boulder" ? `${base.name} sends a boulder rolling: on the next resolve`
+      : `${base.name} calls in a strike`,
     );
     return true;
   }
@@ -2523,7 +2523,7 @@ export class TacticalSim {
       this.forcedZones = [];
       this.pendingStrikes = [];
       this.refreshEventNotice();
-      this.pushLog(`Battle restored — Turn ${this.turn}`);
+      this.pushLog(`Battle restored: Turn ${this.turn}`);
       this.seatLogMark = this.logSeq;
       return true;
     } catch {
@@ -2571,8 +2571,8 @@ export class TacticalSim {
 
   private queueShootFor(actor: CombatEntity, target: CombatEntity, aim: AimMode, partId?: string, free = false): boolean {
     if (!actor.status.canShoot) return this.reject(`${actor.name} cannot shoot`);
-    if (actor.kind === "artillery" && this.orders.some((o) => o.actorId === actor.id && (o.kind === "move" || o.kind === "ram"))) return this.reject(`${actor.name} is moving this turn — the gun can't fire as well`);
-    if (this.isPowerCut(actor)) return this.reject(`${actor.name} has no power — the conduit is cut`);
+    if (actor.kind === "artillery" && this.orders.some((o) => o.actorId === actor.id && (o.kind === "move" || o.kind === "ram"))) return this.reject(`${actor.name} is moving this turn: the gun can't fire as well`);
+    if (this.isPowerCut(actor)) return this.reject(`${actor.name} has no power: the conduit is cut`);
     // Ground units CAN shoot up at flyers -- that is the anti-air. (A gunship's autocannon also rakes ground targets; the bomber has no gun.)
     const requestedPart = partId ? this.targetableParts(target).find((part) => part.id === partId) : undefined;
     if (partId && !requestedPart) return this.reject(`${target.name} does not have that targetable part`);
@@ -3021,7 +3021,7 @@ export class TacticalSim {
     if (!actor || !target || actor.id === target.id) return "Select a unit and target first";
     if (actor.team === target.team) return "Cannot throw grenades at friendly units";
     if (actor.kind !== "soldier" && actor.kind !== "gunship" && actor.kind !== "bomber") return "This unit carries no bombs/grenades";
-    if (target.flying) return "Bombs can't hit aircraft — use guns on flyers";
+    if (target.flying) return "Bombs can't hit aircraft: use guns on flyers";
     if (!actor.status.alive) return `${actor.name} is disabled`;
     if (actor.grenades <= 0) return `${actor.name} is out of grenades`;
     if (actor.commandPoints <= 0) return `${actor.name} has no action points`;
@@ -3157,7 +3157,7 @@ export class TacticalSim {
           x: start.x + (destination.x - start.x) * stopT,
           z: start.z + (destination.z - start.z) * stopT,
         });
-        if (!silent) this.pushLog(`${actor.name} can't cross the water — find a bridge`);
+        if (!silent) this.pushLog(`${actor.name} can't cross the water: find a bridge`);
         return stopped;
       }
 
@@ -4678,7 +4678,7 @@ export class TacticalSim {
         if (dist(other.position, wreck.position) < other.radius + wreck.radius) this.separateFromUnits(other);
       }
       this.salvage.set(wreck.id, SALVAGE_PER_WRECK);
-      this.pushLog(`${target.name} burns out — the wreck is hard cover and holds $${SALVAGE_PER_WRECK} salvage`);
+      this.pushLog(`${target.name} burns out: the wreck is hard cover and holds $${SALVAGE_PER_WRECK} salvage`);
     }
     this.checkEndState();
   }
@@ -4724,7 +4724,7 @@ export class TacticalSim {
         structure.name = "Captured Turret"; // "Derelict" on a turret you now command read as still-dead
       }
       this.effect("ping", { ...structure.position }, { ...structure.position }, team === "player" ? 0x75d8ff : 0xff765f, 0.9, structure.radius + 0.8);
-      this.pushLog(`${this.sideName(team, team === "player" ? "You" : "The enemy")} captured ${wasName}${structure.coverKind === "depot" ? ` (+$${DEPOT_INCOME}/turn)` : structure.kind === "turret" && team === "player" ? " — select it next turn to fire it" : ""}`);
+      this.pushLog(`${this.sideName(team, team === "player" ? "You" : "The enemy")} captured ${wasName}${structure.coverKind === "depot" ? ` (+$${DEPOT_INCOME}/turn)` : structure.kind === "turret" && team === "player" ? ": select it next turn to fire it" : ""}`);
     }
   }
 
@@ -5236,7 +5236,7 @@ export class TacticalSim {
         cut += 1;
       }
       this.pushLog(cut > 0
-        ? `${source.name} ruptures — ${cut} emplacement${cut === 1 ? "" : "s"} lose power for ${CONDUIT_OUTAGE_TURNS} rounds`
+        ? `${source.name} ruptures: ${cut} emplacement${cut === 1 ? "" : "s"} lose power for ${CONDUIT_OUTAGE_TURNS} rounds`
         : `${source.name} ruptures, but nothing nearby was drawing power`);
       return;
     }
@@ -5246,7 +5246,7 @@ export class TacticalSim {
       // waits for a spark. Big enough from the start to matter, capped so a map never fills.
       this.gasClouds.push({ id: `gas-${++this.effectSeq}`, x: source.position.x, z: source.position.z, radius: GAS_START_RADIUS, maxRadius: GAS_MAX_RADIUS });
       this.effect("ping", source.position, source.position, 0xa6e05a, 0.8, GAS_START_RADIUS);
-      this.pushLog(`${source.name} ruptures — gas is spreading. Keep fire away from it, or don't`);
+      this.pushLog(`${source.name} ruptures: gas is spreading. Keep fire away from it, or don't`);
       return;
     }
 
@@ -5290,7 +5290,7 @@ export class TacticalSim {
         radius: FUEL_FIRE_RADIUS,
         turnsLeft: FUEL_FIRE_TURNS,
       });
-      this.pushLog(`${source.name} ignites — the ground burns`);
+      this.pushLog(`${source.name} ignites: the ground burns`);
     }
   }
 
@@ -6587,7 +6587,7 @@ export class TacticalSim {
     else if (this.mode === "domination") this.resolveDomination();
     else if (this.mode === "survival" && this.turn >= this.modeState.target) {
       this.phase = "victory";
-      this.pushLog(`You survived all ${this.modeState.target} rounds — the line held!`);
+      this.pushLog(`You survived all ${this.modeState.target} rounds: the line held!`);
     }
   }
 
@@ -6612,10 +6612,10 @@ export class TacticalSim {
     });
     if (s.playerScore >= s.target) {
       this.phase = "victory";
-      this.pushLog("Sectors dominated — victory!");
+      this.pushLog("Sectors dominated: victory!");
     } else if (s.enemyScore >= s.target) {
       this.phase = "defeat";
-      this.pushLog("The enemy dominates the sectors — defeat.");
+      this.pushLog("The enemy dominates the sectors: defeat.");
     } else {
       this.pushLog(`Sector score ${s.playerScore}–${s.enemyScore} of ${s.target}`);
     }
@@ -6638,7 +6638,7 @@ export class TacticalSim {
       this.syncEntityElevation(unit);
     }
     this.effect("ping", { x: bounds.maxX - 2.5, z: 0 }, { x: bounds.maxX - 2.5, z: 0 }, 0xff765f, 1.0, 4);
-    this.pushLog(`Wave ${wave} inbound — ${count} hostiles hit the east edge`);
+    this.pushLog(`Wave ${wave} inbound: ${count} hostiles hit the east edge`);
   }
 
   // ---- Dynamic map events ---------------------------------------------------------------
@@ -6768,21 +6768,21 @@ export class TacticalSim {
     const t = this.turn;
     let notice: string | undefined;
     const LANE_WORDS: Record<LaneKind, string> = {
-      devil: "A dust devil is coming down the marked lane — get off it!",
-      stampede: "A stampede is coming down the marked lanes — get off them!",
-      boulder: "A boulder is rolling down the marked lane — get off it!",
-      icebreaker: "The icebreaker is coming up the channels — get off the ice!",
+      devil: "A dust devil is coming down the marked lane: get off it!",
+      stampede: "A stampede is coming down the marked lanes: get off them!",
+      boulder: "A boulder is rolling down the marked lane: get off it!",
+      icebreaker: "The icebreaker is coming up the channels: get off the ice!",
     };
     const lane = this.lanesOn(t)[0];
     if (lane) { this.pushLog(LANE_WORDS[lane.kind]); notice = `⚠ ${LANE_WORDS[lane.kind]}`; }
     const zones = this.eventZonesForTurn(t);
     if (zones.some((z) => z.kind === "barrage")) {
-      this.pushLog("Incoming artillery barrage — clear the marked zone!");
-      notice = "⚠ Incoming barrage — clear the marked zone before you end your turn.";
+      this.pushLog("Incoming artillery barrage: clear the marked zone!");
+      notice = "⚠ Incoming barrage: clear the marked zone before you end your turn.";
     }
     if (zones.some((z) => z.kind === "slag")) {
-      this.pushLog("The furnaces are venting — molten slag will flood the marked zone this turn.");
-      notice = notice ?? "⚠ Slag spill — the marked zone floods and burns this turn.";
+      this.pushLog("The furnaces are venting: molten slag will flood the marked zone this turn.");
+      notice = notice ?? "⚠ Slag spill: the marked zone floods and burns this turn.";
     }
     // No "next turn" banner: the forecast chip already shows a coming storm or barrage (fewest words on screen).
     this.eventNotice = notice;
@@ -7083,7 +7083,7 @@ export class TacticalSim {
           this.effect("ping", { ...e.position }, { ...e.position }, 0x8fd0ff, 0.75, e.radius + 1.1);
           if (!this.strikeDeflected.has(e.id)) {
             this.strikeDeflected.add(e.id);
-            this.pushLog(`${e.name} weathers the strike — hardened HQ, no damage.`);
+            this.pushLog(`${e.name} weathers the strike: hardened HQ, no damage.`);
           }
         }
         continue;
@@ -7133,10 +7133,10 @@ export class TacticalSim {
     }
     if (s.playerScore >= s.target) {
       this.phase = "victory";
-      this.pushLog(this.hotseat ? "Player 1 secures the hill and wins" : "Hill secured — victory!");
+      this.pushLog(this.hotseat ? "Player 1 secures the hill and wins" : "Hill secured: victory!");
     } else if (s.enemyScore >= s.target) {
       this.phase = "defeat";
-      this.pushLog(this.hotseat ? "Player 2 secures the hill and wins" : "Enemy held the hill — defeat.");
+      this.pushLog(this.hotseat ? "Player 2 secures the hill and wins" : "Enemy held the hill: defeat.");
     }
   }
 
@@ -7151,7 +7151,7 @@ export class TacticalSim {
         if (carrier) flag.pos = { ...carrier.position };
         flag.carrierId = undefined;
         flag.droppedTurns = 0;
-        this.pushLog(`A flag carrier fell — the flag drops`);
+        this.pushLog(`A flag carrier fell: the flag drops`);
       } else {
         flag.pos = { ...carrier.position };
       }
@@ -7188,10 +7188,10 @@ export class TacticalSim {
     this.tryCapture(playerFlag, enemyFlag, "enemy");
     if (s.playerScore >= s.target) {
       this.phase = "victory";
-      this.pushLog(this.hotseat ? "Player 1 wins on flag captures" : "Flag captured — victory!");
+      this.pushLog(this.hotseat ? "Player 1 wins on flag captures" : "Flag captured: victory!");
     } else if (s.enemyScore >= s.target) {
       this.phase = "defeat";
-      this.pushLog(this.hotseat ? "Player 2 wins on flag captures" : "Enemy captured your flag — defeat.");
+      this.pushLog(this.hotseat ? "Player 2 wins on flag captures" : "Enemy captured your flag: defeat.");
     }
   }
 
@@ -7248,10 +7248,10 @@ export class TacticalSim {
     // Last Stand has no enemy base: clearing a wave is breathing room, not victory.
     if (this.mode !== "survival" && !factionLiving(this.entities, "enemy").length) {
       this.phase = "victory";
-      this.pushLog(this.hotseat ? "Player 2's force is disabled — Player 1 wins" : "Enemy force disabled");
+      this.pushLog(this.hotseat ? "Player 2's force is disabled: Player 1 wins" : "Enemy force disabled");
     } else if (!factionLiving(this.entities, "player").length) {
       this.phase = "defeat";
-      this.pushLog(this.hotseat ? "Player 1's force is disabled — Player 2 wins" : "Player force disabled");
+      this.pushLog(this.hotseat ? "Player 1's force is disabled: Player 2 wins" : "Player force disabled");
     }
   }
 

@@ -144,7 +144,7 @@ const MEDAL_SEEDS: readonly MedalSeed[] = [
     ["fling30", "Gone With the Wind", "Fling 30 troopers with Shockwaves.", "flung", 30, 30],
     ["calls25", "Air Mail", "Call in 25 support strikes.", "supportCalls", 25, 30],
     ["calls100", "Rain of Steel", "Call in 100 support strikes.", "supportCalls", 100, 70],
-    ["bowl50", "Strike!", "Bowl over 50 foes with Boulder Rolls.", "bowled", 50, 35],
+    ["bowl50", "Rolling Stone", "Bowl over 50 foes with Boulder Rolls.", "bowled", 50, 35],
     ["tankdrop5", "Special Delivery", "Drop 5 tanks from the sky.", "tankdrops", 5, 35],
     ["fieldwork", "Both Schools", "Research both Fire Discipline and Demolitions (in different battles).", "", 2, 40],
   ].map(([id, name, blurb, key, need, points]) => ({

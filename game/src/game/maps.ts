@@ -551,7 +551,7 @@ const RAW_MAPS: readonly MapDef[] = [
     posts: ["rocketpost", "gunpost"],
     name: "Dust Bowl",
     blurb: "A dead supply road through a desert basin, walled by canyons.",
-    feel: "Armour down the dry river bed, infantry through the canyon passes; the plateau derricks watch it all.",
+    feel: "Tanks down the dry river bed, infantry through the canyon passes, snipers on the plateaus.",
     seed: 0x44555354,
     theme: { ground: 0x7a5530, skyline: "mountains", light: { key: 0xffe2b0, keyIntensity: 3.4, elevation: 46, azimuth: 0, sky: 0xdce6f0, bounce: 0x6a4424, hemi: 0.38, rim: 0x9fd8ff, rimIntensity: 0.55 }, surface: "cracked", groundAccent: 0xd9a05a, grid: 0xd6ad6d, fog: 0x8fa6b8, fogDensity: 0.009, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x7fa8c9, ambient: { kind: "dust", color: 0xe6c98a, density: 1.1 } },
     terrain: {
@@ -906,7 +906,7 @@ const RAW_MAPS: readonly MapDef[] = [
     posts: ["gunpost", "mortarpit"],
     name: "Crossfire Basin",
     blurb: "A militarised border: checkpoint gates, a radar station, a trench line.",
-    feel: "Push the trench line, hold the radar station, meet at the checkpoint — mirrored to the bag.",
+    feel: "Push the trench line, hold the radar station or meet at the checkpoint.",
     seed: 0x43524f53,
     theme: { ground: 0x414833, skyline: "fences", light: { key: 0xfff0dc, keyIntensity: 3.5, elevation: 36, azimuth: 15, sky: 0xc8d0dc, bounce: 0x2a3020, hemi: 0.3, rim: 0x9fd8ff, rimIntensity: 0.55 }, surface: "grass", groundAccent: 0x98a15c, grid: 0x97a277, fog: 0x94a3b4, fogDensity: 0.010, playerLight: 0x6fd7ff, enemyLight: 0xff7c5e, sky: 0x8fa3ba, ambient: { kind: "pollen", color: 0xc6d8a8, density: 0.7 } },
     terrain: {
