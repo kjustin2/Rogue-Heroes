@@ -188,6 +188,7 @@ const JUMP_SLAM_THROW = 4;
 // Effect colours that name a SOUND (main.ts maps them): a pad launch whoosh, silent dirt/dust puffs, the train horn, ice cracking.
 export const LAUNCH_FX = 0xffe14a; // a spring trap firing
 export const DIG_FX = 0x8a6a43;
+export const CONTACT_FX = 0xc9b79a; // a thrown body hitting something solid (Sfx.contact: what hit what)
 export const CAR_BOMB_FX = 0xff5a1e; // the car bomb going up (its own boom)
 export const CONVEYOR_FX = 0x5a5e65; // a belt carrying someone (a clank and a motor whine)
 export const COMMANDO_JET = 0xbfe8fe; // the commando's transport (the jet is heard with a chute flutter)
@@ -346,6 +347,9 @@ export interface TacticalOrder {
   stance?: InfantryStance;
   start?: Vec2;
   startedCrouched?: boolean;
+  /** Blocked-move watch: the gap to the stop at the start of the current 0.2s window, and when that window began. */
+  bestGap?: number;
+  bestAt?: number;
   /** A melee order that SHOVES instead of striking (the Push ability): same rush, a big throw. */
   shove?: boolean;
   /** A short hop every trooper can make: a move that arcs over low obstacles and up onto a ledge (see leapRange). */
@@ -1926,6 +1930,7 @@ export class TacticalSim {
     const blocked = this.entities.some((e) => e.status.alive && e.id !== base.id && dist(e.position, point) < e.radius + radius + 0.2);
     if (blocked) return "Spot is blocked by another object";
     if (pointInWater(point)) return "Cannot build in the water";
+    if (onLane(this.mapDef, point, defenseRadius(kind))) return "A hazard runs through here: build off the marked lane";
     if (kind === "minefield" && this.mines.some((m) => m.team === base.team && dist(m, point) < 2.4)) return "There is already a minefield here";
     if (kind === "springtrap" && this.mines.some((m) => m.team === base.team && dist(m, point) < 1.6)) return "There is already a trap here";
     return undefined;
@@ -2731,19 +2736,40 @@ export class TacticalSim {
         }
         return;
       }
+      const before = { ...actor.position };
       actor.position = moveToward(actor.position, order.destination, moveSpeed(actor) * crouchMoveSlow * dt);
+      // NEVER THROUGH A SOLID (movement oracle 2026-10-08): a fast mover aimed dead centre at a small prop (a Chop Bike at a tree)
+      // had the push-out flip sides under it and came out the far side. A step that would cut deep through one ends the move there.
+      const wall = this.solidCrossed(actor, before, actor.position, order.destination);
+      if (wall) {
+        actor.position = before;
+        order.done = true;
+        this.syncEntityElevation(actor);
+        return;
+      }
       this.separateFromUnits(actor, order.destination);
       this.syncEntityElevation(actor);
       actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
       this.checkMines(actor);
+      // BLOCKED: a body stands in the way and every step is pushed back (the unit shook in place against a tank; oracle
+      // 2026-10-08). No progress for 0.2s ends the move where it stands.
+      // Measured over 0.2s windows: under a quarter of its speed in real progress means it is being pushed back as fast as it steps.
+      const gap = dist(actor.position, order.destination);
+      if (order.bestGap === undefined) { order.bestGap = gap; order.bestAt = order.elapsed; }
+      else if (order.elapsed - (order.bestAt ?? 0) >= 0.2) {
+        if (order.bestGap - gap < moveSpeed(actor) * crouchMoveSlow * 0.2 * 0.25 && gap > 0.3) { order.done = true; return; }
+        order.bestGap = gap; order.bestAt = order.elapsed;
+      }
       if (dist(actor.position, order.destination) < 0.08) {
         order.done = true;
         // A drop off a ledge can end flush against the face it dropped from (movement oracle, ironworks): back it off like a
         // halt, and if there is no clear spot on the way, it never left (a trooper does not walk into a wall to finish a move).
         if (!actor.flying && order.start) {
           this.settleHalt(actor, order.start);
+          // Still in the face: the nearest ground the hull fits on, a short step away. (It used to snap all the way back to where
+          // the move began -- a Flak Track jumped 12m backwards and was drawn as a throw; movement oracle 2026-10-08.)
           if (hullInRise(actor.position, actor.radius * 0.9) && !hullInRise(order.start, actor.radius * 0.9)) {
-            actor.position = { ...order.start };
+            actor.position = this.nearestFittingGround(actor, actor.position) ?? { ...order.start };
             this.syncEntityElevation(actor);
           }
         }
@@ -2871,6 +2897,8 @@ export class TacticalSim {
           this.pushLog(`${actor.name}'s charge is stopped by the terrain`);
           return;
         }
+        const wall = this.solidCrossed(actor, actor.position, want);
+        if (wall && wall.id !== target.id) { order.done = true; this.pushLog(`${actor.name}'s charge is stopped by ${wall.name}`); return; }
         actor.position = want;
         this.separateFromUnits(actor);
         this.syncEntityElevation(actor);
@@ -2903,6 +2931,8 @@ export class TacticalSim {
           this.pushLog(`${actor.name}'s ram is stopped by the terrain`);
           return;
         }
+        const wall = this.solidCrossed(actor, actor.position, want);
+        if (wall && wall.id !== target.id) { order.fired = true; order.done = true; this.pushLog(`${actor.name}'s ram is stopped by ${wall.name}`); return; }
         actor.position = want;
         this.separateFromUnits(actor);
         this.syncEntityElevation(actor);
@@ -4285,7 +4315,7 @@ export class TacticalSim {
     let ringOut = false;
     // What cut the throw short, if anything. A body that was thrown INTO something is a slam:
     // the momentum it did not get to spend lands as damage, on it and on whatever it hit.
-    let slammedInto: CombatEntity | "cliff" | "prop" | undefined;
+    let slammedInto: CombatEntity | "cliff" | undefined;
     let travelled = 0;
     for (let i = 1; i <= steps; i += 1) {
       const t = (throwDistance * i) / steps;
@@ -4301,7 +4331,7 @@ export class TacticalSim {
       const body = this.bodyAt(entity, next);
       if (body) { slammedInto = body; break; }
       const prop = this.solidPropAt(entity, next);
-      if (prop) { slammedInto = "prop"; break; }
+      if (prop) { slammedInto = prop; break; }
       footing = height;
       landed = next;
       travelled = t;
@@ -4318,6 +4348,7 @@ export class TacticalSim {
     }
     if (actor.team === "player" && entity.team === "enemy" && travelled >= 2) this.tally("player", "thrown");
     entity.position = landed;
+    entity.thrownSeq = (entity.thrownSeq ?? 0) + 1;
     entity.dugIn = undefined; // thrown out of its foxhole
     entity.digging = undefined;
     entity.elevation = terrainHeightAt(landed);
@@ -4332,7 +4363,8 @@ export class TacticalSim {
     }
     if (!drowned) {
       this.pushLog(`${entity.name} is ${opts.pull !== undefined ? "dragged in" : opts.ringOut ? "sent flying" : "thrown by the blast"}`);
-      if (slammedInto) this.resolveSlam(actor, entity, slammedInto, (throwDistance - travelled) / throwDistance, baseDamage, dirX, dirZ);
+      // A forced throw (shockwave, spring, sweep, bowl) carries no blast damage of its own: it slams as hard as it was thrown.
+      if (slammedInto) this.resolveSlam(actor, entity, slammedInto, (throwDistance - travelled) / throwDistance, baseDamage || (opts.force ?? 0) * 4, dirX, dirZ);
       return;
     }
     // Into the channel. Everything is destroyed at once — there is no swimming in this game.
@@ -4392,16 +4424,26 @@ export class TacticalSim {
    * both take it, and the one that was hit is knocked back a step as well. Blasts already throw
    * what they do not kill; this is what makes WHERE they throw it matter.
    */
-  private resolveSlam(actor: CombatEntity, thrown: CombatEntity, into: CombatEntity | "cliff" | "prop", unspent: number, baseDamage: number, dirX: number, dirZ: number): void {
+  private resolveSlam(actor: CombatEntity, thrown: CombatEntity, into: CombatEntity | "cliff", unspent: number, baseDamage: number, dirX: number, dirZ: number): void {
+    // THE CONTACT (2026-10-08, owner: "proper animation and sound design for the collisions"): every body stopped short by something
+    // solid is heard where it hits, by what hit what (main.ts: CONTACT_FX -> Sfx.contact, body x surface), even a soft bump.
+    const contact = { x: thrown.position.x + dirX * thrown.radius, z: thrown.position.z + dirZ * thrown.radius };
+    this.effect("impact", { ...thrown.position }, contact, CONTACT_FX, 0.3, Math.min(1, 0.3 + unspent));
     const force = Math.round(baseDamage * 0.45 * Math.max(0.15, unspent));
     if (force < 3) return;
-    const hard = into === "cliff" || into === "prop";
-    const selfResult = applyDamage(thrown, preferredPart(thrown, "center").id, hard ? force : Math.round(force * 0.6));
-    const what = into === "cliff" ? "the cliff" : into === "prop" ? "cover" : into.name;
+    const solid = into === "cliff" || into.kind === "cover" || isBuildingKind(into.kind) || isDefenseKind(into.kind);
+    const selfResult = applyDamage(thrown, preferredPart(thrown, "center").id, solid ? force : Math.round(force * 0.6));
+    const what = into === "cliff" ? "the cliff" : into.name;
     this.pushLog(`${thrown.name} slams into ${what}`);
     this.effect("strike", { x: thrown.position.x - dirX, z: thrown.position.z - dirZ }, thrown.position, 0xffc07a, 0.45, thrown.radius + 0.6);
     this.afterDamage(actor, thrown, selfResult, "Slam");
-    if (hard) return;
+    if (into === "cliff" || into.kind === "base") return; // rock and hardened HQs take nothing
+    if (solid) {
+      // A crate, a post, a wall takes the blow too (and shakes with it: the renderer's hit flinch). Crates break.
+      const propResult = applyDamage(into, preferredPart(into, "center").id, Math.round(force * 0.5));
+      this.afterDamage(actor, into, propResult, "Slam");
+      return;
+    }
     // The body that was hit takes a share and is shoved a step along the throw.
     const otherResult = applyDamage(into, preferredPart(into, "center").id, Math.round(force * 0.5));
     if (!isBuildingKind(into.kind) && !isDefenseKind(into.kind) && !into.flying && Number.isFinite(blastMass(into))) {
@@ -4986,7 +5028,8 @@ export class TacticalSim {
     const stop = { ...actor.position };
     if (!risesNear(stop, margin)) return;
     const length = dist(start, stop);
-    for (let back = 0.15; back < length; back += 0.15) {
+    // At most 3m back down its own path: walking a body back the whole way in a crowd snapped a Flak Track 12m (oracle 2026-10-08).
+    for (let back = 0.15; back < Math.min(length, 3); back += 0.15) {
       const t = (length - back) / length;
       const c = { x: start.x + (stop.x - start.x) * t, z: start.z + (stop.z - start.z) * t };
       if (clear(c)) {
@@ -4998,6 +5041,22 @@ export class TacticalSim {
     // A bent path (shoved off its line) has no clear spot on the straight line back: the nearest ground the hull fits on.
     const fit = hullInRise(actor.position, actor.radius * 0.9) ? this.nearestFittingGround(actor, actor.position) : undefined;
     if (fit) { actor.position = fit; this.syncEntityElevation(actor); }
+  }
+
+  /** The solid prop / base / defense a ground step from `a` to `b` would cut deep through (not one it starts inside, stands on, or is
+   *  climbing onto as its destination), if any. */
+  private solidCrossed(actor: CombatEntity, a: Vec2, b: Vec2, destination?: Vec2): CombatEntity | undefined {
+    const dx = b.x - a.x, dz = b.z - a.z, d2 = dx * dx + dz * dz;
+    if (d2 < 1e-6) return undefined;
+    return this.entities.find((s) => {
+      if (s.id === actor.id || !s.status.alive || s.flying || s.burrowed) return false;
+      if (!((s.kind === "cover" && s.coverKind !== "ridge") || s.kind === "base" || isDefenseKind(s.kind))) return false;
+      if (s.kind === "cover" && isInfantryKind(actor.kind) && (canClimbCover(s) || isClimbableCover(s)) && ((destination !== undefined && dist(s.position, destination) <= s.radius + 0.5) || actor.elevation > terrainHeightAt(actor.position) + 0.15)) return false;
+      const deep = (actor.radius + s.radius) * 0.6;
+      if (dist(a, s.position) < deep) return false;
+      const t = Math.max(0, Math.min(1, ((s.position.x - a.x) * dx + (s.position.z - a.z) * dz) / d2));
+      return Math.hypot(a.x + dx * t - s.position.x, a.z + dz * t - s.position.z) < deep;
+    });
   }
 
   /** Push-out of overlapping bodies, but never INTO a rock face: a shove that would sink the hull into a
@@ -5039,7 +5098,7 @@ export class TacticalSim {
     for (let iter = 0; iter < 4; iter += 1) {
       let moved = false;
       for (const other of this.entities) {
-        if (other.id === actor.id || !other.status.alive || other.burrowed) continue; // carried (or burrowed) units aren't on the ground
+        if (other.id === actor.id || !other.status.alive || other.burrowed || other.flying) continue; // burrowed units aren't on the ground, flyers are above it (a gunship overhead shoved walkers back and forth)
         if (other.kind === "cover") {
           // Ridges are walkable high ground, and a low cover the unit has climbed ONTO is a valid
           // perch — skip those. If the unit's own move destination sits on this cover it is climbing
@@ -6813,6 +6872,17 @@ export class TacticalSim {
    *  arrives. Each unit is hit once per sweep; `stopAtHeavy` (the boulder) ends the sweep on the first heavy it meets. */
   private queueSweep(kind: SweepKind, from: Vec2, to: Vec2, o: { width: number; damage: number; throw: number; seconds: number; at: number; stopAtHeavy: boolean; team?: Team }): string {
     const id = `roll-${++this.effectSeq}`;
+    // A stone or a car stops at CONTACT with the first solid on its line, not up to a sub-strike's spacing inside it: the run is
+    // cut short there up front (the boulder rolled a metre into a base before the break; collision filmstrip 2026-10-08).
+    if (o.stopAtHeavy) {
+      const full = dist(from, to) || 1;
+      for (let d = 0.25; d < full; d += 0.25) {
+        const p = { x: from.x + ((to.x - from.x) * d) / full, z: from.z + ((to.z - from.z) * d) / full };
+        const hit = this.entities.some((e) => e.status.alive && !e.flying && ((e.kind === "cover" && !["ridge", "span"].includes(e.coverKind ?? "")) || isDefenseKind(e.kind) || isBuildingKind(e.kind))
+          && dist(e.position, p) <= e.radius + (isBuildingKind(e.kind) ? 1.2 : 0) + o.width * 0.9); // an HQ is drawn wider than its footprint
+        if (hit) { o = { ...o, seconds: (o.seconds * d) / full }; to = p; break; }
+      }
+    }
     const len = dist(from, to) || 1;
     const dir = { x: (to.x - from.x) / len, z: (to.z - from.z) / len };
     this.pendingFx.push({ at: o.at, type: "roll", from, to, color: SWEEP_FX[kind], duration: o.seconds, radius: o.width, sweep: id });
@@ -6831,14 +6901,28 @@ export class TacticalSim {
     const hit = this.rollHits.get(strike.roll) ?? new Set<string>();
     this.rollHits.set(strike.roll, hit);
     const owner = this.entities.find((e) => e.kind === "base" && e.team === strike.team);
-    // A CAR BOMB hits solid things too: it goes up against the first prop, post or wall in its path, never through it
-    // (visual QA 2026-10-08: it drove through Dust Bowl's wrecked truck).
-    if (strike.kind === "carbomb") {
+    // A BOULDER OR A CAR BOMB BREAKS AGAINST SOLIDS (owner 2026-10-08: "a boulder hitting a base"): the first prop, post, wall
+    // or base in its path stops it there, never through it. The car bomb goes up; the stone smashes (a hardened HQ shrugs it
+    // off, as it does every strike). A herd, a dust devil and a ship never touch solids: their lanes are kept clear of them.
+    if (strike.stop) {
       const wall = this.entities.find((e) => e.status.alive && !e.flying && ((e.kind === "cover" && !["ridge", "span"].includes(e.coverKind ?? "")) || isDefenseKind(e.kind) || isBuildingKind(e.kind))
-        && dist(e.position, strike.point) <= e.radius + strike.radius * 0.8);
+        && dist(e.position, strike.point) <= e.radius + (isBuildingKind(e.kind) ? 1.2 : 0) + strike.radius * 0.95); // the run was cut to contact (queueSweep)
       if (wall) {
         this.stopSweep(strike.roll);
-        this.detonateStrike({ point: strike.point, radius: CAR_BOMB_RADIUS, damage: CAR_BOMB_DAMAGE, kind: "carblast", team: strike.team });
+        if (strike.kind === "carbomb") {
+          this.detonateStrike({ point: strike.point, radius: CAR_BOMB_RADIUS, damage: CAR_BOMB_DAMAGE, kind: "carblast", team: strike.team });
+          return;
+        }
+        this.effect("blast", strike.point, strike.point, DUST_FX, 0.7, 1.6);
+        this.effect("strike", strike.point, wall.position, 0xd9c4a0, 0.45, wall.radius + 0.5);
+        if (wall.kind === "base") {
+          this.effect("ping", { ...wall.position }, { ...wall.position }, 0x8fd0ff, 0.75, wall.radius + 1.1);
+          this.pushLog(`The boulder smashes against ${wall.name}. Hardened HQ, no damage.`);
+        } else {
+          const result = applyDamage(wall, preferredPart(wall, "center").id, strike.damage);
+          for (const m of result.messages) this.pushLog(m);
+          this.pushLog(`The boulder smashes against ${wall.name}`);
+        }
         return;
       }
     }

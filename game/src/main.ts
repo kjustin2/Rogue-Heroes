@@ -37,7 +37,7 @@ import {
   FACTIONS,
   type FactionId,
   CLASH_BLAST,
-  CONVEYOR_FX, COMMANDO_JET, DIG_FX, ERUPT_FX, HORN_FX, ICE_FX, LAUNCH_FX, SWEEP_FX,
+  CONTACT_FX, CONVEYOR_FX, COMMANDO_JET, DIG_FX, ERUPT_FX, HORN_FX, ICE_FX, LAUNCH_FX, SWEEP_FX,
   PULSE_EMP,
   isPulseBlast,
   CLASH_BOLT,
@@ -2412,6 +2412,12 @@ function processBattleEvents(): void {
       feel.kick(effect.to, { x: view.x, z: view.z }, (0.9 + size * 1.6) * onScreen);
       stage.punch(0.25 * size * onScreen);
       world.flashLight(effect.to, 0xffa24d, (4.5 + size * 4) * onScreen, 260, 1.8);
+    } else if (effect.type === "impact" && effect.color === CONTACT_FX) {
+      // A thrown body hitting something solid: the body's own material against the surface's (a trooper thuds, a bike clangs).
+      const body = entityAtPoint(effect.from);
+      const wall = sim.entities.find((e) => e.status.alive && Math.hypot(e.position.x - effect.from.x, e.position.z - effect.from.z) > 0.2 && Math.hypot(e.position.x - effect.to.x, e.position.z - effect.to.z) < e.radius + 0.5);
+      sfx.contact(body?.kind ?? "soldier", wall?.kind ?? "cover", wall?.coverKind ?? "rock", (effect.radius ?? 0.6) * heard);
+      if (stage.isInView(effect.to)) feel.addTrauma(0.04 + 0.06 * (effect.radius ?? 0.5));
     } else if (effect.type === "impact") {
       const hit = entityAtPoint(effect.to);
       sfx.impact(hit?.kind, hit?.coverKind, heard);

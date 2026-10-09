@@ -122,6 +122,8 @@ export class WorldRenderer {
   private waterWaves: THREE.Texture | undefined;
   /** Where the camera is this frame (for FX that must thin out when they pass right by it). */
   private viewer: THREE.Vector3 | undefined;
+  /** Real seconds since the last frame (for frame-rate independent smoothing). */
+  private frameDt = 0.016;
   /** The bridge decks, each hinged at one bank (makeWaterAndBridges): lifted while the icebreaker passes. */
   private bridgeLeaves: THREE.Group[] = [];
   private lastPlacementSig = "";
@@ -344,6 +346,7 @@ export class WorldRenderer {
     this.particleClock = nowMs;
     if (!(particleDt > 0) || particleDt > 0.1) particleDt = 0.016; // first frame / tab-switch guard
     this.particles.update(particleDt);
+    this.frameDt = particleDt;
     this.emitCombatParticles(sim);
     this.computeRecoil(sim.projectiles);
     this.computeAttackPhases(sim);
@@ -1717,7 +1720,17 @@ export class WorldRenderer {
     const ease = prevElevation !== undefined && targetElevation > prevElevation ? 0.45 : 0.2;
     const renderElevation = prevElevation === undefined ? targetElevation : prevElevation + (targetElevation - prevElevation) * ease;
     group.userData.renderElevation = renderElevation;
-    group.position.set(entity.position.x, renderElevation - bob, entity.position.z);
+    // SMOOTHED JOSTLE (2026-10-08): two bodies pushing apart can nudge a walker a few centimetres sideways each tick, which read as
+    // shaking. Small corrections ease in (a ~50ms critically damped follow); anything bigger is a real move, a throw or a glide.
+    const sp = group.userData.smooth as { x: number; z: number } | undefined;
+    let px = entity.position.x, pz = entity.position.z;
+    if (sp && !entity.flying && Math.hypot(px - sp.x, pz - sp.z) < 0.6) {
+      const k = 1 - Math.exp(-this.frameDt * 22);
+      px = sp.x + (px - sp.x) * k;
+      pz = sp.z + (pz - sp.z) * k;
+    }
+    group.userData.smooth = { x: px, z: pz };
+    group.position.set(px, renderElevation - bob, pz);
     // THROWN, NOT TELEPORTED (owner 2026-09-24: "explosions blowing characters back with a fun
     // animation"). A blast or a push moves a body in the sim in one step; here a sudden jump of a
     // living ground unit becomes a FLIGHT from where it was to where it landed -- infantry arc high
@@ -2105,7 +2118,13 @@ export class WorldRenderer {
     if (last && thrownKind && !entity.flying && entity.kind !== "jumper") {
       const d = Math.hypot(entity.position.x - last.x, entity.position.z - last.z);
       // Nothing walks 0.8m between two frames; only a throw (or a teleport-style placement) does.
-      if (d > 0.8 && d < 20 && !this.commandPhase) { // only in a resolve: deploys and restores place, they do not throw
+      const thrown = (entity.thrownSeq ?? 0) !== (group.userData.thrownSeq ?? entity.thrownSeq ?? 0);
+      group.userData.thrownSeq = entity.thrownSeq ?? 0;
+      // A jump that is NOT a throw (the sim settling a body off a step or out of a neighbour) GLIDES there, flat and quick: drawing
+      // every correction as a throw read as units being shoved for no reason (owner 2026-10-08, "pushed and it doesn't work smoothly").
+      if (!thrown && d > 0.8 && d < 20 && !this.commandPhase) {
+        group.userData.flight = { from: { ...last }, start: performance.now(), dur: 140 + d * 45, height: 0, spin: 0, lean: 0, axis: { x: 0, z: 1 }, stagger: false, real: false, glide: true, flips: 0, nextPuff: 0, landed: false };
+      } else if (d > 0.8 && d < 20 && !this.commandPhase) { // only in a resolve: deploys and restores place, they do not throw
         const dx = (entity.position.x - last.x) / d;
         const dz = (entity.position.z - last.z) / d;
         // A SHOVE (under ~2.2m) is a stagger: the body leans back with the blow, hops a step and
@@ -2131,14 +2150,14 @@ export class WorldRenderer {
         };
       }
     }
-    const f = group.userData.flight as { from: { x: number; z: number; y: number }; start: number; dur: number; height: number; spin: number; lean: number; axis: { x: number; z: number }; stagger: boolean; leap: boolean; real: boolean; flips: number; nextPuff: number; landed: boolean } | undefined;
+    const f = group.userData.flight as { from: { x: number; z: number; y: number }; start: number; dur: number; height: number; spin: number; lean: number; axis: { x: number; z: number }; stagger: boolean; leap: boolean; real: boolean; glide?: boolean; flips: number; nextPuff: number; landed: boolean } | undefined;
     if (!f) { group.userData.flightPitch = 0; group.userData.flightAxis = undefined; return; }
     const t = (performance.now() - f.start) / f.dur;
     if (t >= 1) {
       group.userData.flight = undefined;
       group.userData.flightPitch = 0;
       group.userData.flightAxis = undefined;
-      if (!f.real) {
+      if (!f.real && !f.glide) {
         // Landing: a puff of dust where it came down.
         this.particles?.burst({
           x: entity.position.x, y: groundY + 0.12, z: entity.position.z,

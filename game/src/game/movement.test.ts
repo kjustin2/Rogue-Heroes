@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { TacticalSim } from "./sim";
 import { mapDef } from "./maps";
 import { ARENA_BOUNDS, DEFAULT_TERRAIN, TERRAIN_STEP, setActiveTerrain, terrainHeightAt } from "./terrain";
-import { isDefenseKind, type CombatEntity } from "./damageModel";
+import { isDefenseKind, isInfantryKind, type CombatEntity } from "./damageModel";
 
 const MAPS = ["dustbowl", "ironworks", "verdant", "causeway", "karak", "crossfire"];
 const TECH = ["assault", "armor", "recon", "ordnance", "support", "siege", "airwing"];
@@ -82,6 +82,53 @@ function projectileViolations(sim: TacticalSim, tag: string, seen: Map<string, {
   return v;
 }
 
+// PER TICK (2026-10-08, owner: "a unit when moving collides weird with an object or gets pushed and it doesn't work
+// smoothly"): between turn-end samples a unit can still pass THROUGH a prop, teleport, or shake back and forth.
+//   through: its tick's motion segment passes deep inside a solid it is not standing on or flying over;
+//   teleport: it moved over 3m in one tick without being thrown (applyKnockback bumps `thrownSeq`);
+//   jitter: its heading reversed more than 3 times inside 1s while getting under 0.5m anywhere (stuck shaking against a body or a wall).
+type Track = { x: number; z: number; flips: number[]; dir?: { x: number; z: number }; seq?: number; hist?: { t: number; x: number; z: number }[] };
+function tickViolations(sim: TacticalSim, tag: string, clock: number, tracks: Map<string, Track>): string[] {
+  const v: string[] = [];
+  const solids = sim.entities.filter(solid);
+  for (const u of sim.entities.filter(groundUnit)) {
+    const prev = tracks.get(u.id);
+    const cur = { x: u.position.x, z: u.position.z };
+    if (!prev || u.burrowed) { tracks.set(u.id, { ...cur, flips: [], seq: u.thrownSeq }); continue; }
+    const dx = cur.x - prev.x, dz = cur.z - prev.z, d = Math.hypot(dx, dz);
+    if (d > 3.2) { // a settle steps up to 3m (glided by the renderer); a Striker charge covers ~1.9m a tick; anything past 3m is not a move
+      // A Jump Trooper's leap is airborne (not a ground unit) until it lands with a "land" effect where it is now.
+      const thrown = (u.thrownSeq ?? 0) !== (prev.seq ?? 0) || sim.effects.some((e) => e.type === "land" && e.age <= DT * 1.5 && Math.hypot(e.to.x - cur.x, e.to.z - cur.z) < 0.6);
+      if (!thrown) v.push(`${tag}: ${u.name} teleported ${d.toFixed(2)}m in one tick @(${cur.x.toFixed(1)},${cur.z.toFixed(1)})`);
+    } else if ((u.thrownSeq ?? 0) !== (prev.seq ?? 0)) {
+      tracks.set(u.id, { ...cur, flips: [], seq: u.thrownSeq }); // knocked about by a blast: not a jitter, start over
+      continue;
+    } else if (d > 0.01) {
+      for (const s of solids) {
+        if (s.id === u.id || standingOn(u, s) || u.elevation >= s.elevation + s.height - 0.1) continue;
+        // Climbing ONTO low cover it was ordered onto (infantry only) crosses the rim on the way up: legal.
+        if (s.kind === "cover" && isInfantryKind(u.kind) && sim.orders.some((o) => o.actorId === u.id && !o.done && o.destination && Math.hypot(o.destination.x - s.position.x, o.destination.z - s.position.z) <= s.radius + 0.5)) continue;
+        // closest approach of the tick's segment to the solid's centre
+        const t = Math.max(0, Math.min(1, ((s.position.x - prev.x) * dx + (s.position.z - prev.z) * dz) / (d * d)));
+        const q = Math.hypot(prev.x + dx * t - s.position.x, prev.z + dz * t - s.position.z);
+        const deep = (u.radius + s.radius) * 0.6;
+        const startDeep = Math.hypot(prev.x - s.position.x, prev.z - s.position.z) < deep;
+        if (q < deep && !startDeep) v.push(`${tag}: ${u.name} walked through ${s.name} (${(s.coverKind ?? s.kind)})`);
+      }
+      const dir = { x: dx / d, z: dz / d };
+      const flips = prev.flips.filter((c) => clock - c < 1);
+      const hist = [...(prev.hist ?? []), { t: clock, x: cur.x, z: cur.z }].filter((h) => clock - h.t <= 1);
+      const net = Math.hypot(cur.x - hist[0].x, cur.z - hist[0].z); // shaking that GOES somewhere is a unit sidling round a neighbour
+      if (prev.dir && d > 0.02 && dir.x * prev.dir.x + dir.z * prev.dir.z < -0.5) flips.push(clock);
+      if (flips.length > 3 && net < 0.5) { v.push(`${tag}: ${u.name} jittered (${flips.length} reversals in 1s) @(${cur.x.toFixed(1)},${cur.z.toFixed(1)})`); flips.length = 0; }
+      tracks.set(u.id, { ...cur, flips, dir: d > 0.02 ? dir : prev.dir, seq: u.thrownSeq, hist });
+      continue;
+    }
+    tracks.set(u.id, { ...cur, flips: prev.flips, dir: prev.dir, seq: u.thrownSeq });
+  }
+  return v;
+}
+
 const MATCHUPS = [
   { player: "vanguard", enemy: "syndicate" },
   { player: "syndicate", enemy: "bastion" },
@@ -108,9 +155,11 @@ function playMap(id: string, seed: number, turns: number): string[] {
     for (const b of sim.entities) if (b.kind === "base") b.unlockedTech = [...TECH];
     sim.debugCommandAsAi(); // the player seat plays too, so both armies roam the whole map
     sim.endTurn();
+    const tracks = new Map<string, Track>();
     for (let t = 0; t < 40 && (sim.phase as string) === "resolve"; t += DT) {
       sim.update(DT);
       v.push(...projectileViolations(sim, `${id}/s${seed}/t${turn}`, seen));
+      v.push(...tickViolations(sim, `${id}/s${seed}/t${turn}`, t, tracks));
     }
     v.push(...unitViolations(sim, `${id}/s${seed}/t${turn}`));
   }

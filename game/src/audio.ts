@@ -341,6 +341,17 @@ export class Sfx {
     this.crack(0.04, 0.35 * gain);
   }
 
+  /** A body stopped dead by something solid: its own material and the surface's, together, louder the harder it hit. A trooper
+   *  is a deep thud on top; a vehicle a metal clank. */
+  contact(body: string, surface: string, surfaceCover: string | undefined, gain = 1): void {
+    this.chord(() => {
+      this.sample(impactClass(body), (GROUP_GAIN[impactClass(body)] ?? 0.5) * gain, 0.85, 0);
+      this.sample(impactClass(surface, surfaceCover), (GROUP_GAIN[impactClass(surface, surfaceCover)] ?? 0.5) * 0.8 * gain, 0.9, 0);
+      if (impactClass(body) === "hitsoft") this.boom(70, 0.16, 0.3 * gain);
+      else this.boom(120, 0.12, 0.22 * gain);
+    });
+  }
+
   /** A blow landing (melee). */
   strike(gain = 1): void {
     if (this.sample("hitpunch", GROUP_GAIN.hitpunch * 1.3 * gain)) return;
@@ -954,6 +965,7 @@ export async function measureMix(s: Sfx): Promise<Array<{ group: string; name: s
   for (const r of [1, 2, 4]) jobs.push(["boom", `blast ${r}m`, (x) => x.explosion(r)]);
   jobs.push(["boom", "crash", (x) => x.crash()], ["boom", "ignite", (x) => x.ignite()], ["boom", "strike", (x) => x.strike()]);
   for (const m of ["newTurn", "alarm", "turn", "victory", "defeat", "coin", "horn", "jet", "allSet", "achievement", "conveyor", "chute"] as const) jobs.push(["moment", m, (x) => (x[m] as () => void).call(x)]);
+  jobs.push(["boom", "contact trooper", (x) => x.contact("soldier", "cover", "rock")], ["boom", "contact bike", (x) => x.contact("chopbike", "cover", "crate")]);
   for (const [h, sec] of [["devil", 2.6], ["stampede", 2.2], ["boulder", 1.8], ["icebreaker", 3.0], ["carbomb", 1.9]] as const) jobs.push(["event", h, (x) => x.hazard(h, sec)]);
   for (const u of ["ui", "hover", "unit", "error", "select", "back", "toggle", "open", "deploy", "build", "arm"] as const) jobs.push(["ui", u, (x) => (x[u] as () => void).call(x)]);
   const out: Array<{ group: string; name: string; peak: number; rms: number }> = [];

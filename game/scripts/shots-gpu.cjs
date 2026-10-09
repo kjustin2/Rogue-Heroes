@@ -631,6 +631,50 @@ app.whenReady().then(async () => {
         await js(`window.__rht.setTimeScale(1); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = ""))`);
         continue;
       }
+      if (s === "collisions") {
+        // 2026-10-08: what a collision looks like. A shockwave flings a trooper and a bike into crates beside them (they stop
+        // against the crate, which shakes), and a boulder rolls into the enemy base and smashes there. Four frames each.
+        const stage = async (name, setup) => {
+          await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal", "vanguard")`);
+          await sleep(1500);
+          await js(`(() => { const r = window.__rht, sim = r.sim; r.deselect(); document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = "hidden")); sim.economy.set("enemy", 0);
+            ${setup}
+            r.holdCamera(true); sim.endTurn(); r.setTimeScale(0.5); })()`);
+          for (let i = 0; i < 7; i += 1) { await sleep(i === 0 ? 1500 : 350); await shot(`collide-${name}-${i}`); }
+          await js(`window.__rht.holdCamera(false); window.__rht.setTimeScale(1)`);
+        };
+        await stage("fling", `const t = sim.debugSpawn("soldier", "enemy", { x: 1.6, z: -8 }); t.status.canShoot = false; t.status.canMove = false;
+          const b = sim.debugSpawn("chopbike", "enemy", { x: -1.8, z: -8 }); b.status.canShoot = false; b.status.canMove = false;
+          sim.debugCover("crate", { x: 4.2, z: -8 }); sim.debugCover("crate", { x: -4.6, z: -8 });
+          sim.queuedSupport.push({ kind: "shockwave", point: { x: 0, z: -8 }, dir: { x: 1, z: 0 }, team: "player" });
+          r.setView({ x: 0, z: -8, zoom: 0.4, pitch: 0.62, yaw: 0.25 });`);
+        await stage("boulder-base", `const hq = sim.entities.find((e) => e.kind === "base" && e.team === "enemy");
+          sim.queuedSupport.push({ kind: "boulder", point: { x: hq.position.x - 7, z: hq.position.z }, dir: { x: 1, z: 0 }, team: "player" });
+          r.setView({ x: hq.position.x - 4, z: hq.position.z, zoom: 0.45, pitch: 0.62, yaw: 0.25 });`);
+        await js(`document.querySelectorAll("#ui").forEach((e) => (e.style.visibility = ""))`);
+        continue;
+      }
+      if (s === "footprints") {
+        // DATA: each ground kind's sim collision radius against its DRAWN footprint (the half-width of the meshes' xz bounding box,
+        // across and along its facing). Collision that is much smaller than the model reads as clipping; much bigger, as stopping
+        // short. Flags anything off by more than 25% (2026-10-08, owner: "proper collision for different unit types").
+        const kinds = ["soldier", "sniper", "heavy", "jumper", "skater", "striker", "molotov", "mortar", "bazooka", "flamer", "hookshot", "sledge", "breaker", "boomer", "juggernaut", "mole", "chopbike", "flak", "tank", "artillery", "bulldozer"];
+        await js(`window.__rht.setTimeScale(1); window.__rht.startBattle("dustbowl", "destroy", "normal")`);
+        await sleep(1200);
+        const ids = await js(`(() => { const sim = window.__rht.sim; window.__rht.deselect(); return JSON.stringify(${JSON.stringify(kinds)}.map((k, i) => { const e = sim.debugSpawn(k, "player", { x: -14 + (i % 7) * 4.5, z: -8 + Math.floor(i / 7) * 6 }); e.yaw = 0; return [k, e.id]; })); })()`);
+        await sleep(1500);
+        const rows = await js(`(() => { const r = window.__rht, out = [];
+          for (const [k, id] of ${ids}) { const e = r.sim.entity(id); let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+            r.sceneObject().traverse((m) => { if (!m.isMesh || m.userData.entityId !== id || !m.visible) return; if (m.material && m.material.transparent && m.material.opacity < 0.5) return;
+              m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld);
+              minX = Math.min(minX, b.min.x); maxX = Math.max(maxX, b.max.x); minZ = Math.min(minZ, b.min.z); maxZ = Math.max(maxZ, b.max.z); });
+            const half = Math.max(maxX - minX, maxZ - minZ) / 2, across = Math.min(maxX - minX, maxZ - minZ) / 2;
+            out.push({ k, radius: e.radius, across: +across.toFixed(2), along: +half.toFixed(2), off: +(e.radius / Math.max(0.01, (across + half) / 2)).toFixed(2) }); }
+          return JSON.stringify(out); })()`);
+        const table = JSON.parse(rows);
+        for (const t of table) console.log(`FOOTPRINT ${t.k.padEnd(11)} radius ${t.radius.toFixed(2)}  drawn ${t.across.toFixed(2)} x ${t.along.toFixed(2)}  ratio ${t.off}${t.off < 0.75 || t.off > 1.25 ? "  <-- off" : ""}`);
+        continue;
+      }
       if (s === "muzzlecheck") {
         // DATA, not pictures: for every shooter, fire one round and measure how far the sim's round origin is from the nearest drawn weapon-part box.
         const kinds = ["gunship", "soldier", "sniper", "heavy", "skater", "striker", "molotov", "mortar", "bazooka", "flamer", "hookshot", "bulldozer", "mole", "breaker", "juggernaut", "tank", "chopbike", "flak", "artillery"];

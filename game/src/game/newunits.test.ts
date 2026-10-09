@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { TacticalSim, mapDef } from "./sim";
+import { CONTACT_FX, TacticalSim, mapDef } from "./sim";
 import { FACTIONS } from "./factions";
 import { recomputeStatus } from "./damageModel";
 import { PULSE_EMP, isPulseBlast } from "./sim";
@@ -581,6 +581,60 @@ describe("shockwave, spring trap and tank drop", () => {
     expect(hp(tank), "blown up against the tank").toBeLessThan(hpTank);
     expect(tank.position, "a tank never moves").toEqual(at);
     expect(hp(behind), "the run stopped at the tank").toBe(hpBehind);
+  });
+
+  it("a boulder breaks against a base (no damage) or a defense (damaged), never rolling through (owner 2026-10-08)", () => {
+    const sim = staged();
+    const base = sim.entities.find((e) => e.kind === "base" && e.team === "enemy")!;
+    const baseHp = hp(base);
+    const behind = sim.debugSpawn("soldier", "player", { x: base.position.x + 6, z: base.position.z });
+    tough(behind);
+    const hpBehind = hp(behind);
+    // A line straight through the enemy base, rolling outwards.
+    (sim as unknown as { queuedSupport: unknown[] }).queuedSupport.push({ kind: "boulder", point: { x: base.position.x, z: base.position.z }, dir: { x: 1, z: 0 }, team: "player" });
+    run(sim);
+    expect(hp(base), "a hardened HQ shrugs it off").toBe(baseHp);
+    expect(sim.log.some((l) => l.includes("smashes against") && l.includes(base.name))).toBe(true);
+    expect(hp(behind), "the stone stopped at the base").toBe(hpBehind);
+    const sim2 = staged();
+    const post = sim2.debugStructure("exturret", "enemy", { x: 0, z: 0 });
+    const hpPost = hp(post);
+    call(sim2, "boulder", { x: 0, z: 0 });
+    run(sim2);
+    expect(hp(post), "the turret is hit").toBeLessThan(hpPost);
+    expect(sim2.effects.some((e) => e.type === "roll"), "and no stone is drawn past it").toBe(false);
+  });
+
+  it("a body thrown into something solid makes ONE contact (heard), and the crate takes the blow; a clear throw makes none", () => {
+    const sim = staged();
+    const shove = (sim as unknown as { applyKnockback(a: unknown, e: unknown, p: { x: number; z: number }, d: number, f: number, o: object): void }).applyKnockback.bind(sim);
+    const contacts = (): number => sim.effects.filter((e) => e.type === "impact" && e.color === CONTACT_FX).length;
+    const trooper = sim.debugSpawn("soldier", "player", { x: -6, z: 4 });
+    tough(trooper);
+    const crate = sim.debugCover("crate", { x: -3.2, z: 4 });
+    const crateHp = crate.parts.reduce((a, p) => a + p.hp, 0);
+    shove(trooper, trooper, { x: -8, z: 4 }, 0, 1, { force: 6, maxThrow: 6 });
+    expect(contacts(), "one contact").toBe(1);
+    expect(crate.parts.reduce((a, p) => a + p.hp, 0), "the crate took the blow").toBeLessThan(crateHp);
+    const free = sim.debugSpawn("soldier", "player", { x: -6, z: -6 });
+    tough(free);
+    shove(free, free, { x: -8, z: -6 }, 0, 1, { force: 3, maxThrow: 3 });
+    expect(contacts(), "a throw into open ground hits nothing").toBe(1);
+  });
+
+  it("nothing can be built on a marked hazard lane", () => {
+    const sim = new TacticalSim();
+    const md = mapDef("dustbowl");
+    const pb = md.playerBase;
+    // A herd lane run right past the player's base, through its build ring.
+    sim.configure({ ...md, lanes: [{ kind: "stampede", lines: "flanks", offset: Math.abs(pb.x) - 4, startTurn: 4, period: 4, width: 2, damage: 1, throw: 1 }] }, "destroy", "normal");
+    setActiveTerrain(md.terrain);
+    sim.economy.set("player", 3000);
+    const base = sim.entities.find((e) => e.kind === "base" && e.team === "player")!;
+    const lane = sim.lanesOn(4).find((l) => Math.abs(l.from.x - (pb.x + 4)) < 0.1)!;
+    expect(lane, "the test lane passes the base").toBeTruthy();
+    expect(sim.buildFailureReason(base, "barrels", { x: lane.from.x, z: pb.z + 4 }) ?? "").toMatch(/hazard/);
+    expect(sim.buildFailureReason(base, "barrels", { x: pb.x - 4, z: pb.z + 4 }) ?? "").not.toMatch(/hazard/);
   });
 
   it("a car bomb goes up against a solid prop in its path, never through it (visual QA 2026-10-08)", () => {

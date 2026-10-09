@@ -151,6 +151,8 @@ export interface CombatEntity {
   dodgeTurn?: number;
   // TANK DROP: turns left before the dropped tank's crew scuttles it into a wreck.
   dropTtl?: number;
+  // Bumped every time this body is THROWN (applyKnockback): the renderer flies a throw and only glides any other correction.
+  thrownSeq?: number;
   // COMMANDO DROP: this trooper came down under a chute (the renderer drops it in).
   chuted?: boolean;
   // FACTION TRAITS (factions.ts unitMods), stamped at deploy: the same Recruit is quicker for Vanguard and sturdier for Bastion.
@@ -297,7 +299,7 @@ export function createBulldozer(id: string, name: string, team: Team, position: 
 
 export function createArtillery(id: string, name: string, team: Team, position: Vec2): CombatEntity {
   return createVehicle(id, name, "artillery", team, position, {
-    radius: 1.75,
+    radius: 1.55, // was 1.75: a wider circle than the drawn hull, so bodies stopped short of it (footprints, 2026-10-08)
     height: 1.5,
     hullHp: 86,
     turretHp: 44,
@@ -543,7 +545,7 @@ export function createBoomer(id: string, name: string, team: Team, position: Vec
   return e;
 }
 export const createJuggernaut = (id: string, name: string, team: Team, position: Vec2): CombatEntity => createInfantry(id, name, "juggernaut", team, position, {
-  radius: 0.8, height: 1.84, bodyHp: 64, headHp: 22, weaponHp: 30, legsHp: 34, packHp: 30, weaponLabel: "Blast Cannon", packLabel: "Shell Hopper", packRole: "utility", grenades: 0,
+  radius: 0.9, height: 1.84, bodyHp: 64, headHp: 22, weaponHp: 30, legsHp: 34, packHp: 30, weaponLabel: "Blast Cannon", packLabel: "Shell Hopper", packRole: "utility", grenades: 0,
 });
 
 // ROUND 7 (2026-10-07): the second fun audit.

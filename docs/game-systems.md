@@ -72,6 +72,26 @@ changed nothing). Their pace is a design call for the owner, not a bug.
 - **Causeway drawbridges**: each bridge deck is a leaf hinged at one bank (`makeWaterAndBridges`, `bridgeLeaves`); while the
   icebreaker passes, a crossing within ~4.5m of its hull swings up ~70 degrees and drops back after (`liftBridges`, renderer only).
 
+## Glitch hunt (2026-10-08, owner: "collides weird ... pushed and it doesn't work smoothly ... a boulder hitting a base")
+Found by the per-tick movement oracle (`movement.test.ts`: through / teleport / jitter, each fault-injection proven), fixed at the cause:
+- **Snaps drawn as throws.** A move ending in a step face snapped the unit back to the move's START (a Flak Track 12m) and
+  `settleHalt` walked crowded bodies back along their whole path; the renderer drew every >0.8m jump as a throw. Now: settles
+  go at most 3m (then the nearest fitting ground), real throws carry `thrownSeq` (applyKnockback) and only those fly; any other
+  correction GLIDES (`flyThrownBody`); small per-tick jostle is eased (~50ms follow).
+- **Through solids.** A fast mover aimed dead centre at a small prop slipped through it (Chop Bike / tree); a melee charge or a
+  ram could cut through a wreck. `solidCrossed` ends any ground step, charge or ram that would cut deep through a prop, post,
+  wall or base (climbing onto ordered cover excepted).
+- **Shaking in place.** Walkers were shoved back and forth by gunships overhead (separation now ignores flyers), and a move
+  blocked by a body kept stepping and bouncing back (a move making under a quarter of its speed for 0.2s now ends).
+- **Hazards against structures.** A boulder or a car bomb stops at CONTACT with the first prop, post, wall or base on its line
+  (the run is cut there up front, `queueSweep`; HQs get the drawn margin): the car bomb goes up, the stone smashes (a hardened HQ
+  takes nothing, a defense or prop is damaged). Nothing can be built on a marked hazard lane.
+- **Every collision is felt.** A body stopped by something solid emits one contact (`CONTACT_FX` -> `Sfx.contact`: the body's
+  material against the surface's, a thud for a trooper, a clank for a vehicle, louder the harder it hit); the prop it hit takes
+  part of the blow (and flinches; crates break); a flung body (shockwave, spring, sweep) slams as hard as it was thrown.
+- **Footprints** (`npm run shots:gpu -- footprints`): sim radius vs drawn size per kind; Juggernaut 0.8 -> 0.9, Artillery
+  1.75 -> 1.55. Sledge / Flamer read wide only by their hammer / hose.
+
 ## Visual + audio QA pass (2026-10-08, independent visual-qa agent on fresh real-GPU shots)
 Fixed (ranked majors): the boulder tore into loose triangles (`boulderGeometry` lumped an unwelded icosahedron per index:
 now `mergeVertices` first); the transport jet's contrail drew a white band over a low camera (it fades within ~7-14m of the
