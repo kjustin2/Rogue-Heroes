@@ -29,7 +29,7 @@ const STAGES = {
   // The four attacks the 2026-09-23 audit fixed: mortar smoke (the tube must hoist), the gunship's
   // gun run (tracers from the aircraft, not a line on the ground), the bomber's carpet (three bombs
   // must be SEEN falling) and the hand-grenade THROW (the free arm windmills; `grenade` films it too).
-  smoke: { actor: "mortar", target: "soldier", dist: 10, order: "smoke", zoom: 0.95, scale: 0.5, span: 6.1 },
+  salvo: { actor: "mortar", target: "soldier", dist: 10, order: "salvo", zoom: 0.95, scale: 0.5, span: 6.1 },
   strafe: { actor: "gunship", target: "soldier", dist: 5, order: "strafe", zoom: 0.8, scale: 0.35, span: 2.4 },
   carpet: { actor: "bomber", target: "soldier", dist: 0.4, order: "bomb", zoom: 0.8, scale: 0.35, span: 1.6 },
   throw: { actor: "soldier", target: "soldier", dist: 6.5, order: "grenade", zoom: 0.45, scale: 0.35, span: 1.3 },
@@ -42,7 +42,7 @@ const STAGES = {
   "through-wall": { actor: "soldier", target: "soldier", dist: 7, order: "shoot", zoom: 0.6, scale: 0.4, span: 3.4, wall: true, coverAt: 0.5 },
   "through-tree": { actor: "soldier", target: "soldier", dist: 7, order: "shoot", zoom: 0.6, scale: 0.4, span: 3.4, cover: "tree", coverAt: 0.5 },
 };
-const PROJECTILE_STAGES = ["through-crate", "through-sandbag", "through-rock", "through-tree", "shoot", "heavy", "sniper", "pistol", "flame", "grenade", "launcher", "mortar", "tank", "artillery", "turret", "gunship", "smoke", "carpet"];
+const PROJECTILE_STAGES = ["through-crate", "through-sandbag", "through-rock", "through-tree", "shoot", "heavy", "sniper", "pistol", "flame", "grenade", "launcher", "mortar", "tank", "artillery", "turret", "gunship", "salvo", "carpet"];
 // A software GPU (a cloud container) runs a few fps and the frame loop clamps dt at 50ms, so the
 // sim runs slower than the wall clock the gaps below assume. FILM_SLOW=<n> stretches every gap.
 const SLOW = Number(process.env.FILM_SLOW ?? 1) || 1;
@@ -106,7 +106,7 @@ try {
       sim.setIntent(stage.order);
       const queued = stage.order === "melee" ? sim.queueMelee(target.id)
         : stage.order === "grenade" ? sim.queueGrenade(target.id)
-        : stage.order === "smoke" ? sim.queueSmokeAt({ ...target.position })
+        : stage.order === "salvo" ? sim.queueSalvoAt({ ...target.position })
         : stage.order === "bomb" ? sim.queueBombDrop()
         : stage.order === "strafe" ? sim.queueMove({ x: target.position.x + 4, z: 0 })
         : sim.queueShoot(target.id);

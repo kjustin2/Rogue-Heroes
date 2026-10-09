@@ -92,30 +92,6 @@ app.whenReady().then(async () => {
       }
     }
 
-    if (probe === "pickup") {
-      // Does the cash-cache coin/ring sink into the ground AS DRAWN? The coin is placed off the SIM
-      // height (terrainHeightAt); the ground is drawn at visualGroundAt (talus + plate lift).
-      for (const map of (arg ? [arg] : ["causeway", "ironworks", "verdant"])) {
-        await js("window.__rht.startBattle(" + JSON.stringify(map) + ", \"destroy\", \"normal\"); window.__rht.deselect();");
-        await sleep(3500);
-        const p = await js("(() => { const s = window.__rht.sim; const c = s.pickups && s.pickups[0]; return c ? JSON.stringify({ id: c.id, x: c.x, z: c.z }) : ''; })()");
-        if (!p) { console.log(map + ": no pickups"); continue; }
-        const c = JSON.parse(p);
-        console.log(map + " pickup " + c.id + " at " + c.x.toFixed(2) + "," + c.z.toFixed(2));
-        await js("window.__rht.setView({ x: " + c.x + ", z: " + (c.z + 1.2) + ", zoom: 0.62, pitch: 0.35, yaw: 0.3 })");
-        await sleep(1200);
-        // 10 consecutive frames across a full bob cycle (period 2pi/0.005ms = 1.26s).
-        const frames = []; for (let i = 0; i < 10; i += 1) { frames.push(await cap()); await sleep(130); }
-        const tiles = []; for (const f of frames) tiles.push(await sharp(f).extract({ left: 660, top: 300, width: 280, height: 260 }).resize(560, 520, { kernel: "nearest" }).png().toBuffer());
-        await sharp({ create: { width: 560 * 5, height: 520 * 2, channels: 3, background: "#000" } })
-          .composite(tiles.map((input, i) => ({ input, left: (i % 5) * 560, top: Math.floor(i / 5) * 520 }))).png()
-          .toFile(path.join(outDir, "pickup-" + map + "-bob.png"));
-        console.log("  pickup-" + map + "-bob.png (10 frames across the bob)");
-        // The numbers: coin world Y vs the ground the renderer draws under it.
-        console.log("  " + await js("(() => { const out = []; window.__rht.sceneObject().traverse((o) => { if (o.userData && o.userData.pickupId && o.geometry && o.geometry.type === 'OctahedronGeometry') { o.geometry.computeBoundingBox(); out.push({ id: o.userData.pickupId, y: +o.position.y.toFixed(3), bottom: +(o.position.y + o.geometry.boundingBox.min.y).toFixed(3) }); } }); return JSON.stringify(out); })()"));
-      }
-    }
-
     if (probe === "screenpick") {
       // What object is at screen pixel (x,y)? Raycasts the live scene through the live camera.
       const [map, sx, sy, view] = [arg, +process.argv[4], +process.argv[5], process.argv[6]];
@@ -339,7 +315,7 @@ app.whenReady().then(async () => {
     }
 
     if (probe === "flatoverlay") {
-      // Ground overlays in the pickups/mines/zones block are FLAT discs at the sim height, unlike
+      // Ground overlays in the mines/zones block are FLAT discs at the sim height, unlike
       // the move field / weapon ring which are draped (drapeToTerrain). Count how many sit where a
       // flat disc cannot lie: within its own radius of a terrain-block edge (a real step).
       for (const map of ["dustbowl", "ironworks", "verdant", "causeway", "karak", "crossfire"]) {
@@ -348,8 +324,8 @@ app.whenReady().then(async () => {
         console.log(map + " " + await js("(() => { const s = window.__rht.sim; const blocks = s.mapDef.terrain.blocks || [];" +
           " const nearEdge = (x, z, r) => blocks.some((b) => { const inX = x > b.minX - r && x < b.maxX + r; const inZ = z > b.minZ - r && z < b.maxZ + r;" +
           "   const deepX = x > b.minX + r && x < b.maxX - r; const deepZ = z > b.minZ + r && z < b.maxZ - r; return inX && inZ && !(deepX && deepZ); });" +
-          " const picks = (s.pickups || []); const mines = (s.mines || []); const zones = (s.environment ? s.environment().zones : []) || [];" +
-          " return JSON.stringify({ pickups: picks.length, pickupsStraddlingAStep: picks.filter((p) => nearEdge(p.x, p.z, 0.74)).length," +
+          " const mines = (s.mines || []); const zones = (s.environment ? s.environment().zones : []) || [];" +
+          " return JSON.stringify({" +
           "   mines: mines.length, minesStraddling: mines.filter((m) => nearEdge(m.x, m.z, 0.26)).length," +
           "   zones: zones.length, zonesStraddling: zones.filter((z) => nearEdge(z.x, z.z, z.radius)).length }); })()"));
       }

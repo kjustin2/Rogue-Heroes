@@ -188,6 +188,8 @@ const JUMP_SLAM_THROW = 4;
 // Effect colours that name a SOUND (main.ts maps them): a pad launch whoosh, silent dirt/dust puffs, the train horn, ice cracking.
 export const LAUNCH_FX = 0xffe14a; // a spring trap firing
 export const DIG_FX = 0x8a6a43;
+// A boulder breaking against a tank or a structure: the dust ring plus rock chunks thrown out (sweepFx.drawRubble) and a crash.
+export const BOULDER_BREAK_FX = 0x8a7a67;
 export const CONTACT_FX = 0xc9b79a; // a thrown body hitting something solid (Sfx.contact: what hit what)
 export const CAR_BOMB_FX = 0xff5a1e; // the car bomb going up (its own boom)
 export const CONVEYOR_FX = 0x5a5e65; // a belt carrying someone (a clank and a motor whine)
@@ -264,7 +266,7 @@ export const SHOCKWAVE_FX = 0xd9b98a; // a warm dust ring, never a white flash
 /** Heavy things landing (a tank dropped from the sky, cover collapsing): a dust burst, not a fireball. */
 export const DUST_FX = 0xb59a72;
 /** Blasts that draw as a ring of dust and grit instead of fire (and leave no scorch): the shockwave, the tank drop, a boulder breaking. */
-export const isDustBlast = (color: number | undefined): boolean => color === SHOCKWAVE_FX || color === DUST_FX;
+export const isDustBlast = (color: number | undefined): boolean => color === SHOCKWAVE_FX || color === DUST_FX || color === BOULDER_BREAK_FX;
 // TANK DROP (support): the crush under the chute, and how long the tank fights before it is scuttled.
 const TANK_DROP_CRUSH = 2.2;
 const TANK_DROP_DAMAGE = 60;
@@ -347,9 +349,6 @@ export interface TacticalOrder {
   stance?: InfantryStance;
   start?: Vec2;
   startedCrouched?: boolean;
-  /** Blocked-move watch: the gap to the stop at the start of the current 0.2s window, and when that window began. */
-  bestGap?: number;
-  bestAt?: number;
   /** A melee order that SHOVES instead of striking (the Push ability): same rush, a big throw. */
   shove?: boolean;
   /** A short hop every trooper can make: a move that arcs over low obstacles and up onto a ledge (see leapRange). */
@@ -2748,18 +2747,12 @@ export class TacticalSim {
         return;
       }
       this.separateFromUnits(actor, order.destination);
+      // WAIT, DON'T BOUNCE: a step that the push-apart throws BACK past where it started (a body in the way, usually a friend in the
+      // same advance) is not taken; the unit waits for the way to clear instead of shaking in place (2026-10-09).
+      if (dist(actor.position, order.destination) > dist(before, order.destination) + 0.01) actor.position = before;
       this.syncEntityElevation(actor);
       actor.yaw = Math.atan2(order.destination.x - actor.position.x, order.destination.z - actor.position.z);
       this.checkMines(actor);
-      // BLOCKED: a body stands in the way and every step is pushed back (the unit shook in place against a tank; oracle
-      // 2026-10-08). No progress for 0.2s ends the move where it stands.
-      // Measured over 0.2s windows: under a quarter of its speed in real progress means it is being pushed back as fast as it steps.
-      const gap = dist(actor.position, order.destination);
-      if (order.bestGap === undefined) { order.bestGap = gap; order.bestAt = order.elapsed; }
-      else if (order.elapsed - (order.bestAt ?? 0) >= 0.2) {
-        if (order.bestGap - gap < moveSpeed(actor) * crouchMoveSlow * 0.2 * 0.25 && gap > 0.3) { order.done = true; return; }
-        order.bestGap = gap; order.bestAt = order.elapsed;
-      }
       if (dist(actor.position, order.destination) < 0.08) {
         order.done = true;
         // A drop off a ledge can end flush against the face it dropped from (movement oracle, ironworks): back it off like a
@@ -4675,7 +4668,14 @@ export class TacticalSim {
       // A rammer that killed on contact is standing on the spot the wreck now occupies; step aside.
       for (const other of this.entities) {
         if (other.id === wreck.id || !other.status.alive || other.flying || other.kind === "cover" || isBuildingKind(other.kind) || isDefenseKind(other.kind)) continue;
-        if (dist(other.position, wreck.position) < other.radius + wreck.radius) this.separateFromUnits(other);
+        if (dist(other.position, wreck.position) >= other.radius + wreck.radius) continue;
+        // Knocked aside by the falling hulk: drawn as a stagger and heard as a contact, never a silent slide (2026-10-09).
+        const was = { ...other.position };
+        this.separateFromUnits(other);
+        if (dist(was, other.position) > 0.3) {
+          other.thrownSeq = (other.thrownSeq ?? 0) + 1;
+          this.effect("impact", { ...other.position }, { x: (other.position.x + wreck.position.x) / 2, z: (other.position.z + wreck.position.z) / 2 }, CONTACT_FX, 0.3, 0.8);
+        }
       }
       this.salvage.set(wreck.id, SALVAGE_PER_WRECK);
       this.pushLog(`${target.name} burns out: the wreck is hard cover and holds $${SALVAGE_PER_WRECK} salvage`);
@@ -5636,12 +5636,10 @@ export class TacticalSim {
     return best;
   }
 
-  // `dryRun` (recon preview): decide unit orders only — no repairs, no comms clamp, no base
-  // purchases — so enemyIntents() can undo everything it touched.
-  private queueEnemyOrders(dryRun = false): void {
+  private queueEnemyOrders(): void {
     const profile = this.aiProfile();
     this.aiClaims = [];
-    if (!dryRun) {
+    {
       for (const entity of this.living("enemy")) repairForNewTurn(entity);
       const enemyCommsOnline = this.entities.some((e) =>
         e.team === "enemy" &&
@@ -5682,7 +5680,7 @@ export class TacticalSim {
       if (isBuildingKind(enemy.kind)) continue; // carried units can't act
       // EASY hesitates: about a third of its units sit a turn out. It is the bot a new player
       // learns on, and at full activity it out-raced the "smart" brains in self-play.
-      if (easyBrain && !dryRun && this.rng.chance(0.3)) continue;
+      if (easyBrain && this.rng.chance(0.3)) continue;
       // The fun units act on every brain: a Boomer runs in and blows, a Breaker punches whatever it reaches.
       if (this.aiBoomerAct(enemy, players)) continue;
       if (this.aiPunchAct(enemy, players)) continue;
@@ -6913,7 +6911,7 @@ export class TacticalSim {
           this.detonateStrike({ point: strike.point, radius: CAR_BOMB_RADIUS, damage: CAR_BOMB_DAMAGE, kind: "carblast", team: strike.team });
           return;
         }
-        this.effect("blast", strike.point, strike.point, DUST_FX, 0.7, 1.6);
+        this.effect("blast", strike.point, strike.point, BOULDER_BREAK_FX, 0.9, 1.6);
         this.effect("strike", strike.point, wall.position, 0xd9c4a0, 0.45, wall.radius + 0.5);
         if (wall.kind === "base") {
           this.effect("ping", { ...wall.position }, { ...wall.position }, 0x8fd0ff, 0.75, wall.radius + 1.1);
@@ -6944,7 +6942,7 @@ export class TacticalSim {
           this.detonateStrike({ point: strike.point, radius: CAR_BOMB_RADIUS, damage: CAR_BOMB_DAMAGE, kind: "carblast", team: strike.team });
           return;
         }
-        this.effect("blast", strike.point, strike.point, DUST_FX, 0.7, 1.6);
+        this.effect("blast", strike.point, strike.point, BOULDER_BREAK_FX, 0.9, 1.6);
         this.pushLog(`The boulder smashes against ${e.name}`);
         return;
       }

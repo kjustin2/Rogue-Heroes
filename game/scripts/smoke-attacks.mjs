@@ -34,7 +34,7 @@ const CASES = [
   { name: "machine-gun", actor: "heavy", target: "heavy", dist: 7, order: "shoot", limb: "weapon", round: true },
   { name: "launcher", actor: "molotov", target: "heavy", dist: 8, order: "shoot", limb: "weapon", round: true },
   { name: "mortar", actor: "mortar", target: "heavy", dist: 10, order: "shoot", limb: "weapon", round: true },
-  { name: "mortar-smoke", actor: "mortar", target: "heavy", dist: 10, order: "smoke", limb: "weapon", round: true },
+  { name: "mortar-salvo", actor: "mortar", target: "heavy", dist: 10, order: "salvo", limb: "weapon", round: true },
   { name: "pistol", actor: "mole", target: "heavy", dist: 6, order: "shoot", limb: "weapon", round: true },
   { name: "jumper-carbine", actor: "jumper", target: "heavy", dist: 7, order: "shoot", limb: "weapon", round: true },
   { name: "flamer", actor: "flamer", target: "heavy", dist: 4.5, order: "shoot", limb: "weapon", round: true },
@@ -82,7 +82,6 @@ try {
       sim.economy.set("enemy", 0);
       // ...and clear the lasting hazards earlier cases left on the lane: the mortar's smoke cloud
       // (correctly) swallows every flat shot through it for three turns, and fire burns for two.
-      sim.smokeClouds.length = 0;
       sim.burnZones.length = 0;
       const actor = sim.debugSpawn(c.actor, "player", { x: -4, z: -6 }, { clearTerrain: true });
       const target = sim.debugSpawn(c.target, "enemy", { x: actor.position.x + c.dist, z: actor.position.z });
@@ -107,7 +106,7 @@ try {
       sim.debugSelect(ids.actor);
       const ok = c.order === "shoot" ? sim.queueShoot(ids.target)
         : c.order === "grenade" ? sim.queueGrenade(ids.target)
-        : c.order === "smoke" ? sim.queueSmokeAt({ x: target.position.x, z: target.position.z })
+        : c.order === "salvo" ? sim.queueSalvoAt({ x: target.position.x, z: target.position.z })
         : c.order === "melee" ? sim.queueMelee(ids.target)
         : c.order === "bomb" ? sim.queueBombDrop()
         : c.order === "ram" ? sim.queueRam(ids.target)

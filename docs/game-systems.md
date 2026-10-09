@@ -82,13 +82,17 @@ Found by the per-tick movement oracle (`movement.test.ts`: through / teleport / 
   ram could cut through a wreck. `solidCrossed` ends any ground step, charge or ram that would cut deep through a prop, post,
   wall or base (climbing onto ordered cover excepted).
 - **Shaking in place.** Walkers were shoved back and forth by gunships overhead (separation now ignores flyers), and a move
-  blocked by a body kept stepping and bouncing back (a move making under a quarter of its speed for 0.2s now ends).
+  blocked by a body kept stepping and bouncing back. A step the push-apart throws back past where it started is not taken: the
+  unit WAITS for the way to clear (2026-10-09). A first fix that ended "blocked" moves was measured stopping 24% of moves short
+  (median 3.8m, mostly behind a friend in the same advance) and was removed; waiting alone keeps the jitter oracle green.
 - **Hazards against structures.** A boulder or a car bomb stops at CONTACT with the first prop, post, wall or base on its line
   (the run is cut there up front, `queueSweep`; HQs get the drawn margin): the car bomb goes up, the stone smashes (a hardened HQ
   takes nothing, a defense or prop is damaged). Nothing can be built on a marked hazard lane.
 - **Every collision is felt.** A body stopped by something solid emits one contact (`CONTACT_FX` -> `Sfx.contact`: the body's
   material against the surface's, a thud for a trooper, a clank for a vehicle, louder the harder it hit); the prop it hit takes
   part of the blow (and flinches; crates break); a flung body (shockwave, spring, sweep) slams as hard as it was thrown.
+- **A boulder breaking** (on a tank, a wall or a base) throws seven chunks of the stone out on low arcs that shrink into the dust
+  (`BOULDER_BREAK_FX`, `sweepFx.drawRubble`) with a crash; a unit shoved aside by a falling wreck staggers and thuds.
 - **Footprints** (`npm run shots:gpu -- footprints`): sim radius vs drawn size per kind; Juggernaut 0.8 -> 0.9, Artillery
   1.75 -> 1.55. Sledge / Flamer read wide only by their hammer / hose.
 

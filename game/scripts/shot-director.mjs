@@ -45,11 +45,18 @@ try {
   await page.waitForSelector("[data-map]");
   await page.click("[data-map]");
   await page.evaluate(() => { const f = document.querySelector(".start-flow"); for (let i = 0; i < 3 && Number(f.dataset.step) < 3; i += 1) document.querySelector('[data-step-go="next"]').click(); document.querySelector("[data-start]").click(); });
-  await page.waitForFunction(() => window.__rht?.sim?.phase === "command", null, { timeout: 20000 });
+  // Wait for the BATTLE, not just a command phase: the menu's sim is in "command" too, and the real battle is configured a few
+  // frames later under the loading veil. Staging before that was wiped by the battle start: no shot was ever fired, the director had
+  // nothing to watch, and this check passed or failed on the camera's idle sweep (about half the runs, 2026-10-09).
+  await page.waitForSelector(".battle-loading", { timeout: 20000 }).catch(() => undefined);
+  await page.waitForFunction(() => window.__rht?.sim?.phase === "command" && !document.querySelector(".battle-loading"), null, { timeout: 20000 });
+  await page.waitForTimeout(600);
 
   const ok = await page.evaluate(({ KILL, NOISE }) => {
     const sim = window.__rht.sim;
-    sim.entities.splice(0, sim.entities.length);
+    // Clear the board but KEEP both bases: with no base left the battle is over before a shot resolves, the director has nothing
+    // to watch, and the camera's fallback sweep only passed this check by luck (it failed about half the runs, 2026-10-09).
+    for (let i = sim.entities.length - 1; i >= 0; i -= 1) if (sim.entities[i].kind !== "base") sim.entities.splice(i, 1);
 
     // Fight A: a killing blow. One shot into a target left on a single hit point.
     const killer = sim.debugSpawn("heavy", "player", { x: KILL.x - 2, z: KILL.z });

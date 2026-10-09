@@ -578,8 +578,8 @@ app.whenReady().then(async () => {
             for (const [dx, dz, k] of [[0, 0, "soldier"], [1.6, 1.2, "soldier"], [-1.4, 1.4, "heavy"], [0.4, -1.8, "tank"]]) { const e = sim.debugSpawn(k, "enemy", { x: tgt.x + dx, z: tgt.z + dz }); for (const p of e.parts) if (p.role === "weapon") p.hp = 0; e.status.canShoot = false; foes.push(e.id); }
             const mate = sim.debugSpawn("soldier", "player", { x: bx + 9, z: 3 }); mate.parts[0].hp = Math.max(1, mate.parts[0].hp * 0.3); mate.status.alive = true;
             sim.select(base.id); sim.pendingSupport = ${JSON.stringify(kind)};
-            const ok = sim.queueSupportAt(${kind === "medevac" ? "{ x: bx + 9, z: 3 }" : "tgt"});
-            r.setView({ x: ${kind === "medevac" ? "bx + 9" : "tgt.x"}, z: 1, zoom: 0.3, pitch: 0.6, yaw: 0.3 }); r.deselect();
+            const ok = sim.queueSupportAt(tgt);
+            r.setView({ x: tgt.x, z: 1, zoom: 0.3, pitch: 0.6, yaw: 0.3 }); r.deselect();
             const log = sim.log.slice(-3).map((l) => l.text ?? l);
             if (ok) { sim.endTurn(); r.setTimeScale(0.8); }
             return JSON.stringify({ ok, log }); })()`);
@@ -1140,7 +1140,7 @@ app.whenReady().then(async () => {
           const a = sim.debugSpawn("artillery", "player", { x: -6, z: 2 }); a.deployed = true; a.yaw = 0.3;
           sim.debugSpawn("skater", "player", { x: -3, z: -2 });
           sim.debugSpawn("soldier", "enemy", { x: 6, z: 1 }); sim.debugSpawn("heavy", "enemy", { x: 7, z: -3 });
-          sim.revealedOrders = true; window.__rht.deselect();
+          window.__rht.deselect();
           window.__rht.setView({ x: 0, z: 0, zoom: 0.55, pitch: 0.55, yaw: 0.3 }); })()`);
         await sleep(1500);
         await shot("recon");
@@ -1173,12 +1173,11 @@ app.whenReady().then(async () => {
         continue;
       }
       if (s === "abilities") {
-        // Smoke cloud, a marked enemy, a downed trooper beside a medic: the three new cues in one frame.
+        // A trooper laid out prone beside a Breaker and a Skater: the stance cues in one frame.
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
         await sleep(1500);
         await js(`(() => { const sim = window.__rht.sim;
-          sim.smokeClouds.push({ id: "smoke-shot", x: -4, z: 0, radius: 3, turnsLeft: 3 });
-          const e = sim.debugSpawn("soldier", "enemy", { x: 3, z: -1 }); e.yaw = 2.6; e.markedUntilTurn = sim.turn + 1;
+          const e = sim.debugSpawn("soldier", "enemy", { x: 3, z: -1 }); e.yaw = 2.6;
           const m = sim.debugSpawn("breaker", "player", { x: 1, z: 2 }); m.yaw = 0.4;
           const d = sim.debugSpawn("skater", "player", { x: 2.4, z: 2.4 }); d.yaw = 0.2; d.stance = "prone";
           window.__rht.deselect(); })()`);
@@ -1362,11 +1361,11 @@ app.whenReady().then(async () => {
       }
       if (s === "statuses") {
         // Every long roster status at once, for the "text runs through the health bar" class:
-        // hull down, suppressed, crouched + grenades, deployed artillery, a hurt unit; then the Info panel.
+        // a tank, suppressed, crouched + grenades, deployed artillery, a hurt unit; then the Info panel.
         await js(`window.__rht.startBattle("dustbowl", "destroy", "normal")`);
         await sleep(1500);
         await js(`(() => { const sim = window.__rht.sim;
-          const t = sim.debugSpawn("tank", "player", { x: -12, z: 2 }); t.hullDown = true;
+          const t = sim.debugSpawn("tank", "player", { x: -12, z: 2 }); t.yaw = 0.4;
           const h = sim.debugSpawn("heavy", "player", { x: -12, z: -1 }); h.suppressedUntilTurn = sim.turn + 1;
           const s1 = sim.debugSpawn("soldier", "player", { x: -13, z: 0 }); s1.stance = "crouched";
           const a = sim.debugSpawn("artillery", "player", { x: -14, z: 3 }); a.deployed = true;

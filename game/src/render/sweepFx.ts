@@ -402,6 +402,7 @@ export function sweepWarmUp(): THREE.Group {
   const e: SweepEffect = { from: { x: -4, z: 0 }, to: { x: 4, z: 0 }, duration: 2, radius: 1.4 };
   for (const kind of ["devil", "stampede", "boulder", "icebreaker", "carbomb"] as const) drawSweep(g, kind, e, 0.5, () => 0, 1000);
   g.add(makeChute());
+  drawRubble(g, { to: { x: 0, z: 0 } }, 0.3, () => 0);
   return g;
 }
 
@@ -421,4 +422,22 @@ export function makeChute(): THREE.Group {
     g.add(l);
   }
   return g;
+}
+
+/** A BOULDER BREAKING (against a tank, a wall or a base): seven chunks of the same stone thrown out on low arcs, tumbling, then
+ *  shrinking into the dust in the last third (nothing vanishes at full size). Drawn from the effect's own progress `t`. */
+export function drawRubble(root: THREE.Object3D, e: { to: Vec2; radius?: number }, t: number, ground: GroundAt): void {
+  const stone = mat("boulder", { color: 0x8a7a66, roughness: 0.95, flatShading: true });
+  const g = ground(e.to);
+  for (let i = 0; i < 7; i += 1) {
+    const a = (i / 7) * Math.PI * 2 + rnd(i) * 0.6;
+    const reach = (1.2 + rnd(i + 7) * 1.8) * (e.radius ?? 1.6) * 0.8;
+    const k = Math.min(1, t * 1.6);
+    const x = e.to.x + Math.cos(a) * reach * k, z = e.to.z + Math.sin(a) * reach * k;
+    const y = g + 0.25 + 4 * (0.6 + rnd(i + 3)) * k * (1 - k) * 1.2;
+    const s = (0.32 + rnd(i + 11) * 0.22) * (t < 0.66 ? 1 : 1 - (t - 0.66) / 0.34);
+    const o = mesh(boulderGeometry(), stone, x, y, z, Math.max(0.01, s));
+    o.rotation.set(t * 9 + i, t * 7 + i * 2, 0);
+    root.add(o);
+  }
 }

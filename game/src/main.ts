@@ -37,7 +37,7 @@ import {
   FACTIONS,
   type FactionId,
   CLASH_BLAST,
-  CONTACT_FX, CONVEYOR_FX, COMMANDO_JET, DIG_FX, ERUPT_FX, HORN_FX, ICE_FX, LAUNCH_FX, SWEEP_FX,
+  BOULDER_BREAK_FX, CONTACT_FX, CONVEYOR_FX, COMMANDO_JET, DIG_FX, ERUPT_FX, HORN_FX, ICE_FX, LAUNCH_FX, SWEEP_FX,
   PULSE_EMP,
   isPulseBlast,
   CLASH_BOLT,
@@ -2397,6 +2397,12 @@ function processBattleEvents(): void {
     } else if (effect.type === "ping" && effect.color === LAUNCH_FX) {
       sfx.jet();
       feel.addTrauma(0.06 * heard);
+    } else if (effect.type === "blast" && effect.color === BOULDER_BREAK_FX) {
+      // The stone breaking on armour or a wall: a crash of rock, not an explosion.
+      sfx.crash(heard);
+      sfx.impact("cover", "rock", heard);
+      resolveCam.note(effect.to.x, effect.to.z, POI_WEIGHT.impact, 1.4);
+      if (stage.isInView(effect.to)) feel.addTrauma(0.12);
     } else if (effect.type === "blast" && effect.color === 0xff7a2a) {
       sfx.ignite(heard); // fire catching (a flamer's splash, a Molotov, the slag), never an explosion
       feel.addTrauma(0.06 * heard);

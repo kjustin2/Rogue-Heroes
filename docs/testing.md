@@ -272,3 +272,9 @@ every map, cancel refunds, dead-before-order, shared destinations, water).
 - `npm run shots:gpu -- airaim muzzlecheck` (2026-10-03): `airaim` = gunship Bomb armed, ground spot picked 6m off (line + splash stay put as the cursor wanders, no move queued), Confirm, the fall filmed; `muzzlecheck` prints, per shooter, the gap between its round origin and its drawn weapon mesh. `muzzles.test.ts` pins the aircraft values; `orderLabel.test.ts` pins every order's name.
 - The `treatanim` shot case, the medic/engineer/sapper/apc/interceptor smoke attacks and the pad/oil fieldhands frames were removed with those units (2026-10-04). `ui-audit` gained a `clipped-text` rule (text poking past a clipping box) and a 1366x768 viewport.
 - `ui-audit` also has a `blurred-glow` rule (toon UI: hard offset shadows only; it found AP pips, faction pips, the log toggle, the end-screen title and the detail card still glowing). `chaosRoster.test.ts` fuzzes every troop kind with every order on all six maps with save/restore round trips.
+
+
+**Smoke staging (2026-10-09).** A smoke that stages a battle must wait for the BATTLE, not just `phase === "command"`: the menu's
+sim is in a command phase too, and the real battle is configured a few frames later under the `.battle-loading` veil. Staging before
+it was silently wiped. `smoke:director` failed about half its runs for exactly this reason (no shot ever fired, and the check passed
+only when the camera's idle sweep happened to pass the kill). Wait for the veil to come and go, then stage.

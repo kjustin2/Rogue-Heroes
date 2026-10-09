@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { ParticleShape, Particles } from "./particles";
-import { drawSweep, makeChute, sweepWarmUp, type SweepDraw } from "./sweepFx";
+import { drawRubble, drawSweep, makeChute, sweepWarmUp, type SweepDraw } from "./sweepFx";
 import { hasMotionBank, sampleMotion } from "./infantryMotion";
 import { ANKLE_Y, CROUCH_GAIT, GAIT_TIERS, HIP_Y, HIP_Z, KNEE_Y, bodyAt, footAt, gaitTier, solveLeg, type GaitParams, type LegPose } from "./gait";
 import { splitAtKnee } from "./legSplit";
@@ -10,7 +10,7 @@ import { clamp, clamp01, dist, pointToSegmentDistance, segmentProgress, type Vec
 import { isAirKind, isBuildingKind, isDefenseKind, isInfantryKind, isLandmarkKind, isMountKind, isVehicleKind, type CombatEntity, type CoverKind, type DamagePart, type Team, type EntityKind, type PartRole } from "../game/damageModel";
 import { factionDef, type FactionId } from "../game/factions";
 import type { OrderKind, Projectile, ShotPreview, TacticalSim, VisualEvent } from "../game/sim";
-import { CLASH_BLAST, CLASH_BOLT, IMMOVABLE_HEAVIES, SWEEP_FX, isDustBlast, isPulseBlast, minefieldPoints, muzzleFor } from "../game/sim";
+import { BOULDER_BREAK_FX, CLASH_BLAST, CLASH_BOLT, IMMOVABLE_HEAVIES, SWEEP_FX, isDustBlast, isPulseBlast, minefieldPoints, muzzleFor } from "../game/sim";
 import { MAPS, type MapTheme, type AmbientKind, type AmbientSpec, type GroundSurfaceKind, type SkylineKind } from "../game/maps";
 import type { TroopKind } from "../game/units";
 import { ARENA_BOUNDS, TERRAIN_STEP, arenaDepth, arenaWidth, climbsAlong, onTerrainEdge, pointInWater, terrainBlocks, terrainBridges, terrainHeightAt, terrainIce, terrainWater, type TerrainRect } from "../game/terrain";
@@ -5893,6 +5893,7 @@ export class WorldRenderer {
           new THREE.MeshBasicMaterial({ color: 0xcfb894, transparent: true, opacity: 0.6 * (1 - t), side: THREE.DoubleSide, depthWrite: false }),
         );
         this.effectRoot.add(ring);
+        if (effect.color === BOULDER_BREAK_FX) drawRubble(this.effectRoot, effect, t, drawnGroundAt);
       } else if (effect.type === "blast") {
         // Battle scar: the first frame of every blast burns a scorch decal into the ground
         // that persists for the whole battle (FIFO-capped so long sieges stay cheap).
